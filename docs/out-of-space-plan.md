@@ -332,6 +332,36 @@ the question it answers next.
 Storage also lost its second input port. Two lines arriving at one tank is a merge, and a merge
 should be something built out of track where the player can see it.
 
+### Saving is a text file, and that is the point (2026-08-01)
+
+Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the
+loop everything else runs inside. Finding something wrong, describing it, and having it
+reconstructed from the description is lossy and slow, and it was how three rounds of the previous
+session went. A file removes that step entirely.
+
+That makes **legibility the format's job**, not compactness. It is line-oriented, one entry per
+line, `#` comments, and every placed thing carries its coordinates:
+
+```
+machine 485 Miner facing=Right ore=Iron=410,Copper=180,Titanium=110,Silica=300 buffer=Ore/- carry=0 rate=1000   # (5, 12)
+rail 489 Rail links=5 channel=Amber   # (9, 12) R-L-
+```
+
+`links=5` is what the sim stores; `R-L-` is what a person reads. A whole vessel can be typed by
+hand, which is what makes "try this layout" a thing that can be sent rather than described.
+
+**Only what cannot be re-derived is written.** Structure, occupancy and signals are recomputed every
+tick, so writing them would be writing a cache — and a cache in a save file is a cache that can
+disagree with the world. The **ledgers are written**, baselines included, precisely because they are
+*not* derivable: `mined == aboard + vented` is a claim about this world's history, and a load that
+reset them would forgive every leak that happened before the save.
+
+The test that matters is not a round trip. It is two copies of the same vessel, one of which went
+through a file, still agreeing **after another few hundred ticks**. A state comparison passes while
+ignoring a field the format forgot; running on does not. Confirmed by deliberately dropping a
+miner's fractional `carry` from the writer — invisible in any snapshot, and the divergence test
+caught it immediately.
+
 #### Parked: liquids and gases might not want packets at all
 
 Raised while scoping the transport layer, and deliberately *not* being built now — packets carry all

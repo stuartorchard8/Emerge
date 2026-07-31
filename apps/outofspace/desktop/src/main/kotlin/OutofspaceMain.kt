@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Save
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
@@ -48,6 +49,9 @@ fun main() {
 
     hud.onTogglePause = { controller.paused = !controller.paused }
     hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
+    hud.canSave = true
+    hud.onSave = { hud.saveStatus = saveWorld(controller) }
+    hud.onLoad = { hud.saveStatus = loadWorld(controller, renderer) }
 
     var leftDown = false
     var middleDown = false
@@ -125,6 +129,8 @@ fun main() {
             GLFW_KEY_W -> controller.tool = if (controller.tool == Tool.Build) Tool.Wire else Tool.Build
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
+            GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
+            GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
@@ -167,6 +173,43 @@ fun main() {
     ui.cleanup()
     glfwDestroyWindow(window)
     glfwTerminate()
+}
+
+/**
+ * Where a save goes: one well-known file beside wherever the game was started.
+ *
+ * One slot rather than a file picker, deliberately. The job this does is *handing a world to
+ * somebody* — a reproduction of something that misbehaved — and for that, a path you can predict and
+ * paste is worth more than a dialog. Slots and naming can come when there is a reason to keep two.
+ */
+private val SAVE_FILE = java.io.File("outofspace.save")
+
+/** Writes the world, and says where it went — the path is the point, since it is meant to be shared. */
+private fun saveWorld(controller: OutofspaceController): String = try {
+    SAVE_FILE.writeText(Save.write(controller.state))
+    println("saved to ${SAVE_FILE.absolutePath}")
+    "saved: ${SAVE_FILE.absolutePath}"
+} catch (e: Exception) {
+    println("save failed: ${e.message}")
+    "save failed: ${e.message}"
+}
+
+/**
+ * Reads the world back, or says why it could not.
+ *
+ * A bad save must never take the game down with it: the file is the thing most likely to have been
+ * hand-edited, so a parse failure is an ordinary outcome and belongs on screen rather than in a
+ * stack trace. The running world is left exactly as it was.
+ */
+private fun loadWorld(controller: OutofspaceController, renderer: OutofspaceRenderer): String = try {
+    val state = Save.read(SAVE_FILE.readText())
+    controller.reset(state)
+    renderer.centreOn(state)
+    println("loaded ${SAVE_FILE.absolutePath}")
+    "loaded: ${SAVE_FILE.absolutePath}"
+} catch (e: Exception) {
+    println("load failed: ${e.message}")
+    "load failed: ${e.message}"
 }
 
 private fun updateResolution(window: Long, ui: Ui, renderer: OutofspaceRenderer) {

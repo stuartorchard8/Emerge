@@ -30,6 +30,19 @@ class OutofspaceHud {
     var onReset: () -> Unit = {}
 
     /**
+     * Saving is a **host** capability, not a game one: the sim knows how to turn a world into text
+     * ([org.emerge.demo.outofspace.world.Save]) but nothing in shared code knows what a file is. A
+     * host that can write one sets [canSave] and the two buttons appear; the others simply do not
+     * offer what they cannot do, which beats a button that quietly fails.
+     */
+    var canSave: Boolean = false
+    var onSave: () -> Unit = {}
+    var onLoad: () -> Unit = {}
+
+    /** What the last save or load did, shown next to the buttons. Blank until something happens. */
+    var saveStatus: String = ""
+
+    /**
      * @param hovered the tile under the pointer, or -1. Desktop and web have a pointer; on touch
      *   there is no hover, so the inspector falls back to the machine the player last tapped.
      */
@@ -126,12 +139,22 @@ class OutofspaceHud {
                     row("a sensor reads the tile it faces", 0x9A9A9AFFL)
                 }
                 row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
+                if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
             inspectPanel(controller, if (hovered >= 0) hovered else controller.selected)
             wiringPanel(controller)
 
             panel(Anchor.BottomRight) {
+                if (canSave) {
+                    if (saveStatus.isNotEmpty()) row(saveStatus, 0x9AA4B4FFL)
+                    actionRow(
+                        listOf(
+                            Triple("SAVE", 0x2E5A6BFFL) { onSave() },
+                            Triple("LOAD", 0x2E5A6BFFL) { onLoad() },
+                        ),
+                    )
+                }
                 button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
                 button("RESET", 0xCC3333FFL) { onReset() }
             }

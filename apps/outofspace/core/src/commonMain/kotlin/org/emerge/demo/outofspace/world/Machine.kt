@@ -79,10 +79,10 @@ sealed interface Directed : Machine {
  * a real cost, so a bridge is a trade rather than a free win, and a line built out of them is slower
  * than one that did not need them.
  *
- * Its ports sit on the tiles **flanking** the span rather than at its ends, which matters more than
- * it sounds: segments connect to one another by adjacency, so track at a bridge's own end would sit
- * next to the track it is meant to be hopping over and the two runs would merge regardless of ports.
- * Keeping the whole span clear of its own line is what actually separates them.
+ * Its ports sit at its **own two ends**. They spent a while flanking the span instead, because
+ * segments used to join by mere adjacency and track at a bridge's end would have sat next to the run
+ * it was meant to be hopping over — merging the two regardless of ports. Explicit links removed that
+ * reason, and the ports came home.
  *
  * Those two ports are the only thing constraining where it can go: no two ports of the same conduit
  * may share a tile, or which of them a segment feeds would be ambiguous.
