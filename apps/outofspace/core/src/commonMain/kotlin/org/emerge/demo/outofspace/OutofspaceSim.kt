@@ -678,12 +678,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (accepting, full) = inputs.partition { tile ->
                 ports[tile].orEmpty().any { it.kind == PortKind.Input && hasRoom(it) }
             }
+            // Where material enters the layer. A bridge's far end counts, which is what gives the
+            // run on the other side of a crossing a direction of its own.
+            val sources = ports.entries
+                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
+                .map { it.key }
             val flow = FlowField.derive(
                 grid,
                 { rails[it] != null },
                 { tile, dir -> rails[tile]?.linkedTo(dir) == true },
                 accepting,
                 full,
+                sources,
             )
 
             val carried = arrayOfNulls<Packet>(rails.size)

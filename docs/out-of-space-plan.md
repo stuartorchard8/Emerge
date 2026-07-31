@@ -365,6 +365,50 @@ one network` asserted the starved tank got *nothing*; it now gets everything the
 hold. The merge is still real, so the test now asserts the ordering — the far tank receives nothing
 until the near one is at capacity — which is the honest statement of what merging costs.
 
+### A fork needs to know where material came in (2026-08-01)
+
+Second save from Stu, same afternoon: a line splitting to a vent two tiles away and a tank three
+tiles away sent **everything** down the vent.
+
+Nothing chose the vent. Under pure pulling, material moves to whichever neighbour is closest to a
+consumer, and one branch simply happened to be shorter — so the junction produced a single
+successor. `Diverters`, which has existed since the transport layer was built specifically to
+alternate at such a junction, had almost nothing to alternate between: a fork only ever yielded two
+successors when the branches were *exactly* the same length. It was very nearly dead code.
+
+**A shortest-path rule cannot tell a fork from a shortcut**, and no amount of tuning the sink side
+fixes that, because the consumers are symmetric — the asymmetry is which way the material came in.
+So the source sweep is back, and the model is now two fields:
+
+- **Depth**, from every *output* port: how far a tile is from where material enters. A step is legal
+  only if it increases depth by one. That is what "forward" means, it makes the flow a DAG, and it
+  is why nothing can circle.
+- **Distance**, from every *input* port: what makes a step worth taking, with the accepting/full
+  tiering from the previous correction.
+
+Both arms of a real fork are one step further from the source, so both are legal and the diverter
+finally gets its choice.
+
+Two things fell out that are worth recording because each looked fine and was not:
+
+- **"Leads somewhere useful" has to be asked along the forward graph, not the undirected one.** A
+  dead-end spur can always reach a consumer by turning round and going back out the way it came in,
+  so a plain `distance >= 0` test sends material down it — the exact dead-end filling that pulling
+  was introduced to prevent. It needs real reachability over the DAG, computed deepest-first.
+- **The traversal order has to be measured the same way movement is.** Walking a source-fed run in
+  nearest-to-a-sink order visits a fork *before* the tile it has just moved a packet into, and moves
+  the same packet again — several tiles in one pass. Fed tiles are now ordered by distance from the
+  source; orphans, which still move by the old rule, by closeness to a consumer.
+
+`isFed` changed meaning with it, for the same reason: "has a distance to some consumer" answers yes
+for precisely the dead ends the network should leave alone. It now means the tile has a successor or
+is somewhere material can be taken.
+
+**Material nobody is feeding** — a belt whose miner was just torn out — has no forward, and falls
+back to the old downhill-to-the-nearest-consumer rule. This is the one place the two models coexist,
+and it is deliberate rather than a leftover: "material with nothing upstream drains to whatever will
+have it" is a different situation with a different right answer.
+
 ### Saving is a text file, and that is the point (2026-08-01)
 
 Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the

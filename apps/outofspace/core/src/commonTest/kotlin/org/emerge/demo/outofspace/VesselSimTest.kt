@@ -131,6 +131,34 @@ class VesselSimTest {
         assertBalanced(s, "line with a full tank and an open vent")
     }
 
+    /**
+     * The second save Stu sent: a line splitting to a vent and to a tank sent everything overboard.
+     *
+     * The vent happened to be the nearer of the two, and "move toward the nearest consumer" cannot
+     * tell that apart from a fork. The whole point of a branch is that it branches.
+     */
+    @Test
+    fun `a branch splits between its outputs instead of feeding the nearest`() {
+        val grid = Grid(12, 10)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        machines[grid.index(2, 5)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        machines[grid.index(5, 2)] = Vent()                            // two tiles up from the fork
+        machines[grid.index(9, 5)] = Storage(Direction.Right)          // four tiles along, in at (8, 5)
+        joinRow(grid, rails, 3, 8, 5)
+        joinCol(grid, rails, 5, 2, 5)
+
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 30)
+
+        assertTrue(s.ventedGrams > 0L, "the vent took a share")
+        val stored = (s[grid.index(9, 5)] as Storage).contents?.mass ?: 0L
+        assertTrue(stored > 0L, "and so did the tank, which used to get nothing at all")
+        // Not an exact split: the tank stops pulling when it fills, and everything then goes
+        // overboard. Both being fed while both can take is the property that matters.
+        assertTrue(stored >= s.ventedGrams / 2, "and the shares are comparable, not lopsided: $stored vs ${s.ventedGrams}")
+        assertBalanced(s, "forked line")
+    }
+
     @Test
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)

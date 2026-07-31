@@ -50,11 +50,13 @@ class BridgeTest {
      * The horizontal line runs left to right along row 5, from a full tank to an empty one. The
      * vertical line runs top to bottom down column 9. They meet at (9, 5).
      */
-    private fun crossing(bridged: Boolean = false): VesselState {
+    private fun crossing(bridged: Boolean = false, horizontalSupply: Resource? = ingots): VesselState {
         val m = arrayOfNulls<Machine>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
 
-        m[grid.index(3, 5)] = Storage(Direction.Right, ingots)      // out at (4, 5)
+        // Emptying the horizontal source is how the merge is caught: with nothing of its own to
+        // send, anything arriving at its tank must have come off the *other* line.
+        m[grid.index(3, 5)] = Storage(Direction.Right, horizontalSupply)   // out at (4, 5)
         m[grid.index(15, 5)] = Storage(Direction.Right)             // in at (14, 5)
         m[grid.index(9, 2)] = Storage(Direction.Down, ingots)       // out at (9, 3)
         m[grid.index(9, 9)] = Storage(Direction.Down)               // in at (9, 8)
@@ -107,28 +109,27 @@ class BridgeTest {
     fun `drawn straight through, the two lines really are one network`() {
         // What the bridge exists to prevent, and it has to be a real failure or the bridge is
         // solving nothing. Drawing the horizontal line *through* (9, 5) makes a four-way junction,
-        // and pulling gives that junction a very definite opinion: the vertical tank is nearer, so
-        // it takes the horizontal line's material too and the line's own tank is starved.
+        // and a junction is a fork: material coming down the column splits, and half of it leaves
+        // along a line it was never meant to be on.
         //
-        // Stated as an ordering rather than a final total, because a full consumer no longer stops
-        // traffic — once the nearer tank is full the queue moves past it and the far one does
-        // eventually fill. "Starved until the thief is full" is the merge; "starved for ever" was an
-        // artefact of consumers being terminal, which was its own bug.
-        var s = crossing()
-        var sawStarvation = false
-        repeat(60 * 30) {
-            s = run(s, 1)
-            val downstream = (s[grid.index(9, 9)] as Storage).contents?.mass ?: 0L
-            val across = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
-            if (downstream > 0L && across == 0L) sawStarvation = true
-            if (across > 0L) {
-                assertEquals(
-                    Storage.CAP, downstream,
-                    "the far tank got something while the nearer one still had room: not merged",
-                )
-            }
-        }
-        assertTrue(sawStarvation, "the nearer tank should have been taking everything for a while")
+        // The test starves the horizontal line of its own supply, so anything reaching its tank can
+        // only have come off the vertical one. That is a sharper statement than any total: the two
+        // worlds differ in *whose material ends up where*, which is exactly what a crossing is for.
+        //
+        // Its earlier forms asserted the near tank stole everything and the far one got nothing.
+        // Both were artefacts rather than the mechanic — first of consumers being terminal, then of
+        // "nearest sink wins" standing in for a fork.
+        val merged = run(crossing(horizontalSupply = null), 60 * 30)
+        assertTrue(
+            (merged[grid.index(15, 5)] as Storage).contents?.mass ?: 0L > 0L,
+            "the column's material reached the row's tank: the two lines are one network",
+        )
+
+        val bridged = run(crossing(bridged = true, horizontalSupply = null), 60 * 30)
+        assertNull(
+            (bridged[grid.index(15, 5)] as Storage).contents,
+            "and with a bridge it cannot: the column passes over without joining",
+        )
     }
 
     @Test

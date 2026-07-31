@@ -80,16 +80,21 @@ class TransportTest {
             for (y in minOf(fromY, toY) until maxOf(fromY, toY)) join(grid.index(x, y), Direction.Down)
         }
 
-        /** The flow field this network has, given where its consumers are. */
+        /**
+         * The flow field this network has, given where its consumers are — and, where it matters,
+         * where material comes *in*.
+         *
+         * Leaving [from] empty is the "nobody is feeding this" case: material on the run drains
+         * downhill to the nearest consumer. That is a real situation (a belt whose miner was just
+         * torn out) and most of the tests below only care about the downstream half, so they say
+         * nothing about sources. A test about a **fork** must name one, because which way is forward
+         * at a junction is a fact about where material entered.
+         */
         fun toward(vararg sinks: Int): FlowField =
             FlowField.derive(grid, { it in tiles }, ::linked, sinks.toList())
 
-        /**
-         * As [toward], but some of the consumers have no room. They still pull — material queues
-         * against a blockage rather than abandoning it — but only where nothing else will have it.
-         */
-        fun toward(accepting: List<Int>, full: List<Int>): FlowField =
-            FlowField.derive(grid, { it in tiles }, ::linked, accepting, full)
+        fun toward(accepting: List<Int>, full: List<Int> = emptyList(), from: List<Int> = emptyList()): FlowField =
+            FlowField.derive(grid, { it in tiles }, ::linked, accepting, full, from)
     }
 
     private fun net(): Net = Net()
@@ -266,6 +271,64 @@ class TransportTest {
             }
         }
         assertEquals(listOf(7), taken)
+    }
+
+    // ── A fork is a fork even when one branch is shorter ─────────────────────
+
+    /**
+     * From a save Stu sent: a line splitting to a vent two tiles away and a tank three tiles away
+     * put **everything** down the vent and nothing down the other branch.
+     *
+     * Nothing chose the vent. Material moved to whichever neighbour was closest to a consumer, and
+     * one branch simply happened to be shorter — so the junction produced a single successor and
+     * [Diverters], which exists to alternate at exactly this junction, never saw a choice at all.
+     *
+     * A shortest-path rule cannot tell a fork from a shortcut. Knowing where material came *in* can:
+     * both branches lie one step further from the source, so both are legal moves.
+     */
+    @Test
+    fun `a fork alternates even when one branch reaches its consumer sooner`() {
+        // In from the left; up is two tiles to a consumer, down-then-along is five.
+        val fork = grid.index(5, 3)
+        val n = net().row(2, 5, 3)
+            .col(5, 1, 3)        // the short branch, consumer at (5, 1)
+            .col(5, 3, 4).row(5, 9, 4)   // the long one, consumer at (9, 4)
+        val f = n.toward(
+            accepting = listOf(grid.index(5, 1), grid.index(9, 4)),
+            from = listOf(grid.index(2, 3)),
+        )
+
+        assertEquals(
+            listOf(grid.index(5, 2), grid.index(5, 4)),
+            f.successorsOf(fork).toList().sorted(),
+            "both branches are live, however unequal",
+        )
+
+        val diverters = DiverterWork(Diverters.EMPTY)
+        var up = 0
+        var down = 0
+        repeat(8) {
+            val h = held(n, fork to lump())
+            step(f, h, diverters)
+            if (h[grid.index(5, 2)] != null) up++
+            if (h[grid.index(5, 4)] != null) down++
+        }
+        assertEquals(4, up, "half went the short way")
+        assertEquals(4, down, "and half the long way")
+    }
+
+    @Test
+    fun `a fork still refuses the branch that leads nowhere`() {
+        // The other half of the same rule. Being one step further from the source is not enough —
+        // a branch also has to lead to something, or a dead end would fill up like it used to.
+        val fork = grid.index(5, 3)
+        val n = net().row(2, 5, 3)
+            .col(5, 1, 3)                // to a consumer
+            .col(5, 3, 4).row(5, 9, 4)   // to nothing at all
+        val f = n.toward(accepting = listOf(grid.index(5, 1)), from = listOf(grid.index(2, 3)))
+
+        assertEquals(listOf(grid.index(5, 2)), f.successorsOf(fork).toList())
+        assertFalse(f.isFed(grid.index(8, 4)), "the dead branch is not part of the network")
     }
 
     // ── A consumer with no room is traffic to drive round, not a wall ─────────
@@ -483,11 +546,21 @@ class TransportTest {
      * branches leaving x=5. A fork only exists where *both* ways lead somewhere — which is the point
      * of pulling.
      */
+    /**
+     * A run that splits: in from the left along row 3, out to a consumer above and one below.
+     *
+     * The source at the left end is load-bearing, not scenery. Which way is forward at a junction is
+     * decided by where material came in, so a fork with nothing feeding it is not a fork — it is two
+     * consumers with some track between them.
+     */
     private fun why(): Pair<Net, FlowField> {
         val n = net().row(2, 5, 3)
             .lay(grid.index(5, 2)).join(grid.index(5, 3), Direction.Up)
             .lay(grid.index(5, 4)).join(grid.index(5, 3), Direction.Down)
-        return n to n.toward(grid.index(5, 2), grid.index(5, 4))
+        return n to n.toward(
+            accepting = listOf(grid.index(5, 2), grid.index(5, 4)),
+            from = listOf(grid.index(2, 3)),
+        )
     }
 
     @Test
@@ -504,9 +577,11 @@ class TransportTest {
             if (h[up] != null) sent.add(2)
             if (h[down] != null) sent.add(4)
         }
-        // Which branch goes first follows Direction's declaration order (Down before Up) — arbitrary,
-        // but fixed, and the alternation after it is the part that matters.
-        assertEquals(listOf(4, 2, 4, 2, 4, 2), sent, "even by construction, not by iteration luck")
+        // Which branch goes first follows ascending tile index (up, then down) — arbitrary, but
+        // fixed, and the alternation after it is the part that matters. It used to follow
+        // Direction's declaration order instead; branches are now sorted by index like every other
+        // tie-break in the file, which is worth one less arbitrary ordering to remember.
+        assertEquals(listOf(2, 4, 2, 4, 2, 4), sent, "even by construction, not by iteration luck")
     }
 
     @Test
