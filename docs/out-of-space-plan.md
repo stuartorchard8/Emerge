@@ -235,7 +235,65 @@ own "is this legible?" question. One at a time.
   gravity it declines to sort rather than guessing an axis. Breaching reuses the structure derivation
   with no new code: the tile stops being enclosed, so its air is vented and its heat radiated.
   Invariant: `aboard + vented == baseline`, every tick.
-- **Liquids and pipes**, then **power and mechanical linkage**.
+- **The stockpile became a view over the storages** (`Stockpile.of(machines)`), and the central node
+  was deleted. Material used to live in one of two mutually exclusive places — on the grid, or banked
+  — so the conservation check had to name both. Deriving it removes the seam: there is no act of
+  banking, only of storing, and the invariant shortens to `mined == aboard + vented`. A warehouse
+  becomes a thing you can lose, which a central bank could never be.
+- **Debris** (`world/Debris.kt`). Dismantling a machine spills its contents onto the deck rather than
+  deleting them — the mass balance was right to call the old behaviour a leak, and the fix is
+  somewhere for the material to go, not an exemption for player edits. A sparse map from tile to
+  pile, unlike the dense air and heat fields, because it is touched in a handful of tiles and only on
+  dismantle. Piles fall toward gravity, pass *through* machinery, and stop at hull or at a per-tile
+  cap. They keep their `Form`s apart: rubble loses its arrangement, not its refinement. Spilling
+  outside the hull vents and breaching a room takes its heaps — both free from the structure model.
+  `downDirection(gravity)` is shared with `stratifyColumns`, since the two must not be able to
+  disagree about which way is down.
+- **Footprints and ports** (`world/Footprint.kt`). Conveyors are one tile; miners, processors,
+  fabricators and tanks three; smelters five. Belts carry one packet. This had to precede pipes,
+  because **a port is a property of a tile**: on a one-tile machine every port overlaps every other
+  and connectivity collapses into "which way is it pointing".
+  - Machines anchor at their **centre**, hence odd sizes. Rotating about a centre leaves the covered
+    tiles alone, so a rotate is a change of facing and nothing else.
+  - Ports are declared **once in the machine's own frame** (facing-Right canonical) and rotated into
+    the world, so "in at the back, concentrate out the front, tailings out of the floor" is one
+    sentence that holds at every orientation.
+  - Delivery checks a port's **facing**, not merely its tile — otherwise a three-by-three is a
+    nine-tile sponge that absorbs anything touching it.
+  - Which buffer drains through which port is named by `Stream`, not inferred from an angle. The old
+    "product by `facing`, waste by `facing.clockwise`" rule only worked while machines were one tile.
+  - `Occupancy` is derived every tick beside `StructureMap`; a machine is stored exactly once, so
+    twenty-five tiles of furnace cannot come to disagree about one furnace's contents.
+  - Thermal mass scales with footprint.
+  - Ports render in ONI's language: **white in, green out**.
+- **Liquids and pipes** next, then **power and mechanical linkage**.
+
+### The transport layer, as scoped
+
+Settled with Stu after the footprint work, and worth recording because one premise is a common
+misreading of the reference game. **ONI's pipes are not a balanced graph.** Its *wires* are — power
+solves a whole connected component against total supply and demand — but pipes and rails move
+discrete packets with order-dependent junctions, which is why bridge-priority tricks are a player
+skill there. That is an artifact, not a design, and it is not worth inheriting.
+
+So the transport layer is two mechanisms, chosen per network rather than one forced everywhere:
+
+- **Packets** — things with a position, visible jams, real latency. Solids stay here.
+- **Circuit** — no position; solve the connected component in one pass. Right for power, probably for
+  signals.
+
+Fluids get segment-held mixtures with **balanced junctions**, since a three-way split of N packets is
+exactly largest-remainder apportionment and `apportion()` is already exact.
+
+The design decision that makes **bridges** free: *connectivity is a property of ports, not of tiles*.
+A normal segment has ports on four sides; a bridge has two opposite ports and none on the others.
+Two runs crossing in the same layer simply share no port, so the network derivation never needs to
+know the special case exists. Four layers — Deck, Conduit, Power, Signal — one occupant each per
+tile; structure, heat and air only ever read the Deck.
+
+Explicit isometric 3D was considered and set aside: the honest version makes the *simulation* 3D
+(heat, air and fluid fields all gain a depth axis), which would undo the 2D cut this whole version
+rests on.
 
 Deliberately deferred, and worth stating so they are not mistaken for oversights: **pressure is not
 yet coupled to temperature**. `P ∝ mT` is what produces convection, and it is a pass of its own
