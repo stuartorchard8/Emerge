@@ -74,7 +74,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         lastTimeNanos = now
 
         ui.advanceClock(delta)
-        renderer.draw(controller.tick(delta))
+        renderer.draw(controller.tick(delta), -1, controller.overlay)
         hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)
         ui.draw()
     }

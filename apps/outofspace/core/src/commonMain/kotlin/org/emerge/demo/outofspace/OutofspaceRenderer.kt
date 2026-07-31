@@ -7,6 +7,8 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Analyzer
 import org.emerge.demo.outofspace.world.Fabricator
+import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
@@ -34,6 +36,12 @@ import kotlin.math.max
  * screen and [tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
  * gravity will point when Phase 4 arrives.
  */
+/** What the world is being looked at *through*. */
+enum class Overlay(val label: String) {
+    None("PLAIN"),
+    Heat("HEAT"),
+}
+
 class OutofspaceRenderer {
 
     private val rects = UiRectRenderer(maxRects = MAX_RECTS)
@@ -116,7 +124,7 @@ class OutofspaceRenderer {
         return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    fun draw(state: VesselState, hoveredIndex: Int = -1) {
+    fun draw(state: VesselState, hoveredIndex: Int = -1, overlay: Overlay = Overlay.None) {
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f)
         GPU.clearColorBuffer()
         GPU.enableBlend()
@@ -144,6 +152,21 @@ class OutofspaceRenderer {
             for (x in minX..maxX) {
                 val index = grid.index(x, y)
                 drawMachine(state, index, x, y, state.machines[index] ?: continue)
+            }
+        }
+
+        // The overlay goes over the machines, not under them: the question it answers is "how hot is
+        // it *there*", and putting it behind the thing you are asking about answers the wrong one.
+        if (overlay == Overlay.Heat) {
+            for (y in minY..maxY) {
+                for (x in minX..maxX) {
+                    val index = grid.index(x, y)
+                    tileRect(
+                        x, y, 1f,
+                        if (state.structure.isVacuum(index)) 0x05070CD0L
+                        else temperatureColor(state.kelvinAt(index)),
+                    )
+                }
             }
         }
 
@@ -239,6 +262,7 @@ class OutofspaceRenderer {
                     rect((x + 0.5f) * tilePx, (y + 0.78f) * tilePx, 0.2f * tilePx, 0.2f * tilePx, packetColor(p.contents.dominant))
                 }
             }
+            is Hull -> tileRect(x, y, 1f, 0x4A5464FFL)
             is Sensor -> {
                 tileRect(x, y, 0.94f, 0x24303CFFL)
                 // The eye faces what it watches, and wears the colour it broadcasts on.
@@ -286,6 +310,34 @@ class OutofspaceRenderer {
 
     private fun packetColor(dominant: Species?): Long = speciesColor(dominant)
 
+    /**
+     * Cold blue through neutral at room temperature to hot orange, at a fixed alpha so machine shapes
+     * stay faintly readable underneath.
+     *
+     * The ramp is **absolute** — anchored at [HeatField.AMBIENT_KELVIN] rather than normalised to
+     * whatever happens to be on screen — so the same colour always means the same temperature; a
+     * relative ramp would make a cool vessel look as alarming as a burning one.
+     *
+     * But it spans only [RAMP_SPAN] kelvin either side of ambient, not the whole range down to space.
+     * A working vessel lives within a few tens of degrees of comfortable, and the first attempt at
+     * this used a 220K span, across which an 18K spread was a single flat wash of blue: technically
+     * honest and completely useless. An absolute ramp still has to be scaled to the question.
+     */
+    private fun temperatureColor(kelvin: Int): Long {
+        val alpha = 0xC8L
+        val f = ((kelvin - HeatField.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
+        return if (f <= 0f) {
+            val c = -f
+            rgba((0x50 - 0x30 * c).toInt(), (0xA0 - 0x60 * c).toInt(), (0xC0 - 0x30 * c).toInt(), alpha)
+        } else {
+            rgba((0x50 + 0xAF * f).toInt(), (0xA0 - 0x50 * f).toInt(), (0xC0 - 0xB0 * f).toInt(), alpha)
+        }
+    }
+
+    private fun rgba(r: Int, g: Int, b: Int, a: Long): Long =
+        (r.coerceIn(0, 255).toLong() shl 24) or (g.coerceIn(0, 255).toLong() shl 16) or
+            (b.coerceIn(0, 255).toLong() shl 8) or a
+
     // ── Primitives ────────────────────────────────────────────────────────────
 
     private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
@@ -314,6 +366,9 @@ class OutofspaceRenderer {
 
         /** Bar-full reference for machine buffers — a machine holding this much is visibly backed up. */
         private const val BUFFER_BAR_FULL = 4_000f
+
+        /** Kelvin either side of ambient that saturates the heat ramp. */
+        private const val RAMP_SPAN = 60f
     }
 }
 
@@ -327,6 +382,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Analyzer -> 0x2A3242FFL
+    MachineKind.Hull -> 0x4A5464FFL
     MachineKind.Node -> 0x2E7A4AFFL
     MachineKind.Vent -> 0x3A3A44FFL
 }

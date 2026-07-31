@@ -20,6 +20,8 @@ machines to sensors so the vessel runs itself.
 | `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
 | `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, fabricator, storage, sensor, node, vent. |
+| `world/Structure.kt` | `Structure` and `StructureMap` — hull, interior and vacuum, derived by flood fill from the grid edge. |
+| `world/Heat.kt` | `HeatField` (joules per tile), conduction, radiation to space, and per-gram machine heat. |
 | `world/Signal.kt` | The trigger grammar: colour `Channel`s, `Signals`, and `Wiring` — `activation = Σ(signal × weight)`. |
 | `world/Vessel.kt` → `contentsBreakdown` | What the inspector reads: a machine's buffers, named separately. |
 | `world/Vessel.kt` | `VesselState` (the snapshot) and `Stockpile` (the global construction inventory the node feeds). |
@@ -29,7 +31,7 @@ machines to sensors so the vessel runs itself.
 Nothing of the app template's placeholder world remains.
 
 ```bash
-./gradlew :apps:outofspace:core:jvmTest    # 98 tests, well under a second
+./gradlew :apps:outofspace:core:jvmTest    # 110 tests, well under a second
 ./gradlew :apps:outofspace:desktop:run     # the game
 ```
 
@@ -53,6 +55,20 @@ correct simulation comes to look like a broken one. Two things fix that:
 
 The starter world has one either side of the processor, reporting on AMBER and CYAN. Watching those
 two numbers in the signals panel is the whole explanation of what a processor does.
+
+## Structure and heat
+
+Build **hull**; the inside is whatever it encloses. A flood fill inward from the grid edge marks
+everything space can reach, and what it cannot reach is interior — so a breach needs no special
+handling, it is just a hole the fill pours through.
+
+Each enclosed tile stores **joules**, and temperature is `joules / capacity`. Machines charge waste
+heat per gram of work they do, so a throttled machine warms the room proportionally less and the
+heat model needs no clock of its own. Hull tiles touching space radiate — slowly, because vacuum is
+an excellent insulator and a spacecraft's real problem is rejecting heat, not keeping it.
+
+Press `H` for the heat overlay. The invariant is `stored + radiated − generated == baseline`, shown
+live beside the mass balance.
 
 ## Wiring
 

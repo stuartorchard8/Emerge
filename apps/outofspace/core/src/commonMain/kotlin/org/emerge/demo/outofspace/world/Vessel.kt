@@ -69,15 +69,37 @@ data class VesselState(
     val minedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
     /**
+     * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
+     * away to space. The thermal counterpart of [minedGrams] and [ventedGrams], and they buy the
+     * same thing: `stored + radiated − generated` must never move, so an energy leak is one
+     * assertion away rather than a mystery.
+     */
+    val generatedJoules: Long = 0L,
+    val radiatedJoules: Long = 0L,
+    /**
      * The channel values computed this tick. Kept in the snapshot rather than recomputed by the
      * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
      * drawn dimmed when its activation is zero, which is the answer to "why has this stopped".
      */
     val signals: Signals = Signals.build { },
+    /** Derived from where the hull is, every tick — see [StructureMap]. */
+    val structure: StructureMap = StructureMap.derive(grid, machines),
+    val heat: HeatField = HeatField.ambient(grid, StructureMap.derive(grid, machines), machines),
+    /**
+     * The energy the world started with. Fixed at construction so `stored + radiated − generated`
+     * has something to be compared against — the thermal twin of the mass balance.
+     */
+    val baselineJoules: Long = heat.totalJoules,
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
     }
+
+    /** Temperature of a tile in kelvin, accounting for what is in it. */
+    fun kelvinAt(index: Int): Int =
+        heat.kelvinAt(index, HeatField.capacityOf(structure, machines, index))
+
+    val storedJoules: Long get() = heat.totalJoules
 
     operator fun get(index: Int): Machine? = machines.getOrNull(index)
     operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null
@@ -112,6 +134,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Storage -> machine.contents?.mass ?: 0L
     is Analyzer -> machine.holding?.mass ?: 0L
     is Sensor -> 0L
+    is Hull -> 0L
     is Node -> 0L
     is Vent -> 0L
 }
@@ -133,6 +156,7 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
     is Analyzer -> if (machine.holding != null) Signals.FULL else 0
     is Sensor -> 0
+    is Hull -> 0
     is Node -> 0
     is Vent -> 0
 }.coerceIn(0, Signals.FULL)
@@ -170,7 +194,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
             "PASSING" to Resource(form, p.contents)
         },
     )
-    is Sensor, is Node, is Vent -> emptyList()
+    is Sensor, is Node, is Vent, is Hull -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
@@ -186,6 +210,7 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
     is Analyzer -> machine.holding?.contents ?: Mixture.EMPTY
     is Sensor -> Mixture.EMPTY
+    is Hull -> Mixture.EMPTY
     is Node -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
 }

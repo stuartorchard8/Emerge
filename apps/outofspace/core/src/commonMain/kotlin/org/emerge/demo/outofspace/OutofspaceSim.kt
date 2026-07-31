@@ -18,6 +18,8 @@ import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Machine
@@ -31,11 +33,14 @@ import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.fullness
+import org.emerge.demo.outofspace.world.heatPerGram
+import org.emerge.demo.outofspace.world.stepHeat
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
@@ -114,6 +119,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (edit in input.edits) w.apply(edit)
         }
 
+        // Structure first: heat and (later) air both need to know what is wall and what is outside,
+        // and an edit this tick must be reflected in it this tick.
+        val structure = StructureMap.derive(w.grid, w.machines)
+
         val signals = Signals.build { raise ->
             for (i in w.machines.indices) {
                 when (val m = w.machines[i]) {
@@ -135,9 +144,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val activation = m.wiring.activation(Action.Run, signals)
             w.machines[i] = when (m) {
                 is Miner -> w.produce(cfg, m, activation)
-                is Processor -> refine(cfg, m, activation)
-                is Smelter -> melt(cfg, m, activation)
-                is Fabricator -> fabricate(cfg, m, activation)
+                is Processor -> w.refine(cfg, m, activation, i)
+                is Smelter -> w.melt(cfg, m, activation, i)
+                is Fabricator -> w.fabricate(cfg, m, activation, i)
                 else -> m
             }
         }
@@ -154,6 +163,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
+        val warmed = state.heat.copyJoules()
+        for (i in warmed.indices) warmed[i] += w.heatAdded[i]
+        val (heat, radiated) = stepHeat(
+            state.grid, structure, w.machines.toList(), HeatField.of(warmed), cfg.ticksPerSecond,
+        )
+
         return state.copy(
             machines = w.machines.toList(),
             stockpile = w.stockpile,
@@ -161,6 +176,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             minedGrams = w.minedGrams,
             ventedGrams = w.ventedGrams,
             signals = signals,
+            structure = structure,
+            heat = heat,
+            generatedJoules = w.generatedJoules,
+            radiatedJoules = state.radiatedJoules + radiated,
         )
     }
 
@@ -177,7 +196,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun throttled(gramsPerSecond: Long, activation: Int): Long =
         if (activation <= 0) 0L else gramsPerSecond * activation / Signals.FULL
 
-    private fun refine(cfg: OutofspaceConfig, m: Processor, activation: Int): Processor {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input = m.input ?: return m
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
         // Backed up: a full output stops the machine rather than being hoarded. Note this catches
@@ -188,6 +207,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        heat(at, chunkMass * heatPerGram(m))
         val r = process(chunk, m.efficiencyPermille)
         val product = m.product.merged(r.product) ?: return m.copy(carry = carry)
         val tailings = m.tailings.merged(r.tailings) ?: return m.copy(carry = carry)
@@ -200,7 +220,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
     }
 
-    private fun melt(cfg: OutofspaceConfig, m: Smelter, activation: Int): Smelter {
+    private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, at: Int): Smelter {
         val input = m.input ?: return m
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
         if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
@@ -208,6 +228,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        heat(at, chunkMass * heatPerGram(m))
         val r = smelt(chunk)
         // A smelter holds one kind of ingot at a time. If this chunk's dominant species differs from
         // what is already waiting, stall rather than quietly mixing two metals — a stopped machine is
@@ -230,7 +251,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * *is* the instruction. Holding two that make nothing is a machine sitting visibly idle, which is
      * a better error message than a dialog.
      */
-    private fun fabricate(cfg: OutofspaceConfig, m: Fabricator, activation: Int): Fabricator {
+    private fun Work.fabricate(cfg: OutofspaceConfig, m: Fabricator, activation: Int, at: Int): Fabricator {
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
         if (blocked(m.output)) return m.copy(carry = carry)
         if (m.inputs.size < 2 || grams <= 0L) return m.copy(carry = carry)
@@ -241,6 +262,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val each = minOf(grams, a.mass, b.mass)
         if (each <= 0L) return m.copy(carry = carry)
 
+        heat(at, each * 2L * heatPerGram(m))
         val chunkA = a.mixture.take(each)
         val chunkB = b.mixture.take(each)
         val made = Resource(outputForm, chunkA + chunkB)
@@ -314,6 +336,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** This tick's signal snapshot, set once the sensing pass has run. */
         var signals: Signals = Signals.build { }
 
+        /** Joules each tile gained this tick from machines doing work, applied with the heat step. */
+        val heatAdded: LongArray = LongArray(state.grid.size)
+        var generatedJoules: Long = state.generatedJoules
+
+        /** Charges [joules] of waste heat to the tile at [index]. */
+        fun heat(index: Int, joules: Long) {
+            if (joules <= 0L || index !in heatAdded.indices) return
+            heatAdded[index] += joules
+            generatedJoules += joules
+        }
+
+        /** Where a machine instance currently sits — miners are charged heat by identity. */
+        fun indexOf(machine: Machine): Int = machines.indexOfFirst { it === machine }
+
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
@@ -362,6 +398,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (grams <= 0L) return m.copy(carry = carry)
             val dug = m.composition.scaledTo(grams)
             minedGrams += dug.total
+            heat(indexOf(m), dug.total * heatPerGram(m))
             return m.copy(buffer = Resource(Form.Ore, m.buffer.mixture + dug), carry = carry)
         }
 
@@ -544,6 +581,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Analyzer -> Analyzer(facing)
             MachineKind.Node -> Node()
             MachineKind.Vent -> Vent()
+            MachineKind.Hull -> Hull()
         }
     }
 }

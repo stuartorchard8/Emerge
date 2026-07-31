@@ -27,6 +27,10 @@ import org.emerge.demo.outofspace.OutofspaceReducer
  * contents fills up, a sensor watching it broadcasts that fullness on RED, and the miner feeding it
  * is wired `ALWAYS - RED`, so it digs until the tank is full and then stops. Two machines and one
  * sensor is the smallest thing that shows what the trigger grammar is for.
+ *
+ * The whole thing sits inside a hull box, which is what makes it a *vessel* rather than machinery
+ * floating in space: the enclosed tiles hold heat, and the smelter's waste heat has to travel out
+ * through the walls to be radiated away. Knock a hull tile out and that room becomes outside.
  */
 fun starterVessel(grid: Grid): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
@@ -59,6 +63,20 @@ fun starterVessel(grid: Grid): VesselState {
     beltRun(5, 6, wy)
     put(7, wy, Storage(Direction.Right))          // faces empty floor, so it fills rather than drains
     put(7, wy + 1, Sensor(Direction.Up, Channel.Red))
+
+    // ── The hull, enclosing all of it ──
+    val left = 2
+    val right = 19
+    val top = y - 2
+    val bottom = y + 6
+    for (hx in left..right) {
+        put(hx, top, Hull())
+        put(hx, bottom, Hull())
+    }
+    for (hy in top..bottom) {
+        put(left, hy, Hull())
+        put(right, hy, Hull())
+    }
 
     return VesselState(grid = grid, machines = machines.toList())
 }

@@ -211,12 +211,29 @@ looked wrong, since nothing anywhere said that ore is 40% iron or that the conce
 front is 75%. Any simulation of mixtures needs this before it needs more mechanics — a lesson to
 carry into Phase 4, where a tile of air is far less legible than a lump of ore.
 
-**Phase 4 — The systems layer. (the actual goal)**
+**Phase 4 — The systems layer. (the actual goal — in progress)**
 Now the interior is a cell network and everything before was scaffolding. In order, each with its
-own "is this legible?" question: heat conduction between adjacent tiles and machines; atmosphere as
-a per-tile mixture with pressure-driven flow and gravity stratification; liquids and pipes; power
-and mechanical linkage. Cyto's diffusion, conservation checker and golden-digest gate are the tools.
-One at a time.
+own "is this legible?" question. One at a time.
+
+- **Structure and heat. ✅ BUILT.** Structure is *derived*, not painted: the player builds hull, and
+  a flood fill inward from the grid edge decides what is enclosed. That answers "what is outside the
+  hull" for free and makes a breach mean exactly what it should — remove one hull tile and the fill
+  pours in, so the room *becomes* outside. No separate concept of a leak was needed.
+  Heat stores **energy** per tile with temperature derived as `joules / capacity`; storing
+  temperature and averaging it would create and destroy energy wherever two unlike tiles met.
+  Conduction is Jacobi (computed from old temperatures, applied after) so it cannot depend on visit
+  order, and each flux is capped at the amount that would equalise the pair, which is what stops a
+  coarse timestep oscillating. Machines charge heat **per gram of work done** rather than per second,
+  so it needs no clock of its own and a throttled machine warms the room proportionally less.
+  Invariant: `stored + radiated − generated == baseline`, every tick.
+- **Atmosphere** — per-tile gas mixture, pressure-driven flow, gravity stratification. Next.
+- **Liquids and pipes**, then **power and mechanical linkage**.
+
+Two tuning lessons already banked. Radiating heat in vacuum is *hard* — the first `RADIANCE` tried
+was 90× too high, which meant a vessel could only ever freeze and heat was never a constraint;
+spacecraft struggle to reject heat, and that is the interesting version. And an absolute colour ramp
+still has to be scaled to the question: the first heat overlay spanned 220K, across which a real
+18K spread was one flat wash of blue.
 
 **Phase 5 and beyond — flight, fleet, solar system, crew.**
 Needs the unit design deferred in §4. Multiplayer belongs here too; fix `LockstepHost`'s input

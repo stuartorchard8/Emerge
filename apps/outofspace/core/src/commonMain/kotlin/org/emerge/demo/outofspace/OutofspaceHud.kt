@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Analyzer
+import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
@@ -49,6 +51,13 @@ class OutofspaceHud {
                 val balanced = s.minedGrams == s.inTransitGrams + s.stockpile.totalGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
+                title("ENERGY")
+                keyValue("Generated", joules(s.generatedJoules))
+                keyValue("Radiated", joules(s.radiatedJoules))
+                keyValue("Stored", joules(s.storedJoules))
+                val heatBalanced = s.storedJoules + s.radiatedJoules - s.generatedJoules == s.baselineJoules
+                row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                gap()
                 title("SIGNALS")
                 for (channel in Channel.EMITTABLE) {
                     val value = s.signals[channel]
@@ -75,8 +84,16 @@ class OutofspaceHud {
             }
 
             panel(Anchor.BottomLeft) {
-                title("TOOL  ·  ${controller.tool.label}")
+                title("TOOL  ·  ${controller.tool.label}   VIEW  ·  ${controller.overlay.label}")
                 controlRowOfTools(controller)
+                actionRow(
+                    Overlay.entries.map { view ->
+                        Triple(
+                            if (view == controller.overlay) "> ${view.label}" else view.label,
+                            if (view == controller.overlay) 0x8A5A2AFFL else 0x232A38FFL,
+                        ) { controller.overlay = view }
+                    },
+                )
                 gap()
                 if (controller.tool == Tool.Build) {
                     title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
@@ -123,6 +140,7 @@ class OutofspaceHud {
 
         panel(Anchor.TopRight) {
             title("INSPECT  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
+            tileConditions(controller, index)
 
             if (machine is Analyzer) {
                 // The whole point of the machine, so it leads.
@@ -151,6 +169,37 @@ class OutofspaceHud {
                     row("   " + composition(resource.mixture), 0x9AA4B4FFL)
                 }
             }
+        }
+    }
+
+    /**
+     * Where the tile sits and how hot it is — the two facts that will matter most once air arrives,
+     * and the ones with nowhere else to live.
+     */
+    private fun org.emerge.render.torus.ui.PanelBuilder.tileConditions(
+        controller: OutofspaceController,
+        index: Int,
+    ) {
+        val s = controller.state
+        val structure = s.structure[index]
+        keyValue(
+            "PLACE",
+            when (structure) {
+                Structure.Vacuum -> "OUTSIDE"
+                Structure.Hull -> "HULL"
+                Structure.Interior -> "INSIDE"
+            },
+            0x9A9A9AFFL,
+            if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
+        )
+        if (structure != Structure.Vacuum) {
+            val k = s.kelvinAt(index)
+            keyValue(
+                "TEMP",
+                "${k}K  (${k - 273}C)",
+                0x9A9A9AFFL,
+                if (k > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+            )
         }
     }
 
@@ -254,6 +303,13 @@ class OutofspaceHud {
     }
 
     private fun signed(percent: Int): String = if (percent >= 0) "+$percent%" else "$percent%"
+
+    /** Joules get large fast; kJ and MJ keep the panel narrow. */
+    private fun joules(j: Long): String = when {
+        j < 10_000L -> "${j}J"
+        j < 10_000_000L -> "${j / 1000}kJ"
+        else -> "${j / 1_000_000}MJ"
+    }
 
     /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
     private fun grams(g: Long): String =

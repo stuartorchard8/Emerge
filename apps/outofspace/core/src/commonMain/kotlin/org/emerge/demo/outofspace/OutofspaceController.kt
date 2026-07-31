@@ -47,6 +47,9 @@ class OutofspaceController(
      */
     var tool: Tool = Tool.Build
 
+    /** Which overlay the world is being viewed through. A view preference, so it lives here. */
+    var overlay: Overlay = Overlay.None
+
     /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
     var selected: Int = -1
         private set

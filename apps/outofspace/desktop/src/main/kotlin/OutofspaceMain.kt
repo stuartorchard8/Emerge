@@ -117,6 +117,9 @@ fun main() {
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
             GLFW_KEY_R -> controller.rotateBrush()
+            GLFW_KEY_H -> controller.overlay =
+                if (controller.overlay == org.emerge.demo.outofspace.Overlay.None) org.emerge.demo.outofspace.Overlay.Heat
+                else org.emerge.demo.outofspace.Overlay.None
             GLFW_KEY_W -> controller.tool = if (controller.tool == Tool.Build) Tool.Wire else Tool.Build
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
@@ -151,7 +154,7 @@ fun main() {
 
         val state = controller.tick(delta)
 
-        renderer.draw(state, hovered)
+        renderer.draw(state, hovered, controller.overlay)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
 

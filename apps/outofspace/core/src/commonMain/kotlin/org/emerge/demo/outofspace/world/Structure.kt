@@ -1,0 +1,90 @@
+package org.emerge.demo.outofspace.world
+
+/**
+ * What a tile *is*, structurally — which is the question everything in Phase 4 needs answered before
+ * it can do anything. Heat needs to know what conducts, atmosphere needs to know what contains.
+ */
+enum class Structure {
+    /** Open space. Cold, empty, and connected to the outside. */
+    Vacuum,
+
+    /** A wall. Blocks the inside from the outside, conducts heat, and is the only thing that does. */
+    Hull,
+
+    /** Inside the vessel: air, machines, and whatever else is being kept alive in here. */
+    Interior,
+}
+
+/**
+ * Every tile's [Structure], derived rather than authored.
+ *
+ * The player never paints "floor". They build **hull**, and the inside is whatever the hull encloses:
+ * a flood fill inward from the grid's edge marks everything space can reach, and what it cannot reach
+ * is interior. That gives the right answer to "what is outside the hull" for free, and it makes a
+ * breach mean exactly what it should — knock out one hull tile and the fill pours in, so the room
+ * *becomes* outside, with no separate concept of a leak.
+ *
+ * Derived every tick. A flood fill over a grid this size is a rounding error next to the rest of the
+ * tick, and the alternative — caching it and invalidating on edits — is a class of bug for no gain.
+ */
+class StructureMap(private val kinds: ByteArray) {
+
+    operator fun get(index: Int): Structure = Structure.entries[kinds[index].toInt()]
+
+    fun isVacuum(index: Int): Boolean = kinds[index].toInt() == Structure.Vacuum.ordinal
+    fun isHull(index: Int): Boolean = kinds[index].toInt() == Structure.Hull.ordinal
+    fun isInterior(index: Int): Boolean = kinds[index].toInt() == Structure.Interior.ordinal
+
+    /** Tiles that hold heat and air: everything except open space. */
+    fun isEnclosed(index: Int): Boolean = !isVacuum(index)
+
+    val interiorCount: Int get() = kinds.count { it.toInt() == Structure.Interior.ordinal }
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is StructureMap && kinds.contentEquals(other.kinds))
+
+    override fun hashCode(): Int = kinds.contentHashCode()
+
+    companion object {
+        /**
+         * Flood-fills space in from every edge tile, stopping at hull. Anything not reached and not
+         * hull is interior.
+         *
+         * Only [Hull] blocks. A smelter does not seal a room — it is a lump of machinery in one, and
+         * making every machine airtight would mean a wall of conveyors counted as a pressure vessel,
+         * which is neither true nor good play.
+         */
+        fun derive(grid: Grid, machines: List<Machine?>): StructureMap {
+            val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
+            for (i in machines.indices) {
+                if (machines[i] is Hull) kinds[i] = Structure.Hull.ordinal.toByte()
+            }
+
+            // Breadth-first from the border. An explicit stack rather than recursion: a 48x28 grid is
+            // 1344 deep in the worst case and this also runs on JS.
+            val stack = ArrayDeque<Int>()
+            fun seed(index: Int) {
+                if (kinds[index].toInt() == Structure.Interior.ordinal) {
+                    kinds[index] = Structure.Vacuum.ordinal.toByte()
+                    stack.addLast(index)
+                }
+            }
+            for (x in 0 until grid.width) {
+                seed(grid.index(x, 0))
+                seed(grid.index(x, grid.height - 1))
+            }
+            for (y in 0 until grid.height) {
+                seed(grid.index(0, y))
+                seed(grid.index(grid.width - 1, y))
+            }
+            while (stack.isNotEmpty()) {
+                val at = stack.removeLast()
+                for (dir in Direction.ALL) {
+                    val next = grid.neighbour(at, dir)
+                    if (next >= 0) seed(next)
+                }
+            }
+            return StructureMap(kinds)
+        }
+    }
+}
