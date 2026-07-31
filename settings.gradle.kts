@@ -35,6 +35,11 @@ plugins {
 // If there are changes in only one of the projects, Gradle will rebuild only the one that has changed.
 // Learn more about structuring projects with Gradle - https://docs.gradle.org/8.7/userguide/multi_project_builds.html
 
+include(":apps:outofspace:core")
+include(":apps:outofspace:desktop")
+include(":apps:outofspace:android")
+include(":apps:outofspace:web")
+
 // The starting point for a new app — copy it with `tools/new-app.sh <name>`. It is a real, built
 // app rather than inert files so that an engine API change breaks it here, not the first time it
 // gets copied. See apps/template/README.md.
