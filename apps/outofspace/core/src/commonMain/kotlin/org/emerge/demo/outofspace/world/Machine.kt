@@ -76,8 +76,16 @@ data class Belt(
     val occupancy: Int get() = slots.count { it != null }
 
     companion object {
-        /** Packets visible on one belt tile. Four reads clearly at the zoom the game runs at. */
-        const val SLOTS = 4
+        /**
+         * Packets on one belt tile: **one**.
+         *
+         * It was four, back when a machine was also one tile and a belt tile had to stand in for a
+         * length of line. Now that a processor is three tiles across and a smelter five, a belt tile
+         * is a belt tile — and one packet per tile makes the line's contents something you can
+         * count by looking at it rather than by reading four sub-slots. A jam is still perfectly
+         * visible; it is just measured in tiles, which is the unit everything else is now in.
+         */
+        const val SLOTS = 1
 
         /** Ticks between advances. At 60 Hz this is 10 slots/second — 2.5 tiles/second. */
         const val STEP_TICKS = 6

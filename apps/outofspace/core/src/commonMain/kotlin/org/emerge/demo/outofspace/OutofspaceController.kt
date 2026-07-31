@@ -63,7 +63,9 @@ class OutofspaceController(
     fun apply(index: Int) {
         when (tool) {
             Tool.Build -> place(index)
-            Tool.Wire -> selected = if (state[index] == null) -1 else index
+            // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
+            // selects the furnace rather than nothing.
+            Tool.Wire -> selected = state.occupancy[index]
         }
     }
 
@@ -74,7 +76,7 @@ class OutofspaceController(
 
     /** Cycles a trigger's channel; the constant is included so a term can be pinned on. */
     fun cycleTriggerChannel(index: Int, action: Action, slot: Int, delta: Int) {
-        val current = state[index]?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        val current = state.machineCovering(index)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
         val all = Channel.ALL
         val next = all[((all.indexOf(current.channel) + delta) % all.size + all.size) % all.size]
         wire(index, action, slot, current.copy(channel = next))
@@ -82,7 +84,7 @@ class OutofspaceController(
 
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
     fun cycleTriggerWeight(index: Int, action: Action, slot: Int, delta: Int) {
-        val current = state[index]?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        val current = state.machineCovering(index)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
         val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
         val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
         wire(index, action, slot, current.copy(weightPermille = next))
@@ -90,7 +92,7 @@ class OutofspaceController(
 
     /** Retunes whatever broadcasts on this tile — a sensor or an analyzer. */
     fun cycleSensorChannel(index: Int, delta: Int) {
-        val current = when (val m = state[index]) {
+        val current = when (val m = state.machineCovering(index)) {
             is Sensor -> m.channel
             is Analyzer -> m.channel
             else -> return

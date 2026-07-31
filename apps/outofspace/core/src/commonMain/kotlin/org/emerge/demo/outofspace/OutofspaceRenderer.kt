@@ -5,6 +5,9 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Belt
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.PortKind
+import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Analyzer
@@ -145,6 +148,12 @@ class OutofspaceRenderer {
         val maxX = minOf(grid.width - 1, floor(camX + halfW).toInt() + 1)
         val minY = max(0, floor(camY - halfH).toInt())
         val maxY = minOf(grid.height - 1, floor(camY + halfH).toInt() + 1)
+        // Machines are drawn from their centre tile, so one whose centre is just off screen can
+        // still have half its body on it. Widen the machine pass by the largest footprint's reach.
+        val mMinX = max(0, minX - MAX_REACH)
+        val mMaxX = minOf(grid.width - 1, maxX + MAX_REACH)
+        val mMinY = max(0, minY - MAX_REACH)
+        val mMaxY = minOf(grid.height - 1, maxY + MAX_REACH)
 
         // Floor, so the buildable area reads as a place rather than as a void.
         for (y in minY..maxY) {
@@ -165,8 +174,8 @@ class OutofspaceRenderer {
             }
         }
 
-        for (y in minY..maxY) {
-            for (x in minX..maxX) {
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
                 val index = grid.index(x, y)
                 drawMachine(state, index, x, y, state.machines[index] ?: continue)
             }
@@ -222,11 +231,13 @@ class OutofspaceRenderer {
     // ── Machine drawing ───────────────────────────────────────────────────────
 
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
+        val n = m.kind.size
         // A machine with no activation is stopped, and saying so on the tile is the answer to the
         // only question wiring ever raises: why is this not running?
         if (m !is Sensor && m.wiring.activation(Action.Run, state.signals) <= 0) {
-            tileRect(x, y, 0.94f, 0x1A1A20FFL)
-            tileRect(x, y, 0.34f, 0x8A3030FFL)
+            bodyRect(x, y, n, 0.94f, 0x1A1A20FFL)
+            bodyRect(x, y, n, 0.34f, 0x8A3030FFL)
+            drawPorts(state, index, m)
             return
         }
         when (m) {
@@ -249,37 +260,33 @@ class OutofspaceRenderer {
                 }
             }
             is Miner -> {
-                tileRect(x, y, 0.94f, 0x6B4A2AFFL)
-                edgeMark(x, y, m.facing, 0xD9A066FFL)
-                fillBar(x, y, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
+                bodyRect(x, y, n, 0.94f, 0x6B4A2AFFL)
+                fillBar(x, y, n, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
             }
             is Processor -> {
-                tileRect(x, y, 0.94f, 0x2E5A6BFFL)
-                edgeMark(x, y, m.facing, 0x7FD4EEFFL)
-                edgeMark(x, y, m.facing.clockwise, 0x6B5A2EFFL)   // where tailings leave
-                fillBar(x, y, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                bodyRect(x, y, n, 0.94f, 0x2E5A6BFFL)
+                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Smelter -> {
-                tileRect(x, y, 0.94f, 0x8A3A2AFFL)
-                edgeMark(x, y, m.facing, 0xFFB05AFFL)
-                edgeMark(x, y, m.facing.clockwise, 0x4A3A32FFL)   // where slag leaves
-                fillBar(x, y, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                bodyRect(x, y, n, 0.94f, 0x8A3A2AFFL)
+                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Fabricator -> {
-                tileRect(x, y, 0.94f, 0x6B3A7AFFL)
-                edgeMark(x, y, m.facing, 0xD9A0EEFFL)
-                fillBar(x, y, massIn(m).toFloat() / (Fabricator.INPUT_CAP * 2))
+                bodyRect(x, y, n, 0.94f, 0x6B3A7AFFL)
+                fillBar(x, y, n, massIn(m).toFloat() / (Fabricator.INPUT_CAP * 2))
             }
             is Storage -> {
-                tileRect(x, y, 0.94f, 0x3A4A5AFFL)
-                edgeMark(x, y, m.facing, 0x8AA0B8FFL)
-                // A storage shows its level as a rising fill, not a thin bar: it is a tank.
+                bodyRect(x, y, n, 0.94f, 0x3A4A5AFFL)
+                // A tank shows its level as a rising fill, not a thin bar, and now it rises through
+                // a room-sized body -- which is what makes a nearly-full warehouse legible across
+                // the deck rather than a detail you have to hover to read.
                 val level = (m.contents?.mass ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
-                    val h = level.coerceIn(0f, 1f) * 0.8f
+                    val h = level.coerceIn(0f, 1f) * (n - 0.2f)
+                    val bottom = y + n * 0.5f - 0.03f
                     rect(
-                        (x + 0.5f) * tilePx, (y + 0.9f - h * 0.5f) * tilePx,
-                        0.8f * tilePx, h * tilePx,
+                        (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
+                        (n - 0.2f) * tilePx, h * tilePx,
                         packetColor(m.contents?.mixture?.dominant),
                     )
                 }
@@ -323,12 +330,48 @@ class OutofspaceRenderer {
                 tileRect(x, y, 0.4f, 0x0A0A0CFFL)
             }
         }
+        drawPorts(state, index, m)
     }
 
     /** Position of belt slot [i] within its tile, in tile units from the centre. Slot 0 is the head. */
     private fun slotOffset(facing: Direction, i: Int, slots: Int): Pair<Float, Float> {
         val along = 0.5f - (i + 0.5f) / slots
         return (facing.dx * along) to (facing.dy * along)
+    }
+
+    /**
+     * The body of a machine: a square of [span] tiles centred on its anchor tile, inset a little.
+     *
+     * Machines anchor at their centre, so this is the same expression for every size — a one-tile
+     * conveyor and a five-tile furnace differ only in [span]. Drawing from a corner would need the
+     * offset to depend on facing as well, since rotation would move the anchor.
+     */
+    private fun bodyRect(x: Int, y: Int, span: Int, inset: Float, color: Long) {
+        val side = (span - (1f - inset)) * tilePx
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side, side, color)
+    }
+
+    /**
+     * Every port on a machine, in ONI's language: **white in, green out**.
+     *
+     * Worth stating out loud on the tile, because with footprints "where does this connect" stops
+     * being answerable from the machine's facing alone. A five-tile smelter has three ports on three
+     * different edges, and a player who cannot see them has to guess.
+     *
+     * A port is drawn as a stub straddling the machine's boundary, so it reads as a fitting on the
+     * wall rather than as cargo sitting inside.
+     */
+    private fun drawPorts(state: VesselState, index: Int, m: Machine) {
+        for (port in portsOf(state.grid, m, index)) {
+            val px = state.grid.xOf(port.tile)
+            val py = state.grid.yOf(port.tile)
+            val color = if (port.kind == PortKind.Input) 0xE8ECF2FFL else 0x5ADB7EFFL
+            val cx = (px + 0.5f + port.side.dx * 0.46f) * tilePx
+            val cy = (py + 0.5f + port.side.dy * 0.46f) * tilePx
+            val w = if (port.side.dx != 0) 0.22f else 0.44f
+            val h = if (port.side.dy != 0) 0.22f else 0.44f
+            rect(cx, cy, w * tilePx, h * tilePx, color)
+        }
     }
 
     /** A hollow square of [color] around the tile edge — a border, not a fill. */
@@ -350,14 +393,16 @@ class OutofspaceRenderer {
         rect(cx, cy, hw * tilePx * 2f, hh * tilePx * 2f, color)
     }
 
-    /** How full a machine is, along the bottom of its tile. The at-a-glance "is this backing up?". */
-    private fun fillBar(x: Int, y: Int, fraction: Float) {
+    /** How full a machine is, along the bottom of its body. The at-a-glance "is this backing up?". */
+    private fun fillBar(x: Int, y: Int, span: Int, fraction: Float) {
         val f = fraction.coerceIn(0f, 1f)
         if (f <= 0f) return
-        val w = f * 0.8f
+        val full = span - 0.2f
+        val w = f * full
+        val left = x + 0.5f - full * 0.5f
         rect(
-            (x + 0.1f + w * 0.5f) * tilePx,
-            (y + 0.86f) * tilePx,
+            (left + w * 0.5f) * tilePx,
+            (y + 0.5f + span * 0.5f - 0.16f) * tilePx,
             w * tilePx, 0.1f * tilePx,
             if (f > 0.85f) 0xE05A4AFFL else 0x9AE07AFFL,
         )
@@ -437,6 +482,9 @@ class OutofspaceRenderer {
 
     companion object {
         private const val MAX_RECTS = 20_000
+
+        /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
+        private const val MAX_REACH = 2
         private const val MIN_TILE_PX = 6f
         private const val MAX_TILE_PX = 64f
 

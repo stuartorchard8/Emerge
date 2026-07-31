@@ -40,7 +40,12 @@ class DebrisTest {
 
     private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 9_000L))
 
-    /** A sealed box [w] x [h] with a hollow middle, so removals happen somewhere with a floor. */
+    /**
+     * A sealed box [w] x [h] with a hollow middle, so removals happen somewhere with a floor.
+     *
+     * Rooms here are generous because a tank is three tiles across: two of them need four tiles
+     * between their centres to not overlap, and one needs a tile of clearance from the wall.
+     */
     private fun room(w: Int, h: Int, fill: (Int, Int) -> Machine? = { _, _ -> null }): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
@@ -52,7 +57,7 @@ class DebrisTest {
 
     @Test
     fun `dismantling a full storage spills its contents instead of deleting them`() {
-        val s0 = room(8, 8) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
+        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
         val g = s0.grid
         assertEquals(9_000L, s0.inTransitGrams, "the tank's contents are aboard to begin with")
 
@@ -63,58 +68,56 @@ class DebrisTest {
 
     @Test
     fun `spilled material falls until it reaches the deck`() {
-        val s0 = room(8, 8) { x, y -> if (x == 4 && y == 2) Storage(Direction.Right, ingots) else null }
+        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
         val g = s0.grid
 
-        // Removed at the top of an eight-tile room, so it has a long way to fall.
-        var s = run(s0, 1, OutofspaceInput(listOf(Edit.Remove(g.index(4, 2)))))
-        assertTrue(s.debris.massAt(g.index(4, 2)) > 0L || s.debris.massAt(g.index(4, 3)) > 0L)
+        // Removed near the top of a twelve-tile room, so it has a long way to fall.
+        var s = run(s0, 1, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
+        assertTrue(s.debris.massAt(g.index(4, 3)) > 0L || s.debris.massAt(g.index(4, 4)) > 0L)
 
         s = run(s, 30)
-        assertEquals(9_000L, s.debris.massAt(g.index(4, 7)), "it should be resting on the lowest floor")
-        assertEquals(0L, s.debris.massAt(g.index(4, 2)), "and nothing left where it came from")
+        assertEquals(9_000L, s.debris.massAt(g.index(4, 11)), "it should be resting on the lowest floor")
+        assertEquals(0L, s.debris.massAt(g.index(4, 3)), "and nothing left where it came from")
     }
 
     @Test
     fun `a heap keeps its forms apart rather than blending them`() {
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Silica to 2_000L))
-        val s0 = room(6, 6) { x, y ->
+        val s0 = room(12, 12) { x, y ->
             when {
-                x == 3 && y == 2 -> Storage(Direction.Right, ingots)
-                x == 4 && y == 2 -> Storage(Direction.Right, ore)
+                x == 4 && y == 3 -> Storage(Direction.Right, ingots)
+                x == 8 && y == 3 -> Storage(Direction.Right, ore)
                 else -> null
             }
         }
         val g = s0.grid
-        // Both spill, and both fall to the deck -- but into different columns, so move one across by
-        // dropping them onto the same tile: remove them and let column 3 and 4 settle, then check the
-        // two piles stayed distinct where they landed.
         val s = run(s0, 30, OutofspaceInput(listOf(
-            Edit.Remove(g.index(3, 2)),
-            Edit.Remove(g.index(4, 2)),
+            Edit.Remove(g.index(4, 3)),
+            Edit.Remove(g.index(8, 3)),
         )))
-        assertEquals(listOf(Form.IronIngot), s.debris[g.index(3, 5)].map { it.form })
-        assertEquals(listOf(Form.Ore), s.debris[g.index(4, 5)].map { it.form })
+        assertEquals(listOf(Form.IronIngot), s.debris[g.index(4, 11)].map { it.form })
+        assertEquals(listOf(Form.Ore), s.debris[g.index(8, 11)].map { it.form })
         // The ore is still a mixture, and still the mixture it was.
-        assertEquals(2_000L, s.debris.mixtureAt(g.index(4, 5))[Species.Silica])
+        assertEquals(2_000L, s.debris.mixtureAt(g.index(8, 11))[Species.Silica])
     }
 
     @Test
     fun `two piles landing on the same tile merge by form`() {
-        val s0 = room(6, 6) { x, y ->
+        // Same column, four tiles apart so the two footprints do not overlap.
+        val s0 = room(12, 12) { x, y ->
             when {
-                x == 3 && y == 2 -> Storage(Direction.Right, ingots)
-                x == 3 && y == 3 -> Storage(Direction.Right, ingots)
+                x == 4 && y == 3 -> Storage(Direction.Right, ingots)
+                x == 4 && y == 7 -> Storage(Direction.Right, ingots)
                 else -> null
             }
         }
         val g = s0.grid
         val s = run(s0, 30, OutofspaceInput(listOf(
-            Edit.Remove(g.index(3, 2)),
-            Edit.Remove(g.index(3, 3)),
+            Edit.Remove(g.index(4, 3)),
+            Edit.Remove(g.index(4, 7)),
         )))
-        assertEquals(18_000L, s.debris.massAt(g.index(3, 5)), "both loads ended up in one heap")
-        assertEquals(1, s.debris[g.index(3, 5)].size, "as a single entry, being the same form")
+        assertEquals(18_000L, s.debris.massAt(g.index(4, 11)), "both loads ended up in one heap")
+        assertEquals(1, s.debris[g.index(4, 11)].size, "as a single entry, being the same form")
     }
 
     @Test
@@ -131,12 +134,12 @@ class DebrisTest {
 
     @Test
     fun `breaching a room takes its spilled material with the air`() {
-        val s0 = room(6, 6) { x, y -> if (x == 3 && y == 2) Storage(Direction.Right, ingots) else null }
+        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
         val g = s0.grid
-        var s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(3, 2)))))
+        var s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
         assertEquals(9_000L, s.debrisGrams, "resting on the deck")
 
-        s = run(s, 3, OutofspaceInput(listOf(Edit.Remove(g.index(3, 1)))))
+        s = run(s, 3, OutofspaceInput(listOf(Edit.Remove(g.index(4, 1)))))
         assertEquals(0L, s.debrisGrams, "the room is outside now")
         assertEquals(9_000L, s.ventedGrams)
     }
@@ -145,48 +148,48 @@ class DebrisTest {
     fun `debris falls through machinery rather than piling on top of it`() {
         // A belt spanning the column the heap falls down. Rubble on the deck under a conveyor is
         // rubble on the deck; blocking it would leave piles hanging where a machine happened to be.
-        val s0 = room(6, 6) { x, y ->
+        val s0 = room(12, 12) { x, y ->
             when {
-                x == 3 && y == 2 -> Storage(Direction.Right, ingots)
-                x == 3 && y == 4 -> Belt(Direction.Right)
+                x == 4 && y == 3 -> Storage(Direction.Right, ingots)
+                x == 4 && y == 8 -> Belt(Direction.Right)
                 else -> null
             }
         }
         val g = s0.grid
-        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(3, 2)))))
-        assertEquals(9_000L, s.debris.massAt(g.index(3, 5)), "it reached the floor past the belt")
+        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
+        assertEquals(9_000L, s.debris.massAt(g.index(4, 11)), "it reached the floor past the belt")
     }
 
     @Test
     fun `sideways gravity makes heaps settle against a wall`() {
         // Nothing about settling may assume down is +y. This is the same guard stratification has.
         val sideways = Frac2(Frac(1L, 1), Frac(0L, 1))
-        val s0 = room(8, 6) { x, y -> if (x == 3 && y == 3) Storage(Direction.Right, ingots) else null }
+        val s0 = room(12, 8) { x, y -> if (x == 4 && y == 4) Storage(Direction.Right, ingots) else null }
             .copy(gravity = sideways)
         val g = s0.grid
-        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(3, 3)))))
-        assertEquals(9_000L, s.debris.massAt(g.index(7, 3)), "it slid to the far wall, not the floor")
+        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 4)))))
+        assertEquals(9_000L, s.debris.massAt(g.index(11, 4)), "it slid to the far wall, not the floor")
     }
 
     @Test
     fun `diagonal gravity settles nothing rather than guessing an axis`() {
         val diagonal = Frac2(Frac(1L, 1), Frac(1L, 1))
-        val s0 = room(6, 6) { x, y -> if (x == 3 && y == 2) Storage(Direction.Right, ingots) else null }
+        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
             .copy(gravity = diagonal)
         val g = s0.grid
-        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(3, 2)))))
-        assertEquals(9_000L, s.debris.massAt(g.index(3, 2)), "it stayed exactly where it was dropped")
+        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
+        assertEquals(9_000L, s.debris.massAt(g.index(4, 3)), "it stayed exactly where it was dropped")
     }
 
     @Test
     fun `the world still never loses a gram when the player takes it apart`() {
-        var s = starterVessel(Grid(24, 16))
+        var s = starterVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
         s = run(s, 60 * 20)
 
         // Rip out every machine on one row of the working line, mid-flow.
-        val y = s.grid.height / 2
-        val edits = (3..18).map { Edit.Remove(s.grid.index(it, y)) }
+        val y = 12   // the row the starter vessel's main line runs along
+        val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
         s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
 
         repeat(120) {
@@ -203,11 +206,11 @@ class DebrisTest {
     @Test
     fun `two runs of a world being dismantled are identical`() {
         fun digest(): String {
-            var s = starterVessel(Grid(24, 16))
+            var s = starterVessel(Grid(40, 28))
             val cfg = OutofspaceConfig(grid = s.grid)
             s = run(s, 300)
-            val y = s.grid.height / 2
-            val edits = (3..18).map { Edit.Remove(s.grid.index(it, y)) }
+            val y = 12   // the row the starter vessel's main line runs along
+            val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
             s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
             s = run(s, 120)
             return buildString {
@@ -221,19 +224,19 @@ class DebrisTest {
     @Test
     fun `a pile stops falling into a tile that is already full`() {
         val huge = Resource(Form.IronIngot, Mixture.of(Species.Iron to Debris.TILE_CAP))
-        val s0 = room(6, 6) { x, y ->
+        val s0 = room(12, 12) { x, y ->
             when {
-                x == 3 && y == 2 -> Storage(Direction.Right, ingots)
-                x == 3 && y == 3 -> Storage(Direction.Right, huge)
+                x == 4 && y == 3 -> Storage(Direction.Right, ingots)
+                x == 4 && y == 7 -> Storage(Direction.Right, huge)
                 else -> null
             }
         }
         val g = s0.grid
         val s = run(s0, 30, OutofspaceInput(listOf(
-            Edit.Remove(g.index(3, 2)),
-            Edit.Remove(g.index(3, 3)),
+            Edit.Remove(g.index(4, 3)),
+            Edit.Remove(g.index(4, 7)),
         )))
-        assertEquals(Debris.TILE_CAP, s.debris.massAt(g.index(3, 5)), "the deck tile took its fill")
-        assertEquals(9_000L, s.debris.massAt(g.index(3, 4)), "and the rest rests on top of it")
+        assertEquals(Debris.TILE_CAP, s.debris.massAt(g.index(4, 11)), "the deck tile took its fill")
+        assertEquals(9_000L, s.debris.massAt(g.index(4, 10)), "and the rest rests on top of it")
     }
 }

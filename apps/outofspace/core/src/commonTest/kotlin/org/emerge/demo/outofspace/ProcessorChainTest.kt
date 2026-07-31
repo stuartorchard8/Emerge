@@ -17,18 +17,22 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The processor's **direction contract**, and the backpressure that gives it teeth.
+ * The processor's **port contract**, and the backpressure that gives it teeth.
  *
- * Concentrate leaves by the facing side, tailings by the side clockwise of it. Getting these the
- * wrong way round would silently invert the whole refining game, and it is not something you can see
- * by looking at a running world — hence a test that measures purity on each side by name.
+ * Concentrate leaves by the front port, tailings by the one in the floor. Getting these the wrong way
+ * round would silently invert the whole refining game, and it is not something you can see by looking
+ * at a running world — hence a test that measures purity on each side by name.
+ *
+ * These layouts are drawn to scale now that machines are rooms. A three-tile processor centred at
+ * `x` covers `x-1 .. x+1`, takes material in at `x-1` and pushes concentrate out at `x+1`, so the
+ * next processor's centre sits at `x+3` and the two buildings abut with no conveyor between them.
+ * That adjacency is worth knowing: a straight refining chain packs solid.
  */
 class ProcessorChainTest {
 
-    private val cfg = OutofspaceConfig(grid = Grid(8, 3))
-
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
+        val cfg = OutofspaceConfig(grid = state.grid)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
         return s
     }
@@ -41,44 +45,48 @@ class ProcessorChainTest {
     }
 
     @Test
-    fun `the concentrate leaves forward and the tailings leave to the side`() {
-        val grid = Grid(3, 2)
+    fun `the concentrate leaves forward and the tailings leave downward`() {
+        val grid = Grid(12, 10)
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40_000L))
-        val m = arrayOfNulls<Machine>(6)
-        m[0] = Processor(Direction.Right, input = ore)
-        m[1] = Storage(Direction.Up)      // forward of the processor, facing nothing so it holds
-        m[3] = Storage(Direction.Down)    // below it: the side clockwise of Right
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)
+        // Forward of the processor's product port, and below its tailings port. Both face Right, so
+        // both hold what they are given rather than passing it on.
+        m[grid.index(6, 3)] = Storage(Direction.Right)
+        m[grid.index(3, 6)] = Storage(Direction.Right)
         var s = VesselState(grid, m.toList())
         s = run(s, 60 * 200)
 
-        val forward = (s[1] as Storage).contents
-        val side = (s[3] as Storage).contents
+        val forward = (s[grid.index(6, 3)] as Storage).contents
+        val below = (s[grid.index(3, 6)] as Storage).contents
 
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         assertTrue(purity(forward) > 70, "forward should be concentrated, was ${purity(forward)}%")
         assertTrue(
-            forward.mixture[Species.Iron] * 100 / forward.mass > side!!.mixture[Species.Iron] * 100 / side.mass,
+            forward.mixture[Species.Iron] * 100 / forward.mass > below!!.mixture[Species.Iron] * 100 / below.mass,
             "forward must be richer in iron than the tailings",
         )
     }
 
     @Test
     fun `chained straight through, purity climbs at every stage`() {
-        // Miner -> processor -> processor -> processor -> storage, each with a vent for its tailings.
-        val grid = Grid(6, 2)
-        val m = arrayOfNulls<Machine>(12)
-        m[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 1..3) {
-            m[x] = Processor(Direction.Right)
-            m[x + 6] = Vent()
+        // Miner -> processor -> processor -> processor -> tank, each processor venting its tailings
+        // through the floor. Every building abuts the next; the ports line up without conveyors.
+        val grid = Grid(20, 8)
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        val stages = listOf(5, 8, 11)
+        for (x in stages) {
+            m[grid.index(x, 3)] = Processor(Direction.Right)
+            m[grid.index(x, 5)] = Vent()
         }
-        m[4] = Storage(Direction.Up)
+        m[grid.index(14, 3)] = Storage(Direction.Right)
         var s = VesselState(grid, m.toList())
         s = run(s, 60 * 300)
 
-        val stages = (1..3).map { purity((s[it] as Processor).product) }
-        assertEquals(listOf(75, 100, 100), stages, "each stage should be cleaner than the last: $stages")
-        assertEquals(100, purity((s[4] as Storage).contents), "and the far end should be pure metal")
+        val purities = stages.map { purity((s[grid.index(it, 3)] as Processor).product) }
+        assertEquals(listOf(75, 100, 100), purities, "each stage should be cleaner than the last: $purities")
+        assertEquals(100, purity((s[grid.index(14, 3)] as Storage).contents), "and the far end is pure metal")
     }
 
     /**
@@ -88,19 +96,20 @@ class ProcessorChainTest {
      */
     @Test
     fun `a processor with nowhere to put its tailings backs up instead of hoarding them`() {
-        val grid = Grid(6, 2)
-        val m = arrayOfNulls<Machine>(12)
-        m[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 1..3) m[x] = Processor(Direction.Right)   // no vents anywhere
-        m[4] = Storage(Direction.Up)
+        val grid = Grid(20, 8)
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        val stages = listOf(5, 8, 11)
+        for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no vents anywhere
+        m[grid.index(14, 3)] = Storage(Direction.Right)
         var s = VesselState(grid, m.toList())
         s = run(s, 60 * 300)
 
-        for (x in 1..3) {
-            val held = (s[x] as Processor).tailings?.mass ?: 0L
+        for (x in stages) {
+            val held = (s[grid.index(x, 3)] as Processor).tailings?.mass ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + 1_000L,
-                "stage $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",
+                "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",
             )
         }
         assertEquals(

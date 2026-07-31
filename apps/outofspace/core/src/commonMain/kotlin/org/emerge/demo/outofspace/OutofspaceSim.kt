@@ -20,6 +20,15 @@ import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.Occupancy
+import org.emerge.demo.outofspace.world.Port
+import org.emerge.demo.outofspace.world.PortKind
+import org.emerge.demo.outofspace.world.Stream
+import org.emerge.demo.outofspace.world.coveredTiles
+import org.emerge.demo.outofspace.world.footprintFits
+import org.emerge.demo.outofspace.world.inputPortAt
+import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.HeatField
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
@@ -50,7 +59,12 @@ import org.emerge.sim.core.SimReducer
 
 /** Fixed world parameters. */
 data class OutofspaceConfig(
-    val grid: Grid = Grid(48, 28),
+    /**
+     * Generous, because machines are now rooms: a smelter is five tiles across and a refinery line
+     * of them is long. A grid this size is still trivial to sweep, and "a big bound with the hull
+     * drawn inside it" is what gives the expansion fantasy without a growable world.
+     */
+    val grid: Grid = Grid(96, 60),
     /** Sim tick rate. Feeds [Rate], which is what makes a machine's grams-per-second exact. */
     val ticksPerSecond: Int = 60,
 ) {
@@ -91,8 +105,8 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  *     machine's behaviour depend on where it sits in the grid relative to its sensor.
  *  3. **Produce** — miners accrue ore into their buffers.
  *  4. **Process** — processors, smelters and fabricators draw from their inputs and fill outputs.
- *  5. **Eject** — anything holding a full packet's worth of output pushes it into the tile it faces.
- *     Waste leaves by the side clockwise of facing, so a rightward line drops its waste downward.
+ *  5. **Eject** — anything holding a full packet's worth of output pushes it out through the matching
+ *     output **port**: a specific tile of the machine's footprint, facing a specific way.
  *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
  *     goes overboard.
  *  7. **Advance belts** — every [Belt.STEP_TICKS] ticks: deliver each belt's head packet, then shift
@@ -127,13 +141,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Structure first: heat and (later) air both need to know what is wall and what is outside,
         // and an edit this tick must be reflected in it this tick.
         val structure = StructureMap.derive(w.grid, w.machines)
+        val occupancy = Occupancy(w.originOf.copyOf())
 
         val signals = Signals.build { raise ->
             for (i in w.machines.indices) {
                 when (val m = w.machines[i]) {
                     is Sensor -> {
+                        // Through the occupancy index, so a sensor pointed at any tile of a
+                        // five-tile furnace reads the furnace rather than nothing.
                         val target = w.grid.neighbour(i, m.facing)
-                        if (target >= 0) raise(m.channel, fullness(w.machines[target]))
+                        val seen = if (target < 0) -1 else w.originOf[target]
+                        if (seen >= 0) raise(m.channel, fullness(w.machines[seen]))
                     }
                     // The analyzer's reading persists after the packet leaves, so purity is a
                     // steady signal rather than a flicker as lumps go past.
@@ -171,7 +189,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
         val (heat, radiated) = stepHeat(
-            state.grid, structure, w.machines.toList(), HeatField.of(warmed), cfg.ticksPerSecond,
+            state.grid, structure, occupancy, HeatField.of(warmed), cfg.ticksPerSecond,
         )
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
@@ -189,6 +207,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventedGrams = w.ventedGrams,
             signals = signals,
             structure = structure,
+            occupancy = occupancy,
             heat = heat,
             generatedJoules = w.generatedJoules,
             radiatedJoules = state.radiatedJoules + radiated,
@@ -347,6 +366,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val debris: DebrisWork = DebrisWork(state.debris)
         var ventedGrams: Long = state.ventedGrams
 
+        /**
+         * tile -> the index its machine is stored at, or -1. Maintained as edits land rather than
+         * re-derived per edit, so a tick that places twenty things stays linear.
+         */
+        val originOf: IntArray = IntArray(state.grid.size).also { o ->
+            for (i in machines.indices) {
+                val m = machines[i] ?: continue
+                for (t in coveredTiles(state.grid, i, m.kind.size)) o[t] = i + 1
+            }
+            for (i in o.indices) o[i] -= 1
+        }
+
         /** This tick's signal snapshot, set once the sensing pass has run. */
         var signals: Signals = Signals.build { }
 
@@ -367,43 +398,61 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
+                    // The click names the machine's *centre*, and the footprint grows around it.
                     if (edit.index !in machines.indices) return
-                    // Placing onto an occupied tile is a no-op, so a stray click cannot destroy a
-                    // machine — and everything inside it — by accident.
-                    if (machines[edit.index] != null) return
+                    val size = edit.kind.size
+                    if (!footprintFits(grid, edit.index, size)) return
+                    val covered = coveredTiles(grid, edit.index, size)
+                    // Placing over anything occupied is a no-op, so a stray click cannot destroy a
+                    // machine — and everything inside it — by accident. With footprints that check
+                    // has to cover every tile, not just the one under the cursor.
+                    if (covered.any { originOf[it] >= 0 }) return
                     machines[edit.index] = newMachine(edit.kind, edit.facing)
+                    for (t in covered) originOf[t] = edit.index
                 }
                 is Edit.Rotate -> {
-                    val m = machines.getOrNull(edit.index)
-                    if (m is Directed) machines[edit.index] = m.rotated()
+                    // Rotating about the centre leaves the covered tiles alone -- footprints are
+                    // square -- so only the ports move. That is the whole reason machines anchor at
+                    // their centre rather than a corner.
+                    val at = originAt(edit.index) ?: return
+                    val m = machines[at]
+                    if (m is Directed) machines[at] = m.rotated()
                 }
                 is Edit.Remove -> {
-                    if (edit.index !in machines.indices) return
+                    // Clicking any tile of a machine removes the whole machine, not a slice of it.
+                    val at = originAt(edit.index) ?: return
                     // Whatever it was holding falls on the deck. Deleting it instead would be a
                     // genuine leak, and the mass balance said so -- the answer is somewhere for the
                     // material to go, not an exemption for the player's own edits.
-                    debris.spill(edit.index, spoilsOf(machines[edit.index]))
-                    machines[edit.index] = null
+                    debris.spill(at, spoilsOf(machines[at]))
+                    for (t in coveredTiles(grid, at, machines[at]!!.kind.size)) originOf[t] = -1
+                    machines[at] = null
                 }
                 is Edit.Wire -> {
-                    val m = machines.getOrNull(edit.index) ?: return
+                    val at = originAt(edit.index) ?: return
+                    val m = machines[at] ?: return
                     val current = m.wiring.triggers(edit.action).toMutableList()
                     when {
                         edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
                         edit.slot in current.indices -> current[edit.slot] = edit.trigger
                         else -> current.add(edit.trigger)
                     }
-                    machines[edit.index] = m.withWiring(m.wiring.with(edit.action, current))
+                    machines[at] = m.withWiring(m.wiring.with(edit.action, current))
                 }
                 is Edit.SetChannel -> {
-                    when (val m = machines.getOrNull(edit.index)) {
-                        is Sensor -> machines[edit.index] = m.copy(channel = edit.channel)
-                        is Analyzer -> machines[edit.index] = m.copy(channel = edit.channel)
+                    val at = originAt(edit.index) ?: return
+                    when (val m = machines[at]) {
+                        is Sensor -> machines[at] = m.copy(channel = edit.channel)
+                        is Analyzer -> machines[at] = m.copy(channel = edit.channel)
                         else -> {}
                     }
                 }
             }
         }
+
+        /** The index the machine covering [tile] is stored at, so any tile of it can be edited. */
+        private fun originAt(tile: Int): Int? =
+            if (tile !in originOf.indices) null else originOf[tile].takeIf { it >= 0 }
 
         /**
          * Digs. [minedGrams] is incremented **here**, not when a packet ships, because that is the
@@ -421,73 +470,73 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m.copy(buffer = Resource(Form.Ore, m.buffer.mixture + dug), carry = carry)
         }
 
-        /** Pushes a full packet out of any machine holding one: product forward, waste sideways. */
+        /**
+         * Pushes a full packet out of each of a machine's output ports.
+         *
+         * Which buffer drains through which port is named by [Stream] rather than worked out from an
+         * angle. The old rule — product leaves by `facing`, waste by `facing.clockwise` — only ever
+         * worked because every machine was one tile; on a five-tile furnace the two streams leave
+         * from genuinely different tiles and the relationship between them is not a rotation.
+         */
         fun eject(index: Int) {
+            val m = machines[index] ?: return
+            if (m is Belt) return   // belts move on their own cadence, below
+            // A storage only lets go while its RUN activation is positive, which is what turns it
+            // from a bucket into a valve the moment you wire something to it.
+            if (m is Storage && m.wiring.activation(Action.Run, signals) <= 0) return
+            for (port in portsOf(grid, m, index)) {
+                if (port.kind == PortKind.Output) ejectThrough(index, port)
+            }
+        }
+
+        private fun ejectThrough(index: Int, port: Port) {
             when (val m = machines[index]) {
                 is Miner -> {
                     val (packet, rest) = takePacket(m.buffer) ?: return
-                    if (send(index, m.facing, packet)) machines[index] = m.copy(buffer = rest)
+                    if (send(port, packet)) machines[index] = m.copy(buffer = rest)
                 }
                 is Processor -> {
-                    m.product?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, m.facing, packet)) {
-                            machines[index] = (machines[index] as Processor).copy(product = rest.orNull())
-                        }
-                    }
-                    val after = machines[index] as? Processor ?: return
-                    after.tailings?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, after.facing.clockwise, packet)) {
-                            machines[index] = (machines[index] as Processor).copy(tailings = rest.orNull())
-                        }
-                    }
+                    val buffer = if (port.stream == Stream.Waste) m.tailings else m.product
+                    val (packet, rest) = buffer?.let(::takePacket) ?: return
+                    if (!send(port, packet)) return
+                    val now = machines[index] as Processor
+                    machines[index] =
+                        if (port.stream == Stream.Waste) now.copy(tailings = rest.orNull())
+                        else now.copy(product = rest.orNull())
                 }
                 is Smelter -> {
-                    m.refined?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, m.facing, packet)) {
-                            machines[index] = (machines[index] as Smelter).copy(refined = rest.orNull())
-                        }
-                    }
-                    val after = machines[index] as? Smelter ?: return
-                    after.slag?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, after.facing.clockwise, packet)) {
-                            machines[index] = (machines[index] as Smelter).copy(slag = rest.orNull())
-                        }
-                    }
+                    val buffer = if (port.stream == Stream.Waste) m.slag else m.refined
+                    val (packet, rest) = buffer?.let(::takePacket) ?: return
+                    if (!send(port, packet)) return
+                    val now = machines[index] as Smelter
+                    machines[index] =
+                        if (port.stream == Stream.Waste) now.copy(slag = rest.orNull())
+                        else now.copy(refined = rest.orNull())
                 }
                 is Fabricator -> {
-                    m.output?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, m.facing, packet)) {
-                            machines[index] = (machines[index] as Fabricator).copy(output = rest.orNull())
-                        }
-                    }
+                    val (packet, rest) = m.output?.let(::takePacket) ?: return
+                    if (send(port, packet)) machines[index] = m.copy(output = rest.orNull())
                 }
                 is Analyzer -> {
                     val held = m.holding ?: return
-                    if (send(index, m.facing, held)) {
-                        // holding clears; the reading stays, which is what makes the tile readable
-                        // when the line is idle.
-                        machines[index] = (machines[index] as Analyzer).copy(holding = null)
-                    }
+                    // holding clears; the reading stays, which is what makes the tile readable when
+                    // the line is idle.
+                    if (send(port, held)) machines[index] = m.copy(holding = null)
                 }
                 is Storage -> {
-                    // A storage only lets go while its RUN activation is positive, which is what
-                    // turns it from a bucket into a valve the moment you wire something to it.
-                    if (m.wiring.activation(Action.Run, signals) <= 0) return
-                    m.contents?.let(::takePacket)?.let { (packet, rest) ->
-                        if (send(index, m.facing, packet)) {
-                            machines[index] = (machines[index] as Storage).copy(contents = rest.orNull())
-                        }
-                    }
+                    val (packet, rest) = m.contents?.let(::takePacket) ?: return
+                    if (send(port, packet)) machines[index] = m.copy(contents = rest.orNull())
                 }
                 else -> {}
             }
         }
 
-        /** Hands a belt's head packet to whatever it faces. */
+        /** Hands a belt's head packet out through its output port. */
         fun deliverBeltHead(index: Int) {
             val belt = machines[index] as? Belt ?: return
             val head = belt.slots.firstOrNull() ?: return
-            if (send(index, belt.facing, head)) {
+            val port = portsOf(grid, belt, index).firstOrNull { it.kind == PortKind.Output } ?: return
+            if (send(port, head)) {
                 machines[index] = belt.copy(slots = belt.slots.toMutableList().also { it[0] = null })
             }
         }
@@ -504,11 +553,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun Resource.orNull(): Resource? = if (isEmpty) null else this
 
-        /** Offers [packet] to the neighbour of [from] in [dir]. True if it was taken. */
-        fun send(from: Int, dir: Direction, packet: Packet): Boolean {
-            val target = grid.neighbour(from, dir)
+        /**
+         * Offers [packet] out through [port]. True if something on the other side took it.
+         *
+         * The receiving side must have an **input port on the tile the packet arrives at, facing
+         * back the way it came**. Checking the facing and not merely the tile is what stops a
+         * three-by-three building behaving like a nine-tile sponge that absorbs anything touching
+         * it — a machine has a back and two sides, and routing to the right one is the mechanic.
+         */
+        fun send(port: Port, packet: Packet): Boolean {
+            val target = grid.neighbour(port.tile, port.side)
             if (target < 0) return false
-            return when (val dest = machines[target]) {
+            val at = originOf[target]
+            if (at < 0) return false
+            val dest = machines[at] ?: return false
+            if (inputPortAt(grid, dest, at, target, port.side) == null) return false
+            return deliver(at, dest, packet)
+        }
+
+        /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
+        private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
+            return when (val dest = destination) {
                 is Belt -> {
                     val tail = dest.slots.lastIndex
                     if (dest.slots[tail] != null) false

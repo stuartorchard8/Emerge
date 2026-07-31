@@ -40,7 +40,7 @@ import kotlin.test.assertTrue
  */
 class VesselSimTest {
 
-    private val cfg = OutofspaceConfig(grid = Grid(24, 12))
+    private val cfg = OutofspaceConfig(grid = Grid(40, 28))
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state
@@ -101,33 +101,37 @@ class VesselSimTest {
 
     @Test
     fun `a jam fills the belt from the head backwards and stays visible`() {
-        // Four belts feeding a dead end: they should pack solid, head first.
-        val grid = Grid(6, 1)
-        val machines = arrayOfNulls<Machine>(6)
-        machines[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 1..4) machines[x] = Belt(Direction.Right)
-        // index 5 left empty: nothing accepts, so the line backs up.
+        // Four belts feeding a dead end: they should pack solid, head first. The miner is three
+        // tiles across, so its output port is at x=3 and the belt run starts at x=4.
+        val grid = Grid(12, 5)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        for (x in 4..7) machines[grid.index(x, 2)] = Belt(Direction.Right)
+        // (8, 2) left empty: nothing accepts, so the line backs up.
         var s = VesselState(grid, machines.toList())
 
         s = run(s, 60 * 30)
-        val belts = (1..4).map { s[it] as Belt }
+        val belts = (4..7).map { s[grid.index(it, 2)] as Belt }
         assertTrue(belts.all { it.isFull }, "every belt should be packed: ${belts.map { it.occupancy }}")
-        assertTrue((s[0] as Miner).buffer.mass >= Miner.BUFFER_CAP, "and the miner should have stopped digging")
+        assertTrue(
+            (s[grid.index(2, 2)] as Miner).buffer.mass >= Miner.BUFFER_CAP,
+            "and the miner should have stopped digging",
+        )
         assertBalanced(s, "jammed line")
     }
 
     @Test
     fun `a jam clears from the front when the blockage is removed`() {
-        val grid = Grid(6, 1)
-        val machines = arrayOfNulls<Machine>(6)
-        machines[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (x in 1..4) machines[x] = Belt(Direction.Right)
+        val grid = Grid(12, 5)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        for (x in 4..7) machines[grid.index(x, 2)] = Belt(Direction.Right)
         var s = VesselState(grid, machines.toList())
         s = run(s, 60 * 30)
 
         // Drop a vent on the end; the line should drain.
-        s = run(s, 60 * 10, OutofspaceInput(listOf(Edit.Place(5, MachineKind.Vent, Direction.Right))))
-        assertTrue((s[4] as Belt).occupancy < 4, "the belt nearest the vent should have drained")
+        s = run(s, 60 * 10, OutofspaceInput(listOf(Edit.Place(grid.index(8, 2), MachineKind.Vent, Direction.Right))))
+        assertTrue((s[grid.index(7, 2)] as Belt).occupancy < 1, "the belt nearest the vent should have drained")
         assertTrue(s.ventedGrams > 0L, "and material should have gone overboard")
         assertBalanced(s, "drained line")
     }
@@ -150,14 +154,15 @@ class VesselSimTest {
     @Test
     fun `raw ore run straight into a smelter yields nothing but slag`() {
         // The default ore body is 41% iron: too dirty to smelt. This is the lesson the world teaches.
-        val grid = Grid(5, 2)
-        val machines = arrayOfNulls<Machine>(10)
-        machines[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-        machines[1] = Belt(Direction.Right)
-        machines[2] = Smelter(Direction.Right)
-        machines[3] = Storage(Direction.Right)
-        machines[2 + 5] = Vent()   // below the smelter: where slag goes
-        var s = VesselState(Grid(5, 2), machines.toList())
+        val grid = Grid(16, 8)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        machines[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        machines[grid.index(4, 3)] = Belt(Direction.Right)
+        machines[grid.index(7, 3)] = Smelter(Direction.Right)     // covers x 5..9
+        machines[grid.index(10, 3)] = Belt(Direction.Right)
+        machines[grid.index(12, 3)] = Storage(Direction.Right)
+        machines[grid.index(7, 6)] = Vent()   // under the smelter's slag port: where slag goes
+        var s = VesselState(grid, machines.toList())
 
         s = run(s, 60 * 60)
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
@@ -196,17 +201,20 @@ class VesselSimTest {
 
     @Test
     fun `what a storage holds is what the vessel can build with`() {
-        val grid = Grid(3, 1)
+        val grid = Grid(10, 5)
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        // The storage faces the empty tile beyond it, so it fills rather than draining.
-        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(ingot, null, null, null)), Storage(Direction.Right), null))
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(2, 2)] = Belt(Direction.Right, listOf(ingot))
+        // The tank faces open deck beyond it, so it fills rather than draining.
+        m[grid.index(4, 2)] = Storage(Direction.Right)
+        var s = VesselState(grid, m.toList())
         s = run(s, Belt.STEP_TICKS)
-        assertEquals(1_000L, (s[1] as Storage).contents!!.mass, "it landed in the tank")
+        assertEquals(1_000L, (s[grid.index(4, 2)] as Storage).contents!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
 
-        // Take the storage away and the stockpile goes with it: availability is a fact about where
+        // Take the tank away and the stockpile goes with it: availability is a fact about where
         // things are, not a number banked somewhere safe.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(1))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.index(4, 2)))))
         assertEquals(0L, s.stockpile.totalGrams)
     }
 

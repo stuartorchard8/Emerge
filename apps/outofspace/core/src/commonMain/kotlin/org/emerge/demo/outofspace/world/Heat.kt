@@ -69,10 +69,10 @@ class HeatField(private val joules: LongArray) {
          */
         const val RADIANCE = 1L
 
-        fun ambient(grid: Grid, structure: StructureMap, machines: List<Machine?>): HeatField {
+        fun ambient(grid: Grid, structure: StructureMap, occupancy: Occupancy): HeatField {
             val joules = LongArray(grid.size)
             for (i in 0 until grid.size) {
-                val capacity = capacityOf(structure, machines, i)
+                val capacity = capacityOf(structure, occupancy, i)
                 joules[i] = if (capacity <= 0L) 0L else AMBIENT_KELVIN * capacity
             }
             return HeatField(joules)
@@ -80,11 +80,18 @@ class HeatField(private val joules: LongArray) {
 
         fun of(joules: LongArray): HeatField = HeatField(joules.copyOf())
 
-        /** Joules per kelvin for a tile: its structure plus whatever machine sits in it. */
-        fun capacityOf(structure: StructureMap, machines: List<Machine?>, index: Int): Long = when {
+        /**
+         * Joules per kelvin for a tile: its structure plus whatever machine covers it.
+         *
+         * **Covers**, not "is stored at" — a five-tile smelter is twenty-five tiles of thermal mass,
+         * because it is twenty-five tiles of furnace. Charging the capacity only to its centre would
+         * make a big machine thermally identical to a small one, and the reason a furnace should be
+         * hard to cool is precisely that there is a lot of it.
+         */
+        fun capacityOf(structure: StructureMap, occupancy: Occupancy, index: Int): Long = when {
             structure.isVacuum(index) -> 0L
             structure.isHull(index) -> HULL_CAPACITY
-            else -> INTERIOR_CAPACITY + if (machines[index] != null) MACHINE_CAPACITY else 0L
+            else -> INTERIOR_CAPACITY + if (!occupancy.isFree(index)) MACHINE_CAPACITY else 0L
         }
     }
 }
@@ -106,13 +113,13 @@ class HeatField(private val joules: LongArray) {
 fun stepHeat(
     grid: Grid,
     structure: StructureMap,
-    machines: List<Machine?>,
+    occupancy: Occupancy,
     heat: HeatField,
     ticksPerSecond: Int,
 ): Pair<HeatField, Long> {
     val joules = heat.copyJoules()
     val delta = LongArray(joules.size)
-    val capacity = LongArray(joules.size) { HeatField.capacityOf(structure, machines, it) }
+    val capacity = LongArray(joules.size) { HeatField.capacityOf(structure, occupancy, it) }
     val kelvin = IntArray(joules.size) { if (capacity[it] <= 0L) HeatField.SPACE_KELVIN else (joules[it] / capacity[it]).toInt() }
 
     // ── Conduction, each unordered pair once (right and down covers every edge) ──

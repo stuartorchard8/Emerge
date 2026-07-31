@@ -61,7 +61,7 @@ class AtmosphereTest {
 
     @Test
     fun `air is conserved on every tick of a working vessel`() {
-        var s = starterVessel(Grid(28, 20))
+        var s = starterVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
         assertTrue(s.atmosphereGrams > 0L, "a sealed vessel starts with air in it")
         repeat(60 * 40) {
@@ -275,7 +275,7 @@ class AtmosphereTest {
             append(s.atmosphereGrams).append('|').append(s.airVentedGrams)
             for (i in 0 until s.grid.size) append(s.air.pressureAt(i)).append(',')
         }
-        val grid = Grid(24, 16)
+        val grid = Grid(40, 28)
         assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
     }
 }

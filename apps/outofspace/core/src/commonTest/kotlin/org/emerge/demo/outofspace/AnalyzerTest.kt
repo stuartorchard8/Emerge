@@ -38,17 +38,27 @@ class AnalyzerTest {
         return s
     }
 
+    /**
+     * Belt, analyzer, tank — with the spacing real machines need. The tank is three tiles across and
+     * anchors at its centre, so its input port lands at (4, 2), which is exactly where the analyzer
+     * pushes to.
+     */
+    private fun line(packet: SolidPacket, channel: Channel = Channel.Amber): VesselState {
+        val grid = Grid(10, 5)
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[grid.index(2, 2)] = Belt(Direction.Right, listOf(packet))
+        m[grid.index(3, 2)] = Analyzer(Direction.Right, channel)
+        m[grid.index(5, 2)] = Storage(Direction.Right)
+        return VesselState(grid, m.toList())
+    }
+
     @Test
     fun `an analyzer reports the dominant species of what passes through`() {
-        val grid = Grid(3, 1)
         val ore = SolidPacket(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
-        var s = VesselState(
-            grid,
-            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Storage(Direction.Right)),
-        )
+        var s = line(ore)
         s = run(s, Belt.STEP_TICKS * 2)
 
-        val analyzer = s[1] as Analyzer
+        val analyzer = s[s.grid.index(3, 2)] as Analyzer
         assertEquals(Species.Iron, analyzer.lastDominant, "iron is the largest single component")
         assertEquals(410, analyzer.lastPurity, "41% of the ore, not a majority of it")
         assertEquals(Form.Ore, analyzer.lastForm)
@@ -56,15 +66,11 @@ class AnalyzerTest {
 
     @Test
     fun `the reading persists after the packet has gone, so an idle line still reads`() {
-        val grid = Grid(3, 1)
         val ore = SolidPacket(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
-        var s = VesselState(
-            grid,
-            listOf(Belt(Direction.Right, listOf(ore, null, null, null)), Analyzer(Direction.Right), Storage(Direction.Right)),
-        )
+        var s = line(ore)
         s = run(s, Belt.STEP_TICKS * 20)
 
-        val analyzer = s[1] as Analyzer
+        val analyzer = s[s.grid.index(3, 2)] as Analyzer
         assertNull(analyzer.holding, "the packet moved on")
         assertEquals(410, analyzer.lastPurity, "but the reading stayed")
         assertEquals(1_000L, s.stockpile.totalGrams, "and it was passed through, not consumed")
@@ -72,24 +78,15 @@ class AnalyzerTest {
 
     @Test
     fun `an analyzer broadcasts purity on its channel`() {
-        val grid = Grid(3, 1)
         val pure = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        var s = VesselState(
-            grid,
-            listOf(
-                Belt(Direction.Right, listOf(pure, null, null, null)),
-                Analyzer(Direction.Right, Channel.Violet),
-                Storage(Direction.Right),
-            ),
-        )
-        s = run(s, Belt.STEP_TICKS * 2)
+        var s = run(line(pure, Channel.Violet), Belt.STEP_TICKS * 2)
         assertEquals(1000, s.signals[Channel.Violet], "pure metal reads 100%")
     }
 
     @Test
     fun `analyzers either side of a processor show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
-        val s = run(starterVessel(Grid(24, 14)), 60 * 120)
+        val s = run(starterVessel(Grid(40, 28)), 60 * 120)
         val raw = s.signals[Channel.Amber]
         val concentrated = s.signals[Channel.Cyan]
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
@@ -98,7 +95,7 @@ class AnalyzerTest {
 
     @Test
     fun `an analyzer conserves what passes through it`() {
-        var s = starterVessel(Grid(24, 14))
+        var s = starterVessel(Grid(40, 28))
         repeat(60 * 90) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {

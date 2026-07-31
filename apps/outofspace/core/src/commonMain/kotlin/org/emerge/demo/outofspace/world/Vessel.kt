@@ -103,7 +103,9 @@ data class VesselState(
     val signals: Signals = Signals.build { },
     /** Derived from where the hull is, every tick — see [StructureMap]. */
     val structure: StructureMap = StructureMap.derive(grid, machines),
-    val heat: HeatField = HeatField.ambient(grid, StructureMap.derive(grid, machines), machines),
+    /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
+    val occupancy: Occupancy = Occupancy.derive(grid, machines),
+    val heat: HeatField = HeatField.ambient(grid, StructureMap.derive(grid, machines), Occupancy.derive(grid, machines)),
     /**
      * The energy the world started with. Fixed at construction so `stored + radiated − generated`
      * has something to be compared against — the thermal twin of the mass balance.
@@ -131,7 +133,16 @@ data class VesselState(
 
     /** Temperature of a tile in kelvin, accounting for what is in it. */
     fun kelvinAt(index: Int): Int =
-        heat.kelvinAt(index, HeatField.capacityOf(structure, machines, index))
+        heat.kelvinAt(index, HeatField.capacityOf(structure, occupancy, index))
+
+    /** The machine covering a tile, wherever its centre happens to be. */
+    fun machineCovering(index: Int): Machine? = machines.getOrNull(occupancy[index])
+
+    /** Every connection point of the machine stored at [index]. */
+    fun portsAt(index: Int): List<Port> {
+        val m = machines.getOrNull(index) ?: return emptyList()
+        return portsOf(grid, m, index)
+    }
 
     val storedJoules: Long get() = heat.totalJoules
 

@@ -154,12 +154,14 @@ class WiringTest {
      */
     @Test
     fun `a miner wired ALWAYS minus RED throttles smoothly as the tank it fills gets full`() {
-        val grid = Grid(4, 2)
-        val machines = arrayOfNulls<Machine>(8)
-        machines[0] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        // Miner covers x 1..3 and pushes out at x=3; the tank covers 4..6 and takes it in at x=4.
+        // The sensor sits below the tank looking up at its bottom row.
+        val grid = Grid(12, 8)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        machines[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
             .withWiring(wiring(Channel.Always to 1000, Channel.Red to -1000)) as Miner
-        machines[1] = Storage(Direction.Right)          // faces empty floor, so it fills
-        machines[1 + 4] = Sensor(Direction.Up, Channel.Red)
+        machines[grid.index(5, 3)] = Storage(Direction.Right)   // faces open deck, so it fills
+        machines[grid.index(5, 5)] = Sensor(Direction.Up, Channel.Red)
         var s = VesselState(grid, machines.toList())
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
@@ -176,12 +178,12 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue((s[1] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue((s[grid.index(5, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
     }
 
     @Test
     fun `the starter vessel ships that same loop, working`() {
-        val s = run(starterVessel(cfg.grid.copy(width = 24, height = 14)), 60 * 40)
+        val s = run(starterVessel(Grid(40, 28)), 60 * 40)
         assertTrue(s.signals[Channel.Red] > 800, "the demonstration storage should have nearly filled")
         // And the main line is unaffected by it.
         assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still stores iron")
@@ -206,10 +208,12 @@ class WiringTest {
 
     @Test
     fun `a freshly placed machine is wired to ALWAYS so it simply works`() {
-        val grid = Grid(2, 1)
-        var s = VesselState(grid, listOf(null, null))
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Miner, Direction.Right))))
-        assertEquals(listOf(Trigger(Channel.Always, 1000)), s[0]!!.wiring.triggers(Action.Run))
+        // Room for the whole footprint: a place that would hang off the grid is refused outright.
+        val grid = Grid(8, 6)
+        val at = grid.index(3, 3)
+        var s = VesselState(grid, List(grid.size) { null })
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Miner, Direction.Right))))
+        assertEquals(listOf(Trigger(Channel.Always, 1000)), s[at]!!.wiring.triggers(Action.Run))
     }
 
     @Test
@@ -225,6 +229,20 @@ class WiringTest {
 
     // ── Fabricator and storage ────────────────────────────────────────────────
 
+    /**
+     * [upstream] at (3, 3) feeding a tank at (6, 3).
+     *
+     * Both are three tiles across, so their centres sit three apart and the buildings abut: the
+     * upstream machine's output port at x=4 lands exactly on the tank's input port at x=5.
+     */
+    private fun twoUp(upstream: Machine): VesselState {
+        val g = Grid(12, 6)
+        val m = arrayOfNulls<Machine>(g.size)
+        m[g.index(3, 3)] = upstream
+        m[g.index(6, 3)] = Storage(Direction.Right)
+        return VesselState(g, m.toList())
+    }
+
     @Test
     fun `a fabricator combines its two inputs into what they make`() {
         val grid = Grid(2, 1)
@@ -235,7 +253,7 @@ class WiringTest {
                 Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 4_000L)),
             ),
         )
-        var s = VesselState(grid, listOf(fab, Storage(Direction.Right)))
+        var s = twoUp(fab)
         s = run(s, 60 * 20)
         assertTrue(s.stockpile[Form.SteelAlloy].total > 0L, "iron + carbon fibre makes steel: ${s.stockpile}")
         // Composition is carried through: steel from these inputs is half iron, half carbon.
@@ -253,7 +271,7 @@ class WiringTest {
                 Resource(Form.TitaniumIngot, Mixture.of(Species.Titanium to 1_000L)),
             ),
         )
-        var s = VesselState(grid, listOf(fab, Storage(Direction.Right)))
+        var s = twoUp(fab)
         s = run(s, 60 * 5)
         assertEquals(2_000L, s.inTransitGrams, "nothing consumed, nothing lost")
         assertEquals(0L, s.stockpile.totalGrams)
@@ -270,36 +288,37 @@ class WiringTest {
             ),
         )
         val packet = SolidPacket(Resource(Form.CopperIngot, Mixture.of(Species.Copper to 1_000L)))
-        var s = VesselState(grid, listOf(Belt(Direction.Right, listOf(packet, null, null, null)), fab))
+        val g = Grid(12, 6)
+        val m = arrayOfNulls<Machine>(g.size)
+        m[g.index(2, 3)] = Belt(Direction.Right, listOf(packet))
+        m[g.index(4, 3)] = fab                                  // input port at (3, 3)
+        var s = VesselState(g, m.toList())
         s = run(s, Belt.STEP_TICKS * 2)
-        assertNotNull((s[0] as Belt).slots.firstOrNull { it != null }, "the copper is still on the belt")
-        assertEquals(2, (s[1] as Fabricator).inputs.size)
+        assertNotNull((s[g.index(2, 3)] as Belt).slots.firstOrNull { it != null }, "the copper is still on the belt")
+        assertEquals(2, (s[g.index(4, 3)] as Fabricator).inputs.size)
     }
 
     @Test
     fun `a storage releases only while it is told to`() {
-        val grid = Grid(3, 1)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5_000L))
         val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
-        var s = VesselState(grid, listOf(shut, Storage(Direction.Right), null))
-        s = run(s, 60 * 5)
-        assertEquals(5_000L, (s[0] as Storage).contents!!.mass, "a closed valve holds everything")
-        assertNull((s[1] as Storage).contents, "so nothing arrives downstream")
+        val g = twoUp(shut).grid
+        var s = run(twoUp(shut), 60 * 5)
+        assertEquals(5_000L, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
+        assertNull((s[g.index(6, 3)] as Storage).contents, "so nothing arrives downstream")
 
-        val open = Storage(Direction.Right, stored)
-        var s2 = VesselState(grid, listOf(open, Storage(Direction.Right), null))
-        s2 = run(s2, 60 * 5)
-        assertEquals(5_000L, (s2[1] as Storage).contents!!.mass, "an open one drains into the next tank")
-        assertNull((s2[0] as Storage).contents, "and empties itself doing it")
+        var s2 = run(twoUp(Storage(Direction.Right, stored)), 60 * 5)
+        assertEquals(5_000L, (s2[g.index(6, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────
 
     @Test
     fun `the world still never loses a gram with sensors and wiring in play`() {
-        var s = starterVessel(cfg.grid.copy(width = 24, height = 14))
+        var s = starterVessel(Grid(40, 28))
         repeat(60 * 60) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 89 == 0) {
@@ -318,7 +337,7 @@ class WiringTest {
             append(s.tick).append(s.minedGrams).append(s.ventedGrams).append(s.stockpile)
             for (m in s.machines) append(m?.toString() ?: "-")
         }
-        val grid = cfg.grid.copy(width = 24, height = 14)
+        val grid = Grid(40, 28)
         assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
     }
 }

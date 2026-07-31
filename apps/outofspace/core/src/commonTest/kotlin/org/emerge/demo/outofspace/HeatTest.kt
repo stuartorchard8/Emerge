@@ -114,7 +114,7 @@ class HeatTest {
 
     @Test
     fun `energy is conserved on every tick of a working vessel`() {
-        var s = starterVessel(Grid(28, 20))
+        var s = starterVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
         repeat(60 * 60) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
@@ -150,11 +150,13 @@ class HeatTest {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200_000L))
-        val room = sealedRoom(9, 9) { x, y ->
+        // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
+        // slag port at (5,7), so the vents go one tile beyond each.
+        val room = sealedRoom(10, 10) { x, y ->
             when {
                 x == 5 && y == 5 -> Smelter(Direction.Right, input = ore)
-                x == 6 && y == 5 -> Vent()      // refined leaves forward
-                x == 5 && y == 6 -> Vent()      // slag leaves clockwise of forward
+                x == 8 && y == 5 -> Vent()      // refined leaves forward
+                x == 5 && y == 8 -> Vent()      // slag leaves through the floor
                 else -> null
             }
         }
@@ -162,8 +164,8 @@ class HeatTest {
         val s = run(room, 60 * 30)
 
         val atSmelter = s.kelvinAt(g.index(5, 5))
-        val twoAway = s.kelvinAt(g.index(3, 5))
-        val farCorner = s.kelvinAt(g.index(2, 8))
+        val twoAway = s.kelvinAt(g.index(2, 5))
+        val farCorner = s.kelvinAt(g.index(2, 9))
 
         assertTrue(atSmelter > HeatField.AMBIENT_KELVIN + 15, "the furnace tile should be hot: ${atSmelter}K")
         assertTrue(atSmelter > twoAway, "hottest at the source: $atSmelter vs $twoAway")
@@ -206,7 +208,7 @@ class HeatTest {
     fun `machines outside the hull dump their heat straight to space`() {
         val grid = Grid(5, 3)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20_000L))
-        val machines = arrayOfNulls<Machine>(15)
+        val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(2, 1)] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())
         s = run(s, 60 * 10)
@@ -232,7 +234,7 @@ class HeatTest {
             append(s.storedJoules).append('|').append(s.radiatedJoules).append('|').append(s.generatedJoules)
             for (i in 0 until s.grid.size) append(s.kelvinAt(i)).append(',')
         }
-        val grid = Grid(24, 16)
+        val grid = Grid(40, 28)
         assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
     }
 

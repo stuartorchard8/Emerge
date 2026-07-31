@@ -146,7 +146,7 @@ class OutofspaceHud {
     private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
         if (index < 0) return
         val s = controller.state
-        val machine = s[index]
+        val machine = s.machineCovering(index)
         val spill = s.debris[index]
         // A bare tile with a heap on it is still worth inspecting -- otherwise the material you just
         // dumped on the deck would be visible but unreadable, which is the gap the analyzer existed
