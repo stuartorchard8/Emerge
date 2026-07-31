@@ -103,10 +103,16 @@ data class Miner(
 }
 
 /**
- * A mineral processor: concentrates its input, product out the front, tailings out the back.
+ * A mineral processor: the **concentrate leaves by the facing side** and the **tailings by the side
+ * clockwise of it**. Never backwards — the input arrives that way.
+ *
+ * That direction contract is what makes a straight-through chain work: feed one processor's output
+ * into the next and purity climbs (41% iron becomes 75%, then 100%), at the cost of throwing more
+ * and more still-useful material into the tailings. Wasteful and effective, which is the trade the
+ * machine exists to offer. Each stage needs somewhere for its tailings to go, or it backs up.
  *
  * Deliberately slower than a miner, so a naively built line jams and the player has to think about
- * throughput. That is the lesson the machine exists to teach.
+ * throughput. That is the other lesson it teaches.
  */
 data class Processor(
     override val facing: Direction,
@@ -225,3 +231,13 @@ data class Vent(
 
 /** Machine input buffers hold this much before they stop accepting. */
 const val MACHINE_BUFFER_CAP = 4_000L
+
+/**
+ * And output buffers hold this much before the machine stops *running*.
+ *
+ * Without this a processor whose waste side is blocked keeps working and hoards its tailings
+ * indefinitely — tens of kilograms inside one tile, invisibly. Capping it makes a blocked output
+ * back up into the input and then up the belt behind it, which is the same way every other blockage
+ * in the game behaves: visibly, and starting at the thing that is actually stuck.
+ */
+const val MACHINE_OUTPUT_CAP = 4_000L

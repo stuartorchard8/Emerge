@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
@@ -160,6 +161,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
+    /** True when any output buffer is full, which stops the machine until something drains it. */
+    private fun blocked(vararg outputs: Resource?): Boolean =
+        outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
+
     /** Rate scaled by activation: a throttle, not a switch. Zero or negative activation stops it. */
     private fun throttled(gramsPerSecond: Long, activation: Int): Long =
         if (activation <= 0) 0L else gramsPerSecond * activation / Signals.FULL
@@ -167,6 +172,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun refine(cfg: OutofspaceConfig, m: Processor, activation: Int): Processor {
         val input = m.input ?: return m
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        // Backed up: a full output stops the machine rather than being hoarded. Note this catches
+        // the *tailings* side too, so a processor with nowhere to put its waste stops, and the jam
+        // travels back up the line where it can be seen.
+        if (blocked(m.product, m.tailings)) return m.copy(carry = carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
@@ -186,6 +195,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun melt(cfg: OutofspaceConfig, m: Smelter, activation: Int): Smelter {
         val input = m.input ?: return m
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
@@ -214,6 +224,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      */
     private fun fabricate(cfg: OutofspaceConfig, m: Fabricator, activation: Int): Fabricator {
         val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        if (blocked(m.output)) return m.copy(carry = carry)
         if (m.inputs.size < 2 || grams <= 0L) return m.copy(carry = carry)
 
         val a = m.inputs[0]

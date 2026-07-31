@@ -126,9 +126,9 @@ fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
     is Belt -> machine.occupancy * Signals.FULL / machine.slots.size
     is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
-    is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
-    is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP * 2)).toInt()
-    is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2)).toInt()
+    is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Fabricator -> (massIn(machine) * Signals.FULL / (Fabricator.INPUT_CAP * 2 + MACHINE_OUTPUT_CAP)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
     is Sensor -> 0
     is Node -> 0
