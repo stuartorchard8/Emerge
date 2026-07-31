@@ -1,0 +1,12 @@
+Problems to address before proceeding with liquid management:
+1. Bridges are invisible, though they do seem to work.
+2. Rails connect to every neighboring rail - they should be connected explicitly by dragging (like in ONI), otherwise bridges don't actually allow rails/pipes to cross one another without interfering and we'd also need to have much more sprawling designs if every pipe/conveyor line needs a 1 tile gap between neighboring lines.
+3. Rails behave unexpectedly at junctions. Resources ought to be pulled towards outputs, not so much pushed away from inputs. ONI actually pulls resources towards inputs if no outputs are on the line - resources are never pushed onto dead ends. I think we need to set up a bunch of small test cases here to make sure this behaves consistently and predictably.
+4. Storages have 2 inputs and 1 output. Should it not be 1 input 1 output?
+
+Suggestions:
+A. Drop the fabricator. It's a throwback to a different time that I don't think is relevant anymore.
+B. Change the current "vent" to be an ejector that has to be built into the hull; not just thoughtless free waste disposal on-site.
+C. Make machines cost resources (I imagine this is planned, but currently there's no real game, just a framework demo).
+D. Save/load so I can present examples to you of things I may want to work differently.
+E. Proceed with plan for liquids and pipes ahead of these suggestions unless any are quick wins or immediately more valuable for ongoing work.
