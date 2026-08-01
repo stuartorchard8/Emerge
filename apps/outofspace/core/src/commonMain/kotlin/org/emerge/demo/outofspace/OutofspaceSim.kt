@@ -633,13 +633,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         fun pushOut(tile: Int, port: Port) {
             val segment = rails[tile] ?: return
-            if (port.fromBridge) {
-                val bridge = bridges[port.owner] ?: return
-                val held = bridge.exit ?: return
-                if (!load(tile, segment, held)) return
-                bridges[port.owner] = bridge.copy(exit = null)
-                return
-            }
+            // Bridges are not ejected from here. They are conduit, so they set their load down as
+            // part of the conduit step -- see [depositFromBridge].
+            if (port.fromBridge) return
 
             val m = machines[port.owner] ?: return
             // A storage only lets go while its RUN activation is positive, which is what turns it
@@ -653,6 +649,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (packet, rest) = takePacket(buffer, room) ?: return
             if (!load(tile, segment, packet)) return
             machines[port.owner] = withBuffer(m, port, rest.orNull())
+        }
+
+        /**
+         * A bridge putting its exit slot down on the track at its far end.
+         *
+         * Worth knowing where this leaves the packet: a bridge's ports sit at ±1 from its centre,
+         * which is exactly where its exit slot is, so setting down is a change of *layer* at one
+         * tile rather than a step. The walk that follows may then carry it onward in the same step,
+         * and that is one tile of travel in total rather than two.
+         */
+        private fun depositFromBridge(tile: Int, port: Port) {
+            val segment = rails[tile] ?: return
+            val bridge = bridges[port.owner] ?: return
+            val held = bridge.exit ?: return
+            if (!load(tile, segment, held)) return
+            bridges[port.owner] = bridge.copy(exit = null)
         }
 
         /** Which of a machine's buffers drains through [port]. */
@@ -693,6 +705,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * with no cache to invalidate.
          */
         fun advanceRails(ports: Map<Int, List<Port>>) {
+            // A bridge sets down what it has been carrying *first*, before anything shifts.
+            //
+            // This is the whole of why a bridge's three slots are three real slots. Draining the
+            // exit at the end of the step instead -- which is where machine ejection happens, and
+            // where this used to live -- leaves the slot still occupied when the shift runs, so the
+            // packet behind it cannot advance. The bridge then delivers once every two steps with a
+            // slot standing idle between, which is correct tile by tile and half speed overall.
+            for ((tile, at) in ports) for (port in at) {
+                if (port.kind == PortKind.Output && port.fromBridge) depositFromBridge(tile, port)
+            }
+
             // A bridge is three tiles of the layer, so it steps when the layer steps — and *before*
             // the track does, so the slot a packet vacates is free for the one behind it in the same
             // step. Exactly the reason the track itself is walked most-downstream first.

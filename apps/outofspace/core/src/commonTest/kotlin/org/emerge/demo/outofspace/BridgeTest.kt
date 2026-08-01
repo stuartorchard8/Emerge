@@ -195,8 +195,16 @@ class BridgeTest {
         assertNull(s.bridges[at]?.entry, "and the entrance is free for the next one")
 
         s = run(s, Bridge.STEP_TICKS)
-        assertNull(s.bridges[at]?.exit, "off the far end in the same step it reaches it")
-        assertEquals(20_000L, s.railAt(grid.index(10, 5))?.held?.mass, "and onto the track there")
+        assertEquals(20_000L, s.bridges[at]?.exit?.mass, "resting on the far end, for a whole step")
+        assertNull(s.bridges[at]?.middle, "and the middle is free for the next one")
+        assertNull(s.railAt(grid.index(10, 5))?.held, "not yet put down — that is next step's job")
+
+        s = run(s, Bridge.STEP_TICKS)
+        assertNull(s.bridges[at]?.exit, "and now down onto the track")
+        // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
+        // setting down there and running on one tile is a single tile of travel, not two. The
+        // deposit happens first precisely so the track can carry it in the same step.
+        assertEquals(20_000L, s.railAt(grid.index(11, 5))?.held?.mass, "and away down the far run")
     }
 
     @Test
@@ -212,9 +220,11 @@ class BridgeTest {
 
     @Test
     fun `a bridge takes a packet every step, not one every three`() {
-        // The flowing case. The exit slot is empty at the end of most steps because it is put down
-        // on the track in the same step it reaches the end -- exactly what the last tile of any run
-        // does -- so throughput is what has to be measured, not occupancy.
+        // The flowing case, and the one that pins the ordering. A bridge sets down what it was
+        // *already* holding, before anything shifts along -- so the exit slot is free by the time
+        // the shift wants it and the span stays a pipeline. Drain it after the shift instead and
+        // every slot idles a step waiting for the one ahead, halving the throughput while looking
+        // perfectly correct tile by tile. Occupancy cannot see that; only throughput can.
         val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200_000L))
         var s = crossing(bridged = true, horizontalSupply = supply)
         // Priming: three steps of latency across the span, plus the run either side of it. The
