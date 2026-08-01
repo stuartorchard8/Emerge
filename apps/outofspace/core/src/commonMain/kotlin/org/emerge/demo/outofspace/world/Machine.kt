@@ -98,8 +98,8 @@ data class Bridge(
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
 
     companion object {
-        /** Ticks between a conduit advancing. At 60 Hz this is 2.5 tiles a second. */
-        const val STEP_TICKS = 6
+        /** Ticks between a conduit advancing. At 4 Hz this is 4 tiles a second. */
+        const val STEP_TICKS = 1
     }
 }
 

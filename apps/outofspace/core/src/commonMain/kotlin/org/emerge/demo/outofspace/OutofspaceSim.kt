@@ -68,7 +68,7 @@ data class OutofspaceConfig(
      */
     val grid: Grid = Grid(96, 60),
     /** Sim tick rate. Feeds [Rate], which is what makes a machine's grams-per-second exact. */
-    val ticksPerSecond: Int = 60,
+    val ticksPerSecond: Int = 4,
 ) {
     val secondsPerTick: Float get() = 1f / ticksPerSecond
 }
@@ -196,15 +196,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        // Ports first, so a building that produced this tick can put its output on the track before
-        // the track moves. The alternative -- move, then load -- costs every packet a step of
-        // latency for no reason anyone could observe.
+        // Rails first, so a building that produced this tick can put its output on the track after
+        // the track moves. The alternative -- load, then move -- causes packets to instantly be transported away
+        // from the building in the same tick they were dropped.
         val ports = w.portsByTile(Conduit.Rail)
+        if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
+
         for ((tile, at) in ports) for (port in at) {
             if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
-
-        if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
 
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
