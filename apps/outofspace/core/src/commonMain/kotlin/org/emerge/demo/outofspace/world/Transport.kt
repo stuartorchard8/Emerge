@@ -146,14 +146,26 @@ data class Segment(
  * is nothing better anywhere it still travels to the blockage and packs in behind it, which is how a
  * jam stays visible on the deck instead of hiding inside the machine feeding the belt.
  *
- * ### Material nobody is feeding
+ * ### Where forward runs out
  *
- * A tile the source sweep never reached — a belt whose miner was just dismantled, or a test that
- * simply put a packet down — has no "forward". It falls back to the older rule and moves downhill
- * toward the nearest consumer, which is safe for the same reason the old model was safe: the
- * potential strictly decreases. This is the one place the two models coexist, and it is deliberate:
- * "material with nothing upstream drains to whatever will have it" is a different situation with a
- * different right answer, not a special case of the main one.
+ * Depth is measured from every source at once, and that means a **merge** — a second producer
+ * joining a run that already has one — does more than add material. The newcomer resets depth to
+ * zero where it lands and inverts the gradient over everything upstream of it, so the two waves meet
+ * at a tile with nothing deeper beside it. That tile has no forward at all, and because a branch
+ * leading nowhere is not worth entering, the emptiness spreads back up the line until the first
+ * producer has nowhere to put anything either. Half a factory goes quiet because somebody bridged
+ * onto its belt.
+ *
+ * So forward is not the only rule. Where a tile's forward leads nowhere useful — a watershed like
+ * that, or a run whose miner was just dismantled and which the source sweep never reached at all —
+ * material falls back to the older rule and moves **downhill toward the nearest consumer**. The two
+ * coexist deliberately, and the split is not a special case bolted on: it is the difference between
+ * "material is being driven along here" and "material is finding its own way out", which really are
+ * two situations with two right answers.
+ *
+ * The fallback is safe for the reason the old model was safe — the potential strictly decreases —
+ * and it cannot be reached from a tile that has a working forward, because a tile uses one rule or
+ * the other and never both.
  *
  * ### Order
  *
@@ -166,9 +178,12 @@ class FlowField private constructor(
     private val distance: IntArray,
     private val successors: Array<IntArray>,
     /**
-     * Segment tiles, **nearest to a sink first**. Advancing in this order means the tile in front is
+     * Segment tiles, **most downstream first**. Advancing in this order means the tile in front is
      * emptied before the one behind it tries to move into it, so a full run shuffles along by one in
      * a single pass instead of one tile per tick.
+     *
+     * "Downstream" is measured by whichever rule each tile actually moves by, because a tile ranked
+     * one way and moved another gets visited after the packet it just received and moves it twice.
      */
     val order: IntArray,
 ) {
@@ -292,31 +307,25 @@ class FlowField private constructor(
                     tile in acceptingSet || tile in fullSet || forward[tile].any { reachesAnything[it] }
             }
 
-            val successors = Array(grid.size) { EMPTY }
-            for (tile in 0 until grid.size) {
-                if (depth[tile] >= 0) {
-                    // A branch leading to a working consumer beats one leading only to a blockage,
-                    // and only when there is no such branch at all does the queue form.
-                    val useful = forward[tile].filter { reachesAccepting[it] }
-                    val chosen = if (useful.isNotEmpty()) useful else forward[tile].filter { reachesAnything[it] }
-                    if (chosen.isNotEmpty()) successors[tile] = chosen.toIntArray()
-                    continue
-                }
-                if (distance[tile] < 0) continue
-
-                // Nothing upstream: fall back to draining downhill toward the nearest consumer.
+            /**
+             * The older rule: step to a neighbour strictly closer to a consumer.
+             *
+             * Safe on its own terms — the potential falls every step, so nothing can circle — and
+             * blind to forks, which is why it is no longer the main rule. It is still exactly right
+             * wherever "forward" has nothing to say.
+             */
+            fun downhill(tile: Int): IntArray {
+                if (distance[tile] < 0) return EMPTY
                 if (distance[tile] == 0) {
                     // A tile at a sink is not the end of the road. Whatever the consumer there does
                     // not take carries on to the next one. Neighbours whose own nearest sink is
                     // *this* one are excluded, or material refused here would be sent to a tile that
                     // would only send it straight back.
-                    val onward = Direction.ALL.mapNotNull { dir ->
+                    return Direction.ALL.mapNotNull { dir ->
                         if (!linked(tile, dir)) return@mapNotNull null
                         val next = grid.neighbour(tile, dir)
                         if (next < 0 || distance[next] < 0 || nearest[next] == tile) null else next
-                    }.sortedWith(compareBy<Int> { distance[it] }.thenBy { it })
-                    if (onward.isNotEmpty()) successors[tile] = onward.toIntArray()
-                    continue
+                    }.sortedWith(compareBy<Int> { distance[it] }.thenBy { it }).toIntArray()
                 }
                 var found = 0
                 val buffer = IntArray(4)
@@ -325,7 +334,26 @@ class FlowField private constructor(
                     val next = grid.neighbour(tile, dir)
                     if (next >= 0 && distance[next] == distance[tile] - 1) buffer[found++] = next
                 }
-                if (found > 0) successors[tile] = buffer.copyOf(found)
+                return buffer.copyOf(found)
+            }
+
+            val successors = Array(grid.size) { EMPTY }
+            /** Which of the two rules each tile ended up moving by. Read only to build [order]. */
+            val movesForward = BooleanArray(grid.size)
+            for (tile in 0 until grid.size) {
+                if (depth[tile] >= 0) {
+                    // A branch leading to a working consumer beats one leading only to a blockage,
+                    // and only when there is no such branch at all does the queue form.
+                    val useful = forward[tile].filter { reachesAccepting[it] }
+                    val chosen = if (useful.isNotEmpty()) useful else forward[tile].filter { reachesAnything[it] }
+                    if (chosen.isNotEmpty()) {
+                        successors[tile] = chosen.toIntArray()
+                        movesForward[tile] = true
+                        continue
+                    }
+                }
+                val onward = downhill(tile)
+                if (onward.isNotEmpty()) successors[tile] = onward
             }
 
             // Most-downstream first, so the tile ahead is empty by the time the one behind tries to
@@ -336,9 +364,13 @@ class FlowField private constructor(
             // visits the fork *before* the tile it just moved into, and moves the same packet again.
             // So a fed tile is ranked by how far it is from the source, and one nothing feeds — which
             // moves by the fallback rule — by how close it is to a consumer.
+            // A tile is ranked by the same measure it moves by, and the tiles moving downhill sort
+            // ahead of the ones moving forward, because downhill is what the tail of a run does.
             val fed = (0 until grid.size).filter { distance[it] >= 0 || depth[it] >= 0 }
             val order = fed.sortedWith(
-                compareBy<Int> { if (depth[it] >= 0) -depth[it] else distance[it] }.thenBy { it },
+                compareBy<Int> { if (movesForward[it]) 1 else 0 }
+                    .thenBy { if (movesForward[it]) -depth[it] else distance[it] }
+                    .thenBy { it },
             )
             return FlowField(distance, successors, order.toIntArray())
         }

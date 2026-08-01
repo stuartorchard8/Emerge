@@ -159,6 +159,57 @@ class VesselSimTest {
         assertBalanced(s, "forked line")
     }
 
+    /**
+     * The third save Stu sent: two storages, each recirculating on its own loop of track, and the
+     * only difference between them was that something else also fed one of the loops. The fed one
+     * stopped dead — its own material sat on the tile outside its output port and never moved,
+     * while the untouched loop ran perfectly.
+     *
+     * A producer joining partway along a run does not merely add material to it. Depth is measured
+     * from every source at once, so the newcomer resets depth to zero where it lands and inverts the
+     * gradient over everything upstream of it. The two waves meet at a tile with nothing deeper
+     * beside it, which therefore has no forward at all — and since a branch leading nowhere is not
+     * worth entering, that emptiness spreads back up the line until the first producer has nowhere
+     * to put anything either.
+     *
+     * Merging two feeds into one line is completely ordinary — it is what a bridge dropping onto a
+     * main run *is* — so this is the case that says the forward rule cannot be the only rule.
+     */
+    @Test
+    fun `a loop that something else also feeds still carries its own material`() {
+        val grid = Grid(12, 10)
+        val machines = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+
+        // A storage recirculating on its own loop: out at (8, 5), round, and back in at (6, 5).
+        // Empty to begin with: everything aboard counts as mined, so seeding the tank would trip
+        // the conservation ledger rather than test anything.
+        machines[grid.index(7, 5)] = Storage(Direction.Right)
+        joinRow(grid, rails, 8, 9, 5)
+        joinCol(grid, rails, 9, 5, 7)
+        joinRow(grid, rails, 4, 9, 7)
+        joinCol(grid, rails, 4, 5, 7)
+        joinRow(grid, rails, 4, 6, 5)
+
+        // ...and a miner dropping onto that same loop, one tile in from the far corner.
+        machines[grid.index(3, 7)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 30)
+
+        // The far arm is the stretch between the storage's output and where the miner joins. It is
+        // exactly what went quiet, so material standing on it is the whole assertion.
+        val farArm = listOf(grid.index(9, 5), grid.index(9, 6), grid.index(9, 7), grid.index(8, 7))
+        assertTrue(
+            farArm.any { s.rails[it]?.held != null },
+            "the storage's own material never got out onto the loop",
+        )
+        assertTrue(
+            ((s[grid.index(7, 5)] as Storage).contents?.mass ?: 0L) > 0L,
+            "and the loop should have carried the miner's material round into the storage",
+        )
+        assertBalanced(s, "merged loop")
+    }
+
     @Test
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)

@@ -409,6 +409,49 @@ back to the old downhill-to-the-nearest-consumer rule. This is the one place the
 and it is deliberate rather than a leftover: "material with nothing upstream drains to whatever will
 have it" is a different situation with a different right answer.
 
+### A merge is not a second source, it is an inverted gradient (2026-08-01)
+
+Third save, same day, and the one that showed the previous entry's last paragraph was drawn too
+narrowly. Two storages, each recirculating on its own loop of track, identical but for one thing: a
+bridge dropped material onto one of them. The bridged loop **stopped dead** — its storage's own
+material sat on the tile outside the output port and never moved — while the untouched loop ran
+perfectly. Exactly backwards from what you would guess, since the interference came from the loop
+that was getting *more* material.
+
+Depth is a single breadth-first sweep from *every* output port at once, so a producer joining partway
+along a run does not merely add material to it. It resets depth to zero where it lands and
+**inverts** the gradient over everything upstream. The two waves meet at a tile whose neighbours are
+both no deeper than it is, and a tile with nothing deeper beside it has no forward at all. Then the
+dead-end reachability rule — correct, and doing its job — sees a branch leading nowhere and refuses
+to enter it, so the emptiness propagates back up the line until the original producer is walled in.
+Half a factory goes quiet because somebody bridged onto its belt.
+
+There is no single potential field that avoids this. Merging two feeds into one line is completely
+ordinary; it is what a bridge dropping onto a main run *is*. **So forward cannot be the only rule.**
+Where a tile's forward leads nowhere useful, material now falls back to the old downhill rule. The
+"material nobody is feeding" case above turns out to be the *special* case of that, not the general
+one: an orphan is simply a tile whose forward is empty because there was never a source at all.
+
+Two things this cost, both already-learned lessons recurring in new clothes:
+
+- **The traversal order splits with the rule.** A tile ranked by depth but moved by distance gets
+  visited after the packet it has just received, and moves it twice — the same multi-tile leap as
+  before, arriving by a different route. Tiles moving downhill now sort ahead of tiles moving
+  forward, each keyed by its own measure.
+- **"Never step back upstream" is a plausible discriminator and a wrong one.** It would separate a
+  watershed from a dead end if the watershed's downhill neighbour sat at equal depth, which it does
+  in the save that prompted this and does not in general. Tried, tested, reverted.
+
+What survived instead is that a dead branch now **drains**. Nothing enters it — that is the property
+that matters, and it is still enforced at the fork — but material stranded on one finds its way back
+out rather than sitting there forever. `isFed` says yes for such a tile now.
+
+A cycle is still impossible for tiles moving forward, since depth strictly increases, and for tiles
+moving downhill, since distance strictly decreases. A path alternating between the two rules is not
+excluded by construction the way the pure DAG was; it is ruled out empirically by the conservation
+ledgers and the run-on determinism test rather than by argument, which is worth knowing if this area
+misbehaves again.
+
 ### Saving is a text file, and that is the point (2026-08-01)
 
 Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the

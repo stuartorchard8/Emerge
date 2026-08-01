@@ -328,7 +328,73 @@ class TransportTest {
         val f = n.toward(accepting = listOf(grid.index(5, 1)), from = listOf(grid.index(2, 3)))
 
         assertEquals(listOf(grid.index(5, 2)), f.successorsOf(fork).toList())
-        assertFalse(f.isFed(grid.index(8, 4)), "the dead branch is not part of the network")
+
+        // The dead branch does now have a way *out* — anything stranded on it drains back toward
+        // the consumer rather than sitting there for ever, which is the same courtesy a run whose
+        // producer was dismantled gets. That is a change from when nothing entered *or* left a dead
+        // end, and it is the safe half: what must never happen is material being sent down it.
+        val stranded = grid.index(8, 4)
+        val held = held(n, stranded to lump())
+        val diverters = DiverterWork(Diverters.EMPTY)
+        repeat(20) { advanceSegments(f, held, diverters) { tile, packet -> if (tile == grid.index(5, 1)) null else packet } }
+        assertTrue(held.all { it == null }, "material stranded on a dead branch never got off it")
+        assertNull(held[grid.index(9, 4)], "and nothing was pushed further into the dead end")
+    }
+
+    // ── Two things feeding one line ──────────────────────────────────────────
+
+    /**
+     * A merge: a second producer joins a line that already has one further up it.
+     *
+     * This is the ordinary shape of a bridge dropping material onto a main run, and it broke the
+     * first version of the source sweep badly enough to be worth two tests. Depth is measured from
+     * *every* source at once, so a producer joining partway along does not merely add material — it
+     * resets depth to zero where it lands and **inverts** the gradient over everything upstream of
+     * it. The two waves meet somewhere in the middle at a tile whose neighbours are both no deeper
+     * than it is, and a tile with nothing deeper next to it has no forward at all.
+     *
+     * The far producer's material then stops dead at that watershed, and because a branch leading
+     * nowhere is not worth entering, the emptiness propagates back up the line until the producer
+     * itself has nowhere to put anything. Half the run goes quiet while the near producer, whose
+     * material happens to be flowing the way depth points, carries on perfectly.
+     */
+    @Test
+    fun `a second producer joining a line does not strand the first`() {
+        val sink = grid.index(1, 1)
+        val far = grid.index(10, 1)
+        val joining = grid.index(3, 1)
+        val n = net().row(1, 10, 1)
+        val f = n.toward(accepting = listOf(sink), from = listOf(far, joining))
+
+        // Every tile between the far producer and the sink still has somewhere to send material,
+        // and it is always the next tile towards the sink.
+        for (x in 2..10) {
+            val tile = grid.index(x, 1)
+            assertEquals(
+                listOf(grid.index(x - 1, 1)),
+                f.successorsOf(tile).toList(),
+                "(${x}, 1) has lost its way to the consumer",
+            )
+        }
+    }
+
+    @Test
+    fun `material from the far end of a merged line actually arrives`() {
+        val sink = grid.index(1, 1)
+        val far = grid.index(10, 1)
+        val n = net().row(1, 10, 1)
+        val f = n.toward(accepting = listOf(sink), from = listOf(far, grid.index(3, 1)))
+
+        val held = held(n, far to lump())
+        val diverters = DiverterWork(Diverters.EMPTY)
+        var arrived = false
+        // Nine steps to walk; give it room to spare and stop when the consumer takes it.
+        repeat(20) {
+            advanceSegments(f, held, diverters) { tile, packet ->
+                if (tile == sink) { arrived = true; null } else packet
+            }
+        }
+        assertTrue(arrived, "the far producer's material never reached the consumer")
     }
 
     // ── A consumer with no room is traffic to drive round, not a wall ─────────
