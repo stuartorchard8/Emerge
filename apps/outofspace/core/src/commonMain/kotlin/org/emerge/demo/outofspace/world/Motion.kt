@@ -38,15 +38,18 @@ class Motion(
 ) {
     /** Whether [tile]'s packet arrived from a neighbour, and if so which way it was travelling. */
     fun arrivedFrom(tile: Int): Direction? {
+        if (tile < 0 || tile >= arrivals.size) return null
         val code = arrivals[tile].toInt()
         return if (code in 1..Direction.ALL.size) Direction.ALL[code - 1] else null
     }
 
     /** True when [tile]'s packet was put there by a machine's output port, and should grow in. */
-    fun appearedAt(tile: Int): Boolean = arrivals[tile].toInt() == FROM_PORT
+    fun appearedAt(tile: Int): Boolean =
+        tile in arrivals.indices && arrivals[tile].toInt() == FROM_PORT
 
     /** The mass [tile]'s packet had at the start of the tick. */
-    fun previousMassAt(tile: Int): Long = previousMass[tile]
+    fun previousMassAt(tile: Int): Long =
+        if (tile in previousMass.indices) previousMass[tile] else 0L
 
     fun bridgeSlotIsNew(tile: Int, slot: Int): Boolean =
         (bridgeSlots[tile] ?: 0) and (1 shl slot) != 0
