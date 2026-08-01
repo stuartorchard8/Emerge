@@ -452,6 +452,49 @@ excluded by construction the way the pure DAG was; it is ruled out empirically b
 ledgers and the run-on determinism test rather than by argument, which is worth knowing if this area
 misbehaves again.
 
+### Dropping the tick rate was a test of whether the tick rate means anything (2026-08-01)
+
+Moving to 4Hz broke eight tests at once, and the eight failures looked like eight unrelated bugs: a
+miner had dug fifteen times too much, a gauge's line was empty when looked at, a tank had hit its cap
+so a fork read as lopsided, a room would not equalise, a processor's concentrate came out at 66%
+instead of 75%. Three causes, and only one of them was in the tests.
+
+**Four were the test clock.** "Run for thirty seconds" was written `60 * 30`, with the 60 a literal
+rather than a reading of `ticksPerSecond`, so every one of them silently became 450 seconds. Now
+`seconds(n)` in `TestClock.kt`. Ticks are still right where the tick is the thing under test — a
+`STEP_TICKS` multiple, or `Rate` arithmetic that passes its own rate in.
+
+**The atmosphere was past its stability limit.** Flux was capped at *half* the gradient, which is the
+right limit for a pair of tiles and the wrong one for a lattice: every edge is computed against one
+snapshot and applied together, so a tile surrounded by four emptier ones gives away half a gradient
+four times over. High tiles and low tiles swap places every tick and the room sits in a permanent
+checkerboard — a gap of 1467 grams that never moved, at any duration. It never showed at 60Hz because
+`FLOW_PER_SECOND / 60` is a tenth of the gap and the half-gap cap never bound. At 4Hz the raw flux is
+one and a half *times* the gap, so the cap bound on every edge at once.
+
+Two changes. The cap is now `STABLE_SHARE` — a tenth, a statement about a four-neighbour grid rather
+than about the tick rate. (An eighth is the theoretical limit and is *marginally* stable: it stops
+diverging but rings, resting in a ±6 shimmer instead of settling. A tenth damps, and is what 60Hz was
+accidentally running at all along.) And the flow pass is now **sub-stepped** — run as many times per
+tick as it takes to deliver the second's worth of movement in stable increments. Work per second is
+unchanged, since the passes go up exactly as the ticks come down, and 4Hz and 60Hz now equalise the
+same room to the same ±1 in the same ten seconds. Worth knowing: `stratifyColumns` has the same
+shape and has **not** been sub-stepped, so stratification is still tick-rate dependent.
+
+**A processor's concentration depends on the tick rate, and still does.** Same ore, same machine:
+65% at 1Hz, 66% at 4Hz, 72% at 30Hz, 75% at 60Hz, 79% at 120Hz. `process` floors its impurity split
+and `Mixture.take` rounds the chunk's own composition, so a smaller chunk-per-tick concentrates
+harder — the machine is manufacturing purity out of integer flooring. Rounding the split to nearest
+instead of down was tried and merely inverts the bias (50% at 120Hz); the honest fix is a rounding
+carry held on the machine, the way `Rate` already holds one for grams. **Not fixed.** The two tests
+that were pinned to the 60Hz figures now assert the property they are named for — each stage cleaner
+than the last, concentrate well above the 41% feed — rather than three numbers that were never about
+refining.
+
+The general lesson, third time of asking: a tick is an implementation detail and every rate in the
+sim has to be stated per *second*. `Rate` does this for machines. Heat and air needed it and only
+appeared not to because 60Hz happened to sit inside their stability envelopes.
+
 ### Saving is a text file, and that is the point (2026-08-01)
 
 Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the

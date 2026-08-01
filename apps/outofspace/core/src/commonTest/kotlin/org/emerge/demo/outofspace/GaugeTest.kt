@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -60,7 +61,7 @@ class GaugeTest {
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val s = run(line(ore), 60 * 5)
+        val s = run(line(ore), seconds(5))
         val gauge = gaugeOf(s)
         assertEquals(Species.Iron, gauge.lastDominant, "iron is the largest single component")
         assertEquals(410, gauge.lastPurity, "41% of the ore, not a majority of it")
@@ -70,7 +71,7 @@ class GaugeTest {
     @Test
     fun `the reading persists after the packet has gone, so an idle line still reads`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val s = run(line(ore), 60 * 30)
+        val s = run(line(ore), seconds(30))
         val gauge = gaugeOf(s)
         assertEquals(null, gauge.held, "the packet moved on")
         assertEquals(410, gauge.lastPurity, "but the reading stayed")
@@ -80,7 +81,7 @@ class GaugeTest {
     @Test
     fun `a gauge measures without taking, so it costs the line nothing`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4_000L))
-        val s = run(line(ore), 60 * 30)
+        val s = run(line(ore), seconds(30))
         assertEquals(4_000L, s.stockpile.totalGrams, "every gram arrived at the far end")
         assertEquals(s.minedGrams + 4_000L, s.inTransitGrams + s.ventedGrams, "and none went missing")
     }
@@ -88,7 +89,7 @@ class GaugeTest {
     @Test
     fun `a gauge broadcasts purity on its channel`() {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L))
-        val s = run(line(pure, Channel.Violet), 60 * 5)
+        val s = run(line(pure, Channel.Violet), seconds(5))
         assertEquals(1000, s.signals[Channel.Violet], "pure metal reads 100%")
     }
 
@@ -108,7 +109,7 @@ class GaugeTest {
     @Test
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
-        val s = run(starterVessel(Grid(40, 28)), 60 * 150)
+        val s = run(starterVessel(Grid(40, 28)), seconds(150))
         val raw = s.signals[Channel.Amber]
         val concentrated = s.signals[Channel.Cyan]
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
@@ -119,7 +120,7 @@ class GaugeTest {
     fun `a gauge conserves what passes through it`() {
         var s = starterVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
-        repeat(60 * 90) {
+        repeat(seconds(90)) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {
                 assertEquals(s.minedGrams, s.inTransitGrams + s.ventedGrams, "tick ${s.tick}")
@@ -151,7 +152,10 @@ class GaugeTest {
     @Test
     fun `a packet on the track is readable, which is what the gauge was invented for`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val s = run(line(ore), 12)
+        // Conduit steps, not seconds: the line is one packet long and six tiles end to end, so the
+        // window where anything is on it at all is a handful of advances wide. `12` used to be two
+        // advances and is now twelve, by which time the lone packet is in the far tank.
+        val s = run(line(ore), Bridge.STEP_TICKS * 3)
         val carried = (0 until s.grid.size).mapNotNull { s.railAt(it)?.held }
         assertTrue(carried.isNotEmpty(), "something should be on the line by now")
         assertTrue(carried.all { it is SolidPacket }, "and it is a solid, with a form to name")

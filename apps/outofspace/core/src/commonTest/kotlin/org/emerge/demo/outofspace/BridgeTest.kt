@@ -119,13 +119,13 @@ class BridgeTest {
         // Its earlier forms asserted the near tank stole everything and the far one got nothing.
         // Both were artefacts rather than the mechanic — first of consumers being terminal, then of
         // "nearest sink wins" standing in for a fork.
-        val merged = run(crossing(horizontalSupply = null), 60 * 30)
+        val merged = run(crossing(horizontalSupply = null), seconds(30))
         assertTrue(
             (merged[grid.index(15, 5)] as Storage).contents?.mass ?: 0L > 0L,
             "the column's material reached the row's tank: the two lines are one network",
         )
 
-        val bridged = run(crossing(bridged = true, horizontalSupply = null), 60 * 30)
+        val bridged = run(crossing(bridged = true, horizontalSupply = null), seconds(30))
         assertNull(
             (bridged[grid.index(15, 5)] as Storage).contents,
             "and with a bridge it cannot: the column passes over without joining",
@@ -154,7 +154,7 @@ class BridgeTest {
     fun `a bridge carries one line over the other without them meeting`() {
         // The horizontal line hops the vertical one. Its material has to arrive at the far end
         // having never touched the column, and the column's material has to be unaffected.
-        val s = run(crossing(bridged = true), 60 * 40)
+        val s = run(crossing(bridged = true), seconds(40))
 
         assertTrue(
             ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,

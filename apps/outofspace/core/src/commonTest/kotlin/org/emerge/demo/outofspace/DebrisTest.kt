@@ -185,7 +185,7 @@ class DebrisTest {
     fun `the world still never loses a gram when the player takes it apart`() {
         var s = starterVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
-        s = run(s, 60 * 20)
+        s = run(s, seconds(20))
 
         // Rip out every machine on one row of the working line, mid-flow.
         val y = 12   // the row the starter vessel's main line runs along

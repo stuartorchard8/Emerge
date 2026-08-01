@@ -89,7 +89,7 @@ class VesselSimTest {
         val grid = Grid(12, 5)
         var s = minedLine(grid, toX = 7)
         // Long enough to fill the 20kg tank at 1kg a second, and then back the line up behind it.
-        s = run(s, 60 * 60)
+        s = run(s, seconds(60))
 
         val carried = (3..7).map { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
@@ -124,7 +124,7 @@ class VesselSimTest {
         joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
 
         // Long enough to fill the 20 kg tank several times over.
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 120)
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), seconds(120))
 
         assertEquals(Storage.CAP, (s[grid.index(8, 5)] as Storage).contents?.mass, "the tank filled")
         assertTrue(s.ventedGrams > 0L, "and the rest went up the branch and overboard")
@@ -148,7 +148,7 @@ class VesselSimTest {
         joinRow(grid, rails, 3, 8, 5)
         joinCol(grid, rails, 5, 2, 5)
 
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 30)
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), seconds(30))
 
         assertTrue(s.ventedGrams > 0L, "the vent took a share")
         val stored = (s[grid.index(9, 5)] as Storage).contents?.mass ?: 0L
@@ -194,7 +194,7 @@ class VesselSimTest {
         // ...and a miner dropping onto that same loop, one tile in from the far corner.
         machines[grid.index(3, 7)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
 
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 60 * 30)
+        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), seconds(30))
 
         // The far arm is the stretch between the storage's output and where the miner joins. It is
         // exactly what went quiet, so material standing on it is the whole assertion.
@@ -214,11 +214,11 @@ class VesselSimTest {
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
         var s = minedLine(grid, toX = 7)
-        s = run(s, 60 * 60)
+        s = run(s, seconds(60))
 
         // Tear out the full tank and put a vent on the end of the run instead. The vent takes
         // anything, so the line drains from the front — the tile nearest the consumer moves first.
-        s = run(s, 60 * 10, OutofspaceInput(listOf(
+        s = run(s, seconds(10), OutofspaceInput(listOf(
             Edit.Remove(grid.index(8, 2)),
             Edit.Place(grid.index(7, 2), MachineKind.Vent, Direction.Right),
         )))
@@ -238,7 +238,7 @@ class VesselSimTest {
         // Starts one tile past the miner's output port, so nothing ever reaches it.
         joinRow(grid, rails, 5, 8, 2)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
-        s = run(s, 60 * 20)
+        s = run(s, seconds(20))
 
         assertEquals(0L, (5..8).sumOf { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L })
         assertBalanced(s, "orphan track")
@@ -256,7 +256,7 @@ class VesselSimTest {
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         joinRow(grid, rails, 3, 7, 2)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
-        s = run(s, 60 * 30)
+        s = run(s, seconds(30))
 
         // One packet does leave the miner: pushing out onto the tile under an output port is how
         // material enters a network at all, and that happens before anything asks where it is going.
@@ -284,7 +284,7 @@ class VesselSimTest {
         machines[grid.index(5, 2)] = Vent()
         joinRow(grid, rails, 3, 5, 2)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
-        s = run(s, 60 * 10)
+        s = run(s, seconds(10))
         // minedGrams counts at the shovel, so it is the whole 10kg regardless of where it sits now.
         assertEquals(10_000L, s.minedGrams, "10s of digging is 10kg")
         assertBalanced(s, "miner into a vent")
@@ -305,7 +305,7 @@ class VesselSimTest {
         joinCol(grid, rails, 7, 3, 6)
         var s = VesselState(grid, machines.toList(), rails = rails.toList())
 
-        s = run(s, 60 * 60)
+        s = run(s, seconds(60))
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
         assertEquals(0L, s.stockpile[Form.IronIngot].total, "and no ingot should ever reach the store")
         assertBalanced(s, "ore straight to smelter")
@@ -313,7 +313,7 @@ class VesselSimTest {
 
     @Test
     fun `a processor in front of the smelter is what makes ingots`() {
-        val s = run(starterVessel(cfg.grid), 60 * 120)
+        val s = run(starterVessel(cfg.grid), seconds(120))
         val ironIngots = s.stockpile[Form.IronIngot]
         assertTrue(ironIngots.total > 0L, "the full line should store iron: ${s.stockpile}")
         assertEquals(ironIngots.total, ironIngots[Species.Iron], "and the ingots should be pure iron")
@@ -326,7 +326,7 @@ class VesselSimTest {
         val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Silica to 100L))
         val smelter = Smelter(Direction.Right, input = ironOre)
         var s = VesselState(grid, listOf(smelter, null, null))
-        s = run(s, 60 * 5)
+        s = run(s, seconds(5))
         val after = s[0] as Smelter
         assertEquals(Form.IronIngot, assertNotNull(after.refined).form)
 
@@ -334,7 +334,7 @@ class VesselSimTest {
         val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Silica to 100L))
         var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null))
         val heldBefore = (s2[0] as Smelter).refined!!.mass
-        s2 = run(s2, 60 * 5)
+        s2 = run(s2, seconds(5))
         val stalled = s2[0] as Smelter
         assertEquals(heldBefore, stalled.refined!!.mass, "output should not have grown")
         assertEquals(copperOre.mass, stalled.input!!.mass, "and the copper ore should be untouched")
@@ -422,7 +422,7 @@ class VesselSimTest {
     @Test
     fun `the world never loses a gram`() {
         var s = starterVessel(cfg.grid)
-        repeat(60 * 90) {
+        repeat(seconds(90)) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 97 == 0) assertBalanced(s, "tick ${s.tick}")
         }
@@ -433,7 +433,7 @@ class VesselSimTest {
     @Test
     fun `species are conserved too, not merely total mass`() {
         var s = starterVessel(cfg.grid)
-        repeat(60 * 60) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        repeat(seconds(60)) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         // Everything the miners dug, versus everything that exists anywhere now. Vented material is
         // gone for good, so it is reconstructed from what the vents recorded... which they do not
@@ -468,7 +468,7 @@ class VesselSimTest {
     @Test
     fun `packets on the track are always whole and never oversized`() {
         var s = starterVessel(cfg.grid)
-        repeat(60 * 40) {
+        repeat(seconds(40)) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             for (r in s.rails) {
                 val p = r?.held ?: continue

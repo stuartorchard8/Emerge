@@ -64,10 +64,33 @@ class AirField(private val grams: LongArray) {
 
         /**
          * How much of a pressure difference moves in a second. Gas equalises quickly — a door opening
-         * is not a slow event — but the flux is capped at half the gap so it can never overshoot and
-         * oscillate, the same guard conduction needs.
+         * is not a slow event — but see [STABLE_SHARE] for the cap that keeps it from sloshing.
          */
         const val FLOW_PER_SECOND = 6L
+
+        /**
+         * The largest share of a gradient one edge may move in a single pass.
+         *
+         * The cap used to be **half** the gap, which is the right limit for a *pair* of tiles and the
+         * wrong one for a grid. Every edge is computed against the same snapshot and applied together,
+         * so a tile surrounded by four emptier ones gives away half a gradient four times over in one
+         * tick, and the whole field flips: high tiles become low, low become high, and the room sits
+         * in a permanent checkerboard, sloshing back and forth for ever without equalising.
+         *
+         * It never showed while the sim ran at 60Hz, because `FLOW_PER_SECOND / 60` is a tenth of the
+         * gap and a tenth is stable — the half-gap cap was there but never binding. Dropping the tick
+         * rate to 4 made the raw flux one and a half *times* the gap, so the cap bound on every edge
+         * of every tile at once and the scheme went straight past its stability limit.
+         *
+         * The theoretical limit for a lattice where a tile has four neighbours is an eighth, and a
+         * tenth is used instead because *at* the limit the field is only marginally stable: it stops
+         * diverging but rings, resting in a ±6 shimmer rather than settling. A tenth damps, which is
+         * measurable and is the number 60Hz was accidentally running at all along.
+         *
+         * The point is that this is a statement about the **grid**, not about the tick rate, so it
+         * holds at whatever rate the game is run at.
+         */
+        const val STABLE_SHARE = 10L
 
         /** How fast heavy gas trades places with light gas below it, per second. */
         const val STRATIFY_PER_SECOND = 3L
@@ -109,40 +132,53 @@ fun stepAir(
     ticksPerSecond: Int,
 ): Pair<AirField, Long> {
     val grams = air.copyGrams()
-    val pressure = LongArray(grid.size) { tile ->
-        var sum = 0L
-        val base = tile * Species.COUNT
-        for (s in Species.GASES) sum += grams[base + s.ordinal]
-        sum
-    }
 
     // ── Flow: dense to sparse, each edge once ──
+    //
+    // Sub-stepped, because a tick is not allowed to mean anything. One pass can only move
+    // [AirField.STABLE_SHARE] of a gradient before the scheme goes unstable, and at a low tick rate
+    // the gas is *owed* far more movement per tick than one pass may deliver. So the pass runs as
+    // many times as it takes: the share per second comes out the same at 4Hz and at 60Hz, which is
+    // the same promise [org.emerge.demo.outofspace.logistics.Rate] makes for every machine in the
+    // game. Total work per second is unchanged — the passes go up exactly as the ticks go down.
+    val passes = ((AirField.FLOW_PER_SECOND * AirField.STABLE_SHARE + ticksPerSecond - 1) /
+        ticksPerSecond).toInt().coerceAtLeast(1)
     val moves = ArrayList<LongArray>()   // (from, to, amount) collected, then applied
-    for (tile in 0 until grid.size) {
-        if (!structure.isInterior(tile)) continue
-        for (dir in FLOW_DIRS) {
-            val other = grid.neighbour(tile, dir)
-            if (other < 0 || !structure.isInterior(other)) continue
-            val gap = pressure[tile] - pressure[other]
-            if (gap == 0L) continue
-            val from = if (gap > 0) tile else other
-            val magnitude = if (gap > 0) gap else -gap
-            var flux = AirField.FLOW_PER_SECOND * magnitude / ticksPerSecond
-            // Integer division floors, and this rate is a fraction per tick, so without a minimum of
-            // one gram every gradient below ten grams would freeze exactly where it was — a room
-            // would visibly stop equalising with a permanent staircase across it. Heat has no such
-            // problem only because its coefficient happens to exceed the tick rate.
-            if (flux == 0L && magnitude >= 2L) flux = 1L
-            flux = minOf(flux, magnitude / 2)          // never past equal
-            flux = minOf(flux, pressure[from])          // never more than is there
-            if (flux <= 0L) continue
-            moves.add(longArrayOf(from.toLong(), (if (gap > 0) other else tile).toLong(), flux))
+    repeat(passes) {
+        val pressure = LongArray(grid.size) { tile ->
+            var sum = 0L
+            val base = tile * Species.COUNT
+            for (s in Species.GASES) sum += grams[base + s.ordinal]
+            sum
         }
-    }
-    for (move in moves) {
-        val from = move[0].toInt()
-        val to = move[1].toInt()
-        transferGas(grams, from, to, move[2])
+        moves.clear()
+        for (tile in 0 until grid.size) {
+            if (!structure.isInterior(tile)) continue
+            for (dir in FLOW_DIRS) {
+                val other = grid.neighbour(tile, dir)
+                if (other < 0 || !structure.isInterior(other)) continue
+                val gap = pressure[tile] - pressure[other]
+                if (gap == 0L) continue
+                val from = if (gap > 0) tile else other
+                val magnitude = if (gap > 0) gap else -gap
+                var flux = AirField.FLOW_PER_SECOND * magnitude / (ticksPerSecond.toLong() * passes)
+                // The lattice stability limit, not the pairwise one — see [AirField.STABLE_SHARE].
+                flux = minOf(flux, magnitude / AirField.STABLE_SHARE)
+                // Both of the divisions above floor, so a small gradient rounds to no flow at all
+                // and freezes exactly where it is — a room visibly stops equalising with a permanent
+                // staircase across it. Applied after the stability cap, or the cap takes it straight
+                // back and reinstates the freeze it exists to prevent.
+                if (flux == 0L && magnitude >= 2L) flux = 1L
+                flux = minOf(flux, pressure[from])          // never more than is there
+                if (flux <= 0L) continue
+                moves.add(longArrayOf(from.toLong(), (if (gap > 0) other else tile).toLong(), flux))
+            }
+        }
+        for (move in moves) {
+            val from = move[0].toInt()
+            val to = move[1].toInt()
+            transferGas(grams, from, to, move[2])
+        }
     }
 
     stratifyColumns(grid, structure, grams, gravity, ticksPerSecond)

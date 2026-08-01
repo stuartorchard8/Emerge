@@ -122,7 +122,7 @@ class HeatTest {
     fun `energy is conserved on every tick of a working vessel`() {
         var s = starterVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
-        repeat(60 * 60) {
+        repeat(seconds(60)) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 83 == 0) assertEnergyBalanced(s, "tick ${s.tick}")
         }
@@ -135,7 +135,7 @@ class HeatTest {
     fun `breaching a hull radiates the room's heat rather than deleting it`() {
         val sealed = sealedRoom(8, 8)
         val g = sealed.grid
-        val warm = run(sealed, 60)
+        val warm = run(sealed, seconds(1))
         assertEnergyBalanced(warm, "before the breach")
         val storedBefore = warm.storedJoules
 
@@ -176,7 +176,7 @@ class HeatTest {
             }
         }
         val g = room.grid
-        val s = run(room, 60 * 30)
+        val s = run(room, seconds(30))
 
         val atSmelter = s.kelvinAt(g.index(5, 5))
         val twoAway = s.kelvinAt(g.index(2, 5))
@@ -212,7 +212,7 @@ class HeatTest {
         var s = sealedRoom(6, 6)
         val g = s.grid
         val startK = s.kelvinAt(g.index(3, 3))
-        s = run(s, 60 * 120)
+        s = run(s, seconds(120))
         val endK = s.kelvinAt(g.index(3, 3))
         assertTrue(endK < startK, "it should have cooled: $startK -> $endK")
         assertTrue(endK >= HeatField.SPACE_KELVIN, "but never below space itself: ${endK}K")
@@ -226,7 +226,7 @@ class HeatTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(2, 1)] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())
-        s = run(s, 60 * 10)
+        s = run(s, seconds(10))
 
         assertEquals(Structure.Vacuum, s.structure[grid.index(2, 1)], "nothing encloses it")
         assertEquals(0L, s.storedJoules, "so it stores nothing")
