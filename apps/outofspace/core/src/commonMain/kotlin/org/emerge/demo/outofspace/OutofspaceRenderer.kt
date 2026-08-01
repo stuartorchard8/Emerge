@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
@@ -196,7 +195,7 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val index = grid.index(x, y)
-                drawBridge(state.bridges[index] ?: continue, x, y)
+                drawBridge(state, index, state.bridges[index] ?: continue, x, y)
             }
         }
 
@@ -267,12 +266,11 @@ class OutofspaceRenderer {
                 cx + dir.dx * 0.25f * tilePx, cy + dir.dy * 0.25f * tilePx,
                 (if (dir.dx != 0) 0.55f else 0.30f) * tilePx,
                 (if (dir.dy != 0) 0.55f else 0.30f) * tilePx,
-                RAIL_COLOR,
+                kindColor(MachineKind.Rail),
             )
         }
-        // The hub, always drawn: an isolated stub is still a thing you built and have to be able to
-        // see, or laying track and forgetting to connect it looks like laying nothing at all.
-        rect(cx, cy, 0.30f * tilePx, 0.30f * tilePx, if (segment.isIsolated) RAIL_STUB_COLOR else RAIL_COLOR)
+        // The hub, always drawn
+        rect(cx, cy, 0.30f * tilePx, 0.30f * tilePx, kindColor(MachineKind.Rail))
         segment.channel?.let { channel ->
             frame(x, y, channel.color)
         }
@@ -284,29 +282,18 @@ class OutofspaceRenderer {
     }
 
     /**
-     * A bridge: a capsule spanning its three tiles, drawn over the track it crosses.
+     * A bridge: an elevated track spanning its three tiles, drawn over any track it crosses.
      *
-     * Raised off the deck with a shadow line under it, because the one thing a player has to read at
-     * a glance is that the run passing beneath is *not* connected to it. A flat capsule sitting in
-     * the same plane as the track would look exactly like a junction.
+     * Off-color to signify that it is not part of the lower track except for its ports.
      */
-    private fun drawBridge(b: Bridge, x: Int, y: Int) {
+    private fun drawBridge(state: VesselState, index: Int, b: Bridge, x: Int, y: Int) {
         val horizontal = b.facing.dx != 0
-        val long = if (horizontal) 3f else 0.62f
-        val across = if (horizontal) 0.62f else 3f
+        val long = if (horizontal) 2.62f else 0.62f
+        val across = if (horizontal) 0.62f else 2.62f
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        rect(cx, cy + 0.10f * tilePx, long * tilePx, across * tilePx, 0x00000070L)
-        rect(cx, cy, long * tilePx, across * tilePx, 0xD8DEE9FFL)
-        rect(cx, cy, (long - 0.26f) * tilePx, (across - 0.26f) * tilePx, 0x1A2030FFL)
-        // Its two ends, which are its ports -- and the only tiles it connects to.
-        for (end in listOf(-1, 1)) {
-            rect(
-                cx + (if (horizontal) end * 1f else 0f) * tilePx,
-                cy + (if (horizontal) 0f else end * 1f) * tilePx,
-                0.34f * tilePx, 0.34f * tilePx, 0xD8DEE9FFL,
-            )
-        }
+        drawPorts(state, index, b)
+        rect(cx, cy, (long - 0.26f) * tilePx, (across - 0.26f) * tilePx, kindColor(MachineKind.Bridge))
         b.held?.let {
             rect(cx, cy, 0.40f * tilePx, 0.40f * tilePx, packetColor(it.contents.dominant))
         }
@@ -328,19 +315,19 @@ class OutofspaceRenderer {
             // Never reached: bridges are not on the deck list. They have their own pass.
             is Bridge -> Unit
             is Miner -> {
-                bodyRect(x, y, n, 0.94f, 0x6B4A2AFFL)
+                bodyRect(x, y, n, 0.94f, kindColor(MachineKind.Miner))
                 fillBar(x, y, n, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
             }
             is Processor -> {
-                bodyRect(x, y, n, 0.94f, 0x2E5A6BFFL)
+                bodyRect(x, y, n, 0.94f, kindColor(MachineKind.Processor))
                 fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Smelter -> {
-                bodyRect(x, y, n, 0.94f, 0x8A3A2AFFL)
+                bodyRect(x, y, n, 0.94f, kindColor(MachineKind.Smelter))
                 fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Storage -> {
-                bodyRect(x, y, n, 0.94f, 0x3A4A5AFFL)
+                bodyRect(x, y, n, 0.94f, kindColor(MachineKind.Storage))
                 // A tank shows its level as a rising fill, not a thin bar, and now it rises through
                 // a room-sized body -- which is what makes a nearly-full warehouse legible across
                 // the deck rather than a detail you have to hover to read.
@@ -355,25 +342,19 @@ class OutofspaceRenderer {
                     )
                 }
             }
-            is Hull -> tileRect(x, y, 1f, 0x4A5464FFL)
+            is Hull -> tileRect(x, y, 1f, kindColor(MachineKind.Hull))
             is Sensor -> {
-                tileRect(x, y, 0.94f, 0x24303CFFL)
+                tileRect(x, y, 0.94f, kindColor(MachineKind.Sensor))
                 // The eye faces what it watches, and wears the colour it broadcasts on.
                 edgeMark(x, y, m.facing, m.channel.color)
                 tileRect(x, y, 0.3f, m.channel.color)
             }
             is Vent -> {
-                tileRect(x, y, 0.94f, 0x3A3A44FFL)
+                tileRect(x, y, 0.94f, kindColor(MachineKind.Vent))
                 tileRect(x, y, 0.4f, 0x0A0A0CFFL)
             }
         }
         drawPorts(state, index, m)
-    }
-
-    /** Position of belt slot [i] within its tile, in tile units from the centre. Slot 0 is the head. */
-    private fun slotOffset(facing: Direction, i: Int, slots: Int): Pair<Float, Float> {
-        val along = 0.5f - (i + 0.5f) / slots
-        return (facing.dx * along) to (facing.dy * along)
     }
 
     /**
@@ -403,10 +384,10 @@ class OutofspaceRenderer {
             val px = state.grid.xOf(port.tile)
             val py = state.grid.yOf(port.tile)
             val color = if (port.kind == PortKind.Input) 0xE8ECF2FFL else 0x5ADB7EFFL
-            val cx = (px + 0.5f + port.side.dx * 0.46f) * tilePx
-            val cy = (py + 0.5f + port.side.dy * 0.46f) * tilePx
-            val w = if (port.side.dx != 0) 0.22f else 0.44f
-            val h = if (port.side.dy != 0) 0.22f else 0.44f
+            val cx = (px + 0.5f) * tilePx
+            val cy = (py + 0.5f) * tilePx
+            val w = 0.44f
+            val h = 0.44f
             rect(cx, cy, w * tilePx, h * tilePx, color)
         }
     }
@@ -523,10 +504,6 @@ class OutofspaceRenderer {
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
 
-        private const val RAIL_COLOR = 0x39445AFFL
-
-        /** Dimmer, for track that joins nothing yet — laid, but not drawn into a line. */
-        private const val RAIL_STUB_COLOR = 0x2A3040FFL
         private const val MIN_TILE_PX = 6f
         private const val MAX_TILE_PX = 64f
 
@@ -542,7 +519,7 @@ class OutofspaceRenderer {
 fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Rail -> 0x39445AFFL
     MachineKind.Gauge -> 0x39445AFFL
-    MachineKind.Bridge -> 0xD8DEE9FFL
+    MachineKind.Bridge -> 0x1A2030FFL
     MachineKind.Miner -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
