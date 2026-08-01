@@ -162,7 +162,7 @@ fun main() {
 
         val state = controller.tick(delta)
 
-        renderer.draw(state, hovered, controller.overlay)
+        renderer.draw(state, hovered, controller.overlay, controller.tickAlpha)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
 

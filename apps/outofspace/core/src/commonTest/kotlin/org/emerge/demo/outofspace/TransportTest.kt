@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Diverters
 import org.emerge.demo.outofspace.world.DiverterWork
 import org.emerge.demo.outofspace.world.FlowField
+import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.advanceSegments
 import kotlin.test.Test
@@ -112,8 +113,9 @@ class TransportTest {
         flow: FlowField,
         held: Array<Packet?>,
         diverters: DiverterWork = DiverterWork(Diverters.EMPTY),
+        log: MotionLog? = null,
         absorb: (Int, Packet) -> Packet? = { _, p -> p },
-    ): Int = advanceSegments(flow, held, diverters, absorb)
+    ): Int = advanceSegments(flow, held, diverters, log, absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
 

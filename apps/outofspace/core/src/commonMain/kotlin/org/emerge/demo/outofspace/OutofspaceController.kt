@@ -163,6 +163,17 @@ class OutofspaceController(
     }
 
     /**
+     * How far the clock has got through the tick that has not happened yet, 0 to 1.
+     *
+     * This is the whole of what makes the world move smoothly at four ticks a second: the sim's
+     * state is a series of stills, and this says how far between two of them the frame is. Paused
+     * reads 1 rather than freezing mid-step — a stopped world should show where things actually
+     * are, not where they were going.
+     */
+    val tickAlpha: Float
+        get() = if (paused) 1f else (accumulator / cfg.secondsPerTick).coerceIn(0f, 1f)
+
+    /**
      * Advances by [deltaSeconds] of real time and returns the state to draw.
      *
      * [maxTicksPerFrame] is the spiral-of-death guard: catching up fully after a long frame makes

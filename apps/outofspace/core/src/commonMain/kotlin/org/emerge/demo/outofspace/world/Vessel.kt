@@ -92,6 +92,15 @@ data class VesselState(
     val bridges: List<Bridge?> = List(machines.size) { null },
     /** Which way each fork last sent material — see [Diverters]. */
     val diverters: Diverters = Diverters.EMPTY,
+    /**
+     * What moved where during the tick that produced this state, for the renderer — see [Motion].
+     *
+     * Presentation only: nothing in the sim reads it and the save does not carry it, so a loaded
+     * world starts still and is animated again from its first tick. It rides in the snapshot rather
+     * than being worked out by the renderer because only the mover knows which of a tile's
+     * neighbours a packet came from.
+     */
+    val motion: Motion = Motion.NONE,
     val gravity: Frac2 = DEFAULT_GRAVITY,
     /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
     val debris: Debris = Debris.EMPTY,

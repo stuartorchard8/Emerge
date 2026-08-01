@@ -37,6 +37,8 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.Motion
+import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Processor
@@ -249,6 +251,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             radiatedJoules = state.radiatedJoules + radiated,
             air = air,
             airVentedGrams = state.airVentedGrams + airVented,
+            motion = w.motion.freeze(),
         )
     }
 
@@ -380,6 +383,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
+
+        /**
+         * This tick's record of what moved where, for the renderer alone — see [Motion].
+         *
+         * Built from the rails as they were before anything happened, so a packet ejected by a
+         * machine during this tick is correctly reported as having appeared rather than as having
+         * always been there.
+         */
+        val motion: MotionLog = MotionLog(state.rails)
+
 
         /**
          * tile -> the index its machine is stored at, or -1. Maintained as edits land rather than
@@ -647,17 +660,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val room = segment.held?.let { Capacity.headroom(it) } ?: Capacity.PACKET_GRAMS
             val buffer = bufferFor(m, port) ?: return
             val (packet, rest) = takePacket(buffer, room) ?: return
+            val wasEmpty = segment.held == null
             if (!load(tile, segment, packet)) return
             machines[port.owner] = withBuffer(m, port, rest.orNull())
+            // Only an empty tile counts as an appearance. Topping up a lump already standing there
+            // is a change of mass, which draws itself from the mass the tile started the tick with.
+            if (wasEmpty) motion.placedByPort(tile)
         }
 
         /**
          * A bridge putting its exit slot down on the track at its far end.
          *
-         * Worth knowing where this leaves the packet: a bridge's ports sit at ±1 from its centre,
-         * which is exactly where its exit slot is, so setting down is a change of *layer* at one
-         * tile rather than a step. The walk that follows may then carry it onward in the same step,
-         * and that is one tile of travel in total rather than two.
+         * **Records no motion, because nothing moved.** A bridge's ports sit at ±1 from its centre,
+         * which is exactly where its entry and exit slots are drawn, so setting down is a change of
+         * *layer* at one tile rather than a change of place. Marking it as an arrival would draw the
+         * packet growing in on top of the one already sitting there; marking it as a departure would
+         * draw a ghost shrinking away from a packet that has not gone anywhere. Left silent, the
+         * lump simply continues — off the bridge and along the track in one unbroken slide.
          */
         private fun depositFromBridge(tile: Int, port: Port) {
             val segment = rails[tile] ?: return
@@ -708,10 +727,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // A bridge sets down what it has been carrying *first*, before anything shifts.
             //
             // This is the whole of why a bridge's three slots are three real slots. Draining the
-            // exit at the end of the step instead -- which is where machine ejection happens, and
-            // where this used to live -- leaves the slot still occupied when the shift runs, so the
-            // packet behind it cannot advance. The bridge then delivers once every two steps with a
-            // slot standing idle between, which is correct tile by tile and half speed overall.
+            // exit at the end of the step instead — which is where machine ejection happens, and
+            // where this used to live — leaves the slot occupied when the shift runs, so the packet
+            // behind it cannot advance and the bridge delivers once every two steps with a slot
+            // standing idle between. Draining first frees the slot the shift is about to want.
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output && port.fromBridge) depositFromBridge(tile, port)
             }
@@ -721,7 +740,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // step. Exactly the reason the track itself is walked most-downstream first.
             for (i in bridges.indices) {
                 val b = bridges[i] ?: continue
-                if (b.conduit == Conduit.Rail) bridges[i] = b.advanced()
+                if (b.conduit != Conduit.Rail) continue
+                val after = b.advanced()
+                bridges[i] = after
+                // A slot that was empty and is not now took delivery from the slot behind it, which
+                // is the only way a bridge slot is ever filled from the inside.
+                if (b.exit == null && after.exit != null) motion.bridgeSlotFilled(i, Motion.SLOT_EXIT)
+                if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(i, Motion.SLOT_MIDDLE)
             }
 
             // Split by whether the consumer can take anything at all. A full one still pulls, but
@@ -750,12 +775,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val carried = arrayOfNulls<Packet>(rails.size)
             for (i in rails.indices) carried[i] = rails[i]?.held
 
-            advanceSegments(flow, carried, diverters) { tile, packet ->
+            advanceSegments(flow, carried, diverters, motion) { tile, packet ->
                 var left: Packet? = packet
                 for (port in ports[tile].orEmpty()) {
                     if (port.kind != PortKind.Input) continue
                     val remaining = left ?: break
                     left = offerTo(port, remaining)
+                    if (left == null && port.fromBridge) motion.handedToBridge(tile)
                 }
                 left
             }

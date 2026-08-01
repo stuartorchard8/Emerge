@@ -578,6 +578,44 @@ test the previous design could not have passed, which is the clearest statement 
 The real lesson, then, is not about ticks or seconds. It is that the sim had **two** units for time
 and spent all its effort keeping them agreeing. One unit cannot disagree with itself.
 
+### Drawing the tick happening, not the tick having happened (2026-08-01)
+
+At four ticks a second a packet crossing a whole tile per tick reads as teleporting, so packets now
+interpolate from where they were to where they are. The interesting part is not the lerp, it is that
+**the renderer cannot work out where a packet was**. Given two consecutive snapshots, a lump on a
+tile with three joined neighbours might have come from any of them, or from a machine's port, or have
+sat still while the tile behind it was refilled. The mover knows and the observer is guessing, so the
+mover writes it down: `Motion`, built during the tick and carried in the snapshot, presentation-only,
+never read by the sim and never saved. A freshly loaded world is simply still for one tick.
+
+Size and position are animated separately, and that split does the awkward cases for free. Mass
+interpolates from what the tile held at the start of the tick, which covers a packet being drawn into
+a machine, topped up from one, or squashed into by the packet behind it — all three change a lump's
+size without moving it, and all three pop without it. A separate `scale` factor, which really does go
+to zero, does the appearing and disappearing. Keeping them apart is what lets a half-full packet
+shrink away *from half size* rather than jumping to full first.
+
+**The animation immediately exposed a modelling bug rather than a drawing one**, which is the best
+argument for having built it. Packets crossed a bridge smoothly to the middle and then teleported to
+the far end and pulsed. Two separate causes, both invisible while everything moved a tile at a time:
+
+- **The exit slot never survived a tick.** Machine ejection runs after the conduits advance, so the
+  shift filled the exit and the same tick's `pushOut` emptied it. A bridge was three slots of which
+  one was imaginary. Draining is now the *first* thing the conduit step does, before the shift.
+  Ordering matters more than it looks: draining after the shift also gives every slot a full tick,
+  but leaves the exit occupied when the shift wants it, so each slot idles a step waiting for the one
+  ahead and the bridge quietly runs at half speed. That version is correct tile by tile, and only a
+  throughput test can see it.
+- **Getting on and off a bridge is not a movement.** A bridge's ports sit at ±1 from its centre —
+  exactly where the entry and exit slots are drawn — so a packet handed between the track and the
+  span changes *layer* without changing place. The first attempt grew it in on the span and shrank it
+  off the track, which draws two lumps at one tile and pulses. Left silent, a crossing is one
+  unbroken slide from the track, along the span, and back onto the track.
+
+Both are the same lesson as the `arrived` rule for track: one step per advance has to be a fact about
+the packet, not about the order the passes happen to run in. Animation is a good way to find out that
+it is not, because the eye catches a discontinuity that a tile-by-tile assertion is happy with.
+
 ### Saving is a text file, and that is the point (2026-08-01)
 
 Built before liquids, ahead of the other suggestions, for one reason: the loop it shortens is the

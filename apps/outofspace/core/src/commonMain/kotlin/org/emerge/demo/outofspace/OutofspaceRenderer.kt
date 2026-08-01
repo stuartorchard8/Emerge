@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.HeatField
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Processor
@@ -131,7 +132,22 @@ class OutofspaceRenderer {
         return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    fun draw(state: VesselState, hoveredIndex: Int = -1, overlay: Overlay = Overlay.None) {
+    /**
+     * How far through the current tick the clock is, 0 to 1 — see [OutofspaceController.tickAlpha].
+     *
+     * Held as a field rather than threaded through every draw call because almost everything that
+     * draws a packet needs it. Defaults to 1, which is "the tick has landed": a caller that does not
+     * pass one gets the world exactly as the sim left it, which is what the tests want.
+     */
+    private var alpha: Float = 1f
+
+    fun draw(
+        state: VesselState,
+        hoveredIndex: Int = -1,
+        overlay: Overlay = Overlay.None,
+        tickAlpha: Float = 1f,
+    ) {
+        alpha = tickAlpha.coerceIn(0f, 1f)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
         GPU.enableBlend()
@@ -198,6 +214,9 @@ class OutofspaceRenderer {
                 drawBridge(state, index, state.bridges[index] ?: continue, x, y)
             }
         }
+
+        // Things that have left the world, over the track they left from and under the overlay.
+        drawDepartures(state)
 
         // The overlay goes over the machines, not under them: the question it answers is "how hot is
         // it *there*", and putting it behind the thing you are asking about answers the wrong one.
@@ -275,11 +294,45 @@ class OutofspaceRenderer {
             frame(x, y, channel.color)
         }
         val packet = segment.held ?: return
-        // Size tracks how full the lump is, so a line of half-packets looks like one.
-        val fill = (packet.mass.toFloat() / Capacity.PACKET_GRAMS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
-        val side = Visual.PACKET_FILL * fill
-        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side * tilePx, side * tilePx, packetColor(packet.contents.dominant))
+        val motion = state.motion
+
+        // Where it was standing a tick ago, as an offset in tiles from where it is now. A packet
+        // that slid in from a neighbour starts back there and arrives exactly as the tick lands.
+        val came = motion.arrivedFrom(tile)
+        val backX = if (came == null) 0f else -came.dx.toFloat()
+        val backY = if (came == null) 0f else -came.dy.toFloat()
+
+        // A packet the port has just set down grows in from nothing rather than blinking into being.
+        val scale = if (motion.appearedAt(tile)) alpha else 1f
+
+        drawPacket(
+            x + 0.5f + backX * (1f - alpha),
+            y + 0.5f + backY * (1f - alpha),
+            lerp(motion.previousMassAt(tile).toFloat(), packet.mass.toFloat(), alpha),
+            scale,
+            packet.contents.dominant,
+        )
     }
+
+    /**
+     * One lump of material, at fractional tile coordinates.
+     *
+     * [mass] sets how big it is, so a line of half-packets looks like one — and interpolating the
+     * mass rather than snapping it is what keeps a packet being drawn into a machine, or topped up
+     * from one, from popping between two sizes.
+     *
+     * [scale] is separate and multiplies on top: it is the appearing and disappearing, and unlike
+     * the mass it really does go to zero. Keeping the two apart is what lets a half-full packet
+     * shrink away to nothing *from* half size rather than jumping to full first.
+     */
+    private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, dominant: Species?) {
+        if (scale <= 0f) return
+        val fill = (mass / Capacity.PACKET_GRAMS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
+        val side = Visual.PACKET_FILL * fill * scale
+        rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx, packetColor(dominant))
+    }
+
+    private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
 
     /**
      * A bridge: an elevated track spanning its three tiles, drawn over any track it crosses.
@@ -296,11 +349,44 @@ class OutofspaceRenderer {
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(MachineKind.Bridge))
         // One slot per tile spanned, drawn where that tile is: material crossing a bridge is visibly
         // travelling along it rather than disappearing into the middle and reappearing.
-        val slots = listOf(-1 to b.entry, 0 to b.middle, 1 to b.exit)
-        for ((along, packet) in slots) {
+        //
+        // The entry slot never animates: a bridge's ports are at ±1, exactly where the entry and
+        // exit slots are drawn, so a packet stepping onto a bridge changes layer without changing
+        // place. The two shifts *along* the span are real travel, and those slide.
+        val slots = listOf(
+            Triple(-1f, b.entry, Motion.SLOT_ENTRY),
+            Triple(0f, b.middle, Motion.SLOT_MIDDLE),
+            Triple(1f, b.exit, Motion.SLOT_EXIT),
+        )
+        for ((along, packet, slot) in slots) {
             if (packet == null) continue
+            val from = if (state.motion.bridgeSlotIsNew(index, slot)) along - 1f else along
+            val at = lerp(from, along, alpha)
             val size = Visual.BRIDGE_PACKET_SIZE * tilePx
-            rect(cx + b.facing.dx * along * tilePx, cy + b.facing.dy * along * tilePx, size, size, packetColor(packet.contents.dominant))
+            rect(
+                cx + b.facing.dx * at * tilePx,
+                cy + b.facing.dy * at * tilePx,
+                size, size, packetColor(packet.contents.dominant),
+            )
+        }
+    }
+
+    /**
+     * The packets that were somewhere at the start of the tick and are nowhere at the end of it.
+     *
+     * Drawn last and separately because they are not in the world any more — a machine has eaten
+     * them. Without this a packet arriving at a smelter simply stops existing between two frames,
+     * which reads as a dropped item rather than as one being taken in.
+     */
+    private fun drawDepartures(state: VesselState) {
+        for (d in state.motion.departures) {
+            drawPacket(
+                state.grid.xOf(d.tile) + 0.5f,
+                state.grid.yOf(d.tile) + 0.5f,
+                d.packet.mass.toFloat(),
+                1f - alpha,
+                d.packet.contents.dominant,
+            )
         }
     }
 

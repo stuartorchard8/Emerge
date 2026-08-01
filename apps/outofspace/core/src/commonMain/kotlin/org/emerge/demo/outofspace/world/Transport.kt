@@ -175,6 +175,7 @@ data class Segment(
  * junction priority this project decided not to inherit.
  */
 class FlowField private constructor(
+    private val grid: Grid,
     private val distance: IntArray,
     private val successors: Array<IntArray>,
     /**
@@ -203,6 +204,13 @@ class FlowField private constructor(
     /** The tiles material moves to from here. More than one is a fork. */
     fun successorsOf(tile: Int): IntArray =
         if (tile in successors.indices) successors[tile] else EMPTY
+
+    /**
+     * Which way you face going from [from] to the adjacent [to]. Only ever asked of a step the
+     * field itself produced, so the two really are neighbours and the answer always exists.
+     */
+    fun directionBetween(from: Int, to: Int): Direction =
+        Direction.ALL.first { grid.neighbour(from, it) == to }
 
     companion object {
         private val EMPTY = IntArray(0)
@@ -372,7 +380,7 @@ class FlowField private constructor(
                     .thenBy { if (movesForward[it]) -depth[it] else distance[it] }
                     .thenBy { it },
             )
-            return FlowField(distance, successors, order.toIntArray())
+            return FlowField(grid, distance, successors, order.toIntArray())
         }
     }
 }
@@ -483,6 +491,7 @@ fun advanceSegments(
     flow: FlowField,
     held: Array<Packet?>,
     diverters: DiverterWork,
+    log: MotionLog? = null,
     absorb: (tile: Int, packet: Packet) -> Packet?,
 ): Int {
     var moved = 0
@@ -502,7 +511,10 @@ fun advanceSegments(
 
         val leftover = absorb(tile, packet)
         held[tile] = leftover
-        if (leftover == null) continue
+        if (leftover == null) {
+            log?.takenFromRail(tile, packet)
+            continue
+        }
 
         val options = flow.successorsOf(tile)
         val target = diverters.choose(tile, options) { held[it] == null }
@@ -510,6 +522,7 @@ fun advanceSegments(
             held[target] = leftover
             held[tile] = null
             arrived[target] = true
+            log?.moved(tile, target, flow.directionBetween(tile, target))
             moved++
             continue
         }
