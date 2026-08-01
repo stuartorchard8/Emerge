@@ -34,8 +34,8 @@ import kotlin.math.max
  * call** through the engine's [UiRectRenderer] — no custom shader, and no per-tile draw overhead. A
  * tile game earns that simplicity; spending a shader on it before there is art would be premature.
  *
- * The camera lives here and works in tile units: [camX]/[camY] is the tile at the centre of the
- * screen and [tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
+ * The camera lives here and works in tile units: [OutofspaceRenderer.camX]/[OutofspaceRenderer.camY] is the tile at the centre of the
+ * screen and [OutofspaceRenderer.tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
  * gravity will point when Phase 4 arrives.
  */
 /** What the world is being looked at *through*. */
@@ -263,14 +263,14 @@ class OutofspaceRenderer {
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
             rect(
-                cx + dir.dx * Visual.RAIL_PORTION * tilePx, cy + dir.dy * Visual.RAIL_PORTION * tilePx,
-                (if (dir.dx != 0) Visual.RAIL_ARM_LONG else Visual.RAIL_ARM_SHORT) * tilePx,
-                (if (dir.dy != 0) Visual.RAIL_ARM_LONG else Visual.RAIL_ARM_SHORT) * tilePx,
+                cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
+                (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
                 kindColor(MachineKind.Rail),
             )
         }
         // The hub, always drawn
-        rect(cx, cy, Visual.RAIL_HUB_SIZE * tilePx, Visual.RAIL_HUB_SIZE * tilePx, kindColor(MachineKind.Rail))
+        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(MachineKind.Rail))
         segment.channel?.let { channel ->
             frame(x, y, channel.color)
         }
@@ -479,7 +479,7 @@ class OutofspaceRenderer {
             (((base shr 24) and 0xFF) * scale).toInt(),
             (((base shr 16) and 0xFF) * scale).toInt(),
             (((base shr 8) and 0xFF) * scale).toInt(),
-            Colors.HEAT_ALPHA.toLong(),
+            Colors.HEAT_ALPHA,
         )
     }
 
@@ -537,33 +537,27 @@ class OutofspaceRenderer {
     /** Palette colours for machine kinds, tiles, UI states, and overlays. */
     object Colors {
         // ── Backgrounds ─────────────────────────────────────────────────
-        val TILE_LIGHT  = 0x141A24FFL
-        val TILE_DARK   = 0x111722FFL
-        val HULL        = 0x4A5464FFL
-        val HULL_EDGE   = 0x3A4A5AFFL
+        const val TILE_LIGHT  = 0x141A24FFL
+        const val TILE_DARK   = 0x111722FFL
 
         // ── Stopped machine states ──────────────────────────────────────
-        val STOPPED_BODY    = 0x1A1A20FFL
-        val STOPPED_INDICATOR = 0x8A3030FFL
+        const val STOPPED_BODY    = 0x1A1A20FFL
+        const val STOPPED_INDICATOR = 0x8A3030FFL
 
         // ── Overlay colours ─────────────────────────────────────────────
-        val OVERLAY_VACUUM  = 0x05070CD0L
-        val OVERLAY_EMPTY   = 0x120A10D8L
+        const val OVERLAY_VACUUM  = 0x05070CD0L
+        const val OVERLAY_EMPTY   = 0x120A10D8L
 
         // ── UI highlights ───────────────────────────────────────────────
-        val HOVER   = 0xFFFFFF1AL
-        val SELECT  = 0xE8ECF2FFL
+        const val HOVER   = 0xFFFFFF1AL
 
         // ── Component colours ───────────────────────────────────────────
-        val VENT_CORE     = 0x0A0A0CFFL
-        val DEBRIS_TOP    = 0x00000060L
-        val SHADOW        = 0x00000070L
-        val RAIL_STUB     = 0x2A3040FFL
-        val BRIDGE_GLOW   = 0xD8DEE9FFL
+        const val VENT_CORE     = 0x0A0A0CFFL
+        const val DEBRIS_TOP    = 0x00000060L
 
         // ── Port colours ────────────────────────────────────────────────
-        val PORT_IN  = 0xE8ECF2FFL
-        val PORT_OUT = 0x5ADB7EFFL
+        const val PORT_IN  = 0xE8ECF2FFL
+        const val PORT_OUT = 0x5ADB7EFFL
 
         // ── Heat ramp base ──────────────────────────────────────────────
         const val HEAT_ALPHA = 0xC8L
@@ -577,27 +571,27 @@ class OutofspaceRenderer {
         const val HOT_B_OFFSET = 0xB0
 
         // ── Fill bar colours ────────────────────────────────────────────
-        val FILL_WARN = 0xE05A4AFFL
-        val FILL_OK = 0x9AE07AFFL
+        const val FILL_WARN = 0xE05A4AFFL
+        const val FILL_OK = 0x9AE07AFFL
 
         // ── Pressure scale coefficients ─────────────────────────────────
         const val PRESSURE_MIN_SCALE = 0.12f
         const val PRESSURE_MAX_SCALE = 1f
 
         // ── Species colours ─────────────────────────────────────────────
-        val IRON       = 0xB07A5AFFL
-        val ALUMINUM   = 0xB8BCC4FFL
-        val COPPER     = 0xE08A3AFFL
-        val TITANIUM   = 0xC8CCD4FFL
-        val SILICA     = 0xD8D0A8FFL
-        val CARBON     = 0x484848FFL
-        val RARE_EARTH = 0x6ED09AFFL
-        val URANIUM    = 0xA8E04AFFL
-        val OXYGEN     = 0x7AB8FFFFL
-        val NITROGEN   = 0x9A9AD0FFL
-        val CARBON_DIOXIDE = 0x8A8A8AFFL
-        val WATER      = 0x4A8AD0FFL
-        val EMPTY      = 0x707070FFL
+        const val IRON       = 0xB07A5AFFL
+        const val ALUMINUM   = 0xB8BCC4FFL
+        const val COPPER     = 0xE08A3AFFL
+        const val TITANIUM   = 0xC8CCD4FFL
+        const val SILICA     = 0xD8D0A8FFL
+        const val CARBON     = 0x484848FFL
+        const val RARE_EARTH = 0x6ED09AFFL
+        const val URANIUM    = 0xA8E04AFFL
+        const val OXYGEN     = 0x7AB8FFFFL
+        const val NITROGEN   = 0x9A9AD0FFL
+        const val CARBON_DIOXIDE = 0x8A8A8AFFL
+        const val WATER      = 0x4A8AD0FFL
+        const val EMPTY      = 0x707070FFL
     }
 
     /** Scales, thresholds, and offsets that drive the renderer's visual layout. */
@@ -609,20 +603,18 @@ class OutofspaceRenderer {
         const val VENT_CORE_SCALE = 0.4f
 
         // ── Port dimensions ─────────────────────────────────────────────
-        const val PORT_SIZE = 0.44f
-        const val PORT_SIDE_OFFSET = 0.46f
+        const val PORT_SIZE = 0.75f
 
         // ── Rail dimensions ─────────────────────────────────────────────
-        const val RAIL_HUB_SIZE = 0.30f
-        const val RAIL_ARM_SHORT = 0.30f
-        const val RAIL_ARM_LONG = 0.55f
-        const val RAIL_PORTION = 0.25f
+        const val RAIL_DIAMETER = 0.50f
+        const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
+        const val RAIL_ARM_OFFSET = (1f+RAIL_DIAMETER)/4f
 
         // ── Bridge dimensions ───────────────────────────────────────────
-        const val BRIDGE_SPAN_X = 2.62f
-        const val BRIDGE_SPAN_Y = 0.62f
-        const val BRIDGE_INSET = 0.26f
-        const val BRIDGE_PACKET_SIZE = 0.40f
+        const val BRIDGE_SPAN_X = 3.0f
+        const val BRIDGE_SPAN_Y = 1.0f
+        const val BRIDGE_INSET = 1f - RAIL_DIAMETER
+        const val BRIDGE_PACKET_SIZE = 0.375f
 
         // ── Debris dimensions ───────────────────────────────────────────
         const val DEBRIS_TOP_WIDTH = 0.94f
@@ -637,10 +629,6 @@ class OutofspaceRenderer {
         const val FILL_BAR_SPAN_INSET = 0.2f
         const val FILL_BAR_BOTTOM_OFFSET = 0.16f
         const val FILL_BAR_WARN = 0.85f
-
-        // ── Fill bar colours ────────────────────────────────────────────
-        const val FILL_OK_ALPHA = 0xFFL
-        const val FILL_WARN_ALPHA = 0xFFL
 
         // ── Tank dimensions ─────────────────────────────────────────────
         const val TANK_SPAN_INSET = 0.2f
@@ -660,7 +648,6 @@ class OutofspaceRenderer {
         const val DEBRIS_MIN_HEIGHT = 0.05f
         const val DEBRIS_MAX_HEIGHT = 0.6f
         const val DEBRIS_BASE_HEIGHT = 0.15f
-        const val PACKET_VISIBILITY_FRACTION = 0.05f
         const val PRESSURE_MIN_F = 0.08f
         const val PRESSURE_MAX_F = 1.6f
         const val PRESSURE_MIN_SCALE = 0.12f
@@ -687,17 +674,17 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
  * lump on a belt and its name in the inspector are unmistakably the same stuff.
  */
 fun speciesColor(dominant: Species?): Long = when (dominant) {
-    Species.Iron -> 0xB07A5AFFL
-    Species.Aluminum -> 0xB8BCC4FFL
-    Species.Copper -> 0xE08A3AFFL
-    Species.Titanium -> 0xC8CCD4FFL
-    Species.Silica -> 0xD8D0A8FFL
-    Species.Carbon -> 0x484848FFL
-    Species.RareEarth -> 0x6ED09AFFL
-    Species.Uranium -> 0xA8E04AFFL
-    Species.Oxygen -> 0x7AB8FFFFL
-    Species.Nitrogen -> 0x9A9AD0FFL
-    Species.CarbonDioxide -> 0x8A8A8AFFL
-    Species.Water -> 0x4A8AD0FFL
-    null -> 0x707070FFL
+    Species.Iron -> OutofspaceRenderer.Colors.IRON
+    Species.Aluminum -> OutofspaceRenderer.Colors.ALUMINUM
+    Species.Copper -> OutofspaceRenderer.Colors.COPPER
+    Species.Titanium -> OutofspaceRenderer.Colors.TITANIUM
+    Species.Silica -> OutofspaceRenderer.Colors.SILICA
+    Species.Carbon -> OutofspaceRenderer.Colors.CARBON
+    Species.RareEarth -> OutofspaceRenderer.Colors.RARE_EARTH
+    Species.Uranium -> OutofspaceRenderer.Colors.URANIUM
+    Species.Oxygen -> OutofspaceRenderer.Colors.OXYGEN
+    Species.Nitrogen -> OutofspaceRenderer.Colors.NITROGEN
+    Species.CarbonDioxide -> OutofspaceRenderer.Colors.CARBON_DIOXIDE
+    Species.Water -> OutofspaceRenderer.Colors.WATER
+    null -> OutofspaceRenderer.Colors.EMPTY
 }
