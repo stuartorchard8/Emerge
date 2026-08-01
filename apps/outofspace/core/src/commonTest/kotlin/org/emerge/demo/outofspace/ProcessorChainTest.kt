@@ -69,12 +69,12 @@ class ProcessorChainTest {
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         // Against the *feed*, which is the claim: 41% ore in, appreciably richer out.
         //
-        // ⚠️ The old threshold of 70 was pinned to a figure that turns out to depend on the tick
-        // rate — measured at 65% at 1Hz, 66% at 4Hz, 75% at 60Hz, 79% at 120Hz for the same ore and
-        // the same machine. `process` floors its impurity split, and `Mixture.take` rounds the
-        // chunk's own composition, so a smaller chunk-per-tick concentrates harder. That is a
-        // defect in the model, not in the test, and it is not fixed here; the assertion is stated
-        // loosely enough to be true of the model rather than of one tick rate.
+        // Stated as a margin over the feed rather than a fixed figure, because the claim really is
+        // comparative — this is the test for "concentrating does something", and the exact numbers
+        // belong to the chain test below. It used to be loose for a worse reason: the figure moved
+        // with the tick rate (65% at 1Hz, 79% at 120Hz) because `process` floors its impurity split
+        // once per chunk and the chunk was a chunk-per-second-divided-by-the-rate. Rates are per
+        // tick now, so the chunk is a constant and so is the result.
         val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
         assertTrue(
             purity(forward) > fed + 20,
@@ -109,16 +109,12 @@ class ProcessorChainTest {
         var s = VesselState(grid, m.toList(), rails = rails.toList())
         s = run(s, 1200)
 
-        // The property, not three magic numbers. `listOf(75, 100, 100)` was measured off a build
-        // running at 60Hz, and those exact figures are an artefact of that rate rather than
-        // anything about refining — see the note in the test above.
+        // Exact figures again, now that a rate is stated per tick and a stage's concentration is
+        // therefore a fact about the machine rather than about the clock. These were briefly
+        // loosened to a property when the same chain measured 75/100/100 at 60Hz and 66/88/100 at
+        // 4Hz; that spread is gone, so the test can go back to saying what it actually expects.
         val purities = stages.map { purity((s[grid.index(it, 3)] as Processor).product) }
-        assertEquals(
-            purities.sorted(),
-            purities,
-            "each stage should be cleaner than the last: $purities",
-        )
-        assertTrue(purities.first() > 60, "the first stage already concentrates: $purities")
+        assertEquals(listOf(66, 88, 100), purities, "41% ore, cleaner at every stage")
         assertEquals(100, purity((s[grid.index(21, 3)] as Storage).contents), "and the far end is pure metal")
     }
 
