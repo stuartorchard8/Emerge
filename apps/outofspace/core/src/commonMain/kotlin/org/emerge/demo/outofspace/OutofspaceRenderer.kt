@@ -294,8 +294,13 @@ class OutofspaceRenderer {
         val cy = (y + 0.5f) * tilePx
         drawPorts(state, index, b)
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(MachineKind.Bridge))
-        b.held?.let {
-            rect(cx, cy, Visual.BRIDGE_PACKET_SIZE * tilePx, Visual.BRIDGE_PACKET_SIZE * tilePx, packetColor(it.contents.dominant))
+        // One slot per tile spanned, drawn where that tile is: material crossing a bridge is visibly
+        // travelling along it rather than disappearing into the middle and reappearing.
+        val slots = listOf(-1 to b.entry, 0 to b.middle, 1 to b.exit)
+        for ((along, packet) in slots) {
+            if (packet == null) continue
+            val size = Visual.BRIDGE_PACKET_SIZE * tilePx
+            rect(cx + b.facing.dx * along * tilePx, cy + b.facing.dy * along * tilePx, size, size, packetColor(packet.contents.dominant))
         }
     }
 

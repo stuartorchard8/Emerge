@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -166,13 +167,64 @@ class BridgeTest {
         )
     }
 
+    // ── Three tiles of track, behaving like three tiles of track ──────────────
+
+    /** The bridged crossing with nothing feeding the horizontal run, and one lump placed by hand. */
+    private fun withLumpAtTheEntrance(): VesselState {
+        val s = crossing(bridged = true, horizontalSupply = null)
+        val rails = s.rails.toMutableList()
+        val at = grid.index(8, 5)
+        rails[at] = rails[at]!!.copy(held = SolidPacket(ingots))
+        return s.copy(rails = rails)
+    }
+
     @Test
-    fun `a bridge holds one packet and passes it on`() {
-        var s = crossing(bridged = true)
-        // Long enough for the first lump to be picked up, short enough that it is still in there.
-        s = run(s, Bridge.STEP_TICKS * 2)
-        val carried = (0 until grid.size).sumOf { s.bridges[it]?.held?.mass ?: 0L }
-        assertTrue(carried <= 1_000L, "one packet at a time, never more: ${carried}g")
+    fun `a packet crosses a bridge one slot at a time`() {
+        // The whole point of three slots: a bridge costs what its three tiles of track would have
+        // cost, and the material is somewhere identifiable the whole way over rather than vanishing
+        // into the span and reappearing. Off the track at the input end, over the tile being hopped,
+        // then down onto the track at the far end.
+        val at = grid.index(9, 5)
+        var s = withLumpAtTheEntrance()
+
+        s = run(s, Bridge.STEP_TICKS)
+        assertEquals(20_000L, s.bridges[at]?.entry?.mass, "lifted off the track at the input end")
+
+        s = run(s, Bridge.STEP_TICKS)
+        assertEquals(20_000L, s.bridges[at]?.middle?.mass, "over the tile it hops")
+        assertNull(s.bridges[at]?.entry, "and the entrance is free for the next one")
+
+        s = run(s, Bridge.STEP_TICKS)
+        assertNull(s.bridges[at]?.exit, "off the far end in the same step it reaches it")
+        assertEquals(20_000L, s.railAt(grid.index(10, 5))?.held?.mass, "and onto the track there")
+    }
+
+    @Test
+    fun `a bridge backs up three deep, like the three tiles it spans`() {
+        // With the far tank gone the output run fills and stops taking, and what queues behind it is
+        // the whole bridge. One slot meant a bridge could only ever hold one lump, which is the same
+        // statement as "it is a bottleneck": the span had a third of the capacity of the track it
+        // replaced, so a bridged line ran at a third of the speed of the line either side of it.
+        var s = crossing(bridged = true).withMachine(grid.index(15, 5), null)
+        s = run(s, Bridge.STEP_TICKS * 20)
+        assertEquals(Bridge.SLOTS, s.bridges[grid.index(9, 5)]?.carried?.size, "all three slots loaded")
+    }
+
+    @Test
+    fun `a bridge takes a packet every step, not one every three`() {
+        // The flowing case. The exit slot is empty at the end of most steps because it is put down
+        // on the track in the same step it reaches the end -- exactly what the last tile of any run
+        // does -- so throughput is what has to be measured, not occupancy.
+        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200_000L))
+        var s = crossing(bridged = true, horizontalSupply = supply)
+        // Priming: three steps of latency across the span, plus the run either side of it. The
+        // window then has to close before the receiving tank fills, or this measures its capacity.
+        s = run(s, Bridge.STEP_TICKS * 13)
+        val before = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
+        val steps = 15
+        s = run(s, Bridge.STEP_TICKS * steps)
+        val delivered = ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) - before
+        assertEquals(steps * 1_000L, delivered, "a packet a step, all the way across")
     }
 
     // ── The placement rule ────────────────────────────────────────────────────

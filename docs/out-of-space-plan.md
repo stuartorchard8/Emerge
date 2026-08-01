@@ -472,6 +472,25 @@ order stays exactly as it was — it is what makes a packed run shuffle along in
 real property worth keeping — but it is now an *optimisation* rather than the thing correctness rests
 on. Where it cannot be achieved, a run costs a tick of latency at the boundary instead of teleporting.
 
+### A bridge is three tiles, so it holds three packets (2026-08-01)
+
+It held one, and that was two mistakes wearing one coat. A three-tile span with one slot has a third
+of the capacity of the track it replaces, so every bridged line ran at a third speed for no reason a
+player could see — a bottleneck dressed as a detour. And material inside it was *nowhere*: it left
+one end of the span and appeared at the other, which is the wormhole reading the whole latency
+argument existed to avoid.
+
+Now `entry`, `middle` and `exit`, shifted one place per conduit step, in the same pass as the track
+and before it — so the slot a packet leaves is free for the one behind it, the same rule and the same
+reason as `FlowField.order`. Three steps of latency, one packet per step, which is precisely what
+three tiles of ordinary rail cost. The renderer draws each slot at the tile it is on, so a bridge now
+shows its traffic.
+
+Worth noting for the test that measured it: the `exit` slot is empty at the end of nearly every step,
+because it is put down on the track in the same step it reaches the end — the same thing the last
+tile of any run does. Occupancy is the wrong thing to assert; throughput, and the backed-up case, are
+the right ones.
+
 ### Dropping the tick rate was a test of whether the tick rate means anything (2026-08-01)
 
 Moving to 4Hz broke eight tests at once, and the eight failures looked like eight unrelated bugs: a

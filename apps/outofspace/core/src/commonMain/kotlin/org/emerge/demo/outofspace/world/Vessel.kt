@@ -206,7 +206,7 @@ data class VesselState(
             var sum = debris.totalGrams
             for (m in machines) sum += massIn(m)
             for (r in rails) sum += r?.held?.mass ?: 0L
-            for (b in bridges) sum += b?.held?.mass ?: 0L
+            for (b in bridges) sum += b?.mass ?: 0L
             return sum
         }
 
@@ -235,7 +235,7 @@ fun spoilsOf(machine: Machine?): List<Resource> =
 /** Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks. */
 fun massIn(machine: Machine?): Long = when (machine) {
     null -> 0L
-    is Bridge -> machine.held?.mass ?: 0L
+    is Bridge -> machine.mass
     is Miner -> machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
@@ -254,7 +254,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
  */
 fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
-    is Bridge -> if (machine.held != null) Signals.FULL else 0
+    is Bridge -> machine.carried.size * Signals.FULL / Bridge.SLOTS
     is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
@@ -272,12 +272,15 @@ fun fullness(machine: Machine?): Int = when (machine) {
  */
 fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
-    is Bridge -> listOfNotNull(
-        machine.held?.let { p ->
-            val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
-            "IN TRANSIT" to Resource(form, p.contents)
-        },
-    )
+    // Slot by slot, input end first: "which end of the span is it on" is the only thing worth
+    // knowing about a bridge, and one lump labelled IN TRANSIT could not say it.
+    is Bridge -> listOf("IN" to machine.entry, "SPAN" to machine.middle, "OUT" to machine.exit)
+        .mapNotNull { (label, p) ->
+            if (p == null) null else {
+                val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
+                label to Resource(form, p.contents)
+            }
+        }
     is Miner -> listOf("BUFFER" to machine.buffer)
     is Processor -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
@@ -296,7 +299,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
 fun contentsOf(machine: Machine?): Mixture = when (machine) {
     null -> Mixture.EMPTY
-    is Bridge -> machine.held?.contents ?: Mixture.EMPTY
+    is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
     is Miner -> machine.buffer.mixture
     is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)

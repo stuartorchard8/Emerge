@@ -126,7 +126,9 @@ object Save {
         when (m) {
             is Bridge -> {
                 put("conduit", m.conduit.name)
-                put("held", m.held?.let { writePacket(it) })
+                put("in", m.entry?.let { writePacket(it) })
+                put("span", m.middle?.let { writePacket(it) })
+                put("out", m.exit?.let { writePacket(it) })
             }
             is Miner -> {
                 put("ore", writeMixture(m.composition))
@@ -345,7 +347,12 @@ object Save {
                 conduit = f["conduit"]?.let { name ->
                     Conduit.entries.firstOrNull { it.name == name } ?: fail("unknown conduit '$name'")
                 } ?: Conduit.Rail,
-                held = f["held"]?.let { readPacket(it, fail) },
+                // `held` is what a bridge's single slot was called before it became the three tiles
+                // it looks like. Read as the entry slot so an older save loads its material rather
+                // than quietly dropping it — which would look like a leak, not a format change.
+                entry = (f["in"] ?: f["held"])?.let { readPacket(it, fail) },
+                middle = f["span"]?.let { readPacket(it, fail) },
+                exit = f["out"]?.let { readPacket(it, fail) },
             )
             MachineKind.Miner -> Miner(
                 facing = facing(),

@@ -128,9 +128,10 @@ data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
  *     output **port**: a specific tile of the machine's footprint, facing a specific way.
  *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
  *     goes overboard.
- *  7. **Advance the conduits** — every [Bridge.STEP_TICKS] ticks: derive each layer's flow field
- *     from where its **input** ports are, then move everything on it one step toward the nearest of
- *     them, offering each packet to the port under it first.
+ *  7. **Advance the conduits** — every [Bridge.STEP_TICKS] ticks: shift every bridge along by a
+ *     slot, then derive each layer's flow field from where its **input** ports are and move
+ *     everything on it one step toward the nearest of them, offering each packet to the port under
+ *     it first. A bridge steps with the layer because it *is* three tiles of the layer.
  *
  * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
  * below. Activation is a *throttle rather than a switch* so that a weight means something beyond on
@@ -425,7 +426,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // reach the track once it is threaded underneath.
                     val bridge = bridges[edit.index]
                     if (bridge != null) {
-                        bridge.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
+                        // Every slot: a bridge taken apart mid-span drops all three lumps, or the
+                        // conservation invariant would read the dismantle as a leak.
+                        if (bridge.carried.isNotEmpty()) {
+                            debris.spill(edit.index, bridge.carried.map { asResource(it) })
+                        }
                         bridges[edit.index] = null
                         return
                     }
@@ -611,9 +616,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val segment = rails[tile] ?: return
             if (port.fromBridge) {
                 val bridge = bridges[port.owner] ?: return
-                val held = bridge.held ?: return
+                val held = bridge.exit ?: return
                 if (!load(tile, segment, held)) return
-                bridges[port.owner] = bridge.copy(held = null)
+                bridges[port.owner] = bridge.copy(exit = null)
                 return
             }
 
@@ -669,6 +674,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * with no cache to invalidate.
          */
         fun advanceRails(ports: Map<Int, List<Port>>) {
+            // A bridge is three tiles of the layer, so it steps when the layer steps — and *before*
+            // the track does, so the slot a packet vacates is free for the one behind it in the same
+            // step. Exactly the reason the track itself is walked most-downstream first.
+            for (i in bridges.indices) {
+                val b = bridges[i] ?: continue
+                if (b.conduit == Conduit.Rail) bridges[i] = b.advanced()
+            }
+
             // Split by whether the consumer can take anything at all. A full one still pulls, but
             // only once no accepting one is reachable — so traffic runs *past* a full machine to
             // reach a working one, and backs up against it when there is nowhere else to be.
@@ -725,7 +738,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * has successors).
          */
         private fun hasRoom(port: Port): Boolean {
-            if (port.fromBridge) return bridges[port.owner]?.held == null
+            if (port.fromBridge) return bridges[port.owner]?.entry == null
             return when (val m = machines[port.owner]) {
                 is Processor -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
                 is Smelter -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
@@ -740,8 +753,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun offerTo(port: Port, packet: Packet): Packet? {
             if (port.fromBridge) {
                 val bridge = bridges[port.owner] ?: return packet
-                if (bridge.held != null) return packet
-                bridges[port.owner] = bridge.copy(held = packet)
+                if (bridge.entry != null) return packet
+                bridges[port.owner] = bridge.copy(entry = packet)
                 return null
             }
             val dest = machines[port.owner] ?: return packet
