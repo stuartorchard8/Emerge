@@ -450,6 +450,14 @@ class DiverterWork(diverters: Diverters) {
  *     behind it tries to move up. A packed run advances by one along its whole length in a single
  *     pass rather than crawling a tile per tick.
  *
+ * That second rule is an *optimisation*, and it is not always achievable. [FlowField.order] ranks a
+ * tile by the measure it actually moves by, and where a run uses both rules at once — which is what
+ * a machine's output port partway along a line produces, since it makes that tile a source and
+ * leaves everything behind it with no forward — the two rankings interleave and a tile can be walked
+ * *after* the tile that feeds it. So the one-step-per-pass guarantee is enforced here instead, by
+ * `arrived`: a packet that landed on a tile this pass does not move again, whatever the order said.
+ * Without it a packet crossing such a port jumps two tiles in a tick and appears to skip over it.
+ *
  * Material on a tile the field never reached does not move at all: it is on a run with no consumer,
  * and there is nowhere for it to go that would be an improvement.
  *
@@ -478,7 +486,18 @@ fun advanceSegments(
     absorb: (tile: Int, packet: Packet) -> Packet?,
 ): Int {
     var moved = 0
+    /**
+     * Tiles that took delivery during this pass.
+     *
+     * A packet moves one tile per advance, and that has to be true of the *packet* rather than of
+     * the walk. Where [FlowField.order] cannot put a tile ahead of the one feeding it — a run that
+     * moves by both rules at once, which any output port partway along a line creates — this is what
+     * keeps the step to one. It also means such a tile does not offer the new arrival to its own
+     * port until next pass, which is what every other tile on the run does anyway.
+     */
+    val arrived = BooleanArray(held.size)
     for (tile in flow.order) {
+        if (arrived[tile]) continue
         val packet = held[tile] ?: continue
 
         val leftover = absorb(tile, packet)
@@ -490,6 +509,7 @@ fun advanceSegments(
         if (target >= 0) {
             held[target] = leftover
             held[tile] = null
+            arrived[target] = true
             moved++
             continue
         }
@@ -501,6 +521,7 @@ fun advanceSegments(
             val squashed = squashOnto(ahead, leftover) ?: continue
             held[option] = squashed.merged
             held[tile] = squashed.rejected
+            arrived[option] = true
             moved++
             break
         }

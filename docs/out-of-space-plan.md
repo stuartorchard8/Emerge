@@ -452,6 +452,26 @@ excluded by construction the way the pure DAG was; it is ruled out empirically b
 ledgers and the run-on determinism test rather than by argument, which is worth knowing if this area
 misbehaves again.
 
+### One step per advance is a fact about the packet, not about the walk (2026-08-01)
+
+The sequel to the previous entry's first bullet, and proof that ranking each tile by the measure it
+moves by was not enough. Sorting downhill tiles ahead of forward tiles fixes the leap *within* a run;
+it cannot fix it at the **boundary between the two**, which is exactly where such a run has one.
+
+Found in a save of Stu's: a miner feeding a line that forks to two vents, with a bridge's output port
+sitting on the fork tile. That port makes the fork a source, so depth there is zero, so every tile
+between the miner and the fork has no forward at all and moves downhill — while the fork itself moves
+forward. Downhill sorts first, so the tile feeding the fork is walked *before* the fork, hands its
+packet over, and the fork then moves the same packet on in the same pass. The fork tile was never
+occupied in any single frame: material appeared to skip straight over the port.
+
+No ordering can be relied on to prevent this, because "most downstream first" is a total order over
+one potential and this run has two. So the guarantee moved to where it can actually be enforced:
+`advanceSegments` records the tiles that took delivery this pass and does not move them again. The
+order stays exactly as it was — it is what makes a packed run shuffle along in one pass, which is a
+real property worth keeping — but it is now an *optimisation* rather than the thing correctness rests
+on. Where it cannot be achieved, a run costs a tick of latency at the boundary instead of teleporting.
+
 ### Dropping the tick rate was a test of whether the tick rate means anything (2026-08-01)
 
 Moving to 4Hz broke eight tests at once, and the eight failures looked like eight unrelated bugs: a

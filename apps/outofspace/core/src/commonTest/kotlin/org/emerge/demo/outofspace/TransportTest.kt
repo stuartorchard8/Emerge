@@ -503,6 +503,28 @@ class TransportTest {
     }
 
     @Test
+    fun `a packet passing an output port partway along a run still moves only one tile`() {
+        // A machine's output port sits on a tile of a run that already carries material — a second
+        // miner feeding a shared line, or a bridge putting material down on it. That tile is a
+        // source, so depth there is zero and every tile *behind* it has no forward at all and falls
+        // back to moving downhill. The two rules interleave in the traversal order, and the source
+        // tile ends up walked after the tile that feeds it: the packet is moved into it and then
+        // straight out of it again, jumping two tiles in one step and appearing to skip the port.
+        //
+        // One tile per advance is a fact about the packet, not about the walk.
+        val n = net().row(2, 10, 3)
+        val sink = grid.index(10, 3)
+        val midOutput = grid.index(6, 3)
+        val f = n.toward(accepting = listOf(sink), from = listOf(grid.index(2, 3), midOutput))
+
+        val h = held(n, grid.index(5, 3) to lump())
+        step(f, h)
+        assertNull(h[grid.index(5, 3)], "it left the tile behind the port")
+        assertEquals(1_000L, h[midOutput]?.mass, "and stopped on the port's own tile")
+        assertNull(h[grid.index(7, 3)], "rather than carrying straight over it")
+    }
+
+    @Test
     fun `a packet sitting on the consumer stays put rather than falling off the end`() {
         val n = net().row(2, 4, 3)
         val f = n.toward(grid.index(4, 3))
