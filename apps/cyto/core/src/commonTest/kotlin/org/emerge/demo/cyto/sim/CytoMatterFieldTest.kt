@@ -161,7 +161,8 @@ class CytoMatterFieldTest {
         // of the 9 ordered bonds at most once, so there is nothing there to diffuse.
         for (p in 0 until n) {
             val sp = f.scheduledSpecies(p.toLong())
-            seen.merge(if (sp < 0) 0 else SpeciesRegistry.atomCount(sp), 1, Int::plus)
+            val len = if (sp < 0) 0 else SpeciesRegistry.atomCount(sp)
+            seen[len] = (seen[len] ?: 0) + 1
         }
         assertEquals(n / 2, seen.getValue(1), "monomers: half of all passes")
         assertEquals(n / 4, seen.getValue(2), "diatoms: a quarter")

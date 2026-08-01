@@ -3,6 +3,7 @@ package org.emerge.demo.cyto.sim
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.sim.core.EntityId
 import org.emerge.sim.core.physics.primitives.Frac
+import kotlin.jvm.JvmField
 
 /**
  * The matter-model gene (MORPHOGENESIS.md). A gene is exactly three parts — **one energy source** (how
