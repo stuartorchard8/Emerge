@@ -61,7 +61,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, m.toList(), rails = rails.toList())
-        s = run(s, seconds(200))
+        s = run(s, 800)
 
         val forward = (s[grid.index(7, 3)] as Storage).contents
         val below = (s[grid.index(3, 8)] as Storage).contents
@@ -107,7 +107,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), rails = rails.toList())
-        s = run(s, seconds(300))
+        s = run(s, 1200)
 
         // The property, not three magic numbers. `listOf(75, 100, 100)` was measured off a build
         // running at 60Hz, and those exact figures are an artefact of that rate rather than
@@ -141,7 +141,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), rails = rails.toList())
-        s = run(s, seconds(300))
+        s = run(s, 1200)
 
         for (x in stages) {
             val held = (s[grid.index(x, 3)] as Processor).tailings?.mass ?: 0L

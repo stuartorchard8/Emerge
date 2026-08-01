@@ -149,7 +149,7 @@ data class Miner(
     val composition: Mixture,
     val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
-    val gramsPerSecond: Long = 1_000L,
+    val gramsPerTick: Long = 250L,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Miner
@@ -179,7 +179,7 @@ data class Processor(
     val product: Resource? = null,
     val tailings: Resource? = null,
     val carry: Long = 0L,
-    val gramsPerSecond: Long = 500L,
+    val gramsPerTick: Long = 125L,
     val efficiencyPermille: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : Directed {
@@ -195,7 +195,7 @@ data class Smelter(
     val refined: Resource? = null,
     val slag: Resource? = null,
     val carry: Long = 0L,
-    val gramsPerSecond: Long = 500L,
+    val gramsPerTick: Long = 125L,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Smelter

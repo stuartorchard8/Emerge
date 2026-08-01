@@ -39,8 +39,17 @@ class SaveError(message: String) : Exception(message)
  */
 object Save {
 
-    /** Bump when a field's meaning changes. An old save is refused rather than misread. */
-    const val VERSION = 1
+    /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
+    const val VERSION = 2
+
+    /**
+     * The tick rate version 1 saves were written at, and so the number that converts their
+     * `rate` field from grams per second into the grams per tick version 2 stores.
+     *
+     * Frozen here as a literal rather than read from the config, because it is a fact about old
+     * files and must not move when the config's tick rate does. Applied in [readMachine].
+     */
+    const val V1_TICKS_PER_SECOND = 4L
 
     // ── Writing ───────────────────────────────────────────────────────────────
 
@@ -134,14 +143,14 @@ object Save {
                 put("ore", writeMixture(m.composition))
                 put("buffer", writeResource(m.buffer))
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerSecond.toString())
+                put("rate", m.gramsPerTick.toString())
             }
             is Processor -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("out", m.product?.let { writeResource(it) })
                 put("waste", m.tailings?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerSecond.toString())
+                put("rate", m.gramsPerTick.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
             is Smelter -> {
@@ -149,7 +158,7 @@ object Save {
                 put("out", m.refined?.let { writeResource(it) })
                 put("waste", m.slag?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerSecond.toString())
+                put("rate", m.gramsPerTick.toString())
             }
             is Storage -> put("stored", m.contents?.let { writeResource(it) })
             is Sensor -> put("channel", m.channel.name)
@@ -213,8 +222,8 @@ object Save {
         }
         val version = header[1].toIntOrNull()
             ?: throw SaveError("line $headerLine: unreadable version '${header[1]}'")
-        if (version != VERSION) {
-            throw SaveError("save is version $version, this build reads version $VERSION")
+        if (version !in 1..VERSION) {
+            throw SaveError("save is version $version, this build reads version 1..$VERSION")
         }
 
         val (gridLine, gridTokens) = next()
@@ -267,7 +276,7 @@ object Save {
                 "machine" -> {
                     val t = tile(1)
                     if (machines[t] != null) fail("two machines at tile $t")
-                    machines[t] = readMachine(tokens.drop(2), ::fail)
+                    machines[t] = readMachine(tokens.drop(2), version, ::fail)
                 }
                 "rail" -> {
                     val t = tile(1)
@@ -277,7 +286,7 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (bridges[t] != null) fail("two bridges at tile $t")
-                    bridges[t] = readMachine(tokens.drop(2), ::fail) as? Bridge ?: fail("not a bridge")
+                    bridges[t] = readMachine(tokens.drop(2), version, ::fail) as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
                 "debris" -> {
@@ -329,7 +338,7 @@ object Save {
         )
     }
 
-    private fun readMachine(tokens: List<String>, fail: (String) -> Nothing): Machine {
+    private fun readMachine(tokens: List<String>, version: Int, fail: (String) -> Nothing): Machine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         val kind = MachineKind.ALL.firstOrNull { it.name == kindName } ?: fail("unknown machine '$kindName'")
         val f = fields(tokens.drop(1), fail)
@@ -340,6 +349,15 @@ object Save {
         fun res(key: String): Resource? = f[key]?.let { readResource(it, fail) }
         fun num(key: String, fallback: Long): Long =
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
+
+        // Version 1 stated a machine's throughput per *second*; version 2 states it per tick, which
+        // is the only unit the sim has. An old file's number is therefore divided by the rate those
+        // files ran at, so a v1 factory keeps the throughput it was built with instead of silently
+        // speeding up fourfold. Defaults are already per tick, so they are not converted.
+        fun rate(fallback: Long): Long {
+            val stored = num("rate", fallback * V1_TICKS_PER_SECOND)
+            return if (version < 2) stored / V1_TICKS_PER_SECOND else num("rate", fallback)
+        }
 
         val machine: Machine = when (kind) {
             MachineKind.Bridge -> Bridge(
@@ -359,20 +377,20 @@ object Save {
                 composition = readMixture(f["ore"] ?: fail("a miner needs an ore body"), fail),
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
                 carry = num("carry", 0L),
-                gramsPerSecond = num("rate", 1_000L),
+                gramsPerTick = rate(250L),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
                 input = res("in"), product = res("out"), tailings = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerSecond = num("rate", 500L),
+                gramsPerTick = rate(125L),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 input = res("in"), refined = res("out"), slag = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerSecond = num("rate", 500L),
+                gramsPerTick = rate(125L),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
             MachineKind.Sensor -> Sensor(

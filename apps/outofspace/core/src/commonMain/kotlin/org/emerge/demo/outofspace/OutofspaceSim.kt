@@ -67,7 +67,23 @@ data class OutofspaceConfig(
      * drawn inside it" is what gives the expansion fantasy without a growable world.
      */
     val grid: Grid = Grid(96, 60),
-    /** Sim tick rate. Feeds [Rate], which is what makes a machine's grams-per-second exact. */
+    /**
+     * How fast to run the world, and **nothing else**.
+     *
+     * The tick is the unit of simulation: every rate in the game is stated per tick, so nothing
+     * below this line divides by it. This number therefore says how quickly you watch the world
+     * happen, not how finely it is computed — raise it and the factory runs faster, exactly as if
+     * you had turned a speed dial, with identical results per tick.
+     *
+     * That is deliberate, and it is the second answer to the question. The first was to make every
+     * subsystem invariant to this number, which cost a carry, a sub-stepping loop, a stability
+     * constant and a test-clock helper, and *still* leaked: processor purity moved with the tick
+     * rate because the chunk it rounds is a chunk-per-tick. Making the tick the unit costs nothing
+     * and cannot leak, because there is no second unit to disagree with.
+     *
+     * Only [OutofspaceController]'s frame accumulator reads it, which is the one place that is
+     * honestly about real time.
+     */
     val ticksPerSecond: Int = 4,
 ) {
     val secondsPerTick: Float get() = 1f / ticksPerSecond
@@ -209,16 +225,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
-        val (heat, radiated) = stepHeat(
-            state.grid, structure, occupancy, HeatField.of(warmed), cfg.ticksPerSecond,
-        )
+        val (heat, radiated) = stepHeat(state.grid, structure, occupancy, HeatField.of(warmed))
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
 
-        val (air, airVented) = stepAir(
-            state.grid, structure, state.air, state.gravity, cfg.ticksPerSecond,
-        )
+        val (air, airVented) = stepAir(state.grid, structure, state.air, state.gravity)
 
         return state.copy(
             machines = w.machines.toList(),
@@ -249,13 +261,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun blocked(vararg outputs: Resource?): Boolean =
         outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
 
-    /** Rate scaled by activation: a throttle, not a switch. Zero or negative activation stops it. */
-    private fun throttled(gramsPerSecond: Long, activation: Int): Long =
-        if (activation <= 0) 0L else gramsPerSecond * activation / Signals.FULL
+    /**
+     * Grams for this tick: the machine's per-tick rate scaled by activation, which is a throttle
+     * rather than a switch. Zero or negative activation stops it.
+     *
+     * The scaling is where the only fraction in a machine's throughput lives, so [Rate] carries the
+     * remainder across ticks — see its note. A machine at full activation gets its rate untouched.
+     */
+    private fun throttled(gramsPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
+        if (activation <= 0) 0L to carry
+        else Rate.tick(gramsPerTick * activation, Signals.FULL, carry)
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input = m.input ?: return m
-        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
         // Backed up: a full output stops the machine rather than being hoarded. Note this catches
         // the *tailings* side too, so a processor with nowhere to put its waste stops, and the jam
         // travels back up the line where it can be seen.
@@ -279,7 +298,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, at: Int): Smelter {
         val input = m.input ?: return m
-        val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
         if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
@@ -568,7 +587,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * statement about shipping rather than about mass.
          */
         fun produce(cfg: OutofspaceConfig, m: Miner, activation: Int): Miner {
-            val (grams, carry) = Rate.tick(throttled(m.gramsPerSecond, activation), cfg.ticksPerSecond, m.carry)
+            val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
             if (m.buffer.mass >= Miner.BUFFER_CAP) return m.copy(carry = carry)  // backed up: stop digging
             if (grams <= 0L) return m.copy(carry = carry)
             val dug = m.composition.scaledTo(grams)

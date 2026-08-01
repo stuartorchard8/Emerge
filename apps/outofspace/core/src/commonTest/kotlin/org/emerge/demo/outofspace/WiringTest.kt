@@ -122,7 +122,7 @@ class WiringTest {
         fun minedAfterASecond(w: Wiring): Long {
             val grid = Grid(2, 1)
             val miner = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY).withWiring(w) as Miner
-            return run(VesselState(grid, listOf(miner, null)), seconds(1)).minedGrams
+            return run(VesselState(grid, listOf(miner, null)), 4).minedGrams
         }
         assertEquals(1_000L, minedAfterASecond(wiring(Channel.Always to 1000)))
         assertEquals(500L, minedAfterASecond(wiring(Channel.Always to 500)), "half the weight, half the ore")
@@ -176,14 +176,14 @@ class WiringTest {
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
         // period. What matters is the *shape*: the rate falls away as the tank fills.
-        val firstTenSeconds = run(s, seconds(10)).minedGrams
+        val firstTenSeconds = run(s, 40).minedGrams
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
-        s = run(s, seconds(40))
+        s = run(s, 160)
         val red = s.signals[Channel.Red]
         assertTrue(red > 800, "the tank should be reading nearly full, got $red")
 
-        val lateRate = run(s, seconds(10)).minedGrams - s.minedGrams
+        val lateRate = run(s, 40).minedGrams - s.minedGrams
         assertTrue(
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
@@ -193,7 +193,7 @@ class WiringTest {
 
     @Test
     fun `the starter vessel ships that same loop, working`() {
-        val s = run(starterVessel(Grid(40, 28)), seconds(40))
+        val s = run(starterVessel(Grid(40, 28)), 160)
         assertTrue(s.signals[Channel.Red] > 800, "the demonstration storage should have nearly filled")
         // And the main line is unaffected by it.
         assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still stores iron")
@@ -262,11 +262,11 @@ class WiringTest {
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
-        var s = run(twoUp(shut), seconds(5))
+        var s = run(twoUp(shut), 20)
         assertEquals(5_000L, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
         assertNull((s[g.index(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
-        var s2 = run(twoUp(Storage(Direction.Right, stored)), seconds(5))
+        var s2 = run(twoUp(Storage(Direction.Right, stored)), 20)
         assertEquals(5_000L, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
         assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
     }
@@ -276,7 +276,7 @@ class WiringTest {
     @Test
     fun `the world still never loses a gram with sensors and wiring in play`() {
         var s = starterVessel(Grid(40, 28))
-        repeat(seconds(60)) {
+        repeat(240) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 89 == 0) {
                 assertEquals(

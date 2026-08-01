@@ -63,10 +63,16 @@ class AirField(private val grams: LongArray) {
         )
 
         /**
-         * How much of a pressure difference moves in a second. Gas equalises quickly — a door opening
-         * is not a slow event — but see [STABLE_SHARE] for the cap that keeps it from sloshing.
+         * How many relaxation passes a tick runs. Gas equalises quickly — a door opening is not a
+         * slow event — but one pass may only move [STABLE_SHARE] of a gradient before the scheme
+         * goes unstable, so speed has to come from repeating a stable pass rather than from taking a
+         * bigger one.
+         *
+         * This is the honest shape of the thing. It used to be a per-second flow rate divided by the
+         * tick rate, with the pass count derived to keep the two agreeing; the arithmetic worked out
+         * to exactly this and no more, so all that machinery was computing a constant.
          */
-        const val FLOW_PER_SECOND = 6L
+        const val FLOW_PASSES = 15
 
         /**
          * The largest share of a gradient one edge may move in a single pass.
@@ -77,10 +83,13 @@ class AirField(private val grams: LongArray) {
          * tick, and the whole field flips: high tiles become low, low become high, and the room sits
          * in a permanent checkerboard, sloshing back and forth for ever without equalising.
          *
-         * It never showed while the sim ran at 60Hz, because `FLOW_PER_SECOND / 60` is a tenth of the
-         * gap and a tenth is stable — the half-gap cap was there but never binding. Dropping the tick
-         * rate to 4 made the raw flux one and a half *times* the gap, so the cap bound on every edge
-         * of every tile at once and the scheme went straight past its stability limit.
+         * It never showed while the sim ran at 60Hz, because the flow rate divided by 60 was a tenth
+         * of the gap and a tenth is stable — the half-gap cap was there but never binding. Dropping
+         * the tick rate to 4 made the raw flux one and a half *times* the gap, so the cap bound on
+         * every edge of every tile at once and the scheme went straight past its stability limit.
+         * That was the clearest evidence that dividing by the tick rate was the wrong idea: the
+         * stability of a numerical scheme is a fact about the grid and the step, and letting a
+         * display setting choose the step meant a display setting could break the physics.
          *
          * The theoretical limit for a lattice where a tile has four neighbours is an eighth, and a
          * tenth is used instead because *at* the limit the field is only marginally stable: it stops
@@ -92,8 +101,14 @@ class AirField(private val grams: LongArray) {
          */
         const val STABLE_SHARE = 10L
 
-        /** How fast heavy gas trades places with light gas below it, per second. */
-        const val STRATIFY_PER_SECOND = 3L
+        /**
+         * How much of the wrong-way-up gas trades places each tick, as the exact fraction
+         * [STRATIFY]/[STRATIFY_PER]. Three quarters, so a room sorts itself out in a few ticks.
+         */
+        const val STRATIFY = 3L
+
+        /** What [STRATIFY] is out of. See its note. */
+        const val STRATIFY_PER = 4L
 
         fun of(grams: LongArray): AirField = AirField(grams.copyOf())
 
@@ -129,22 +144,16 @@ fun stepAir(
     structure: StructureMap,
     air: AirField,
     gravity: Frac2,
-    ticksPerSecond: Int,
 ): Pair<AirField, Long> {
     val grams = air.copyGrams()
 
     // ── Flow: dense to sparse, each edge once ──
     //
-    // Sub-stepped, because a tick is not allowed to mean anything. One pass can only move
-    // [AirField.STABLE_SHARE] of a gradient before the scheme goes unstable, and at a low tick rate
-    // the gas is *owed* far more movement per tick than one pass may deliver. So the pass runs as
-    // many times as it takes: the share per second comes out the same at 4Hz and at 60Hz, which is
-    // the same promise [org.emerge.demo.outofspace.logistics.Rate] makes for every machine in the
-    // game. Total work per second is unchanged — the passes go up exactly as the ticks go down.
-    val passes = ((AirField.FLOW_PER_SECOND * AirField.STABLE_SHARE + ticksPerSecond - 1) /
-        ticksPerSecond).toInt().coerceAtLeast(1)
+    // Sub-stepped, because one pass can only move [AirField.STABLE_SHARE] of a gradient before the
+    // scheme goes unstable, and a tick is meant to be a visible amount of equalising. So a tick is
+    // [AirField.FLOW_PASSES] stable passes rather than one unstable big one.
     val moves = ArrayList<LongArray>()   // (from, to, amount) collected, then applied
-    repeat(passes) {
+    repeat(AirField.FLOW_PASSES) {
         val pressure = LongArray(grid.size) { tile ->
             var sum = 0L
             val base = tile * Species.COUNT
@@ -161,13 +170,11 @@ fun stepAir(
                 if (gap == 0L) continue
                 val from = if (gap > 0) tile else other
                 val magnitude = if (gap > 0) gap else -gap
-                var flux = AirField.FLOW_PER_SECOND * magnitude / (ticksPerSecond.toLong() * passes)
                 // The lattice stability limit, not the pairwise one — see [AirField.STABLE_SHARE].
-                flux = minOf(flux, magnitude / AirField.STABLE_SHARE)
-                // Both of the divisions above floor, so a small gradient rounds to no flow at all
-                // and freezes exactly where it is — a room visibly stops equalising with a permanent
-                // staircase across it. Applied after the stability cap, or the cap takes it straight
-                // back and reinstates the freeze it exists to prevent.
+                var flux = magnitude / AirField.STABLE_SHARE
+                // That division floors, so a small gradient rounds to no flow at all and freezes
+                // exactly where it is — a room visibly stops equalising with a permanent staircase
+                // across it.
                 if (flux == 0L && magnitude >= 2L) flux = 1L
                 flux = minOf(flux, pressure[from])          // never more than is there
                 if (flux <= 0L) continue
@@ -181,7 +188,7 @@ fun stepAir(
         }
     }
 
-    stratifyColumns(grid, structure, grams, gravity, ticksPerSecond)
+    stratifyColumns(grid, structure, grams, gravity)
 
     // ── Venting: anything not enclosed has no air, and what it had is gone ──
     var vented = 0L
@@ -214,7 +221,6 @@ fun stratifyColumns(
     structure: StructureMap,
     grams: LongArray,
     gravity: Frac2,
-    ticksPerSecond: Int,
 ) {
     // A diagonal or zero gravity means no stratification rather than a wrong one. Shared with
     // debris settling, which needs the identical answer and must not be able to disagree.
@@ -236,7 +242,7 @@ fun stratifyColumns(
                 val light = byWeight[l]
                 // Swap what is "the wrong way up": heavy gas above, light gas below.
                 val available = minOf(grams[upper + heavy.ordinal], grams[lower + light.ordinal])
-                val swap = AirField.STRATIFY_PER_SECOND * available / ticksPerSecond
+                val swap = AirField.STRATIFY * available / AirField.STRATIFY_PER
                 if (swap <= 0L) continue
                 grams[upper + heavy.ordinal] -= swap
                 grams[lower + heavy.ordinal] += swap

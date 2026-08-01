@@ -61,7 +61,7 @@ class GaugeTest {
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val s = run(line(ore), seconds(5))
+        val s = run(line(ore), 20)
         val gauge = gaugeOf(s)
         assertEquals(Species.Iron, gauge.lastDominant, "iron is the largest single component")
         assertEquals(410, gauge.lastPurity, "41% of the ore, not a majority of it")
@@ -71,7 +71,7 @@ class GaugeTest {
     @Test
     fun `the reading persists after the packet has gone, so an idle line still reads`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        val s = run(line(ore), seconds(30))
+        val s = run(line(ore), 120)
         val gauge = gaugeOf(s)
         assertEquals(null, gauge.held, "the packet moved on")
         assertEquals(410, gauge.lastPurity, "but the reading stayed")
@@ -81,7 +81,7 @@ class GaugeTest {
     @Test
     fun `a gauge measures without taking, so it costs the line nothing`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4_000L))
-        val s = run(line(ore), seconds(30))
+        val s = run(line(ore), 120)
         assertEquals(4_000L, s.stockpile.totalGrams, "every gram arrived at the far end")
         assertEquals(s.minedGrams + 4_000L, s.inTransitGrams + s.ventedGrams, "and none went missing")
     }
@@ -89,7 +89,7 @@ class GaugeTest {
     @Test
     fun `a gauge broadcasts purity on its channel`() {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L))
-        val s = run(line(pure, Channel.Violet), seconds(5))
+        val s = run(line(pure, Channel.Violet), 20)
         assertEquals(1000, s.signals[Channel.Violet], "pure metal reads 100%")
     }
 
@@ -109,7 +109,7 @@ class GaugeTest {
     @Test
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
-        val s = run(starterVessel(Grid(40, 28)), seconds(150))
+        val s = run(starterVessel(Grid(40, 28)), 600)
         val raw = s.signals[Channel.Amber]
         val concentrated = s.signals[Channel.Cyan]
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
@@ -120,7 +120,7 @@ class GaugeTest {
     fun `a gauge conserves what passes through it`() {
         var s = starterVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
-        repeat(seconds(90)) {
+        repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {
                 assertEquals(s.minedGrams, s.inTransitGrams + s.ventedGrams, "tick ${s.tick}")

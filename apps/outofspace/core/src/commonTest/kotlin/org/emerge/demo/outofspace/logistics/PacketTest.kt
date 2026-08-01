@@ -164,46 +164,57 @@ class PacketTest {
     }
 
     // ── Rates: the place a float would otherwise sneak in ──────────────────────
+    //
+    // A machine's rate is whole grams per tick, so the clock cannot make it fractional. A *throttle*
+    // can: these cover the one remaining division.
 
     @Test
-    fun `one kilo per second delivers exactly one kilo per second at 60Hz`() {
+    fun `a throttled machine delivers its exact share, not a rounded one`() {
         var carry = 0L
         var delivered = 0L
-        repeat(60) {
-            val (grams, next) = Rate.tick(gramsPerSecond = 1_000L, ticksPerSecond = 60, carry = carry)
+        // 125 g/tick at 45% is 56.25 g — a quarter gram a tick that must not be dropped.
+        repeat(4) {
+            val (grams, next) = Rate.tick(numerator = 125L * 450, denominator = 1_000, carry = carry)
             delivered += grams
             carry = next
         }
-        assertEquals(1_000L, delivered, "16.67 g/tick must still come to exactly 1kg over a second")
+        assertEquals(225L, delivered, "56.25 g/tick must come to exactly 225 g over four ticks")
     }
 
     @Test
-    fun `rate carry stays exact over a long run`() {
+    fun `throttle carry stays exact over a long run`() {
         var carry = 0L
         var delivered = 0L
-        val seconds = 3_600
-        repeat(60 * seconds) {
-            val (grams, next) = Rate.tick(1_000L, 60, carry)
+        val ticks = 3_600
+        repeat(ticks) {
+            val (grams, next) = Rate.tick(125L * 450, 1_000, carry)
             delivered += grams
             carry = next
         }
-        assertEquals(1_000L * seconds, delivered, "an hour at 1kg/s is exactly 3600kg, not about that")
+        assertEquals(125L * 450 * ticks / 1_000, delivered, "a long run is exact, not about right")
     }
 
     @Test
-    fun `awkward rates and tick rates stay exact`() {
+    fun `awkward rates and throttles stay exact`() {
         for (rate in longArrayOf(1L, 7L, 333L, 1_000L, 20_001L)) {
-            for (hz in intArrayOf(1, 7, 30, 60, 144)) {
+            for (activation in intArrayOf(1, 7, 333, 500, 999, 1_000)) {
                 var carry = 0L
                 var delivered = 0L
-                repeat(hz * 10) {
-                    val (g, next) = Rate.tick(rate, hz, carry)
+                repeat(1_000) {
+                    val (g, next) = Rate.tick(rate * activation, 1_000, carry)
                     delivered += g
                     carry = next
                 }
-                assertEquals(rate * 10, delivered, "rate=$rate hz=$hz")
+                assertEquals(rate * activation, delivered, "rate=$rate activation=$activation")
             }
         }
+    }
+
+    @Test
+    fun `full activation needs no carry at all`() {
+        val (grams, carry) = Rate.tick(125L * 1_000, 1_000, carry = 0L)
+        assertEquals(125L, grams)
+        assertEquals(0L, carry, "an unthrottled machine has no fraction to remember")
     }
 
     @Test

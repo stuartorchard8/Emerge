@@ -206,10 +206,30 @@ class SaveTest {
     }
 
     @Test
-    fun `a save from another version is refused rather than misread`() {
-        val text = Save.write(starterVessel(cfg.grid)).replaceFirst("outofspace 1", "outofspace 99")
+    fun `a save from a future version is refused rather than misread`() {
+        val text = Save.write(starterVessel(cfg.grid)).replaceFirst("outofspace 2", "outofspace 99")
         val error = assertFailsWith<SaveError> { Save.read(text) }
         assertTrue(error.message!!.contains("version 99"), error.message!!)
+    }
+
+    @Test
+    fun `a version 1 save keeps the throughput it was built with`() {
+        // Version 1 wrote grams per *second* at four ticks a second. Read as per-tick it would run
+        // the whole factory four times too fast, which is a save that loads and is still wrong.
+        val v1 = """
+            outofspace 1
+            grid 8 6
+            machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
+        """.trimIndent() + "\n"
+        val miner = assertNotNull(Save.read(v1).machines[20] as? Miner)
+        assertEquals(250L, miner.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
+    }
+
+    @Test
+    fun `a version 1 save with no rate at all gets the current default`() {
+        val v1 = "outofspace 1\ngrid 8 6\nmachine 20 Miner facing=Right ore=Iron=1000\n"
+        val miner = assertNotNull(Save.read(v1).machines[20] as? Miner)
+        assertEquals(Miner(Direction.Right, Mixture.EMPTY).gramsPerTick, miner.gramsPerTick)
     }
 
     @Test

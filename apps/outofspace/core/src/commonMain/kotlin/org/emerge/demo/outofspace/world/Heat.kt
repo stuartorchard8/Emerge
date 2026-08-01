@@ -52,10 +52,10 @@ class HeatField(private val joules: LongArray) {
 
         /**
          * How fast heat crosses between two adjacent enclosed tiles, in joules per kelvin of
-         * difference per second. Tuned so a smelter warms its neighbourhood over tens of seconds —
+         * difference **per tick**. Tuned so a smelter warms its neighbourhood over tens of ticks —
          * fast enough to watch, slow enough that where you put things matters.
          */
-        const val CONDUCTANCE = 220L
+        const val CONDUCTANCE = 55L
 
         /**
          * How fast a hull tile sheds heat to the space beside it — deliberately **small**.
@@ -66,8 +66,15 @@ class HeatField(private val joules: LongArray) {
          * (90) the hull shed a megajoule a second against the smelter's twenty kilojoules, so heat
          * could never accumulate and the only possible failure was freezing — which is neither true
          * nor an interesting thing to build against.
+         *
+         * Kept as the exact fraction [RADIANCE]/[RADIANCE_PER] joules per kelvin per exposed side
+         * per tick, because unlike [CONDUCTANCE] it does not come out whole and rounding it to one
+         * would quadruple it.
          */
         const val RADIANCE = 1L
+
+        /** What [RADIANCE] is out of. See its note. */
+        const val RADIANCE_PER = 4L
 
         fun ambient(grid: Grid, structure: StructureMap, occupancy: Occupancy): HeatField {
             val joules = LongArray(grid.size)
@@ -115,7 +122,6 @@ fun stepHeat(
     structure: StructureMap,
     occupancy: Occupancy,
     heat: HeatField,
-    ticksPerSecond: Int,
 ): Pair<HeatField, Long> {
     val joules = heat.copyJoules()
     val delta = LongArray(joules.size)
@@ -135,7 +141,7 @@ fun stepHeat(
             val cold = if (dT > 0) other else index
             val gap = if (dT > 0) dT else -dT
 
-            val wanted = HeatField.CONDUCTANCE * gap / ticksPerSecond
+            val wanted = HeatField.CONDUCTANCE * gap
             // The most that can move before the two are equal: dT * Ca*Cb / (Ca+Cb).
             val ceiling = gap.toLong() * capacity[hot] * capacity[cold] / (capacity[hot] + capacity[cold])
             val flux = minOf(wanted, ceiling)
@@ -158,7 +164,7 @@ fun stepHeat(
         if (exposure == 0) continue
         val gap = kelvin[index] - HeatField.SPACE_KELVIN
         if (gap <= 0) continue
-        val wanted = HeatField.RADIANCE * exposure * gap / ticksPerSecond
+        val wanted = HeatField.RADIANCE * exposure * gap / HeatField.RADIANCE_PER
         // Never radiate past the temperature of space.
         val ceiling = gap.toLong() * capacity[index]
         val flux = minOf(wanted, ceiling)

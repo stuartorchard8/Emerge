@@ -84,31 +84,34 @@ object Capacity {
 }
 
 /**
- * Converts a throughput expressed per second into a whole number of grams for one tick, **without
- * losing the fraction**.
+ * Scales a whole-gram rate by a fraction **without losing the fraction**.
  *
- * "1 kg/s" at 60 ticks per second is 16.67 g/tick, and there is no honest integer for that. Rounding
- * every tick either leaks mass or silently runs the belt at the wrong speed — over an hour, either
- * is a lot. So the fraction is carried in state: each tick adds the per-second rate to a carry,
- * takes out whole grams, and keeps the remainder for next time. Over any whole number of seconds the
- * delivered total is exact.
+ * A machine's throughput is stated per *tick*, so the clock never enters this: a miner is 250 g/tick
+ * and that is a whole number by construction. What is not whole is a **throttle**. A processor run
+ * at 45% of 125 g/tick owes 56.25 g, and there is no honest integer for that. Rounding it away every
+ * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is
+ * a lot. So the fraction is carried in state: each tick adds the scaled numerator to a carry, takes
+ * out whole grams, and keeps the remainder for next time. Over any run of ticks the delivered total
+ * is exact to within a gram.
  *
  * The carry is a plain `Long` living in whatever machine owns the rate, so it serialises with the
- * snapshot and survives a save like everything else.
+ * snapshot and survives a save like everything else. At full activation the numerator divides
+ * exactly and the carry simply stays at zero.
  */
 object Rate {
     /**
-     * Given a rate and the accumulated fractional [carry], returns `(gramsThisTick, newCarry)`.
+     * Given `numerator / denominator` grams and the accumulated fractional [carry], returns
+     * `(gramsThisTick, newCarry)`.
      *
-     * @param gramsPerSecond throughput, e.g. 1000 for the 1 kg/s belt
-     * @param ticksPerSecond the sim tick rate
+     * @param numerator grams-per-tick already multiplied by the throttle, e.g. `125 * activation`
+     * @param denominator what that multiplier is out of, e.g. [org.emerge.demo.outofspace.world.Signals.FULL]
      * @param carry leftover from the previous tick; start at 0
      */
-    fun tick(gramsPerSecond: Long, ticksPerSecond: Int, carry: Long): Pair<Long, Long> {
-        require(gramsPerSecond >= 0L) { "negative rate: $gramsPerSecond" }
-        require(ticksPerSecond > 0) { "tick rate must be positive: $ticksPerSecond" }
-        val accumulated = carry + gramsPerSecond
-        return (accumulated / ticksPerSecond) to (accumulated % ticksPerSecond)
+    fun tick(numerator: Long, denominator: Int, carry: Long): Pair<Long, Long> {
+        require(numerator >= 0L) { "negative rate: $numerator" }
+        require(denominator > 0) { "denominator must be positive: $denominator" }
+        val accumulated = carry + numerator
+        return (accumulated / denominator) to (accumulated % denominator)
     }
 }
 

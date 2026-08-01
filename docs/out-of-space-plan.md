@@ -530,9 +530,53 @@ that were pinned to the 60Hz figures now assert the property they are named for 
 than the last, concentrate well above the 41% feed — rather than three numbers that were never about
 refining.
 
-The general lesson, third time of asking: a tick is an implementation detail and every rate in the
-sim has to be stated per *second*. `Rate` does this for machines. Heat and air needed it and only
-appeared not to because 60Hz happened to sit inside their stability envelopes.
+The general lesson drawn at the time — a tick is an implementation detail, so every rate in the sim
+has to be stated per *second* — turned out to be the wrong one, and the next section is why.
+
+### The tick is the unit, and seconds belong to the renderer (2026-08-01)
+
+Everything above is the cost of one assumption: that the world should come out the same per second
+whatever the tick rate. Paying it bought a fractional carry on every machine, a sub-stepping loop in
+the atmosphere, a stability constant, a test-clock helper — and it *still* leaked, because processor
+purity is a function of the chunk size and the chunk size is a chunk per tick. Three sessions running,
+the bug of the day was a tick-rate bug.
+
+So the assumption is gone. **Every rate in the sim is now stated per tick**, and `ticksPerSecond` is
+read in exactly one place: the controller's frame accumulator, which is the one thing that is honestly
+about real time. Raising it makes the factory run faster, the way a speed dial does, with identical
+results per tick.
+
+What that is worth, concretely:
+
+- **The purity defect is gone**, without the rounding carry it was going to need. It was never about
+  chemistry. `process` floors its impurity split once per chunk, so the bias was a function of how
+  big a chunk is; make the chunk a constant and the bias is a constant. Nothing in `Chemistry.kt`
+  changed.
+- **`stratifyColumns` is fixed too**, the one still-dependent subsystem from the previous section. It
+  needed no sub-stepping — just its own fraction, `STRATIFY / STRATIFY_PER`.
+- **The atmosphere's sub-stepping stays, and now says what it means.** `FLOW_PASSES = 15` — a tick is
+  fifteen stability-limited relaxation passes. The old code derived that number from a per-second flow
+  rate and the tick rate; the arithmetic came out at exactly fifteen, so all of it was computing a
+  constant. `STABLE_SHARE` stays untouched: it was always a statement about a four-neighbour lattice,
+  and it is the one constant in this whole story that was right the first time.
+- **`TestClock.kt` is deleted.** Tests count ticks, because ticks are what there is.
+- **`Rate` survives, doing a smaller and truer job.** The clock was never the only fraction — a
+  *throttle* is one, and 45% of 125 g/tick is 56.25 g. So the carry still exists and still serialises,
+  but it now carries the throttle's remainder rather than the clock's, and an unthrottled machine
+  never touches it.
+
+Save version 2. The `rate` field changed units, so version 1 files are migrated by dividing by the
+four ticks a second they were written at — a v1 factory keeps the throughput it was built with instead
+of quietly running four times too fast, which is the sort of "it loaded fine" that is worse than a
+refusal.
+
+The test that pins all of this is `the tick rate changes how fast you watch, not what happens`: play
+200 ticks at 1Hz, 4Hz and 60Hz and compare the entire save text. It is deliberately blunt — a gram, a
+carry, a joule, a diverter cursor, anything at all that comes out different fails it. It is also the
+test the previous design could not have passed, which is the clearest statement of the difference.
+
+The real lesson, then, is not about ticks or seconds. It is that the sim had **two** units for time
+and spent all its effort keeping them agreeing. One unit cannot disagree with itself.
 
 ### Saving is a text file, and that is the point (2026-08-01)
 

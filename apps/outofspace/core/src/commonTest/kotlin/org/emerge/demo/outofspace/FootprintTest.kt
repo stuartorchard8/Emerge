@@ -180,14 +180,14 @@ class FootprintTest {
             val rails = st.rails.toMutableList()
             rails[st.grid.index(5, 6)] = null
             st.copy(rails = rails)
-        }, seconds(10))
+        }, 40)
 
         assertNull((s[s.grid.index(6, 6)] as Storage).contents, "no port on the tiles it crosses")
     }
 
     @Test
     fun `track reaching a port delivers into the building`() {
-        val s = run(feed(endX = 5, endY = 6), seconds(10))
+        val s = run(feed(endX = 5, endY = 6), 40)
         assertTrue(
             ((s[s.grid.index(6, 6)] as Storage).contents?.mass ?: 0L) > 0L,
             "it went in the front door, from underneath",
@@ -241,7 +241,7 @@ class FootprintTest {
 
     @Test
     fun `the starter plant still runs end to end with every machine at its real size`() {
-        val s = run(org.emerge.demo.outofspace.world.starterVessel(Grid(40, 28)), seconds(180))
+        val s = run(org.emerge.demo.outofspace.world.starterVessel(Grid(40, 28)), 720)
         assertTrue(s.stockpile[Form.IronIngot].total > 0L, "iron reaches the tank: ${s.stockpile}")
         assertEquals(
             s.stockpile[Form.IronIngot].total,

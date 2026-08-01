@@ -64,7 +64,7 @@ class AtmosphereTest {
         var s = starterVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
         assertTrue(s.atmosphereGrams > 0L, "a sealed vessel starts with air in it")
-        repeat(seconds(40)) {
+        repeat(160) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 79 == 0) assertAirBalanced(s, "tick ${s.tick}")
         }
@@ -101,7 +101,7 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         s = s.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        s = run(s, seconds(10))
+        s = run(s, 40)
         assertEquals(2_000L, s.air.pressureAt(grid.index(2, 2)), "the high side stayed high")
         assertEquals(500L, s.air.pressureAt(grid.index(6, 2)), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
@@ -118,7 +118,7 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        s = run(s, seconds(20))
+        s = run(s, 80)
         // Adjacent tiles are the precise statement: integer pressure settles into a +/-1 staircase,
         // because a difference of one cannot be halved without overshooting. Asserting a flat field
         // across the whole room would be asserting something that cannot be true.
@@ -185,7 +185,7 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        s = run(s, seconds(30))
+        s = run(s, 120)
         val co2High = s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide)
         val co2Low = s.air.gramsOf(g.index(2, 7), Species.CarbonDioxide)
         assertTrue(co2Low > co2High, "carbon dioxide should have settled: top=$co2High bottom=$co2Low")
@@ -209,7 +209,7 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        s = run(s, seconds(10))
+        s = run(s, 40)
         for (y in 2..5) {
             assertEquals(
                 1_000L, s.air.pressureAt(g.index(2, y)),
@@ -232,7 +232,7 @@ class AtmosphereTest {
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams, gravity = diagonal)
 
         val before = s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide)
-        s = run(s, seconds(10))
+        s = run(s, 40)
         assertEquals(before, s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide), "no sorting happened")
         assertAirBalanced(s, "diagonal gravity")
     }
@@ -248,7 +248,7 @@ class AtmosphereTest {
         val upIsDown = Frac2(Frac(0L, 1), Frac(-1L, 1))
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams, gravity = upIsDown)
 
-        s = run(s, seconds(30))
+        s = run(s, 120)
         val co2High = s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide)
         val co2Low = s.air.gramsOf(g.index(2, 7), Species.CarbonDioxide)
         assertTrue(co2High > co2Low, "with gravity reversed, heavy gas rises: top=$co2High bottom=$co2Low")
@@ -264,7 +264,7 @@ class AtmosphereTest {
             air = AirField.of(LongArray(g.size * Species.COUNT)),
             baselineAirGrams = 0L,
         )
-        val s = run(emptied, seconds(1))
+        val s = run(emptied, 4)
         assertEquals(Structure.Interior, s.structure[g.index(2, 2)], "it is still a room")
         assertEquals(0, s.pressurePercentAt(g.index(2, 2)), "it just has nothing in it")
     }
