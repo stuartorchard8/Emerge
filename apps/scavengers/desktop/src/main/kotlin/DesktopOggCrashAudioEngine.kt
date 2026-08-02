@@ -182,7 +182,7 @@ class DesktopOggCrashAudioEngine(
                     }
                     buffer
                 } finally {
-                    MemoryUtil.memFree(pcm)
+                    memFree(pcm)
                 }
             }
         } finally {

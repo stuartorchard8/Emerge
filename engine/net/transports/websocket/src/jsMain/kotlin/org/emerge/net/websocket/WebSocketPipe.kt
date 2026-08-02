@@ -29,24 +29,20 @@ class WebSocketPipe(url: String) : Pipe {
                 val pkt = pendingOutbox.removeFirst()
                 sendRaw(pkt)
             }
-            Unit
         }
         ws.onclose = { _: Event ->
             open = false
             closed = true
-            Unit
         }
         ws.onerror = { _: Event ->
             open = false
             closed = true
-            Unit
         }
         ws.onmessage = { event: dynamic ->
             val data: ArrayBuffer = event.data
             val view = Int8Array(data)
             val bytes = ByteArray(view.length) { view[it] }
             inbox.addLast(bytes)
-            Unit
         }
     }
 

@@ -28,7 +28,7 @@ object DrocketsSceneView {
     private var activeRenderer: DrocketsRenderer? = null
 
     fun start() {
-        Configuration.STACK_SIZE.set(512); // Size in KB
+        Configuration.STACK_SIZE.set(512) // Size in KB
         Thread {
             runGl()
         }.start()

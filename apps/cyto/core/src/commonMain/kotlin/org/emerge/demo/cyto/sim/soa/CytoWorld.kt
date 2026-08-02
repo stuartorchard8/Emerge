@@ -234,7 +234,7 @@ class CytoWorld private constructor(
      * Provides read-only CSR data for the renderer. Avoids materializing [SpringConstraintComponent]/[ConnectionStateComponent]
      * into the SimState, eliminating per-tick per-entity ArrayList/HashMap allocation.
      */
-    fun getSpringData(): org.emerge.demo.cyto.CytoFrameSpringData? {
+    fun getSpringData(): org.emerge.demo.cyto.CytoFrameSpringData {
         val n = count
         return org.emerge.demo.cyto.CytoFrameSpringData(
             entityId = entityId,

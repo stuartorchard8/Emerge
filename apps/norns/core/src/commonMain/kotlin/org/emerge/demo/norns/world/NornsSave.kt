@@ -115,8 +115,7 @@ object NornsSave {
         val m = HashMap<String, String>()                                  // single-line tagged fields
         var genomeAt = -1; val tracts = ArrayList<FloatArray>(); var morph: MorphNode? = null
         for ((idx, line) in b.withIndex()) {
-            val tag = line.substringBefore(' ')
-            when (tag) {
+            when (val tag = line.substringBefore(' ')) {
                 "c", "loci", "perc", "chem", "bio" -> m[tag] = line.substringAfter(' ')
                 "genome" -> genomeAt = idx
                 "tract" -> tracts.add(parseFloats(line.substringAfter(' ')))

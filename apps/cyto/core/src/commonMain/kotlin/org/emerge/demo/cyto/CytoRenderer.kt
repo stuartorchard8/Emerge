@@ -168,7 +168,7 @@ class CytoRenderer {
      *  started so the view isn't left zoomed on the previous world's scale. */
     fun resetView() {
         cameraX = Coord(0); cameraY = Coord(0)
-        viewHeight = org.emerge.demo.cyto.sim.CytoUnits.CELLS_PER_AXIS * 1.5f
+        viewHeight = CytoUnits.CELLS_PER_AXIS * 1.5f
         followId = -1; followX = 0f; followY = 0f; followVX = 0f; followVY = 0f
     }
 
@@ -936,7 +936,7 @@ class CytoRenderer {
     private fun gatherWeldDirs(
         id: EntityId,
         transform: TransformComponent,
-        springData: org.emerge.demo.cyto.CytoFrameSpringData?,
+        springData: CytoFrameSpringData?,
         springTable: ComponentTable<SpringConstraintComponent>?,
         transforms: ComponentTable<TransformComponent>,
     ): Int {

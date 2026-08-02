@@ -31,7 +31,7 @@ class BiologySystem(
     private val profiler: PipelineProfiler?,
     private val noMutateEntityIdProvider: () -> Int,
     private val state: CytoPipelineState,
-    private val bioProfile: org.emerge.demo.cyto.sim.BioProfile? = null,
+    private val bioProfile: BioProfile? = null,
 ) {
 
     // Per-tick profiling marker

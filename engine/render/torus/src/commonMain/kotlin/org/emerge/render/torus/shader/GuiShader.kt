@@ -4,7 +4,7 @@ import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ScreenLayout
 import org.emerge.sim.core.physics.primitives.Vec2
 
-class GuiShader() {
+class GuiShader {
     private val vSrc = GuiShaderSources.vertex()
     private val fSrc = GuiShaderSources.fragment()
     private val program: Int = ShaderFactory.createProgram(vSrc, fSrc)

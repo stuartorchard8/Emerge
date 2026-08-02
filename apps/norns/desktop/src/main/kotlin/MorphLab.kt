@@ -99,7 +99,7 @@ class MorphLab {
     private val gen = AtomicInteger(0)
     private var rows = ArrayList<MorphNode>()
 
-    private inner class Canvas : JPanel() {
+    private class Canvas : JPanel() {
         var img: BufferedImage? = null
         init { preferredSize = Dimension(RES, RES); minimumSize = Dimension(140, 140); background = BG }
         override fun paintComponent(g: Graphics) {

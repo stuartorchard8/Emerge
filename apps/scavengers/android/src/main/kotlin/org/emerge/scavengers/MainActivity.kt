@@ -60,7 +60,7 @@ class MainActivity : Activity() {
         private const val PREFS_NAME = "emerge_launch"
 
         fun loadSavedSettings(context: Context): LaunchSettings {
-            val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            val prefs = context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
             val defaults = LaunchSettings()
             return LaunchSettings(
                 mode = runCatching { LaunchMode.valueOf(prefs.getString("mode", null) ?: defaults.mode.name) }.getOrDefault(defaults.mode),
@@ -71,7 +71,7 @@ class MainActivity : Activity() {
         }
 
         fun saveSettings(context: Context, settings: LaunchSettings) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            context.getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
                 .edit()
                 .putString("mode", settings.mode.name)
                 .putString("gameMode", settings.gameMode.name)

@@ -36,7 +36,7 @@ actual class ParallelExecutor actual constructor() {
         }
         val jvmTasks: List<Callable<Unit>> = tasks.map { task ->
             object : Callable<Unit> {
-                override fun call(): Unit { task.invoke(); null }
+                override fun call() { task.invoke(); null }
             }
         }
         var first: Throwable? = null

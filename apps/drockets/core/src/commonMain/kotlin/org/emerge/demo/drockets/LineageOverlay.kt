@@ -942,7 +942,7 @@ class LineageOverlay {
         if (cached != null && cached.versionStamp == stamp && cached.filter == filter) {
             return cached.visibleIds to 0f
         }
-        val filterStart = kotlin.time.TimeSource.Monotonic.markNow()
+        val filterStart = TimeSource.Monotonic.markNow()
         val visibleIds = monotoneFilter.apply(filter, frame.lineage, frame.cladogramLayout, livingAncestryCache)
         val filterMs = filterStart.elapsedNow().inWholeNanoseconds.toFloat() / 1_000_000f
         visibleCache = VisibleCache(stamp, filter, visibleIds)

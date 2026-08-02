@@ -535,7 +535,7 @@ class CytoGoldenTest {
         // Fall back to SimState tables if CSR data not provided (legacy tests)
         val springsTable = if (springData == null) s.components.getTable<SpringConstraintComponent>() else null
         val connsTable = if (springData == null) s.components.getTable<ConnectionStateComponent>() else null
-        val springs: Map<EntityId, org.emerge.sim.core.physics.components.SpringConstraintComponent>? =
+        val springs: Map<EntityId, SpringConstraintComponent>? =
             if (springsTable != null) springsTable.asMap() else null
         val conns: Map<EntityId, ConnectionStateComponent>? =
             if (connsTable != null) connsTable.asMap() else null

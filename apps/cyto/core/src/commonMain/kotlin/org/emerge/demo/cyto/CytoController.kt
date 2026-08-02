@@ -708,7 +708,7 @@ class CytoController(
         // Approx degradation rate (broken bonds / tick) — wear gains total biomass (atoms) each tick and breaks
         // one per DEGRADE_PERIOD, so steady-state ≈ bonds / period; ≥1 while there's anything to degrade.
         val degRate = if (degradeTarget == null) 0
-            else maxOf(1, org.emerge.demo.cyto.sim.totalBiomass(cell.biomass) / CytoTuning.DEGRADE_PERIOD)
+            else maxOf(1, totalBiomass(cell.biomass) / CytoTuning.DEGRADE_PERIOD)
         val metabolism = (cytoMap.keys + bioMap.keys + envMap.keys).sorted().mapNotNull { s ->
             val env = envMap[s] ?: 0; val cyto = cytoMap[s] ?: 0; val bio = bioMap[s] ?: 0
             val canHold = handleable.canHold(SpeciesRegistry.id(s))
@@ -738,7 +738,7 @@ class CytoController(
             }
             CellInfo.MetRow(s, env, cyto, bio, dirEnvCyt, dirCytBio)
         }
-        val bioTotal = org.emerge.demo.cyto.sim.totalBiomass(cell.biomass)
+        val bioTotal = totalBiomass(cell.biomass)
         // How many Divide genes are contending for this tick's energy. The division phase splits the cell's
         // means by exactly this count (CytoBiologyCore: `quantaShare = work.quanta / dn`, and each reactant's
         // share is `count / n`), so it is what a DIVIDE gene can really draw on — not the whole pool.
@@ -1059,17 +1059,17 @@ class CytoController(
 
     /** Panel label for one condition operand: a constant's number, `BIO`/`TOUCH`/`NBRS` for the live readings,
      *  or the species token for a cytoplasm count. */
-    private fun operandLabel(op: org.emerge.demo.cyto.sim.Operand): String = when (op) {
-        is org.emerge.demo.cyto.sim.Operand.Constant -> op.value.toString()
-        is org.emerge.demo.cyto.sim.Operand.Chem -> spName(op.species)
-        org.emerge.demo.cyto.sim.Operand.Biomass -> "BIO"
-        org.emerge.demo.cyto.sim.Operand.Touching -> "TOUCH"
-        org.emerge.demo.cyto.sim.Operand.Neighbours -> "NBRS"
+    private fun operandLabel(op: Operand): String = when (op) {
+        is Operand.Constant -> op.value.toString()
+        is Operand.Chem -> spName(op.species)
+        Operand.Biomass -> "BIO"
+        Operand.Touching -> "TOUCH"
+        Operand.Neighbours -> "NBRS"
     }
 
     /** A molecule's display name for the caps card UI ("?" for an empty operand). */
     private fun spName(species: String): String =
-        if (species.isEmpty()) "?" else org.emerge.demo.cyto.sim.SpeciesNames.name(species, speciesAliases).uppercase()
+        if (species.isEmpty()) "?" else SpeciesNames.name(species, speciesAliases).uppercase()
 
     /** Fixed-point-ish 2dp formatter (multiplatform-safe — no String.format). */
     private fun fmt(v: Float): String {

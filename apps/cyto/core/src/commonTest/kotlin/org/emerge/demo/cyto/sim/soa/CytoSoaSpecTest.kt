@@ -680,7 +680,7 @@ class CytoSoaSpecTest {
         // silent no-op. Exact operands (the only kind now) join the monomers regardless of what the cell has
         // most of, so production continues. This is the case that made wildcards a liability, kept as a guard
         // now that they are gone.
-        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val sid = { s: String -> SpeciesRegistry.id(s) }
         val work = CellWork(
             cytoplasm = MoleculeStore.of(mapOf("r" to 1000, "rr" to 5000)),   // product already outnumbers the monomer
             biomass = MoleculeStore.of(mapOf("rr" to 2000)),
@@ -700,7 +700,7 @@ class CytoSoaSpecTest {
         // contains a `gb` bond and even when the cell holds more of it. That richest-molecule-containing-the-
         // bond rule was the old behaviour, and it meant a digestion gene's products depended on the cytoplasm
         // rather than on the gene; naming the fragments makes the whole reaction a property of the genome.
-        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val sid = { s: String -> SpeciesRegistry.id(s) }
         val work = CellWork(
             cytoplasm = MoleculeStore.of(mapOf("rgb" to 5000, "gb" to 1000, "r" to 1000, "g" to 1000)),
             biomass = MoleculeStore.of(mapOf("bg" to 1000)),
@@ -717,7 +717,7 @@ class CytoSoaSpecTest {
     fun breakIsInertWhenItsFragmentsCannotJoin() {
         // No molecule joins `rg`+`rg` (it would repeat the `rg` bond), so no molecule can split into them and
         // the gene has nothing to act on. It must be a clean no-op rather than picking something approximate.
-        val sid = { s: String -> org.emerge.demo.cyto.sim.SpeciesRegistry.id(s) }
+        val sid = { s: String -> SpeciesRegistry.id(s) }
         val work = CellWork(
             cytoplasm = MoleculeStore.of(mapOf("rg" to 5000, "r" to 1000, "g" to 1000)),
             biomass = MoleculeStore.of(mapOf("bg" to 1000)),
@@ -967,7 +967,7 @@ class CytoSoaSpecTest {
         // Spawn at the biomass baseline radius (sqrt(8000/16000) ≈ 0.7) so Contract has room to bite on tick 1
         // (a cell already at MIN_RADIUS couldn't shrink); a shallow overlap touches without welding.
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000, "r" to 100000, "g" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = touchContract)
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000, "r" to 100000, "g" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = Frac(7, 10), genome = touchContract)
         val initial = run {
             val b = SimBuilder(SimState())
             cell(b, -0.6f); cell(b, 0.6f)   // ~0.2 overlap at radius 0.7 ⇒ touch, not weld
@@ -989,7 +989,7 @@ class CytoSoaSpecTest {
         // info panel evaluated every TOUCH clause against a hardcoded 0 and greyed out genes that were in fact
         // firing. Same geometry as the gating test — two shallow-overlapping cells plus a lone control.
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10))
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Muscle, cytoplasm = mapOf("rg" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = Frac(7, 10))
         val initial = run {
             val b = SimBuilder(SimState())
             cell(b, -0.6f); cell(b, 0.6f)   // touching, not welded
@@ -1018,7 +1018,7 @@ class CytoSoaSpecTest {
             Gene(EnergySource.FormBond("r", "g"), GeneCondition(Operand.Neighbours, Comparison.Greater, Operand.Constant(0)), GeneAction(ActionType.Contract)),
         )
         fun cell(b: SimBuilder, x: Float) =
-            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 100000, "r" to 100000, "g" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = org.emerge.sim.core.physics.primitives.Frac(7, 10), genome = weldThenSense)
+            b.spawnCell(CytoUnits.coord2(x, 0f), Coord2.zero, CellType.Collector, cytoplasm = mapOf("rg" to 100000, "r" to 100000, "g" to 100000), biomass = mapOf("rg" to 8000), logicalRadius = Frac(7, 10), genome = weldThenSense)
         val initial = run {
             val b = SimBuilder(SimState())
             cell(b, -0.1f); cell(b, 0.1f)   // deep overlap ⇒ Repair welds them into a connected pair
