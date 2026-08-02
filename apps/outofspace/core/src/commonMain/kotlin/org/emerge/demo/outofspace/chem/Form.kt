@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace.chem
 
 /**
  * What a pile of matter has been *made into*. Orthogonal to what it is made *of*: a
- * [Form.SteelAlloy] still carries the exact species that went into it, impurities and all.
+ * [Form.IronIngot] still carries the exact species that went into it, impurities and all.
  *
  * As with [Species], declaration order is part of the contract — it is the tie-break and the
  * serialisation order. Append, do not reorder.
@@ -30,39 +30,6 @@ enum class Form {
     CarbonFiber,
     RareEarthPowder,
     EnrichedUranium,
-
-    // ── Tier 2: alloys and composites ──
-    SteelAlloy,
-    AluminumAlloy,
-    TitaniumAlloy,
-    CopperWire,
-    SiliconWafer,
-    CarbonComposite,
-    Superconductor,
-    NuclearCell,
-
-    // ── Tier 3: components ──
-    StructuralFrame,
-    FuelTank,
-    HeatShielding,
-    ElectricalSystem,
-    GuidanceSystem,
-    LifeSupport,
-    Thruster,
-    ReactionWheel,
-    DistanceSensor,
-    Fabricator,
-
-    // ── Tier 4: major systems ──
-    PropulsionSystem,
-    CommandModule,
-    PowerSystem,
-    RocketStructure,
-
-    // ── Tier 5: whole-vessel assemblies ──
-    RocketBody,
-    ControlSystems,
-    Vessel,
     ;
 
     /**
@@ -106,64 +73,3 @@ val SMELT_PRODUCTS: Map<Species, Form> = mapOf(
     Species.RareEarth to Form.RareEarthPowder,
     Species.Uranium to Form.EnrichedUranium,
 )
-
-/**
- * Every recipe, as `output to (inputA, inputB)`. Order of the two inputs is not significant — see
- * [recipeFor].
- *
- * The tree is deliberately binary the whole way up: two things go in, one comes out. It keeps the
- * crafting UI trivial and it means a machine that crafts never needs an ingredient list.
- *
- * **Currently unused by any machine.** The fabricator that read it was dropped — a throwback to an
- * earlier shape of the game. This is kept rather than deleted because it is what construction costs
- * will be denominated in: "what does a smelter cost" is a question about this tree. If costs turn out
- * not to want it, delete it then; it is chemistry, and it is covered by its own tests either way.
- */
-val RECIPES: Map<Form, Pair<Form, Form>> = mapOf(
-    // Tier 2 — alloys and composites
-    Form.SteelAlloy to (Form.IronIngot to Form.CarbonFiber),
-    Form.AluminumAlloy to (Form.AluminumIngot to Form.TitaniumIngot),
-    Form.TitaniumAlloy to (Form.TitaniumIngot to Form.RareEarthPowder),
-    Form.CopperWire to (Form.CopperIngot to Form.SiliconCrystal),
-    Form.SiliconWafer to (Form.SiliconCrystal to Form.RareEarthPowder),
-    Form.CarbonComposite to (Form.CarbonFiber to Form.TitaniumAlloy),
-    Form.Superconductor to (Form.RareEarthPowder to Form.CopperWire),
-    Form.NuclearCell to (Form.EnrichedUranium to Form.TitaniumAlloy),
-
-    // Tier 3 — components
-    Form.StructuralFrame to (Form.SteelAlloy to Form.AluminumAlloy),
-    Form.FuelTank to (Form.AluminumAlloy to Form.AluminumAlloy),
-    Form.HeatShielding to (Form.CarbonComposite to Form.TitaniumAlloy),
-    Form.ElectricalSystem to (Form.CopperWire to Form.CopperWire),
-    Form.GuidanceSystem to (Form.SiliconWafer to Form.Superconductor),
-    Form.LifeSupport to (Form.AluminumAlloy to Form.ElectricalSystem),
-    Form.Thruster to (Form.SteelAlloy to Form.HeatShielding),
-    Form.ReactionWheel to (Form.SteelAlloy to Form.ElectricalSystem),
-    Form.DistanceSensor to (Form.SiliconWafer to Form.CopperWire),
-    Form.Fabricator to (Form.TitaniumAlloy to Form.ElectricalSystem),
-
-    // Tier 4 — major systems
-    Form.PropulsionSystem to (Form.Thruster to Form.FuelTank),
-    Form.CommandModule to (Form.GuidanceSystem to Form.LifeSupport),
-    Form.PowerSystem to (Form.NuclearCell to Form.ElectricalSystem),
-    Form.RocketStructure to (Form.StructuralFrame to Form.HeatShielding),
-
-    // Tier 5 — whole-vessel assemblies
-    Form.RocketBody to (Form.PropulsionSystem to Form.RocketStructure),
-    Form.ControlSystems to (Form.CommandModule to Form.PowerSystem),
-    Form.Vessel to (Form.RocketBody to Form.ControlSystems),
-)
-
-/** Reverse index, built once: an unordered input pair → the form it makes. */
-private val RECIPES_BY_INPUTS: Map<Long, Form> =
-    RECIPES.entries.associate { (output, inputs) -> recipeKey(inputs.first, inputs.second) to output }
-
-/** The form made by combining [a] and [b] in either order, or null if that is not a recipe. */
-fun recipeFor(a: Form, b: Form): Form? = RECIPES_BY_INPUTS[recipeKey(a, b)]
-
-/** Order-independent key for a pair of forms. */
-private fun recipeKey(a: Form, b: Form): Long {
-    val lo = minOf(a.ordinal, b.ordinal).toLong()
-    val hi = maxOf(a.ordinal, b.ordinal).toLong()
-    return lo * Form.ALL.size + hi
-}

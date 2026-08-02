@@ -55,7 +55,7 @@ fun smelt(input: Resource): SmeltResult {
     val dominantMass = input.mixture[dominant]
     val impurities = input.mixture.total - dominantMass
 
-    // Nothing to smelt a fluid into, and too dirty is too dirty: either way the whole lot is slag.
+    // Nothing to smelt a fluid into, and too dirty is too dirty: either way the lot is slag.
     if (dominant !in SMELT_PRODUCTS || impurities >= dominantMass) {
         return SmeltResult(
             refined = Resource(Form.Slag, Mixture.EMPTY),
@@ -125,15 +125,6 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
         product = Resource(input.form, productMixture),
         tailings = Resource(input.form, input.mixture - productMixture),
     )
-}
-
-/**
- * Combines two resources per [RECIPES], or returns null if they are not a recipe. Composition is
- * simply summed — nothing is lost in assembly, so impurities ride all the way up the tree.
- */
-fun craft(a: Resource, b: Resource): Resource? {
-    val output = recipeFor(a.form, b.form) ?: return null
-    return Resource(output, a.mixture + b.mixture)
 }
 
 /** Pours two piles of the same form together, or returns null if the forms differ. */

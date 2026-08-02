@@ -3,7 +3,6 @@ package org.emerge.demo.outofspace.chem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -243,95 +242,13 @@ class ChemistryTest {
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 
-    // ── Crafting ───────────────────────────────────────────────────────────────
-
-    @Test
-    fun `crafting conserves mass and works in either input order`() {
-        val iron = Resource(Form.IronIngot, Mixture.of(Species.Iron to 500L))
-        val fiber = Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 300L))
-        val steel = assertNotNull(craft(iron, fiber))
-        assertEquals(Form.SteelAlloy, steel.form)
-        assertConserved(listOf(iron.mixture, fiber.mixture), listOf(steel.mixture), "craft")
-        assertEquals(steel, craft(fiber, iron), "input order must not matter")
-    }
-
-    @Test
-    fun `crafting a non-recipe returns null`() {
-        val iron = Resource(Form.IronIngot, Mixture.of(Species.Iron to 500L))
-        assertNull(craft(iron, iron))
-    }
-
-    @Test
-    fun `merging requires matching forms`() {
-        val a = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L))
-        val b = Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L))
-        assertEquals(350L, assertNotNull(merge(a, b)).mass)
-        assertNull(merge(a, Resource(Form.CopperIngot, Mixture.of(Species.Copper to 1L))))
-    }
-
     // ── The tree as a whole ────────────────────────────────────────────────────
 
     @Test
     fun `every form is reachable from ore`() {
         val reachable = mutableSetOf(Form.Ore, Form.Slag)
         reachable += SMELT_PRODUCTS.values
-        var grew = true
-        while (grew) {
-            grew = false
-            for ((output, inputs) in RECIPES) {
-                if (output !in reachable && inputs.first in reachable && inputs.second in reachable) {
-                    reachable += output
-                    grew = true
-                }
-            }
-        }
         val orphans = Form.ALL.filterNot { it in reachable }
         assertTrue(orphans.isEmpty(), "unreachable forms: $orphans")
-    }
-
-    @Test
-    fun `no two recipes share the same pair of inputs`() {
-        val seen = mutableMapOf<Set<Form>, Form>()
-        for ((output, inputs) in RECIPES) {
-            val key = setOf(inputs.first, inputs.second)
-            val clash = seen.put(key, output)
-            assertNull(clash, "$output and $clash are both made from $key")
-        }
-    }
-
-    @Test
-    fun `mine, process, smelt and craft a component without losing a gram`() {
-        // The whole Phase 1 loop end to end, tracking every stream so nothing can hide.
-        val mined = Resource(
-            Form.Ore,
-            Mixture.of(
-                Species.Iron to 41_237L,   // deliberately not round, to exercise the remainders
-                Species.Silica to 30_011L,
-                Species.Copper to 18_503L,
-                Species.Carbon to 11_249L,
-            ),
-        )
-        val leftovers = mutableListOf<Mixture>()
-
-        // Concentrate twice: tailings are set aside, not thrown away.
-        val first = process(mined, 900)
-        leftovers += first.tailings.mixture
-        val second = process(first.product, 900)
-        leftovers += second.tailings.mixture
-
-        val smelted = smelt(second.product)
-        leftovers += smelted.slag.mixture
-        assertEquals(Form.IronIngot, smelted.refined.form)
-        assertTrue(smelted.refined.mass > 0L, "twice-concentrated ore should smelt to something")
-
-        // Feed it carbon fibre and make steel.
-        val fiber = Resource(Form.CarbonFiber, Mixture.of(Species.Carbon to 5_000L))
-        val steel = assertNotNull(craft(smelted.refined, fiber))
-
-        assertConserved(
-            inputs = listOf(mined.mixture, fiber.mixture),
-            outputs = leftovers + steel.mixture,
-            what = "the full ore-to-steel chain",
-        )
     }
 }

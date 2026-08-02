@@ -117,7 +117,7 @@ class PacketTest {
         val r = assertNotNull(mergeInto(a, b))
         assertEquals(1_000L, r.merged.mass)
         assertEquals(300L, assertNotNull(r.rejected).mass)
-        assertConserved(listOf(a.contents, b.contents), listOf(r.merged.contents, r.rejected!!.contents), "merge")
+        assertConserved(listOf(a.contents, b.contents), listOf(r.merged.contents, r.rejected.contents), "merge")
     }
 
     @Test
@@ -132,7 +132,7 @@ class PacketTest {
     @Test
     fun `different solid forms do not merge`() {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L)))
-        val frame = SolidPacket(Resource(Form.StructuralFrame, Mixture.of(Species.Iron to 100L)))
+        val frame = SolidPacket(Resource(Form.SiliconCrystal, Mixture.of(Species.Iron to 100L)))
         assertNull(mergeInto(ingot, frame), "an ingot cannot be poured into a structural frame")
     }
 
