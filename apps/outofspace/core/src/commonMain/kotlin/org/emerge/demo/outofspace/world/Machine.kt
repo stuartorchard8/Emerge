@@ -1,36 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 /**
- * What kind of thing sits on a tile — the palette the player builds from.
- *
- * [conduit] is which layer it goes on. A null conduit means the **deck**: buildings, walls, the
- * things that occupy floor space and that heat and air care about. Everything else is a fitting on a
- * transport layer, and a fitting shares its tile with whatever is on the deck beneath it — which is
- * the whole point of layers, and the reason a rail can run underneath a smelter to reach its port.
- */
-enum class MachineKind(val label: String, val conduit: Conduit? = null) {
-    Rail("RAIL", Conduit.Rail),
-    Gauge("GAUGE", Conduit.Rail),
-    Bridge("BRIDGE", Conduit.Rail),
-    Miner("MINER"),
-    Processor("PROCESSOR"),
-    Smelter("SMELTER"),
-    Storage("STORAGE"),
-    Sensor("SENSOR"),
-    Vent("VENT"),
-    Hull("HULL"),
-    ;
-
-    /** True for the things that take up floor space. */
-    val isDeck: Boolean get() = conduit == null
-
-    companion object {
-        val ALL: List<MachineKind> = entries.toList()
-        val DECK: List<MachineKind> = ALL.filter { it.isDeck }
-    }
-}
-
-/**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
  * of the world is a snapshot of the world.
  *
