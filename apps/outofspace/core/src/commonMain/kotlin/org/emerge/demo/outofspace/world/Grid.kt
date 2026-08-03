@@ -58,4 +58,14 @@ data class Grid(val width: Int, val height: Int) {
         val y = yOf(index) + dir.dy
         return if (inBounds(x, y)) index(x, y) else -1
     }
+
+    fun isEdge(tile: Int) : Boolean {
+        // TODO: derive exposure from grid index directly for efficiency
+        for (dir in Direction.ALL) {
+            if (neighbour(tile, dir) < 0) {
+                return true
+            }
+        }
+        return false
+    }
 }

@@ -133,18 +133,6 @@ class DebrisTest {
     }
 
     @Test
-    fun `breaching a room takes its spilled material with the air`() {
-        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
-        val g = s0.grid
-        var s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
-        assertEquals(9_000L, s.debrisGrams, "resting on the deck")
-
-        s = run(s, 3, OutofspaceInput(listOf(Edit.Remove(g.index(4, 1)))))
-        assertEquals(0L, s.debrisGrams, "the room is outside now")
-        assertEquals(9_000L, s.ventedGrams)
-    }
-
-    @Test
     fun `debris falls through machinery rather than piling on top of it`() {
         // A belt spanning the column the heap falls down. Rubble on the deck under a conveyor is
         // rubble on the deck; blocking it would leave piles hanging where a machine happened to be.

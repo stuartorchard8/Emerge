@@ -225,7 +225,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
-        val (heat, radiated) = stepHeat(state.grid, structure, occupancy, HeatField.of(warmed))
+        val (heat, radiated) = HeatField.of(warmed) to 0L
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)

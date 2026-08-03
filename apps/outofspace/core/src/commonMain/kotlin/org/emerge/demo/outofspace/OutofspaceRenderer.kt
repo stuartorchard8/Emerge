@@ -225,7 +225,6 @@ class OutofspaceRenderer {
                 for (x in minX..maxX) {
                     val index = grid.index(x, y)
                     val tint = when {
-                        state.structure.isVacuum(index) -> Colors.OVERLAY_VACUUM
                         overlay == Overlay.Heat -> temperatureColor(state.kelvinAt(index))
                         else -> pressureColor(state, index)
                     }

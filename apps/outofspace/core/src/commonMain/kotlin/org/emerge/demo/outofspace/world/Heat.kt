@@ -96,8 +96,7 @@ class HeatField(private val joules: LongArray) {
          * hard to cool is precisely that there is a lot of it.
          */
         fun capacityOf(structure: StructureMap, occupancy: Occupancy, index: Int): Long = when {
-            structure.isVacuum(index) -> 0L
-            structure.isHull(index) -> HULL_CAPACITY
+            structure.isImpermeable(index) -> HULL_CAPACITY
             else -> INTERIOR_CAPACITY + if (!occupancy.isFree(index)) MACHINE_CAPACITY else 0L
         }
     }
@@ -130,10 +129,9 @@ fun stepHeat(
 
     // ── Conduction, each unordered pair once (right and down covers every edge) ──
     for (index in joules.indices) {
-        if (!structure.isEnclosed(index)) continue
         for (dir in CONDUCTION_DIRS) {
             val other = grid.neighbour(index, dir)
-            if (other < 0 || !structure.isEnclosed(other)) continue
+            if (other < 0 || !structure.isContained(other)) continue
             val dT = kelvin[index] - kelvin[other]
             if (dT == 0) continue
 
@@ -155,11 +153,11 @@ fun stepHeat(
     // ── Radiation: hull tiles touching space lose heat to it, permanently ──
     var radiated = 0L
     for (index in joules.indices) {
-        if (!structure.isHull(index)) continue
+        if (!structure.isImpermeable(index)) continue
         var exposure = 0
         for (dir in Direction.ALL) {
             val other = grid.neighbour(index, dir)
-            if (other < 0 || structure.isVacuum(other)) exposure++
+            if (other < 0 || !structure.isContained(other)) exposure++
         }
         if (exposure == 0) continue
         val gap = kelvin[index] - HeatField.SPACE_KELVIN
@@ -178,7 +176,7 @@ fun stepHeat(
         // A tile that is no longer enclosed holds nothing — breach a hull and the room's heat goes
         // with its air. That energy is *radiated*, not deleted: silently zeroing it would be exactly
         // the kind of leak the mass model was built to make impossible.
-        if (!structure.isEnclosed(i)) {
+        if (!structure.isContained(i)) {
             radiated += joules[i]
             joules[i] = 0L
         }

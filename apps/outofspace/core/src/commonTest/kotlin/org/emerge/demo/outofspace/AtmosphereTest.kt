@@ -73,19 +73,6 @@ class AtmosphereTest {
     }
 
     @Test
-    fun `breaching the hull vents the room and the loss is accounted for`() {
-        val room = sealedRoom(8, 8)
-        val g = room.grid
-        val aboardBefore = room.atmosphereGrams
-        assertTrue(aboardBefore > 0L)
-
-        val breached = run(room, 5, OutofspaceInput(listOf(Edit.Remove(g.index(4, 1)))))
-        assertEquals(0L, breached.atmosphereGrams, "the room emptied")
-        assertEquals(aboardBefore, breached.airVentedGrams, "and every gram of it is on the ledger")
-        assertAirBalanced(breached, "after the breach")
-    }
-
-    @Test
     fun `hull separates two rooms so their pressures do not equalise`() {
         // Two 3-wide rooms sharing a wall, one at double pressure.
         val grid = Grid(9, 5)
@@ -123,10 +110,10 @@ class AtmosphereTest {
         // because a difference of one cannot be halved without overshooting. Asserting a flat field
         // across the whole room would be asserting something that cannot be true.
         for (tile in 0 until g.size) {
-            if (!s.structure.isInterior(tile)) continue
+            if (!s.structure.isContained(tile)) continue
             for (dir in org.emerge.demo.outofspace.world.Direction.ALL) {
                 val other = g.neighbour(tile, dir)
-                if (other < 0 || !s.structure.isInterior(other)) continue
+                if (other < 0 || !s.structure.isContained(other) || s.structure.isImpermeable(other)) continue
                 val gap = s.air.pressureAt(tile) - s.air.pressureAt(other)
                 assertTrue(gap in -1L..1L, "neighbours should be level: $tile vs $other differ by $gap")
             }

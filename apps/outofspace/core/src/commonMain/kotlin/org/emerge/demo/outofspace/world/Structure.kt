@@ -31,12 +31,10 @@ class StructureMap(private val kinds: ByteArray) {
 
     operator fun get(index: Int): Structure = Structure.entries[kinds[index].toInt()]
 
-    fun isVacuum(index: Int): Boolean = kinds[index].toInt() == Structure.Vacuum.ordinal
-    fun isHull(index: Int): Boolean = kinds[index].toInt() == Structure.Hull.ordinal
-    fun isInterior(index: Int): Boolean = kinds[index].toInt() == Structure.Interior.ordinal
+    fun isImpermeable(index: Int): Boolean = kinds[index].toInt() == Structure.Hull.ordinal
+    fun isPermeable(index: Int): Boolean = !isImpermeable(index)
 
-    /** Tiles that hold heat and air: everything except open space. */
-    fun isEnclosed(index: Int): Boolean = !isVacuum(index)
+    fun isContained(index: Int): Boolean = kinds[index].toInt() != Structure.Vacuum.ordinal
 
     val interiorCount: Int get() = kinds.count { it.toInt() == Structure.Interior.ordinal }
 

@@ -116,7 +116,7 @@ class AirField(private val grams: LongArray) {
         fun ambient(grid: Grid, structure: StructureMap): AirField {
             val grams = LongArray(grid.size * Species.COUNT)
             for (tile in 0 until grid.size) {
-                if (!structure.isInterior(tile)) continue
+                if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
                 val base = tile * Species.COUNT
                 for (s in Species.GASES) grams[base + s.ordinal] = AMBIENT_AIR[s]
             }
@@ -162,10 +162,10 @@ fun stepAir(
         }
         moves.clear()
         for (tile in 0 until grid.size) {
-            if (!structure.isInterior(tile)) continue
+            if (!structure.isPermeable(tile)) continue
             for (dir in FLOW_DIRS) {
                 val other = grid.neighbour(tile, dir)
-                if (other < 0 || !structure.isInterior(other)) continue
+                if (other < 0 || !structure.isPermeable(other)) continue
                 val gap = pressure[tile] - pressure[other]
                 if (gap == 0L) continue
                 val from = if (gap > 0) tile else other
@@ -188,12 +188,13 @@ fun stepAir(
         }
     }
 
-    stratifyColumns(grid, structure, grams, gravity)
+    stratifyColumns(grid, grams, gravity)
 
     // ── Venting: anything not enclosed has no air, and what it had is gone ──
     var vented = 0L
     for (tile in 0 until grid.size) {
-        if (structure.isInterior(tile)) continue
+        if (!grid.isEdge(tile)) continue
+
         val base = tile * Species.COUNT
         for (s in Species.GASES) {
             vented += grams[base + s.ordinal]
@@ -218,7 +219,6 @@ fun stepAir(
  */
 fun stratifyColumns(
     grid: Grid,
-    structure: StructureMap,
     grams: LongArray,
     gravity: Frac2,
 ) {
@@ -230,9 +230,8 @@ fun stratifyColumns(
     val byWeight = Species.GASES.sortedByDescending { it.molarMass }
 
     for (tile in 0 until grid.size) {
-        if (!structure.isInterior(tile)) continue
         val below = grid.neighbour(tile, down)
-        if (below < 0 || !structure.isInterior(below)) continue
+        if (below < 0) continue // Skips comparison off the grid
 
         val upper = tile * Species.COUNT
         val lower = below * Species.COUNT

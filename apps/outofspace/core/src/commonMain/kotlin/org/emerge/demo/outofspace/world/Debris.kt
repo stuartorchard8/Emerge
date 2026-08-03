@@ -123,14 +123,7 @@ fun settleDebris(
     work: DebrisWork,
     gravity: Frac2,
 ): Long {
-    // Anything lying where there is no floor is in space, and goes. This runs first so a pile that
-    // was inside a room the player just breached leaves this tick rather than resting on vacuum.
     var vented = 0L
-    for (tile in work.tiles()) {
-        if (structure.isInterior(tile)) continue
-        for (r in work.clear(tile)) vented += r.mass
-    }
-
     val down = downDirection(gravity) ?: return vented
 
     // Furthest along the fall direction first: the pile at the bottom settles before the one above
@@ -138,7 +131,12 @@ fun settleDebris(
     val order = work.tiles().sortedByDescending { fallDepth(grid, it, down) }
     for (tile in order) {
         val below = grid.neighbour(tile, down)
-        if (below < 0 || !structure.isInterior(below)) continue
+        if (below < 0) {
+            // Anything that falls off at the edge of the grid is in space and goes.
+            for (r in work.clear(tile)) vented += r.mass
+            continue
+        }
+        if (!structure.isPermeable(below)) continue
         if (work.massAt(below) >= Debris.TILE_CAP) continue
         work.spill(below, work.clear(tile))
     }

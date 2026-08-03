@@ -200,7 +200,7 @@ class HeatTest {
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = (0 until s.grid.size).maxOf { i -> if (s.structure.isVacuum(i)) 0 else s.kelvinAt(i) }
+            val peak = (0 until s.grid.size).maxOf { i -> if (!s.structure.isContained(i)) 0 else s.kelvinAt(i) }
             assertTrue(peak <= previousPeak, "the hottest tile got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }
