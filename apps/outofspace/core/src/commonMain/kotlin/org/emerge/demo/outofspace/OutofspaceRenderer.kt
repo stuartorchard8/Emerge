@@ -39,17 +39,6 @@ import kotlin.math.max
  * screen and [OutofspaceRenderer.tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
  * gravity will point when Phase 4 arrives.
  */
-/** What the world is being looked at *through*. */
-enum class Overlay(val label: String) {
-    None("PLAIN"),
-    Heat("HEAT"),
-    Air("AIR"),
-    ;
-
-    /** What `H` cycles to next. One key beats three, and the HUD has buttons for direct picks. */
-    val next: Overlay get() = entries[(ordinal + 1) % entries.size]
-}
-
 class OutofspaceRenderer {
 
     private val rects = UiRectRenderer(maxRects = MAX_RECTS)
