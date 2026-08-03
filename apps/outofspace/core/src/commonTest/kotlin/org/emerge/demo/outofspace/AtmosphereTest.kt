@@ -110,7 +110,7 @@ class AtmosphereTest {
         // because a difference of one cannot be halved without overshooting. Asserting a flat field
         // across the whole room would be asserting something that cannot be true.
         for (tile in 0 until g.size) {
-            if (!s.structure.isContained(tile)) continue
+            if (!s.structure.isContained(tile) || s.structure.isImpermeable(tile)) continue
             for (dir in org.emerge.demo.outofspace.world.Direction.ALL) {
                 val other = g.neighbour(tile, dir)
                 if (other < 0 || !s.structure.isContained(other) || s.structure.isImpermeable(other)) continue
