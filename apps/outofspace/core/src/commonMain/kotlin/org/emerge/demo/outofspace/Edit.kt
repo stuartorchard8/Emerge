@@ -6,10 +6,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
-import org.emerge.sim.core.SimInput
-
-/** Which mouse-click means what. */
-enum class Tool(val label: String) { Build("BUILD"), Wire("WIRE") }
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
@@ -43,10 +39,4 @@ sealed interface Edit {
 
     /** Retunes a sensor to a different channel. */
     data class SetChannel(val index: Int, val channel: Channel) : Edit
-}
-
-data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
-    companion object {
-        val EMPTY = OutofspaceInput()
-    }
 }
