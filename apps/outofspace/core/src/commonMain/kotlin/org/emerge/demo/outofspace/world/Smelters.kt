@@ -1,0 +1,18 @@
+package org.emerge.demo.outofspace.world
+
+import org.emerge.demo.outofspace.chem.Resource
+
+/** A smelter: refined metal out the front, slag out the side. */
+data class Smelter(
+    override val facing: Direction,
+    val input: Resource? = null,
+    val refined: Resource? = null,
+    val slag: Resource? = null,
+    val carry: Long = 0L,
+    val gramsPerTick: Long = 125L,
+    override val wiring: Wiring = Wiring.RUNNING,
+) : Directed {
+    override val kind: MachineKind get() = MachineKind.Smelter
+    override fun rotated(): Machine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+}
