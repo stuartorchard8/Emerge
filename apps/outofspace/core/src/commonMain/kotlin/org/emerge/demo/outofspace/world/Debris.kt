@@ -19,7 +19,7 @@ import org.emerge.sim.core.physics.primitives.Frac2
  *
  * A pile keeps its [Resource] forms separate — a heap of ingots beside a heap of ore is two entries,
  * not one blended mixture. Rubble loses its arrangement, not its refinement: it would be much easier
- * to flatten everything to species and it would quietly destroy the work a smelter did.
+ * to flatten everything to species, and it would quietly destroy the work a smelter did.
  */
 class Debris private constructor(private val piles: Map<Int, List<Resource>>) {
 
@@ -103,11 +103,11 @@ class DebrisWork(debris: Debris) {
 }
 
 /**
- * Lets loose material fall, and throws overboard whatever is lying outside the hull.
+ * Allows loose material to fall, and throws overboard whatever is lying outside the hull.
  *
  * A pile moves one tile per tick in the direction gravity points, passing straight *through*
  * machinery — rubble on the deck under a conveyor is rubble on the deck, and making belts block it
- * would only produce piles floating in mid-air where a machine used to be. What stops it is the
+ * would only produce piles floating in midair where a machine used to be. What stops it is the
  * structure: it will not fall into hull or into space, and it will not fall into a tile already
  * holding [Debris.TILE_CAP].
  *

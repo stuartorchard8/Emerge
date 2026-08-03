@@ -64,7 +64,7 @@ class Motion(
     override fun hashCode(): Int = arrivals.contentHashCode()
 
     companion object {
-        /** Sitting where it already was. Also what a world that has never ticked reports. */
+        /** Sitting where it already was. This is also what a world that has never ticked reports. */
         const val STILL: Int = 0
 
         /** Handed over by a machine's output port, or set down off a bridge: grows from nothing. */
@@ -125,7 +125,7 @@ class MotionLog(rails: List<Segment?>) {
      *
      * The vacated tile is reset as well as the filled one. It is usually refilled later in the same
      * pass by whatever was behind it — the walk goes most-downstream first — and if it is not, then
-     * nothing is there and it must not still be claiming a mass.
+     * nothing is there, and it must not still be claiming a mass.
      */
     fun moved(from: Int, to: Int, direction: Direction) {
         arrivals[to] = (direction.ordinal + 1).toByte()

@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.chem
 /**
  * A pile of matter: what it has been made into, and what it is made of.
  *
- * [mixture] is not decoration. A [Form.SteelAlloy] smelted from dirty ore carries the impurities
+ * [mixture] is not decoration. A [Form.IronIngot] smelted from dirty ore carries the impurities
  * that came with it, and they follow it up the whole crafting tree — so the quality of what you mine
  * is still legible in what you build.
  */

@@ -3,9 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
-import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
-import org.emerge.demo.outofspace.logistics.SolidPacket
 
 /**
  * What kind of thing sits on a tile — the palette the player builds from.

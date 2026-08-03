@@ -162,7 +162,7 @@ class OutofspaceRenderer {
         val maxX = minOf(grid.width - 1, floor(camX + halfW).toInt() + 1)
         val minY = max(0, floor(camY - halfH).toInt())
         val maxY = minOf(grid.height - 1, floor(camY + halfH).toInt() + 1)
-        // Machines are drawn from their centre tile, so one whose centre is just off screen can
+        // Machines are drawn from their centre tile, so one whose centre is just off-screen can
         // still have half its body on it. Widen the machine pass by the largest footprint's reach.
         val mMinX = max(0, minX - MAX_REACH)
         val mMaxX = minOf(grid.width - 1, maxX + MAX_REACH)

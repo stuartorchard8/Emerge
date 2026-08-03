@@ -81,7 +81,7 @@ class AirField(private val grams: LongArray) {
          * wrong one for a grid. Every edge is computed against the same snapshot and applied together,
          * so a tile surrounded by four emptier ones gives away half a gradient four times over in one
          * tick, and the whole field flips: high tiles become low, low become high, and the room sits
-         * in a permanent checkerboard, sloshing back and forth for ever without equalising.
+         * in a permanent checkerboard, sloshing back and forth forever without equalising.
          *
          * It never showed while the sim ran at 60Hz, because the flow rate divided by 60 was a tenth
          * of the gap and a tenth is stable — the half-gap cap was there but never binding. Dropping

@@ -100,7 +100,7 @@ data class Wiring(val byAction: Map<Action, List<Trigger>> = DEFAULT) {
 
     fun triggers(action: Action): List<Trigger> = byAction[action] ?: emptyList()
 
-    /** Activation in permille, clamped to ±1000. Zero or less means stopped. */
+    /** Activation in permille, clamped to ±1000. Zero or fewer means stopped. */
     fun activation(action: Action, signals: Signals): Int {
         var sum = 0L
         for (t in triggers(action)) sum += signals[t.channel].toLong() * t.weightPermille

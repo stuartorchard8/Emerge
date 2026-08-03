@@ -98,8 +98,8 @@ class Mixture private constructor(private val grams: LongArray) {
     }
 
     /**
-     * This mixture's *proportions* rendered at a different total — the "recipe" operation. An ore
-     * body described as 410g iron / 300g silica per kilogram becomes any number of grams of the same
+     * This mixture's *proportions* rendered at a different total — the "recipe" operation. An orebody
+     * described as 410g iron / 300g silica per kilogram becomes any number of grams of the same
      * stuff. Unlike [take] this may scale up, because a recipe is a ratio and not a pile.
      */
     fun scaledTo(grams: Long): Mixture {

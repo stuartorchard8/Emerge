@@ -330,7 +330,7 @@ object Save {
             structure = structure,
             occupancy = occupancy,
             heat = heat,
-            // A missing baseline means the world's own totals, which is right for a hand-written
+            // A missing baseline means the world's own totals, which is right for a handwritten
             // world and harmless for a saved one, where the line is always present.
             baselineJoules = baselineJoules ?: heat.totalJoules,
             air = air,

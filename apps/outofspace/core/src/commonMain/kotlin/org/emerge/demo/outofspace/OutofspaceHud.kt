@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.HeatField
@@ -176,7 +175,7 @@ class OutofspaceHud {
         val machine = s.machineCovering(index)
         val spill = s.debris[index]
         // A bare tile with a heap on it is still worth inspecting -- otherwise the material you just
-        // dumped on the deck would be visible but unreadable, which is the gap the analyzer existed
+        // dumped on the deck would be visible but unreadable, which is the gap the analyser existed
         // to close in the first place.
         if (machine == null && spill.isEmpty() && s.railAt(index) == null) return
         val grid = s.grid
@@ -206,7 +205,7 @@ class OutofspaceHud {
                     } else {
                         keyValue("LAST SEEN", segment.lastForm?.name ?: "?")
                         keyValue(
-                            segment.lastDominant!!.name.uppercase(),
+                            segment.lastDominant.name.uppercase(),
                             "${segment.lastPurity / 10}%",
                             0x9A9A9AFFL,
                             speciesColor(segment.lastDominant),
@@ -335,7 +334,7 @@ class OutofspaceHud {
             if (gauge?.channel != null) {
                 clauseRow(
                     lhs = "REPORT ON",
-                    cmp = gauge.channel!!.label,
+                    cmp = gauge.channel.label,
                     rhs = "${gauge.lastPurity / 10}%",
                     onLhs = { controller.cycleSensorChannel(index, 1) },
                     onCmp = { controller.cycleSensorChannel(index, 1) },

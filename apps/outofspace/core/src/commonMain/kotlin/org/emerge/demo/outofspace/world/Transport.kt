@@ -136,7 +136,7 @@ data class Segment(
  *
  * The same knowledge is what makes forking *safe*. Offering "any neighbour that leads to some
  * consumer" without it lets two tiles each be a legal step for the other, and a packet between two
- * consumers walks back and forth for ever. Requiring depth to increase makes that impossible by
+ * consumers walks back and forth forever. Requiring depth to increase makes that impossible by
  * construction rather than by a guard.
  *
  * ### A consumer that cannot take anything does not pull
@@ -353,7 +353,7 @@ class FlowField private constructor(
                     // A branch leading to a working consumer beats one leading only to a blockage,
                     // and only when there is no such branch at all does the queue form.
                     val useful = forward[tile].filter { reachesAccepting[it] }
-                    val chosen = if (useful.isNotEmpty()) useful else forward[tile].filter { reachesAnything[it] }
+                    val chosen = useful.ifEmpty { forward[tile].filter { reachesAnything[it] } }
                     if (chosen.isNotEmpty()) {
                         successors[tile] = chosen.toIntArray()
                         movesForward[tile] = true

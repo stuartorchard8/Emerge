@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
@@ -50,7 +49,6 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.spoilsOf
@@ -311,7 +309,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val r = smelt(chunk)
         // A smelter holds one kind of ingot at a time. If this chunk's dominant species differs from
         // what is already waiting, stall rather than quietly mixing two metals — a stopped machine is
-        // the honest signal that the ore body changed under it.
+        // the honest signal that the orebody changed under it.
         val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
         val slag = m.slag.merged(r.slag) ?: return m.copy(carry = carry)
 
@@ -324,7 +322,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * The new contents of an output buffer after [addition] is merged in, or null if the two forms
+     * The new contents of an output buffer after addition is merged in, or null if the two forms
      * cannot coexist.
      *
      * The wrapper exists because "nothing to add, buffer still empty" and "these cannot mix" are
@@ -357,7 +355,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * The ore body a new miner draws from, per kilogram. Mostly iron and far too dirty to smelt
+     * The orebody a new miner draws from, per kilogram. Mostly iron and far too dirty to smelt
      * straight — 410g of iron against 590g of everything else — so a line that runs ore directly into
      * a smelter yields nothing but slag. Learning to put a processor in front is the first thing this
      * world teaches, and it teaches it without a tutorial.
@@ -719,7 +717,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /**
          * Moves everything on one conduit one step.
          *
-         * The flow field is derived fresh: sinks are the **input** ports that actually have track
+         * The flow field is derived fresh: sinks are the **input** ports that actually have a track
          * under them, so connecting or cutting one tile re-decides which way a whole run points,
          * with no cache to invalidate.
          */
@@ -844,26 +842,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
         private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
-            return when (val dest = destination) {
-                is Processor -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
-                is Smelter -> acceptInto(dest.input, packet)?.let { machines[target] = dest.copy(input = it); true } ?: false
+            return when (destination) {
+                is Processor -> acceptInto(destination.input, packet)?.let { machines[target] =
+                    destination.copy(input = it); true } ?: false
+                is Smelter -> acceptInto(destination.input, packet)?.let { machines[target] =
+                    destination.copy(input = it); true } ?: false
                 is Storage -> {
                     if (packet !is SolidPacket) false
                     else {
-                        val existing = dest.contents
+                        val existing = destination.contents
                         if (existing != null && existing.form != packet.form) false
                         else if ((existing?.mass ?: 0L) >= Storage.CAP) false
                         else {
                             val merged = if (existing == null) packet.resource
                             else Resource(existing.form, existing.mixture + packet.contents)
-                            machines[target] = dest.copy(contents = merged)
+                            machines[target] = destination.copy(contents = merged)
                             true
                         }
                     }
                 }
                 is Vent -> {
                     ventedGrams += packet.mass
-                    machines[target] = dest.copy(ventedGrams = dest.ventedGrams + packet.mass)
+                    machines[target] = destination.copy(ventedGrams = destination.ventedGrams + packet.mass)
                     true
                 }
                 // Miners take no input, and a wall is not a hopper.

@@ -5,7 +5,7 @@ package org.emerge.demo.outofspace.world
  *
  * Odd because a machine is stored at its **centre** tile, and a centre only exists for odd sizes.
  * That one choice removes most of the awkwardness from rotation: turning a building leaves its
- * anchor exactly where it was, so a rotate is a change of facing and nothing else. With a top-left
+ * anchor exactly where it was, so a rotation is a change of facing and nothing else. With a top-left
  * anchor, every rotation would also have to move the machine, and "rotate" would silently become
  * "rotate and translate" — which is fiddly to place and worse to undo.
  *
@@ -160,7 +160,7 @@ private data class LocalPort(
  *
  * Describing them unrotated is what keeps this readable: a processor takes material in at the back,
  * sends concentrate out the front and drops tailings out of the bottom, and that sentence is true
- * whichever way the machine is turned. The alternative — four hand-written variants per machine — is
+ * whichever way the machine is turned. The alternative — four handwritten variants per machine — is
  * four chances to get one of them wrong, and a bug that only shows up in one orientation.
  */
 private fun localPorts(machine: Machine): List<LocalPort> {
@@ -237,13 +237,6 @@ fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
     return out
 }
 
-/**
- * The port that would receive material arriving at [tile] travelling in [heading], or null.
- *
- * A port on the far side of a wall it does not face is not a connection: material entering a tile
- * heading right has to meet a port on that tile facing left. Checking the facing rather than just
- * the tile is what stops a three-by-three building behaving like a nine-tile sponge.
- */
 /**
  * The port of [conduit] that this machine exposes at [tile], if any.
  *
