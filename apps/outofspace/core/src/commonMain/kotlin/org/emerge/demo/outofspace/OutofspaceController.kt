@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Trigger
@@ -13,9 +14,6 @@ import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
-
-/** Which mouse-click means what. */
-enum class Tool(val label: String) { Build("BUILD"), Wire("WIRE") }
 
 /**
  * Owns the running world and the boundary between real time and sim time.

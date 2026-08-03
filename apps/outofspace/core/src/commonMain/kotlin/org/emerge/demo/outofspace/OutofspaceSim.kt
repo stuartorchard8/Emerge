@@ -47,7 +47,6 @@ import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
-import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
@@ -56,78 +55,7 @@ import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.stepAir
 import org.emerge.demo.outofspace.world.stepHeat
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
-
-/** Fixed world parameters. */
-data class OutofspaceConfig(
-    /**
-     * Generous, because machines are now rooms: a smelter is five tiles across and a refinery line
-     * of them is long. A grid this size is still trivial to sweep, and "a big bound with the hull
-     * drawn inside it" is what gives the expansion fantasy without a growable world.
-     */
-    val grid: Grid = Grid(96, 60),
-    /**
-     * How fast to run the world, and **nothing else**.
-     *
-     * The tick is the unit of simulation: every rate in the game is stated per tick, so nothing
-     * below this line divides by it. This number therefore says how quickly you watch the world
-     * happen, not how finely it is computed — raise it and the factory runs faster, exactly as if
-     * you had turned a speed dial, with identical results per tick.
-     *
-     * That is deliberate, and it is the second answer to the question. The first was to make every
-     * subsystem invariant to this number, which cost a carry, a sub-stepping loop, a stability
-     * constant and a test-clock helper, and *still* leaked: processor purity moved with the tick
-     * rate because the chunk it rounds is a chunk-per-tick. Making the tick the unit costs nothing
-     * and cannot leak, because there is no second unit to disagree with.
-     *
-     * Only [OutofspaceController]'s frame accumulator reads it, which is the one place that is
-     * honestly about real time.
-     */
-    val ticksPerSecond: Int = 4,
-) {
-    val secondsPerTick: Float get() = 1f / ticksPerSecond
-}
-
-/** A player action. Actions are values, so they replay, serialise and travel over a wire. */
-sealed interface Edit {
-    data class Place(val index: Int, val kind: MachineKind, val facing: Direction) : Edit
-    data class Rotate(val index: Int) : Edit
-    data class Remove(val index: Int) : Edit
-
-    /**
-     * Lays conduit from [from] to the **adjacent** tile [to] and joins the two — one step of a drag.
-     *
-     * Connection is an edit in its own right rather than a consequence of placement, because that is
-     * the only way two runs can touch without merging. A drag is a stream of these, so the line the
-     * player drew is exactly the graph they get; track placed by a single click joins nothing until
-     * something is drawn through it.
-     *
-     * Missing track at either end is laid, so one gesture both builds and connects. Non-adjacent
-     * tiles are ignored rather than pathfound: a drag that skips a tile is a slipped mouse, and
-     * quietly inventing the tiles in between is how you end up with runs nobody meant to build.
-     */
-    data class Lay(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
-
-    /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
-    data class Cut(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
-
-    /**
-     * Rewires one term of one action. [slot] at or past the end appends; a null [trigger] removes.
-     * One edit covers add, change and remove because they are the same operation on a list, and
-     * three edit types would be three chances to get replay ordering subtly different.
-     */
-    data class Wire(val index: Int, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
-
-    /** Retunes a sensor to a different channel. */
-    data class SetChannel(val index: Int, val channel: Channel) : Edit
-}
-
-data class OutofspaceInput(val edits: List<Edit> = emptyList()) : SimInput {
-    companion object {
-        val EMPTY = OutofspaceInput()
-    }
-}
 
 /**
  * The rules of the world.
