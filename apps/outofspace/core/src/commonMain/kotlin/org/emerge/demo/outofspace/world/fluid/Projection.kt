@@ -209,13 +209,39 @@ fun project(
 }
 
 /**
- * How much this cell wants to expand, from how far its pressure sits above its neighbours'.
+ * How much this cell wants to expand, from how far its pressure sits above its neighbours' **as a
+ * fraction of the pressure actually there**.
  *
  * Relative to the neighbourhood rather than to a fixed reference, so it needs no notion of what
  * "normal" is and behaves correctly at a breach without anybody special-casing one: the neighbour is
- * vacuum, the difference is a whole atmosphere, and the cell tries to empty itself. A cell in a
+ * vacuum, the difference is everything the cell has, and it tries to empty itself. A cell in a
  * uniform room differs from its neighbours by nothing and asks for nothing, which is the rest state
  * — and the rest state has to be exactly right, or a still vessel hums.
+ *
+ * ### Why the divisor is the local pressure and not [AMBIENT_PRESSURE]
+ *
+ * It was ambient, and that made the whole scheme quietly **incompressible wherever the gas was
+ * thin** — which is to say, in exactly the plume a breach exists to produce. A cell at a hundredth of
+ * an atmosphere beside vacuum has a pressure *ratio* of infinity and should blow itself apart, but
+ * as an absolute difference it is a hundredth of ambient, so scaling by ambient asked for a
+ * hundredth of the expansion. Meanwhile the gas there was moving at most of a tile per tick. The
+ * solve therefore spent its sweeps enforcing `divergence ≈ 0` on a supersonic plume.
+ *
+ * An incompressible fluid cannot expand, so it can only go somewhere, and the somewhere available
+ * was sideways: the vented gas ran along the hull and wrapped around the vessel in a broad coherent
+ * sheet instead of radiating away into space. That is what it looked like from the outside, and it
+ * looked like a boundary condition bug — the grid rim behaving as a wall — because a fluid that
+ * cannot expand behaves exactly as though something is containing it. Nothing was containing it. It
+ * had simply been told it could not change density.
+ *
+ * Dividing by the local pressure scale instead makes the target **scale-free**: a tenth of an
+ * atmosphere venting into vacuum expands as hard as a full one does, which is correct, and is the
+ * only version that stays right across the six orders of magnitude between a pressurised deck and
+ * the far end of an exhaust plume. Gas expanding into vacuum is the most compressible situation
+ * there is, and the previous form treated it as the least.
+ *
+ * Inside an intact vessel this changes nothing measurable — the local scale *is* roughly ambient
+ * there, so the two divisors agree — which is why a still room still asks for exactly nothing.
  */
 private fun wantedDivergence(
     edges: EdgeGrid,
@@ -237,7 +263,12 @@ private fun wantedDivergence(
     if (wy[down] > 0L) edges.yEdgeAfter(down).let { if (it >= 0) { sum += pressure[it]; count++ } }
 
     if (count == 0) return 0L
-    return (pressure[tile] - sum / count) * EXPANSION / AMBIENT_PRESSURE
+    val mean = sum / count
+    // The larger of the two, so the fraction is bounded by one and a cell beside vacuum asks for
+    // exactly [EXPANSION] rather than for a division by nothing.
+    val scale = if (pressure[tile] > mean) pressure[tile] else mean
+    if (scale <= 0L) return 0L
+    return (pressure[tile] - mean) * EXPANSION / scale
 }
 
 /**
@@ -280,11 +311,14 @@ private const val DAMPING_NUMERATOR = 2L
 private const val DAMPING_DENOMINATOR = 3L
 
 /**
- * The divergence a cell asks for when it sits one whole atmosphere above its neighbours: an eighth
- * of a tile per tick.
+ * The divergence a cell asks for when its neighbours are **vacuum**: an eighth of a tile per tick.
  *
  * Pinned by the extreme case on purpose, because the extreme case is the one anybody will look at. A
  * sealed room opened to vacuum is exactly this situation, and an eighth empties it over something
  * like ten ticks — fast enough to read as explosive, slow enough to watch happen.
+ *
+ * It is a *ratio* that reaches this, not an absolute difference — see [wantedDivergence] — so a thin
+ * plume venting into emptier space asks for the same eighth that a pressurised deck does. That is
+ * the point of it: expansion into vacuum does not get gentler because there is less gas doing it.
  */
 private val EXPANSION: Long = MomentumField.SPEED_LIMIT_RAW / 8

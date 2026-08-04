@@ -159,4 +159,53 @@ class ProjectionTest {
         // And more sweeps refine the same answer rather than changing the question.
         assertTrue(impulseWith(40) != 0L || impulseWith(20) == 0L)
     }
+
+    @Test
+    fun `thin gas blows out of a hole as readily as thick gas does`() {
+        // The divergence target is a pressure *ratio*, so how hard a room decompresses cannot depend
+        // on how much is in it. Get this wrong and the solve turns incompressible wherever the gas is
+        // thin, which is precisely the exhaust plume a breach exists to make: it was scaled against
+        // AMBIENT_PRESSURE, so a room at a hundredth of an atmosphere asked for a hundredth of the
+        // expansion and the vented gas ran sideways along the hull instead of radiating away.
+        fun escapeSpeedAt(scale: Long): Long {
+            val box = Box(10, 8, hole = true)
+            for (x in 2 until 10) for (y in 2 until 8) box.fill(box.grid.index(x, y), scale)
+            box.run()
+
+            val tileGrams = tileMass(box.grid.size, box.grams)
+            var peak = 0L
+            for (e in 0 until box.edges.xEdgeCount) {
+                val before = box.edges.xEdgeBefore(e)
+                val after = box.edges.xEdgeAfter(e)
+                var mass = 0L
+                var count = 0
+                if (before >= 0) { mass += tileGrams[before]; count++ }
+                if (after >= 0) { mass += tileGrams[after]; count++ }
+                if (count == 0 || mass <= 0L) continue
+                // Tiles per tick, scaled up so integer division keeps some figures.
+                val speed = box.mx[e] * 1_000_000L / (mass / count)
+                if (speed > peak) peak = speed
+            }
+            return peak
+        }
+
+        val thick = escapeSpeedAt(Box.AMBIENT)
+        val thin = escapeSpeedAt(Box.AMBIENT / 10)
+
+        assertTrue(thick > 0L, "a full room did not blow out at all")
+        assertTrue(thin > 0L, "a thin room did not blow out at all")
+        // Within a factor of two. Not equality: the pressures are integers and a thinner room rounds
+        // harder. Under the old absolute scaling this ratio was about ten.
+        assertTrue(thin * 2 > thick && thick * 2 > thin, "thin $thin vs thick $thick differ too much")
+
+        // ⚠️ A tenth of an atmosphere is roughly where this stops working. At a *hundredth* — about
+        // nine grams a tile — the solved field rounds to zero and the projection contributes nothing
+        // at all, which is recorded here rather than asserted because it is a limitation and not a
+        // decision. It matters because a vented plume sits at fifteen to thirty grams a tile, right
+        // on that floor: out there the motion is coming from `applyPressureForce`, which works on the
+        // pressure difference directly and keeps its resolution, and not from this solve. If exhaust
+        // physics ever needs the elliptic part to work in near-vacuum, the fix is to carry pressure
+        // in finer units, not to add another special case.
+        assertEquals(0L, escapeSpeedAt(Box.AMBIENT / 100), "the rounding floor has moved — see above")
+    }
 }
