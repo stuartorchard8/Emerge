@@ -651,8 +651,13 @@ class OutofspaceRenderer {
      *
      * A run of squares stepping along the velocity, each smaller and fainter than the last, has no
      * such ambiguity. It points where it is going at any angle, it says which end is the head without
-     * needing a head, and it degrades gracefully — slow air is a dot, fast air is a comet. The head
-     * sits *at* the tile centre so that the streak's position still reads as the tile it belongs to.
+     * needing a head, and it degrades gracefully — slow air is a dot, fast air is a comet.
+     *
+     * The streak **straddles** the tile, head leading. It used to end at the tile centre, with the
+     * whole tail behind — which put every mark on the wrong side of the thing it described and read
+     * as air that had already left. Leading with the head costs a little positional precision (the
+     * bright square is no longer exactly on the tile) and buys the thing the overlay is actually for:
+     * at a glance the field reads as going somewhere, rather than as having been somewhere.
      *
      * [peak] is the fastest speed on screen, so the picture is always scaled to whatever is currently
      * happening; the *lengths* are relative and only the direction is absolute. That is the right
@@ -662,12 +667,14 @@ class OutofspaceRenderer {
      */
     private fun drawFlow(state: VesselState, tile: Int, x: Int, y: Int, peak: Float) {
         val speed = state.flow.speedAt(tile)
+        // Still air has no direction to draw, and the unit vector below would be 0/0. This is a
+        // guard on the arithmetic, not a visibility threshold — that is FLOW_MIN_FRACTION, which is
+        // free to be zero precisely because this is here.
         if (speed <= 0f) return
         val fraction = speed / peak
         if (fraction < Visual.FLOW_MIN_FRACTION) return
 
-        // Unit direction. `speed` is the magnitude of exactly this pair, so this cannot divide by
-        // zero once the check above has passed.
+        // Unit direction. `speed` is the magnitude of exactly this pair, so it is what normalises it.
         val scale = MomentumField.SPEED_LIMIT_RAW.toFloat() * speed
         val dx = state.flow.xAt(tile).toFloat() / scale
         val dy = state.flow.yAt(tile).toFloat() / scale
@@ -676,10 +683,14 @@ class OutofspaceRenderer {
         val cy = (y + 0.5f) * tilePx
         val reach = fraction * Visual.FLOW_MAX_REACH
 
-        for (i in 0 until Visual.FLOW_SEGMENTS) {
-            // Step *backwards* from the centre, so the head stays put and the tail grows behind it.
-            val along = -reach * i / (Visual.FLOW_SEGMENTS - 1)
-            val taper = 1f - i.toFloat() / Visual.FLOW_SEGMENTS
+        // Head first: `i` runs from FLOW_SEGMENTS steps *ahead* of the tile centre back to the same
+        // distance behind it, so the streak straddles the tile with its bright end leading.
+        val steps = Visual.FLOW_SEGMENTS
+        for (i in -steps until steps) {
+            val along = -reach * i / (steps - 1)
+            // Full size and opacity at the head, fading to nothing at the tail. With no arrowhead
+            // available, the fade is the entire signal for which end is the front.
+            val taper = 1f - (i + steps).toFloat() / (2 * steps)
             val size = Visual.FLOW_HEAD_SIZE * taper * tilePx
             rect(
                 cx + dx * along * tilePx, cy + dy * along * tilePx,
@@ -891,10 +902,18 @@ class OutofspaceRenderer {
         const val PRESSURE_MAX_SCALE = 1f
 
         // ── Flow streaks ────────────────────────────────────────────────
-        /** Below this share of the fastest tile on screen, a streak is not drawn at all. */
-        const val FLOW_MIN_FRACTION = 0.04f
-        /** How far the tail of the fastest streak reaches behind its head, in tiles. */
+        /**
+         * Below this share of the fastest tile on screen, a streak is not drawn at all.
+         *
+         * Zero, which means every tile that is moving at all gets a mark. It was 4%, and that
+         * quietly hid the thing the overlay is most often opened for: slow circulation next to
+         * anything fast is *most* of what the air does, and scaling to the on-screen peak already
+         * shrinks it to a dot. Still air is excluded by having no direction, not by being faint.
+         */
+        const val FLOW_MIN_FRACTION = 0.00f
+        /** How far the tail of the fastest streak trails behind the tile centre, in tiles. */
         const val FLOW_MAX_REACH = 0.9f
+        /** Squares behind the tile centre; the head leads by one more, so a streak is twice this. */
         const val FLOW_SEGMENTS = 4
         const val FLOW_HEAD_SIZE = 0.26f
     }
