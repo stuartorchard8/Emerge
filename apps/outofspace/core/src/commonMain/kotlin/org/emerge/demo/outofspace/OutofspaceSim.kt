@@ -54,8 +54,10 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
+import org.emerge.demo.outofspace.world.vesselMassGrams
 import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
@@ -167,9 +169,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
 
+        // What "down" is this tick: the plating plus the engine. Worked out once, from the impulse
+        // the *previous* tick booked, and handed to everything — the fluid, the drift and the debris
+        // all have to agree about which way is down or a pile settles against a gas.
+        //
+        // A tick behind, necessarily: this tick's thrust is not known until this tick's fluid has
+        // been solved, and the fluid has to be solved under some gravity. Explicit, like the rest of
+        // the tick. See [experiencedGravity].
+        val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.massGrams)
+
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
-        w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
+        w.ventedGrams += settleDebris(state.grid, structure, w.debris, felt)
 
         // ── Heat ──────────────────────────────────────────────────────────────
         //
@@ -241,7 +252,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
         val fluid = stepFluid(
-            edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules,
+            edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, felt, w.airJoules,
         )
 
         // The pipes, on the same lattice and through the same solver — see [pipeApertures]. Their
@@ -253,7 +264,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             w.pipeGrams,
             w.pipeMomentumX,
             w.pipeMomentumY,
-            state.gravity,
+            felt,
             w.pipeJoules,
             volumes,
         )
@@ -263,14 +274,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
         }
 
+        // ── Flight ────────────────────────────────────────────────────────────
+        //
+        // What the gas handed the ship *this tick*, which is the force on it. The running total is
+        // the ship's momentum and the running total's increment is its thrust; both matter, and only
+        // one of them can be recovered from a single state — see [VesselState.netImpulseX].
+        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX
+        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY
+
+        val machines = w.machines.toList()
+        val bridges = w.bridges.toList()
+        val debris = w.debris.snapshot()
+        val mass = vesselMassGrams(machines, conduits, bridges, debris)
+
         return state.copy(
-            machines = w.machines.toList(),
+            machines = machines,
             conduits = conduits,
-            bridges = w.bridges.toList(),
+            bridges = bridges,
             diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
             minedGrams = w.minedGrams,
-            debris = w.debris.snapshot(),
+            debris = debris,
             ventedGrams = w.ventedGrams,
             signals = signals,
             structure = structure,
@@ -296,10 +320,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // bolted to the ship — see [exchangeLayers].
             // A pump's intake stops the gas it draws, and the ship feels it — which is what makes a
             // pump usable as a thruster. See [applyPumps].
-            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX +
-                crossed.vesselX + pumped.vesselX,
-            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY +
-                crossed.vesselY + pumped.vesselY,
+            vesselImpulseX = state.vesselImpulseX + netImpulseX,
+            vesselImpulseY = state.vesselImpulseY + netImpulseY,
+            netImpulseX = netImpulseX,
+            netImpulseY = netImpulseY,
+            // Explicit, like everything else in the tick: the ship moves by the velocity it had at
+            // the start of it, and the impulse this tick has just booked is what it will move by
+            // next. Integrating the new velocity instead would give the tick's thrust a free extra
+            // tick of travel, which is a small lie that compounds over a burn.
+            positionX = state.positionX + state.velocityX,
+            positionY = state.positionY + state.velocityY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             // The fourth place momentum can be. Both layers report it: a pipe is the same solver.

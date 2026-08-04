@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
@@ -90,6 +91,16 @@ class OutofspaceHud {
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
                 row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
                     if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                gap()
+                title("FLIGHT")
+                keyValue("Mass", grams(s.massGrams))
+                keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
+                keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
+                keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
+                // What anything loose aboard is falling toward, which is the plating plus the engine.
+                // In milli-g, because a breach is worth a fraction of one and a readout in whole g
+                // would show nothing happening while quite a lot happens.
+                keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
                 gap()
                 title("SIGNALS")
                 for (channel in Channel.EMITTABLE) {
@@ -453,4 +464,20 @@ class OutofspaceHud {
     /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
     private fun grams(g: Long): String =
         if (g < 10_000L) "${g}g" else "${g / 1000}.${(g % 1000) / 100}kg"
+
+    /**
+     * A distance or a speed in [Flight.PER_TILE]'s billionths, to six decimal places of a tile.
+     *
+     * Six because a bare breached hull picks up about a quarter of a millionth of a tile per tick
+     * per tick, and a readout that rounded that to zero would report an engine as broken.
+     */
+    private fun tiles(v: Long): String {
+        val sign = if (v < 0L) "-" else ""
+        val a = if (v < 0L) -v else v
+        val frac = (a % Flight.PER_TILE) / 1000L
+        return "$sign${a / Flight.PER_TILE}.${frac.toString().padStart(6, '0')}"
+    }
+
+    /** A [Frac] gravity as thousandths of the one g [VesselState.DEFAULT_GRAVITY] means. */
+    private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 }

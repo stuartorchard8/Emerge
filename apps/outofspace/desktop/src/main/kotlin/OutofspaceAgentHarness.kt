@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.Overlay
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
@@ -441,6 +442,28 @@ object OutofspaceAgentHarness {
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
             "impulseX" -> state.vesselImpulseX.toDouble()
             "impulseY" -> state.vesselImpulseY.toDouble()
+            // The two instruments the momentum ledger is watched with. `undelivered` is the part of
+            // the solve that had nowhere to go, and it is expected to grow under acceleration; the
+            // whole ledger as one number is `momentumBalance`, which is zero or something is wrong.
+            "undeliveredX" -> state.undeliveredImpulseX.toDouble()
+            "undeliveredY" -> state.undeliveredImpulseY.toDouble()
+            "momentumBalance" -> (
+                state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
+                    state.exhaustMomentumX + state.undeliveredImpulseX +
+                    state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
+                    state.exhaustMomentumY + state.undeliveredImpulseY
+                ).toDouble()
+            // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
+            "massGrams" -> state.massGrams.toDouble()
+            "thrustX" -> state.netImpulseX.toDouble()
+            "thrustY" -> state.netImpulseY.toDouble()
+            "velocityX" -> state.velocityX.toDouble() / Flight.PER_TILE
+            "velocityY" -> state.velocityY.toDouble() / Flight.PER_TILE
+            "positionX" -> state.positionX.toDouble() / Flight.PER_TILE
+            "positionY" -> state.positionY.toDouble() / Flight.PER_TILE
+            // What anything loose aboard falls toward, in g. One is the plating; the rest is engine.
+            "gravityX" -> state.feltGravity.x.raw.toDouble() / Int.MAX_VALUE
+            "gravityY" -> state.feltGravity.y.raw.toDouble() / Int.MAX_VALUE
             else -> null
         }
 
@@ -449,6 +472,9 @@ object OutofspaceAgentHarness {
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
+            "undeliveredX", "undeliveredY", "momentumBalance",
+            "massGrams", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
+            "gravityX", "gravityY",
         )
 
         private fun dumpState(name: String) {

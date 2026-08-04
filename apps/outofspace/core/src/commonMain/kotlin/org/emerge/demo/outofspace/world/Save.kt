@@ -60,6 +60,12 @@ object Save {
         out.append("outofspace ").append(VERSION).append('\n')
         out.append("grid ").append(state.grid.width).append(' ').append(state.grid.height).append('\n')
         out.append("gravity ").append(state.gravity.x.raw).append(' ').append(state.gravity.y.raw).append('\n')
+        // Where it has got to. Absent means the origin, which is where every world starts.
+        out.append("position ").append(state.positionX).append(' ').append(state.positionY).append('\n')
+        // Last tick's thrust, which is not a ledger but is still not derivable: it is what the felt
+        // gravity is worked out from, so a world reloaded without it would coast for one tick under
+        // the plating alone and then diverge from the one that was never saved.
+        out.append("thrust ").append(state.netImpulseX).append(' ').append(state.netImpulseY).append('\n')
         out.append("tick ").append(state.tick).append('\n')
         out.append("mined ").append(state.minedGrams).append('\n')
         out.append("vented ").append(state.ventedGrams).append('\n')
@@ -311,6 +317,10 @@ object Save {
         var undeliveredY = 0L
 
         var gravity = VesselState.DEFAULT_GRAVITY
+        var positionX = 0L
+        var positionY = 0L
+        var netImpulseX = 0L
+        var netImpulseY = 0L
         var tick = 0L
         var mined = 0L
         var vented = 0L
@@ -336,6 +346,8 @@ object Save {
 
             when (tokens[0]) {
                 "gravity" -> gravity = Frac2(Frac(long(1)), Frac(long(2)))
+                "position" -> { positionX = long(1); positionY = long(2) }
+                "thrust" -> { netImpulseX = long(1); netImpulseY = long(2) }
                 "tick" -> tick = long(1)
                 "mined" -> mined = long(1)
                 "vented" -> vented = long(1)
@@ -435,6 +447,10 @@ object Save {
             bridges = bridges.toList(),
             diverters = Diverters.of(diverters),
             gravity = gravity,
+            positionX = positionX,
+            positionY = positionY,
+            netImpulseX = netImpulseX,
+            netImpulseY = netImpulseY,
             debris = Debris.of(piles),
             tick = tick,
             minedGrams = mined,

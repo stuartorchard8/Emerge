@@ -1045,10 +1045,7 @@ tick. It stays undesigned, as planned, until there is a working nozzle to look a
 
 ### Increments
 
-- **G. Motion** — vessel velocity and position, thrust integrated into both, and `Vessel.gravity`
-  written from the resulting acceleration. Axis-aligned engine. The gate is the loop closing:
-  a sealed vessel does not move, a firing engine does, and the fluid ledgers still balance while it
-  is accelerating.
+- **G. Motion** — ✅ **BUILT 2026-08-05.** See §5e.
 - **H. Capture and the hold** — an asteroid field to fly in, rocks as bodies, capture into a hold,
   extraction at a rate into dirty ore.
 - **I. Refining to fuel** — the existing stages, ending in propellant the engine consumes. Plumbing
@@ -1056,6 +1053,70 @@ tick. It stays undesigned, as planned, until there is a working nozzle to look a
   the gameplay loop actually closes.
 - **J. Transport, revisited** — with phase change as the driver and §5d's two candidate shapes on
   the table. Earned rather than guessed.
+
+---
+
+## 5e. Motion, and the constant that turned out to be load-bearing (2026-08-05)
+
+Increment G is built. A vessel has a velocity and a position, thrust drives both, and the thrust it
+is driven by is the same `vesselImpulse` the momentum ledger has been keeping since §5b.
+
+### The shape it took
+
+Almost nothing is stored. The ship's momentum is `vesselImpulse` — already there — its mass is
+`vesselMassGrams`, and velocity is the one over the other, derived, so there is no integrated
+quantity to drift and nothing to be wrong about across a save. Only **position** is new state,
+because a position is a history and cannot be recomputed from anything.
+
+"The ship" is the fabric and what it carries, and **not** the atmosphere. The gas has its own
+momentum on the faces; counting its mass against the ship's momentum would mix the two halves of one
+ledger and give a velocity belonging to neither. The price is stated where it is paid: spending
+propellant does not lighten the vessel, so there is no rocket equation until fuel is cargo in a tank,
+which is increment I.
+
+Felt gravity is `plating − acceleration`, handed to the fluid, the drift and the debris in place of
+the constant they used to read. `VesselState.gravity` stays a *setting*; `feltGravity` is the
+reading. Keeping those apart is what lets a fixture say `copy(gravity = sideways)` and still mean it.
+
+Stu's model held up in both halves. The ship is pushed on the tick the hull opens, before a single
+gram reaches the rim — pinned by a test — and the ledger identity is exactly his "the fluid receives
+zero net force relative to the world".
+
+### ⚠️ The actual finding: the sim had never left `gravity == 1`
+
+The feedback loop everyone was watching for — thrust → gravity → gas piles at the hole → more thrust
+— **converges** and is undramatic: about a six-hundredth of a g on a bare breached hull, and
+`undelivered` sits flat at −163 over three hundred ticks rather than growing as predicted. That was
+not the problem.
+
+The problem was that several passes scale a quantity by `q * g / SPEED_LIMIT_RAW`, which at exactly
+one g is the identity and at **anything else** truncates toward zero. That kills the ones and twos a
+thin plume is made of, and kills them asymmetrically, because truncation toward zero rounds `+7` down
+and `−7` up. `BreachSymmetryTest` went from even to a **nine per cent lean** the moment gravity moved
+off one — and the tell was that the lean was bit-identical at 0.9999 g and at 0.99 g. Not a
+sensitivity to how much gravity there is: a cliff at the one value that had ever been used.
+
+`scaleByGravity` rounds to nearest, symmetrically about zero, and is the identity at one g, so
+nothing measured before it moves. The plume is then even under every gravity tried.
+
+⚠️ **The general lesson, and it is not confined to gravity: anything only ever exercised at one value
+has not been exercised.** A first wrong theory was built and measured before the right one was found —
+that the cross-axis thrust term was noise being amplified — and it had evidence, in that suppressing
+it made the symptom go away. Suppressing a symptom two layers above the cause is exactly what a
+plausible wrong theory buys.
+
+`downDirection` also had to grow up: it answered `null` to anything not *exactly* on an axis, which
+is the same rule as "dominant axis" for as long as gravity is a constant somebody typed, and is not
+the same rule at all once an engine writes it. A lateral engine under active plating gives a
+permanently diagonal pull, and every pile aboard froze the moment it lit. It now rounds to the axis it
+leans toward, and keeps `null` for the two cases with no answer: no gravity, and an exact tie.
+
+### What is not done
+
+Open question 4 stands, narrowed. Off-axis gravity is now *run* constantly, and the fluid handles it
+per-axis; what remains undecided is what a **pile** does under a genuinely diagonal pull — a
+staircase, presumably. It rounds to an axis today. Diagonal settling and diagonal thrust arrive
+together or not at all.
 
 ---
 

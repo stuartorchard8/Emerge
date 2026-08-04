@@ -56,7 +56,43 @@ data class VesselState(
      * neighbours a packet came from.
      */
     val motion: Motion = Motion.NONE,
+    /**
+     * The artificial gravity the deck plating makes, with the engines off.
+     *
+     * A **setting**, and it stays one. What the world is actually run under is [feltGravity], which
+     * is this plus whatever the engine is doing — see [experiencedGravity]. Keeping the two apart is
+     * what lets a fixture say `copy(gravity = sideways)` and mean it: a field that were both the dial
+     * and the reading would be overwritten by the first tick, silently, and a test that set it would
+     * quietly measure something else.
+     *
+     * No code is allowed to assume "down" is a constant or implied by array order, and as of
+     * increment G nothing can: what the passes are handed changes whenever the thrust does.
+     */
     val gravity: Frac2 = DEFAULT_GRAVITY,
+    /**
+     * Where the vessel has got to, in the billionths of a tile [Flight.PER_TILE] counts.
+     *
+     * The only genuinely new state increment G adds, and the only part of flight that has to be
+     * stored: velocity is [vesselImpulseX] over [massGrams] and can always be recomputed, whereas a
+     * position is a history of velocities and cannot be recomputed from anything.
+     *
+     * It is a position in **open space**, not on the grid. The grid is the vessel's own frame and
+     * travels with it; nothing on it moves because the ship does.
+     */
+    val positionX: Long = 0L,
+    val positionY: Long = 0L,
+    /**
+     * The momentum the gas handed the ship during the tick that produced this state — the change in
+     * [vesselImpulseX], not the running total.
+     *
+     * Kept because a force is not recoverable from a history: two states a tick apart give it, one
+     * state does not, and [feltGravity] and every thrust readout want the force. It is also why the
+     * felt gravity lags the thrust by exactly one tick — this tick's impulse is not known until this
+     * tick's fluid has been solved, and the fluid is solved under a gravity. Explicit, like every
+     * other coupling in the tick. See [experiencedGravity].
+     */
+    val netImpulseX: Long = 0L,
+    val netImpulseY: Long = 0L,
     /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
     val debris: Debris = Debris.EMPTY,
     val tick: Long = 0L,
@@ -332,14 +368,31 @@ data class VesselState(
      * Debris counts. Taking a machine apart moves its contents from one term of this sum to another
      * rather than removing them, which is exactly why dismantling stopped reading as a leak.
      */
-    val inTransitGrams: Long
-        get() {
-            var sum = debris.totalGrams
-            for (m in machines) sum += massIn(m)
-            for (r in rails) sum += r?.held?.mass ?: 0L
-            for (b in bridges) sum += b?.mass ?: 0L
-            return sum
-        }
+    val inTransitGrams: Long get() = cargoGrams(machines, conduits, bridges, debris)
+
+    /**
+     * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
+     * [Flight].
+     */
+    val massGrams: Long get() = vesselMassGrams(machines, conduits, bridges, debris)
+
+    /**
+     * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
+     *
+     * Derived rather than integrated: [vesselImpulseX] is the ship's momentum and this is that over
+     * its mass, so there is no accumulated velocity to drift and nothing to be wrong about across a
+     * save. See [Flight] for what counts as the ship and why the atmosphere does not.
+     */
+    val velocityX: Long get() = massGrams.let { if (it <= 0L) 0L else vesselImpulseX * Flight.PER_TILE / it }
+    val velocityY: Long get() = massGrams.let { if (it <= 0L) 0L else vesselImpulseY * Flight.PER_TILE / it }
+
+    /**
+     * What everything loose aboard is actually falling toward: the plating, plus the engine.
+     *
+     * This is what the fluid and the debris are run under — [gravity] alone never is any more. See
+     * [experiencedGravity] for the sign, and for why only one axis of the thrust survives.
+     */
+    val feltGravity: Frac2 get() = experiencedGravity(gravity, netImpulseX, netImpulseY, massGrams)
 
     /** Just the loose material, for the readout that distinguishes "stored" from "spilled". */
     val debrisGrams: Long get() = debris.totalGrams
