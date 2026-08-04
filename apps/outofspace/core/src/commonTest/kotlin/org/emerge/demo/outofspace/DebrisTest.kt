@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.downDirection
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
@@ -18,6 +19,7 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -159,14 +161,34 @@ class DebrisTest {
         assertEquals(9_000L, s.debris.massAt(g.index(11, 4)), "it slid to the far wall, not the floor")
     }
 
+    /**
+     * A gravity off the axis is **rounded** to the axis it leans toward, and only a genuine tie has
+     * no answer.
+     *
+     * This asserts on [downDirection] rather than on a world, and that is the point rather than a
+     * shortcut. It used to run a room under an exactly diagonal gravity and check that nothing moved,
+     * and that world no longer exists: as of increment G the gravity a room is run under is the
+     * plating *plus the thrust*, and a roomful of air leaning on its walls is enough to knock any
+     * hand-typed vector a hair off the diagonal. The rule being tested was never about the room
+     * anyway — it is about what a vector means to a heap that has four directions to choose from.
+     *
+     * A pull that is 99 parts down and one part right means down. Answering "nowhere" to that would
+     * not be caution, it would freeze every pile aboard any vessel whose engine is lit. What has no
+     * answer is a *tie* — an exact diagonal, where down and right are equally right — and that is
+     * still null, because picking one would be a guess rather than a rounding.
+     */
     @Test
-    fun `diagonal gravity settles nothing rather than guessing an axis`() {
-        val diagonal = Frac2(Frac(1L, 1), Frac(1L, 1))
-        val s0 = room(12, 12) { x, y -> if (x == 4 && y == 3) Storage(Direction.Right, ingots) else null }
-            .copy(gravity = diagonal)
-        val g = s0.grid
-        val s = run(s0, 30, OutofspaceInput(listOf(Edit.Remove(g.index(4, 3)))))
-        assertEquals(9_000L, s.debris.massAt(g.index(4, 3)), "it stayed exactly where it was dropped")
+    fun `an off-axis gravity rounds to the axis it leans toward`() {
+        val one = Frac(1L, 1).raw
+        fun at(x: Long, y: Long) = downDirection(Frac2(Frac(x), Frac(y)))
+
+        assertEquals(Direction.Down, at(one / 100L, one), "a hair off vertical is still down")
+        assertEquals(Direction.Up, at(-one / 100L, -one))
+        assertEquals(Direction.Right, at(one, one / 100L), "and a hair off horizontal is still sideways")
+        assertEquals(Direction.Left, at(-one, one / 100L))
+        // The two cases with nothing to round toward.
+        assertNull(at(one, one), "an exact diagonal is a tie, not a direction")
+        assertNull(at(0L, 0L), "and weightlessness is not a direction either")
     }
 
     @Test

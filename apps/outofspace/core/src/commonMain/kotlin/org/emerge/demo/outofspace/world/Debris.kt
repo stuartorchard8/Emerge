@@ -117,21 +117,36 @@ fun settleDebris(
 }
 
 /**
- * Which grid direction gravity points, or null if it does not point along one.
+ * Which grid direction a pile falls, or null when there is no answer to give.
  *
- * The same guard [stratifyColumns] uses, and for the same reason: a diagonal or zero gravity means
- * *no settling* rather than a guessed axis. When acceleration-derived gravity arrives these two are
- * the only places that need a general answer.
+ * A heap has to choose one of four directions — that is what a tile grid is — so a gravity that does
+ * not lie on an axis has to be resolved to one, and the rule is the **dominant component**. A pile
+ * under a gravity leaning 99 parts down and 1 part right falls down; nothing else is a defensible
+ * reading of that vector, and answering `null` to it would be worse than a rounding, because it
+ * switches settling off altogether.
+ *
+ * Null is kept for the two cases where there genuinely is no answer: **no gravity at all**, and a
+ * **tie** — an exactly diagonal pull, where down and right are equally right and picking one is a
+ * guess rather than a rounding. That distinction is the whole of what changed here: the rule used to
+ * be "exactly on an axis or nothing", which is the same thing as long as gravity is a constant
+ * somebody typed, and is not the same thing at all once an engine is writing it. A vessel with its
+ * plating on and a lateral thruster firing has a permanently diagonal gravity, and under the old rule
+ * every pile aboard it froze the moment the engine lit — not as a decision, but because nobody had
+ * had to decide yet.
+ *
+ * ⚠️ What a pile does under a *genuinely* diagonal gravity — a staircase, presumably — is still
+ * undecided, and this does not decide it. It rounds to an axis. Real diagonal settling arrives with
+ * diagonal thrust, and both are scheduled.
  */
 fun downDirection(gravity: Frac2): Direction? {
     val gx = gravity.x.raw
     val gy = gravity.y.raw
+    val ax = if (gx < 0L) -gx else gx
+    val ay = if (gy < 0L) -gy else gy
     return when {
-        gx == 0L && gy > 0L -> Direction.Down
-        gx == 0L && gy < 0L -> Direction.Up
-        gy == 0L && gx > 0L -> Direction.Right
-        gy == 0L && gx < 0L -> Direction.Left
-        else -> null
+        ax == ay -> null                        // both zero, or an exact diagonal: no axis to round to
+        ay > ax -> if (gy > 0L) Direction.Down else Direction.Up
+        else -> if (gx > 0L) Direction.Right else Direction.Left
     }
 }
 
