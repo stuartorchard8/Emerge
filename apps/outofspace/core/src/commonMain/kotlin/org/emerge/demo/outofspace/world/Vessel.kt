@@ -78,13 +78,23 @@ data class VesselState(
     val structure: StructureMap = StructureMap.derive(grid, machines),
     /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
     val occupancy: Occupancy = Occupancy.derive(grid, machines),
+    val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
+    /**
+     * What the atmosphere's energy started at — the gas's twin of [baselineAirGrams], and checked the
+     * same way: `airJoules + airVentedJoules == baselineAirJoules` on every tick.
+     *
+     * The air's heat lives inside [AirField] rather than beside it here, and deliberately — see
+     * [AirField.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
+     */
+    val baselineAirJoules: Long = air.totalJoules,
+    /** Cumulative joules blown overboard with escaping gas. */
+    val airVentedJoules: Long = 0L,
     val heat: HeatField = HeatField.ambient(grid, StructureMap.derive(grid, machines), Occupancy.derive(grid, machines)),
     /**
      * The energy the world started with. Fixed at construction so `stored + radiated − generated`
      * has something to be compared against — the thermal twin of the mass balance.
      */
     val baselineJoules: Long = heat.totalJoules,
-    val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
     /**
      * How the air is moving: momentum on the faces between tiles — see [MomentumField].
      *
@@ -136,9 +146,18 @@ data class VesselState(
      */
     val flow: FlowField by lazy { FlowField.derive(EdgeGrid(grid), momentum, tileMass(grid.size, air.copyGrams())) }
 
-    /** Temperature of a tile in kelvin, accounting for what is in it. */
+    /** Temperature of a tile's *fabric* in kelvin — its walls, deck and machinery. */
     fun kelvinAt(index: Int): Int =
         heat.kelvinAt(index, HeatField.capacityOf(structure, occupancy, index))
+
+    /**
+     * Temperature of a tile's *air* in kelvin, or ambient where there is none to have one.
+     *
+     * A separate number from [kelvinAt], and deliberately so until conduction couples the two — see
+     * [advectHeat]. This is the one the fluid acts on: it is what sets pressure and therefore what
+     * makes a warm parcel rise.
+     */
+    fun airKelvinAt(index: Int): Int = air.kelvinAt(index)
 
     /** The machine covering a tile, wherever its centre happens to be. */
     fun machineCovering(index: Int): Machine? = machines.getOrNull(occupancy[index])

@@ -154,15 +154,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
 
+        // Machines put their work into the fabric they sit in. Conduction and radiation are still
+        // off — heat's own step is what comes back on next, and it is also what will carry this
+        // warmth into the air, which it cannot do yet.
         val warmed = state.heat.copyJoules()
         for (i in warmed.indices) warmed[i] += w.heatAdded[i]
-        val (heat, radiated) = HeatField.of(warmed) to 0L
+        val heat = HeatField.of(warmed)
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
 
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
-        val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity)
+        val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules)
 
         return state.copy(
             machines = w.machines.toList(),
@@ -178,9 +181,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             occupancy = occupancy,
             heat = heat,
             generatedJoules = w.generatedJoules,
-            radiatedJoules = state.radiatedJoules + radiated,
+            radiatedJoules = state.radiatedJoules,
             air = fluid.air,
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
+            // Its own ledger rather than folded into `radiatedJoules`, for the same reason the air's
+            // mass has one separate from the ore's: `atmosphere + vented == baseline` is a cleaner
+            // statement than a combined total, and a break in one does not obscure the other.
+            airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
             momentum = MomentumField.of(EdgeGrid(state.grid), fluid.momentumX, fluid.momentumY),
             vesselImpulseX = state.vesselImpulseX + fluid.vesselX,
             vesselImpulseY = state.vesselImpulseY + fluid.vesselY,
@@ -325,6 +332,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * or it is stranded in a wall for as long as the wall stands.
          */
         val airGrams: LongArray = state.air.copyGrams()
+
+        /** This tick's air temperature, as energy — mutable for the same reason [airGrams] is. */
+        val airJoules: LongArray = state.air.copyJoules()
 
         /** This tick's momentum, mutable for the same reason [airGrams] is. */
         val momentumX: LongArray = state.momentum.copyX()

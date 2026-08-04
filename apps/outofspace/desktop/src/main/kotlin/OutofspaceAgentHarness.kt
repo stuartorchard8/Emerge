@@ -243,6 +243,9 @@ object OutofspaceAgentHarness {
                 "density" -> { tile -> state.air.densityAt(tile).toDouble() }
                 "speed" -> { tile -> flow.speedAt(tile).toDouble() }
                 "heat", "temp" -> { tile -> state.kelvinAt(tile).toDouble() }
+                // The air's temperature, which is a different number from the fabric's until
+                // conduction couples the two -- and the one the fluid actually acts on.
+                "airtemp" -> { tile -> state.airKelvinAt(tile).toDouble() }
                 "air", "mass" -> { tile -> state.air.mixtureAt(tile).total.toDouble() }
                 "debris" -> { tile -> state.debris.massAt(tile).toDouble() }
                 // One gas on its own. Bulk flow provably cannot mix or unmix, so the question
@@ -356,7 +359,7 @@ object OutofspaceAgentHarness {
                 "  rail ${state.rails[tile]?.let { "yes held=${it.held != null}" } ?: "-"}" +
                 "  bridge ${if (state.bridges[tile] != null) "yes" else "-"}")
             println("[agent]   debris    ${state.debris.massAt(tile)}g")
-            println("[agent]   heat      ${state.kelvinAt(tile)}K")
+            println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
             println("[agent]   air       ${air.total}g  ${composition(air)}")

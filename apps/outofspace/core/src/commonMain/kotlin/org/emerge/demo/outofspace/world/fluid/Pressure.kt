@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.HeatField
 
 /**
  * What sets pressure, and what sets weight — which are not the same quantity.
@@ -23,9 +24,16 @@ import org.emerge.demo.outofspace.world.AirField
  * of precision. A tile of ordinary air is about 34,000 of them, which is plenty of resolution and
  * nowhere near troubling a `Long`.
  *
- * Temperature is deliberately still absent. `P ∝ nT` is what turns a hot cell into an expanding one
- * and is the direct route from combustion to thrust, but it belongs with heat coming back on in
- * increment D rather than being smuggled in with the plumbing. Where it will go is marked.
+ * Temperature arrived with increment D, and it entered exactly where this file said it would: the
+ * field below is `n × T / T_ambient`, so its units are unchanged and every reader downstream still
+ * sees "pressure" and needs no adjustment. That scaling is deliberate — dividing by ambient rather
+ * than working in absolute kelvin keeps a room at room temperature reading exactly its old value, so
+ * turning temperature on changed nothing about a vessel sitting still, and everything about one on
+ * fire.
+ *
+ * What it buys is the whole of convection, for one multiplication. A warmed tile is more moles'
+ * worth of pressure at the same mass; [applyBuoyancy] compares mass against pressure and finds the
+ * parcel light for what it is pushing, so it rises. Nothing anywhere says "hot air rises".
  */
 
 /** Millimoles per gram, per species. Fixed at startup; read in the hot path. */
@@ -36,13 +44,29 @@ private val MILLIMOLES_PER_KILOGRAM: LongArray = LongArray(Species.COUNT) { i ->
 private const val MILLI = 1000L
 
 /**
- * Millimoles of gas in each tile — the pressure field, up to a temperature that does not exist yet.
+ * The pressure field: millimoles of gas in each tile, scaled by how hot that gas is.
  *
- * Where temperature arrives, this becomes `n × T / T_ambient` and nothing else has to change: every
- * reader below already treats it as "pressure", not as "an amount of stuff".
+ * [kelvin] is optional and defaults to ambient everywhere, which reproduces the pure-moles field
+ * exactly. That default is what lets every test and caller that has no opinion about temperature go
+ * on not having one.
+ *
+ * The multiplication is done before the division so a tile near ambient does not round its way to a
+ * different pressure than it had. A tile of air is about 34,000 millimoles and kelvin fits in a few
+ * hundred, so the intermediate is comfortably inside a `Long` even for a furnace.
  */
-fun tilePressure(tileCount: Int, grams: LongArray, species: List<Species> = Species.GASES): LongArray =
-    LongArray(tileCount) { millimolesOf(grams, it, species) }
+fun tilePressure(
+    tileCount: Int,
+    grams: LongArray,
+    kelvin: IntArray? = null,
+    species: List<Species> = Species.GASES,
+): LongArray =
+    LongArray(tileCount) { tile ->
+        val moles = millimolesOf(grams, tile, species)
+        if (kelvin == null) moles else moles * kelvin[tile] / AMBIENT_KELVIN
+    }
+
+/** The temperature [tilePressure] measures against — one atmosphere at room temperature. */
+private const val AMBIENT_KELVIN = HeatField.AMBIENT_KELVIN.toLong()
 
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
 fun millimolesOf(grams: LongArray, tile: Int, species: List<Species> = Species.GASES): Long {

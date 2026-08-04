@@ -79,6 +79,12 @@ class OutofspaceHud {
                 keyValue("Stored", joules(s.storedJoules))
                 val heatBalanced = s.storedJoules + s.radiatedJoules - s.generatedJoules == s.baselineJoules
                 row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                // The atmosphere's energy keeps its own ledger, for the same reason its mass does:
+                // a break in one should not obscure the other. Venting hot gas is the only way out.
+                val airHeatBalanced = s.air.totalJoules + s.airVentedJoules == s.baselineAirJoules
+                keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
+                row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
+                    if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("SIGNALS")
                 for (channel in Channel.EMITTABLE) {
@@ -284,6 +290,18 @@ class OutofspaceHud {
             // Beside pressure, because the two being different is the whole point: equal readings
             // mean ordinary air, and a gap between them means the tile has been sorted by weight.
             keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            // The air's own temperature, which is not the fabric's TEMP above and will not be until
+            // conduction couples them. This is the one the fluid acts on -- it is what sets pressure,
+            // so a tile reading hot and over-pressured is a tile that is about to rise.
+            if (density > 0L) {
+                val airK = s.airKelvinAt(index)
+                keyValue(
+                    "AIR TEMP",
+                    "${airK}K  (${airK - 273}C)",
+                    0x9A9A9AFFL,
+                    if (airK > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+                )
+            }
             val speed = s.flow.speedAt(index)
             if (speed > 0f) {
                 keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, index)}", 0x9A9A9AFFL, 0x9AA4B4FFL)

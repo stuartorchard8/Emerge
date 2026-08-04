@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -117,6 +117,13 @@ object Save {
             if (mix.isEmpty) continue
             out.append("air ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
+
+        // How hot that air is. Packed sparsely like heat, and written after the air itself because
+        // it only means anything against the mass it belongs to. A world saved before version 4 has
+        // no line here and loads at room temperature, which is what it was simulating.
+        writeSparse(out, "airheat", state.air.copyJoules())
+        out.append("airventedheat ").append(state.airVentedJoules).append('\n')
+        out.append("baselineairheat ").append(state.baselineAirJoules).append('\n')
 
         // How that air is moving. Packed like heat, and for the same reason: a still vessel writes
         // none of it at all. Saved rather than left to be re-derived because momentum is the fluid's
@@ -266,6 +273,7 @@ object Save {
         val piles = HashMap<Int, MutableList<Resource>>()
         val joules = LongArray(grid.size)
         val airGrams = LongArray(grid.size * Species.COUNT)
+        val airJoules = LongArray(grid.size)
         val edges = EdgeGrid(grid)
         val momentumX = LongArray(edges.xEdgeCount)
         val momentumY = LongArray(edges.yEdgeCount)
@@ -281,6 +289,8 @@ object Save {
         var generated = 0L
         var radiated = 0L
         var airVented = 0L
+        var airVentedJoules = 0L
+        var baselineAirJoules: Long? = null
         var baselineJoules: Long? = null
         var baselineAir: Long? = null
 
@@ -302,6 +312,8 @@ object Save {
                 "generated" -> generated = long(1)
                 "radiated" -> radiated = long(1)
                 "airvented" -> airVented = long(1)
+                "airventedheat" -> airVentedJoules = long(1)
+                "baselineairheat" -> baselineAirJoules = long(1)
                 "baselinejoules" -> baselineJoules = long(1)
                 "baselineair" -> baselineAir = long(1)
 
@@ -332,6 +344,7 @@ object Save {
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
                     joules[t] = tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
                 }
+                "airheat" -> readSparse(tokens, airJoules, ::fail)
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
                 "impulse" -> {
@@ -350,7 +363,10 @@ object Save {
         val structure = StructureMap.derive(grid, machines.toList())
         val occupancy = Occupancy.derive(grid, machines.toList())
         val heat = HeatField.of(joules)
-        val air = AirField.of(airGrams)
+        // Built from both arrays together, so a save that carries temperature keeps it and one that
+        // predates temperature gets the room-temperature default rather than a world at absolute
+        // zero. See AirField.of for why the two are one value.
+        val air = if (airJoules.any { it != 0L }) AirField.of(airGrams, airJoules) else AirField.of(airGrams)
         return VesselState(
             grid = grid,
             machines = machines.toList(),
@@ -373,6 +389,8 @@ object Save {
             baselineJoules = baselineJoules ?: heat.totalJoules,
             air = air,
             baselineAirGrams = baselineAir ?: air.totalGrams,
+            airVentedJoules = airVentedJoules,
+            baselineAirJoules = baselineAirJoules ?: air.totalJoules,
             momentum = MomentumField.of(edges, momentumX, momentumY),
             vesselImpulseX = impulseX,
             vesselImpulseY = impulseY,

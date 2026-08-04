@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
+import org.emerge.demo.outofspace.world.fluid.ambientGasJoules
+import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
 import org.emerge.demo.outofspace.world.fluid.millimolesOf
 
 /**
@@ -16,7 +18,7 @@ import org.emerge.demo.outofspace.world.fluid.millimolesOf
  * [pressureAt] and [densityAt] are the two different things derived from it, and keeping them
  * distinct is what lets a heavy gas settle without a rule telling it to.
  */
-class AirField(private val grams: LongArray) {
+class AirField(private val grams: LongArray, private val joules: LongArray) {
 
     fun gramsOf(tile: Int, species: Species): Long = grams[tile * Species.COUNT + species.ordinal]
 
@@ -29,6 +31,23 @@ class AirField(private val grams: LongArray) {
      * [tilePressure] for why conflating the two is what forced the old `stratifyColumns` to exist.
      */
     fun pressureAt(tile: Int): Long = millimolesOf(grams, tile)
+
+    /**
+     * Joules per kelvin held by the air in a tile — what it costs to warm this much gas by a degree.
+     *
+     * Here rather than at every call site because a tile's temperature depends on it, and computing
+     * it from [copyGrams] would allocate the whole field once per tile queried.
+     */
+    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(grams, tile)
+
+    /**
+     * How hot the air in a tile is, in kelvin. A tile with no air reads as ambient — see [gasKelvin]
+     * for why that is the right placeholder for an absent quantity rather than a dodge.
+     */
+    fun kelvinAt(tile: Int): Int {
+        val capacity = gasCapacityAt(grams, tile)
+        return if (capacity <= 0L) HeatField.AMBIENT_KELVIN else (joules[tile] / capacity).toInt()
+    }
 
     /** Total gas mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: Int): Long {
@@ -52,12 +71,22 @@ class AirField(private val grams: LongArray) {
         return sum
     }
 
+    /** Total thermal energy of the atmosphere — the ledger quantity, the twin of [totalGrams]. */
+    val totalJoules: Long get() {
+        var sum = 0L
+        for (j in joules) sum += j
+        return sum
+    }
+
     fun copyGrams(): LongArray = grams.copyOf()
 
-    override fun equals(other: Any?): Boolean =
-        this === other || (other is AirField && grams.contentEquals(other.grams))
+    fun copyJoules(): LongArray = joules.copyOf()
 
-    override fun hashCode(): Int = grams.contentHashCode()
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            (other is AirField && grams.contentEquals(other.grams) && joules.contentEquals(other.joules))
+
+    override fun hashCode(): Int = 31 * grams.contentHashCode() + joules.contentHashCode()
 
     companion object {
         /**
@@ -71,7 +100,25 @@ class AirField(private val grams: LongArray) {
             Species.CarbonDioxide to 13L,
         )
 
-        fun of(grams: LongArray): AirField = AirField(grams.copyOf())
+        /**
+         * Air at room temperature.
+         *
+         * The energy is **derived from the grams** rather than defaulted to zero, and that default is
+         * what makes this whole design safe. Heat lives inside [AirField] precisely because it must
+         * not be possible to replace a world's air and leave its temperature behind: on a
+         * `data class`, `copy(air = …)` does not re-evaluate other properties' defaults, so a
+         * parallel `airJoules` array would silently keep describing gas that is no longer there. Ten
+         * kilograms of oxygen inheriting one kilogram's worth of energy reads as 57K and stops
+         * behaving like a gas at all — which is exactly what happened when it was tried that way.
+         *
+         * One value, so the two cannot disagree.
+         */
+        fun of(grams: LongArray): AirField =
+            AirField(grams.copyOf(), ambientGasJoules(grams.size / Species.COUNT, grams))
+
+        /** Air at a temperature somebody has an opinion about. Both arrays are copied. */
+        fun of(grams: LongArray, joules: LongArray): AirField =
+            AirField(grams.copyOf(), joules.copyOf())
 
         /** Every enclosed tile filled with [AMBIENT_AIR]; vacuum left empty. */
         fun ambient(grid: Grid, structure: StructureMap): AirField {
@@ -81,7 +128,7 @@ class AirField(private val grams: LongArray) {
                 val base = tile * Species.COUNT
                 for (s in Species.GASES) grams[base + s.ordinal] = AMBIENT_AIR[s]
             }
-            return AirField(grams)
+            return of(grams)
         }
     }
 }

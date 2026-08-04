@@ -38,9 +38,11 @@ class BuoyancyResult(val vesselX: Long, val vesselY: Long)
  * pull it down without the pressure solve immediately pushing it back. Separating those two
  * quantities is what makes the honest version possible.
  *
- * Temperature will enter here and nowhere else. A hot parcel is fewer moles for its mass — lighter
- * than its pressure suggests — so it rises, and convection appears without a line of code that
- * mentions convection. That is what increment D switches back on.
+ * Temperature enters here and nowhere else, and it did so without this function changing. A hot
+ * parcel reads as *more pressure for its mass*, so the `excess` below goes negative and the parcel
+ * is pulled the other way — it rises. Convection is that, plus [advectHeat] carrying the warmth up
+ * with the gas rather than leaving it behind. There is no line of code anywhere that mentions
+ * convection, and that is the whole point of doing it as a force.
  *
  * ### The reaction
  *

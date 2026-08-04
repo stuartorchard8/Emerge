@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -58,6 +59,26 @@ class SaveTest {
 
         // And it keeps agreeing, which is the part a field-by-field comparison cannot promise.
         assertEquals(Save.write(run(played, 200)), Save.write(run(reloaded, 200)))
+    }
+
+    /**
+     * Air temperature survives the trip, and does so as a *run-on* rather than a field comparison.
+     *
+     * Worth its own case because a uniformly room-temperature world cannot fail it: the air's energy
+     * defaults to exactly ambient, so a save that dropped the temperature line entirely would round
+     * trip perfectly and only diverge once something was hot. This warms one room first.
+     */
+    @Test
+    fun `air temperature survives a save`() {
+        val start = starterVessel(cfg.grid)
+        val joules = start.air.copyJoules()
+        val hot = cfg.grid.index(cfg.grid.width / 2, cfg.grid.height / 2)
+        joules[hot] *= 3
+        val played = run(start.copy(air = AirField.of(start.air.copyGrams(), joules)), 60)
+
+        val reloaded = Save.read(Save.write(played))
+        assertEquals(played.air.kelvinAt(hot), reloaded.air.kelvinAt(hot), "the air reloaded at a different temperature")
+        assertEquals(Save.write(run(played, 60)), Save.write(run(reloaded, 60)), "the reload diverged once it ran on")
     }
 
     @Test

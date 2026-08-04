@@ -831,6 +831,22 @@ Each is meant to be shippable and committed on its own.
   forces; `stratifyColumns` deleted here.
 - **D. Boundary** — vacuum as `p = 0`, breach as blowout, and the thrust/torque sum. Heat comes back
   on at this point, because now it has something to push. Sealed-vessel-zero-thrust is the gate.
+  *Temperature landed here (2026-08-04): `tilePressure` is `n × T / T_ambient`, and the gas's thermal
+  energy advects on the same fluxes as momentum, so convection emerges from `applyBuoyancy` without
+  a line of code mentioning convection. Three things it taught, all of them about representation
+  rather than fluids:*
+  - *The gas's heat **must live inside `AirField`**, not beside it in `VesselState`. With capacity
+    derived from mass and energy as the stored quantity, `copy(air = …)` reinterprets old joules
+    against a new capacity — ten kilos of oxygen read as 57K. `copy` is precisely the operation that
+    desynchronises parallel fields, so the two have to be one value.*
+  - *Capacity is carried in **millijoules per kelvin**, and the gas's energy in millijoules to match.
+    Dividing the thousand out early floors a sub-gram tile to zero capacity and a two-gram tile to
+    one — a cliff that lands in the thin edge of a plume and showed up as trace species leaning 20%.*
+  - *Clamping a transfer against the live array instead of the snapshot is a Gauss-Seidel sweep in
+    disguise. Same fault `applySpeciesDrift` had, same detector (`BreachSymmetryTest`).*
+
+  *Still open in D: torque, and coupling the fabric's heat to the air's — until that exists a smelter
+  warms the deck plating and not the room, so there is no in-game way to heat gas.*
 - **E. Liquids** — `d_target = 0` and a free surface. Only after A–D behave.
 - **F. Pipes** — sealed sub-regions at a narrow aperture. Should be mostly configuration if the
   aperture decision above held.
