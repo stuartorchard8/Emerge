@@ -476,8 +476,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // Every placement books the energy the new body brings with it: a tile of
                         // track is a tile of iron at room temperature, and that heat is arriving in
                         // the world rather than being conjured out of the ledger.
-                        MachineKind.Rail -> if (rails[edit.index] == null) {
-                            rails[edit.index] = Segment(Conduit.Rail).also { built(it.joules) }
+                        MachineKind.Rail, MachineKind.Pipe -> {
+                            val c = edit.kind.conduit!!
+                            if (layer(c)[edit.index] == null) {
+                                layer(c)[edit.index] = Segment(c).also { built(it.joules) }
+                            }
                         }
                         MachineKind.Gauge -> if (rails[edit.index] == null) {
                             rails[edit.index] = Segment(Conduit.Rail, channel = Channel.Amber)
@@ -517,16 +520,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         scrapped(bridge.joules)
                         return
                     }
-                    val segment = rails[edit.index]
-                    if (segment != null) {
+                    // One fitting per click, in layer order, for the same reason the track comes off
+                    // before the smelter under it: a tile can hold several and removing them all at
+                    // once would take away things the player could not see they were pointing at.
+                    for (c in Conduit.entries) {
+                        val line = layer(c)
+                        val segment = line[edit.index] ?: continue
                         segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
-                        rails[edit.index] = null
+                        line[edit.index] = null
                         scrapped(segment.joules)
                         // Cut the far half of every join too. Leaving them would let a later tile of
                         // track laid here inherit connections the player never drew.
                         for (dir in Direction.ALL) {
                             val n = grid.neighbour(edit.index, dir)
-                            if (n >= 0) rails[n]?.let { rails[n] = it.cutFrom(dir.opposite) }
+                            if (n >= 0) line[n]?.let { line[n] = it.cutFrom(dir.opposite) }
                         }
                         return
                     }
@@ -961,7 +968,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Vent -> Vent()
             MachineKind.Hull -> Hull()
             // Fittings are placed onto their layer directly and never come through here.
-            MachineKind.Rail, MachineKind.Gauge, MachineKind.Bridge -> Hull()
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Bridge -> Hull()
         }
     }
 }

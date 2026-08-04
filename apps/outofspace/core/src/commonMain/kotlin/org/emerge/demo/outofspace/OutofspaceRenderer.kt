@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
@@ -200,6 +201,15 @@ class OutofspaceRenderer {
             }
         }
 
+        // Pipes under the track, because the track is the layer with things riding on it and so the
+        // one that has to stay legible. Drawn thinner, so a crossing reads as two runs at different
+        // depths rather than as a junction.
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                drawPipe(state, grid.index(x, y), x, y)
+            }
+        }
+
         // Track over the buildings, because it runs on top of the deck rather than being buried by
         // it — and because a run threaded under a smelter is unreadable if the smelter covers it.
         for (y in mMinY..mMaxY) {
@@ -294,6 +304,31 @@ class OutofspaceRenderer {
         )
         // A dark line along the top, so a heap does not read as a solid block of material.
         rect((x + 0.5f) * tilePx, (y + 1f - h) * tilePx, Visual.DEBRIS_TOP_WIDTH * tilePx, Visual.DEBRIS_TOP_HEIGHT * tilePx, Colors.DEBRIS_TOP)
+    }
+
+    /**
+     * One tile of pipe.
+     *
+     * The same spine as [drawRail] and deliberately so — a conduit is a conduit, and the player
+     * should read the two the same way — but narrower and in copper, because it is a different
+     * network and the whole point of the layer is that you can tell which run is which where they
+     * cross. Nothing rides on it: a pipe carries a fluid field rather than packets.
+     */
+    private fun drawPipe(state: VesselState, tile: Int, x: Int, y: Int) {
+        val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        val color = kindColor(MachineKind.Pipe)
+        for (dir in Direction.ALL) {
+            if (!segment.linkedTo(dir)) continue
+            rect(
+                cx + dir.dx * Visual.PIPE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.PIPE_ARM_OFFSET * tilePx,
+                (if (dir.dx != 0) Visual.PIPE_ARM_LENGTH else Visual.PIPE_DIAMETER) * tilePx,
+                (if (dir.dy != 0) Visual.PIPE_ARM_LENGTH else Visual.PIPE_DIAMETER) * tilePx,
+                color,
+            )
+        }
+        rect(cx, cy, Visual.PIPE_DIAMETER * tilePx, Visual.PIPE_DIAMETER * tilePx, color)
     }
 
     /**
@@ -855,6 +890,11 @@ class OutofspaceRenderer {
 
         // ── Rail dimensions ─────────────────────────────────────────────
         const val RAIL_DIAMETER = 0.50f
+
+        /** Narrower than the rail, so a crossing reads as two runs rather than one junction. */
+        const val PIPE_DIAMETER = 0.28f
+        const val PIPE_ARM_LENGTH = (1f-PIPE_DIAMETER)/2f
+        const val PIPE_ARM_OFFSET = (1f+PIPE_DIAMETER)/4f
         const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
         const val RAIL_ARM_OFFSET = (1f+RAIL_DIAMETER)/4f
 
@@ -923,6 +963,7 @@ class OutofspaceRenderer {
 fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Rail -> 0x39445AFFL
     MachineKind.Gauge -> 0x39445AFFL
+    MachineKind.Pipe -> 0x7A5A3AFFL
     MachineKind.Bridge -> 0x1A2030FFL
     MachineKind.Miner -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL

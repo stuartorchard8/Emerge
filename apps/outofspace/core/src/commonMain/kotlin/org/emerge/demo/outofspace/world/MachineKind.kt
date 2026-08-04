@@ -11,6 +11,7 @@ package org.emerge.demo.outofspace.world
 enum class MachineKind(val label: String, val conduit: Conduit? = null) {
     Rail("RAIL", Conduit.Rail),
     Gauge("GAUGE", Conduit.Rail),
+    Pipe("PIPE", Conduit.Pipe),
     Bridge("BRIDGE", Conduit.Rail),
     Miner("MINER"),
     Processor("PROCESSOR"),

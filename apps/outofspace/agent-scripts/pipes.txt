@@ -1,0 +1,21 @@
+# Two networks on one grid: a rail run and a pipe run crossing it.
+#
+# This is the picture the old storage could not produce. One segment list per tile meant `layConduit`
+# found a conduit mismatch at the crossing and returned having laid nothing, so a pipe dragged over
+# track simply stopped existing there — silently, with no error and no gap in the rail.
+#
+# What to read in the shot:
+#   the rail run should be an unbroken horizontal spine, INCLUDING at the crossing tile;
+#   the pipe run should be an unbroken vertical spine in copper, also including the crossing;
+#   they should read as two runs at different depths, not as a junction.
+new
+
+brush RAIL
+drag 14 12 26 12
+
+brush PIPE
+drag 20 8 20 16
+
+camera centre 20 12
+camera zoom 28
+shot crossing

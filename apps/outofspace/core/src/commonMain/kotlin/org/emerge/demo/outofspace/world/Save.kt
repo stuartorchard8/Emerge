@@ -498,7 +498,8 @@ object Save {
             MachineKind.Vent -> Vent(ventedGrams = num("vented", 0L))
             MachineKind.Hull -> Hull()
             // Track is a segment, not a machine, and has its own line.
-            MachineKind.Rail, MachineKind.Gauge -> fail("$kindName is track, not a machine")
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge ->
+                fail("$kindName is a conduit, not a machine")
         }
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: Wiring.RUNNING
         // A file that predates the body model says nothing about a machine's own heat, so it gets
