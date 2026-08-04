@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 6
+    const val VERSION = 7
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -126,6 +126,17 @@ object Save {
         // none of it at all. Saved rather than left to be re-derived because momentum is the fluid's
         // memory -- a world reloaded without it resumes becalmed, and a draught that had to build
         // up again from rest is a different world from the one that was saved.
+        // What is in the pipes, written exactly like the room air above it and only where there is
+        // any: an empty network costs nothing, which is what every world has until something pumps.
+        for (tile in 0 until state.grid.size) {
+            val mix = state.pipeAir.mixtureAt(tile)
+            if (mix.isEmpty) continue
+            out.append("pipeair ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
+        }
+        writeSparse(out, "pipeairheat", state.pipeAir.copyJoules())
+        writeSparse(out, "pipemomx", state.pipeMomentum.copyX())
+        writeSparse(out, "pipemomy", state.pipeMomentum.copyY())
+
         writeSparse(out, "momx", state.momentum.copyX())
         writeSparse(out, "momy", state.momentum.copyY())
 
@@ -278,6 +289,10 @@ object Save {
         val edges = EdgeGrid(grid)
         val momentumX = LongArray(edges.xEdgeCount)
         val momentumY = LongArray(edges.yEdgeCount)
+        val pipeGrams = LongArray(grid.size * Species.COUNT)
+        val pipeJoules = LongArray(grid.size)
+        val pipeMomentumX = LongArray(edges.xEdgeCount)
+        val pipeMomentumY = LongArray(edges.yEdgeCount)
         var impulseX = 0L
         var impulseY = 0L
         var exhaustX = 0L
@@ -361,6 +376,14 @@ object Save {
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airJoules, ::fail)
+                "pipeair" -> {
+                    val t = tile(1)
+                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), ::fail)
+                    for (s in Species.ALL) pipeGrams[t * Species.COUNT + s.ordinal] = mix[s]
+                }
+                "pipeairheat" -> readSparse(tokens, pipeJoules, ::fail)
+                "pipemomx" -> readSparse(tokens, pipeMomentumX, ::fail)
+                "pipemomy" -> readSparse(tokens, pipeMomentumY, ::fail)
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
                 "impulse" -> {
@@ -386,6 +409,10 @@ object Save {
         // predates temperature gets the room-temperature default rather than a world at absolute
         // zero. See AirField.of for why the two are one value.
         val air = if (airJoules.any { it != 0L }) AirField.of(airGrams, airJoules) else AirField.of(airGrams)
+        // Same rule as the room air, and it matters more here: a version 6 file has no pipe lines at
+        // all, so the network loads empty rather than at some temperature nothing was ever at.
+        val pipeAir =
+            if (pipeJoules.any { it != 0L }) AirField.of(pipeGrams, pipeJoules) else AirField.of(pipeGrams)
         return VesselState(
             grid = grid,
             machines = machines.toList(),
@@ -412,9 +439,12 @@ object Save {
                 machines.toList(), conduits, bridges.toList()
             ) else solidJoules(machines.toList(), conduits, bridges.toList()),
             air = air,
-            baselineAirGrams = baselineAir ?: air.totalGrams,
+            pipeAir = pipeAir,
+            pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
+            // Both fields, because they share one ledger — see VesselState.baselineAirGrams.
+            baselineAirGrams = baselineAir ?: (air.totalGrams + pipeAir.totalGrams),
             airVentedJoules = airVentedJoules,
-            baselineAirJoules = baselineAirJoules ?: air.totalJoules,
+            baselineAirJoules = baselineAirJoules ?: (air.totalJoules + pipeAir.totalJoules),
             momentum = MomentumField.of(edges, momentumX, momentumY),
             vesselImpulseX = impulseX,
             vesselImpulseY = impulseY,

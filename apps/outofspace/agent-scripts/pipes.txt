@@ -19,3 +19,13 @@ drag 20 8 20 16
 camera centre 20 12
 camera zoom 28
 shot crossing
+
+echo --- the pipe network is a second fluid field, and it starts empty
+expect pipeGrams = 0
+expect airBalance = 0
+
+echo --- and it stays sealed: no aperture onto the rim, so nothing can vent out of it
+run 200
+expect pipeGrams = 0
+expect airVented = 0
+expect airBalance = 0

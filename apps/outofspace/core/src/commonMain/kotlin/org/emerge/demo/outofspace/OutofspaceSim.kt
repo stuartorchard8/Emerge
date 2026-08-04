@@ -59,6 +59,8 @@ import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.fluid.pipeApertures
+import org.emerge.demo.outofspace.world.fluid.pipeVolumes
 import org.emerge.demo.outofspace.world.fluid.stepFluid
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.fluid.gasCapacity
@@ -192,6 +194,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
         val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules)
 
+        // The pipes, on the same lattice and through the same solver — see [pipeApertures]. Their
+        // connectivity comes from what the player drew rather than from what is solid, and their
+        // cells are a fraction of a tile, which is the whole of what makes a pipe a pipe.
+        //
+        // Run after the rooms rather than before, and it does not yet matter which: nothing connects
+        // the two fields, so this tick they are genuinely independent. The order becomes a real
+        // question when a vent exists, and it wants settling by measurement rather than by argument.
+        val edges = EdgeGrid(state.grid)
+        val pipes = stepFluid(
+            edges,
+            pipeApertures(edges, w.conduitsSnapshot()),
+            w.pipeGrams,
+            w.pipeMomentumX,
+            w.pipeMomentumY,
+            state.gravity,
+            w.pipeJoules,
+            pipeVolumes(state.grid, w.conduitsSnapshot()),
+        )
+        // A pipe has no aperture onto the rim, so nothing can cross it. Checked rather than assumed:
+        // this is the one number that would silently drain the shared air ledger if it were wrong.
+        require(pipes.ventedGrams == 0L && pipes.ventedJoules == 0L) {
+            "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
+        }
+
         return state.copy(
             machines = w.machines.toList(),
             conduits = w.conduitsSnapshot(),
@@ -211,14 +237,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // signs, which is what lets each of them still close on its own — see [SolidHeatStep].
             solidToAirJoules = state.solidToAirJoules + conducted.toAir,
             air = fluid.air,
+            pipeAir = pipes.air,
+            pipeMomentum = MomentumField.of(edges, pipes.momentumX, pipes.momentumY),
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
             // Its own ledger rather than folded into `radiatedJoules`, for the same reason the air's
             // mass has one separate from the ore's: `atmosphere + vented == baseline` is a cleaner
             // statement than a combined total, and a break in one does not obscure the other.
             airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
-            momentum = MomentumField.of(EdgeGrid(state.grid), fluid.momentumX, fluid.momentumY),
-            vesselImpulseX = state.vesselImpulseX + fluid.vesselX,
-            vesselImpulseY = state.vesselImpulseY + fluid.vesselY,
+            momentum = MomentumField.of(edges, fluid.momentumX, fluid.momentumY),
+            // Gas leaning on a pipe elbow pushes the ship exactly as gas leaning on a bulkhead does.
+            // Same term, because it is the same physics happening one layer over.
+            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX,
+            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             motion = w.motion.freeze(),
@@ -387,6 +417,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val momentumX: LongArray = state.momentum.copyX()
         val momentumY: LongArray = state.momentum.copyY()
 
+        /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
+        val pipeGrams: LongArray = state.pipeAir.copyGrams()
+        val pipeJoules: LongArray = state.pipeAir.copyJoules()
+        val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
+        val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
+
         /**
          * This tick's record of what moved where, for the renderer alone — see [Motion].
          *
@@ -465,6 +501,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
+        /**
+         * Whatever was in a pipe cell, let out into the room — because that is what cutting a pipe
+         * does.
+         *
+         * The gas and its heat both move to the same tile of the vessel's own atmosphere. Not
+         * deleted, because [air] and [pipeAir] share one ledger and deleting a gram here would read
+         * downstream as a leak; and not refused like a build over a sealed room, because a player
+         * pulling a pipe apart has every right to and the gas has somewhere obvious to go.
+         *
+         * If that tile is outside the hull the gas is now loose in vacuum, and the next fluid step
+         * vents it through the rim and books it as vented. That needs no case of its own here, which
+         * is the point of putting it in the room rather than inventing a second exit.
+         */
+        fun cutOpen(tile: Int) {
+            val base = tile * Species.COUNT
+            for (sp in Species.GASES) {
+                airGrams[base + sp.ordinal] += pipeGrams[base + sp.ordinal]
+                pipeGrams[base + sp.ordinal] = 0L
+            }
+            airJoules[tile] += pipeJoules[tile]
+            pipeJoules[tile] = 0L
+        }
+
         /** Where a machine instance currently sits — miners are charged heat by identity. */
         fun indexOf(machine: Machine): Int = machines.indexOfFirst { it === machine }
 
@@ -527,6 +586,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         val line = layer(c)
                         val segment = line[edit.index] ?: continue
                         segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
+                        if (c == Conduit.Pipe) cutOpen(edit.index)
                         line[edit.index] = null
                         scrapped(segment.joules)
                         // Cut the far half of every join too. Leaving them would let a later tile of

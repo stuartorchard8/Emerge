@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
@@ -83,13 +84,31 @@ data class VesselState(
     val occupancy: Occupancy = Occupancy.derive(grid, machines),
     val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
     /**
+     * What is inside the pipes — a **second fluid field**, on the same lattice and run by the same
+     * solver, holding its own gas at its own pressure and temperature.
+     *
+     * Separate from [air] because a tile is not a thing: a corridor with a pipe along it has both a
+     * roomful of air and a pipeful of whatever is being plumbed, and one cell per tile can hold one
+     * of them. See [pipeApertures] for why this is a second field rather than the sealed sub-region
+     * of [air] the plan originally called for.
+     *
+     * Starts **empty**, everywhere, and stays empty until something puts gas in it. A pipe is laid
+     * evacuated; the alternative — filling it with whatever room it was built in — would mint
+     * atmosphere on every placement and is a ledger problem for no gain.
+     *
+     * Its heat lives inside it, for the reason [AirField.of] gives at length.
+     */
+    val pipeAir: AirField = AirField.of(LongArray(grid.size * Species.COUNT)),
+    /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
+    val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
+    /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirGrams], and checked the
      * same way: `airJoules + airVentedJoules == baselineAirJoules` on every tick.
      *
      * The air's heat lives inside [AirField] rather than beside it here, and deliberately — see
      * [AirField.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
      */
-    val baselineAirJoules: Long = air.totalJoules,
+    val baselineAirJoules: Long = air.totalJoules + pipeAir.totalJoules,
     /** Cumulative joules blown overboard with escaping gas. */
     val airVentedJoules: Long = 0L,
     /**
@@ -142,8 +161,14 @@ data class VesselState(
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.
+     *
+     * **[air] and [pipeAir] share this one ledger**, and that is a departure from the rule above
+     * rather than an oversight. Solids and gases get separate ledgers because they never interconvert;
+     * room gas and pipe gas interconvert by design — that is what a vent is — so two baselines would
+     * disagree the first time a single gram crossed between them, and the disagreement would look
+     * exactly like a leak. What must not mix is what cannot mix.
      */
-    val baselineAirGrams: Long = air.totalGrams,
+    val baselineAirGrams: Long = air.totalGrams + pipeAir.totalGrams,
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
@@ -265,8 +290,8 @@ data class VesselState(
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
     val storedJoules: Long get() = solidJoules(machines, conduits, bridges)
 
-    /** Total atmosphere still aboard. */
-    val atmosphereGrams: Long get() = air.totalGrams
+    /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
+    val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =

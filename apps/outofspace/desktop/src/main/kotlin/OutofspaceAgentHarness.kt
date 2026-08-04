@@ -247,6 +247,13 @@ object OutofspaceAgentHarness {
                 // conduction couples the two -- and the one the fluid actually acts on.
                 "airtemp" -> { tile -> state.airKelvinAt(tile).toDouble() }
                 "air", "mass" -> { tile -> state.air.mixtureAt(tile).total.toDouble() }
+                // The pipes, which are a second fluid field on the same lattice and so map exactly
+                // like the room air. Worth having as its own view rather than folded into `air`: the
+                // whole question about a pipe is whether what is in it is in the PIPE, and a
+                // combined map cannot answer that.
+                "pipe" -> { tile -> state.pipeAir.mixtureAt(tile).total.toDouble() }
+                "pipetemp" -> { tile -> state.pipeAir.kelvinAt(tile).toDouble() }
+                "pipepressure" -> { tile -> state.pipeAir.pressureAt(tile).toDouble() }
                 "debris" -> { tile -> state.debris.massAt(tile).toDouble() }
                 // One gas on its own. Bulk flow provably cannot mix or unmix, so the question
                 // "has the carbon dioxide settled?" is not answerable from `density` or `air`,
@@ -256,7 +263,10 @@ object OutofspaceAgentHarness {
                     val sp = Species.ALL.firstOrNull { it.name.equals(name, true) }
                         ?: error("unknown species '$name' (have ${Species.ALL.map { it.name }})")
                     ({ tile: Int -> state.air.gramsOf(tile, sp).toDouble() })
-                } else error("field pressure|density|speed|heat|air|debris|species:<Name>|flow|build")
+                } else error(
+                    "field pressure|density|speed|heat|airtemp|air|pipe|pipetemp|pipepressure|" +
+                        "debris|species:<Name>|flow|build"
+                )
             }
 
             var lo = Double.MAX_VALUE
@@ -401,7 +411,10 @@ object OutofspaceAgentHarness {
         private fun reading(field: String): Double? = when (field) {
             "tick" -> controller.tick.toDouble()
             "machines" -> machineCount().toDouble()
+            // Rooms and pipes together, because they share one ledger and `airBalance` below is
+            // that ledger. `pipeGrams` separates them for a script that cares which side gas is on.
             "airGrams" -> state.atmosphereGrams.toDouble()
+            "pipeGrams" -> state.pipeAir.totalGrams.toDouble()
             "airVented" -> state.airVentedGrams.toDouble()
             "airBalance" -> (state.atmosphereGrams + state.airVentedGrams - state.baselineAirGrams).toDouble()
             "debrisGrams" -> state.debrisGrams.toDouble()
@@ -432,7 +445,7 @@ object OutofspaceAgentHarness {
         }
 
         private val FIELDS = listOf(
-            "tick", "machines", "airGrams", "airVented", "airBalance", "debrisGrams", "minedGrams",
+            "tick", "machines", "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "minedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
