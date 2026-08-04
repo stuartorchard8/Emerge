@@ -92,8 +92,9 @@ class AtmosphereTest {
         s = s.copy(air = field, baselineAirGrams = field.totalGrams)
 
         s = run(s, 40)
-        assertEquals(2_000L, s.air.pressureAt(grid.index(2, 2)), "the high side stayed high")
-        assertEquals(500L, s.air.pressureAt(grid.index(6, 2)), "and the low side stayed low")
+        // Pressure reads in millimoles now, not grams -- see [AirField.pressureAt].
+        assertEquals(2_000L, s.air.densityAt(grid.index(2, 2)), "the high side stayed high")
+        assertEquals(500L, s.air.densityAt(grid.index(6, 2)), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
     }
 
@@ -108,24 +109,47 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        s = run(s, 80)
-        // Adjacent tiles are the precise statement: integer pressure settles into a +/-1 staircase,
-        // because a difference of one cannot be halved without overshooting. Asserting a flat field
-        // across the whole room would be asserting something that cannot be true.
-        for (tile in 0 until g.size) {
-            if (!s.structure.isContained(tile) || s.structure.isImpermeable(tile)) continue
-            for (dir in org.emerge.demo.outofspace.world.Direction.ALL) {
-                val other = g.neighbour(tile, dir)
-                if (other < 0 || !s.structure.isContained(other) || s.structure.isImpermeable(other)) continue
-                val gap = s.air.pressureAt(tile) - s.air.pressureAt(other)
-                assertTrue(gap in -1L..1L, "neighbours should be level: $tile vs $other differ by $gap")
-            }
+        fun interior() = (0 until g.size).filter {
+            s.structure.isContained(it) && !s.structure.isImpermeable(it)
+        }
+        val startSpread = interior().let { t ->
+            t.maxOf { s.air.pressureAt(it) } - t.minOf { s.air.pressureAt(it) }
+        }
+
+        s = run(s, 400)
+
+        // Two changes from the version this replaces, both because the air has inertia now.
+        //
+        // It used to assert every pair of neighbours sat within one unit of each other. That is a
+        // statement about diffusion, which can only ever approach equilibrium. A solver that carries
+        // momentum overshoots and rings on the way down, so what can honestly be asserted is that
+        // the spread collapses -- not that it reaches a particular floor by a particular tick.
+        //
+        // And it asserted levelness in every direction, including vertically. Under gravity that is
+        // now wrong on purpose: pure oxygen is heavier than the reference mixture, so it genuinely
+        // settles and a standing vertical gradient is the correct answer rather than a failure.
+        val spread = interior().let { t ->
+            t.maxOf { s.air.pressureAt(it) } - t.minOf { s.air.pressureAt(it) }
+        }
+        assertTrue(
+            spread < startSpread / 10,
+            "the room should have evened out: spread $spread, started at $startSpread",
+        )
+        for (tile in interior()) {
+            val right = g.neighbour(tile, org.emerge.demo.outofspace.world.Direction.Right)
+            if (right < 0 || right !in interior()) continue
+            val gap = s.air.pressureAt(tile) - s.air.pressureAt(right)
+            val tolerance = s.air.pressureAt(tile) / 5L + 1L
+            assertTrue(
+                gap in -tolerance..tolerance,
+                "horizontal neighbours should be close: $tile vs $right differ by $gap",
+            )
         }
         assertAirBalanced(s, "after equalising")
     }
 
     @Test
-    fun `flow never overshoots into an oscillation`() {
+    fun `flow settles rather than running away`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
@@ -133,13 +157,18 @@ class AtmosphereTest {
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
-        var previousPeak = Long.MAX_VALUE
+        // The old assertion was that the peak never rises, which is true of diffusion and false of
+        // any solver that carries momentum: gas that has been accelerated has to arrive somewhere,
+        // and a pressure wave can genuinely re-concentrate for a tick on the way to settling. What
+        // must hold is that it settles -- the peak trends down and never runs away.
+        val start = (0 until g.size).maxOf { s.air.pressureAt(it) }
+        var peak = start
         repeat(300) {
             s = OutofspaceReducer.reduce(cfgFor(g), s, emptyMap())
-            val peak = (0 until g.size).maxOf { s.air.pressureAt(it) }
-            assertTrue(peak <= previousPeak, "the densest tile got denser with no source: $peak > $previousPeak")
-            previousPeak = peak
+            peak = (0 until g.size).maxOf { s.air.pressureAt(it) }
+            assertTrue(peak <= start, "the densest tile ran away from where it began: $peak > $start")
         }
+        assertTrue(peak < start / 2, "and it should have spread out by now: $peak vs $start")
         assertAirBalanced(s, "after settling")
     }
 
@@ -187,7 +216,7 @@ class AtmosphereTest {
     }
 
     @Test
-    fun `stratification moves composition without moving pressure`() {
+    fun `sorting redistributes the column without gaining or losing any of it`() {
         val room = sealedRoom(3, 6)
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
@@ -198,20 +227,33 @@ class AtmosphereTest {
         }
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
+        val startColumn = (2..5).sumOf { s.air.densityAt(g.index(2, it)) }
 
         s = run(s, 40)
-        for (y in 2..5) {
-            assertEquals(
-                1_000L, s.air.pressureAt(g.index(2, y)),
-                "a swap must not change how much is in a tile (row $y)",
-            )
-        }
+
+        // The old version asserted each tile still weighed exactly what it started at. That was true
+        // when sorting was a swap of equal masses AND pressure was mass; it is not true now and
+        // should not be. What settles is *pressure*, so a tile that has traded heavy gas for light
+        // ends up holding less weight at the same pressure. The column is the conserved thing.
+        assertEquals(
+            startColumn, (2..5).sumOf { s.air.densityAt(g.index(2, it)) },
+            "sorting must not create or destroy gas",
+        )
+        assertTrue(
+            s.air.gramsOf(g.index(2, 5), Species.CarbonDioxide) >
+                s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide),
+            "and the heavy gas should have worked its way down",
+        )
+        assertAirBalanced(s, "after sorting")
     }
 
     @Test
-    fun `without axis-aligned gravity nothing stratifies`() {
-        // The fast path is the only thing that assumes a grid-aligned "down"; a diagonal gravity has
-        // to leave the field alone rather than pick an axis at random.
+    fun `diagonal gravity sorts diagonally`() {
+        // This used to assert the opposite. `stratifyColumns` walked vertical neighbours, so it could
+        // only work when "down" was a grid axis and had to decline the job otherwise; the test
+        // pinned that limitation in place. Sorting is a flux driven by the component of gravity
+        // through each face now, so a diagonal gravity has both a component to sort along and no
+        // reason to refuse.
         val room = sealedRoom(3, 6)
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
@@ -223,7 +265,10 @@ class AtmosphereTest {
 
         val before = s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide)
         s = run(s, 40)
-        assertEquals(before, s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide), "no sorting happened")
+        assertTrue(
+            s.air.gramsOf(g.index(2, 2), Species.CarbonDioxide) < before,
+            "carbon dioxide should have left the top corner under diagonal gravity",
+        )
         assertAirBalanced(s, "diagonal gravity")
     }
 

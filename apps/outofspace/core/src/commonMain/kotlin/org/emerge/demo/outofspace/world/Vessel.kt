@@ -4,6 +4,9 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
@@ -81,6 +84,28 @@ data class VesselState(
     val baselineJoules: Long = heat.totalJoules,
     val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
     /**
+     * How the air is moving: momentum on the faces between tiles — see [MomentumField].
+     *
+     * In state rather than derived, because it is the fluid's memory. A room does not stop being
+     * draughty between ticks, and an exhaust plume that had to be recomputed from pressure every
+     * tick would have no inertia and so could never be a jet.
+     */
+    val momentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
+    /**
+     * Cumulative impulse the air has delivered to the ship, and cumulative momentum that has gone
+     * overboard with escaping gas.
+     *
+     * The vessel does not move yet — flight is Phase 5. These are here now because they are what
+     * makes a breach or an exhaust *mean* something, and because a thrust figure that has been
+     * accumulating correctly since the first tick is far easier to trust than one bolted on later.
+     * In steady flight the two should mirror each other: what pushes the ship is what the ship
+     * pushed against.
+     */
+    val vesselImpulseX: Long = 0L,
+    val vesselImpulseY: Long = 0L,
+    val exhaustMomentumX: Long = 0L,
+    val exhaustMomentumY: Long = 0L,
+    /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.
@@ -145,7 +170,7 @@ data class VesselState(
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =
-        (air.pressureAt(index) * 100 / AirField.AMBIENT_AIR.total).toInt()
+        (air.pressureAt(index) * 100 / AMBIENT_PRESSURE).toInt()
 
     operator fun get(index: Int): Machine? = machines.getOrNull(index)
     operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null

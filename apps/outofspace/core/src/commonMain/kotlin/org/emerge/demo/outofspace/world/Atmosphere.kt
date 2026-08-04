@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
-import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.demo.outofspace.world.fluid.millimolesOf
 
 /**
  * The air, tile by tile: grams of each gas species in every enclosed tile.
@@ -12,17 +12,26 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * tile would allocate a thousand small objects every tick, and this is the field that will be touched
  * most often once life support and combustion exist.
  *
- * Grams again, and integers again, for the reasons [Mixture] already gives. Pressure here is simply
- * the total mass in a tile: every tile is the same volume, so mass *is* density, and gas flows from
- * dense to sparse. Temperature is deliberately not in it yet — coupling `P ∝ mT` is what gives
- * convection, and it deserves its own pass rather than being smuggled in with the plumbing.
+ * Grams again, and integers again, for the reasons [Mixture] already gives. Mass is what is stored;
+ * [pressureAt] and [densityAt] are the two different things derived from it, and keeping them
+ * distinct is what lets a heavy gas settle without a rule telling it to.
  */
 class AirField(private val grams: LongArray) {
 
     fun gramsOf(tile: Int, species: Species): Long = grams[tile * Species.COUNT + species.ordinal]
 
-    /** Total gas mass in a tile. With uniform tile volume this is the pressure. */
-    fun pressureAt(tile: Int): Long {
+    /**
+     * Pressure in a tile, in the millimoles [tilePressure] counts.
+     *
+     * **Not mass.** Pressure goes as the number of particles and density as their weight, and this
+     * used to return the mass on the grounds that every tile is the same volume — right about
+     * density, wrong about pressure, and the difference is exactly what lets a heavy gas sink. See
+     * [tilePressure] for why conflating the two is what forced the old `stratifyColumns` to exist.
+     */
+    fun pressureAt(tile: Int): Long = millimolesOf(grams, tile)
+
+    /** Total gas mass in a tile — its density, since every tile is the same volume. */
+    fun densityAt(tile: Int): Long {
         var sum = 0L
         val base = tile * Species.COUNT
         for (s in Species.GASES) sum += grams[base + s.ordinal]
@@ -62,54 +71,6 @@ class AirField(private val grams: LongArray) {
             Species.CarbonDioxide to 13L,
         )
 
-        /**
-         * How many relaxation passes a tick runs. Gas equalises quickly — a door opening is not a
-         * slow event — but one pass may only move [STABLE_SHARE] of a gradient before the scheme
-         * goes unstable, so speed has to come from repeating a stable pass rather than from taking a
-         * bigger one.
-         *
-         * This is the honest shape of the thing. It used to be a per-second flow rate divided by the
-         * tick rate, with the pass count derived to keep the two agreeing; the arithmetic worked out
-         * to exactly this and no more, so all that machinery was computing a constant.
-         */
-        const val FLOW_PASSES = 15
-
-        /**
-         * The largest share of a gradient one edge may move in a single pass.
-         *
-         * The cap used to be **half** the gap, which is the right limit for a *pair* of tiles and the
-         * wrong one for a grid. Every edge is computed against the same snapshot and applied together,
-         * so a tile surrounded by four emptier ones gives away half a gradient four times over in one
-         * tick, and the whole field flips: high tiles become low, low become high, and the room sits
-         * in a permanent checkerboard, sloshing back and forth forever without equalising.
-         *
-         * It never showed while the sim ran at 60Hz, because the flow rate divided by 60 was a tenth
-         * of the gap and a tenth is stable — the half-gap cap was there but never binding. Dropping
-         * the tick rate to 4 made the raw flux one and a half *times* the gap, so the cap bound on
-         * every edge of every tile at once and the scheme went straight past its stability limit.
-         * That was the clearest evidence that dividing by the tick rate was the wrong idea: the
-         * stability of a numerical scheme is a fact about the grid and the step, and letting a
-         * display setting choose the step meant a display setting could break the physics.
-         *
-         * The theoretical limit for a lattice where a tile has four neighbours is an eighth, and a
-         * tenth is used instead because *at* the limit the field is only marginally stable: it stops
-         * diverging but rings, resting in a ±6 shimmer rather than settling. A tenth damps, which is
-         * measurable and is the number 60Hz was accidentally running at all along.
-         *
-         * The point is that this is a statement about the **grid**, not about the tick rate, so it
-         * holds at whatever rate the game is run at.
-         */
-        const val STABLE_SHARE = 10L
-
-        /**
-         * How much of the wrong-way-up gas trades places each tick, as the exact fraction
-         * [STRATIFY]/[STRATIFY_PER]. Three quarters, so a room sorts itself out in a few ticks.
-         */
-        const val STRATIFY = 3L
-
-        /** What [STRATIFY] is out of. See its note. */
-        const val STRATIFY_PER = 4L
-
         fun of(grams: LongArray): AirField = AirField(grams.copyOf())
 
         /** Every enclosed tile filled with [AMBIENT_AIR]; vacuum left empty. */
@@ -126,139 +87,10 @@ class AirField(private val grams: LongArray) {
 }
 
 /**
- * Advances the atmosphere one tick: flow, then stratification, then venting.
- *
- * Flow is computed from the old pressures into a delta buffer and applied afterwards, so — as with
- * heat — the result cannot depend on the order tiles are visited. Gas moved between tiles is a
- * *proportional sample* of the source ([Mixture.take] over the same [apportion]), so a draught
- * carries the room's actual mix rather than skimming one gas off the top.
- *
- * A residual gradient of one gram between neighbours is the resting state, not a bug: a difference
- * of one cannot be split in half without overshooting, so integer pressure settles into a ±1
- * staircase rather than a perfectly flat field. At a kilogram per tile that is a tenth of a percent.
- *
- * [grams] is the tick's working air, **edited in place**: the same array the edit pass has already
- * written to, so a hull put down this tick has moved its air out of the way before the flow runs.
- * The returned [AirField] is a copy, so the state handed back does not alias the scratch.
- *
- * @return the new field and the grams vented to space, which is the only place air legitimately goes.
- */
-fun stepAir(
-    grid: Grid,
-    structure: StructureMap,
-    grams: LongArray,
-    gravity: Frac2,
-): Pair<AirField, Long> {
-    // ── Flow: dense to sparse, each edge once ──
-    //
-    // Sub-stepped, because one pass can only move [AirField.STABLE_SHARE] of a gradient before the
-    // scheme goes unstable, and a tick is meant to be a visible amount of equalising. So a tick is
-    // [AirField.FLOW_PASSES] stable passes rather than one unstable big one.
-    val moves = ArrayList<LongArray>()   // (from, to, amount) collected, then applied
-    repeat(AirField.FLOW_PASSES) {
-        val pressure = LongArray(grid.size) { tile ->
-            var sum = 0L
-            val base = tile * Species.COUNT
-            for (s in Species.GASES) sum += grams[base + s.ordinal]
-            sum
-        }
-        moves.clear()
-        for (tile in 0 until grid.size) {
-            if (!structure.isPermeable(tile)) continue
-            for (dir in FLOW_DIRS) {
-                val other = grid.neighbour(tile, dir)
-                if (other < 0 || !structure.isPermeable(other)) continue
-                val gap = pressure[tile] - pressure[other]
-                if (gap == 0L) continue
-                val from = if (gap > 0) tile else other
-                val magnitude = if (gap > 0) gap else -gap
-                // The lattice stability limit, not the pairwise one — see [AirField.STABLE_SHARE].
-                var flux = magnitude / AirField.STABLE_SHARE
-                // That division floors, so a small gradient rounds to no flow at all and freezes
-                // exactly where it is — a room visibly stops equalising with a permanent staircase
-                // across it.
-                if (flux == 0L && magnitude >= 2L) flux = 1L
-                flux = minOf(flux, pressure[from])          // never more than is there
-                if (flux <= 0L) continue
-                moves.add(longArrayOf(from.toLong(), (if (gap > 0) other else tile).toLong(), flux))
-            }
-        }
-        for (move in moves) {
-            val from = move[0].toInt()
-            val to = move[1].toInt()
-            transferGas(grams, from, to, move[2])
-        }
-    }
-
-    stratifyColumns(grid, grams, gravity)
-
-    // ── Venting: anything not enclosed has no air, and what it had is gone ──
-    var vented = 0L
-    for (tile in 0 until grid.size) {
-        if (!grid.isEdge(tile)) continue
-
-        val base = tile * Species.COUNT
-        for (s in Species.GASES) {
-            vented += grams[base + s.ordinal]
-            grams[base + s.ordinal] = 0L
-        }
-    }
-    return AirField.of(grams) to vented
-}
-
-/**
- * Lets heavy gas sink and light gas rise, one vertical pair at a time.
- *
- * **This is the one function permitted to assume gravity is axis-aligned** (see the plan's §3). It
- * walks vertical neighbours directly, which is only meaningful when "down" is a grid axis. When
- * acceleration-derived gravity arrives, this is the single thing that gets replaced by a general
- * flux along an arbitrary vector — everything else already takes gravity as a parameter and will not
- * notice.
- *
- * Stratification is a **swap**: an equal mass of the heavier gas goes down as the lighter goes up. It
- * therefore moves composition around without moving pressure, which is what stops it fighting the
- * flow pass, and it conserves each species exactly.
- */
-fun stratifyColumns(
-    grid: Grid,
-    grams: LongArray,
-    gravity: Frac2,
-) {
-    // A diagonal or zero gravity means no stratification rather than a wrong one. Shared with
-    // debris settling, which needs the identical answer and must not be able to disagree.
-    val down: Direction = downDirection(gravity) ?: return
-
-    // Heaviest first, so each pair is considered once in the order (heavy, lighter).
-    val byWeight = Species.GASES.sortedByDescending { it.molarMass }
-
-    for (tile in 0 until grid.size) {
-        val below = grid.neighbour(tile, down)
-        if (below < 0) continue // Skips comparison off the grid
-
-        val upper = tile * Species.COUNT
-        val lower = below * Species.COUNT
-        for (h in byWeight.indices) {
-            for (l in h + 1 until byWeight.size) {
-                val heavy = byWeight[h]
-                val light = byWeight[l]
-                // Swap what is "the wrong way up": heavy gas above, light gas below.
-                val available = minOf(grams[upper + heavy.ordinal], grams[lower + light.ordinal])
-                val swap = AirField.STRATIFY * available / AirField.STRATIFY_PER
-                if (swap <= 0L) continue
-                grams[upper + heavy.ordinal] -= swap
-                grams[lower + heavy.ordinal] += swap
-                grams[lower + light.ordinal] -= swap
-                grams[upper + light.ordinal] += swap
-            }
-        }
-    }
-}
-
-/**
  * Tries to shove the air out of an area that is about to stop being air, and reports whether it
  * could.
  *
- * A solid tile is not part of the atmosphere: [stepAir] skips impermeable tiles entirely, so air
+ * A solid tile is not part of the atmosphere: the fluid pass shuts every face of one, so air
  * left inside one is neither flowing nor vented — it is simply frozen, invisible, and waiting to
  * reappear the moment the thing on top of it is removed. Building over a room has to *move* that air
  * rather than swallow it, and it has to move it without deleting a gram, because the vessel's air
@@ -373,19 +205,3 @@ private const val UNREACHABLE = Int.MAX_VALUE
  */
 private const val DISPLACE_WEIGHT = 1L shl 20
 
-/** Moves [amount] grams from one tile to another as a proportional sample of the source's mix. */
-private fun transferGas(grams: LongArray, from: Int, to: Int, amount: Long) {
-    val fromBase = from * Species.COUNT
-    val toBase = to * Species.COUNT
-    val weights = LongArray(Species.COUNT)
-    for (s in Species.GASES) weights[s.ordinal] = grams[fromBase + s.ordinal]
-    val share = apportion(weights, amount)
-    for (s in Species.GASES) {
-        val moved = minOf(share[s.ordinal], grams[fromBase + s.ordinal])
-        grams[fromBase + s.ordinal] -= moved
-        grams[toBase + s.ordinal] += moved
-    }
-}
-
-/** Right and down: visiting every tile with these two covers each edge exactly once. */
-private val FLOW_DIRS = listOf(Direction.Right, Direction.Down)

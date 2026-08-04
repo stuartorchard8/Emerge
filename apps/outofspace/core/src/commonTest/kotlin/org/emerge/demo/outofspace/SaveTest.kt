@@ -207,7 +207,7 @@ class SaveTest {
 
     @Test
     fun `a save from a future version is refused rather than misread`() {
-        val text = Save.write(starterVessel(cfg.grid)).replaceFirst("outofspace 2", "outofspace 99")
+        val text = Save.write(starterVessel(cfg.grid)).replaceFirst("outofspace ${Save.VERSION}", "outofspace 99")
         val error = assertFailsWith<SaveError> { Save.read(text) }
         assertTrue(error.message!!.contains("version 99"), error.message!!)
     }

@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.demo.outofspace.logistics.FluidPacket
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
@@ -40,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 2
+    const val VERSION = 3
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -115,10 +117,33 @@ object Save {
             if (mix.isEmpty) continue
             out.append("air ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
+
+        // How that air is moving. Packed like heat, and for the same reason: a still vessel writes
+        // none of it at all. Saved rather than left to be re-derived because momentum is the fluid's
+        // memory -- a world reloaded without it resumes becalmed, and a draught that had to build
+        // up again from rest is a different world from the one that was saved.
+        writeSparse(out, "momx", state.momentum.copyX())
+        writeSparse(out, "momy", state.momentum.copyY())
+
+        out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
+            .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
+            .append('\n')
         return out.toString()
     }
 
     private const val HEAT_PER_LINE = 12
+
+    /** Index=value pairs, several to a line, skipping zeros. The idiom the heat field already uses. */
+    private fun writeSparse(out: StringBuilder, tag: String, values: LongArray) {
+        var onLine = 0
+        for (i in values.indices) {
+            if (values[i] == 0L) continue
+            if (onLine == 0) out.append(tag)
+            out.append(' ').append(i).append('=').append(values[i])
+            if (++onLine == HEAT_PER_LINE) { out.append('\n'); onLine = 0 }
+        }
+        if (onLine != 0) out.append('\n')
+    }
 
     private fun where(grid: Grid, tile: Int): String = "(${grid.xOf(tile)}, ${grid.yOf(tile)})"
 
@@ -241,6 +266,13 @@ object Save {
         val piles = HashMap<Int, MutableList<Resource>>()
         val joules = LongArray(grid.size)
         val airGrams = LongArray(grid.size * Species.COUNT)
+        val edges = EdgeGrid(grid)
+        val momentumX = LongArray(edges.xEdgeCount)
+        val momentumY = LongArray(edges.yEdgeCount)
+        var impulseX = 0L
+        var impulseY = 0L
+        var exhaustX = 0L
+        var exhaustY = 0L
 
         var gravity = VesselState.DEFAULT_GRAVITY
         var tick = 0L
@@ -300,6 +332,12 @@ object Save {
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
                     joules[t] = tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
                 }
+                "momx" -> readSparse(tokens, momentumX, ::fail)
+                "momy" -> readSparse(tokens, momentumY, ::fail)
+                "impulse" -> {
+                    impulseX = long(1); impulseY = long(2)
+                    exhaustX = long(3); exhaustY = long(4)
+                }
                 "air" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), ::fail)
@@ -335,7 +373,23 @@ object Save {
             baselineJoules = baselineJoules ?: heat.totalJoules,
             air = air,
             baselineAirGrams = baselineAir ?: air.totalGrams,
+            momentum = MomentumField.of(edges, momentumX, momentumY),
+            vesselImpulseX = impulseX,
+            vesselImpulseY = impulseY,
+            exhaustMomentumX = exhaustX,
+            exhaustMomentumY = exhaustY,
         )
+    }
+
+    /** The reading half of [writeSparse]. */
+    private fun readSparse(tokens: List<String>, into: LongArray, fail: (String) -> Nothing) {
+        for (i in 1 until tokens.size) {
+            val eq = tokens[i].indexOf('=')
+            if (eq < 0) fail("expected index=value, got '${tokens[i]}'")
+            val at = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad index in '${tokens[i]}'")
+            if (at !in into.indices) fail("index $at is outside the field")
+            into[at] = tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'")
+        }
     }
 
     private fun readMachine(tokens: List<String>, version: Int, fail: (String) -> Nothing): Machine {

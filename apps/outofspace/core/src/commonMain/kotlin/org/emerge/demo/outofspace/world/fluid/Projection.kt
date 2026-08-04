@@ -64,13 +64,25 @@ class ProjectionResult(
  * divergence correction approximate, but conservation holds regardless, because it is a property of
  * the shape of the sum rather than of the values in it.
  *
- * ### Jacobi
+ * ### Jacobi, damped
  *
  * Each sweep reads the previous field and writes a new one, so no cell sees a neighbour that has
  * already moved. Gauss-Seidel — Lague's choice — updates in place and converges in fewer sweeps, at
  * the price of the answer depending on visiting order. A poor trade twice over: it breaks the
  * snapshot-then-apply discipline the rest of the sim keeps, and it cannot be handed to more than one
  * thread. Sweeps are cheap; ordering guarantees are not.
+ *
+ * Undamped Jacobi, however, **does not converge here at all**, and the way it fails is worth
+ * recording because it looks like nothing rather than like an explosion. Take the smallest
+ * interesting case: a full tile beside an empty one, sealed on both far sides. Undamped, each sweep
+ * swaps the sign of the pressure difference — the iteration matrix has an eigenvalue of exactly −1 —
+ * so the field flips back and forth and after any *even* number of sweeps it is precisely zero
+ * again. Zero pressure means zero impulse, which means gas sitting next to a vacuum and calmly
+ * staying put. Nothing warns; the sim simply does not do the most obvious thing it exists to do.
+ *
+ * [DAMPING] fixes it by moving only part of the way each sweep, which drags that eigenvalue to −1/3.
+ * The remaining eigenvalue of 1 is the constant offset every all-walls problem has, and it is
+ * harmless because only pressure *differences* are ever read.
  *
  * ### Walls, and where thrust comes from
  *
@@ -148,7 +160,9 @@ fun project(
             sum += wx[right] * beyond(p, edges.xEdgeAfter(right))
             sum += wy[up] * beyond(p, edges.yEdgeBefore(up))
             sum += wy[down] * beyond(p, edges.yEdgeAfter(down))
-            next[tile] = sum / coupled[tile]
+            // Damped, and it is not optional -- see [DAMPING].
+            val jacobi = sum / coupled[tile]
+            next[tile] = p[tile] + (jacobi - p[tile]) * DAMPING_NUMERATOR / DAMPING_DENOMINATOR
         }
         val swap = p; p = next; next = swap
     }
@@ -255,6 +269,15 @@ private fun velocityRaw(momentum: Long, faceGrams: Long): Long =
  * tiles per tick instead of one.
  */
 const val JACOBI_ITERATIONS = 20
+
+/**
+ * How far toward the plain Jacobi answer each sweep moves: two thirds.
+ *
+ * The textbook weight, and the one that minimises the worst eigenvalue for this stencil. Undamped —
+ * a weight of one — the solve oscillates forever rather than converging; see the note on the class.
+ */
+private const val DAMPING_NUMERATOR = 2L
+private const val DAMPING_DENOMINATOR = 3L
 
 /**
  * The divergence a cell asks for when it sits one whole atmosphere above its neighbours: an eighth

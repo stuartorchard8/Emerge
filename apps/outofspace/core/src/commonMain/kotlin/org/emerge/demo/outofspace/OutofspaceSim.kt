@@ -53,7 +53,9 @@ import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
-import org.emerge.demo.outofspace.world.stepAir
+import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.fluid.stepFluid
 import org.emerge.demo.outofspace.world.stepHeat
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
@@ -160,7 +162,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
 
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
-        val (air, airVented) = stepAir(state.grid, structure, w.airGrams, state.gravity)
+        val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity)
 
         return state.copy(
             machines = w.machines.toList(),
@@ -177,8 +179,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             heat = heat,
             generatedJoules = w.generatedJoules,
             radiatedJoules = state.radiatedJoules + radiated,
-            air = air,
-            airVentedGrams = state.airVentedGrams + airVented,
+            air = fluid.air,
+            airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
+            momentum = MomentumField.of(EdgeGrid(state.grid), fluid.momentumX, fluid.momentumY),
+            vesselImpulseX = state.vesselImpulseX + fluid.vesselX,
+            vesselImpulseY = state.vesselImpulseY + fluid.vesselY,
+            exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
+            exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             motion = w.motion.freeze(),
         )
     }
@@ -313,11 +320,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var ventedGrams: Long = state.ventedGrams
 
         /**
-         * This tick's air, mutable so that the edit pass and [stepAir] work on the same array. An
+         * This tick's air, mutable so that the edit pass and the fluid pass work on one array. An
          * edit that changes whether a tile can hold air has to move that air *before* the flow runs,
          * or it is stranded in a wall for as long as the wall stands.
          */
         val airGrams: LongArray = state.air.copyGrams()
+
+        /** This tick's momentum, mutable for the same reason [airGrams] is. */
+        val momentumX: LongArray = state.momentum.copyX()
+        val momentumY: LongArray = state.momentum.copyY()
 
         /**
          * This tick's record of what moved where, for the renderer alone — see [Motion].

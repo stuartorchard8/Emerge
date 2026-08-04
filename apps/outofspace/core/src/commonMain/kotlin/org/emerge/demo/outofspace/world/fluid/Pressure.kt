@@ -42,12 +42,15 @@ private const val MILLI = 1000L
  * reader below already treats it as "pressure", not as "an amount of stuff".
  */
 fun tilePressure(tileCount: Int, grams: LongArray, species: List<Species> = Species.GASES): LongArray =
-    LongArray(tileCount) { tile ->
-        val base = tile * Species.COUNT
-        var sum = 0L
-        for (s in species) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
-        sum
-    }
+    LongArray(tileCount) { millimolesOf(grams, it, species) }
+
+/** The pressure of a single tile, for callers that want one rather than the whole field. */
+fun millimolesOf(grams: LongArray, tile: Int, species: List<Species> = Species.GASES): Long {
+    val base = tile * Species.COUNT
+    var sum = 0L
+    for (s in species) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
+    return sum
+}
 
 /** A tile of ordinary air at one atmosphere, in the units [tilePressure] returns. */
 val AMBIENT_PRESSURE: Long = run {
