@@ -144,7 +144,7 @@ fun starterVessel(grid: Grid): VesselState {
         put(right, hy, Hull())
     }
 
-    return VesselState(grid = grid, machines = machines.toList(), rails = rails.toList())
+    return VesselState(grid = grid, machines = machines.toList(), conduits = Conduits.ofRails(rails.toList()))
 }
 
 /** `RUN = ALWAYS − RED`: dig at full rate until something raises RED, then stop dead. */

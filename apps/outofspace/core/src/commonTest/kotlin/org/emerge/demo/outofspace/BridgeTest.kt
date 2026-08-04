@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -77,7 +79,7 @@ class BridgeTest {
             }
         }
         if (bridged) bridges[grid.index(9, 5)] = Bridge(Direction.Right)
-        return VesselState(grid, m.toList(), rails = track, bridges = bridges.toList())
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(track), bridges = bridges.toList())
     }
 
     // ── The shape of a bridge ─────────────────────────────────────────────────
@@ -175,7 +177,7 @@ class BridgeTest {
         val rails = s.rails.toMutableList()
         val at = grid.index(8, 5)
         rails[at] = rails[at]!!.copy(held = SolidPacket(ingots))
-        return s.copy(rails = rails)
+        return s.copy(conduits = Conduits.ofRails(rails))
     }
 
     @Test

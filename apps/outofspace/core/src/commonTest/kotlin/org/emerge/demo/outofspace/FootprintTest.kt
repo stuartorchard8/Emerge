@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -167,7 +169,7 @@ class FootprintTest {
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
-        return VesselState(grid, m.toList(), rails = rails.toList())
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
 
     @Test
@@ -179,7 +181,7 @@ class FootprintTest {
             // Remove the run's own input-port tile so the only contact is a covered, portless tile.
             val rails = st.rails.toMutableList()
             rails[st.grid.index(5, 6)] = null
-            st.copy(rails = rails)
+            st.copy(conduits = Conduits.ofRails(rails))
         }, 40)
 
         assertNull((s[s.grid.index(6, 6)] as Storage).contents, "no port on the tiles it crosses")

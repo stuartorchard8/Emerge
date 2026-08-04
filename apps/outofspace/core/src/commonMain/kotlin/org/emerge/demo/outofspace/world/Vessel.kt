@@ -32,13 +32,16 @@ data class VesselState(
     /** The deck: buildings, walls, the things that take up floor space. */
     val machines: List<Machine?>,
     /**
-     * The rail layer — one segment per tile, sharing tiles freely with the deck beneath.
+     * The conduit layers — one grid of segments per network, sharing tiles freely with the deck
+     * beneath and with each other.
      *
-     * A separate list rather than a second thing in `machines`, because that is what a layer *is*:
-     * track running under a smelter and the smelter itself are both real, both at that tile, and
-     * neither is in the other's way. Structure, heat and air never look here.
+     * Separate from `machines` because that is what a layer *is*: track running under a smelter and
+     * the smelter itself are both real, both at that tile, and neither is in the other's way. Keyed
+     * by [Conduit] because the same is true between layers — see [Conduits] for what one list per
+     * tile cost. Structure and air never look here; heat does, because a copper pipe in a hot room
+     * has a temperature whether or not anything is flowing down it.
      */
-    val rails: List<Segment?> = List(machines.size) { null },
+    val conduits: Conduits = Conduits.empty(machines.size),
     /** Bridges, stored at their middle tile. They occupy nothing, so they are not in [occupancy]. */
     val bridges: List<Bridge?> = List(machines.size) { null },
     /** Which way each fork last sent material — see [Diverters]. */
@@ -105,7 +108,7 @@ data class VesselState(
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
      */
-    val baselineJoules: Long = solidJoules(machines, rails, bridges),
+    val baselineJoules: Long = solidJoules(machines, conduits, bridges),
     /**
      * Net energy that has arrived in the world inside newly built bodies, less what left inside
      * scrapped ones. Signed, and one term rather than two, because only the difference is ever read.
@@ -144,7 +147,20 @@ data class VesselState(
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
+        require(conduits.tileCount == grid.size) {
+            "conduit layers are ${conduits.tileCount}, grid holds ${grid.size}"
+        }
     }
+
+    /**
+     * The rail layer, which most of the game means when it says "the track".
+     *
+     * Not a deprecated alias: packets, [FlowField], gauges, bridges and motion are rail concepts and
+     * are right to name the rail layer rather than to be generalised over conduits they will never
+     * run on. A pipe does not carry a packet. What genuinely spans layers — the thermal contact graph
+     * and the save — reads [conduits] instead.
+     */
+    val rails: List<Segment?> get() = conduits[Conduit.Rail]
 
     /**
      * What the vessel can build with: the contents of every storage aboard.
@@ -168,7 +184,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val bodies: List<Body> by lazy { bodiesOf(grid, machines, rails, bridges) }
+    val bodies: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -247,7 +263,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, rails, bridges)
+    val storedJoules: Long get() = solidJoules(machines, conduits, bridges)
 
     /** Total atmosphere still aboard. */
     val atmosphereGrams: Long get() = air.totalGrams

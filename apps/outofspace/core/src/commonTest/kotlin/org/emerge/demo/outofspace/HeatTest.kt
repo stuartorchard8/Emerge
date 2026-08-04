@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -88,7 +90,7 @@ class HeatTest {
             machines[grid.index(w, y)] = Hull()
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
-        return VesselState(grid, machines.toList(), rails = rails(grid, track))
+        return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails(grid, track)))
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────

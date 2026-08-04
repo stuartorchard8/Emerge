@@ -67,7 +67,6 @@ fun stepSolidHeat(
     grid: Grid,
     bodies: List<Body>,
     structure: StructureMap,
-    rails: List<Segment?>,
     airJoules: LongArray,
     airCapacity: LongArray,
 ): SolidHeatStep {
@@ -133,17 +132,20 @@ fun stepSolidHeat(
         }
 
         // Track joined to track: heat runs along a drawn line and not across an undrawn one.
-        if (body.slot == BodySlot.Fitting) {
-            val segment = rails[body.at]
-            if (segment != null) {
-                for (dir in Direction.ALL) {
-                    if (!segment.linkedTo(dir)) continue
-                    val next = grid.neighbour(body.at, dir)
-                    if (next < 0) continue
-                    val other = tiles.fittingAt(next)
-                    if (other < 0 || other <= b) continue
-                    contacts.join(b, other, seriesConductance(k, bodies[other].material.conductance))
-                }
+        //
+        // On its *own* layer, and only there. A pipe crossing a rail shares the tile — so the two
+        // already conduct, through the same-tile contact above, exactly as much as touching metal
+        // should. What they must not do is pass heat *along* each other's runs, which is what a
+        // conduit-blind lookup would have done the moment two layers overlapped: draw a pipe across
+        // a rail and the rail would start conducting down the pipe.
+        if (body.slot == BodySlot.Fitting && body.conduit != null) {
+            for (dir in Direction.ALL) {
+                if (!body.linkedTo(dir)) continue
+                val next = grid.neighbour(body.at, dir)
+                if (next < 0) continue
+                val other = tiles.fittingAt(body.conduit, next)
+                if (other < 0 || other <= b) continue
+                contacts.join(b, other, seriesConductance(k, bodies[other].material.conductance))
             }
         }
     }
@@ -231,7 +233,9 @@ private const val SPACE = -1
 private class TileBodies(tileCount: Int, bodies: List<Body>) {
     private val start = IntArray(tileCount + 1)
     private val ids: IntArray
-    private val fitting = IntArray(tileCount) { -1 }
+    private val tileCount = tileCount
+    /** One slot per (layer, tile): a tile can hold one fitting of each conduit at once. */
+    private val fitting = IntArray(tileCount * Conduit.entries.size) { -1 }
 
     init {
         for (b in bodies) for (t in b.tiles) start[t + 1]++
@@ -240,7 +244,10 @@ private class TileBodies(tileCount: Int, bodies: List<Body>) {
         val cursor = start.copyOf()
         for (i in bodies.indices) {
             for (t in bodies[i].tiles) ids[cursor[t]++] = i
-            if (bodies[i].slot == BodySlot.Fitting) fitting[bodies[i].at] = i
+            val conduit = bodies[i].conduit
+            if (bodies[i].slot == BodySlot.Fitting && conduit != null) {
+                fitting[conduit.ordinal * tileCount + bodies[i].at] = i
+            }
         }
     }
 
@@ -248,8 +255,13 @@ private class TileBodies(tileCount: Int, bodies: List<Body>) {
     fun endOf(tile: Int): Int = start[tile + 1]
     fun id(slot: Int): Int = ids[slot]
 
-    /** The conduit fitting on a tile, or -1. Track joins to track, so this is what a link resolves to. */
-    fun fittingAt(tile: Int): Int = fitting[tile]
+    /**
+     * The fitting of one layer on a tile, or -1.
+     *
+     * Keyed by layer as well as tile, because a link is a statement about one network. Track joins to
+     * track and pipe to pipe; neither joins to the other however neatly they overlap.
+     */
+    fun fittingAt(conduit: Conduit, tile: Int): Int = fitting[conduit.ordinal * tileCount + tile]
 }
 
 /** The contact graph, as parallel arrays that grow. Pairs may repeat; their conductances add. */

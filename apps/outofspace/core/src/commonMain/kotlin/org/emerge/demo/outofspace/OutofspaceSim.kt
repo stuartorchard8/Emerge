@@ -14,6 +14,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.DiverterWork
 import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.Segment
@@ -178,12 +179,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val m = w.machines[i] ?: continue
             w.machines[i] = m.withJoules(m.joules + added)
         }
-        val bodies = bodiesOf(state.grid, w.machines, w.rails, w.bridges)
+        val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
         val conducted = stepSolidHeat(
             grid = state.grid,
             bodies = bodies,
             structure = structure,
-            rails = w.rails,
             airJoules = w.airJoules,
             airCapacity = gasCapacity(state.grid.size, w.airGrams),
         )
@@ -194,7 +194,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         return state.copy(
             machines = w.machines.toList(),
-            rails = w.rails.toList(),
+            conduits = w.conduitsSnapshot(),
             bridges = w.bridges.toList(),
             diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
@@ -349,7 +349,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         var minedGrams: Long = state.minedGrams
         val debris: DebrisWork = DebrisWork(state.debris)
-        val rails: MutableList<Segment?> = state.rails.toMutableList()
+        /**
+         * The conduit layers, one editable grid each — see [Conduits].
+         *
+         * An array of lists rather than a [Conduits] because this is the working copy and every edit
+         * writes one slot; rebuilding an immutable structure per laid tile would be the one place in
+         * the reducer that allocates per keystroke.
+         */
+        val layers: Array<MutableList<Segment?>> =
+            Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
+
+        fun layer(conduit: Conduit): MutableList<Segment?> = layers[conduit.ordinal]
+
+        /** The rail layer, which packets, gauges, bridges and motion all mean by "the track". */
+        val rails: MutableList<Segment?> get() = layers[Conduit.Rail.ordinal]
+
+        fun conduitsSnapshot(): Conduits {
+            var out = Conduits.empty(grid.size)
+            for (c in Conduit.entries) out = out.with(c, layers[c.ordinal].toList())
+            return out
+        }
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
@@ -436,7 +455,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (joules[i] == body.joules) continue
                 when (body.slot) {
                     BodySlot.Deck -> machines[body.at]?.let { machines[body.at] = it.withJoules(joules[i]) }
-                    BodySlot.Fitting -> rails[body.at]?.let { rails[body.at] = it.copy(joules = joules[i]) }
+                    // Keyed by layer as well as tile: two fittings can stand on one tile and each
+                    // has its own temperature, so `at` alone would put a pipe's heat on a rail.
+                    BodySlot.Fitting -> body.conduit?.let { c ->
+                        layer(c)[body.at]?.let { layer(c)[body.at] = it.copy(joules = joules[i]) }
+                    }
                     BodySlot.Span -> bridges[body.at]?.let { bridges[body.at] = it.withJoules(joules[i]) as Bridge }
                 }
             }
@@ -467,8 +490,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
                 is Edit.Cut -> {
                     val dir = adjacency(edit.from, edit.to) ?: return
-                    rails[edit.from]?.let { rails[edit.from] = it.cutFrom(dir) }
-                    rails[edit.to]?.let { rails[edit.to] = it.cutFrom(dir.opposite) }
+                    val line = layer(edit.conduit)
+                    line[edit.from]?.let { line[edit.from] = it.cutFrom(dir) }
+                    line[edit.to]?.let { line[edit.to] = it.cutFrom(dir.opposite) }
                 }
                 is Edit.Rotate -> {
                     // Rotating about the centre leaves the covered tiles alone -- footprints are
@@ -621,12 +645,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun layConduit(from: Int, to: Int, conduit: Conduit) {
             val dir = adjacency(from, to) ?: return
-            val a = rails[from] ?: Segment(conduit)
-            val b = rails[to] ?: Segment(conduit)
-            // Two layers never join. A pipe drawn across a rail is a crossing, not a junction.
-            if (a.conduit != conduit || b.conduit != conduit) return
-            rails[from] = a.joinedTo(dir)
-            rails[to] = b.joinedTo(dir.opposite)
+            // Each layer is its own grid, so a pipe drawn across a rail is a crossing rather than a
+            // junction — and, now, rather than nothing at all. It used to share one list with the
+            // track, find a conduit mismatch, and return having laid no pipe.
+            val line = layer(conduit)
+            val a = line[from] ?: Segment(conduit)
+            val b = line[to] ?: Segment(conduit)
+            line[from] = a.joinedTo(dir)
+            line[to] = b.joinedTo(dir.opposite)
         }
 
         /** The index the machine covering [tile] is stored at, so any tile of it can be edited. */

@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 5
+    const val VERSION = 6
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -80,9 +80,11 @@ object Save {
             out.append("machine ").append(i).append(' ').append(writeMachine(m))
             out.append("   # ").append(where(state.grid, i)).append('\n')
         }
-        for (i in state.rails.indices) {
-            val r = state.rails[i] ?: continue
-            out.append("rail ").append(i).append(' ').append(writeSegment(r))
+        // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
+        // record always named its own network, but while there was one list per tile the keyword
+        // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
+        state.conduits.all { _, i, r ->
+            out.append("conduit ").append(i).append(' ').append(writeSegment(r))
             out.append("   # ").append(where(state.grid, i)).append(' ').append(linkLetters(r)).append('\n')
         }
         for (i in state.bridges.indices) {
@@ -267,7 +269,7 @@ object Save {
         if (grid.size <= 0) throw SaveError("line $gridLine: grid has no tiles")
 
         val machines = arrayOfNulls<Machine>(grid.size)
-        val rails = arrayOfNulls<Segment>(grid.size)
+        val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<Int, Int>()
         val piles = HashMap<Int, MutableList<Resource>>()
@@ -325,10 +327,16 @@ object Save {
                     if (machines[t] != null) fail("two machines at tile $t")
                     machines[t] = readMachine(tokens.drop(2), version, ::fail)
                 }
-                "rail" -> {
+                // `rail` is the version 5 spelling and still read: the record carries its own
+                // conduit either way, so an old file lands on the right layer with no migration.
+                "rail", "conduit" -> {
                     val t = tile(1)
-                    if (rails[t] != null) fail("two segments at tile $t")
-                    rails[t] = readSegment(tokens.drop(2), ::fail)
+                    val segment = readSegment(tokens.drop(2), ::fail)
+                    val layer = layers[segment.conduit.ordinal]
+                    // Per layer, not per tile. Two segments on one tile is what layers are *for*;
+                    // two of the same conduit on one tile is still a corrupt file.
+                    if (layer[t] != null) fail("two ${segment.conduit.label} segments at tile $t")
+                    layer[t] = segment
                 }
                 "bridge" -> {
                     val t = tile(1)
@@ -370,6 +378,10 @@ object Save {
 
         val structure = StructureMap.derive(grid, machines.toList())
         val occupancy = Occupancy.derive(grid, machines.toList())
+        val conduits = Conduits.of(
+            grid.size,
+            *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
+        )
         // Built from both arrays together, so a save that carries temperature keeps it and one that
         // predates temperature gets the room-temperature default rather than a world at absolute
         // zero. See AirField.of for why the two are one value.
@@ -377,7 +389,7 @@ object Save {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            rails = rails.toList(),
+            conduits = conduits,
             bridges = bridges.toList(),
             diverters = Diverters.of(diverters),
             gravity = gravity,
@@ -397,8 +409,8 @@ object Save {
             // file's baseline described the per-tile field, so it is not carried across: the
             // ledger is re-anchored to what the bodies actually hold.
             baselineJoules = if (version >= 5) baselineJoules ?: solidJoules(
-                machines.toList(), rails.toList(), bridges.toList()
-            ) else solidJoules(machines.toList(), rails.toList(), bridges.toList()),
+                machines.toList(), conduits, bridges.toList()
+            ) else solidJoules(machines.toList(), conduits, bridges.toList()),
             air = air,
             baselineAirGrams = baselineAir ?: air.totalGrams,
             airVentedJoules = airVentedJoules,

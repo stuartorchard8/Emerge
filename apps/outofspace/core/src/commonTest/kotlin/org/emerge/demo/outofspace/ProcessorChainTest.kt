@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
@@ -60,7 +62,7 @@ class ProcessorChainTest {
         m[grid.index(3, 8)] = Storage(Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 800)
 
         val forward = (s[grid.index(7, 3)] as Storage).contents
@@ -106,7 +108,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 1200)
 
         // Exact figures again, now that a rate is stated per tick and a stage's concentration is
@@ -136,7 +138,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 1200)
 
         for (x in stages) {

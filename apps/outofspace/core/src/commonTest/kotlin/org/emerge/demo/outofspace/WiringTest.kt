@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -141,7 +143,7 @@ class WiringTest {
         m[grid.index(8, 3)] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, Bridge.STEP_TICKS * 8)
         assertEquals(4_000L, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
@@ -172,7 +174,7 @@ class WiringTest {
         machines[grid.index(6, 5)] = Sensor(Direction.Up, Channel.Red)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 5, 3)
-        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
         // period. What matters is the *shape*: the rate falls away as the tank fills.
@@ -252,7 +254,7 @@ class WiringTest {
         m[g.index(3, 3)] = upstream                  // output port at (4, 3)
         m[g.index(7, 3)] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
-        return VesselState(g, m.toList(), rails = rails.toList())
+        return VesselState(g, m.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
 
     @Test

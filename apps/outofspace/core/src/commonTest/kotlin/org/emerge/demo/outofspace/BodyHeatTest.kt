@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -56,7 +58,7 @@ class BodyHeatTest {
             machines[grid.index(w, y)] = Hull()
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
-        return VesselState(grid, machines.toList(), rails = rails(grid))
+        return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails(grid)))
     }
 
     /** The state with the body stored at [at] set to [kelvin], and its ledger re-anchored. */
@@ -127,7 +129,7 @@ class BodyHeatTest {
         val source = g.index(2, topRow)
         val rails = world.rails.toMutableList()
         rails[source] = rails[source]!!.copy(joules = Material.Iron.capacityPerTile * 2_000L)
-        var s = world.copy(rails = rails.toList())
+        var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
         s = s.copy(baselineJoules = s.storedJoules)
 
         val settled = run(s, 40)

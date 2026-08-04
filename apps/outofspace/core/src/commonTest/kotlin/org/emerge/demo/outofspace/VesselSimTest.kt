@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -81,7 +83,7 @@ class VesselSimTest {
         // exactly the sort of leak that ledger exists to catch.
         machines[grid.index(toX + 1, 2)] = Storage(Direction.Right)
         joinRow(grid, rails, 3, toX, 2)
-        return VesselState(grid, machines.toList(), rails = rails.toList())
+        return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
 
     @Test
@@ -125,7 +127,7 @@ class VesselSimTest {
         joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
 
         // Long enough to fill the 20 kg tank several times over.
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 480)
+        val s = run(VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList())), 480)
 
         assertEquals(Storage.CAP, (s[grid.index(8, 5)] as Storage).contents?.mass, "the tank filled")
         assertTrue(s.ventedGrams > 0L, "and the rest went up the branch and overboard")
@@ -149,7 +151,7 @@ class VesselSimTest {
         joinRow(grid, rails, 3, 8, 5)
         joinCol(grid, rails, 5, 2, 5)
 
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 120)
+        val s = run(VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList())), 120)
 
         assertTrue(s.ventedGrams > 0L, "the vent took a share")
         val stored = (s[grid.index(9, 5)] as Storage).contents?.mass ?: 0L
@@ -195,7 +197,7 @@ class VesselSimTest {
         // ...and a miner dropping onto that same loop, one tile in from the far corner.
         machines[grid.index(3, 7)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
 
-        val s = run(VesselState(grid, machines.toList(), rails = rails.toList()), 120)
+        val s = run(VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList())), 120)
 
         // The far arm is the stretch between the storage's output and where the miner joins. It is
         // exactly what went quiet, so material standing on it is the whole assertion.
@@ -238,7 +240,7 @@ class VesselSimTest {
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         // Starts one tile past the miner's output port, so nothing ever reaches it.
         joinRow(grid, rails, 5, 8, 2)
-        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 80)
 
         assertEquals(0L, (5..8).sumOf { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L })
@@ -256,7 +258,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         joinRow(grid, rails, 3, 7, 2)
-        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 120)
 
         // One packet does leave the miner: pushing out onto the tile under an output port is how
@@ -284,7 +286,7 @@ class VesselSimTest {
         machines[grid.index(2, 2)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         machines[grid.index(5, 2)] = Vent()
         joinRow(grid, rails, 3, 5, 2)
-        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 40)
         // minedGrams counts at the shovel, so it is the whole 10kg regardless of where it sits now.
         assertEquals(10_000L, s.minedGrams, "10s of digging is 10kg")
@@ -304,7 +306,7 @@ class VesselSimTest {
         // One run under the lot, from the miner's port to the tank's.
         joinRow(grid, rails, 3, 11, 3)
         joinCol(grid, rails, 7, 3, 6)
-        var s = VesselState(grid, machines.toList(), rails = rails.toList())
+        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, 240)
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
@@ -350,7 +352,7 @@ class VesselSimTest {
         m[grid.index(4, 2)] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)   // its input port
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, Bridge.STEP_TICKS)
         assertEquals(1_000L, (s[grid.index(4, 2)] as Storage).contents!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
@@ -370,7 +372,7 @@ class VesselSimTest {
         m[grid.index(4, 2)] = Processor(Direction.Right, input = ore)   // input port at (3, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)
-        var s = VesselState(grid, m.toList(), rails = rails.toList())
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, Bridge.STEP_TICKS * 2)
         assertNotNull(s.railAt(grid.index(3, 2))?.held, "the ingot should still be waiting on the track")
     }

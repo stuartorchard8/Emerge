@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -44,7 +46,7 @@ class MotionTest {
         m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
         m[grid.index(tankX, 3)] = Storage(Direction.Right)
         joinRow(grid, rails, 3, tankX - 1, 3)
-        return VesselState(grid, m.toList(), rails = rails.toList())
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -125,7 +127,7 @@ class MotionTest {
         bridges[grid.index(6, 3)] = Bridge(Direction.Right)
         joinRow(grid, rails, 3, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
-        return VesselState(grid, m.toList(), rails = rails.toList(), bridges = bridges.toList())
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bridges = bridges.toList())
     }
 
     @Test

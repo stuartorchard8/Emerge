@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -25,6 +28,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -126,11 +130,59 @@ class SaveTest {
         for (x in 1..4) join(grid.index(x, 3), grid.index(x + 1, 3), Direction.Right)
         for (y in 1..4) join(grid.index(3, y), grid.index(3, y + 1), Direction.Down)
 
-        val state = VesselState(grid, List(grid.size) { null }, rails = rails.toList())
+        val state = VesselState(grid, List(grid.size) { null }, conduits = Conduits.ofRails(rails.toList()))
         val reloaded = Save.read(Save.write(state))
         for (i in 0 until grid.size) {
             assertEquals(rails[i]?.links, reloaded.rails[i]?.links, "links differ at tile $i")
         }
+    }
+
+    @Test
+    fun `both layers of a crossing survive a save`() {
+        val grid = Grid(8, 6)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        val pipes = arrayOfNulls<Segment>(grid.size)
+        val crossing = grid.index(4, 3)
+        for (x in 2..6) rails[grid.index(x, 3)] = Segment(Conduit.Rail, links = 1 shl Direction.Right.ordinal)
+        for (y in 1..5) pipes[grid.index(4, y)] = Segment(Conduit.Pipe, links = 1 shl Direction.Down.ordinal)
+
+        val state = VesselState(
+            grid,
+            List(grid.size) { null },
+            conduits = Conduits.of(
+                grid.size,
+                Conduit.Rail to rails.toList(),
+                Conduit.Pipe to pipes.toList(),
+            ),
+        )
+        val back = Save.read(Save.write(state))
+
+        assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, crossing)?.conduit, "rail lost at the crossing")
+        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, crossing)?.conduit, "pipe lost at the crossing")
+        assertEquals(state.conduits, back.conduits, "a layer changed somewhere across the round trip")
+    }
+
+    /**
+     * Version 5 wrote `rail <tile> <CONDUIT> …` for every layer, because there was one segment list
+     * and the keyword named the list rather than the network. The record always carried its own
+     * conduit, so an old file needs no migration — only for the loader to read the record instead of
+     * the keyword. This pins that, since the alternative reading would silently file every pipe in a
+     * legacy save onto the rail layer.
+     */
+    @Test
+    fun `a version 5 save files each segment by the conduit it names`() {
+        val text = """
+            outofspace 5
+            grid 6 4
+            rail 8 Rail links=2
+            rail 9 Pipe links=1
+        """.trimIndent() + "\n"
+
+        val back = Save.read(text)
+        assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, 8)?.conduit)
+        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, 9)?.conduit)
+        assertNull(back.conduits.at(Conduit.Pipe, 8), "a rail was filed on the pipe layer")
+        assertNull(back.conduits.at(Conduit.Rail, 9), "a pipe was filed on the rail layer")
     }
 
     @Test
@@ -141,7 +193,7 @@ class SaveTest {
         rails[grid.index(2, 2)] = Segment(org.emerge.demo.outofspace.world.Conduit.Rail, channel = Channel.Cyan)
             .reading(SolidPacket(ore))
 
-        val state = VesselState(grid, List(grid.size) { null }, rails = rails.toList())
+        val state = VesselState(grid, List(grid.size) { null }, conduits = Conduits.ofRails(rails.toList()))
         val back = Save.read(Save.write(state)).rails[grid.index(2, 2)]
         assertNotNull(back)
         assertEquals(Channel.Cyan, back.channel)

@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduits
+
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -53,7 +55,7 @@ class GaugeTest {
         m[grid.index(3, 2)] = Storage(Direction.Right, carrying)
         m[grid.index(10, 2)] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, mapOf(6 to channel))
-        return VesselState(grid, m.toList(), rails = rails.toList())
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
 
     private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.index(6, 2))!!

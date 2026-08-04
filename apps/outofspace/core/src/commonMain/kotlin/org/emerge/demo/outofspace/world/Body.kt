@@ -8,7 +8,7 @@ enum class BodySlot {
     /** [VesselState.machines] — buildings and hull, one entry per machine at its centre tile. */
     Deck,
 
-    /** [VesselState.rails] — one segment per tile of a conduit layer. */
+    /** [VesselState.conduits] — one segment per tile of one conduit layer. */
     Fitting,
 
     /** [VesselState.bridges] — stored at the middle of the three tiles it spans. */
@@ -74,8 +74,29 @@ class Body(
      * would make the same furnace hold different amounts of heat in different berths.
      */
     val capacity: Long,
+    /**
+     * Which layer a fitting is on; null for anything that is not one.
+     *
+     * [slot] and [at] used to identify a body on their own, and stopped doing so the moment a tile
+     * could hold a rail *and* a pipe — two fittings, same slot, same index, different objects. This
+     * is the third component of the key, and the conduction pass needs it to put the right joules
+     * back on the right layer.
+     */
+    val conduit: Conduit? = null,
+    /**
+     * A fitting's [Segment.links], carried rather than looked up.
+     *
+     * Heat runs along a drawn line and not across an undrawn one, so the contact graph needs to know
+     * what this segment was joined to. Copying the bitmask here is what lets the conduction pass stop
+     * taking a segment list at all: with the material, the energy and the links all on the body, the
+     * pass no longer has to be told which list the body came out of in order to ask it anything.
+     */
+    val links: Int = 0,
 ) {
     val kelvin: Int get() = (joules / capacity).toInt()
+
+    /** Whether this fitting is joined to its neighbour in [dir] — see [Segment.links]. */
+    fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0
 }
 
 /**
@@ -91,7 +112,7 @@ class Body(
 fun bodiesOf(
     grid: Grid,
     machines: List<Machine?>,
-    rails: List<Segment?>,
+    conduits: Conduits,
     bridges: List<Machine?>,
 ): List<Body> {
     val out = ArrayList<Body>(64)
@@ -109,17 +130,18 @@ fun bodiesOf(
             )
         )
     }
-    for (i in rails.indices) {
-        val s = rails[i] ?: continue
+    conduits.all { conduit, i, s ->
         out.add(
             Body(
                 slot = BodySlot.Fitting,
                 at = i,
                 tiles = intArrayOf(i),
-                material = s.conduit.material,
+                material = conduit.material,
                 permeable = true,
                 joules = s.joules,
-                capacity = s.conduit.material.capacityPerTile,
+                capacity = conduit.material.capacityPerTile,
+                conduit = conduit,
+                links = s.links,
             )
         )
     }
@@ -147,13 +169,13 @@ fun bodiesOf(
 /**
  * Total thermal energy held by every solid thing in the world.
  *
- * Summed straight off the three lists rather than off [bodiesOf], so the ledger costs a walk rather
+ * Summed straight off the stored values rather than off [bodiesOf], so the ledger costs a walk rather
  * than a build — and so it says the same thing whether or not anything has asked for the bodies.
  */
-fun solidJoules(machines: List<Machine?>, rails: List<Segment?>, bridges: List<Machine?>): Long {
+fun solidJoules(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
     var sum = 0L
     for (m in machines) sum += m?.joules ?: 0L
-    for (s in rails) sum += s?.joules ?: 0L
+    conduits.all { _, _, s -> sum += s.joules }
     for (b in bridges) sum += b?.joules ?: 0L
     return sum
 }
