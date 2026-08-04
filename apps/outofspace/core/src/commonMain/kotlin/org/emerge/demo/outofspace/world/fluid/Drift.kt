@@ -75,24 +75,111 @@ fun applySpeciesDrift(
     gravity: Frac2,
     species: List<Species> = Species.GASES,
 ) {
-    val total = tileMass(edges.grid.size, grams, species)
+    val snapshot = grams.copyOf()
+    val total = tileMass(edges.grid.size, snapshot, species)
+    val planned = LongArray((edges.xEdgeCount + edges.yEdgeCount) * Species.COUNT)
 
-    for (e in 0 until edges.xEdgeCount) {
-        if (!apertures.isXOpen(e)) continue
-        exchange(grams, total, edges.xEdgeBefore(e), edges.xEdgeAfter(e), gravity.x.raw, apertures.xAt(e), species)
+    // ── Plan every face against the same snapshot ──
+    eachOpenFace(edges, apertures) { slot, before, after, aperture, alongX ->
+        exchange(
+            snapshot, total, before, after,
+            if (alongX) gravity.x.raw else gravity.y.raw,
+            aperture, species, planned, slot * Species.COUNT,
+        )
     }
-    for (e in 0 until edges.yEdgeCount) {
-        if (!apertures.isYOpen(e)) continue
-        exchange(grams, total, edges.yEdgeBefore(e), edges.yEdgeAfter(e), gravity.y.raw, apertures.yAt(e), species)
+
+    // ── How much each tile has been asked to give up, across all four of its faces ──
+    val demand = LongArray(snapshot.size)
+    eachOpenFace(edges, apertures) { slot, before, after, _, _ ->
+        val base = slot * Species.COUNT
+        for (s in species) {
+            val amount = planned[base + s.ordinal]
+            if (amount > 0L) demand[before * Species.COUNT + s.ordinal] += amount
+            else if (amount < 0L) demand[after * Species.COUNT + s.ordinal] -= amount
+        }
+    }
+
+    // ── Apply, scaled so that nobody is drained past what they actually had ──
+    eachOpenFace(edges, apertures) { slot, before, after, _, _ ->
+        val base = slot * Species.COUNT
+
+        // One factor for the whole face rather than one per species, because [exchange] balanced the
+        // two directions against each other and scaling them unevenly would break that. Drift would
+        // start shifting net weight about, which is the one thing it must never do.
+        var factor = FACTOR_SCALE
+        for (s in species) {
+            val amount = planned[base + s.ordinal]
+            if (amount == 0L) continue
+            val at = (if (amount > 0L) before else after) * Species.COUNT + s.ordinal
+            val asked = demand[at]
+            if (asked <= snapshot[at]) continue
+            val allowed = snapshot[at] * FACTOR_SCALE / asked
+            if (allowed < factor) factor = allowed
+        }
+        if (factor <= 0L) return@eachOpenFace
+
+        for (s in species) {
+            val amount = planned[base + s.ordinal] * factor / FACTOR_SCALE
+            if (amount > 0L) move(grams, before, after, s.ordinal, amount)
+            else if (amount < 0L) move(grams, after, before, s.ordinal, -amount)
+        }
     }
 }
 
 /**
- * Trades gas across one face: every species' settling and mixing added together, then balanced so
- * that as much mass comes back as goes.
+ * Every face gas can cross, x then y, handed its slot in the planning arrays.
+ *
+ * Exists so the three passes above walk the same faces in the same order with the same skips.
+ * Written out three times they would drift apart the first time anybody changed what counts as open,
+ * and the symptom would be one face's planned exchange being applied to another.
+ */
+private inline fun eachOpenFace(
+    edges: EdgeGrid,
+    apertures: ApertureField,
+    body: (slot: Int, before: Int, after: Int, aperture: Int, alongX: Boolean) -> Unit,
+) {
+    for (e in 0 until edges.xEdgeCount) {
+        if (!apertures.isXOpen(e)) continue
+        val before = edges.xEdgeBefore(e)
+        val after = edges.xEdgeAfter(e)
+        if (before < 0 || after < 0) continue
+        body(e, before, after, apertures.xAt(e), true)
+    }
+    for (e in 0 until edges.yEdgeCount) {
+        if (!apertures.isYOpen(e)) continue
+        val before = edges.yEdgeBefore(e)
+        val after = edges.yEdgeAfter(e)
+        if (before < 0 || after < 0) continue
+        body(edges.xEdgeCount + e, before, after, apertures.yAt(e), false)
+    }
+}
+
+/** Fixed-point denominator for the over-draw limiter. A power of two, so the division is cheap. */
+private const val FACTOR_SCALE = 1L shl 20
+
+/**
+ * Works out what gas should trade across one face: every species' settling and mixing added
+ * together, then balanced so that as much mass comes back as goes.
  *
  * A face with the world on one side does nothing — there is no mixture out there to sort against,
  * and gas leaving for space is [advectMass]'s business.
+ *
+ * ### It plans rather than applies, and that is the whole point
+ *
+ * This used to edit `grams` in place as the sweep visited each face, which made the answer depend on
+ * the order faces were visited in — the very trade [project] refuses to make when it picks Jacobi
+ * over Gauss-Seidel. x-edges are numbered `y × stride + x`, so a tile's left face was always
+ * processed before its right one, and gas moved in from the left could move on again in the same
+ * sweep while gas moved in from the right could not.
+ *
+ * That is a left-to-right bias, and because the amount traded is scaled by a species' molar mass it
+ * is a bias that acts on *composition*. It was found by mirroring a breach about its own column: the
+ * bulk density came out even to within one percent, while oxygen — the heavy minority — sat at three
+ * grams on one side against six on the other. Mass was conserved perfectly throughout, so nothing
+ * else could have caught it.
+ *
+ * So every face is now planned against one snapshot and applied afterwards. [planned] receives the
+ * signed per-species amounts at [at], positive meaning `before → after`.
  */
 private fun exchange(
     grams: LongArray,
@@ -102,8 +189,9 @@ private fun exchange(
     gravityRaw: Long,
     aperture: Int,
     species: List<Species>,
+    planned: LongArray,
+    at: Int,
 ) {
-    if (before < 0 || after < 0) return
     val mass = total[before] + total[after]
     if (mass <= 0L) return
 
@@ -142,8 +230,7 @@ private fun exchange(
     val goingUp = apportion(up, traded)
 
     for (s in species) {
-        move(grams, before, after, s.ordinal, goingDown[s.ordinal])
-        move(grams, after, before, s.ordinal, goingUp[s.ordinal])
+        planned[at + s.ordinal] = goingDown[s.ordinal] - goingUp[s.ordinal]
     }
 }
 
