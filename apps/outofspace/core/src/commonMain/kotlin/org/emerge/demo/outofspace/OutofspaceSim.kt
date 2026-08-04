@@ -46,6 +46,7 @@ import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
 import org.emerge.demo.outofspace.world.Smelter
@@ -60,6 +61,8 @@ import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.demo.outofspace.world.fluid.ApertureField
+import org.emerge.demo.outofspace.world.fluid.PumpDemand
+import org.emerge.demo.outofspace.world.fluid.applyPumps
 import org.emerge.demo.outofspace.world.fluid.exchangeLayers
 import org.emerge.demo.outofspace.world.fluid.pipeApertures
 import org.emerge.demo.outofspace.world.fluid.pipeVolumes
@@ -221,6 +224,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeVolumes = volumes,
         )
 
+        // Pumps, alongside the valves and before either layer is solved, for the same reason. Gas
+        // arrives in the pipe as pressure and with no momentum: nothing tells it which way to go
+        // along the run, and the ordinary solver works that out on the next pass. See [applyPumps].
+        val pumped = applyPumps(
+            edges = edges,
+            demands = pumpDemands(state.grid, w.machines, conduits, signals),
+            roomGrams = w.airGrams,
+            roomJoules = w.airJoules,
+            roomMx = w.momentumX,
+            roomMy = w.momentumY,
+            pipeGrams = w.pipeGrams,
+            pipeJoules = w.pipeJoules,
+            pipeVolumes = volumes,
+        )
+
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
         val fluid = stepFluid(
             edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules,
@@ -276,8 +294,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Same term, because it is the same physics happening one layer over.
             // Gas shoved into the closed end of a pipe leans on the fitting, and the fitting is
             // bolted to the ship — see [exchangeLayers].
-            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX + crossed.vesselX,
-            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY + crossed.vesselY,
+            // A pump's intake stops the gas it draws, and the ship feels it — which is what makes a
+            // pump usable as a thruster. See [applyPumps].
+            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX +
+                crossed.vesselX + pumped.vesselX,
+            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY +
+                crossed.vesselY + pumped.vesselY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             motion = w.motion.freeze(),
@@ -286,6 +308,39 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     /** Full snapshots on the wire; a demo sending partial state would merge here instead. */
     override fun patchState(state: VesselState, delta: VesselState): VesselState = delta
+
+    /**
+     * What every pump is asking to move this tick: from the room it faces, into the pipe under it.
+     *
+     * Both ends are optional and a pump missing either simply does not appear in the list. No pipe
+     * beneath it has nowhere to push; facing the hull, or facing off the edge of the grid, has
+     * nothing to draw. Neither is an error — a half-built gas system is an ordinary state to leave a
+     * vessel in, and a pump that complains about it would be a pump you cannot build incrementally.
+     *
+     * Activation is applied here rather than in [applyPumps], so that everything about signals and
+     * throttling stays on this side of the boundary. It is a throttle rather than a switch, like
+     * every other machine: half a signal is half a pump.
+     */
+    private fun pumpDemands(
+        grid: Grid,
+        machines: List<Machine?>,
+        conduits: Conduits,
+        signals: Signals,
+    ): List<PumpDemand> {
+        var demands: MutableList<PumpDemand>? = null
+        for (tile in machines.indices) {
+            val pump = machines[tile] as? Pump ?: continue
+            if (conduits.at(Conduit.Pipe, tile) == null) continue
+            val intake = grid.neighbour(tile, pump.facing)
+            if (intake < 0) continue
+            val activation = pump.wiring.activation(Action.Run, signals)
+            if (activation <= 0) continue
+            val moles = Pump.MILLIMOLES_PER_TICK * activation / Signals.FULL
+            if (moles <= 0L) continue
+            (demands ?: ArrayList<PumpDemand>(4).also { demands = it }).add(PumpDemand(intake, tile, moles))
+        }
+        return demands ?: emptyList()
+    }
 
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
@@ -1065,6 +1120,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.Vent -> Vent()
+            MachineKind.Pump -> Pump(facing)
             MachineKind.Hull -> Hull()
             // Fittings are placed onto their layer directly and never come through here.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> Hull()

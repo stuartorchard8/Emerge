@@ -21,6 +21,7 @@ import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
@@ -511,6 +512,13 @@ class OutofspaceRenderer {
                 edgeMark(x, y, m.facing, m.channel.color)
                 tileRect(x, y, Visual.SENSOR_EYE_SCALE, m.channel.color)
             }
+            // The intake gets an arrow, because facing is the whole of what a pump's orientation
+            // means — which room it empties — and a square with no direction on it would leave the
+            // player guessing.
+            is Pump -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Pump))
+                intakeArrow(x, y, m.facing)
+            }
             is Vent -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Vent))
                 tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
@@ -746,6 +754,15 @@ class OutofspaceRenderer {
 
     // ── Primitives ────────────────────────────────────────────────────────────
 
+    /** A bar on the face a pump draws through, so which room it empties is visible without clicking. */
+    private fun intakeArrow(x: Int, y: Int, facing: Direction) {
+        val cx = (x + 0.5f + facing.dx * Visual.INTAKE_OFFSET) * tilePx
+        val cy = (y + 0.5f + facing.dy * Visual.INTAKE_OFFSET) * tilePx
+        val along = Visual.INTAKE_WIDTH * tilePx
+        val across = Visual.INTAKE_DEPTH * tilePx
+        rect(cx, cy, if (facing.dx != 0) across else along, if (facing.dy != 0) across else along, Colors.VALVE_CORE)
+    }
+
     private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
 
@@ -902,6 +919,9 @@ class OutofspaceRenderer {
         const val PIPE_DIAMETER = 0.28f
         /** Wider than the pipe, so a tap reads against a long run without hiding its arms. */
         const val VALVE_COLLAR  = 0.46f
+        const val INTAKE_OFFSET = 0.34f
+        const val INTAKE_WIDTH  = 0.44f
+        const val INTAKE_DEPTH  = 0.14f
         const val PIPE_ARM_LENGTH = (1f-PIPE_DIAMETER)/2f
         const val PIPE_ARM_OFFSET = (1f+PIPE_DIAMETER)/4f
         const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
@@ -981,6 +1001,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Hull -> 0x4A5464FFL
     MachineKind.Vent -> 0x3A3A44FFL
+    MachineKind.Pump -> 0xB07840FFL
     MachineKind.Valve -> 0xD8A860FFL
 }
 

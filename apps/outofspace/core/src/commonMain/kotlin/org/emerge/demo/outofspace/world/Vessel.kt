@@ -362,6 +362,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Sensor -> 0L
     is Hull -> 0L
     is Vent -> 0L
+    is Pump -> 0L
 }
 
 /**
@@ -381,6 +382,7 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Sensor -> 0
     is Hull -> 0
     is Vent -> 0
+    is Pump -> 0
 }.coerceIn(0, Signals.FULL)
 
 /**
@@ -412,7 +414,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.slag?.let { "SLAG" to it },
     )
     is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
-    is Sensor, is Vent, is Hull -> emptyList()
+    is Sensor, is Vent, is Pump, is Hull -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
@@ -428,4 +430,5 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Sensor -> Mixture.EMPTY
     is Hull -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
+    is Pump -> Mixture.EMPTY
 }

@@ -1,0 +1,43 @@
+# A pump: gas moved UPHILL, out of a room and into a pipe.
+#
+# The difference from a valve is the whole point. A valve stops when the two sides agree; a pump keeps
+# pushing past that until it stalls at Pump.STALL_RATIO times its intake pressure. Read against
+# valve.txt: same plumbing, far more gas in it.
+#
+# Note where the gas goes and what nothing had to tell it. A pump delivers PRESSURE and no momentum
+# at all — nothing says which way along the run to travel. The ordinary pressure force and projection
+# work that out on the next pass, so the run fills from the pump outwards in both directions.
+#
+# What to read in the shot:
+#   a copper pipe run with a pump set into it, its intake bar on the face it draws through;
+#   the `pipe` field map should show gas heaviest at the pump and falling off along the run.
+new
+
+brush PIPE
+drag 14 9 26 9
+
+# Facing UP: a pump draws from the tile it faces, never from the one it stands on. Its own tile has
+# no room air at all — placing any building displaces the air out of its footprint — so drawing from
+# underneath itself would draw from a vacuum.
+brush PUMP UP
+place 20 9
+
+camera centre 20 9
+camera zoom 28
+shot pump
+
+echo --- early on a pump is SLOWER than a valve: it adds a fixed trickle, a hole equalises at once
+run 300
+expect pipeGrams > 1000
+expect pipeGrams < 1700
+
+echo --- but it does not stop where a valve does. This same run through a valve settles at ~3050g,
+echo --- and a pump takes it far past that: the ceiling is the machine, not the pressure it meets.
+run 1700
+expect pipeGrams > 6000
+expect airVented = 0
+expect airBalance = 0
+expect airHeatBalance = 0
+
+field pipe
+shot pump-filled

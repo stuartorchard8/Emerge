@@ -148,7 +148,7 @@ val MachineKind.material: Material
         MachineKind.Hull -> Material.Steel
         MachineKind.Smelter -> Material.Firebrick
         MachineKind.Miner, MachineKind.Processor, MachineKind.Storage,
-        MachineKind.Sensor, MachineKind.Vent,
+        MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material

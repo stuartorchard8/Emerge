@@ -97,7 +97,10 @@ private fun localPorts(machine: Machine): List<LocalPort> {
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
 
-        is Sensor, is Hull -> emptyList()
+        // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
+        // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
+        // over.
+        is Sensor, is Hull, is Pump -> emptyList()
     }
 }
 

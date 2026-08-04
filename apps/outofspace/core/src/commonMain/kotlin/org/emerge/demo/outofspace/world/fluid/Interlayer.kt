@@ -134,9 +134,9 @@ fun exchangeLayers(
         val share = Share(if (crossing < 0L) -crossing else crossing, donorMoles)
 
         val moved = if (fromRoom) {
-            handOver(share, tile, roomGrams, roomJoules, pipeGrams, pipeJoules)
+            handOver(share, tile, tile, roomGrams, roomJoules, pipeGrams, pipeJoules)
         } else {
-            handOver(share, tile, pipeGrams, pipeJoules, roomGrams, roomJoules)
+            handOver(share, tile, tile, pipeGrams, pipeJoules, roomGrams, roomJoules)
         }
         // Signed room-to-pipe, so a valve breathing in and out reads as the small net it is.
         val sign = if (fromRoom) 1L else -1L
@@ -167,31 +167,38 @@ fun exchangeLayers(
  * to its own precision, which is what stops a trace species being rounded out of existence on the way
  * through a valve.
  */
-private class Share(val part: Long, val whole: Long) {
+internal class Share(val part: Long, val whole: Long) {
     fun of(quantity: Long): Long = quantity * part / whole
 }
 
-private class Moved(val grams: Long, val joules: Long)
+internal class Moved(val grams: Long, val joules: Long)
 
 private class Push(val x: Long, val y: Long)
 
-/** Moves [share] of one cell's gas, species by species, with the energy that was riding on it. */
-private fun handOver(
+/**
+ * Moves [share] of one cell's gas, species by species, with the energy that was riding on it.
+ *
+ * The two tiles are separate because a pump's are: a valve exchanges between the two cells at one
+ * place, and a pump draws from the room beside it into the pipe beneath it.
+ */
+internal fun handOver(
     share: Share,
-    tile: Int,
+    donorTile: Int,
+    acceptorTile: Int,
     donorGrams: LongArray,
     donorJoules: LongArray?,
     acceptorGrams: LongArray,
     acceptorJoules: LongArray?,
 ): Moved {
-    val base = tile * Species.COUNT
+    val base = donorTile * Species.COUNT
+    val target = acceptorTile * Species.COUNT
     var grams = 0L
     for (s in Species.GASES) {
         val i = base + s.ordinal
         val take = share.of(donorGrams[i])
         if (take == 0L) continue
         donorGrams[i] -= take
-        acceptorGrams[i] += take
+        acceptorGrams[target + s.ordinal] += take
         grams += take
     }
 
@@ -199,9 +206,9 @@ private fun handOver(
     // conserves exactly and the second accumulates the rounding of a division per tick per valve.
     var joules = 0L
     if (donorJoules != null && acceptorJoules != null) {
-        joules = share.of(donorJoules[tile])
-        donorJoules[tile] -= joules
-        acceptorJoules[tile] += joules
+        joules = share.of(donorJoules[donorTile])
+        donorJoules[donorTile] -= joules
+        acceptorJoules[acceptorTile] += joules
     }
     return Moved(grams, joules)
 }
@@ -254,11 +261,11 @@ private fun handOverMomentum(
  * handful of units, because the split between the two sides is a ratio of these and a ratio of small
  * integers is a coarse one.
  */
-private fun pressureCapacity(volume: Int, kelvin: Int): Long =
+internal fun pressureCapacity(volume: Int, kelvin: Int): Long =
     volume.toLong() * Temperature.AMBIENT_KELVIN / maxOf(kelvin, 1)
 
 /** One cell's gas temperature, with the same "no gas reads as ambient" convention as [gasKelvin]. */
-private fun kelvinAt(grams: LongArray, gasJoules: LongArray?, tile: Int): Int {
+internal fun kelvinAt(grams: LongArray, gasJoules: LongArray?, tile: Int): Int {
     if (gasJoules == null) return Temperature.AMBIENT_KELVIN
     val capacity = gasCapacityAt(grams, tile)
     return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (gasJoules[tile] / capacity).toInt()

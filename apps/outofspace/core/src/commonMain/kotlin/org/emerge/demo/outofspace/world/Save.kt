@@ -202,6 +202,9 @@ object Save {
             }
             is Storage -> put("stored", m.contents?.let { writeResource(it) })
             is Sensor -> put("channel", m.channel.name)
+            // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
+            // heat are all written by the common code around this.
+            is Pump -> {}
             is Vent -> put("vented", m.ventedGrams.toString())
             is Hull -> {}
         }
@@ -529,6 +532,7 @@ object Save {
                 } ?: Channel.Red,
             )
             MachineKind.Vent -> Vent(ventedGrams = num("vented", 0L))
+            MachineKind.Pump -> Pump(facing())
             MachineKind.Hull -> Hull()
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve ->
