@@ -83,7 +83,7 @@ fun applyPressureForce(
             val faceGrams = xFaceGrams(edges, tileGrams, e)
             if (faceGrams <= 0L) continue
             val toGas = drop * apertures.xAt(e) / ApertureField.OPEN
-            mx[e] = capped(mx[e] + toGas, faceGrams)
+            mx[e] += toGas
             // What the solid part of a restriction took. Zero for a fully open face.
             vesselX += drop - toGas
         } else {
@@ -97,7 +97,7 @@ fun applyPressureForce(
             val faceGrams = yFaceGrams(edges, tileGrams, e)
             if (faceGrams <= 0L) continue
             val toGas = drop * apertures.yAt(e) / ApertureField.OPEN
-            my[e] = capped(my[e] + toGas, faceGrams)
+            my[e] += toGas
             vesselY += drop - toGas
         } else {
             vesselY += drop
@@ -108,51 +108,31 @@ fun applyPressureForce(
 }
 
 /**
- * A face's momentum, held to a speed the transport scheme can actually integrate.
+ * ### Why there is no velocity cap here any more
  *
- * ### Why a bound is needed at all
+ * There was one, and it is worth recording what it was for and why it went, because the argument for
+ * it was sound and the measurement was not.
  *
  * The impulse being density-independent is right, and the velocity it implies is unbounded, and both
- * are consequences of the same cancellation. A face carrying a hundredth of ambient mass gets the
- * full push and therefore a hundred times the speed. Physically that is even roughly true — gas
- * expanding into vacuum really does accelerate hard — but an explicit scheme cannot integrate it.
- * Measured without this, a breach plume reached **eleven tiles per tick** against a CFL limit of
- * one, which means advection stepping over ten tiles it should have interacted with. Mass stayed
- * conserved throughout, which is exactly what makes it dangerous: the ledger looks perfect while the
- * transport underneath is nonsense.
+ * are consequences of the same cancellation. A face carrying a hundredth of ambient mass gets the full
+ * push and therefore a hundred times the speed. Physically that is even roughly true — gas expanding
+ * into vacuum really does accelerate hard — but an explicit transport scheme cannot integrate it, so
+ * each face was held to half a tile per tick.
  *
- * ### It has to bound the total, not the increment
+ * That cost the exact telescoping this file leans on hardest. The cap was defended on the grounds that
+ * it "only ever binds on a face with far less than ambient gas on it", which is true, and which does
+ * not help: it put **5238 units into the momentum ledger over 120 ticks of a breached hull**, taken
+ * off the gas and handed to nobody, on an axis where a sealed vessel is supposed to be exactly still.
  *
- * The first attempt capped the per-tick impulse, on the reasoning that clamping a *force* is more
- * conservative than clamping stored state — it cannot eat exhaust that the projection or advection
- * legitimately produced. That reasoning is wrong, and measurement said so: capping the increment
- * changed the peak speed from eleven tiles per tick to eleven tiles per tick. Momentum accumulates.
- * A face taking a bounded push every tick with only [applyDrag]'s thirty-second to bleed it off
- * still runs away over a few dozen ticks, and it runs away *faster* as the gas drains, because the
- * mass in the denominator is falling while the momentum is not. So the bound is on the resulting
- * velocity, which is the quantity that actually has to stay under one.
+ * And it did not buy the invariant it was paying for. Measured with the cap in place, the field still
+ * reached three tiles per tick and broke CFL on ninety of a hundred and twenty ticks — because this
+ * pass is not the last one to touch a face. [project] and [advectMomentum] both add momentum after it,
+ * and neither was capped. Bounding one term of a sum is not bounding the sum.
  *
- * ### What it costs, said plainly
- *
- * Capping breaks the exact telescoping that guarantees a sealed vessel cannot push itself. That
- * guarantee is the one this file leans on hardest, so it matters that the cap **only ever binds on
- * a face with far less than ambient gas on it** — which is to say, in a plume outside the hull or in
- * a room already most of the way to vacuum. Every face of a sealed pressurised vessel sits near
- * ambient mass and moves at a small fraction of a tile per tick, so inside an intact ship the cap is
- * unreachable and the cancellation is exact. A ship whose interior faces are light enough to trip it
- * has lost its atmosphere and has nothing left to drift on.
- *
- * The honest fix is sub-stepping the fluid when [MomentumField.isCflSafe] fails, which is what that
- * function exists to make observable and what a fast exhaust will force anyway. This is the cheap
- * version of the same statement.
+ * So the bound moved to where the limit actually lives: [stepFluid] cuts the tick into as many pieces
+ * as the fastest face needs, and transport stays inside CFL by taking shorter steps rather than by
+ * being lied to about the speed. The gas is allowed to go as fast as the pressure says it does.
  */
-private fun capped(momentum: Long, faceGrams: Long): Long {
-    val limit = faceGrams / CAP_DENOMINATOR
-    return if (momentum > limit) limit else if (momentum < -limit) -limit else momentum
-}
-
-/** Half a tile per tick: the fastest this force will leave a face going, with CFL headroom to spare. */
-private const val CAP_DENOMINATOR = 2L
 
 /** A tile's potential, or zero off the grid — space pushes back with nothing. */
 private fun beyond(potential: LongArray, tile: Int): Long =

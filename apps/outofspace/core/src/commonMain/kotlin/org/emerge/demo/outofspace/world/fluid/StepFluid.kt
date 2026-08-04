@@ -26,6 +26,15 @@ class FluidStep(
     val vesselY: Long,
     val escapedX: Long,
     val escapedY: Long,
+    /**
+     * How many pieces the tick's transport had to be taken in — see [subStepsFor].
+     *
+     * Reported rather than kept private because it is the readout that makes the CFL wall visible.
+     * One means the gas is slower than a tile a tick and the scheme is comfortable. A number climbing
+     * toward [MAX_SUB_STEPS] is a nozzle outrunning an explicit solver, said in the only terms that
+     * can be measured rather than argued about.
+     */
+    val subSteps: Int,
 )
 
 /**
@@ -196,14 +205,31 @@ fun stepFluid(
     val pushed = applyPressureForce(edges, apertures, mx, my, tileGrams, pressure)
     val pressed = project(edges, apertures, mx, my, tileGrams, pressure)
 
-    val moved = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, tileGrams)
-    val carried = advectMomentum(edges, mx, my, moved.flux, tileGrams)
-    // Heat rides the same fluxes as momentum, off the same pre-advection snapshot, for the same
-    // reason: a fraction of the mass leaving takes that fraction of what the mass was carrying.
-    val ventedJoules =
-        if (gasJoules == null) 0L else advectHeat(edges, gasJoules, moved.flux, tileGrams)
-
-    val vented = moved.ventedGrams
+    // ── Transport, in as many pieces as the fastest face requires ──
+    //
+    // See [subStepsFor]. The forces above run once, on the tick; only transport is cut up, because
+    // CFL is a statement about how far something moves before the field it is moving through is
+    // recomputed, and that is what this loop recomputes. Everything inside is the same three passes
+    // in the same order against a freshly measured density each time.
+    val subSteps = subStepsFor(edges, mx, my, tileGrams)
+    var vented = 0L
+    var ventedJoules = 0L
+    var escapedX = 0L
+    var escapedY = 0L
+    repeat(subSteps) {
+        // Not [tileGrams]: that is the tick's opening snapshot, and the whole point of sub-cycling is
+        // that the gas the next piece moves through is the gas the last piece left behind.
+        val nowGrams = tileMass(grid.size, grams)
+        val moved =
+            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, nowGrams, subSteps)
+        val carried = advectMomentum(edges, mx, my, moved.flux, nowGrams)
+        // Heat rides the same fluxes as momentum, off the same pre-advection snapshot, for the same
+        // reason: a fraction of the mass leaving takes that fraction of what the mass was carrying.
+        if (gasJoules != null) ventedJoules += advectHeat(edges, gasJoules, moved.flux, nowGrams)
+        vented += moved.ventedGrams
+        escapedX += carried.x
+        escapedY += carried.y
+    }
 
     // Momentum cannot outlive the gas carrying it. Anything on a face that has just been emptied
     // left with what was on it; keeping it would let a vacuum quietly store a shove.
@@ -229,7 +255,57 @@ fun stepFluid(
         ventedJoules = ventedJoules,
         vesselX = pressed.vesselX + pushed.vesselX + lift.vesselX + rubbed.vesselX,
         vesselY = pressed.vesselY + pushed.vesselY + lift.vesselY + rubbed.vesselY,
-        escapedX = carried.x + strandedX,
-        escapedY = carried.y + strandedY,
+        escapedX = escapedX + strandedX,
+        escapedY = escapedY + strandedY,
+        subSteps = subSteps,
     )
 }
+
+/**
+ * How many pieces this tick's transport has to be taken in: one per whole tile the fastest face moves.
+ *
+ * ### What this replaces
+ *
+ * [applyPressureForce] used to hold each face's velocity to half a tile per tick with a hard clamp,
+ * and its own documentation called that the cheap version of this and named the honest one. The clamp
+ * had two costs. It broke the exact telescoping that guarantees a sealed vessel cannot push itself,
+ * which put 5238 units into the momentum ledger over 120 ticks of a breached hull — momentum removed
+ * from the gas and handed to nobody. And it did not work: measured, the field still reached **three
+ * tiles per tick** with the clamp in place and was over CFL on ninety of those hundred and twenty
+ * ticks, because the clamp bounds one pass and [project] and [advectMomentum] both add momentum after
+ * it. It was buying an invariant it did not deliver, at the price of the one it did.
+ *
+ * Removing it takes the peak to six tiles per tick, which is the honest speed of gas expanding into
+ * vacuum, and this makes six pieces of the tick out of it instead of pretending it is a half.
+ *
+ * ### The bound
+ *
+ * [MAX_SUB_STEPS] is a refusal to spend unbounded time on one tick, not a physical claim. Above it the
+ * transport is stepping over tiles again and the sim is back to being wrong in the old way — so if it
+ * is ever reached in earnest, that is the signal that a nozzle has outrun this scheme, which is
+ * exactly the wall §5b said a fast exhaust would find. It is reached by nothing today.
+ */
+private fun subStepsFor(edges: EdgeGrid, mx: LongArray, my: LongArray, tileGrams: LongArray): Int {
+    var peak = 0L
+    val field = MomentumField.of(edges, mx, my)
+    for (e in 0 until edges.xEdgeCount) {
+        val v = field.velocityX(e, tileGrams).raw
+        val a = if (v < 0L) -v else v
+        if (a > peak) peak = a
+    }
+    for (e in 0 until edges.yEdgeCount) {
+        val v = field.velocityY(e, tileGrams).raw
+        val a = if (v < 0L) -v else v
+        if (a > peak) peak = a
+    }
+    // Round up, so a face at 1.2 tiles gets two pieces and lands at 0.6 of a tile each.
+    val needed = (peak + MomentumField.SPEED_LIMIT_RAW - 1) / MomentumField.SPEED_LIMIT_RAW
+    return when {
+        needed < 1L -> 1
+        needed > MAX_SUB_STEPS -> MAX_SUB_STEPS.toInt()
+        else -> needed.toInt()
+    }
+}
+
+/** See [subStepsFor]: a bound on time spent, not a physical claim. */
+const val MAX_SUB_STEPS = 16L

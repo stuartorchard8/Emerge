@@ -64,6 +64,35 @@ class ThrustBalanceTest {
      * went out of the hole. The bare box is borrowed from `BreachSymmetryTest` for the same reason it
      * uses one: no machines means no refinery running alongside and nothing to attribute a
      * discrepancy to but the fluid.
+     *
+     * ### ⚠️ This one still fails, on one known term, and the term needs a decision rather than a fix
+     *
+     * The residual over 120 ticks was 7478 and is now **238**, out of a vessel impulse of 25310. Two
+     * of the three causes are gone and both were bugs: a bulkhead was erasing the momentum it stopped
+     * instead of keeping it (2040), and the CFL clamp in `applyPressureForce` was discarding momentum
+     * to enforce a limit it did not actually enforce (5238, removed in favour of sub-stepping).
+     *
+     * What is left is [project]. Where a face is **open but has no gas on it**, the solved pressure
+     * difference across it is real and there is nothing to give it to — no fluid to accelerate and no
+     * wall to take the reaction — so the impulses stop telescoping and the shortfall is momentum the
+     * scheme declines to deliver. It is a plume-front effect: at tick 1 it is 136 and by tick 3 it is
+     * 3, and it never grows.
+     *
+     * Two fixes were tried and **both were measured and rejected**, so neither is worth retrying blind:
+     *
+     * - **Pin `p = 0` on tiles holding no gas** — the textbook free-surface boundary condition, and
+     *   the principled answer. It very nearly closes the ledger (down to 2 by tick 10) and it stops
+     *   blowout dead: `ProjectionTest` reports a room that does not decompress at all and a breach
+     *   that does not push the ship. The vacuum side of the interface needs a solved pressure for the
+     *   gradient that drives the vent to exist.
+     * - **Give the impulse to the massless faces anyway**, and let the existing stranded-momentum
+     *   sweep book it as exhaust. This closes the ledger *exactly*, on both axes. It also injects
+     *   momentum into vacuum: the midships plume lean goes from 1% to 6%, the bow's from 5% to 19%,
+     *   and `PumpTest` fails. It closes the books by manufacturing exhaust.
+     *
+     * So the remaining choice is the one this was always heading for: name the term. It is momentum
+     * the discretisation dropped, it is small, it does not accumulate, and a named ledger entry makes
+     * the identity exact while measuring how much of the thrust figure is numerical.
      */
     @Test
     fun `a breached vessel accounts for what it threw overboard`() {

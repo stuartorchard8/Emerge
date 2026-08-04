@@ -79,12 +79,17 @@ class BreachSymmetryTest {
 
     @Test
     fun `a breach amidships vents symmetrically about its own column`() {
-        val leans = leansAfterBreachAt(MIDSHIPS, listOf(2, 5, 8, 12))
+        val leans = leansAfterBreachAt(MIDSHIPS, listOf(1, 2, 3, 4, 5, 8, 12))
         // Raising [FLOOR] to a hundred grams is what stops this test reading noise as a lean, and the
         // failure mode it introduces is the quiet one: a floor that skips everything asserts nothing
-        // and passes forever. So the sample count is asserted too. Measured, this comes to six pairs
-        // — mass at ±2, ±5 and ±8, oxygen at ±2, nitrogen at ±2 and ±5 — which is the instrument still
-        // pointed at both of the things it can tell apart, mass and mixture.
+        // and passes forever. So the sample count is asserted too. Measured, this comes to eight pairs
+        // — mass at ±1, ±2 and ±3, oxygen at ±1 and ±2, nitrogen at all three — which is the instrument
+        // still pointed at both of the things it can tell apart, mass and mixture.
+        //
+        // The distances are close in because the plume is: sub-stepping the transport means the gas
+        // actually leaves rather than banking up in the near field, so by ±5 a column is down to a few
+        // dozen grams and there is nothing out there to measure. Sampling where the gas is beats
+        // sampling where it used to be.
         assertTrue(leans.size >= MEASURED_PAIRS, "only ${leans.size} pairs were big enough to judge")
         val bad = leans.filter { it.percent > TOLERANCE_PERCENT }
         assertTrue(bad.isEmpty(), "the plume leans:\n" + bad.joinToString("\n") { "  $it" })
@@ -266,7 +271,7 @@ class BreachSymmetryTest {
         const val FLOOR = 100L
 
         /** How many pairs [FLOOR] is expected to leave standing. See the amidships test. */
-        const val MEASURED_PAIRS = 6
+        const val MEASURED_PAIRS = 8
 
         /**
          * How far off centre a plume may sit where the world is actually symmetric.
@@ -295,10 +300,17 @@ class BreachSymmetryTest {
          *
          * That is not the model improving — nothing in the solver changed — it is the measurement no
          * longer counting quantisation noise as evidence. But the tolerance guards the measurement, so
-         * it follows the measurement down. Eight leaves headroom above the observed five without
-         * leaving room for a lean anybody would call symmetric.
+         * it follows the measurement down.
+         *
+         * ### 8 → 5, and this time the model did improve
+         *
+         * Sub-stepping the transport took the amidships numbers to **0% or 1% on all eight pairs**,
+         * which is as symmetric as an integer grid can report. What now sets this constant is the
+         * *bow* case rather than the midships one: a breach off-centre in the ship leans 5% in oxygen
+         * at ±2, which is the ship's own shape and is what [BOW] exists to record. Midships would
+         * comfortably take 2.
          */
-        const val TOLERANCE_PERCENT = 8L
+        const val TOLERANCE_PERCENT = 5L
 
         /** Near the hole the off-centre breach gets no more slack than the centred one. */
         const val BOW_TOLERANCE_PERCENT = TOLERANCE_PERCENT

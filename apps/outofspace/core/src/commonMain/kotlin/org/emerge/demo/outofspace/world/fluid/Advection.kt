@@ -69,6 +69,17 @@ class AdvectionResult(val flux: MassFlux, val ventedGrams: Long)
  * AdvectionResult.ventedGrams] so the vessel's air ledger still closes. Increment D turns that same
  * number into thrust; here it is only bookkeeping.
  *
+ * ### A fraction of a tick
+ *
+ * [subSteps] says how many of these this tick is being cut into, and every flux is that much smaller.
+ * One — the default — is the whole tick and the arithmetic below is unchanged.
+ *
+ * It exists because the CFL condition this pass rests on is a statement about *distance per step*, not
+ * per tick: a face moving at three tiles a tick is fine if the step is a third of a tick. The scaling
+ * belongs here rather than on the velocity field because the velocity is real — the gas genuinely is
+ * going that fast — and what has to shrink is how long it is allowed to go on doing it before the
+ * density it is moving through is recomputed. See [stepFluid] for how the count is chosen.
+ *
  * [grams] is `tiles × Species.COUNT` and is **edited in place**, matching [
  * org.emerge.demo.outofspace.world.stepAir]'s convention. Mass moved across a face is a proportional
  * sample of the donor over [apportion], so a draught carries the room's actual mix rather than
@@ -81,6 +92,7 @@ fun advectMass(
     grams: LongArray,
     species: List<Species> = Species.GASES,
     tileGrams: LongArray = tileMass(edges.grid.size, grams, species),
+    subSteps: Int = 1,
 ): AdvectionResult {
     val grid = edges.grid
     val fx = LongArray(edges.xEdgeCount)
@@ -94,7 +106,7 @@ fun advectMass(
         if (raw == 0L) continue
         val donor = if (raw > 0L) edges.xEdgeBefore(e) else edges.xEdgeAfter(e)
         if (donor < 0) continue // Space is empty; nothing blows in from outside.
-        val amount = fluxAcross(tileGrams[donor], raw, aperture)
+        val amount = fluxAcross(tileGrams[donor], raw, aperture, subSteps)
         fx[e] = if (raw > 0L) amount else -amount
     }
     for (e in 0 until edges.yEdgeCount) {
@@ -104,7 +116,7 @@ fun advectMass(
         if (raw == 0L) continue
         val donor = if (raw > 0L) edges.yEdgeBefore(e) else edges.yEdgeAfter(e)
         if (donor < 0) continue
-        val amount = fluxAcross(tileGrams[donor], raw, aperture)
+        val amount = fluxAcross(tileGrams[donor], raw, aperture, subSteps)
         fy[e] = if (raw > 0L) amount else -amount
     }
 
@@ -134,18 +146,22 @@ fun advectMass(
  * Grams crossing a face in one tick: the donor's density, times how fast it is going, times how much
  * of the face is open.
  *
- * A tile is one unit of area and a tick is one unit of time, which is what lets this be a product
- * rather than an integration — the choice to make the tick the unit paying off again. [speedRaw] is
+ * A tile is one unit of area and a tick is one unit of time — divided by [subSteps] where the tick is
+ * being taken in pieces — which is what lets this be a product rather than an integration: the choice
+ * to make the tick the unit paying off again. [speedRaw] is
  * a [org.emerge.sim.core.physics.primitives.Frac] raw value, so dividing by [
  * MomentumField.SPEED_LIMIT_RAW] converts it to a fraction of a tile per tick.
  *
  * The intermediate product is bounded by `grams × 2^31`, so a tile would have to hold four billion
  * grams to overflow a `Long`. A tile holds about a kilogram.
  */
-private fun fluxAcross(donorGrams: Long, speedRaw: Long, aperture: Int): Long {
+private fun fluxAcross(donorGrams: Long, speedRaw: Long, aperture: Int, subSteps: Int): Long {
     if (donorGrams <= 0L) return 0L
     val speed = if (speedRaw < 0L) -speedRaw else speedRaw
-    val full = donorGrams * speed / MomentumField.SPEED_LIMIT_RAW
+    // Divided once, at the end of the product, rather than by scaling the speed first: a face moving
+    // at a hundredth of a tile per tick still has to carry something when the tick is cut in six, and
+    // dividing the speed would round most of those to nothing.
+    val full = donorGrams * speed / (MomentumField.SPEED_LIMIT_RAW * subSteps)
     return full * aperture / ApertureField.OPEN
 }
 
