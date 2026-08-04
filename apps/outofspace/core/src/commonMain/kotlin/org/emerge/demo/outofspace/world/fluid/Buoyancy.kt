@@ -124,7 +124,42 @@ fun applyBuoyancy(
  * properly once there is something to watch, which is increment D.
  */
 private fun pull(excessGrams: Long, gravityRaw: Long): Long =
-    excessGrams * gravityRaw / MomentumField.SPEED_LIMIT_RAW * SETTLING_NUMERATOR / SETTLING_DENOMINATOR
+    scaleByGravity(excessGrams, gravityRaw) * SETTLING_NUMERATOR / SETTLING_DENOMINATOR
+
+/**
+ * Multiply a quantity by a gravity, rounded to nearest and **symmetrically about zero**.
+ *
+ * ### Why this is not `a * g / SPEED_LIMIT_RAW`
+ *
+ * It was, everywhere, until an engine made gravity stop being exactly one. Integer division truncates
+ * toward zero, and it does two things at once that are both invisible at exactly `g = 1` and neither
+ * of which is small:
+ *
+ *  - **It annihilates the small.** A drift of one gram scaled by `0.9999 g` truncates to **zero**, not
+ *    to one. So does two grams, and three. In the thick of a room nobody notices; a plume is made
+ *    almost entirely of ones and twos, and switching them all off is a different plume.
+ *  - **It is not symmetric.** Truncation toward zero rounds `+7` down and `−7` *up*, so a signed
+ *    quantity gets a bias whose direction depends on its sign — which on a mirrored pair of faces is
+ *    a lean, and a lean is the one thing `BreachSymmetryTest` exists to catch.
+ *
+ * The sim's whole life had been spent at `gravity = Frac(1, 1)`, where `a * LIMIT / LIMIT` is exactly
+ * `a` and neither effect exists. Increment G moves gravity off that value on every tick that anything
+ * is thrusting, and the measurement is blunt: at exactly one g the amidships plume mirrors to within
+ * 1%; at 0.9999 g, truncating, it leant **9%** — the same 9% at 0.99 g, because what matters is not
+ * how far from one it is but that it is not one.
+ *
+ * Round-to-nearest fixes both. One gram at 0.9999 g stays one gram; the rounding is the same distance
+ * for `+7` as for `−7`; and at exactly one g it is still the identity, so nothing that was ever
+ * measured under gravity moves.
+ */
+internal fun scaleByGravity(quantity: Long, gravityRaw: Long): Long {
+    val magnitude = if (quantity < 0L) -quantity else quantity
+    val g = if (gravityRaw < 0L) -gravityRaw else gravityRaw
+    val limit = MomentumField.SPEED_LIMIT_RAW
+    val scaled = (magnitude * g + limit / 2L) / limit
+    val negative = (quantity < 0L) != (gravityRaw < 0L)
+    return if (negative) -scaled else scaled
+}
 
 private const val SETTLING_NUMERATOR = 1L
 private const val SETTLING_DENOMINATOR = 4L

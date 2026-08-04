@@ -261,7 +261,7 @@ private fun settling(
     val magnitude = if (heaviness > 0L) heaviness else -heaviness
     val speed = if (gravityRaw > 0L) gravityRaw else -gravityRaw
     var moving = available * magnitude / s.molarMass.toLong()
-    moving = moving * speed / MomentumField.SPEED_LIMIT_RAW
+    moving = scaleByGravity(moving, speed)
     moving = moving * SETTLING_NUMERATOR / SETTLING_DENOMINATOR
     return if (along) moving else -moving
 }
