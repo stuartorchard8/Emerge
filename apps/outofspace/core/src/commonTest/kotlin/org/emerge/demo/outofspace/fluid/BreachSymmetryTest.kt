@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace.fluid
 import org.emerge.demo.outofspace.OutofspaceConfig
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Grid
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -20,30 +22,36 @@ import kotlin.test.assertTrue
  * gas all goes left, and a plume looks plausible at a glance in almost any state; the eye is bad at
  * spotting a twenty percent lean. So this measures the lean.
  *
- * ### ⚠️ The mirror plane has to be a symmetry of the *world*, not just of the hole
+ * ### ⚠️ Where the vessel sits must not change how it vents
  *
- * This took two wrong answers to pin down, and the wrong answers are worth keeping because both are
- * easy to reach again.
+ * It used to, badly, and the reason is worth keeping because the fix was arrived at through two
+ * wrong answers first.
  *
- * The vessel used to be laid out from `x = 1` in a grid 96 wide, so its port wall sat one tile from
- * the edge of the world. That edge is not scenery — [stepFluid] writes off whatever reaches the
- * outermost ring, so it is a hard vacuum that never fills, and a cell beside it is granted full
- * expansion every tick forever. The plume leaned about eighteen percent toward it.
+ * [stepFluid] once wrote off whatever sat in the outermost ring of tiles at the end of every tick.
+ * That is reasonable bookkeeping and a ruinous boundary condition: a ring emptied every tick is a
+ * **permanent hard vacuum**, so every cell beside it read a neighbour at zero pressure and was
+ * granted full expansion forever. The rim was not an exit, it was a pump — and the starter vessel
+ * sits one tile from it.
  *
- * The first diagnosis was that the *ship* was lopsided about the breach, which was plausible and
- * wrong. The control that settles it is a bare hull box with a **centred** breach, run at two
- * distances from the rim — same ship, same hole, only the position changed:
+ * The control that isolates this is a bare hull box with a breach **centred in it**, so the ship
+ * cannot be blamed, run at two distances from the rim:
  *
  * ```
- *   hull 1..13,  breach 7,  one tile from the rim    ±5: 28% lean
- *   hull 41..53, breach 47, forty tiles from it      ±5:  0% lean
+ *                                  ring deleted   ring kept
+ *   hull 1..13,  breach 7   (rim)     28% lean      6% lean
+ *   hull 41..53, breach 47  (open)     0% lean      0% lean
  * ```
  *
- * So it was the boundary, and the solver was even-handed all along. The second wrong answer was to
- * try to fix it *at* the boundary by making the rim non-reflecting: that stops the suction and makes
- * matters worse (28% → 42%), because a pocket that cannot drain simply fills up instead. Nothing
- * done to a boundary condition can conjure up somewhere for gas to go. The vessel needed room, so
- * `starterVessel` now centres itself and the hull sits at 31..63 with about thirty tiles either side.
+ * The two wrong answers, recorded because both are easy to reach again. First: blaming the *ship's*
+ * shape, which came from a comparison that moved away from the rim and centred within the hull at
+ * the same time and so could not tell the two apart. Second: trying to fix it *at* the boundary by
+ * making the rim non-reflecting — which stops the suction and makes matters worse (28% → 42%),
+ * because a pocket that cannot drain fills up and reflects instead.
+ *
+ * What works is deleting the special case entirely. Gas leaves by flowing off the grid, which
+ * [advectMass] already did and counted; the rim ring is now an ordinary tile that fills and pushes
+ * back like any other. A vessel beside the edge of the world now vents within a few percent of one
+ * in the middle of it, so it can be put wherever the game wants it.
  *
  * Which leaves the honest residual: a breach *off-centre in the ship* still leans at distance,
  * because far enough out one sample is beside a hull and its mirror is past the end of one. That is
@@ -76,19 +84,17 @@ class BreachSymmetryTest {
     /**
      * A breach off-centre in the ship, held only near the hole.
      *
-     * Six tiles from the port wall and twenty-six from the starboard one, so the two sides stop being
-     * comparable quickly: at ±5 the port sample is already in the corner while its mirror still has
-     * twenty tiles of flat hull ahead of it. Only ±2 is a fair pairing, and that is all this asserts.
+     * Six tiles from the port wall and two from the grid rim, so the two sides stop being comparable
+     * quickly: at ±5 the port sample is already at the ship's corner while its mirror still has twenty
+     * tiles of flat hull ahead of it, and oxygen there leans 14%. Only ±2 is a fair pairing, and that
+     * is all this asserts.
      *
-     * It also asserts **bulk only**. Oxygen out here is four to eight grams a tile, where a two-gram
-     * swing reads as thirty percent and means very little; the mixture check needs the midships case,
-     * where the geometry is exact and the comparison can be trusted. Density and pressure are the
-     * larger, steadier numbers, and they are the ones that moved when the vessel was off-centre —
-     * this assertion failed at eighteen percent before it was centred, and passes now.
+     * It is the assertion that was failing at ~18% while the rim was still being emptied every tick,
+     * and it is the reason the vessel can go on sitting where it does.
      */
     @Test
     fun `a breach off-centre in the ship is still even near the hole`() {
-        val leans = leansAfterBreachAt(BOW, listOf(2), speciesToo = false)
+        val leans = leansAfterBreachAt(BOW, listOf(2))
         val bad = leans.filter { it.percent > BOW_TOLERANCE_PERCENT }
         assertTrue(bad.isEmpty(), "the bow plume leans:\n" + bad.joinToString("\n") { "  $it" })
     }
@@ -99,11 +105,11 @@ class BreachSymmetryTest {
     }
 
     /**
-     * Breaches the hull at [breachX], runs [TICKS], and measures every mirrored pair on [ROW].
+     * Breaches the hull at [breachX], runs [TICKS], and measures every mirrored pair of columns.
      *
-     * [ROW] is the first open row *above* the hull. Row 7 is the hull course itself — the breached
-     * tile's own row — so a pair taken there would compare two solid tiles that both hold nothing and
-     * would agree however broken the sim was.
+     * A column is everything above the hull, rows `0 until HULL_ROW`. The hull course itself is
+     * excluded because it is solid — sampled there, two mirrored tiles both hold nothing and agree
+     * however broken the sim is.
      *
      * Mass and mixture are both measured, and they can fail independently: bulk flow moves every
      * species together, so a lopsided *mixture* means [applySpeciesDrift] is leaning while a lopsided
@@ -120,24 +126,46 @@ class BreachSymmetryTest {
         val air = controller.state.air
         val out = ArrayList<Lean>()
         for (d in distances) {
-            val l = grid.index(breachX - d, ROW)
-            val r = grid.index(breachX + d, ROW)
             val at = "±$d from x=$breachX"
-            add(out, "density $at", air.densityAt(l), air.densityAt(r))
-            add(out, "pressure $at", air.pressureAt(l), air.pressureAt(r))
-            if (speciesToo) for (s in Species.GASES) add(out, "${s.name} $at", air.gramsOf(l, s), air.gramsOf(r, s))
+            add(out, "column $at", column(air, grid, breachX - d), column(air, grid, breachX + d))
+            if (!speciesToo) continue
+            for (s in Species.GASES) {
+                add(out, "${s.name} $at", column(air, grid, breachX - d, s), column(air, grid, breachX + d, s))
+            }
         }
         return out
     }
 
     /**
+     * All the gas standing above the hull in one column — the whole plume, not one tile of it.
+     *
+     * Single tiles were the original design and they stopped working once the rim stopped hoarding
+     * gas: with the plume free to leave, a tile out here holds six to nine grams, where the ±1 of
+     * integer transport reads as twenty percent and swamps whatever bias is actually present. The
+     * measurement had lost its resolution rather than the sim having lost its symmetry.
+     *
+     * Summing the column restores it without weakening anything — it is the same quantity over more
+     * samples, so a real lean still shows at full strength while the quantisation averages out. It is
+     * also closer to the question actually being asked, which was never about one tile: it was
+     * whether there is more gas on one side of the hole than the other.
+     */
+    private fun column(air: AirField, grid: Grid, x: Int, species: Species? = null): Long {
+        var sum = 0L
+        for (y in 0 until HULL_ROW) {
+            val tile = grid.index(x, y)
+            sum += if (species == null) air.densityAt(tile) else air.gramsOf(tile, species)
+        }
+        return sum
+    }
+
+    /**
      * Records one pair, skipping those where both sides are tiny.
      *
-     * Out at the edge of a plume the values are single grams, and one gram against two is a hundred
-     * percent lean that means nothing — that is integer rounding, not a bias. [FLOOR] is where that
-     * stops being true. ⚠️ Carbon dioxide is only 1.3% of the mix by mass, so at plume densities it
-     * is almost always below the floor; that is why the mixture check is really a nitrogen and oxygen
-     * check, and why a CO₂-specific bias would not be caught here.
+     * Even summed over a column the far reaches of a plume come to single grams, and one against two
+     * is a hundred percent lean that means nothing — integer rounding, not bias. [FLOOR] is where that
+     * stops being true. ⚠️ Carbon dioxide is only 1.3% of the mix by mass, so it is often below the
+     * floor even summed; the mixture check is in practice a nitrogen and oxygen check, and a
+     * CO₂-specific bias would not be caught here.
      */
     private fun add(into: MutableList<Lean>, what: String, left: Long, right: Long) {
         if (left < FLOOR && right < FLOOR) return
@@ -152,14 +180,14 @@ class BreachSymmetryTest {
     }
 
     private companion object {
-        /** Amidships: the hull spans 31..63, so this is the mirror plane of the ship itself. */
-        const val MIDSHIPS = 47
+        /** Amidships: the hull spans 1..33, so this is the mirror plane of the ship itself. */
+        const val MIDSHIPS = 17
 
-        /** Six tiles from the port wall and twenty-six from the starboard one. */
-        const val BOW = 37
+        /** Six tiles from the port wall, twenty-six from the starboard one, and beside the grid rim. */
+        const val BOW = 7
 
+        /** The hull's top course. Everything above it is outside, and is what gets compared. */
         const val HULL_ROW = 7
-        const val ROW = 6
         const val TICKS = 50
 
         /** Below this many grams a difference is rounding rather than bias. */

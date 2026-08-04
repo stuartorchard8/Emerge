@@ -4,11 +4,11 @@
 # What to read: `flow` should show a coherent jet out of the hole rather than noise, `speed` should
 # peak AT the hole, and airBalance must stay 0 — every gram that leaves is vented, not lost.
 new
-remove 50 7
+remove 20 7
 run 1
 echo --- immediately after the cut
 field flow
-probe 50 7
+probe 20 7
 
 echo --- and as the room empties
 trend 6 10
@@ -30,7 +30,7 @@ expect airVented > 0
 expect peakSpeed > 0
 
 overlay FLOW
-camera centre 50 12 26
+camera centre 20 12 26
 shot breach-flow
 overlay PRESSURE
 shot breach-pressure

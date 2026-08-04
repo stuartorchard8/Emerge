@@ -65,13 +65,31 @@ class FluidStep(
  * never change the ratio between them. A sealed one-tile-wide column needs the second and gets
  * nothing at all from the first.
  *
- * ### Venting
+ * ### Venting, and why there is only one way to do it
  *
- * Gas leaves in two ways, and both are counted. It flows out through the rim faces of the grid under
- * its own pressure — the honest way, carrying momentum with it — and anything still sitting in the
- * outermost ring of tiles at the end of the tick is written off, because that ring is the edge of
- * the world rather than a place. Momentum on a face that has been left with no gas on it goes too:
- * it went with the gas, and leaving it behind would let a vacuum accumulate a push.
+ * Gas leaves by flowing out through the rim faces under its own pressure, carrying its momentum with
+ * it, and [advectMass] counts what crosses. That is the whole mechanism.
+ *
+ * There used to be a second one: anything still sitting in the outermost ring of tiles was written
+ * off at the end of every tick, on the grounds that the ring is the edge of the world rather than a
+ * place. That is defensible bookkeeping and a disastrous boundary condition, because a ring that is
+ * emptied every tick is a **permanent hard vacuum**. Every cell beside it read a neighbour at zero
+ * pressure, so [wantedDivergence] granted it full expansion and [applyPressureForce] gave it a
+ * full-atmosphere shove, every tick, forever, whatever the gas was doing. The rim stopped being an
+ * exit and became a pump — and one with infinite suction sitting a fixed distance from anything
+ * built near it.
+ *
+ * The cost was that **where a vessel sat in its grid changed how it vented**. The same hull with a
+ * centred breach leaned 28% one tile from the rim and 0% forty tiles away. It was mistaken for a
+ * fluid-model bug twice, and it was neither: it was a boundary quietly rewriting the problem.
+ *
+ * Deleting the ring deletion fixes it at the source. The rim tiles are ordinary tiles that fill and
+ * push back like any others, the outermost *faces* open onto nothing, and gas crosses them when the
+ * pressure behind it says so — which is what an opening onto space is. Nothing has to be told where
+ * the edge of the world is.
+ *
+ * Momentum on a face left with no gas on it still goes: it went with the gas, and leaving it behind
+ * would let a vacuum accumulate a push.
  *
  * [grams], [mx] and [my] are the tick's working arrays, **edited in place** — the same arrays the
  * edit pass has already written to, so a hull put down this tick has moved its air out of the way
@@ -103,15 +121,7 @@ fun stepFluid(
     val moved = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, tileGrams)
     val carried = advectMomentum(edges, mx, my, moved.flux, tileGrams)
 
-    var vented = moved.ventedGrams
-    for (tile in 0 until grid.size) {
-        if (!grid.isEdge(tile)) continue
-        val base = tile * Species.COUNT
-        for (s in Species.GASES) {
-            vented += grams[base + s.ordinal]
-            grams[base + s.ordinal] = 0L
-        }
-    }
+    val vented = moved.ventedGrams
 
     // Momentum cannot outlive the gas carrying it. Anything on a face that has just been emptied
     // left with what was on it; keeping it would let a vacuum quietly store a shove.

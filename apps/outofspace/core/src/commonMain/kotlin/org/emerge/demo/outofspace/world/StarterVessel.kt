@@ -131,8 +131,8 @@ fun starterVessel(grid: Grid): VesselState {
     put(11, wy + 2, Sensor(Direction.Up, Channel.Red))
 
     // ── The hull, enclosing all of it ──
-    val left = HULL_LEFT
-    val right = HULL_RIGHT
+    val left = 1
+    val right = 33
     val top = y - 5
     val bottom = wy + 5
     for (hx in left..right) {
@@ -144,55 +144,9 @@ fun starterVessel(grid: Grid): VesselState {
         put(right, hy, Hull())
     }
 
-    return centred(grid, machines, rails)
+    return VesselState(grid = grid, machines = machines.toList(), rails = rails.toList())
 }
 
-/**
- * Slides the finished vessel into the middle of its grid.
- *
- * ### Why this is not cosmetic
- *
- * It was laid out from `x = 1`, which put its port wall one tile from the edge of the world and left
- * sixty tiles of space to starboard. The rim is not scenery: [stepFluid] writes off whatever reaches
- * the outermost ring, so it is a hard vacuum that never fills, and a cell beside it is granted the
- * full expansion demand every tick forever. A vessel sitting on top of one vents into a six-tile
- * pocket on one side and into open space on the other.
- *
- * That is worth a lot more than it sounds. The same symmetrical hull with a centred breach leans
- * **28% one tile from the rim and 0% forty tiles away** — same ship, same hole, same solver. It was
- * mistaken twice for a bug in the fluid model, and it is neither a bug nor fixable there: a boundary
- * condition cannot conjure up somewhere for the gas to go. Suppressing the rim's suction only makes
- * it worse, because then the pocket fills and reflects instead of draining. The gas needs *room*, and
- * the only thing that provides room is not being next to the edge.
- *
- * So the layout keeps its comfortable absolute coordinates and gets translated once at the end,
- * which is why this is a shift rather than an origin threaded through forty call sites. Rails carry
- * directional joins and bridges carry ports, and a pure translation leaves every one of them
- * pointing the way it did.
- */
-private fun centred(grid: Grid, machines: Array<Machine?>, rails: Array<Segment?>): VesselState {
-    val shift = (grid.width - HULL_SPAN) / 2 - HULL_LEFT
-    if (shift <= 0) return VesselState(grid = grid, machines = machines.toList(), rails = rails.toList())
-
-    val movedMachines = arrayOfNulls<Machine>(grid.size)
-    val movedRails = arrayOfNulls<Segment>(grid.size)
-    for (y in 0 until grid.height) {
-        for (x in 0 until grid.width) {
-            val to = x + shift
-            if (to >= grid.width) continue
-            val from = grid.index(x, y)
-            val into = grid.index(to, y)
-            movedMachines[into] = machines[from]
-            movedRails[into] = rails[from]
-        }
-    }
-    return VesselState(grid = grid, machines = movedMachines.toList(), rails = movedRails.toList())
-}
-
-/** Where the hull is drawn before [centred] moves it — the two numbers that shift has to undo. */
-private const val HULL_LEFT = 1
-private const val HULL_RIGHT = 33
-private const val HULL_SPAN = HULL_RIGHT - HULL_LEFT + 1
 /** `RUN = ALWAYS − RED`: dig at full rate until something raises RED, then stop dead. */
 private val STOP_WHEN_RED = Wiring(
     mapOf(
