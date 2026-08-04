@@ -19,6 +19,7 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null) {
     Storage("STORAGE"),
     Sensor("SENSOR"),
     Vent("VENT"),
+    Valve("VALVE", Conduit.Pipe),
     Hull("HULL"),
     ;
 

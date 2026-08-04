@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 7
+    const val VERSION = 8
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -219,6 +219,9 @@ object Save {
         val f = StringBuilder(s.conduit.name)
         f.append(" links=").append(s.links)
         s.channel?.let { f.append(" channel=").append(it.name) }
+        // Written only when set, like every other optional field: a file full of `valve=0` would
+        // hide the handful of tiles that are actually taps.
+        if (s.valve) f.append(" valve=1")
         s.held?.let { f.append(" held=").append(writePacket(it)) }
         // A gauge's reading persists after the packet has gone, so it is state, not decoration.
         s.lastForm?.let { f.append(" lastform=").append(it.name) }
@@ -528,7 +531,7 @@ object Save {
             MachineKind.Vent -> Vent(ventedGrams = num("vented", 0L))
             MachineKind.Hull -> Hull()
             // Track is a segment, not a machine, and has its own line.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge ->
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve ->
                 fail("$kindName is a conduit, not a machine")
         }
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: Wiring.RUNNING
@@ -564,6 +567,7 @@ object Save {
             },
             lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
             lastMass = f["lastmass"]?.toLongOrNull() ?: 0L,
+            valve = f["valve"] == "1",
             joules = f["k"]?.toLongOrNull() ?: conduit.material.ambientPerTile,
         )
     }

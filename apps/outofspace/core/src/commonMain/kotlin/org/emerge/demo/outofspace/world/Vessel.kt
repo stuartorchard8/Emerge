@@ -293,6 +293,20 @@ data class VesselState(
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
 
+    /**
+     * The heat that atmosphere is carrying, in the rooms and in the pipes — what [baselineAirJoules]
+     * anchors.
+     *
+     * The counterpart to [atmosphereGrams], and it arrived a whole increment later than it should
+     * have. The mass side got a both-fields total when the pipes were built; the energy side kept
+     * reading `air.totalJoules` alone. That was invisible for exactly as long as the pipe layer was
+     * sealed — no gas crossed, so no joules crossed — and the moment a valve opened, every joule that
+     * went into the plumbing read as destroyed. The lesson is the ledger's own: two quantities that
+     * share a baseline have to be summed the same way, and the second one is easy to forget because
+     * nothing fails until something moves.
+     */
+    val atmosphereJoules: Long get() = air.totalJoules + pipeAir.totalJoules
+
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =
         (air.pressureAt(index) * 100 / AMBIENT_PRESSURE).toInt()

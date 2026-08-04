@@ -86,7 +86,7 @@ class OutofspaceHud {
                 // venting gas, and back into the fabric — so what the solids say they gave the air
                 // appears here with the opposite sign, and both sides have to close on their own.
                 val airHeatBalanced =
-                    s.air.totalJoules + s.airVentedJoules - s.solidToAirJoules == s.baselineAirJoules
+                    s.atmosphereJoules + s.airVentedJoules - s.solidToAirJoules == s.baselineAirJoules
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
                 row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
                     if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)

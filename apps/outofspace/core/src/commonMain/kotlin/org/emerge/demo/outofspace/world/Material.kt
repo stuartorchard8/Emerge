@@ -151,7 +151,7 @@ val MachineKind.material: Material
         MachineKind.Sensor, MachineKind.Vent,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
-        MachineKind.Pipe -> Conduit.Pipe.material
+        MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
         MachineKind.Bridge -> Conduit.Rail.material
     }
 

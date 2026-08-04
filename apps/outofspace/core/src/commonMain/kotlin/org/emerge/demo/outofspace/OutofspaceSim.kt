@@ -59,9 +59,12 @@ import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.fluid.ApertureField
+import org.emerge.demo.outofspace.world.fluid.exchangeLayers
 import org.emerge.demo.outofspace.world.fluid.pipeApertures
 import org.emerge.demo.outofspace.world.fluid.pipeVolumes
 import org.emerge.demo.outofspace.world.fluid.stepFluid
+import org.emerge.demo.outofspace.world.fluid.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.fluid.gasCapacity
 import org.emerge.sim.core.PlayerId
@@ -191,26 +194,50 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
         w.applyBodyHeat(bodies, conducted.joules)
 
+        val edges = EdgeGrid(state.grid)
+        val conduits = w.conduitsSnapshot()
+        val roomApertures = ApertureField.derive(edges, structure)
+        val plumbing = pipeApertures(edges, conduits)
+        val volumes = pipeVolumes(state.grid, conduits)
+
+        // Valves first, before either layer is solved. A crossing delivers pressure into a cell, and
+        // it should be free to propagate away in the tick it arrived rather than sitting for one —
+        // the same reason conduction runs before the fluid. It also settles the ordering question
+        // between the two layers by making it moot: both of them see the exchange, so neither is
+        // privileged by going first. See [exchangeLayers].
+        val crossed = exchangeLayers(
+            edges = edges,
+            openings = valveOpenings(state.grid, conduits),
+            roomApertures = roomApertures,
+            roomGrams = w.airGrams,
+            roomJoules = w.airJoules,
+            roomMx = w.momentumX,
+            roomMy = w.momentumY,
+            pipeApertures = plumbing,
+            pipeGrams = w.pipeGrams,
+            pipeJoules = w.pipeJoules,
+            pipeMx = w.pipeMomentumX,
+            pipeMy = w.pipeMomentumY,
+            pipeVolumes = volumes,
+        )
+
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
-        val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules)
+        val fluid = stepFluid(
+            edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules,
+        )
 
         // The pipes, on the same lattice and through the same solver — see [pipeApertures]. Their
         // connectivity comes from what the player drew rather than from what is solid, and their
         // cells are a fraction of a tile, which is the whole of what makes a pipe a pipe.
-        //
-        // Run after the rooms rather than before, and it does not yet matter which: nothing connects
-        // the two fields, so this tick they are genuinely independent. The order becomes a real
-        // question when a vent exists, and it wants settling by measurement rather than by argument.
-        val edges = EdgeGrid(state.grid)
         val pipes = stepFluid(
             edges,
-            pipeApertures(edges, w.conduitsSnapshot()),
+            plumbing,
             w.pipeGrams,
             w.pipeMomentumX,
             w.pipeMomentumY,
             state.gravity,
             w.pipeJoules,
-            pipeVolumes(state.grid, w.conduitsSnapshot()),
+            volumes,
         )
         // A pipe has no aperture onto the rim, so nothing can cross it. Checked rather than assumed:
         // this is the one number that would silently drain the shared air ledger if it were wrong.
@@ -220,7 +247,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         return state.copy(
             machines = w.machines.toList(),
-            conduits = w.conduitsSnapshot(),
+            conduits = conduits,
             bridges = w.bridges.toList(),
             diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
@@ -247,8 +274,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             momentum = MomentumField.of(edges, fluid.momentumX, fluid.momentumY),
             // Gas leaning on a pipe elbow pushes the ship exactly as gas leaning on a bulkhead does.
             // Same term, because it is the same physics happening one layer over.
-            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX,
-            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY,
+            // Gas shoved into the closed end of a pipe leans on the fitting, and the fitting is
+            // bolted to the ship — see [exchangeLayers].
+            vesselImpulseX = state.vesselImpulseX + fluid.vesselX + pipes.vesselX + crossed.vesselX,
+            vesselImpulseY = state.vesselImpulseY + fluid.vesselY + pipes.vesselY + crossed.vesselY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             motion = w.motion.freeze(),
@@ -540,6 +569,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             if (layer(c)[edit.index] == null) {
                                 layer(c)[edit.index] = Segment(c).also { built(it.joules) }
                             }
+                        }
+                        // Unlike a gauge, this upgrades a run that is already there rather than
+                        // only laying a fresh tile. A valve is almost always something you add to
+                        // plumbing you have already drawn, and refusing that would mean tearing up a
+                        // tile of pipe to put a tap on it.
+                        MachineKind.Valve -> {
+                            val existing = layer(Conduit.Pipe)[edit.index]
+                            layer(Conduit.Pipe)[edit.index] =
+                                existing?.copy(valve = true)
+                                    ?: Segment(Conduit.Pipe, valve = true).also { built(it.joules) }
                         }
                         MachineKind.Gauge -> if (rails[edit.index] == null) {
                             rails[edit.index] = Segment(Conduit.Rail, channel = Channel.Amber)
@@ -1028,7 +1067,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Vent -> Vent()
             MachineKind.Hull -> Hull()
             // Fittings are placed onto their layer directly and never come through here.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Bridge -> Hull()
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> Hull()
         }
     }
 }

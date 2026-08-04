@@ -85,6 +85,23 @@ fun pipeApertures(edges: EdgeGrid, conduits: Conduits): ApertureField {
 }
 
 /**
+ * Where gas may cross between a room and the pipe sharing its tile: a length of pipe that is a valve.
+ *
+ * Everything else is [ApertureField.CLOSED], which is every tile in a vessel with no plumbing in it
+ * and every tile of an ordinary run. A pipe is sealed unless somebody opened it, which is what a pipe
+ * is.
+ *
+ * The width is [ApertureField.OPEN] — as wide as the way gets. That is a real position rather than a
+ * placeholder for a tuning constant: [exchangeLayers] is bounded by the volumes it is equalising
+ * between, so a fully open valve moves the gas that fits and no more. A throttled valve is this
+ * number scaled down, and comes free the moment anything wants to ask for one.
+ */
+fun valveOpenings(grid: Grid, conduits: Conduits): IntArray =
+    IntArray(grid.size) { tile ->
+        if (conduits.at(Conduit.Pipe, tile)?.isValve == true) ApertureField.OPEN else ApertureField.CLOSED
+    }
+
+/**
  * [PIPE_VOLUME] wherever a pipe is laid, and a whole tile everywhere else.
  *
  * The cells with no pipe on them never hold gas and never open a face, so their volume is never read

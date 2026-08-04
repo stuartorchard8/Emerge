@@ -1,0 +1,42 @@
+# A valve: the one place gas crosses between the rooms and the plumbing.
+#
+# Until this, the pipe layer was sealed — its ledger was easy because nothing could cross it. A valve
+# opens it, and the interesting number is that the SHARED air ledger still closes: room gas and pipe
+# gas share one baseline precisely because they interconvert, so a gram lost on the way through has
+# nowhere to hide.
+#
+# What to read in the shot:
+#   a copper pipe run threaded through the vessel, with one bright collar on it — that is the valve;
+#   the `pipe` field map should show gas spreading out along the run from the collar, not everywhere
+#   at once, because it has to flow there through the pipe like anything else.
+# Along row 9, which is open deck. Worth saying because the obvious row to pick is not: a valve needs
+# ROOM AIR on its own tile to exchange with, and a machine's footprint has none — placing a building
+# displaces the air out of every tile it covers. A valve buried under the starter vessel's smelter
+# opens onto a vacuum and does nothing, which looks exactly like a broken valve.
+new
+
+brush PIPE
+drag 14 9 26 9
+
+# The brush opens a length of run that is already there rather than laying a fresh tile, which is how
+# a player actually builds one: draw the plumbing, then decide where it breathes.
+brush VALVE
+place 20 9
+
+camera centre 20 9
+camera zoom 28
+shot valve
+
+echo --- the pipes start empty and the valve is the only way in
+expect pipeGrams > 0
+expect airBalance = 0
+
+echo --- gas crosses, runs along the plumbing, and the shared ledger still closes
+run 300
+expect pipeGrams > 400
+expect airVented = 0
+expect airBalance = 0
+expect airHeatBalance = 0
+
+field pipe
+shot valve-filled

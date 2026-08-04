@@ -84,9 +84,31 @@ data class Segment(
      * The default reads [conduit], which is declared above it: a tile of rail starts as iron at room
      * temperature and a tile of pipe as copper, without anything having to remember to set it.
      */
+    /**
+     * If set, this length of pipe is a **valve**: gas crosses freely between it and the room sharing
+     * its tile.
+     *
+     * A property of a segment for exactly the reason a gauge is one, and it took a wrong turn to
+     * find out. Built first as a deck machine, it did not work at all and could not have: placing a
+     * building *displaces the air out of its own tile*, so a valve-as-machine opened onto a cell
+     * that placing it had just emptied, and nothing ever crossed. That is not a bug in the placement
+     * rule — a machine is a solid thing that occupies a deck, and the rule is right. A valve is not
+     * one. It is a fitting on a run, like the pipe it sits on, and fittings do not displace air.
+     *
+     * Being a segment also makes the impossible states impossible: a valve cannot exist without a
+     * pipe to be part of, it needs no ports, and it cannot break a run in two.
+     *
+     * Meaningful only on [Conduit.Pipe]. Nothing enforces that, in the same way nothing stops a
+     * channel being set on a pipe — the brush only ever sets it on plumbing, and [isValve] is asked
+     * exclusively by the pipe layer.
+     */
+    val valve: Boolean = false,
     val joules: Long = conduit.material.ambientPerTile,
 ) {
     val isGauge: Boolean get() = channel != null
+
+    /** True for a length of pipe that is open to the room around it — see [valve]. */
+    val isValve: Boolean get() = valve && conduit == Conduit.Pipe
 
     /** Whether this tile is joined to its neighbour in [dir]. */
     fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0

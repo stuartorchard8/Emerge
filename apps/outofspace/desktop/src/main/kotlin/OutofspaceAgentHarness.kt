@@ -433,7 +433,7 @@ object OutofspaceAgentHarness {
                     state.generatedJoules - state.constructionJoules - state.baselineJoules
                 ).toDouble()
             "airHeatBalance" -> (
-                state.air.totalJoules + state.airVentedJoules - state.solidToAirJoules -
+                state.atmosphereJoules + state.airVentedJoules - state.solidToAirJoules -
                     state.baselineAirJoules
                 ).toDouble()
             "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()

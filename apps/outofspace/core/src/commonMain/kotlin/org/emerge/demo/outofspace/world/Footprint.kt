@@ -17,7 +17,7 @@ val MachineKind.size: Int
     get() = when (this) {
         // Fittings and the small deck pieces. A bridge is three tiles long but occupies none of
         // them, so its size says nothing about space -- only its two ports place it.
-        MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Bridge -> 1
+        MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> 1
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Hull -> 1
         MachineKind.Miner -> 3
         MachineKind.Processor, MachineKind.Storage -> 3

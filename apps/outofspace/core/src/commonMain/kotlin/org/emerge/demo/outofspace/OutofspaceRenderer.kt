@@ -329,6 +329,11 @@ class OutofspaceRenderer {
             )
         }
         rect(cx, cy, Visual.PIPE_DIAMETER * tilePx, Visual.PIPE_DIAMETER * tilePx, color)
+        // A valve wears a bright collar, the way a gauge wears its channel: wider than the pipe so it
+        // reads at a glance against a long run, and centred so it does not hide which arms are joined.
+        if (segment.isValve) {
+            rect(cx, cy, Visual.VALVE_COLLAR * tilePx, Visual.VALVE_COLLAR * tilePx, Colors.VALVE_CORE)
+        }
     }
 
     /**
@@ -836,6 +841,8 @@ class OutofspaceRenderer {
 
         // ── Component colours ───────────────────────────────────────────
         const val VENT_CORE     = 0x0A0A0CFFL
+        /** Bright, because a valve's core is the way through rather than a hole into space. */
+        const val VALVE_CORE    = 0xD8A860FFL
         const val DEBRIS_TOP    = 0x00000060L
 
         // ── Port colours ────────────────────────────────────────────────
@@ -893,6 +900,8 @@ class OutofspaceRenderer {
 
         /** Narrower than the rail, so a crossing reads as two runs rather than one junction. */
         const val PIPE_DIAMETER = 0.28f
+        /** Wider than the pipe, so a tap reads against a long run without hiding its arms. */
+        const val VALVE_COLLAR  = 0.46f
         const val PIPE_ARM_LENGTH = (1f-PIPE_DIAMETER)/2f
         const val PIPE_ARM_OFFSET = (1f+PIPE_DIAMETER)/4f
         const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
@@ -972,6 +981,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.Hull -> 0x4A5464FFL
     MachineKind.Vent -> 0x3A3A44FFL
+    MachineKind.Valve -> 0xD8A860FFL
 }
 
 /**
