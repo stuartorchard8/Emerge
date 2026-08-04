@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.Miner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.SaveError
@@ -138,7 +139,10 @@ class SaveTest {
             composition = Mixture.of(Species.Iron to 700L, Species.Carbon to 300L),
             buffer = Resource(Form.Ore, Mixture.of(Species.Iron to 123L)),
             carry = 37L,
-        ).withWiring(starterVessel(cfg.grid)[cfg.grid.index(5, 19)]!!.wiring)
+            // Any non-default wiring will do; the starter vessel's second miner is the one that has
+            // some. Found rather than indexed, because the layout is free to move — it was pinned at
+            // (5,19) until the vessel was centred in its grid, and then this broke.
+        ).withWiring(starterVessel(cfg.grid).machines.first { it is Miner && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.index(7, 4)] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L)))
 
         val state = VesselState(grid, machines.toList())
