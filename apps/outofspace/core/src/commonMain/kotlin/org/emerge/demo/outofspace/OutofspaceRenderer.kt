@@ -23,6 +23,8 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
+import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.UiRectRenderer
 import kotlin.math.floor
@@ -213,11 +215,38 @@ class OutofspaceRenderer {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
                     val index = grid.index(x, y)
-                    val tint = when {
-                        overlay == Overlay.Heat -> temperatureColor(state.kelvinAt(index))
-                        else -> pressureColor(state, index)
+                    val tint = when (overlay) {
+                        Overlay.Heat -> temperatureColor(state.kelvinAt(index))
+                        Overlay.Air -> mixtureColor(state, index)
+                        Overlay.Pressure -> divergingColor(state.air.pressureAt(index).toFloat() / AMBIENT_PRESSURE)
+                        Overlay.Density -> divergingColor(state.air.densityAt(index).toFloat() / AirField.AMBIENT_AIR.total)
+                        Overlay.Flow -> Colors.FLOW_BACKDROP
+                        Overlay.None -> 0L
                     }
                     tileRect(x, y, 1f, tint)
+                }
+            }
+        }
+
+        // Flow is a vector, so it gets drawn rather than tinted — over its own backdrop, which is
+        // there to darken the deck so faint air is still visible against it.
+        if (overlay == Overlay.Flow) {
+            // Scaled to the fastest tile *on screen*, not to a fixed constant. A fixed one has to be
+            // chosen for either a settling room or an exhaust plume and is useless for the other,
+            // and the first attempt at this overlay was exactly that: a hard-coded ceiling against
+            // which ordinary circulation was uniformly black.
+            var peak = 0f
+            for (y in minY..maxY) {
+                for (x in minX..maxX) {
+                    val s = state.flow.speedAt(grid.index(x, y))
+                    if (s > peak) peak = s
+                }
+            }
+            if (peak > 0f) {
+                for (y in minY..maxY) {
+                    for (x in minX..maxX) {
+                        drawFlow(state, grid.index(x, y), x, y, peak)
+                    }
                 }
             }
         }
@@ -548,7 +577,7 @@ class OutofspaceRenderer {
      * wrong gas or short of the right one, and either is a problem you want to spot from across the
      * vessel rather than by pointing at tiles one at a time.
      */
-    private fun pressureColor(state: VesselState, index: Int): Long {
+    private fun mixtureColor(state: VesselState, index: Int): Long {
         val pressure = state.air.pressureAt(index)
         if (pressure <= 0L) return Colors.OVERLAY_EMPTY
         val f = (pressure.toFloat() / AirField.AMBIENT_AIR.total).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
@@ -560,6 +589,90 @@ class OutofspaceRenderer {
             (((base shr 8) and 0xFF) * scale).toInt(),
             Colors.HEAT_ALPHA,
         )
+    }
+
+    /**
+     * A scalar as a *deviation from ambient*: blue where there is less than there should be, orange
+     * where there is more, and near-neutral where the vessel is behaving.
+     *
+     * Diverging rather than a single ramp, because both of the fields drawn with this have a
+     * meaningful zero — one atmosphere — and the question asked of them is almost always "which way
+     * is this wrong", not "how much is there". A one-ended ramp answers that only by making the
+     * viewer remember which shade ambient was, which nobody does.
+     *
+     * [f] is the value over its ambient, so 1.0 is normal. The span either side is [PRESSURE_SPAN]
+     * rather than the full range down to vacuum, for the reason [temperatureColor] gives at length:
+     * an honest full-range ramp renders every difference worth looking at as one flat wash.
+     */
+    private fun divergingColor(f: Float): Long {
+        if (f <= 0f) return Colors.OVERLAY_VACUUM
+        val d = ((f - 1f) / PRESSURE_SPAN).coerceIn(-1f, 1f)
+        return if (d <= 0f) {
+            val c = -d
+            rgba(
+                (ColorBase.THIN_R + (Colors.THIN_R_TARGET - ColorBase.THIN_R) * c).toInt(),
+                (ColorBase.THIN_G + (Colors.THIN_G_TARGET - ColorBase.THIN_G) * c).toInt(),
+                (ColorBase.THIN_B + (Colors.THIN_B_TARGET - ColorBase.THIN_B) * c).toInt(),
+                Colors.HEAT_ALPHA,
+            )
+        } else {
+            rgba(
+                (ColorBase.THIN_R + (Colors.DENSE_R_TARGET - ColorBase.THIN_R) * d).toInt(),
+                (ColorBase.THIN_G + (Colors.DENSE_G_TARGET - ColorBase.THIN_G) * d).toInt(),
+                (ColorBase.THIN_B + (Colors.DENSE_B_TARGET - ColorBase.THIN_B) * d).toInt(),
+                Colors.HEAT_ALPHA,
+            )
+        }
+    }
+
+    /**
+     * One tile's air velocity, as a tapering streak from the tile centre in the direction of flow.
+     *
+     * ### Why a streak of squares and not an arrow
+     *
+     * Because the only primitive here is an axis-aligned rectangle — there is no rotation in the
+     * instanced rect shader — so a real arrowhead at an arbitrary angle is not available. Decomposing
+     * the velocity into an x-bar and a y-bar was the other option and was rejected: it draws a
+     * corner, and a corner reads as two flows meeting rather than one flow going diagonally.
+     *
+     * A run of squares stepping along the velocity, each smaller and fainter than the last, has no
+     * such ambiguity. It points where it is going at any angle, it says which end is the head without
+     * needing a head, and it degrades gracefully — slow air is a dot, fast air is a comet. The head
+     * sits *at* the tile centre so that the streak's position still reads as the tile it belongs to.
+     *
+     * [peak] is the fastest speed on screen, so the picture is always scaled to whatever is currently
+     * happening; the *lengths* are relative and only the direction is absolute. That is the right
+     * trade for a debugging view — the question is nearly always "where is it going", and an overlay
+     * that goes blank whenever the vessel is calm answers it for exactly the cases that do not need
+     * answering.
+     */
+    private fun drawFlow(state: VesselState, tile: Int, x: Int, y: Int, peak: Float) {
+        val speed = state.flow.speedAt(tile)
+        if (speed <= 0f) return
+        val fraction = speed / peak
+        if (fraction < Visual.FLOW_MIN_FRACTION) return
+
+        // Unit direction. `speed` is the magnitude of exactly this pair, so this cannot divide by
+        // zero once the check above has passed.
+        val scale = MomentumField.SPEED_LIMIT_RAW.toFloat() * speed
+        val dx = state.flow.xAt(tile).toFloat() / scale
+        val dy = state.flow.yAt(tile).toFloat() / scale
+
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        val reach = fraction * Visual.FLOW_MAX_REACH
+
+        for (i in 0 until Visual.FLOW_SEGMENTS) {
+            // Step *backwards* from the centre, so the head stays put and the tail grows behind it.
+            val along = -reach * i / (Visual.FLOW_SEGMENTS - 1)
+            val taper = 1f - i.toFloat() / Visual.FLOW_SEGMENTS
+            val size = Visual.FLOW_HEAD_SIZE * taper * tilePx
+            rect(
+                cx + dx * along * tilePx, cy + dy * along * tilePx,
+                size, size,
+                rgba(0xFF, 0xFF, 0xFF, (Colors.FLOW_ALPHA * taper).toLong()),
+            )
+        }
     }
 
     private fun rgba(r: Int, g: Int, b: Int, a: Long): Long =
@@ -595,10 +708,22 @@ class OutofspaceRenderer {
         const val HOT_R = 0x50
         const val HOT_G = 0xA0
         const val HOT_B = 0xC0
+
+        /** Ambient, the midpoint of the diverging ramp: a dark neutral that reads as "nothing to see". */
+        const val THIN_R = 0x2A
+        const val THIN_G = 0x2E
+        const val THIN_B = 0x38
     }
 
     companion object {
-        private const val MAX_RECTS = 20_000
+        /**
+         * Raised from 20,000 when the flow overlay arrived: it draws up to four rects per visible
+         * tile *on top of* the tint pass, which at a wide zoom is more than the deck and the
+         * machines put together. Hitting the cap does not crash — [rect] drops the overflow — but it
+         * drops it silently, and an observability tool that quietly stops drawing at the far side of
+         * the screen is worse than none.
+         */
+        private const val MAX_RECTS = 48_000
 
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
@@ -611,6 +736,13 @@ class OutofspaceRenderer {
 
         /** Kelvin either side of ambient that saturates the heat ramp. */
         private const val RAMP_SPAN = 60f
+
+        /**
+         * Fraction of an atmosphere either side of ambient that saturates the pressure and density
+         * ramps. Half an atmosphere: a room down to two thirds is a problem you want to see, and a
+         * breach reaching full saturation on its way to vacuum is the point.
+         */
+        private const val PRESSURE_SPAN = 0.5f
     }
 
     /** Palette colours for machine kinds, tiles, UI states, and overlays. */
@@ -626,6 +758,18 @@ class OutofspaceRenderer {
         // ── Overlay colours ─────────────────────────────────────────────
         const val OVERLAY_VACUUM  = 0x05070CD0L
         const val OVERLAY_EMPTY   = 0x120A10D8L
+
+        /** Ends of the diverging ramp: thin air toward blue, dense air toward orange. */
+        const val THIN_R_TARGET  = 0x40
+        const val THIN_G_TARGET  = 0x90
+        const val THIN_B_TARGET  = 0xE0
+        const val DENSE_R_TARGET = 0xF0
+        const val DENSE_G_TARGET = 0x90
+        const val DENSE_B_TARGET = 0x30
+
+        /** A near-opaque wash under the flow streaks, so faint air still stands out from the deck. */
+        const val FLOW_BACKDROP = 0x0A0D14E0L
+        const val FLOW_ALPHA = 224f
 
         // ── UI highlights ───────────────────────────────────────────────
         const val HOVER   = 0xFFFFFF1AL
@@ -731,6 +875,14 @@ class OutofspaceRenderer {
         const val PRESSURE_MAX_F = 1.6f
         const val PRESSURE_MIN_SCALE = 0.12f
         const val PRESSURE_MAX_SCALE = 1f
+
+        // ── Flow streaks ────────────────────────────────────────────────
+        /** Below this share of the fastest tile on screen, a streak is not drawn at all. */
+        const val FLOW_MIN_FRACTION = 0.04f
+        /** How far the tail of the fastest streak reaches behind its head, in tiles. */
+        const val FLOW_MAX_REACH = 0.9f
+        const val FLOW_SEGMENTS = 4
+        const val FLOW_HEAD_SIZE = 0.26f
     }
 }
 

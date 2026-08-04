@@ -6,7 +6,9 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.FlowField
 import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.fluid.tileMass
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
@@ -123,6 +125,16 @@ data class VesselState(
      * thing that can disagree with the world, and this is cheap to fold.
      */
     val stockpile: Stockpile get() = Stockpile.of(machines)
+
+    /**
+     * Where the air is going, tile by tile — see [FlowField].
+     *
+     * Presentation and inspection only; the sim reads [momentum] directly. Cached because the flow
+     * overlay wants the whole field every frame while the state behind it only changes once a tick,
+     * and rebuilding it sixty times for one tick's worth of answer would be sixty times the work for
+     * the same picture.
+     */
+    val flow: FlowField by lazy { FlowField.derive(EdgeGrid(grid), momentum, tileMass(grid.size, air.copyGrams())) }
 
     /** Temperature of a tile in kelvin, accounting for what is in it. */
     fun kelvinAt(index: Int): Int =

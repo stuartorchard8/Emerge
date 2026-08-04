@@ -3,7 +3,9 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.MachineKind
@@ -264,7 +266,10 @@ class OutofspaceHud {
                 if (k > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        if (structure == Structure.Interior) {
+        // Wherever there is gas, not only inside — a vented plume is out in the vacuum by definition,
+        // and it was the one thing the fluid sim does that the inspector could not be pointed at.
+        val density = s.air.densityAt(index)
+        if (structure == Structure.Interior || density > 0L) {
             val percent = s.pressurePercentAt(index)
             keyValue(
                 "PRESSURE",
@@ -276,9 +281,35 @@ class OutofspaceHud {
                     else -> 0x9ED0B0FFL
                 },
             )
+            // Beside pressure, because the two being different is the whole point: equal readings
+            // mean ordinary air, and a gap between them means the tile has been sorted by weight.
+            keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            val speed = s.flow.speedAt(index)
+            if (speed > 0f) {
+                keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, index)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            }
             val mix = s.air.mixtureAt(index)
             if (!mix.isEmpty) row("   " + composition(mix), 0x9AA4B4FFL)
         }
+    }
+
+    /**
+     * Which way a tile's air is going, as an eight-point compass arrow.
+     *
+     * A bearing rather than two signed components, because "is it leaving through that breach" is the
+     * question, and reading a sign pair as a direction is a step the panel can take for the player.
+     * **+y is down** — see [org.emerge.demo.outofspace.world.fluid.EdgeGrid] — so the vertical glyphs
+     * are the opposite way round from what the arithmetic first suggests.
+     */
+    private fun bearing(s: VesselState, index: Int): String {
+        val x = s.flow.xAt(index)
+        val y = s.flow.yAt(index)
+        // A component under an eighth of the other is not a direction, it is rounding.
+        val ax = if (x < 0) -x else x
+        val ay = if (y < 0) -y else y
+        val horizontal = if (ax * 8 < ay) "" else if (x > 0) ">" else "<"
+        val vertical = if (ay * 8 < ax) "" else if (y > 0) "v" else "^"
+        return horizontal + vertical
     }
 
     /**
