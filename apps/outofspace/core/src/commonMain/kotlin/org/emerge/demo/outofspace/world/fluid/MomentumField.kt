@@ -70,11 +70,11 @@ class MomentumField(
      * as a real half-cell of nothing — which would read every escaping draught at double speed.
      */
     fun velocityX(edge: Int, tileGrams: LongArray): Frac =
-        velocity(x[edge], faceGrams(tileGrams, edges.xEdgeBefore(edge), edges.xEdgeAfter(edge)))
+        velocity(x[edge], xFaceGrams(edges, tileGrams, edge))
 
     /** Velocity across a y-edge in tiles per tick. Positive is downward — see [EdgeGrid]. */
     fun velocityY(edge: Int, tileGrams: LongArray): Frac =
-        velocity(y[edge], faceGrams(tileGrams, edges.yEdgeBefore(edge), edges.yEdgeAfter(edge)))
+        velocity(y[edge], yFaceGrams(edges, tileGrams, edge))
 
     /**
      * Whether every face is moving slower than a tile per tick.
@@ -112,14 +112,6 @@ class MomentumField(
         /** Builds from raw per-face momenta. The arrays are copied. */
         fun of(edges: EdgeGrid, x: LongArray, y: LongArray): MomentumField =
             MomentumField(edges, x.copyOf(), y.copyOf())
-
-        private fun faceGrams(tileGrams: LongArray, before: Int, after: Int): Long {
-            var sum = 0L
-            var count = 0
-            if (before >= 0) { sum += tileGrams[before]; count++ }
-            if (after >= 0) { sum += tileGrams[after]; count++ }
-            return if (count == 0) 0L else sum / count
-        }
 
         private fun velocity(momentum: Long, grams: Long): Frac =
             if (grams <= 0L) Frac(0L) else Frac(momentum * Int.MAX_VALUE.toLong() / grams)

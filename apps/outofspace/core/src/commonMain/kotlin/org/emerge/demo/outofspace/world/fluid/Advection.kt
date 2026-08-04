@@ -80,15 +80,9 @@ fun advectMass(
     momentum: MomentumField,
     grams: LongArray,
     species: List<Species> = Species.GASES,
+    tileGrams: LongArray = tileMass(edges.grid.size, grams, species),
 ): AdvectionResult {
     val grid = edges.grid
-    val tileGrams = LongArray(grid.size) { tile ->
-        var sum = 0L
-        val base = tile * Species.COUNT
-        for (s in species) sum += grams[base + s.ordinal]
-        sum
-    }
-
     val fx = LongArray(edges.xEdgeCount)
     val fy = LongArray(edges.yEdgeCount)
 
