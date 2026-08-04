@@ -50,6 +50,19 @@ class BuoyancyResult(val vesselX: Long, val vesselY: Long)
  * than discarded so the vessel's momentum ledger stays closed; over a settled vessel it comes to
  * very little, because the excess that is being pulled down is by definition the excess.
  *
+ * ### Volume, and why it scales the reference rather than the parcel
+ *
+ * This is one of exactly two places the solver cares how big a cell is — see [VolumeField] for why
+ * the other two dozen uses of `tileGrams` do not. The comparison being made is against *the mass
+ * ordinary air would have at this pressure*, and that reference is a mass, so it has to be the mass
+ * that would fit in **this** cell rather than in a whole tile. Half the room, half the reference.
+ *
+ * Scaling the reference keeps [excess] a mass, which is what the rest of the function needs: the
+ * impulse below is a weight, and a weight is a mass times a gravity. Converting the whole comparison
+ * to densities instead would read more like a textbook and would then have to multiply the volume
+ * straight back in to get a force, so it is the same arithmetic with an extra round trip through a
+ * quantity nothing else here uses.
+ *
  * [mx] and [my] are edited in place. Closed faces are left alone: gas does not press on a bulkhead
  * sideways in a way that moves it through the bulkhead.
  */
@@ -61,6 +74,7 @@ fun applyBuoyancy(
     tileGrams: LongArray,
     pressure: LongArray,
     gravity: Frac2,
+    volumes: VolumeField? = null,
 ): BuoyancyResult {
     val gx = gravity.x.raw
     val gy = gravity.y.raw
@@ -69,7 +83,11 @@ fun applyBuoyancy(
     // How much heavier each tile is than ordinary air at the same pressure would be. Negative means
     // lighter, which is what rises.
     val excess = LongArray(tileGrams.size) { tile ->
-        tileGrams[tile] - pressure[tile] * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE
+        val reference = pressure[tile] * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE
+        val fitted =
+            if (volumes == null) reference
+            else reference * volumes.at(tile) / VolumeField.FULL
+        tileGrams[tile] - fitted
     }
 
     var addedX = 0L

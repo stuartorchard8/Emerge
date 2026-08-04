@@ -107,6 +107,19 @@ class FluidStep(
  * heat gets exactly the behaviour it had before, which is what makes this increment's effect on
  * venting and thrust measurable rather than tangled up with re-baselined expectations.
  *
+ * ### Volume
+ *
+ * [volumes] says how much room each cell's gas has, and null means every cell is a whole tile —
+ * which is what every cell was until pipes needed to be smaller than one. See [VolumeField].
+ *
+ * It reaches exactly two of the passes below, and that is the useful thing to know about it rather
+ * than an implementation detail: [tilePressure], because the same gas in less room pushes harder, and
+ * [applyBuoyancy], because that is the one pass comparing a parcel against what its surroundings
+ * weigh. Every other use of [tileGrams] in this file is a **mass** — the fraction of it that crosses
+ * a face, the mass a momentum is divided by to get a velocity, the mass a velocity cap is measured
+ * against — and none of those change because a box got smaller. Conflating the two would make a
+ * narrow pipe advect and accelerate wrongly while looking superficially more physical.
+ *
  * [grams], [mx], [my] and [gasJoules] are the tick's working arrays, **edited in place** — the same
  * arrays the edit pass has already written to, so a hull put down this tick has moved its air out of
  * the way before any of this runs.
@@ -119,6 +132,7 @@ fun stepFluid(
     my: LongArray,
     gravity: Frac2,
     gasJoules: LongArray? = null,
+    volumes: VolumeField? = null,
 ): FluidStep {
     val edges = EdgeGrid(grid)
     val apertures = ApertureField.derive(edges, structure)
@@ -134,10 +148,10 @@ fun stepFluid(
     // so the effect is well under a kelvin; carrying energy on the drift fluxes too would be the
     // exact version, and is not worth a second transfer pass for that.
     val kelvin = gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, grams)) }
-    val pressure = tilePressure(grid.size, grams, kelvin)
+    val pressure = tilePressure(grid.size, grams, kelvin, volumes)
 
     val rubbed = applyDrag(edges, mx, my)
-    val lift = applyBuoyancy(edges, apertures, mx, my, tileGrams, pressure, gravity)
+    val lift = applyBuoyancy(edges, apertures, mx, my, tileGrams, pressure, gravity, volumes)
     val pushed = applyPressureForce(edges, apertures, mx, my, tileGrams, pressure)
     val pressed = project(edges, apertures, mx, my, tileGrams, pressure)
 
