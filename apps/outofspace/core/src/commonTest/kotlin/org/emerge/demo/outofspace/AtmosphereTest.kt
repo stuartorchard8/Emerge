@@ -92,9 +92,17 @@ class AtmosphereTest {
         s = s.copy(air = field, baselineAirGrams = field.totalGrams)
 
         s = run(s, 40)
+        // Per *room*, not per tile. What this test is about is the wall: a room at four times the
+        // pressure of the one next door stays there, because nothing crosses a bulkhead. Within a
+        // room the gas is free to slosh — the two tiles of the high side started at exactly 2000
+        // each and a single gram moving between them is the sim working, not the wall leaking.
+        // Asserting per-tile made this a test of "the air does not move at all", which is a
+        // different and much stronger claim than the one in its name, and a false one.
+        //
         // Pressure reads in millimoles now, not grams -- see [AirField.pressureAt].
-        assertEquals(2_000L, s.air.densityAt(grid.index(2, 2)), "the high side stayed high")
-        assertEquals(500L, s.air.densityAt(grid.index(6, 2)), "and the low side stayed low")
+        fun roomGrams(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.index(it, 2)) }
+        assertEquals(4_000L, roomGrams(2..3), "the high side stayed high")
+        assertEquals(1_000L, roomGrams(5..6), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
     }
 
