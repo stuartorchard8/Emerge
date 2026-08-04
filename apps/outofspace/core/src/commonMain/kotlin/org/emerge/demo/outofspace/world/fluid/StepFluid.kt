@@ -120,6 +120,20 @@ class FluidStep(
  * against — and none of those change because a box got smaller. Conflating the two would make a
  * narrow pipe advect and accelerate wrongly while looking superficially more physical.
  *
+ * ### Connectivity is an argument, not a derivation
+ *
+ * There are two entry points and the difference between them is the whole of what a pipe will be.
+ *
+ * This one is the vessel's own atmosphere: hand it a [StructureMap] and it works out which faces are
+ * open from what has been built, which is the only sensible reading of "the air in the ship". The
+ * other takes an [ApertureField] already made up, and exists because the pipe layer's connectivity is
+ * not derivable from the structure at all — a pipe conducts where the player **drew a link**, which
+ * is a fact about `Segment.links` rather than about which tiles are solid.
+ *
+ * Splitting them costs one delegating call and buys the thing §5b promised the aperture decision
+ * would buy: a second body of fluid is the same solver pointed at a different adjacency, not a second
+ * solver. Nothing below this line knows which layer it is running on.
+ *
  * [grams], [mx], [my] and [gasJoules] are the tick's working arrays, **edited in place** — the same
  * arrays the edit pass has already written to, so a hull put down this tick has moved its air out of
  * the way before any of this runs.
@@ -135,7 +149,34 @@ fun stepFluid(
     volumes: VolumeField? = null,
 ): FluidStep {
     val edges = EdgeGrid(grid)
-    val apertures = ApertureField.derive(edges, structure)
+    return stepFluid(edges, ApertureField.derive(edges, structure), grams, mx, my, gravity, gasJoules, volumes)
+}
+
+/**
+ * The solver proper, over whatever [apertures] say is connected to what.
+ *
+ * Everything [stepFluid]'s own documentation says about ordering, venting, temperature and volume
+ * applies here unchanged — this is the body that used to be inline in it, and the only thing that
+ * moved is where the aperture field comes from.
+ *
+ * The one thing worth adding is what a *disconnected* cell does, because the pipe layer is mostly
+ * disconnected and the vessel's atmosphere never was. A cell with every face shut couples to nothing,
+ * so [project] leaves it alone, [applyPressureForce] finds no open face to push through, and
+ * [advectMass] moves nothing across a closed aperture. It simply sits there holding what it holds.
+ * That falls out of the existing passes rather than needing a guard, which is the payment for having
+ * made the aperture an area from the start.
+ */
+fun stepFluid(
+    edges: EdgeGrid,
+    apertures: ApertureField,
+    grams: LongArray,
+    mx: LongArray,
+    my: LongArray,
+    gravity: Frac2,
+    gasJoules: LongArray? = null,
+    volumes: VolumeField? = null,
+): FluidStep {
+    val grid = edges.grid
 
     // Sorting first, because it moves mass between tiles: the density and pressure fields everything
     // below reads have to be the ones it leaves behind, not the ones it started from.
