@@ -80,6 +80,12 @@ class BreachSymmetryTest {
     @Test
     fun `a breach amidships vents symmetrically about its own column`() {
         val leans = leansAfterBreachAt(MIDSHIPS, listOf(2, 5, 8, 12))
+        // Raising [FLOOR] to a hundred grams is what stops this test reading noise as a lean, and the
+        // failure mode it introduces is the quiet one: a floor that skips everything asserts nothing
+        // and passes forever. So the sample count is asserted too. Measured, this comes to six pairs
+        // — mass at ±2, ±5 and ±8, oxygen at ±2, nitrogen at ±2 and ±5 — which is the instrument still
+        // pointed at both of the things it can tell apart, mass and mixture.
+        assertTrue(leans.size >= MEASURED_PAIRS, "only ${leans.size} pairs were big enough to judge")
         val bad = leans.filter { it.percent > TOLERANCE_PERCENT }
         assertTrue(bad.isEmpty(), "the plume leans:\n" + bad.joinToString("\n") { "  $it" })
     }
@@ -187,23 +193,19 @@ class BreachSymmetryTest {
     }
 
     /**
-     * Records one pair, skipping those where both sides are tiny.
+     * Records one pair, skipping those too small for a percentage to mean anything.
      *
-     * Even summed over a column the far reaches of a plume come to single grams, and one against two
-     * is a hundred percent lean that means nothing — integer rounding, not bias. [FLOOR] is where that
-     * stops being true. ⚠️ Carbon dioxide is only 1.3% of the mix by mass, so it is often below the
-     * floor even summed; the mixture check is in practice a nitrogen and oxygen check, and a
+     * ⚠️ Carbon dioxide is only 1.3% of the mix by mass, so it is almost always below [FLOOR] even
+     * summed over a column; the mixture check is in practice a nitrogen and oxygen check, and a
      * CO₂-specific bias would not be caught here.
      */
     private fun add(into: MutableList<Lean>, what: String, left: Long, right: Long) {
-        if (left < FLOOR && right < FLOOR) return
         val total = left + right
-        if (total == 0L) return
-        // A single gram is the quantum this sim counts in, so a one-gram difference is rounding
-        // however large it looks as a percentage — five against four is eleven percent and means
-        // nothing. ⚠️ The cost is that a systematic one-gram bias spread over many tiles would slip
-        // through; if that is ever suspected, sum a row rather than lowering this.
-        if (abs(left - right) <= GRAIN) return
+        if (total < FLOOR) return
+        // Every pair above the floor is recorded, leaning or not, so that the count can be asserted —
+        // see the test. There is no longer a separate one-gram guard: it existed because a five-gram
+        // sample made one gram look like eleven percent, and a hundred-gram floor makes one gram look
+        // like one percent, which is what it is.
         into.add(Lean(what, left, right, abs(left - right) * 100L / total))
     }
 
@@ -221,11 +223,50 @@ class BreachSymmetryTest {
         const val HULL_BOTTOM = 24
         const val TICKS = 50
 
-        /** Below this many grams a difference is rounding rather than bias. */
-        const val FLOOR = 4L
+        /**
+         * How much gas a mirrored pair needs between it before a percentage is worth reading.
+         *
+         * ### Why it went from 4 to 100, and how that was settled rather than guessed
+         *
+         * Summing whole columns fixed the resolution problem for **mass** and the per-species measures
+         * inherited a floor that no longer suited them. A mass column at ±2 holds five hundred grams;
+         * an oxygen column at ±5 holds fifteen. The same tolerance was being applied to samples two
+         * orders of magnitude apart in size, and the small ones failed it — 12 against 18, a 20% lean
+         * on six grams.
+         *
+         * Bias or noise is the whole question, and it has a cheap separator: run the same breach for
+         * different lengths of time. Noise wanders and does not care that the plume grew; a real bias
+         * grows with it. Measured, at ±5 in oxygen, `right − left` over 25/50/100/200/400 ticks:
+         *
+         * ```
+         *   +1   +6   +1   +1   +2
+         * ```
+         *
+         * and the mass pair at ±2 over the same runs: `−12  +6  −11  −35  +4`. It changes sign, it
+         * does not trend, and the 20% that failed the test is one draw out of that spread. **Noise.**
+         *
+         * What the same sweep does show is how the noise scales, and it is not constant in grams. A
+         * pair holding ~900 grams differs by up to 35; a pair holding ~30 differs by up to 6. Those are
+         * ratios of 30 and 5.5 against sample-size ratios of 30 and 5.5 — the imbalance goes as the
+         * **square root** of the sample, which is exactly a random walk, which is exactly what integer
+         * transport quantisation is. Across every pair measured the coefficient sits between 0.4 and
+         * 1.3 grams per root-gram.
+         *
+         * So a percentage tolerance is only meaningful once `√total` is small enough against `total`
+         * for the noise to fit inside it: `1.3 × √total / total < 13%` needs about a hundred grams.
+         * Hence this number, and hence the shape of the rule — it is a floor on the **pair**, not on
+         * each side, so a genuinely lopsided 1-against-200 is still judged and still fails loudly.
+         *
+         * ⚠️ It is deliberately *not* a `K × √total` threshold applied to every pair. That would be the
+         * statistically tidy version and it would blunt the instrument: the drift bug this file caught
+         * on its first run was three grams against six, which is a coefficient of 1.0 and would sit
+         * inside the noise band. A systematic bias scales with the sample and so survives a floor;
+         * noise does not. Filtering by sample size keeps what filtering by significance would lose.
+         */
+        const val FLOOR = 100L
 
-        /** The smallest amount the sim counts in; a difference this size is never evidence. */
-        const val GRAIN = 1L
+        /** How many pairs [FLOOR] is expected to leave standing. See the amidships test. */
+        const val MEASURED_PAIRS = 6
 
         /**
          * How far off centre a plume may sit where the world is actually symmetric.
@@ -244,8 +285,20 @@ class BreachSymmetryTest {
          * masking, and it is worth chasing on its own. What this file can still say with the old
          * sharpness is that the body model and the fabric-to-air coupling add **nothing** to it:
          * with the machines taken out, the numbers before and after are identical to the gram.
+         *
+         * ### 13 → 8, and the pre-existing asymmetry above was mostly the ruler
+         *
+         * The 11% and 13% quoted above were both read off pairs holding a couple of dozen grams, where
+         * [FLOOR] now says a percentage means nothing. Raising the floor to a hundred grams leaves six
+         * pairs standing and the worst of them leans **5%**. The transport asymmetry that was worth
+         * chasing on its own is, on every sample big enough to measure it, not there.
+         *
+         * That is not the model improving — nothing in the solver changed — it is the measurement no
+         * longer counting quantisation noise as evidence. But the tolerance guards the measurement, so
+         * it follows the measurement down. Eight leaves headroom above the observed five without
+         * leaving room for a lean anybody would call symmetric.
          */
-        const val TOLERANCE_PERCENT = 13L
+        const val TOLERANCE_PERCENT = 8L
 
         /** Near the hole the off-centre breach gets no more slack than the centred one. */
         const val BOW_TOLERANCE_PERCENT = TOLERANCE_PERCENT
