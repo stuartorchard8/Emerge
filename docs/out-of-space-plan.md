@@ -849,7 +849,10 @@ Each is meant to be shippable and committed on its own.
   warms the deck plating and not the room, so there is no in-game way to heat gas.*
 - **E. Liquids** — `d_target = 0` and a free surface. Only after A–D behave.
 - **F. Pipes** — sealed sub-regions at a narrow aperture. Should be mostly configuration if the
-  aperture decision above held.
+  aperture decision above held. *This is the increment that overran — see §5d. It was built, it
+  works, and it is deliberately not wired into anything while the slice below is built. The
+  "mostly configuration" estimate was wrong for the reason recorded in `PipeField.kt`: a tile can
+  hold both a room and a pipe, so the sealed-sub-region form cannot represent it.*
 
 ### The known wall
 
@@ -953,6 +956,109 @@ after are identical to the gram.
 
 ---
 
+## 5d. The vertical slice (2026-08-05)
+
+The plumbing got ahead of the game. Increment F built a second fluid layer, a valve, a pump and an
+interlayer crossing, and the result was good enough to keep and not good enough to trust — so the
+question "what should pipes be?" was about to consume the next increment as well. It is worth
+answering, and it is not worth answering *now*, because of what a look at the tree turned up:
+
+**Thrust is measured every tick and connects to nothing.** `advectMomentum` books the momentum that
+leaves through the rim and the comment says outright that "equal and opposite, it is thrust". And
+`Vessel.gravity` is a `Frac2` — a vector, already threaded through `applyBuoyancy`,
+`applySpeciesDrift` and `Debris.downDirection` — that has only ever held a constant. Two wires, both
+live, never joined. The vessel has no position and no velocity, so nothing in the game can move.
+
+That is the loose end, and it exists today. Everything else on the list adds to it.
+
+So the slice comes first: **a vessel that thrusts, travels, captures rock, refines it into fuel, and
+burns that fuel to thrust again.** Nothing in that loop needs a pipe.
+
+### What was settled about pipes, so it is not re-litigated
+
+- **Pipes are not packets.** The tempting simplification — ONI's model, reusing the proven transport
+  layer — was rejected on one argument: a packet is a sealed quantity of one thing, so a packet of
+  water that boils has nowhere to put the gas. Phase change in a pipe becomes a special case, and
+  then so does bursting, and so does a pipe half full of vapour. That is the whole point of putting
+  fluid in pipes, and packets make it inexpressible.
+- **ONI is not evidence either way.** Its *pipes* are gravity-agnostic; its *rooms* assume gravity.
+  But a packet does bake in "the liquid is a coherent slug that stays a slug", and in a vessel whose
+  gravity can be switched off that is a gravity assumption in disguise.
+- **The volume term did not destabilise the room sim.** `tilePressure` multiplies before it divides,
+  so a cell at `VolumeField.FULL` lands on bit-identical values to before the parameter existed, and
+  it reaches exactly two call sites. What it *does* do is make a pipe cell the stiffest cell in the
+  world — an eighth the mass at eight times the pressure, against CFL and pressure-force caps that
+  are both mass-based. ⚠️ **It was never A/B'd against `PIPE_VOLUME = FULL`**, and the pipe suite
+  cannot detect the difference: `ValveTest` asserts against `room * PIPE_VOLUME / FULL`
+  symbolically, so every test passes whatever the dial says. A one-line experiment nobody ran.
+- **The simpler fluid pipe exists, if the overlap is dropped.** A pipe tile that *is* a pipe — full
+  volume, ordinary cells, connectivity from drawn links — deletes `Interlayer.kt`, the volume term
+  and the momentum-free pump, keeps phase change and gas-or-liquid, and costs pipes running under
+  corridors and pipes crossing each other. If the overlap is kept instead, the honest form is a
+  genuine interlayer **axis** (a face between the layers, so momentum crosses by ordinary
+  advection), not a relaxation approximating one. That is the choice to make in §5e, with phase
+  change in front of it.
+
+**The existing pipe code stays in the tree, unused.** It is tested and it costs nothing idle;
+stripping it would be work spent on a question that is still open.
+
+### Water: defer the transition, not the phase
+
+`Species.Water` is already `Phase.Liquid`, and `Species.kt` already says phase is "what this normally
+is" with `(species, temperature, pressure)` flagged for later. Calling it ice would be a regression
+dressed as a simplification.
+
+What gets deferred is the **transition**. Extraction yields water into a `Mixture` at a rate; the
+mass ledger does not care what phase it is. ⚠️ And it cannot care yet, because the fluid solver
+iterates `Species.GASES` — liquid water has no field to exist in, so it can only be stockpiled
+cargo. That is the real reason "heat the asteroid and let the water melt off it" is not the
+mechanism today: the melt has nowhere to go. It is a good thing to want, and it arrives with phase
+change, and the shape below is chosen so that it can arrive without the surrounding structure
+changing.
+
+### The cargo hold is a food vacuole
+
+A captured rock is a `Body` — it already has a material, a mass and its own joules — sitting in a
+room that can be pressurised like any other. The hold is a region with an **extraction rate** that
+leeches mass off the bodies in it and produces dirty ore from their average composition, which then
+runs through the refining stages that already exist.
+
+Average composition rather than geometry is the load-bearing simplification: no per-rock shape, no
+erosion model, and the output is a `Mixture` with real proportions, which is what makes refining a
+decision rather than a lookup. It also degrades in the right direction — when phase change exists,
+the rate stops being a constant and becomes a function of the body's temperature, and heating the
+rock becomes the mechanism without anything above it moving.
+
+### Thrust is experienced gravity
+
+`a = F/m` from the thrust already being measured, written into `Vessel.gravity`, which every
+consumer already reads. Convection under acceleration, debris settling toward the stern, a heavy gas
+pooling against the direction of travel — all of it falls out of passes that are already written.
+
+⚠️ **The first engine is axis-aligned, on purpose.** `applyBuoyancy` documents itself as the one
+function permitted to assume gravity is axis-aligned, and a vector gravity has never been exercised
+off-axis. Diagonal thrust is a scheduled follow-up, not a thing to discover as a bug with three
+subsystems stacked on top of it.
+
+The CFL wall in §5b is the other thing this walks toward: a genuinely fast exhaust exceeds a cell per
+tick. It stays undesigned, as planned, until there is a working nozzle to look at.
+
+### Increments
+
+- **G. Motion** — vessel velocity and position, thrust integrated into both, and `Vessel.gravity`
+  written from the resulting acceleration. Axis-aligned engine. The gate is the loop closing:
+  a sealed vessel does not move, a firing engine does, and the fluid ledgers still balance while it
+  is accelerating.
+- **H. Capture and the hold** — an asteroid field to fly in, rocks as bodies, capture into a hold,
+  extraction at a rate into dirty ore.
+- **I. Refining to fuel** — the existing stages, ending in propellant the engine consumes. Plumbing
+  stays crude: a tank bolted to the engine, no run of pipe between them. This is the increment where
+  the gameplay loop actually closes.
+- **J. Transport, revisited** — with phase change as the driver and §5d's two candidate shapes on
+  the table. Earned rather than guessed.
+
+---
+
 ## 6. Open questions
 
 1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
@@ -962,11 +1068,17 @@ after are identical to the gram.
    pump works against gravitational head while a gas compressor works against pressure. That
    difference is the interesting part of fluid machinery and it wants designing alongside the
    atmosphere model in Phase 4, not before — noted here so it does not get quietly forgotten.
+   *Partly answered by the pump built in increment F: it works against pressure, stalls at a ratio,
+   and does not model compression heating — which is exactly the term that would make it a
+   compressor. Reopens with §5d increment J.*
 3. **Should the grammar get a comparison?** `WHEN RED > 900` would buy digital control — latches,
    hysteresis, "top up only when nearly empty" — alongside the proportional behaviour it already
    has. It is the obvious next expressive step, and the obvious risk is turning a small language
    into a big one.
-4. **Miners are a stand-in** and should not grow depth. Whatever eventually replaces them — imports
+4. **Off-axis gravity has never been run.** `applyBuoyancy` is the one function permitted to assume
+   gravity is axis-aligned, and until §5d increment G nothing ever gave it a reason not to be.
+   Diagonal thrust is the first thing that will, and it is scheduled rather than assumed to work.
+5. **Miners are a stand-in** and should not grow depth. Whatever eventually replaces them — imports
    from outside the vessel, a mining rig on a surface — is a Phase 5 question, not a machine to
    elaborate now.
 
