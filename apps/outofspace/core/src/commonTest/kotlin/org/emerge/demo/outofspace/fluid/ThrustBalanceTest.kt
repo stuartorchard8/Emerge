@@ -19,16 +19,26 @@ import kotlin.test.assertTrue
  * `exhaustMomentum` is what has gone overboard. Nothing has ever checked those two against the gas
  * still aboard, and until something does, a thrust figure is a number rather than a measurement.
  *
- * Momentum is conserved, and the world has exactly three places to keep it:
+ * Momentum is conserved, and the world has exactly four places to keep it:
  *
- *     vesselImpulse + gasAboard + exhaust == 0
+ *     vesselImpulse + gasAboard + exhaust + undelivered == 0
  *
  * Everything starts at rest, so the total is zero and stays zero. Each term is signed in the same
  * frame: gas gains what nobody took from it, the ship takes what it was pushed by, and what leaves
- * through the rim is gone. Every pass in the solver that removes momentum from the gas books it to
- * one of the other two — [applyDrag], [applyBuoyancy], [applyPressureForce] and [project] to the
- * ship, [advectMomentum] over the side — so the identity is exact rather than approximate, and a
- * failure means some pass is minting or eating momentum without saying so.
+ * through the rim is gone.
+ *
+ * The fourth is an admission rather than a place, and it is here because the alternative is worse. A
+ * pressure difference across a face with **no gas on it** has no fluid to accelerate and no wall to
+ * take the reaction, so the solve declines to deliver it — see [ProjectionResult.undeliveredX] for
+ * the two fixes that were built, measured and rejected. Counting it keeps the identity exact, which
+ * is what makes it an instrument; hiding it inside one of the other three would make the ledger a
+ * tautology, and burying it would leave the identity approximate, which is the same as not having
+ * one. Its *size* is the useful output: it says how much of a thrust figure is discretisation.
+ *
+ * Every pass that removes momentum from the gas books it to one of the other three — [applyDrag],
+ * [applyBuoyancy], [applyPressureForce] and [project] to the ship, [advectMomentum] over the side —
+ * so the identity is exact rather than approximate, and a failure means some pass is minting or
+ * eating momentum without saying so.
  *
  * This is deliberately checked **every tick** rather than at the end. A ledger that closes only at
  * the end can be two errors that cancel, and the tick it first parts company on is most of the
@@ -49,7 +59,7 @@ class ThrustBalanceTest {
      * about in its own documentation.
      */
     @Test
-    fun `a sealed vessel keeps its momentum in the three places it can be`() {
+    fun `a sealed vessel keeps its momentum in the places it can be`() {
         val controller = OutofspaceController(OutofspaceConfig(), starterVessel(OutofspaceConfig().grid))
         repeat(TICKS) {
             controller.stepOnce()
@@ -65,34 +75,17 @@ class ThrustBalanceTest {
      * uses one: no machines means no refinery running alongside and nothing to attribute a
      * discrepancy to but the fluid.
      *
-     * ### ⚠️ This one still fails, on one known term, and the term needs a decision rather than a fix
+     * ### What this cost to make true, because it was red for three commits
      *
-     * The residual over 120 ticks was 7478 and is now **238**, out of a vessel impulse of 25310. Two
-     * of the three causes are gone and both were bugs: a bulkhead was erasing the momentum it stopped
-     * instead of keeping it (2040), and the CFL clamp in `applyPressureForce` was discarding momentum
-     * to enforce a limit it did not actually enforce (5238, removed in favour of sub-stepping).
+     * The residual over 120 ticks was **7478** and is now **zero**. Two of the three causes were
+     * outright bugs. A bulkhead was erasing the momentum it stopped instead of handing it to the hull
+     * (2040, all on the gravity axis — an atmosphere sits on a deck and advects into the floor
+     * forever). And the CFL clamp in [applyPressureForce] was discarding momentum to enforce a limit
+     * it did not actually enforce (5238); it is gone, and [stepFluid] sub-steps transport instead.
      *
-     * What is left is [project]. Where a face is **open but has no gas on it**, the solved pressure
-     * difference across it is real and there is nothing to give it to — no fluid to accelerate and no
-     * wall to take the reaction — so the impulses stop telescoping and the shortfall is momentum the
-     * scheme declines to deliver. It is a plume-front effect: at tick 1 it is 136 and by tick 3 it is
-     * 3, and it never grows.
-     *
-     * Two fixes were tried and **both were measured and rejected**, so neither is worth retrying blind:
-     *
-     * - **Pin `p = 0` on tiles holding no gas** — the textbook free-surface boundary condition, and
-     *   the principled answer. It very nearly closes the ledger (down to 2 by tick 10) and it stops
-     *   blowout dead: `ProjectionTest` reports a room that does not decompress at all and a breach
-     *   that does not push the ship. The vacuum side of the interface needs a solved pressure for the
-     *   gradient that drives the vent to exist.
-     * - **Give the impulse to the massless faces anyway**, and let the existing stranded-momentum
-     *   sweep book it as exhaust. This closes the ledger *exactly*, on both axes. It also injects
-     *   momentum into vacuum: the midships plume lean goes from 1% to 6%, the bow's from 5% to 19%,
-     *   and `PumpTest` fails. It closes the books by manufacturing exhaust.
-     *
-     * So the remaining choice is the one this was always heading for: name the term. It is momentum
-     * the discretisation dropped, it is small, it does not accumulate, and a named ledger entry makes
-     * the identity exact while measuring how much of the thrust figure is numerical.
+     * The third is [project]'s undelivered impulse, which is counted rather than fixed — see
+     * [ProjectionResult.undeliveredX] for the two fixes that were built and measured and cost more
+     * than the term does.
      */
     @Test
     fun `a breached vessel accounts for what it threw overboard`() {
@@ -120,13 +113,15 @@ class ThrustBalanceTest {
         val aboardY = s.momentum.totalY + s.pipeMomentum.totalY
         assertEquals(
             0L,
-            s.vesselImpulseX + aboardX + s.exhaustMomentumX,
-            "$what: x — ship ${s.vesselImpulseX}, aboard $aboardX, exhaust ${s.exhaustMomentumX}",
+            s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX,
+            "$what: x — ship ${s.vesselImpulseX}, aboard $aboardX, exhaust ${s.exhaustMomentumX}, " +
+                "undelivered ${s.undeliveredImpulseX}",
         )
         assertEquals(
             0L,
-            s.vesselImpulseY + aboardY + s.exhaustMomentumY,
-            "$what: y — ship ${s.vesselImpulseY}, aboard $aboardY, exhaust ${s.exhaustMomentumY}",
+            s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY,
+            "$what: y — ship ${s.vesselImpulseY}, aboard $aboardY, exhaust ${s.exhaustMomentumY}, " +
+                "undelivered ${s.undeliveredImpulseY}",
         )
     }
 

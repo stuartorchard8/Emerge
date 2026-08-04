@@ -158,6 +158,18 @@ data class VesselState(
     val exhaustMomentumX: Long = 0L,
     val exhaustMomentumY: Long = 0L,
     /**
+     * Momentum the fluid solve worked out and could not hand to anything — see
+     * [org.emerge.demo.outofspace.world.fluid.ProjectionResult.undeliveredX].
+     *
+     * The fourth store, and the one that is an admission rather than a place. A pressure difference
+     * across a face with no gas on it has no fluid to accelerate and no wall to push, so it is
+     * counted here instead of quietly unbalancing the other three. Small and non-accumulating today
+     * — 238 against a vessel impulse of 25310 over 120 ticks of a breach — and expected to grow once
+     * the ship moves and drives its own atmosphere toward the hole.
+     */
+    val undeliveredImpulseX: Long = 0L,
+    val undeliveredImpulseY: Long = 0L,
+    /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.

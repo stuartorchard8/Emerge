@@ -27,6 +27,15 @@ class FluidStep(
     val escapedX: Long,
     val escapedY: Long,
     /**
+     * Impulse the pressure solve had nowhere to put — see [ProjectionResult.undeliveredX].
+     *
+     * Carried out of the solver rather than dropped because it is the fourth place momentum can be,
+     * and the ledger identity is only exact with it: `vessel + aboard + exhaust + undelivered == 0`.
+     * Its size is the readout for how much of a thrust figure is discretisation rather than physics.
+     */
+    val undeliveredX: Long,
+    val undeliveredY: Long,
+    /**
      * How many pieces the tick's transport had to be taken in — see [subStepsFor].
      *
      * Reported rather than kept private because it is the readout that makes the CFL wall visible.
@@ -258,6 +267,8 @@ fun stepFluid(
         escapedX = escapedX + strandedX,
         escapedY = escapedY + strandedY,
         subSteps = subSteps,
+        undeliveredX = pressed.undeliveredX,
+        undeliveredY = pressed.undeliveredY,
     )
 }
 

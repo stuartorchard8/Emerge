@@ -302,6 +302,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 crossed.vesselY + pumped.vesselY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
+            // The fourth place momentum can be. Both layers report it: a pipe is the same solver.
+            undeliveredImpulseX = state.undeliveredImpulseX + fluid.undeliveredX + pipes.undeliveredX,
+            undeliveredImpulseY = state.undeliveredImpulseY + fluid.undeliveredY + pipes.undeliveredY,
             motion = w.motion.freeze(),
         )
     }

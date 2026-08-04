@@ -9,9 +9,9 @@ package org.emerge.demo.outofspace.world.fluid
  * Newton's third law true by fiat and test nothing; computing both and comparing them is a real
  * check that the discretisation is sound, and it is the check the rocket rests on.
  *
- * They part company only at a vacuum boundary, and legitimately so: there is no wall there to take
- * the reaction, because the momentum has left with the gas. That escape is counted by
- * [advectMomentum], not here.
+ * They part company at a vacuum boundary, and [undeliveredX] and [undeliveredY] are exactly how far —
+ * see below. The three always sum to zero: `fluid + vessel + undelivered == 0`, on both axes, every
+ * tick, exactly.
  *
  * [vesselX] and [vesselY] carry a second term on top of that lean: the momentum a bulkhead **stopped**
  * — see the note where closed faces are pinned. Leaning and stopping are both things a wall does to
@@ -22,6 +22,39 @@ class ProjectionResult(
     val vesselY: Long,
     val fluidX: Long,
     val fluidY: Long,
+    /**
+     * The impulse the solve worked out and had nowhere to put.
+     *
+     * A face that is **open but has no gas on it** still has a solved pressure difference across it,
+     * and there is nothing for that to act on: no fluid to accelerate, and no wall to take the
+     * reaction. It is skipped, and skipping it is what makes the remaining impulses stop telescoping,
+     * so the shortfall shows up as the gas and the hull disagreeing. This is that shortfall, measured
+     * rather than absorbed.
+     *
+     * It happens in the plume front, where the outermost tile holding gas sits beside vacuum that the
+     * solve has nonetheless given a pressure — because that vacuum tile is coupled to the gas through
+     * the face they share, which does have mass. On a breached bare hull it is 136 at tick 1, 3 by
+     * tick 3, and 238 over 120 ticks against a vessel impulse of 25310. It does not accumulate,
+     * because it is a property of the front rather than of the volume behind it.
+     *
+     * ### Why it is named rather than fixed
+     *
+     * Two fixes were built and measured and both cost more than the term does. Pinning `p = 0` on
+     * massless tiles — the textbook free-surface boundary condition — very nearly closes it and stops
+     * blowout dead, because the vacuum side of the interface needs a solved pressure for the gradient
+     * that drives the vent to exist at all. Handing the impulse to the massless faces anyway and
+     * letting [stepFluid]'s stranded-momentum sweep write it off closes the ledger *exactly*, and does
+     * it by injecting momentum into vacuum: the midships plume lean goes from 1% to 6%, the bow's from
+     * 5% to 19%, and a pump stops working.
+     *
+     * So it is reported. That makes the ledger identity exact — see `ThrustBalanceTest` — and it makes
+     * the size of the term a direct measurement of how much of the thrust figure is discretisation
+     * rather than physics. ⚠️ It is expected to **grow** once the vessel moves: thrust becomes
+     * experienced gravity, which pushes the atmosphere toward the breach, which makes a bigger and
+     * faster plume, which is more plume front. Watch it there.
+     */
+    val undeliveredX: Long,
+    val undeliveredY: Long,
 )
 
 /**
@@ -185,15 +218,27 @@ fun project(
     // ── Push the fluid down the gradient ──
     var fluidX = 0L
     var fluidY = 0L
+    // An open face with no gas on it is the one case where the impulse goes nowhere. It is measured
+    // on the way past rather than silently skipped — see [ProjectionResult.undeliveredX].
+    var undeliveredX = 0L
+    var undeliveredY = 0L
     for (e in 0 until edges.xEdgeCount) {
-        if (wx[e] == 0L) continue
         val impulse = beyond(p, edges.xEdgeBefore(e)) - beyond(p, edges.xEdgeAfter(e))
+        if (impulse == 0L) continue
+        if (wx[e] == 0L) {
+            if (apertures.isXOpen(e)) undeliveredX += impulse
+            continue
+        }
         mx[e] += impulse
         fluidX += impulse
     }
     for (e in 0 until edges.yEdgeCount) {
-        if (wy[e] == 0L) continue
         val impulse = beyond(p, edges.yEdgeBefore(e)) - beyond(p, edges.yEdgeAfter(e))
+        if (impulse == 0L) continue
+        if (wy[e] == 0L) {
+            if (apertures.isYOpen(e)) undeliveredY += impulse
+            continue
+        }
         my[e] += impulse
         fluidY += impulse
     }
@@ -221,7 +266,9 @@ fun project(
         if (after >= 0 && coupled[after] > 0L) vesselY -= p[after]
     }
 
-    return ProjectionResult(vesselX + stoppedX, vesselY + stoppedY, fluidX, fluidY)
+    return ProjectionResult(
+        vesselX + stoppedX, vesselY + stoppedY, fluidX, fluidY, undeliveredX, undeliveredY,
+    )
 }
 
 /**

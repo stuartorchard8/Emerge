@@ -140,8 +140,12 @@ object Save {
         writeSparse(out, "momx", state.momentum.copyX())
         writeSparse(out, "momy", state.momentum.copyY())
 
+        // Six values since the ledger gained its fourth store. Appended rather than versioned: a file
+        // written with four is a world whose undelivered impulse was zero, which reads correctly as
+        // absent — see the optional pair below.
         out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
+            .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
             .append('\n')
         return out.toString()
     }
@@ -303,6 +307,8 @@ object Save {
         var impulseY = 0L
         var exhaustX = 0L
         var exhaustY = 0L
+        var undeliveredX = 0L
+        var undeliveredY = 0L
 
         var gravity = VesselState.DEFAULT_GRAVITY
         var tick = 0L
@@ -395,6 +401,9 @@ object Save {
                 "impulse" -> {
                     impulseX = long(1); impulseY = long(2)
                     exhaustX = long(3); exhaustY = long(4)
+                    // Absent in files written before the ledger had a fourth store, and zero is the
+                    // right reading of absent: nothing had been counted there yet.
+                    if (tokens.size > 6) { undeliveredX = long(5); undeliveredY = long(6) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -456,6 +465,8 @@ object Save {
             vesselImpulseY = impulseY,
             exhaustMomentumX = exhaustX,
             exhaustMomentumY = exhaustY,
+            undeliveredImpulseX = undeliveredX,
+            undeliveredImpulseY = undeliveredY,
         )
     }
 
