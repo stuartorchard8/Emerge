@@ -32,7 +32,16 @@ class FluidStep(
  * ### The order, and why it is this one
  *
  * Forces first, because gravity acts on the gas as it is at the start of the tick. **Pressure
- * second, transport third** — and that way round matters. The projection's whole job is to work out
+ * second, transport third** — and that way round matters.
+ *
+ * "Forces" now includes [applyPressureForce], and it belongs with gravity rather than with the
+ * projection even though both are about pressure. The distinction is that this one is a force the
+ * gas exerts on itself from the pressure it actually has, and the projection is a *correction* that
+ * makes the resulting field consistent. Both read the same equation-of-state field; only the first
+ * gives the gas a speed of sound. Leaving it out was why a breached vessel vented *nothing at all* —
+ * see [applyPressureForce] for the arithmetic of that failure.
+ *
+ * Pressure second, transport third. The projection's whole job is to work out
  * the velocity field that satisfies what the gas is trying to do; advecting before solving would
  * move mass according to a field that does not yet satisfy anything, piling it up in places the
  * pressure was about to forbid. Solve, then move what the solution says to move.
@@ -88,6 +97,7 @@ fun stepFluid(
 
     val rubbed = applyDrag(edges, mx, my)
     val lift = applyBuoyancy(edges, apertures, mx, my, tileGrams, pressure, gravity)
+    val pushed = applyPressureForce(edges, apertures, mx, my, tileGrams, pressure)
     val pressed = project(edges, apertures, mx, my, tileGrams, pressure)
 
     val moved = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, tileGrams)
@@ -124,8 +134,8 @@ fun stepFluid(
         momentumX = mx.copyOf(),
         momentumY = my.copyOf(),
         ventedGrams = vented,
-        vesselX = pressed.vesselX + lift.vesselX + rubbed.vesselX,
-        vesselY = pressed.vesselY + lift.vesselY + rubbed.vesselY,
+        vesselX = pressed.vesselX + pushed.vesselX + lift.vesselX + rubbed.vesselX,
+        vesselY = pressed.vesselY + pushed.vesselY + lift.vesselY + rubbed.vesselY,
         escapedX = carried.x + strandedX,
         escapedY = carried.y + strandedY,
     )

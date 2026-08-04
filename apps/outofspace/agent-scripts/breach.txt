@@ -16,12 +16,17 @@ field speed
 field flow
 field pressure
 
-# Note what this does NOT assert: `airVented` stays 0, and correctly so — that counter is air leaving
-# the *grid*, and this breach empties into the void tiles around the hull, which are still part of the
-# world. "Vented" and "outside the hull" are different things, and the harness was how that got
-# noticed. What must hold is conservation, and that the air is actually moving.
+# `airVented` counts air leaving the *grid*, not air leaving the hull — the void tiles around the
+# vessel are still part of the world, so the two are different things and the harness was how that
+# got noticed. This used to assert `airVented = 0`, on the reasoning that the plume would still be
+# crossing the void by the time the script ended.
+#
+# It is now > 0, and the change is the point. That assertion was quietly encoding a bug: before
+# `applyPressureForce` existed the gas was not slow to reach the rim, it was barely moving at all —
+# a breached vessel measured `dAir = 0` for two hundred straight ticks. Nothing propagated the news
+# of the hole, so nothing left. Air that actually blows out reaches the rim well inside this run.
 expect airBalance = 0
-expect airVented = 0
+expect airVented > 0
 expect peakSpeed > 0
 
 overlay FLOW

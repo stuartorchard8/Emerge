@@ -1,0 +1,155 @@
+package org.emerge.demo.outofspace.fluid
+
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.Hull
+import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.StructureMap
+import org.emerge.demo.outofspace.world.fluid.ApertureField
+import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.fluid.applyPressureForce
+import org.emerge.demo.outofspace.world.fluid.tileMass
+import org.emerge.demo.outofspace.world.fluid.tilePressure
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * The gas pushing itself down its own pressure gradient — the term that gives the sim a speed of
+ * sound.
+ *
+ * Worth stating what its absence looked like, because it was not a slow version of the right
+ * behaviour. A breached vessel measured `dAir = 0` for two hundred consecutive ticks: the pressure
+ * field reached the momentum field only through the projection's divergence target, which is zero
+ * wherever a cell matches its neighbours, so a uniform room never learned there was a hole in it and
+ * vented *nothing*. The two properties below are the ones that failure violated and the ones any
+ * rewrite has to keep: a gradient must produce motion, and a uniform room must not.
+ */
+class PressureForceTest {
+
+    private class Room(val w: Int, val h: Int) {
+        val grid = Grid(w + 2, h + 2)
+        val edges = EdgeGrid(grid)
+        val apertures: ApertureField
+        val grams = LongArray(grid.size * Species.COUNT)
+        val mx = LongArray(edges.xEdgeCount)
+        val my = LongArray(edges.yEdgeCount)
+
+        init {
+            val machines = arrayOfNulls<Machine>(grid.size)
+            for (x in 1..w) { machines[grid.index(x, 1)] = Hull(); machines[grid.index(x, h)] = Hull() }
+            for (y in 1..h) { machines[grid.index(1, y)] = Hull(); machines[grid.index(w, y)] = Hull() }
+            apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines.toList()))
+            for (x in 2 until w) for (y in 2 until h) air(grid.index(x, y))
+        }
+
+        fun air(tile: Int, share: Long = 1L) {
+            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
+        }
+
+        fun empty(tile: Int) {
+            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = 0L
+        }
+
+        fun run() = applyPressureForce(
+            edges, apertures, mx, my,
+            tileMass(grid.size, grams),
+            tilePressure(grid.size, grams),
+        )
+
+        fun totalX(): Long = mx.sum()
+        fun totalY(): Long = my.sum()
+    }
+
+    @Test
+    fun `uniform air feels no force at all`() {
+        val room = Room(8, 8)
+        room.run()
+
+        // Not "small" — exactly zero. A room that hums is a room whose air slowly relocates, and the
+        // rest state is the one thing here that has to be perfect rather than close.
+        assertTrue(room.mx.all { it == 0L }, "a still room gained x-momentum")
+        assertTrue(room.my.all { it == 0L }, "a still room gained y-momentum")
+    }
+
+    @Test
+    fun `a sealed vessel cannot push itself however its pressure is arranged`() {
+        val room = Room(8, 8)
+        // A thoroughly uneven interior: a dense knot in one corner, a thin patch in the other.
+        room.air(room.grid.index(3, 3), share = 3)
+        room.air(room.grid.index(4, 3), share = 2)
+        room.air(room.grid.index(6, 6), share = 0)
+
+        val result = room.run()
+
+        // The impulses telescope along every row and column, so whatever the gas does internally it
+        // does to itself. This is the guarantee the whole thrust ledger rests on.
+        assertEquals(0L, room.totalX(), "sealed vessel gained net x-momentum")
+        assertEquals(0L, room.totalY(), "sealed vessel gained net y-momentum")
+        // And the hull reactions cancel too: nothing outside is pushing back.
+        assertEquals(0L, result.vesselX, "sealed vessel was pushed in x")
+        assertEquals(0L, result.vesselY, "sealed vessel was pushed in y")
+    }
+
+    @Test
+    fun `gas beside a vacuum is pushed into it`() {
+        val room = Room(8, 8)
+        for (y in 2 until 8) room.empty(room.grid.index(6, y))
+
+        room.run()
+
+        // The face between the last full column and the empty one must be moving toward the empty
+        // side. Positive x is toward +x, and the vacuum is at x = 6.
+        val face = room.edges.xEdge(6, 4)
+        assertTrue(room.mx[face] > 0L, "gas was not pushed toward the vacuum: ${room.mx[face]}")
+    }
+
+    @Test
+    fun `a breach pushes the vessel away from the hole`() {
+        val room = Room(8, 8)
+
+        // One hole in the left wall, and nothing else changed. The asymmetry is the whole point: a
+        // sealed room's wall terms cancel exactly (the test above), so whatever survives here is
+        // attributable to the single face that is no longer there.
+        val x = room.apertures.copyX()
+        val y = room.apertures.copyY()
+        x[room.edges.xEdge(2, 4)] = ApertureField.OPEN
+        val breached = ApertureField(room.edges, x, y)
+
+        val result = applyPressureForce(
+            room.edges, breached, room.mx, room.my,
+            tileMass(room.grid.size, room.grams),
+            tilePressure(room.grid.size, room.grams),
+        )
+
+        // Gas heads for the hole, which is toward -x.
+        assertTrue(room.totalX() < 0L, "gas did not head for the breach: ${room.totalX()}")
+        // And the ship goes the other way. This is the entire rocket, in its smallest form: the wall
+        // term that used to cancel the one on the far side has been replaced by an opening.
+        assertTrue(result.vesselX > 0L, "vessel was not pushed away from the breach: ${result.vesselX}")
+    }
+
+    @Test
+    fun `the force never leaves a face moving faster than the transport can follow`() {
+        val room = Room(8, 8)
+        // A near-vacuum next to full air is the worst case: the impulse is density-independent, so
+        // without a bound the velocity it implies on a nearly empty face is unbounded. Measured
+        // before the cap existed, a breach plume ran at eleven tiles per tick against a limit of one.
+        for (y in 2 until 8) for (x in 5 until 8) {
+            for (s in Species.GASES) {
+                room.grams[room.grid.index(x, y) * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] / 500L
+            }
+        }
+
+        // Repeatedly, because the bug the cap fixes is accumulation: a bounded push every tick still
+        // runs away over dozens of ticks. Capping the increment rather than the total left the peak
+        // speed exactly where it was.
+        repeat(50) { room.run() }
+
+        val tileGrams = tileMass(room.grid.size, room.grams)
+        val field = MomentumField.of(room.edges, room.mx, room.my)
+        assertTrue(field.isCflSafe(tileGrams), "the pressure force drove a face past one tile per tick")
+    }
+}

@@ -67,7 +67,7 @@ fun applyBuoyancy(
     // How much heavier each tile is than ordinary air at the same pressure would be. Negative means
     // lighter, which is what rises.
     val excess = LongArray(tileGrams.size) { tile ->
-        tileGrams[tile] - pressure[tile] * AMBIENT_GRAMS / AMBIENT_PRESSURE
+        tileGrams[tile] - pressure[tile] * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE
     }
 
     var addedX = 0L
@@ -109,5 +109,8 @@ private fun pull(excessGrams: Long, gravityRaw: Long): Long =
 private const val SETTLING_NUMERATOR = 1L
 private const val SETTLING_DENOMINATOR = 4L
 
-/** What a tile of ordinary air weighs at one atmosphere — the reference [applyBuoyancy] compares to. */
-private val AMBIENT_GRAMS: Long = AirField.AMBIENT_AIR.total
+/**
+ * What a tile of ordinary air weighs at one atmosphere — the reference [applyBuoyancy] compares to,
+ * and the mass [applyPressureForce] scales the speed of sound against.
+ */
+internal val AMBIENT_TILE_GRAMS: Long = AirField.AMBIENT_AIR.total
