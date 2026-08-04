@@ -73,30 +73,34 @@ fun applyPressureForce(
     var vesselX = 0L
     var vesselY = 0L
 
+    // Converted to impulse units once per *tile*, before any difference is taken — see [potentialOf].
+    val potential = potentialOf(pressure)
+
     for (e in 0 until edges.xEdgeCount) {
-        val before = edges.xEdgeBefore(e)
-        val after = edges.xEdgeAfter(e)
-        val drop = beyondPressure(pressure, before) - beyondPressure(pressure, after)
+        val drop = beyond(potential, edges.xEdgeBefore(e)) - beyond(potential, edges.xEdgeAfter(e))
         if (drop == 0L) continue
         if (apertures.isXOpen(e)) {
             val faceGrams = xFaceGrams(edges, tileGrams, e)
             if (faceGrams <= 0L) continue
-            mx[e] = capped(mx[e] + impulse(drop, apertures.xAt(e)), faceGrams)
+            val toGas = drop * apertures.xAt(e) / ApertureField.OPEN
+            mx[e] = capped(mx[e] + toGas, faceGrams)
+            // What the solid part of a restriction took. Zero for a fully open face.
+            vesselX += drop - toGas
         } else {
-            vesselX += impulse(drop, ApertureField.OPEN)
+            vesselX += drop
         }
     }
     for (e in 0 until edges.yEdgeCount) {
-        val before = edges.yEdgeBefore(e)
-        val after = edges.yEdgeAfter(e)
-        val drop = beyondPressure(pressure, before) - beyondPressure(pressure, after)
+        val drop = beyond(potential, edges.yEdgeBefore(e)) - beyond(potential, edges.yEdgeAfter(e))
         if (drop == 0L) continue
         if (apertures.isYOpen(e)) {
             val faceGrams = yFaceGrams(edges, tileGrams, e)
             if (faceGrams <= 0L) continue
-            my[e] = capped(my[e] + impulse(drop, apertures.yAt(e)), faceGrams)
+            val toGas = drop * apertures.yAt(e) / ApertureField.OPEN
+            my[e] = capped(my[e] + toGas, faceGrams)
+            vesselY += drop - toGas
         } else {
-            vesselY += impulse(drop, ApertureField.OPEN)
+            vesselY += drop
         }
     }
 
@@ -150,18 +154,29 @@ private fun capped(momentum: Long, faceGrams: Long): Long {
 /** Half a tile per tick: the fastest this force will leave a face going, with CFL headroom to spare. */
 private const val CAP_DENOMINATOR = 2L
 
-/** Pressure in a tile, or zero off the grid — space pushes back with nothing. */
-private fun beyondPressure(pressure: LongArray, tile: Int): Long =
-    if (tile < 0) 0L else pressure[tile]
+/** A tile's potential, or zero off the grid — space pushes back with nothing. */
+private fun beyond(potential: LongArray, tile: Int): Long =
+    if (tile < 0) 0L else potential[tile]
 
 /**
- * The momentum a pressure drop of [drop] delivers across a face of the given [aperture] in one tick.
+ * Every tile's pressure in the impulse units the faces work in, converted **before** any difference
+ * is taken.
  *
- * Scaled by aperture so that a half-open face transmits half the push, which is what makes a grille
- * or a partly-cycled door behave like a restriction rather than a wall.
+ * This is the whole of what makes the telescoping above exact, and it was worth an array. Converting
+ * per face instead — `drop × SOUND_IMPULSE / AMBIENT_PRESSURE`, as this did — truncates each
+ * difference separately, and a truncated sum of differences is not the difference of the sums. The
+ * error is a fraction of a unit per face, it does not cancel, and along a column under gravity the
+ * drops all lean the same way so it accumulates in one direction: a sealed motionless vessel booked
+ * itself a fifth of its own impulse ledger in twelve ticks, all of it on the gravity axis, all of it
+ * rounding. The x-axis looked perfect throughout, because there the drops alternate sign and the
+ * truncation averages out — which is exactly how a bug like this hides.
+ *
+ * Differencing values that are each already whole numbers of impulse units telescopes exactly, in
+ * integers, with no rounding left to accumulate. That is what the doc above always claimed and what
+ * it now does.
  */
-private fun impulse(drop: Long, aperture: Int): Long =
-    drop * SOUND_IMPULSE / AMBIENT_PRESSURE * aperture / ApertureField.OPEN
+private fun potentialOf(pressure: LongArray): LongArray =
+    LongArray(pressure.size) { pressure[it] * SOUND_IMPULSE / AMBIENT_PRESSURE }
 
 /**
  * The momentum one whole atmosphere of difference puts on a face of ordinary air: a quarter of a
