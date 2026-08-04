@@ -22,12 +22,16 @@ application {
 // Extra entry points go here, one `JavaExec` each — this is how the other apps get their headless
 // renderers, benchmarks, conservation checks and agent harnesses. Registering them as Gradle tasks
 // (rather than leaving them as classes you remember) is what makes them usable from CI and by an
-// agent. Cyto's build file is worth copying from when you want a scripted, screenshotting harness.
-//
-// tasks.register<JavaExec>("benchOutofspace") {
-//     group = "verification"
-//     description = "Headless tick profiler: runs N ticks and prints the per-phase breakdown."
-//     mainClass = "org.emerge.desktop.OutofspaceBenchmarkKt"
-//     classpath = sourceSets["main"].runtimeClasspath
-//     workingDir = rootDir
-// }
+// agent.
+tasks.register<JavaExec>("outofspaceAgent") {
+    group = "application"
+    description = "Headless, script-driven Out of Space harness for agents/CI: build, run the world " +
+        "for a stated number of ticks, and observe it as ASCII fields, per-tile probes, JSON totals or " +
+        "a real GL screenshot. --args=\"<scriptFile|-> [outDir]\" (outDir default: agent-out)."
+    mainClass = "org.emerge.desktop.OutofspaceAgentHarnessKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir   // so save paths and agent-out resolve from the repo root
+    standardInput = System.`in`   // so `--args=-` can take a script on stdin
+    for (key in listOf("oos.agent.w", "oos.agent.h"))
+        providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
+}

@@ -1,0 +1,27 @@
+# The harness proving itself: build something, run it, look at it four ways.
+#
+# Every command in here is one an investigation actually uses, so if this run is clean the tool is
+# working. Run:  ./gradlew :apps:outofspace:desktop:outofspaceAgent --args="apps/outofspace/agent-scripts/smoke.txt .build/agent-out"
+new
+echo --- the starter vessel, as built
+field build
+state starter
+
+echo --- run it a while and check nothing leaks
+trend 4 25
+expect airBalance = 0
+expect tick = 100
+
+echo --- the four fluid views of the same air
+field pressure
+field density
+field speed
+field flow
+
+echo --- one tile, in full
+probe 48 30
+
+echo --- and what a player would see
+overlay PRESSURE
+camera fit
+shot pressure

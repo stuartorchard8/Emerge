@@ -183,15 +183,28 @@ class OutofspaceController(
             accumulator += deltaSeconds.coerceIn(0f, 0.25f) * speed
             var steps = 0
             while (accumulator >= cfg.secondsPerTick && steps < maxTicksPerFrame) {
-                stepper.step(mapOf(localPlayer to takeInput()))
+                stepOnce()
                 accumulator -= cfg.secondsPerTick
                 steps++
             }
             if (steps == maxTicksPerFrame) accumulator = 0f
         } else if (pending.isNotEmpty()) {
             // Edits still land while paused, so the world reacts to a click when it is stopped.
-            stepper.step(mapOf(localPlayer to takeInput()))
+            stepOnce()
         }
+        return stepper.state
+    }
+
+    /**
+     * Advances **exactly one tick**, applying whatever edits are pending — real time not involved.
+     *
+     * The clock for anything that is not a window. [tick] is about turning frame deltas into ticks,
+     * which is a question only a host with a display has; a test or the agent harness wants to say
+     * "one tick" and get one tick, with no accumulator to leave a fraction behind. Both go through
+     * this, so a scripted world and a played one advance by the same call.
+     */
+    fun stepOnce(): VesselState {
+        stepper.step(mapOf(localPlayer to takeInput()))
         return stepper.state
     }
 

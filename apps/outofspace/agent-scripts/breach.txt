@@ -1,0 +1,31 @@
+# A hull breach, which is the fluid sim's loudest behaviour and therefore the best thing to point a
+# new instrument at: cut one hull tile and the room should empty through it, fast, in one direction.
+#
+# What to read: `flow` should show a coherent jet out of the hole rather than noise, `speed` should
+# peak AT the hole, and airBalance must stay 0 — every gram that leaves is vented, not lost.
+new
+remove 20 7
+run 1
+echo --- immediately after the cut
+field flow
+probe 20 7
+
+echo --- and as the room empties
+trend 6 10
+field speed
+field flow
+field pressure
+
+# Note what this does NOT assert: `airVented` stays 0, and correctly so — that counter is air leaving
+# the *grid*, and this breach empties into the void tiles around the hull, which are still part of the
+# world. "Vented" and "outside the hull" are different things, and the harness was how that got
+# noticed. What must hold is conservation, and that the air is actually moving.
+expect airBalance = 0
+expect airVented = 0
+expect peakSpeed > 0
+
+overlay FLOW
+camera centre 20 12 26
+shot breach-flow
+overlay PRESSURE
+shot breach-pressure

@@ -95,6 +95,20 @@ class OutofspaceRenderer {
         }
     }
 
+    /**
+     * Points the camera at a tile, optionally at a stated zoom — the scripted equivalent of panning
+     * and scrolling until you can see the thing.
+     *
+     * Separate from [centreOn] because the two answer different questions: that one frames the whole
+     * vessel, this one frames *the tile you are arguing about*. A headless capture has no pointer to
+     * scroll with, so without this it can only ever show the whole ship.
+     */
+    fun focusOn(tileX: Float, tileY: Float, pixelsPerTile: Float = tilePx) {
+        camX = tileX
+        camY = tileY
+        tilePx = pixelsPerTile.coerceIn(MIN_TILE_PX, MAX_TILE_PX)
+    }
+
     fun panByPixels(dxPixels: Float, dyPixels: Float) {
         camX -= dxPixels / tilePx
         camY -= dyPixels / tilePx
