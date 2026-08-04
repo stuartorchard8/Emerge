@@ -106,7 +106,10 @@ fun settleDebris(
             for (r in work.clear(tile)) vented += r.mass
             continue
         }
-        if (!structure.isPermeable(below)) continue
+        // The wall stops a fall; a machine does not. Rubble on the deck under a machine is rubble on
+        // the deck — see the test that says so. Machines being solid is a fact about *air*, and
+        // reusing it here would leave heaps hanging wherever one happened to be.
+        if (structure[below] == Structure.Hull) continue
         if (work.massAt(below) >= Debris.TILE_CAP) continue
         work.spill(below, work.clear(tile))
     }

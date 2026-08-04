@@ -28,6 +28,7 @@ import org.emerge.demo.outofspace.world.Port
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.coveredTiles
+import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
@@ -158,7 +159,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
 
-        val (air, airVented) = stepAir(state.grid, structure, state.air, state.gravity)
+        // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
+        val (air, airVented) = stepAir(state.grid, structure, w.airGrams, state.gravity)
 
         return state.copy(
             machines = w.machines.toList(),
@@ -311,6 +313,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var ventedGrams: Long = state.ventedGrams
 
         /**
+         * This tick's air, mutable so that the edit pass and [stepAir] work on the same array. An
+         * edit that changes whether a tile can hold air has to move that air *before* the flow runs,
+         * or it is stranded in a wall for as long as the wall stands.
+         */
+        val airGrams: LongArray = state.air.copyGrams()
+
+        /**
          * This tick's record of what moved where, for the renderer alone — see [Motion].
          *
          * Built from the rails as they were before anything happened, so a packet ejected by a
@@ -454,6 +463,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (covered.any { originOf[it] >= 0 }) return
             val built = newMachine(kind, facing)
             if (portsClash(portsOf(grid, built, at))) return
+
+            // Every deck machine is solid, so the air standing where it is about to be has to go
+            // somewhere first. It is the last check because it is the only one that can fail on
+            // account of the *air* rather than the geometry: air with nowhere to go means the build
+            // is refused, which is the only answer that neither destroys it nor buries it.
+            // Through `originOf` rather than `machines`, so the covered tiles of a footprint whose
+            // centre is elsewhere count as solid too.
+            if (!tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
+
             machines[at] = built
             for (t in covered) originOf[t] = at
         }

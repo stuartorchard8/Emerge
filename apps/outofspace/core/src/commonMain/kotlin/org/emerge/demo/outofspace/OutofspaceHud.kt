@@ -250,6 +250,7 @@ class OutofspaceHud {
                 Structure.Vacuum -> "OUTSIDE"
                 Structure.Hull -> "HULL"
                 Structure.Interior -> "INSIDE"
+                Structure.Machine -> "MACHINE"
             },
             0x9A9A9AFFL,
             if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,

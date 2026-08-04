@@ -16,7 +16,10 @@ class StructureMap(private val kinds: ByteArray) {
 
     operator fun get(index: Int): Structure = Structure.entries[kinds[index].toInt()]
 
-    fun isImpermeable(index: Int): Boolean = kinds[index].toInt() == Structure.Hull.ordinal
+    /** Solid: air can neither sit in this tile nor cross it. Walls and machines both. */
+    fun isImpermeable(index: Int): Boolean =
+        kinds[index].toInt() == Structure.Hull.ordinal || kinds[index].toInt() == Structure.Machine.ordinal
+
     fun isPermeable(index: Int): Boolean = !isImpermeable(index)
 
     fun isContained(index: Int): Boolean = kinds[index].toInt() != Structure.Vacuum.ordinal
@@ -30,17 +33,20 @@ class StructureMap(private val kinds: ByteArray) {
 
     companion object {
         /**
-         * Flood-fills space in from every edge tile, stopping at hull. Anything not reached and not
-         * hull is interior.
+         * Flood-fills space in from every edge tile, stopping at anything solid. Anything not
+         * reached and not solid is interior.
          *
-         * Only [Hull] blocks. A smelter does not seal a room — it is a lump of machinery in one, and
-         * making every machine airtight would mean a wall of conveyors counted as a pressure vessel,
-         * which is neither true nor good play.
+         * Every deck machine blocks, over its whole footprint — a smelter is a solid object, and a
+         * tile of solid object is not somewhere air can be. Conduits are not in this list at all:
+         * rails and bridges live on their own layers and share a tile with the deck beneath them, so
+         * a belt running through a room does not divide it.
          */
         fun derive(grid: Grid, machines: List<Machine?>): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
             for (i in machines.indices) {
-                if (machines[i] is Hull) kinds[i] = Structure.Hull.ordinal.toByte()
+                val m = machines[i] ?: continue
+                val kind = if (m is Hull) Structure.Hull else Structure.Machine
+                for (t in coveredTiles(grid, i, m.kind.size)) kinds[t] = kind.ordinal.toByte()
             }
 
             // Breadth-first from the border. An explicit stack rather than recursion: a 48x28 grid is

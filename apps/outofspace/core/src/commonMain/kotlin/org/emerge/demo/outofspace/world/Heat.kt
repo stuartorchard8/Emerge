@@ -96,7 +96,9 @@ class HeatField(private val joules: LongArray) {
          * hard to cool is precisely that there is a lot of it.
          */
         fun capacityOf(structure: StructureMap, occupancy: Occupancy, index: Int): Long = when {
-            structure.isImpermeable(index) -> HULL_CAPACITY
+            // The wall only. A machine is solid too, but its thermal mass is the machine's, and
+            // charging it a hull's would make a smelter as hard to heat as the ship's skin.
+            structure[index] == Structure.Hull -> HULL_CAPACITY
             else -> INTERIOR_CAPACITY + if (!occupancy.isFree(index)) MACHINE_CAPACITY else 0L
         }
     }
@@ -153,7 +155,10 @@ fun stepHeat(
     // ── Radiation: hull tiles touching space lose heat to it, permanently ──
     var radiated = 0L
     for (index in joules.indices) {
-        if (!structure.isImpermeable(index)) continue
+        // Hull, not merely solid: the skin is what radiates, and a machine standing against a breach
+        // is not the ship's skin. Keeping this on [Structure.Hull] is also what stops machines being
+        // made airtight from quietly changing the vessel's heat balance.
+        if (structure[index] != Structure.Hull) continue
         var exposure = 0
         for (dir in Direction.ALL) {
             val other = grid.neighbour(index, dir)

@@ -2,12 +2,15 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
+import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -254,6 +257,100 @@ class AtmosphereTest {
         val s = run(emptied, 4)
         assertEquals(Structure.Interior, s.structure[g.index(2, 2)], "it is still a room")
         assertEquals(0, s.pressurePercentAt(g.index(2, 2)), "it just has nothing in it")
+    }
+
+    @Test
+    fun `building a wall through a room pushes its air aside rather than swallowing it`() {
+        val room = sealedRoom(8, 4)
+        val g = room.grid
+        val wall = g.index(4, 3)
+        var s = run(room, 20)   // settle first, so the wall tile is holding a known amount
+        val aboard = s.atmosphereGrams
+        assertTrue(s.air.pressureAt(wall) > 0L, "the tile we are about to wall off had air in it")
+
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
+        assertEquals(0L, s.air.pressureAt(wall), "a hull tile is not part of the atmosphere")
+        assertEquals(aboard, s.atmosphereGrams, "and not a gram of it was lost")
+        assertAirBalanced(s, "after walling")
+    }
+
+    @Test
+    fun `a build with nowhere to put the air is refused`() {
+        // A one-tile pocket: hull all round bar the tile itself, which the player then tries to fill.
+        val room = sealedRoom(5, 5)
+        val g = room.grid
+        val pocket = g.index(3, 3)
+        val machines = room.machines.toMutableList()
+        for (dir in Direction.ALL) machines[g.neighbour(pocket, dir)] = Hull()
+        var s = run(room.copy(machines = machines.toList()), 4)
+        val trapped = s.air.pressureAt(pocket)
+        assertTrue(trapped > 0L, "the pocket has air in it to begin with")
+
+        s = run(s, 2, OutofspaceInput(listOf(Edit.Place(pocket, MachineKind.Hull, Direction.Up))))
+        assertEquals(null, s.machines[pocket], "the build had nowhere to put the air, so it did not happen")
+        assertEquals(trapped, s.air.pressureAt(pocket), "and the air is untouched")
+        assertAirBalanced(s, "after the refusal")
+    }
+
+    @Test
+    fun `a footprint displaces the air under all of it at once`() {
+        val room = sealedRoom(9, 5)   // a 7x3 interior, room for a 3x3 with a column either side
+        val g = room.grid
+        val at = g.index(5, 3)
+        var s = run(room, 20)
+        val aboard = s.atmosphereGrams
+
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Storage, Direction.Right))))
+        assertTrue(s.machines[at] != null, "the storage went down")
+        for (x in 4..6) for (y in 2..4) {
+            assertEquals(0L, s.air.pressureAt(g.index(x, y)), "($x,$y) is under the machine")
+        }
+        assertEquals(aboard, s.atmosphereGrams, "every gram of it moved rather than vanishing")
+        assertAirBalanced(s, "after a footprint landed")
+    }
+
+    @Test
+    fun `displaced air splits between the ways out by how far it has to travel`() {
+        // A five-tile strip with one way out at each end, and air in a tile twice as far from the
+        // right one as the left: it should leave two-to-one in favour of the near door.
+        val g = Grid(9, 3)
+        val strip = (2..6).map { g.index(it, 1) }
+        val exits = setOf(g.index(1, 1), g.index(7, 1))
+        val grams = LongArray(g.size * Species.COUNT)
+        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L
+
+        assertTrue(tryDisplaceAir(g, grams, strip) { it in exits }, "both ends are open")
+        for (tile in strip) {
+            assertEquals(0L, grams[tile * Species.COUNT + Species.Oxygen.ordinal], "the strip is empty")
+        }
+        assertEquals(2_000L, grams[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
+        assertEquals(1_000L, grams[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
+    }
+
+    @Test
+    fun `a sealed area displaces nothing and reports failure`() {
+        val g = Grid(9, 3)
+        val strip = (2..6).map { g.index(it, 1) }
+        val grams = LongArray(g.size * Species.COUNT)
+        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L
+        val before = grams.copyOf()
+
+        assertTrue(!tryDisplaceAir(g, grams, strip) { false }, "there is no way out")
+        assertTrue(grams.contentEquals(before), "a refusal leaves the field exactly as it found it")
+    }
+
+    @Test
+    fun `knocking a wall out lets air back into the tile`() {
+        val room = sealedRoom(8, 4)
+        val g = room.grid
+        val wall = g.index(4, 3)
+        var s = run(room, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
+        s = run(s, 20)
+        val aboard = s.atmosphereGrams
+
+        s = run(s, 20, OutofspaceInput(listOf(Edit.Remove(wall))))
+        assertTrue(s.air.pressureAt(wall) > 0L, "the room flowed back into it")
+        assertEquals(aboard, s.atmosphereGrams, "an intact hull still loses nothing")
     }
 
     @Test
