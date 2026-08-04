@@ -704,6 +704,146 @@ before relying on it.
 
 ---
 
+## 5b. The fluid field (2026-08-04)
+
+Heat conduction and radiation were switched off before this was written. They were not wrong so much
+as inert: heat had no way to *move* anything, so it read as a number painted on the world rather than
+a thing happening in it. Convection is the missing half, and convection is a fluid problem. So the
+fluid sim comes first and heat comes back on top of it.
+
+The structural source material is Sebastian Lague's grid smoke sim (`~/seb-smoke`, CPU version in
+`Assets/SmokeCPU/FluidGrid.cs`): a staggered MAC grid, a relaxation pressure solve, and
+semi-Lagrangian advection. What follows takes the skeleton and rejects two of the three numerical
+choices, for reasons that are specific to this game rather than to fluids in general.
+
+### The end state, so the increments point somewhere
+
+Written down first because every decision below is only justified by where it is going, and because
+the increments are meant to be individually shippable without quietly foreclosing on this.
+
+1. Gas moves in the vessel with momentum — draughts, updraughts, inertia. A breach is a blowout.
+2. Liquids follow, on the same field, incompressible being a *parameter* rather than a second solver.
+3. Pipes are not a third network. A pipe is a sealed region running the same solver at a narrower
+   aperture and a smaller volume — the vessel in microcosm. A burst pipe and a hull breach become the
+   same event.
+4. **Gas leaving the grid imparts momentum on the vessel.** Mix combustible products, ignite, eject
+   the exhaust, and the thing moves — off-centre, and it rotates. A chemical rocket that nobody
+   implemented, that falls out of conservation laws being kept honestly.
+
+Point 4 is the acceptance test for the whole enterprise. It is also the thing that dictates the
+numerics, because it is the one goal that cannot survive an approximate scheme.
+
+### Store momentum, not velocity
+
+The decision the rest hangs on.
+
+Semi-Lagrangian advection — Lague's step, and the standard one — traces backwards and bilinearly
+samples. It is stable, cheap, and **conserves nothing**. For smoke that is a non-issue. Here it takes
+out both of the ledgers the game is built on: `Mixture`'s promise that there is no arithmetic path
+which loses a gram, and the thrust sum, which is only meaningful if momentum is exact. A rocket built
+on a lossy momentum field is a rocket whose thrust is an artefact of the discretisation, and no
+amount of tuning rescues that.
+
+So both mass and momentum move in **flux form**: across each edge, an amount leaves one cell and
+arrives in the other, and the two are the same number by construction. That is exactly what
+`transferGas` already does — only the line computing the amount changes, from a pressure gradient to
+a velocity. `apportion` splits the flux across species unchanged.
+
+Momentum is therefore stored as an integer `Long` (gram·cells per tick), one per edge, and **velocity
+is derived** as momentum over the mass it is carried by. This inverts the usual arrangement and it is
+the right way round here: velocity is a convenience, momentum is the conserved thing, and the
+conserved thing is what gets a home in state. It also sidesteps `Frac`'s ~[-2,2] range, which a fast
+exhaust would otherwise overrun — `Frac` appears only where a velocity is momentarily needed, and CFL
+already requires that to be under a cell per tick.
+
+The invariant this buys, and the one to test hardest: **a sealed vessel produces exactly zero net
+thrust, forever.** Internal pressure forces are equal and opposite and must cancel to the last unit.
+Anything else is a leak, and a leak is indistinguishable from free energy.
+
+### The pressure solve stays, and takes a target divergence
+
+The first scoping pass argued gas does not need a projection, since gas is compressible and pressure
+is just mass. That was wrong about what the projection is *for*. Its value is not incompressibility,
+it is **ellipticity**: the solve couples every cell to every other cell within a single tick. Without
+it, information crosses one cell per tick, and a breach at one end of a ninety-six cell corridor is
+not felt at the other for ninety-six ticks. Relaxation-only diffusion is exactly that, and it is why
+the current atmosphere equalises without ever producing a draught.
+
+Compressibility is recovered by solving toward a **target divergence** rather than toward zero:
+
+```
+∇²p = ∇·v − d_target
+```
+
+where `d_target` comes from the equation of state — an over-dense or hot cell wants to expand, a
+sparse one to contract. One extra term, the same solver. It also deletes the gas/liquid fork before
+it is built: **a liquid is the case where `d_target` is zero.** Combustion raising temperature raises
+the target divergence, which is what makes the projection itself generate the outward acceleration
+that becomes thrust.
+
+**Jacobi, not Gauss-Seidel.** Lague's `PressureSolve` reads and writes the same array in one sweep.
+It is deterministic, but it is order-*dependent*, which breaks the snapshot-then-apply discipline
+every other pass in `Atmosphere.kt` keeps, and it cannot be parallelised. Jacobi converges more slowly
+per iteration and buys back both. Iteration count is the tuning dial, and at 96×60 there is room.
+
+### The edge is the primitive, and every edge has an aperture
+
+The cheap-now, expensive-later decision, and the one that makes pipes-as-microcosm nearly free.
+
+The solver must not be written as `for x, for y` over a rectangle, because point 3 needs it to run on
+a sub-region with different connectivity. But an abstract graph is equally wrong, because momentum is
+a **vector** and a graph has no geometry to give it a direction.
+
+What satisfies both: keep the lattice, and make the unit of iteration the **edge between two tiles**,
+carrying an **aperture** — an open area, not a boolean. A hull edge has aperture zero. Open air has
+aperture one. A pipe has aperture along its run and zero across it. `StructureMap.isImpermeable`
+stops being the solid mask and becomes one contributor to an aperture field.
+
+Pipes then need no new solver, no new network and no new packet type: they are the same sweep at a
+narrow aperture over a small volume. This costs nothing to adopt now and is a rewrite to retrofit.
+
+### What this replaces
+
+`stepAir`'s fifteen relaxation passes are diffusion, not transport. Diffusion survives at most as a
+small sub-grid mixing term; the transport is advection now.
+
+`stratifyColumns` goes. It is the function §3 flags as *the one function permitted to assume gravity
+is axis-aligned*, and it does not get ported — it becomes a **buoyancy force** on the edge momenta,
+`F ∝ (ρ_cell − ρ_ambient) · gravity`, with density already available from `molarMass` and the
+per-species grams. That form takes gravity as an arbitrary vector natively, so the axis-aligned
+special case is deleted rather than carried forward, and convection *emerges* instead of being a
+scripted swap of the wrong-way-up gas.
+
+Two things carry over from the existing atmosphere untouched, and they are the reason this is a
+smaller job than it looks: the solid map is `StructureMap`, already derived every tick and already
+handling machine footprints; and `Structure.Vacuum`, from the flood fill, is a free-outflow boundary
+— a Dirichlet `p = 0` — which is what turns venting from `grams = 0` into a pressure-driven blowout.
+
+### Increments
+
+Each is meant to be shippable and committed on its own.
+
+- **A. `VelocityField`** — staggered MAC layout, integer edge momenta, the aperture field, solid-aware
+  accessors. Pure structure, tested alone, moves nothing.
+- **B. Conservative advection** — mass and momentum in flux form across apertures. The existing
+  conservation tests are the acceptance criterion and must pass unchanged.
+- **C. Pressure projection** — Jacobi, target divergence from the EOS. Plus buoyancy and gravity as
+  forces; `stratifyColumns` deleted here.
+- **D. Boundary** — vacuum as `p = 0`, breach as blowout, and the thrust/torque sum. Heat comes back
+  on at this point, because now it has something to push. Sealed-vessel-zero-thrust is the gate.
+- **E. Liquids** — `d_target = 0` and a free surface. Only after A–D behave.
+- **F. Pipes** — sealed sub-regions at a narrow aperture. Should be mostly configuration if the
+  aperture decision above held.
+
+### The known wall
+
+A genuinely fast exhaust exceeds one cell per tick, which breaks the CFL condition the whole explicit
+scheme rests on. Storing momentum as `Long` dodges the *range* problem but not the *stability* one.
+The answer is sub-stepping where velocities are high, and it is deliberately not designed here —
+it wants to be looked at with a working nozzle in front of it rather than guessed at now.
+
+---
+
 ## 6. Open questions
 
 1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
