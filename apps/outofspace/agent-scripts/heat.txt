@@ -1,0 +1,33 @@
+# The fabric and the air, coupled: a furnace should heat itself, then its room, then drive a
+# circulation without anything being told to circulate.
+#
+# What to read:
+#   `temp`    is the hottest *solid* on each tile — the furnace should stand out sharply, because
+#             firebrick conducts badly and is meant to hold its own heat.
+#   `airtemp` should show a warm plume ABOVE the furnace rather than a symmetric blob around it.
+#             That asymmetry is the whole result: nothing in the heat pass knows which way is up, so
+#             an updraught can only come from `P = nT` making warm gas light and buoyancy lifting it.
+#   both balances must stay 0. Coupling joined two previously independent ledgers, and the one
+#   failure mode that matters is heat being minted at the join rather than moved across it.
+new
+run 400
+
+echo --- the fabric, after four hundred ticks of smelting
+field temp
+
+echo --- and the air it is heating
+field airtemp
+
+echo --- at the furnace, and one tile above it
+probe 20 12
+probe 20 10
+
+echo --- the ledgers
+expect heatBalance = 0
+expect airHeatBalance = 0
+expect hottestSolidK > 350
+expect hottestAirK > 300
+
+overlay HEAT
+camera centre 20 12 26
+shot heat-fabric

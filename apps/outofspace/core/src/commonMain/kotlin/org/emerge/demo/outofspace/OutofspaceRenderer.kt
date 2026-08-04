@@ -10,7 +10,7 @@ import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
@@ -554,7 +554,7 @@ class OutofspaceRenderer {
      * Cold blue through neutral at room temperature to hot orange, at a fixed alpha so machine shapes
      * stay faintly readable underneath.
      *
-     * The ramp is **absolute** — anchored at [HeatField.AMBIENT_KELVIN] rather than normalised to
+     * The ramp is **absolute** — anchored at [Temperature.AMBIENT_KELVIN] rather than normalised to
      * whatever happens to be on screen — so the same colour always means the same temperature; a
      * relative ramp would make a cool vessel look as alarming as a burning one.
      *
@@ -565,7 +565,7 @@ class OutofspaceRenderer {
      */
     private fun temperatureColor(kelvin: Int): Long {
         val alpha = Colors.HEAT_ALPHA
-        val f = ((kelvin - HeatField.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
+        val f = ((kelvin - Temperature.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
         return if (f <= 0f) {
             val c = -f
             rgba(

@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 
 /**
  * What sets pressure, and what sets weight — which are not the same quantity.
@@ -66,7 +66,7 @@ fun tilePressure(
     }
 
 /** The temperature [tilePressure] measures against — one atmosphere at room temperature. */
-private const val AMBIENT_KELVIN = HeatField.AMBIENT_KELVIN.toLong()
+private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
 fun millimolesOf(grams: LongArray, tile: Int, species: List<Species> = Species.GASES): Long {

@@ -13,7 +13,7 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * legitimately leaves the world.
  *
  * **Sparse on purpose.** Debris is rare and clustered, so this is a map from tile to pile rather than
- * a dense field like [AirField] or [HeatField]. Those are touched everywhere every tick and a dense
+ * a dense field like [AirField] or [Temperature]. Those are touched everywhere every tick and a dense
  * array is the cheap shape for them; this is touched in a handful of tiles and only when someone
  * takes something apart. A dense `tiles × species` array here would be almost entirely zeroes.
  *

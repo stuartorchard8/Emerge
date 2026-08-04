@@ -204,8 +204,11 @@ class SaveTest {
         val back = Save.read(Save.write(played))
         assertEquals(played.storedJoules, back.storedJoules)
         assertEquals(played.atmosphereGrams, back.atmosphereGrams)
+        // Body by body rather than tile by tile: solid heat lives on the machine and the segment
+        // now, so the thing that has to survive a round trip is each object's own energy.
         for (tile in 0 until cfg.grid.size) {
-            assertEquals(played.heat.joulesAt(tile), back.heat.joulesAt(tile), "joules differ at tile $tile")
+            assertEquals(played.machines[tile]?.joules, back.machines[tile]?.joules, "machine joules differ at tile $tile")
+            assertEquals(played.rails[tile]?.joules, back.rails[tile]?.joules, "segment joules differ at tile $tile")
             assertEquals(played.air.mixtureAt(tile), back.air.mixtureAt(tile), "air differs at tile $tile")
         }
     }

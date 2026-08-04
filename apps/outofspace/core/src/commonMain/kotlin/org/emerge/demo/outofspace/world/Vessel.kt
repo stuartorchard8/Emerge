@@ -89,12 +89,30 @@ data class VesselState(
     val baselineAirJoules: Long = air.totalJoules,
     /** Cumulative joules blown overboard with escaping gas. */
     val airVentedJoules: Long = 0L,
-    val heat: HeatField = HeatField.ambient(grid, StructureMap.derive(grid, machines), Occupancy.derive(grid, machines)),
     /**
-     * The energy the world started with. Fixed at construction so `stored + radiated − generated`
-     * has something to be compared against — the thermal twin of the mass balance.
+     * The energy the world's **solids** started with. Fixed at construction so the thermal balance
+     * has something to be compared against — the twin of [baselineAirGrams].
+     *
+     * The balance it anchors is
+     * `stored + radiated + solidToAir − generated − construction == baseline`,
+     * and the two terms beyond the obvious ones are what the body model costs:
+     *
+     *  - [constructionJoules], because a body carries its energy with it. Building a wall brings a
+     *    wall's worth of room-temperature heat into the world and scrapping one takes it away, and
+     *    neither is a leak. The old per-tile field hid this by charging every tile a capacity
+     *    whether or not anything was standing on it.
+     *  - [solidToAirJoules], because the fabric and the atmosphere now exchange heat, so what one
+     *    ledger loses the other gains. Counting it keeps both closed independently, which is what
+     *    makes a break in one legible instead of being absorbed by the other.
      */
-    val baselineJoules: Long = heat.totalJoules,
+    val baselineJoules: Long = solidJoules(machines, rails, bridges),
+    /**
+     * Net energy that has arrived in the world inside newly built bodies, less what left inside
+     * scrapped ones. Signed, and one term rather than two, because only the difference is ever read.
+     */
+    val constructionJoules: Long = 0L,
+    /** Cumulative net energy conducted from the solids into the atmosphere. Negative the other way. */
+    val solidToAirJoules: Long = 0L,
     /**
      * How the air is moving: momentum on the faces between tiles — see [MomentumField].
      *
@@ -146,16 +164,50 @@ data class VesselState(
      */
     val flow: FlowField by lazy { FlowField.derive(EdgeGrid(grid), momentum, tileMass(grid.size, air.copyGrams())) }
 
-    /** Temperature of a tile's *fabric* in kelvin — its walls, deck and machinery. */
-    fun kelvinAt(index: Int): Int =
-        heat.kelvinAt(index, HeatField.capacityOf(structure, occupancy, index))
+    /**
+     * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
+     * and the inspector both want it every frame while the state behind it changes once a tick.
+     */
+    val bodies: List<Body> by lazy { bodiesOf(grid, machines, rails, bridges) }
+
+    /**
+     * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
+     *
+     * Hottest rather than an average, because this is a readout and a heat map, and the question
+     * anyone asks of one is "is there something dangerous here". A firebrick furnace at 900K sharing
+     * a tile with a cold rail averages to something that reads safe and is not. The rail has its own
+     * temperature and the inspector can name it; the map shows the worst.
+     *
+     * Ambient where nothing is standing there at all: an empty tile has no fabric to have a
+     * temperature, and its air's is [airKelvinAt].
+     */
+    fun kelvinAt(index: Int): Int = fabricKelvin[index]
+
+    /**
+     * The hottest body on each tile, folded once. The heat overlay asks for every tile every frame,
+     * and answering each one by scanning the body list would be the whole world times the whole
+     * world for a picture that changes once a tick.
+     */
+    private val fabricKelvin: IntArray by lazy {
+        val out = IntArray(grid.size) { Temperature.AMBIENT_KELVIN }
+        val seen = BooleanArray(grid.size)
+        for (body in bodies) {
+            val k = body.kelvin
+            for (t in body.tiles) {
+                if (!seen[t] || k > out[t]) out[t] = k
+                seen[t] = true
+            }
+        }
+        out
+    }
 
     /**
      * Temperature of a tile's *air* in kelvin, or ambient where there is none to have one.
      *
-     * A separate number from [kelvinAt], and deliberately so until conduction couples the two — see
-     * [advectHeat]. This is the one the fluid acts on: it is what sets pressure and therefore what
-     * makes a warm parcel rise.
+     * Still a separate number from [kelvinAt], and now for a better reason than "they are not
+     * coupled yet": they *are* coupled, through [stepSolidHeat], and a wall being hotter than the
+     * room it is heating is the whole content of that coupling. This is the one the fluid acts on —
+     * it sets pressure, and therefore what makes a warm parcel rise.
      */
     fun airKelvinAt(index: Int): Int = air.kelvinAt(index)
 
@@ -194,7 +246,8 @@ data class VesselState(
         return portsOf(grid, m, index)
     }
 
-    val storedJoules: Long get() = heat.totalJoules
+    /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
+    val storedJoules: Long get() = solidJoules(machines, rails, bridges)
 
     /** Total atmosphere still aboard. */
     val atmosphereGrams: Long get() = air.totalGrams

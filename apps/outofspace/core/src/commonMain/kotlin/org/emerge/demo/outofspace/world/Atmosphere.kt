@@ -46,7 +46,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
      */
     fun kelvinAt(tile: Int): Int {
         val capacity = gasCapacityAt(grams, tile)
-        return if (capacity <= 0L) HeatField.AMBIENT_KELVIN else (joules[tile] / capacity).toInt()
+        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (joules[tile] / capacity).toInt()
     }
 
     /** Total gas mass in a tile — its density, since every tile is the same volume. */

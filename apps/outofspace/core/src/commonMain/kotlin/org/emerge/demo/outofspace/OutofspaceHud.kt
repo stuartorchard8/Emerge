@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
@@ -77,11 +77,16 @@ class OutofspaceHud {
                 keyValue("Generated", joules(s.generatedJoules))
                 keyValue("Radiated", joules(s.radiatedJoules))
                 keyValue("Stored", joules(s.storedJoules))
-                val heatBalanced = s.storedJoules + s.radiatedJoules - s.generatedJoules == s.baselineJoules
+                keyValue("To air", joules(s.solidToAirJoules / 1000L))
+                val heatBalanced = s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
+                    s.generatedJoules - s.constructionJoules == s.baselineJoules
                 row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 // The atmosphere's energy keeps its own ledger, for the same reason its mass does:
-                // a break in one should not obscure the other. Venting hot gas is the only way out.
-                val airHeatBalanced = s.air.totalJoules + s.airVentedJoules == s.baselineAirJoules
+                // a break in one should not obscure the other. Two ways out now: overboard with
+                // venting gas, and back into the fabric — so what the solids say they gave the air
+                // appears here with the opposite sign, and both sides have to close on their own.
+                val airHeatBalanced =
+                    s.air.totalJoules + s.airVentedJoules - s.solidToAirJoules == s.baselineAirJoules
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
                 row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
                     if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
@@ -263,13 +268,18 @@ class OutofspaceHud {
             0x9A9A9AFFL,
             if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
         )
-        if (structure != Structure.Vacuum) {
-            val k = s.kelvinAt(index)
+        // Every solid thing standing here, each with its own temperature. A tile can hold a rail, a
+        // conduit and a machine at once, and one averaged TEMP for the three of them was exactly the
+        // reading the body model exists to stop giving — a cold copper line under a furnace is the
+        // interesting case, and an average erases it.
+        for (body in s.bodies) {
+            if (index !in body.tiles) continue
+            val k = body.kelvin
             keyValue(
-                "TEMP",
+                body.material.label,
                 "${k}K  (${k - 273}C)",
                 0x9A9A9AFFL,
-                if (k > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+                if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
         // Wherever there is gas, not only inside — a vented plume is out in the vacuum by definition,
@@ -290,16 +300,17 @@ class OutofspaceHud {
             // Beside pressure, because the two being different is the whole point: equal readings
             // mean ordinary air, and a gap between them means the tile has been sorted by weight.
             keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
-            // The air's own temperature, which is not the fabric's TEMP above and will not be until
-            // conduction couples them. This is the one the fluid acts on -- it is what sets pressure,
-            // so a tile reading hot and over-pressured is a tile that is about to rise.
+            // The air's own temperature, which is its own number and not the fabric's above. The two
+            // are coupled now, so a gap between them is a wall heating a room rather than two
+            // unrelated readings. This is the one the fluid acts on -- it is what sets pressure, so a
+            // tile reading hot and over-pressured is a tile that is about to rise.
             if (density > 0L) {
                 val airK = s.airKelvinAt(index)
                 keyValue(
                     "AIR TEMP",
                     "${airK}K  (${airK - 273}C)",
                     0x9A9A9AFFL,
-                    if (airK > HeatField.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+                    if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
                 )
             }
             val speed = s.flow.speedAt(index)

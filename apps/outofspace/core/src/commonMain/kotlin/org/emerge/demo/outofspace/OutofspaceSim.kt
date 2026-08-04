@@ -32,7 +32,10 @@ import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Body
+import org.emerge.demo.outofspace.world.ambientJoules
+import org.emerge.demo.outofspace.world.bodiesOf
+import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
@@ -56,7 +59,8 @@ import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.demo.outofspace.world.fluid.stepFluid
-import org.emerge.demo.outofspace.world.stepHeat
+import org.emerge.demo.outofspace.world.stepSolidHeat
+import org.emerge.demo.outofspace.world.fluid.gasCapacity
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 
@@ -154,15 +158,36 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
 
-        // Machines put their work into the fabric they sit in. Conduction and radiation are still
-        // off — heat's own step is what comes back on next, and it is also what will carry this
-        // warmth into the air, which it cannot do yet.
-        val warmed = state.heat.copyJoules()
-        for (i in warmed.indices) warmed[i] += w.heatAdded[i]
-        val heat = HeatField.of(warmed)
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, state.gravity)
+
+        // ── Heat ──────────────────────────────────────────────────────────────
+        //
+        // Conduction runs **before** the fluid, and on the air as the edit pass left it. That order
+        // is what makes convection a loop rather than a lag: a wall warms the parcel beside it, and
+        // then, in the same tick, buoyancy finds that parcel light and lifts it. The other way round
+        // the gas is moved first and heated afterwards, so every parcel rises one tick after it was
+        // warmed and the circulation always trails its own cause.
+        //
+        // Waste heat lands in the machine that did the work — see [heatPerGram] — so it has to
+        // conduct out through the casing before the room feels it.
+        for (i in w.machines.indices) {
+            val added = w.heatAdded[i]
+            if (added == 0L) continue
+            val m = w.machines[i] ?: continue
+            w.machines[i] = m.withJoules(m.joules + added)
+        }
+        val bodies = bodiesOf(state.grid, w.machines, w.rails, w.bridges)
+        val conducted = stepSolidHeat(
+            grid = state.grid,
+            bodies = bodies,
+            structure = structure,
+            rails = w.rails,
+            airJoules = w.airJoules,
+            airCapacity = gasCapacity(state.grid.size, w.airGrams),
+        )
+        w.applyBodyHeat(bodies, conducted.joules)
 
         // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
         val fluid = stepFluid(state.grid, structure, w.airGrams, w.momentumX, w.momentumY, state.gravity, w.airJoules)
@@ -179,9 +204,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             signals = signals,
             structure = structure,
             occupancy = occupancy,
-            heat = heat,
             generatedJoules = w.generatedJoules,
-            radiatedJoules = state.radiatedJoules,
+            radiatedJoules = state.radiatedJoules + conducted.radiated,
+            constructionJoules = w.constructionJoules,
+            // What the fabric gave the atmosphere this tick. Both ledgers read it, with opposite
+            // signs, which is what lets each of them still close on its own — see [SolidHeatStep].
+            solidToAirJoules = state.solidToAirJoules + conducted.toAir,
             air = fluid.air,
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
             // Its own ledger rather than folded into `radiatedJoules`, for the same reason the air's
@@ -365,15 +393,53 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** This tick's signal snapshot, set once the sensing pass has run. */
         var signals: Signals = Signals.build { }
 
-        /** Joules each tile gained this tick from machines doing work, applied with the heat step. */
+        /**
+         * Joules each **machine** gained this tick from its own work, indexed by where it is stored.
+         *
+         * By machine rather than by tile, which is the body model's whole point here: a furnace's
+         * waste heat is in the furnace, so it has to get out through the firebrick before the room
+         * feels it. Charged to a separate array rather than straight onto the machine because the
+         * production passes rebuild machines as they go, and a `copy` in a later pass would drop a
+         * write made by an earlier one.
+         */
         val heatAdded: LongArray = LongArray(state.grid.size)
         var generatedJoules: Long = state.generatedJoules
 
-        /** Charges [joules] of waste heat to the tile at [index]. */
+        /**
+         * Energy that arrived in the world inside newly built bodies, less what left inside scrapped
+         * ones — see [VesselState.constructionJoules].
+         */
+        var constructionJoules: Long = state.constructionJoules
+
+        /** Charges [joules] of waste heat to the machine stored at [index]. */
         fun heat(index: Int, joules: Long) {
             if (joules <= 0L || index !in heatAdded.indices) return
             heatAdded[index] += joules
             generatedJoules += joules
+        }
+
+        /** Books a body's energy in or out of the world as it is built or scrapped. */
+        fun built(joules: Long) { constructionJoules += joules }
+
+        fun scrapped(joules: Long) { constructionJoules -= joules }
+
+        /**
+         * Puts each body's new energy back where it came from.
+         *
+         * Through [Body.slot] and [Body.at] rather than by rebuilding the lists, so the conduction
+         * pass never has to know which of three collections a thing lives in — that is the one
+         * question the slot exists to answer.
+         */
+        fun applyBodyHeat(bodies: List<Body>, joules: LongArray) {
+            for (i in bodies.indices) {
+                val body = bodies[i]
+                if (joules[i] == body.joules) continue
+                when (body.slot) {
+                    BodySlot.Deck -> machines[body.at]?.let { machines[body.at] = it.withJoules(joules[i]) }
+                    BodySlot.Fitting -> rails[body.at]?.let { rails[body.at] = it.copy(joules = joules[i]) }
+                    BodySlot.Span -> bridges[body.at]?.let { bridges[body.at] = it.withJoules(joules[i]) as Bridge }
+                }
+            }
         }
 
         /** Where a machine instance currently sits — miners are charged heat by identity. */
@@ -384,11 +450,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Place -> {
                     if (edit.index !in machines.indices) return
                     when (edit.kind) {
+                        // Every placement books the energy the new body brings with it: a tile of
+                        // track is a tile of iron at room temperature, and that heat is arriving in
+                        // the world rather than being conjured out of the ledger.
                         MachineKind.Rail -> if (rails[edit.index] == null) {
-                            rails[edit.index] = Segment(Conduit.Rail)
+                            rails[edit.index] = Segment(Conduit.Rail).also { built(it.joules) }
                         }
                         MachineKind.Gauge -> if (rails[edit.index] == null) {
                             rails[edit.index] = Segment(Conduit.Rail, channel = Channel.Amber)
+                                .also { built(it.joules) }
                         }
                         MachineKind.Bridge -> placeBridge(edit.index, edit.facing)
                         else -> placeBuilding(edit.index, edit.kind, edit.facing)
@@ -420,12 +490,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             debris.spill(edit.index, bridge.carried.map { asResource(it) })
                         }
                         bridges[edit.index] = null
+                        scrapped(bridge.joules)
                         return
                     }
                     val segment = rails[edit.index]
                     if (segment != null) {
                         segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
                         rails[edit.index] = null
+                        scrapped(segment.joules)
                         // Cut the far half of every join too. Leaving them would let a later tile of
                         // track laid here inherit connections the player never drew.
                         for (dir in Direction.ALL) {
@@ -441,6 +513,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // material to go, not an exemption for the player's own edits.
                     debris.spill(at, spoilsOf(machines[at]))
                     for (t in coveredTiles(grid, at, machines[at]!!.kind.size)) originOf[t] = -1
+                    scrapped(machines[at]!!.joules)
                     machines[at] = null
                 }
                 is Edit.Wire -> {
@@ -494,6 +567,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
 
             machines[at] = built
+            built(built.joules)
             for (t in covered) originOf[t] = at
         }
 
@@ -513,6 +587,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (ports.size < 2) return
             if (portsClash(ports)) return
             bridges[at] = built
+            built(built.joules)
         }
 
         /**

@@ -412,6 +412,19 @@ object OutofspaceAgentHarness {
             "storedJoules" -> state.storedJoules.toDouble()
             "generatedJoules" -> state.generatedJoules.toDouble()
             "radiatedJoules" -> state.radiatedJoules.toDouble()
+            "solidToAirJoules" -> state.solidToAirJoules.toDouble()
+            // The whole solid balance as one number, so a script can `expect heatBalance == 0`
+            // rather than reassembling five terms. Zero, always — see [VesselState.baselineJoules].
+            "heatBalance" -> (
+                state.storedJoules + state.radiatedJoules + state.solidToAirJoules -
+                    state.generatedJoules - state.constructionJoules - state.baselineJoules
+                ).toDouble()
+            "airHeatBalance" -> (
+                state.air.totalJoules + state.airVentedJoules - state.solidToAirJoules -
+                    state.baselineAirJoules
+                ).toDouble()
+            "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()
+            "hottestAirK" -> (0 until state.grid.size).maxOf { state.airKelvinAt(it) }.toDouble()
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
             "impulseX" -> state.vesselImpulseX.toDouble()
             "impulseY" -> state.vesselImpulseY.toDouble()
@@ -421,7 +434,8 @@ object OutofspaceAgentHarness {
         private val FIELDS = listOf(
             "tick", "machines", "airGrams", "airVented", "airBalance", "debrisGrams", "minedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
-            "radiatedJoules", "peakSpeed", "impulseX", "impulseY",
+            "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
+            "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
         )
 
         private fun dumpState(name: String) {

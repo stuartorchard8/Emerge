@@ -76,6 +76,15 @@ data class Segment(
     /** The dominant species' share of the last thing through, in permille. */
     val lastPurity: Int = 0,
     val lastMass: Long = 0L,
+    /**
+     * How much thermal energy this length of track is holding, in the millijoules [Material]
+     * documents — see [Machine.joules] for why it lives here rather than in a field beside the
+     * layer.
+     *
+     * The default reads [conduit], which is declared above it: a tile of rail starts as iron at room
+     * temperature and a tile of pipe as copper, without anything having to remember to set it.
+     */
+    val joules: Long = conduit.material.ambientPerTile,
 ) {
     val isGauge: Boolean get() = channel != null
 

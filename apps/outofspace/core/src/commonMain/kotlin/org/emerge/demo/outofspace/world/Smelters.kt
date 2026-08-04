@@ -11,8 +11,10 @@ data class Smelter(
     val carry: Long = 0L,
     val gramsPerTick: Long = 125L,
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Smelter),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Smelter
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 }

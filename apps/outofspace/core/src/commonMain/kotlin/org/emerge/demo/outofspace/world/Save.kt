@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 4
+    const val VERSION = 5
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -67,6 +67,8 @@ object Save {
         out.append("radiated ").append(state.radiatedJoules).append('\n')
         out.append("airvented ").append(state.airVentedGrams).append('\n')
         out.append("baselinejoules ").append(state.baselineJoules).append('\n')
+        out.append("construction ").append(state.constructionJoules).append('\n')
+        out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
 
         // Tiles are written as indices because that is what the world is indexed by, but an index is
@@ -98,17 +100,10 @@ object Save {
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
 
-        // Heat is one number per tile and mostly zero outside the hull, so only what is warm is
-        // written, packed several to a line to keep a big vessel from becoming thousands of them.
-        var onLine = 0
-        for (tile in 0 until state.grid.size) {
-            val j = state.heat.joulesAt(tile)
-            if (j == 0L) continue
-            if (onLine == 0) out.append("heat")
-            out.append(' ').append(tile).append('=').append(j)
-            if (++onLine == HEAT_PER_LINE) { out.append('\n'); onLine = 0 }
-        }
-        if (onLine != 0) out.append('\n')
+        // Solid heat has no line of its own any more. It lives on the machine and the segment,
+        // written as their `k=` field, because that is where the energy lives in the world — see
+        // [Body]. A separate per-tile block would be a second place for it to be, and the two would
+        // disagree the first time somebody hand-edited one of them.
 
         // Air gets a line per tile: a mixture is wordy, and the air in one room is a thing you want
         // to be able to read and edit.
@@ -200,6 +195,10 @@ object Save {
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
         if (m.wiring != Wiring.RUNNING) put("wire", writeWiring(m.wiring))
+        // And omitted at room temperature, for the same reason: a file full of identical `k=`
+        // fields hides the one machine that is actually hot. Version 5 and later; a version 4 file
+        // has no per-body heat at all and every body loads at ambient.
+        if (m.joules != ambientJoules(m.kind)) put("k", m.joules.toString())
         return f.toString()
     }
 
@@ -213,6 +212,7 @@ object Save {
         s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
         if (s.lastPurity != 0) f.append(" lastpurity=").append(s.lastPurity)
         if (s.lastMass != 0L) f.append(" lastmass=").append(s.lastMass)
+        if (s.joules != s.conduit.material.ambientPerTile) f.append(" k=").append(s.joules)
         return f.toString()
     }
 
@@ -271,7 +271,6 @@ object Save {
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<Int, Int>()
         val piles = HashMap<Int, MutableList<Resource>>()
-        val joules = LongArray(grid.size)
         val airGrams = LongArray(grid.size * Species.COUNT)
         val airJoules = LongArray(grid.size)
         val edges = EdgeGrid(grid)
@@ -292,6 +291,8 @@ object Save {
         var airVentedJoules = 0L
         var baselineAirJoules: Long? = null
         var baselineJoules: Long? = null
+        var construction = 0L
+        var solidToAir = 0L
         var baselineAir: Long? = null
 
         while (at < lines.size) {
@@ -315,6 +316,8 @@ object Save {
                 "airventedheat" -> airVentedJoules = long(1)
                 "baselineairheat" -> baselineAirJoules = long(1)
                 "baselinejoules" -> baselineJoules = long(1)
+                "construction" -> construction = long(1)
+                "solidtoair" -> solidToAir = long(1)
                 "baselineair" -> baselineAir = long(1)
 
                 "machine" -> {
@@ -337,12 +340,17 @@ object Save {
                     val pile = piles.getOrPut(tile(1)) { mutableListOf() }
                     for (i in 2 until tokens.size) pile.add(readResource(tokens[i], ::fail))
                 }
+                // Version 4 and earlier stored heat per *tile*. There is no honest way to
+                // redistribute a tile's joules over the bodies standing on it — the field averaged
+                // them in the first place, which is the reason it was replaced — so the line is
+                // parsed for well-formedness and dropped, and every body loads at ambient. Silently
+                // ignoring an unknown key instead would let a genuine typo through.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
                     if (eq < 0) fail("expected tile=joules, got '${tokens[i]}'")
                     val t = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad tile in '${tokens[i]}'")
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
-                    joules[t] = tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
+                    tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airJoules, ::fail)
                 "momx" -> readSparse(tokens, momentumX, ::fail)
@@ -362,7 +370,6 @@ object Save {
 
         val structure = StructureMap.derive(grid, machines.toList())
         val occupancy = Occupancy.derive(grid, machines.toList())
-        val heat = HeatField.of(joules)
         // Built from both arrays together, so a save that carries temperature keeps it and one that
         // predates temperature gets the room-temperature default rather than a world at absolute
         // zero. See AirField.of for why the two are one value.
@@ -383,10 +390,15 @@ object Save {
             airVentedGrams = airVented,
             structure = structure,
             occupancy = occupancy,
-            heat = heat,
+            constructionJoules = construction,
+            solidToAirJoules = solidToAir,
             // A missing baseline means the world's own totals, which is right for a handwritten
-            // world and harmless for a saved one, where the line is always present.
-            baselineJoules = baselineJoules ?: heat.totalJoules,
+            // world and harmless for a saved one, where the line is always present. A version 4
+            // file's baseline described the per-tile field, so it is not carried across: the
+            // ledger is re-anchored to what the bodies actually hold.
+            baselineJoules = if (version >= 5) baselineJoules ?: solidJoules(
+                machines.toList(), rails.toList(), bridges.toList()
+            ) else solidJoules(machines.toList(), rails.toList(), bridges.toList()),
             air = air,
             baselineAirGrams = baselineAir ?: air.totalGrams,
             airVentedJoules = airVentedJoules,
@@ -477,7 +489,15 @@ object Save {
             MachineKind.Rail, MachineKind.Gauge -> fail("$kindName is track, not a machine")
         }
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: Wiring.RUNNING
-        return machine.withWiring(wiring)
+        // A file that predates the body model says nothing about a machine's own heat, so it gets
+        // the room-temperature default its constructor already supplied. The old per-tile `heat`
+        // lines are read and discarded: they described a field that no longer exists, and
+        // reinterpreting a tile's joules as a body's would be exactly the misreading the version
+        // number is there to prevent.
+        val heated = f["k"]?.let { j ->
+            machine.withJoules(j.toLongOrNull() ?: fail("bad joules '$j'"))
+        } ?: machine
+        return heated.withWiring(wiring)
     }
 
     private fun readSegment(tokens: List<String>, fail: (String) -> Nothing): Segment {
@@ -501,6 +521,7 @@ object Save {
             },
             lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
             lastMass = f["lastmass"]?.toLongOrNull() ?: 0L,
+            joules = f["k"]?.toLongOrNull() ?: conduit.material.ambientPerTile,
         )
     }
 

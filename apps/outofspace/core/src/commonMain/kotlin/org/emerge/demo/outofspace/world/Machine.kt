@@ -20,8 +20,41 @@ package org.emerge.demo.outofspace.world
 sealed interface Machine {
     val kind: MachineKind
     val wiring: Wiring
+
+    /**
+     * How much thermal energy this machine is holding, in the millijoules [Material] documents.
+     *
+     * On the machine rather than in a field beside it, and that is load-bearing — see [Body]. A
+     * parallel array keyed by tile would be desynchronised by `copy(machines = …)`, which is the
+     * operation every save load, every fixture and every player edit goes through, and the symptom
+     * is a freshly laid rail inheriting the energy of the furnace that used to stand there. Here,
+     * a machine's capacity and a machine's energy are properties of the same value and cannot come
+     * apart.
+     *
+     * Defaults to room temperature for the machine's own footprint and material, so placing one
+     * needs no separate act of initialisation.
+     */
+    val joules: Long
+
     fun withWiring(wiring: Wiring): Machine
+
+    fun withJoules(joules: Long): Machine
 }
+
+/**
+ * How many tiles' worth of material a machine is made of.
+ *
+ * The footprint, squared — except for a bridge, which claims no floor space at all and is
+ * nonetheless three tiles of metal spanning three tiles of room. Deliberately **not** derived from
+ * the clipped [coveredTiles] of wherever it stands: what a thing is made of does not change when it
+ * is built near the edge of the grid, and a capacity that varied with position would make an
+ * identical machine hold a different amount of heat depending on where you put it.
+ */
+val MachineKind.thermalTiles: Int
+    get() = if (this == MachineKind.Bridge) 3 else size * size
+
+/** What a freshly built machine of this kind holds: all of it, at room temperature. */
+fun ambientJoules(kind: MachineKind): Long = kind.material.ambientPerTile * kind.thermalTiles
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {

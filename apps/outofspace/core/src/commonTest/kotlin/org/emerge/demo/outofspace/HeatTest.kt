@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
@@ -28,11 +28,16 @@ import kotlin.test.assertTrue
  *
  * The headline assertion is the thermal twin of the mass balance:
  *
- *     stored + radiated − generated == baseline
+ *     stored + radiated + solidToAir − generated − construction == baseline
  *
  * on every tick. Energy is the stored quantity and temperature is derived from it, precisely so that
  * this can be checked exactly; a field of temperatures with no capacities behind it would create and
  * destroy energy every time two unlike tiles met, and nothing would ever notice.
+ *
+ * The two extra terms are what the body model costs and both are honest traffic rather than
+ * fudge factors — building a wall brings a wall's heat into the world, and the fabric now conducts
+ * into the atmosphere. The air's own ledger is checked against the same `solidToAir` with the
+ * opposite sign, which is what proves the coupling moves energy rather than minting it.
  */
 class HeatTest {
 
@@ -49,8 +54,19 @@ class HeatTest {
     private fun assertEnergyBalanced(s: VesselState, what: String) {
         assertEquals(
             s.baselineJoules,
-            s.storedJoules + s.radiatedJoules - s.generatedJoules,
-            "$what: stored ${s.storedJoules} + radiated ${s.radiatedJoules} - generated ${s.generatedJoules}",
+            s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
+                s.generatedJoules - s.constructionJoules,
+            "$what: stored ${s.storedJoules} + radiated ${s.radiatedJoules} " +
+                "+ toAir ${s.solidToAirJoules} - generated ${s.generatedJoules} " +
+                "- construction ${s.constructionJoules}",
+        )
+        // The other half of the coupling. Whatever the fabric says it gave the air, the air has to
+        // be holding — otherwise the transfer is a leak in one ledger and a mint in the other, and
+        // each of them alone would look balanced.
+        assertEquals(
+            s.baselineAirJoules,
+            s.air.totalJoules + s.airVentedJoules - s.solidToAirJoules,
+            "$what: air ${s.air.totalJoules} + vented ${s.airVentedJoules} - fromSolid ${s.solidToAirJoules}",
         )
     }
 
@@ -181,57 +197,77 @@ class HeatTest {
         val twoAway = s.kelvinAt(g.index(2, 5))
         val farCorner = s.kelvinAt(g.index(2, 9))
 
-        assertTrue(atSmelter > HeatField.AMBIENT_KELVIN + 15, "the furnace tile should be hot: ${atSmelter}K")
+        assertTrue(atSmelter > Temperature.AMBIENT_KELVIN + 15, "the furnace tile should be hot: ${atSmelter}K")
         assertTrue(atSmelter > twoAway, "hottest at the source: $atSmelter vs $twoAway")
         assertTrue(twoAway >= farCorner, "and cooler with distance: $twoAway vs $farCorner")
     }
 
     @Test
     fun `heat never overshoots into an oscillation`() {
-        // One very hot tile beside cold ones. A flux computed without an equalising cap would send
-        // more energy than the gap holds and the two tiles would swap hot and cold every tick.
-        val room = sealedRoom(6, 6)
+        // One very hot body among cold ones. A flux computed without an equalising cap would send
+        // more energy than the gap holds and the two would swap hot and cold every tick — and the
+        // body model makes that easier to trip, not harder, because a copper fitting beside a steel
+        // wall is a hundredfold capacity ratio rather than the twofold one a tile field ever saw.
+        val room = sealedRoom(6, 6, track = { row(2, 5, 3) })
         val g = room.grid
-        val joules = room.heat.copyJoules()
-        joules[g.index(3, 3)] = 4_000L * HeatField.INTERIOR_CAPACITY   // 4000K in one tile
-        var s = room.copy(heat = HeatField.of(joules), baselineJoules = HeatField.of(joules).totalJoules)
+        val hot = g.index(3, 1)             // a wall tile, driven to 4000K
+        val machines = room.machines.toMutableList()
+        val wall = machines[hot]!!
+        machines[hot] = wall.withJoules(wall.joules * 4_000 / Temperature.AMBIENT_KELVIN)
+        var s = room.copy(machines = machines.toList()).let { it.copy(baselineJoules = it.storedJoules) }
 
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = (0 until s.grid.size).maxOf { i -> if (!s.structure.isContained(i)) 0 else s.kelvinAt(i) }
-            assertTrue(peak <= previousPeak, "the hottest tile got hotter with no source: $peak > $previousPeak")
+            val peak = s.bodies.maxOf { it.kelvin }
+            assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }
+        assertTrue(previousPeak < 4_000, "and it actually spread: ${previousPeak}K")
         assertEnergyBalanced(s, "after settling")
     }
 
-//    @Test
-//    fun `a sealed room with no heat source cools toward space`() {
-//        var s = sealedRoom(6, 6)
-//        val g = s.grid
-//        val startK = s.kelvinAt(g.index(3, 3))
-//        s = run(s, 480)
-//        val endK = s.kelvinAt(g.index(3, 3))
-//        assertTrue(endK < startK, "it should have cooled: $startK -> $endK")
-//        assertTrue(endK >= HeatField.SPACE_KELVIN, "but never below space itself: ${endK}K")
-//        assertEnergyBalanced(s, "after cooling")
-//    }
-//
-//    @Test
-//    fun `machines outside the hull dump their heat straight to space`() {
-//        val grid = Grid(5, 3)
-//        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20_000L))
-//        val machines = arrayOfNulls<Machine>(grid.size)
-//        machines[grid.index(2, 1)] = Smelter(Direction.Right, input = ore)
-//        var s = VesselState(grid, machines.toList())
-//        s = run(s, 40)
-//
-//        assertEquals(Structure.Vacuum, s.structure[grid.index(2, 1)], "nothing encloses it")
-//        assertEquals(0L, s.storedJoules, "so it stores nothing")
-//        assertTrue(s.generatedJoules > 0L && s.radiatedJoules == s.generatedJoules, "it all went to space")
-//        assertEnergyBalanced(s, "bare machine")
-//    }
+    @Test
+    fun `a sealed room with no heat source cools toward space`() {
+        var s = sealedRoom(6, 6)
+        val g = s.grid
+        // A *wall* tile. An empty interior tile has no fabric to have a temperature any more — the
+        // old field charged every tile a capacity whether or not anything stood on it, and that is
+        // exactly the fiction the body model drops. What is in an empty room is air, and the air's
+        // temperature is [airKelvinAt].
+        val wall = g.index(3, 1)
+        val startK = s.kelvinAt(wall)
+        s = run(s, 480)
+        val endK = s.kelvinAt(wall)
+        assertTrue(endK < startK, "the wall should have cooled: $startK -> $endK")
+        assertTrue(endK >= Temperature.SPACE_KELVIN, "but never below space itself: ${endK}K")
+        assertEnergyBalanced(s, "after cooling")
+    }
+
+    @Test
+    fun `a machine outside the hull keeps its own heat and radiates it`() {
+        // Roomy enough that the five-tile furnace does not fill it: with nothing but space around
+        // it, every face of the thing is exposed.
+        val grid = Grid(11, 11)
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20_000L))
+        val machines = arrayOfNulls<Machine>(grid.size)
+        machines[grid.index(5, 5)] = Smelter(Direction.Right, input = ore)
+        var s = VesselState(grid, machines.toList())
+        s = run(s, 40)
+
+        // The machine's own tile reads as Machine — it is solid. What matters is that nothing
+        // encloses it: every tile around it is space.
+        assertEquals(Structure.Vacuum, s.structure[grid.index(1, 1)], "nothing encloses it")
+        assertEquals(Structure.Machine, s.structure[grid.index(5, 5)], "and it is solid, not a room")
+        // The old per-tile field zeroed anything not enclosed, so a bare machine stored nothing at
+        // all. That was a property of the field rather than of the world: a furnace in vacuum is
+        // still a furnace full of hot firebrick, and what vacuum actually does is make radiation the
+        // only way out. So it stores its heat, and sheds it slowly.
+        assertTrue(s.storedJoules > 0L, "a furnace in vacuum is still a hot furnace")
+        assertTrue(s.radiatedJoules > 0L, "and the only way out is radiation")
+        assertTrue(s.kelvinAt(grid.index(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
+        assertEnergyBalanced(s, "bare machine")
+    }
 
     @Test
     fun `placing hull is an ordinary build action`() {

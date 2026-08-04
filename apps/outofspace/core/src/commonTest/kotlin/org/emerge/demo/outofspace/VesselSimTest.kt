@@ -383,7 +383,13 @@ class VesselSimTest {
         val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L)))
         var s = VesselState(grid, listOf(store, null))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Sensor, Direction.Right))))
-        assertEquals(store, s[0], "a stray click must not destroy a machine and its contents")
+        // Compared with its heat put back, because a tick of conduction has moved it: the machine
+        // is a thermal body now and radiating for one tick is not the same as being overwritten.
+        assertEquals(
+            store,
+            s[0]?.withJoules(store.joules),
+            "a stray click must not destroy a machine and its contents",
+        )
     }
 
     @Test

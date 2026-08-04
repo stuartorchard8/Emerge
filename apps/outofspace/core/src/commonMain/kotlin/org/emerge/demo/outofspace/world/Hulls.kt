@@ -4,9 +4,11 @@ package org.emerge.demo.outofspace.world
 data class Vent(
     val ventedGrams: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Vent),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Vent
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 }
 
 /**
@@ -19,7 +21,9 @@ data class Vent(
  */
 data class Hull(
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Hull),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Hull
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 }

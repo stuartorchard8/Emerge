@@ -860,6 +860,99 @@ it wants to be looked at with a working nozzle in front of it rather than guesse
 
 ---
 
+## 5c. The body model (2026-08-04)
+
+Heat came back on, and the first thing it needed was somewhere to be.
+
+The field it replaces gave every tile one temperature and one heat capacity, worked out from what
+kind of tile it was: interior, hull, or interior-plus-a-machine. That is a fair approximation right
+up to the moment a tile holds more than one thing — which in this game is the ordinary case, because
+conduits are **layers** and layers exist precisely so a rail, a pipe and a machine can share the
+floor. Averaging an iron rail, a copper pipe and a titanium furnace shell into one lump denies all
+three of them the only thing that makes materials interesting: they warm at different rates and pass
+heat at different rates. Routing a cable through a hot room could never cost or save anything,
+because the cable had no temperature of its own to lose.
+
+### The unit is the object, and the object owns its energy
+
+`Body` is one solid thing with one temperature: a wall, a five-tile furnace, a tile of track. Its
+capacity is `Material.capacityPerTile × thermalTiles`, so a furnace is twenty-five tiles of firebrick
+at one temperature — which is what a furnace is — while a run of track is one body per tile, which is
+what track is.
+
+The energy lives **on the machine and on the segment**, not in a field beside them. This is the same
+decision, for the same reason, as the gas's heat living inside `AirField`: when energy is stored and
+temperature derived, a parallel array keyed by tile is desynchronised by exactly one operation,
+`copy(machines = …)`, and that operation is every save load, every fixture and every player edit.
+Pull a smelter, drop a rail on the tile, and the rail inherits a furnace's joules and reads at four
+thousand kelvin. There is no discipline that survives that; there is only a shape that makes it
+unreachable. It costs a field on eight data classes.
+
+### Touching is a graph, not a stencil
+
+`stepSolidHeat` builds a contact list rather than sweeping a neighbourhood:
+
+| contact | rule |
+| --- | --- |
+| same tile | anything sharing a tile touches, whatever layer it is on |
+| impermeable ↔ impermeable | across tile faces, counted **per face** so a five-tile joint is five times a one-tile one |
+| impermeable ↔ air | the air in each neighbouring permeable tile — the only way heat reaches a room |
+| permeable ↔ anything | its own tile only: what shares it, and the air in it |
+| fitting ↔ fitting | only where the player **drew** a join — see `Segment.links` |
+
+The last row is the one that makes routing a decision. Two runs of track lying side by side are not
+connected, so heat does not cross between them; a long copper run is a thermal short circuit along
+its length and nothing at all across it, which is what a cable is. A bridge needs no case of its own:
+it spans three tiles and the segments it joins to sit on the two ends, so the shared-tile rule
+already connects it.
+
+The shared-tile rule is not physically grounded — three objects are not really in one cubic metre —
+and it is kept anyway, because a tile is a bookkeeping unit rather than a volume and the behaviour it
+gives is the right one: things built on top of each other share their heat.
+
+### What it cost the ledgers
+
+Two new terms, both honest traffic rather than fudge factors:
+
+- `constructionJoules` — a body carries its energy with it, so building a wall brings a wall's worth
+  of room-temperature heat into the world and scrapping one takes it away. The old field hid this by
+  charging every tile a capacity whether or not anything stood on it.
+- `solidToAirJoules` — the fabric and the atmosphere exchange heat now, so what one ledger loses the
+  other gains. Booked once, read by both with opposite signs, which is what keeps each of them
+  closing independently. A transfer that is not counted is a leak in one and a mint in the other.
+
+Both hold exactly over four hundred ticks of a working refinery.
+
+### Convection, for free, again
+
+Nothing in the heat pass knows which way is up. A furnace warms itself, conducts through firebrick
+into the air beside it, `P = nT` makes that gas light for its pressure, buoyancy lifts it and
+`advectHeat` carries the warmth up with the parcel. Measured at tick 400 of the starter vessel: the
+furnace at 401 K, and the hottest air in the ship — 334 K — directly **above** it, with the gas
+below it barely warm.
+
+### ⚠️ Conduction runs before the fluid
+
+A wall warms its parcel, and buoyancy lifts that parcel, in the same tick. The other order works and
+is subtly worse: every parcel would rise one tick after it was warmed, so the circulation always
+trails its own cause.
+
+### ⚠️ What this uncovered and did not cause
+
+`BreachSymmetryTest` ran on the starter vessel, which is fine while the air is isothermal — the only
+thing the gas can feel is the hull, and the hull is symmetric whatever stands inside it. Coupling
+ended that: a refinery line is not mirror-symmetric, so one half of the ship is now genuinely warmer,
+and a warmer plume is a faster plume. The test moved to a bare hull box, where the world really is
+symmetric.
+
+The box leans 11–13% at ±5 and ±12 — **and it leans by exactly the same amounts on `1d7c8e1e`, the
+commit before any of this.** So there is a real, pre-existing asymmetry in the transport that the
+starter vessel was masking, and it is worth chasing on its own. What the test still says with full
+sharpness is that the body model adds *nothing* to it: with the machines out, the numbers before and
+after are identical to the gram.
+
+---
+
 ## 6. Open questions
 
 1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides

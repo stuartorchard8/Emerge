@@ -15,10 +15,12 @@ data class Miner(
     val carry: Long = 0L,
     val gramsPerTick: Long = 250L,
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Miner),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Miner
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
         const val BUFFER_CAP = 5_000L

@@ -10,8 +10,10 @@ data class Sensor(
     override val facing: Direction,
     val channel: Channel = Channel.Red,
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Sensor),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Sensor
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 }

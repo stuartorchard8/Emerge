@@ -16,10 +16,12 @@ data class Storage(
     override val facing: Direction,
     val contents: Resource? = null,
     override val wiring: Wiring = Wiring.RUNNING,
+    override val joules: Long = ambientJoules(MachineKind.Storage),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Storage
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
+    override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
         const val CAP = 20_000L

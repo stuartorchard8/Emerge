@@ -1,15 +1,15 @@
 package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 
 /**
  * How hot the gas is: thermal energy that belongs to the atmosphere, travels with it, and sets its
  * pressure.
  *
- * ### Why this is not [HeatField]
+ * ### Why the gas's heat is not in the same place as the fabric's
  *
- * The first attempt put the gas's energy into the existing per-tile joules and made a tile's heat
+ * The first attempt put the gas's energy into a per-tile joules field and made a tile's heat
  * capacity include its air. One field, one temperature per room, air and fittings in equilibrium —
  * which is defensible physics at this grain, and it broke immediately for a reason worth writing
  * down.
@@ -22,13 +22,15 @@ import org.emerge.demo.outofspace.world.HeatField
  * exactly the operation that lets them disagree.
  *
  * So the gas's energy lives with the gas. It is impossible to move air without moving its heat,
- * because the same pass does both, and the invariant is structural rather than remembered.
+ * because the same pass does both, and the invariant is structural rather than remembered. The same
+ * argument, applied to solids, is why a machine's heat lives on the machine — see
+ * [org.emerge.demo.outofspace.world.Body].
  *
- * The cost, stated plainly: there are two temperatures in a tile — the fabric's, in [HeatField], and
- * the air's, here. They are not yet coupled, so a smelter warms the deck plating and not the room.
- * The coupling is one conduction term between the two fields and it belongs with heat's own step
- * coming back on, which is the next piece of work rather than this one. Building it now would mean
- * tuning a coefficient against convection that does not exist yet.
+ * A tile therefore has one air temperature and as many fabric temperatures as there are things
+ * standing in it. They are **coupled**, by [org.emerge.demo.outofspace.world.stepSolidHeat], which
+ * conducts across every contact and books the net crossing so that both ledgers still close on
+ * their own. A wall hotter than the room it is heating is not two numbers disagreeing; it is what a
+ * wall heating a room looks like.
  *
  * ### Why energy is the thing that moves
  *
@@ -83,7 +85,7 @@ const val CAPACITY_SCALE = 1000L
 /**
  * Temperature of the gas in each tile, in kelvin.
  *
- * A tile with no gas has no gas temperature, and reads as [HeatField.AMBIENT_KELVIN] rather than as
+ * A tile with no gas has no gas temperature, and reads as [Temperature.AMBIENT_KELVIN] rather than as
  * space. That is not a dodge around dividing by zero: [tilePressure] multiplies by this, and nothing
  * times a temperature is still nothing, so the value is only ever a placeholder for an absent
  * quantity. Ambient is the placeholder that makes an empty tile behave identically to how it did
@@ -91,7 +93,7 @@ const val CAPACITY_SCALE = 1000L
  */
 fun gasKelvin(gasJoules: LongArray, capacity: LongArray): IntArray =
     IntArray(gasJoules.size) {
-        if (capacity[it] <= 0L) HeatField.AMBIENT_KELVIN else (gasJoules[it] / capacity[it]).toInt()
+        if (capacity[it] <= 0L) Temperature.AMBIENT_KELVIN else (gasJoules[it] / capacity[it]).toInt()
     }
 
 /**
@@ -100,7 +102,7 @@ fun gasKelvin(gasJoules: LongArray, capacity: LongArray): IntArray =
  */
 fun ambientGasJoules(tileCount: Int, grams: LongArray): LongArray {
     val capacity = gasCapacity(tileCount, grams)
-    return LongArray(tileCount) { capacity[it] * HeatField.AMBIENT_KELVIN }
+    return LongArray(tileCount) { capacity[it] * Temperature.AMBIENT_KELVIN }
 }
 
 /**

@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.HeatField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.StructureMap
@@ -138,7 +138,7 @@ class ThermalTest {
         // started 400K above ambient is spread across a good part of the room after sixty ticks.
         // What is being asserted is that identifiable warmth survived the journey, not that it
         // arrived intact; a scheme that kept it intact would be one that had stopped conserving.
-        assertTrue(best > HeatField.AMBIENT_KELVIN + 10, "the warmth dissipated entirely: ${best}K")
+        assertTrue(best > Temperature.AMBIENT_KELVIN + 10, "the warmth dissipated entirely: ${best}K")
     }
 
     /**
