@@ -12,6 +12,10 @@ package org.emerge.demo.outofspace.world.fluid
  * They part company only at a vacuum boundary, and legitimately so: there is no wall there to take
  * the reaction, because the momentum has left with the gas. That escape is counted by
  * [advectMomentum], not here.
+ *
+ * [vesselX] and [vesselY] carry a second term on top of that lean: the momentum a bulkhead **stopped**
+ * — see the note where closed faces are pinned. Leaning and stopping are both things a wall does to
+ * gas, and both are impulses on the hull, so they belong in the same number.
  */
 class ProjectionResult(
     val vesselX: Long,
@@ -107,10 +111,21 @@ fun project(
 ): ProjectionResult {
     val grid = edges.grid
 
-    // A bulkhead carries no flow. Enforced rather than assumed, because a face that has just been
-    // built over would otherwise keep whatever momentum it had while it was still open.
-    for (e in 0 until edges.xEdgeCount) if (!apertures.isXOpen(e)) mx[e] = 0L
-    for (e in 0 until edges.yEdgeCount) if (!apertures.isYOpen(e)) my[e] = 0L
+    // ── A bulkhead carries no flow, and what it stopped it keeps ──
+    //
+    // Enforced rather than assumed, because momentum arrives on closed faces every tick:
+    // [advectMomentum] works on a dual grid and knows nothing about apertures, so gas flowing toward a
+    // wall hands its momentum to the face the wall is on. Zeroing that face is right — nothing flows
+    // through a bulkhead — but the momentum did not stop existing when the gas hit the hull. It went
+    // into the hull, which is what a wall *is*: the thing that takes what it stops.
+    //
+    // Erasing it instead was worth 2040 units of the ledger over 120 ticks of a breached vessel, all
+    // of it on the gravity axis, because an atmosphere sitting on a deck advects downward into the
+    // floor every single tick and the floor was throwing the impact away.
+    var stoppedX = 0L
+    var stoppedY = 0L
+    for (e in 0 until edges.xEdgeCount) if (!apertures.isXOpen(e)) { stoppedX += mx[e]; mx[e] = 0L }
+    for (e in 0 until edges.yEdgeCount) if (!apertures.isYOpen(e)) { stoppedY += my[e]; my[e] = 0L }
 
     // ── How strongly each face couples the cells either side: aperture over density ──
     //
@@ -183,6 +198,7 @@ fun project(
         fluidY += impulse
     }
 
+
     // ── And let the bulkheads take the reaction ──
     //
     // Worked out from the walls themselves rather than from what the fluid gained, so that the two
@@ -205,7 +221,7 @@ fun project(
         if (after >= 0 && coupled[after] > 0L) vesselY -= p[after]
     }
 
-    return ProjectionResult(vesselX, vesselY, fluidX, fluidY)
+    return ProjectionResult(vesselX + stoppedX, vesselY + stoppedY, fluidX, fluidY)
 }
 
 /**
