@@ -75,13 +75,19 @@ sealed interface Edit {
         /**
          * What [Thrust] is worth, in thousandths of one tile per tick per tick.
          *
-         * Twenty, which is two per cent of the deck plating and about thirty times what a bare
-         * breached hull manages. Big enough to fly a vessel across the nav panel in a few seconds of
-         * held key, small enough that the atmosphere leans into it and sloshes rather than being
-         * slammed against the stern — the felt gravity is the interesting half of this, and a
-         * thruster that pinned every loose gram to one wall would hide it.
+         * A quarter of a g, which is a torch ship rather than a station-keeping nudge.
+         *
+         * ⚠️ It was twenty milli-g, chosen to be gentle enough that the atmosphere would lean into a
+         * burn and slosh rather than being slammed against the stern. That reasoning was sound and
+         * the number was worthless: at 0.02 g the settling passes rounded to *nothing at all* — see
+         * [org.emerge.demo.outofspace.world.fluid.scaleByGravity] for the measurement — so a burn
+         * moved the ship and left everything inside it exactly where it was.
+         *
+         * With the truncation fixed and the deck plating gone, this is the only gravity a vessel
+         * has, so it has to be worth having. A quarter of a g settles a room over tens of ticks,
+         * which is the regime the settling rate was tuned for in the first place.
          */
-        const val DEBUG_THRUST_MILLI_G: Long = 20L
+        const val DEBUG_THRUST_MILLI_G: Long = 250L
 
         /**
          * How big a dropped rock is, in cells of radius — so five across, twenty-one cells filled.

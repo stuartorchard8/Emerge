@@ -344,7 +344,10 @@ object Save {
         // that says zero is a world whose rocks all arrived after it started.
         var baselineRockGrams: Long? = null
 
-        var gravity = VesselState.DEFAULT_GRAVITY
+        // Absent means freefall, which is what a vessel with its engines off has — and what
+        // every world written before the plating was dropped meant by "one g" is still written out
+        // explicitly, so an old save keeps the gravity it was played under.
+        var gravity = VesselState.FREEFALL
         var positionX = 0L
         var positionY = 0L
         var netImpulseX = 0L

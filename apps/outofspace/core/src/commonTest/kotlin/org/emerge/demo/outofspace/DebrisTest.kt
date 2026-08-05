@@ -54,7 +54,7 @@ class DebrisTest {
         for (x in 1..w) { machines[grid.index(x, 1)] = Hull(); machines[grid.index(x, h)] = Hull() }
         for (y in 1..h) { machines[grid.index(1, y)] = Hull(); machines[grid.index(w, y)] = Hull() }
         for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
-        return VesselState(grid, machines.toList())
+        return VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
     }
 
     @Test
@@ -127,7 +127,7 @@ class DebrisTest {
         val grid = Grid(5, 3)
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(2, 1)] = Storage(Direction.Right, ingots)
-        val s0 = VesselState(grid, machines.toList())
+        val s0 = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
 
         val s = run(s0, 3, OutofspaceInput(listOf(Edit.Remove(grid.index(2, 1)))))
         assertEquals(0L, s.debrisGrams, "there is no deck out there to land on")

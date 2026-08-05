@@ -8,8 +8,6 @@ import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -96,7 +94,7 @@ class RockTest {
      */
     @Test
     fun `a burn leaves a free rock astern`() {
-        val controller = OutofspaceController(CFG, bareHull().copy(gravity = NO_PLATING))
+        val controller = OutofspaceController(CFG, bareHull().copy(gravity = VesselState.FREEFALL))
         controller.dropRock(CFG.grid.index(18, 16))
         controller.stepOnce()
 
@@ -206,7 +204,7 @@ class RockTest {
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
-        return VesselState(grid = grid, machines = machines.toList())
+        return VesselState(grid = grid, machines = machines.toList(), gravity = VesselState.PLATING_ONE_G)
     }
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */
@@ -220,8 +218,5 @@ class RockTest {
 
         /** 60 ticks of a 35×33 fluid solve — enough for a burn to be unambiguous, and under a second. */
         const val TICKS = 60
-
-        /** Engines-only: the deck plating switched off, so the only "down" is the ship's own thrust. */
-        val NO_PLATING: Frac2 = Frac2(Frac(0L), Frac(0L))
     }
 }

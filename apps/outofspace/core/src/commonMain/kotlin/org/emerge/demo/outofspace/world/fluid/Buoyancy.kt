@@ -124,7 +124,7 @@ fun applyBuoyancy(
  * properly once there is something to watch, which is increment D.
  */
 private fun pull(excessGrams: Long, gravityRaw: Long): Long =
-    scaleByGravity(excessGrams, gravityRaw) * SETTLING_NUMERATOR / SETTLING_DENOMINATOR
+    scaleByGravity(excessGrams, gravityRaw, SETTLING_NUMERATOR, SETTLING_DENOMINATOR)
 
 /**
  * Multiply a quantity by a gravity, rounded to nearest and **symmetrically about zero**.
@@ -151,12 +151,54 @@ private fun pull(excessGrams: Long, gravityRaw: Long): Long =
  * Round-to-nearest fixes both. One gram at 0.9999 g stays one gram; the rounding is the same distance
  * for `+7` as for `−7`; and at exactly one g it is still the identity, so nothing that was ever
  * measured under gravity moves.
+ *
+ * ### ⚠️ The settling factor has to come through here too, and not doing so cost a second bug
+ *
+ * The fix above landed, and immediately below both of its call sites sat
+ * `scaleByGravity(...) * SETTLING_NUMERATOR / SETTLING_DENOMINATOR` — a **truncating integer divide**
+ * on the very next operation. So the rounding was undone one line later, and everything the doc
+ * above says about annihilating the small was still true, just at a quarter of the scale: a quantity
+ * needed `q × g ≥ 4` to survive at all.
+ *
+ * Nobody saw it because the plating held gravity at one g, where `q/4` truncating is a fair enough
+ * approximation of a settling rate that was itself called a tuning dial. Dropping the plating made
+ * gravity a *small* number for the first time, and at small g the divide is not an approximation, it
+ * is an off switch. Measured, on a breached bare hull:
+ *
+ * ```
+ *   g     1.0    0.5    0.45   0.4    0.3    0.25   0.2    0.1    0.02   0.0
+ *   lean  0%     12%    12%    12%    87%    31%    31%    31%    31%    31%
+ *                └── bit-identical ──┘        └────── bit-identical ──────┘
+ * ```
+ *
+ * Plateaus of *bit-identical* results, which is the same tell as before: not a sensitivity to how
+ * much gravity there is, but a set of values that are all secretly the same value. Everything below
+ * about 0.3 g was zero gravity. A 0.02 g burn — which is what the debug engine used to be worth —
+ * would have moved the ship and left the atmosphere inside it completely untouched, and the felt-
+ * gravity model would have read as implemented and done nothing.
+ *
+ * So the whole scaling is **one rounded operation**: `q × g × num / (LIMIT × den)`, rounded once at
+ * the end. The general form of the lesson is the one §5e already wrote down, and it wants stating
+ * more sharply: **rounding correctly is not a property of an expression, it is a property of the
+ * whole chain.** A rounded multiply followed by a truncating divide is a truncating chain.
  */
-internal fun scaleByGravity(quantity: Long, gravityRaw: Long): Long {
+internal fun scaleByGravity(
+    quantity: Long,
+    gravityRaw: Long,
+    /**
+     * The settling rate, as a fraction — folded in here rather than applied afterwards. Defaults to
+     * one, which is a caller that only wants the gravity.
+     */
+    numerator: Long = 1L,
+    denominator: Long = 1L,
+): Long {
     val magnitude = if (quantity < 0L) -quantity else quantity
     val g = if (gravityRaw < 0L) -gravityRaw else gravityRaw
-    val limit = MomentumField.SPEED_LIMIT_RAW
-    val scaled = (magnitude * g + limit / 2L) / limit
+    // A gram is at most a few hundred thousand and a gravity at most `Int.MAX`, so the product is
+    // ~1e14 and a long has room to spare. Stated because the whole point of this function is that
+    // its arithmetic is load-bearing.
+    val divisor = MomentumField.SPEED_LIMIT_RAW * denominator
+    val scaled = (magnitude * g * numerator + divisor / 2L) / divisor
     val negative = (quantity < 0L) != (gravityRaw < 0L)
     return if (negative) -scaled else scaled
 }

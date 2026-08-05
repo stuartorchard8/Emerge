@@ -149,7 +149,7 @@ fun vesselMassGrams(
  *
  * [netImpulseX] is one tick's change in the ship's momentum — not the running total — because what is
  * felt is a force and not a history. Divided by the ship's mass it is an acceleration in tiles per
- * tick per tick, which is exactly the unit [VesselState.DEFAULT_GRAVITY] is already stated in.
+ * tick per tick, which is exactly the unit [VesselState.PLATING_ONE_G] is already stated in.
  *
  * ### What moving gravity off exactly one g cost, because it was not nothing
  *

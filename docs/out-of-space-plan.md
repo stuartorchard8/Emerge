@@ -1235,7 +1235,21 @@ so that each one ends with something to look at, and each commit carries **all f
   claim is *no plating out there*, not *no motion*; the two only coincide when the ship is not
   accelerating, so the fixture is now a vacuum one. Same shape of error as §5e's: **a stronger
   assertion than the model makes is a test that will fail on correct behaviour.**
-- **H2. Collision** — grid/grid overlap against hull and deck. It lands and stays landed, and
+- **H1b. Freefall** — ✅ **BUILT 2026-08-05.** The deck plating is gone. See §5g.
+- **H2. Collision** — grid/grid overlap against hull and deck, **with restitution**: a rock that hits
+  the ship ricochets rather than sticking. `e = 0.5`, tuned for legibility rather than measured (rock
+  on steel is really nearer 0.2–0.4, and a ricochet you cannot see is not worth having). Normal
+  impulse only — frictionless, so a rock sliding along a wall keeps sliding — plus a resting
+  threshold, below which the bounce is dropped, because otherwise a rock on the deck buzzes forever.
+  The exchange is `+J` to the rock and `−J` to the ship, so it conserves momentum *by construction*
+  and needs no ledger term at all, unlike the debug engine.
+
+  ⚠️ **Do H2a first: move the rock's momentum into the world frame.** It is in the *vessel* frame
+  today, which was right while nothing exchanged. The moment something does, an impulse on the ship
+  changes the frame every other rock's velocity is measured against, and the reduced-mass term goes
+  missing silently. In the world frame there is no pseudo-force at all: a free rock has constant
+  momentum, the plating is an ordinary force where it reaches, and the astern drift falls out of
+  position being relative. It should be bit-identical to H1, which is the check. It lands and stays landed, and
   `momentumBalance` stays zero because the ship gets what the rock loses.
 - **H3. The extractor** — 5×5 permeable background machine, leeching mass off the rocks on its tiles
   into a `Mixture` that feeds the existing refining stages. **The miner is deleted here.** This is
@@ -1243,6 +1257,59 @@ so that each one ends with something to look at, and each commit carries **all f
   the capture ceremony and does not depend on it.
 - **H4. Capture** — the field outside, flying at a rock, the rock entering the grid.
 - **H5. Pressure on rocks** — the permeable coupling above. Last, so it can be cut.
+
+---
+
+## 5g. Freefall, and a constant that was an off switch (2026-08-05)
+
+**The deck plating is gone.** A vessel has no gravity of its own; "down" is something it earns by
+burning and loses the moment the engine stops. That is where §1 and §3 were always pointing —
+"parameterised, acceleration-derived later" — and increment G is what made the second half available.
+
+The field stayed rather than becoming a constant zero. `VesselState.gravity` defaults to `FREEFALL`,
+and `PLATING_ONE_G` is kept as a **value** that a fixture sets when it means to exercise buoyancy or
+settling. §5e's lesson forbids the alternative: a term only ever run at one value has not been run,
+and zero is the worst value to be stuck at, because every gravity-scaled quantity goes identically to
+zero and a whole class of bug stops being merely unlikely and becomes invisible. Nine tests were
+silently inheriting plating and now say so, which is an improvement on not knowing.
+
+### ⚠️ What it uncovered: gravity below 0.3 g did nothing at all
+
+Sweeping the plume lean against gravity, rather than theorising about it:
+
+```
+  g     1.0   0.5   0.45  0.4   0.3   0.25  0.2   0.1   0.02  0.0
+  lean  0%    12%   12%   12%   87%   31%   31%   31%   31%   31%
+              └─ bit-identical ─┘      └──── bit-identical ────┘
+```
+
+Plateaus of **bit-identical** results — the same tell as §5e, and the same cause one line further
+down. `pull` was a *rounded* gravity multiply followed immediately by a **truncating** integer divide
+by the settling rate, so a quantity needed `q × g ≥ 4` to survive. Everything below about 0.3 g was
+zero gravity. The debug engine was worth 0.02 g, so thrust-derived gravity would have moved the ship
+and left the atmosphere inside it untouched — implemented, and inert.
+
+The whole scaling is now one rounded operation, `q × g × num / (LIMIT × den)`. The general form is
+worth having: **rounding correctly is a property of the chain, not of an expression.** A rounded
+multiply followed by a truncating divide is a truncating chain.
+
+The debug engine is 0.25 g, because with the plating gone it is the only gravity a vessel has.
+
+### ⚠️ Parked: the plume leans, and `BreachSymmetryTest` is `@Ignore`d
+
+Taking the double-damping off roughly **doubles** buoyancy on the small quantities a plume is made
+of, and `pull` predicts what happens — "a strong pull overshoots and the layer bounces". The 1 g
+symmetry cases went to 9–12% against a 5% tolerance. The scaling function is provably antisymmetric
+in isolation (`−9 → −2`, `+9 → +2`), so this is not a new asymmetry; it is the settling rate now
+being applied once instead of one-and-a-bit times, and wanting retuning. Two denominators were tried
+and neither was the answer.
+
+Separately, and unrelated to any of it: a breach **in freefall** leans 7–18% with buoyancy not even
+called, so there is an asymmetry in the pressure/advection path that gravity was masking. Recorded by
+a test rather than fixed.
+
+Both are parked deliberately. **The gameplay loop comes first**; this is a fluid-tuning session and
+it should be one, not a detour inside an increment about rocks.
 
 ---
 

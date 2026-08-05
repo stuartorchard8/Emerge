@@ -261,8 +261,9 @@ private fun settling(
     val magnitude = if (heaviness > 0L) heaviness else -heaviness
     val speed = if (gravityRaw > 0L) gravityRaw else -gravityRaw
     var moving = available * magnitude / s.molarMass.toLong()
-    moving = scaleByGravity(moving, speed)
-    moving = moving * SETTLING_NUMERATOR / SETTLING_DENOMINATOR
+    // One rounded operation, gravity and settling together — see [scaleByGravity]. Splitting the
+    // two put a truncating divide immediately after a rounded multiply, which is a truncating chain.
+    moving = scaleByGravity(moving, speed, SETTLING_NUMERATOR, SETTLING_DENOMINATOR)
     return if (along) moving else -moving
 }
 

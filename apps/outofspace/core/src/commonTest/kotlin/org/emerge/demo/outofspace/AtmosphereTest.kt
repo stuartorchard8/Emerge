@@ -57,7 +57,7 @@ class AtmosphereTest {
             machines[grid.index(1, y)] = Hull()
             machines[grid.index(w, y)] = Hull()
         }
-        return VesselState(grid, machines.toList())
+        return VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
     }
 
     // ── Conservation ──────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ class AtmosphereTest {
         for (x in 1..7) { machines[grid.index(x, 1)] = Hull(); machines[grid.index(x, 3)] = Hull() }
         for (y in 1..3) { machines[grid.index(1, y)] = Hull(); machines[grid.index(7, y)] = Hull() }
         machines[grid.index(4, 2)] = Hull()   // the dividing wall
-        var s = VesselState(grid, machines.toList())
+        var s = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
 
         val grams = LongArray(grid.size * Species.COUNT)
         for (x in 2..3) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L
@@ -413,6 +413,11 @@ class AtmosphereTest {
             for (i in 0 until s.grid.size) append(s.air.pressureAt(i)).append(',')
         }
         val grid = Grid(40, 28)
-        assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
+        // 500 ticks, twice, which measures 2.8s. It was 900 and measured 5.06s the moment the
+        // settling truncation came out — stronger buoyancy means faster gas means more CFL
+        // sub-steps per tick, so the same tick count costs more than it used to. Determinism
+        // either holds or it does not; a run long enough for the world to be busy is the whole
+        // requirement, and 500 ticks of a breathing starter vessel is amply that.
+        assertEquals(digest(run(starterVessel(grid), 500)), digest(run(starterVessel(grid), 500)))
     }
 }

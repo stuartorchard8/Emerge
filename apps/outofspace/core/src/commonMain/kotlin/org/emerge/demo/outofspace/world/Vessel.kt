@@ -57,7 +57,8 @@ data class VesselState(
      */
     val motion: Motion = Motion.NONE,
     /**
-     * The artificial gravity the deck plating makes, with the engines off.
+     * Whatever gravity this vessel has with its engines off — [FREEFALL] for a ship, which is all
+     * of them.
      *
      * A **setting**, and it stays one. What the world is actually run under is [feltGravity], which
      * is this plus whatever the engine is doing — see [experiencedGravity]. Keeping the two apart is
@@ -65,10 +66,14 @@ data class VesselState(
      * and the reading would be overwritten by the first tick, silently, and a test that set it would
      * quietly measure something else.
      *
+     * It stayed a field when the deck plating was dropped, rather than becoming a constant zero, for
+     * the reason [PLATING_ONE_G] gives at length: a term that is only ever zero is a term whose bugs
+     * are all invisible. A spun ring or a planet's surface would arrive here too.
+     *
      * No code is allowed to assume "down" is a constant or implied by array order, and as of
      * increment G nothing can: what the passes are handed changes whenever the thrust does.
      */
-    val gravity: Frac2 = DEFAULT_GRAVITY,
+    val gravity: Frac2 = FREEFALL,
     /**
      * Where the vessel has got to, in the billionths of a tile [Flight.PER_TILE] counts.
      *
@@ -468,8 +473,48 @@ data class VesselState(
         copy(machines = machines.toMutableList().also { it[index] = machine })
 
     companion object {
-        /** One g, straight down the screen. A constant *value*, not a constant in the code. */
-        val DEFAULT_GRAVITY: Frac2 = Frac2(Frac(0L, 1), Frac(1L, 1))
+        /**
+         * **What a vessel has when its engines are off: nothing.**
+         *
+         * The deck plating is gone, and its removal is the point rather than a simplification. A
+         * ship in space has no floor; what a crew stands on is the engine, and a vessel that made
+         * its own gravity out of nowhere was the one deeply unphysical thing left in a model whose
+         * whole purpose is to be a place to do physics. "Down" is now something the vessel *earns*
+         * by burning, and it is gone the moment the engine is.
+         *
+         * That is where §3 was always pointing — "vessel-local constant, parameterised;
+         * acceleration-derived later" — and increment G is what made the second half available.
+         *
+         * ⚠️ Note what it costs, because two of the three are losses and neither is a bug:
+         *
+         *  - **Convection stops on a coasting ship.** Buoyancy is a gravity term, so a vessel that
+         *    is not burning has no natural circulation at all and heat moves only by conduction and
+         *    by forced flow. It comes back under thrust. See §5c's "convection, for free, again",
+         *    which is now "convection, for free, while the engine is lit".
+         *  - **Debris neither settles nor goes overboard**, because [settleDebris] bails when
+         *    [downDirection] has no answer, and "falls off the edge of the grid" was the whole
+         *    mechanism by which a breached room lost its heaps. In freefall loose material would be
+         *    *dragged* out by the airflow instead, which is a mechanism this game does not have yet.
+         *    That is a gap this opens rather than one it creates, and it belongs with the fluid
+         *    coupling in §5f H5.
+         *  - Rocks stop plummeting: a fiftieth of a tile per tick per tick under a burn rather than
+         *    a whole one, which is most of why H2 is not primarily about tunnelling.
+         */
+        val FREEFALL: Frac2 = Frac2(Frac(0L), Frac(0L))
+
+        /**
+         * One g, straight down the screen — what the plating used to make, kept as a **value**.
+         *
+         * Not dead code and not nostalgia. §5e's finding was that a quantity only ever run at one
+         * value has not been run, and zero is the worst value to get stuck at: every gravity-scaled
+         * term goes identically to zero, so a whole class of bug becomes invisible rather than
+         * merely unlikely. This is what a fixture sets when it means to exercise buoyancy, settling
+         * or drift — and a test that needs it now has to *say so*, which is an improvement on
+         * inheriting it from a default and not knowing.
+         *
+         * It is also the shape a spun ring or a planet's surface would arrive in, if either ever does.
+         */
+        val PLATING_ONE_G: Frac2 = Frac2(Frac(0L, 1), Frac(1L, 1))
 
         fun empty(grid: Grid): VesselState = VesselState(grid, List(grid.size) { null })
     }

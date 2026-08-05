@@ -205,7 +205,12 @@ class FlightTest {
     @Test
     fun `an engine is felt inside the ship as a gravity pointing astern`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
+        // Run under plating **explicitly**, because plating is no longer what a vessel has by
+        // default — see [VesselState.FREEFALL]. The claim being made here is that thrust is *added*
+        // to whatever gravity a hull already has and never overwrites it, and that claim needs a
+        // non-zero one to be about anything. It reads as a fixture saying what it is testing, which
+        // is what dropping the default bought.
+        val controller = OutofspaceController(cfg, bareHull(cfg.grid).copy(gravity = VesselState.PLATING_ONE_G))
         controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
 
         var leanX = 0L
@@ -213,19 +218,25 @@ class FlightTest {
         repeat(TICKS) {
             controller.stepOnce()
             leanX += controller.state.feltGravity.x.raw
-            leanY += controller.state.feltGravity.y.raw - VesselState.DEFAULT_GRAVITY.y.raw
+            leanY += controller.state.feltGravity.y.raw - VesselState.PLATING_ONE_G.y.raw
         }
 
         assertTrue(leanX < 0L, "an engine pushing +x should be felt as a pull toward -x, not $leanX")
         // Nothing is pushing along y, so what shows up there is the atmosphere leaning on the deck
-        // as it rings — measured, a few hundredths of the thrust. A wobble beside the engine rather
-        // than a second engine, which is what makes this fixture axis-aligned enough to reason about.
+        // as it rings. A wobble beside the engine rather than a second engine, which is what makes
+        // this fixture axis-aligned enough to reason about.
+        //
+        // ⚠️ It was a few hundredths of the thrust and is now about a tenth, and the ratio moved for
+        // a reason rather than drifting: fixing the settling truncation (see [scaleByGravity]) took
+        // the double-damping off buoyancy, so a sealed hull now rings roughly twice as hard. The
+        // claim being made is unchanged and still comfortably true — an order of magnitude between
+        // the engine's axis and the wobble — so the bound is restated rather than the claim weakened.
         assertTrue(
-            abs(leanY) * 20L < abs(leanX),
+            abs(leanY) * 8L < abs(leanX),
             "the engine is not on an axis: x lean $leanX, y lean $leanY",
         )
         // The plating is a setting and the thrust is added to it, so thrusting never rewrites it.
-        assertEquals(VesselState.DEFAULT_GRAVITY, controller.state.gravity)
+        assertEquals(VesselState.PLATING_ONE_G, controller.state.gravity)
     }
 
     /**

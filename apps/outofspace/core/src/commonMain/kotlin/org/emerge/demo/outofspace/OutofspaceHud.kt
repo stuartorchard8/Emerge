@@ -618,7 +618,7 @@ class OutofspaceHud {
         return "$sign${a / Flight.PER_TILE}.${frac.toString().padStart(6, '0')}"
     }
 
-    /** A [Frac] gravity as thousandths of the one g [VesselState.DEFAULT_GRAVITY] means. */
+    /** A [Frac] gravity as thousandths of the one g [VesselState.PLATING_ONE_G] means. */
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
