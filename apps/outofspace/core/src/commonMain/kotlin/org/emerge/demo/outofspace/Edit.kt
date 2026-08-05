@@ -59,6 +59,18 @@ sealed interface Edit {
      */
     data class Thrust(val dx: Int, val dy: Int) : Edit
 
+    /**
+     * **A stand-in for capture**: puts a rock in the world at [index], centred on that tile.
+     *
+     * Increment H4 is where rocks arrive by being flown at, and this is how there is one to look at
+     * before then. It obeys the same rule [Thrust] does: it mints mass, so it books what it mints
+     * into [org.emerge.demo.outofspace.world.VesselState.capturedGrams], and the rock ledger closes
+     * either way. It emphatically does **not** go through
+     * [org.emerge.demo.outofspace.world.VesselState.minedGrams] — the miner is the thing the
+     * extractor exists to delete, and hanging the replacement off it would weld the two together.
+     */
+    data class DropRock(val index: Int, val radius: Int = DEFAULT_ROCK_RADIUS) : Edit
+
     companion object {
         /**
          * What [Thrust] is worth, in thousandths of one tile per tick per tick.
@@ -70,5 +82,14 @@ sealed interface Edit {
          * thruster that pinned every loose gram to one wall would hide it.
          */
         const val DEBUG_THRUST_MILLI_G: Long = 20L
+
+        /**
+         * How big a dropped rock is, in cells of radius — so five across, twenty-one cells filled.
+         *
+         * Big enough to read as an object rather than a speck at the zoom anyone plays at, and small
+         * enough to fit through a doorway, which will matter the moment it stops flying through
+         * walls in H2.
+         */
+        const val DEFAULT_ROCK_RADIUS: Int = 2
     }
 }

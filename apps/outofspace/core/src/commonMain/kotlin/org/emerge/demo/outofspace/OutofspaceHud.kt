@@ -59,6 +59,39 @@ class OutofspaceHud {
                 keyValue("FPS", fps.toInt().toString())
                 keyValue("Speed", "${controller.speed}x")
                 gap()
+                title("FLIGHT")
+                keyValue("Mass", grams(s.massGrams))
+                keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
+                keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
+                keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
+                // What anything loose aboard is falling toward, which is the plating plus the engine.
+                // In milli-g, because a breach is worth a fraction of one and a readout in whole g
+                // would show nothing happening while quite a lot happens.
+                keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
+                // The debug engine's running total, shown whenever it is not zero and hidden when it
+                // is, so the readout is an admission rather than furniture — see [Edit.Thrust]. The
+                // ledger stays balanced *because* this is counted, which is the whole arrangement.
+                if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
+                    keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
+                }
+                // Hidden until there is one, because an empty section is a section the eye learns to
+                // stop reading — and this panel already asks a lot of it.
+                if (s.rocks.isNotEmpty()) {
+                    gap()
+                    title("ROCKS")
+                    keyValue("Adrift", "${s.rocks.size}")
+                    keyValue("Mass", grams(s.rockGrams))
+                    keyValue("Captured", grams(s.capturedGrams))
+                    // Rock's answer to `mined == aboard + vented`, and it gets its own line for the
+                    // same reason the others do: a leak that shows up as a word is a leak somebody
+                    // notices, and a leak buried in a number is one that gets explained away.
+                    val rockBalanced = s.rockGrams == s.baselineRockGrams + s.capturedGrams
+                    row(
+                        if (rockBalanced) "balanced" else "LEAK",
+                        if (rockBalanced) 0x6ED09AFFL else 0xE05A4AFFL,
+                    )
+                }
+                gap()
                 title("MASS BALANCE")
                 keyValue("Mined", grams(s.minedGrams))
                 keyValue("Aboard", grams(s.inTransitGrams))
@@ -93,22 +126,6 @@ class OutofspaceHud {
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
                 row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
                     if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
-                gap()
-                title("FLIGHT")
-                keyValue("Mass", grams(s.massGrams))
-                keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
-                keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
-                keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
-                // What anything loose aboard is falling toward, which is the plating plus the engine.
-                // In milli-g, because a breach is worth a fraction of one and a readout in whole g
-                // would show nothing happening while quite a lot happens.
-                keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
-                // The debug engine's running total, shown whenever it is not zero and hidden when it
-                // is, so the readout is an admission rather than furniture — see [Edit.Thrust]. The
-                // ledger stays balanced *because* this is counted, which is the whole arrangement.
-                if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
-                    keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
-                }
                 gap()
                 title("SIGNALS")
                 for (channel in Channel.EMITTABLE) {
@@ -253,6 +270,19 @@ class OutofspaceHud {
         if (speed > 0f) {
             val reach = needle * (speed / NAV_FULL_SCALE_SPEED).coerceAtMost(1f)
             line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
+        }
+
+        // Rocks, which live in the vessel's frame rather than in open space — so they are plotted
+        // against the middle of the grid rather than against the ship's travelled position. Both are
+        // ship-relative offsets in tiles, which is what makes it coherent to draw them on one panel:
+        // the origin marker says where you started relative to you now, and a rock dot says where a
+        // rock is relative to you now.
+        for (rock in s.rocks) {
+            val rx = cx + (rock.centreX.toFloat() / Flight.PER_TILE - s.grid.width / 2f) * perPx
+            val ry = cy + (rock.centreY.toFloat() / Flight.PER_TILE - s.grid.height / 2f) * perPx
+            if (rx <= x0 || rx >= x0 + size || ry <= y0 || ry >= y0 + size) continue
+            val d = 2f * density
+            rect(rx - d, ry - d, d * 2f, d * 2f, 0x9A8A72FFL)
         }
 
         // The ship, last, so nothing is drawn over it — and on a dark pad, so it stays legible when

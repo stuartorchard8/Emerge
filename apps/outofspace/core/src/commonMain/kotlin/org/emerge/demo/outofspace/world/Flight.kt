@@ -55,7 +55,28 @@ object Flight {
      * sight of it, the fix is to divide first and carry the remainder, not to coarsen the unit.
      */
     const val PER_TILE: Long = 1_000_000_000L
+
+    /**
+     * [Frac]'s unit, spelled out: one tile per tick per tick is one whole [Frac].
+     *
+     * Public because three files now turn an impulse into an acceleration and one of them is about
+     * rocks — see [Rock]. A second copy of this number is a second chance to get it wrong.
+     */
+    const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()
 }
+
+/**
+ * The ship's own acceleration, in [Frac]'s units — the term that makes the vessel's frame a
+ * non-inertial one.
+ *
+ * Named and shared rather than open-coded twice, because it has two consumers that need it for
+ * opposite reasons: [experiencedGravity] subtracts it from the plating to get what the gas feels,
+ * and [feltBy] hands it to a rock *without* the plating, since a deck's artificial gravity does not
+ * reach a rock a hundred tiles astern and the frame's acceleration reaches everything.
+ */
+fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, massGrams: Long): Frac2 =
+    if (massGrams <= 0L) Frac2(Frac(0L), Frac(0L))
+    else Frac2(Frac(netImpulseX * Flight.FRAC_ONE / massGrams), Frac(netImpulseY * Flight.FRAC_ONE / massGrams))
 
 /**
  * Everything the hull is made of, in grams.
@@ -167,10 +188,6 @@ fun vesselMassGrams(
  */
 fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long, massGrams: Long): Frac2 {
     if (massGrams <= 0L) return deckGravity
-    val ax = netImpulseX * FRAC_ONE / massGrams
-    val ay = netImpulseY * FRAC_ONE / massGrams
-    return Frac2(Frac(deckGravity.x.raw - ax), Frac(deckGravity.y.raw - ay))
+    val a = frameAcceleration(netImpulseX, netImpulseY, massGrams)
+    return Frac2(Frac(deckGravity.x.raw - a.x.raw), Frac(deckGravity.y.raw - a.y.raw))
 }
-
-/** [Frac]'s unit, spelled out: one tile per tick per tick is one whole `Frac`. */
-private const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()

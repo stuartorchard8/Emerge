@@ -1,0 +1,67 @@
+# A rock exists — increment H1. Its own grid, its own momentum, no rotation, and it touches nothing.
+#
+# What to read: the rock falls when it is over the deck, does NOT fall when it is out in open space,
+# and slides astern when the engine lights even though nothing pushed it. That last one is the whole
+# increment: the vessel's frame is accelerating, so a rock genuinely at rest in the world has to
+# appear to accelerate the other way, and that apparent motion is the same pseudo-force the gas has
+# been getting since increment G.
+#
+# `rockBalance` must stay 0. A rock is new mass in a closed world and the only thing keeping that
+# honest is that `capturedGrams` admits every gram of it.
+new
+
+echo --- one rock, dropped amidships
+rock 18 10
+expect rockCount = 1
+expect rockGrams > 0
+expect rockBalance = 0
+# The ore ledger must not have noticed. A rock does NOT go through the miner -- the extractor exists
+# to delete the miner, and hanging it off that ledger would weld the two together. See plan §5f.
+#
+# `massBalance` is the statement, not `minedGrams`: the starter vessel has a working miner, so mined
+# is never zero and asserting that it is measures the starter vessel rather than the rock. What has
+# to be true is that mined still equals aboard plus vented with sixty-three kilos of rock in the
+# room -- which is exactly the claim that the rock is in neither of those terms.
+expect massBalance = 0
+
+echo --- and it falls, because it is over the plating
+run 6
+expect rockVY > 0
+
+echo --- three more, and the books still close
+rock 8 10
+rock 28 10
+rock 14 20
+expect rockCount = 4
+expect rockBalance = 0
+expect airBalance = 0
+expect heatBalance = 0
+camera centre 18 14 22
+shot rocks-falling
+
+echo --- now with the plating off, and the engine lit
+new
+gravity 0 0
+rock 18 16
+run 1
+expect rockVY = 0
+expect rockVX = 0
+
+# The ship leaves; the rock stays where it was and so appears to slide astern. Nothing pushed it.
+#
+# Caught at twenty ticks as well as at the end, and that is not padding. By sixty the rock is
+# thirty-five tiles behind and off the grid entirely, which is the correct answer and a useless
+# picture — the world view can only ever show the vessel's own frame. Twenty ticks is where you can
+# still see it crossing the room.
+thrust 1 0 20
+expect rockVX < 0
+camera centre 18 16 22
+shot rocks-astern
+
+thrust 1 0 40
+expect positionX > 0
+expect rockVX < 0
+expect rockBalance = 0
+expect momentumBalance = 0
+# By now it is off the grid, and the nav panel is the only thing that can still say where it is.
+shot rocks-gone

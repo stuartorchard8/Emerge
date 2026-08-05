@@ -54,7 +54,11 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.driftRocks
 import org.emerge.demo.outofspace.world.experiencedGravity
+import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.vesselMassGrams
@@ -181,6 +185,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Settling runs after the edits and after structure is re-derived, so a pile the player just
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, felt)
+
+        // Rocks drift alongside the debris and under the same "down", but not under the same
+        // *number*: a rock outside the hull is past the end of the plating and feels only the
+        // frame's acceleration, whereas a heap on the deck is standing on the plating by definition.
+        // [feltBy] is where that split lives, and it is the reason this is not simply handed `felt`.
+        val rocksDrifted = driftRocks(
+            state.grid,
+            w.rocks,
+            state.gravity,
+            frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
+        )
 
         // ── Heat ──────────────────────────────────────────────────────────────
         //
@@ -352,6 +367,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // while the shortcut is in use — see [VesselState.debugImpulseX].
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
+            rocks = rocksDrifted,
+            capturedGrams = w.capturedGrams,
             motion = w.motion.freeze(),
         )
     }
@@ -545,6 +562,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         var thrustDx: Int = 0
         var thrustDy: Int = 0
+
+        /** Free-floating rock, and the running admission of how much of it came from outside. */
+        val rocks: MutableList<Rock> = state.rocks.toMutableList()
+        var capturedGrams: Long = state.capturedGrams
 
         /**
          * This tick's air, mutable so that the edit pass and the fluid pass work on one array. An
@@ -788,7 +809,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // ship's mass and the ship's mass is not final until the edit pass has finished
                 // building and scrapping things. Spent in the flight section at the end of the tick.
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
+                is Edit.DropRock -> dropRock(edit.index, edit.radius)
             }
+        }
+
+        /**
+         * Drops a rock into the world, centred on [at] — the stand-in for capture, see [Edit.DropRock].
+         *
+         * Two ledgers are told about it in the same breath as it is created, and that is the whole of
+         * what makes this a placeholder rather than a leak. Its **mass** is new to a closed world and
+         * goes to [capturedGrams]; its **energy** is new to the solid ledger and goes through
+         * [built], which is the same term a freshly placed wall's room-temperature heat goes
+         * through, because it is the same fact — a body carries its energy with it.
+         */
+        private fun dropRock(at: Int, radius: Int) {
+            if (at !in machines.indices) return
+            // The click names the centre tile, and the rock's position is its top-left corner, so
+            // the half-width comes off. Half a tile more puts the centre of the disc on the centre
+            // of the tile rather than on its corner.
+            val half = radius * Flight.PER_TILE
+            val rock = Rock.blob(
+                radius = radius,
+                positionX = (grid.xOf(at) * Flight.PER_TILE) - half + Flight.PER_TILE / 2L,
+                positionY = (grid.yOf(at) * Flight.PER_TILE) - half + Flight.PER_TILE / 2L,
+                composition = DEFAULT_ORE_BODY,
+            )
+            rocks.add(rock)
+            capturedGrams += rock.massGrams
+            built(rock.joules)
         }
 
         /**

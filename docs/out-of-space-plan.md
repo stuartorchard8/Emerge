@@ -1217,10 +1217,24 @@ so that each one ends with something to look at, and each commit carries **all f
 3. A screenshot that has actually been opened and looked at before the change is called working.
 4. A paragraph in the handoff saying what to go and look at.
 
-- **H0. The debug thruster and the nav view** — arrow keys put impulse into the ship, `debugImpulse`
-  books it, the nav panel shows position and velocity. You can fly, and see that you are flying.
-- **H1. A rock** — own grid, no rotation, momentum, reads `feltGravity`. On the nav panel from the
-  moment it exists.
+- **H0. The debug thruster and the nav view** — ✅ **BUILT 2026-08-05.** Arrow keys (not WASD: `W` is
+  the tool toggle), `debugImpulse` as the ledger's fifth store, a nav panel with two scales.
+- **H1. A rock** — ✅ **BUILT 2026-08-05.** Own grid, no rotation, momentum, its own ledger. `F6`
+  drops one; `agent-scripts/rocks.txt` drives it.
+
+  Two things it settled that the design above did not say. **The plating stops where the vessel
+  does**: `feltBy` gives a rock the deck's artificial gravity only while it is over the grid, and the
+  frame's acceleration *always*, because those are not the same kind of thing — one is a field the
+  ship makes and the other is the price of writing the world in an accelerating frame. And the rock
+  ledger is `rockGrams == baselineRockGrams + capturedGrams`, deliberately **not** a term in
+  `minedGrams`, so the extractor is not built on the miner it exists to delete.
+
+  ⚠️ A test asserted that a rock in open space "does not move at all" and failed by eight hundredths
+  of a tile — correctly. A sealed hull's atmosphere rings, the ship recoils from it, and a ship with a
+  non-zero acceleration gives every free rock in the universe an equal and opposite apparent one. The
+  claim is *no plating out there*, not *no motion*; the two only coincide when the ship is not
+  accelerating, so the fixture is now a vacuum one. Same shape of error as §5e's: **a stronger
+  assertion than the model makes is a test that will fail on correct behaviour.**
 - **H2. Collision** — grid/grid overlap against hull and deck. It lands and stays landed, and
   `momentumBalance` stays zero because the ship gets what the rock loses.
 - **H3. The extractor** — 5×5 permeable background machine, leeching mass off the rocks on its tiles

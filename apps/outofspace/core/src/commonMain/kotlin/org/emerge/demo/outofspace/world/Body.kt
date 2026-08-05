@@ -172,11 +172,20 @@ fun bodiesOf(
  * Summed straight off the stored values rather than off [bodiesOf], so the ledger costs a walk rather
  * than a build — and so it says the same thing whether or not anything has asked for the bodies.
  */
-fun solidJoules(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
+fun solidJoules(
+    machines: List<Machine?>,
+    conduits: Conduits,
+    bridges: List<Machine?>,
+    // Rocks are solids and their energy is in the solid ledger from the tick they appear, long
+    // before anything conducts with them -- see [Rock]. Counting it only once contact exists would
+    // make the arrival of contact look like energy arriving from nowhere.
+    rocks: List<Rock> = emptyList(),
+): Long {
     var sum = 0L
     for (m in machines) sum += m?.joules ?: 0L
     conduits.all { _, _, s -> sum += s.joules }
     for (b in bridges) sum += b?.joules ?: 0L
+    for (r in rocks) sum += r.joules
     return sum
 }
 

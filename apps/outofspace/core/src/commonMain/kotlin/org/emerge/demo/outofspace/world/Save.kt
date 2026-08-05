@@ -76,6 +76,24 @@ object Save {
         out.append("construction ").append(state.constructionJoules).append('\n')
         out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
+        // The rock ledger's fixed point and its running admission — see [VesselState.capturedGrams].
+        // Absent in a file written before rocks existed, which is a world in which both were zero.
+        out.append("captured ").append(state.capturedGrams).append('\n')
+        out.append("baselinerock ").append(state.baselineRockGrams).append('\n')
+
+        // One line per rock. Its shape is written as a run of 0s and 1s rather than packed, because
+        // the whole point of the format is that a person can read a world and retype part of it, and
+        // a rock is the one thing here whose *shape* somebody will want to try changing by hand.
+        for (r in state.rocks) {
+            out.append("rock ").append(r.width).append(' ').append(r.height)
+                .append(' ').append(r.positionX).append(' ').append(r.positionY)
+                .append(' ').append(r.impulseX).append(' ').append(r.impulseY)
+                .append(' ').append(r.joules)
+                .append(' ').append(writeMixture(r.composition))
+                .append(' ')
+            for (c in r.cells) out.append(if (c) '1' else '0')
+            out.append("   # ").append(r.filled).append(" cells, ").append(r.massGrams).append("g\n")
+        }
 
         // Tiles are written as indices because that is what the world is indexed by, but an index is
         // unreadable to a person and the whole point of the format is that a person can read it. So
@@ -319,6 +337,12 @@ object Save {
         var undeliveredY = 0L
         var debugX = 0L
         var debugY = 0L
+        val rocks = ArrayList<Rock>()
+        var capturedGrams = 0L
+        // Null rather than zero, so "no line" and "a line saying zero" stay different things: a file
+        // from before rocks existed must derive its baseline from the rocks it has (none), and a file
+        // that says zero is a world whose rocks all arrived after it started.
+        var baselineRockGrams: Long? = null
 
         var gravity = VesselState.DEFAULT_GRAVITY
         var positionX = 0L
@@ -414,6 +438,24 @@ object Save {
                 "pipemomy" -> readSparse(tokens, pipeMomentumY, ::fail)
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
+                "captured" -> capturedGrams = long(1)
+                "baselinerock" -> baselineRockGrams = long(1)
+                "rock" -> {
+                    val w = tokens[1].toIntOrNull() ?: fail("unreadable rock width")
+                    val h = tokens[2].toIntOrNull() ?: fail("unreadable rock height")
+                    val bits = tokens.getOrNull(9) ?: fail("a rock needs a shape")
+                    if (bits.length != w * h) fail("a ${w}x$h rock has ${bits.length} cells")
+                    rocks.add(
+                        Rock(
+                            width = w, height = h,
+                            cells = BooleanArray(bits.length) { bits[it] == '1' },
+                            positionX = long(3), positionY = long(4),
+                            impulseX = long(5), impulseY = long(6),
+                            joules = long(7),
+                            composition = readMixture(tokens[8], ::fail),
+                        ),
+                    )
+                }
                 "impulse" -> {
                     impulseX = long(1); impulseY = long(2)
                     exhaustX = long(3); exhaustY = long(4)
@@ -492,6 +534,9 @@ object Save {
             undeliveredImpulseY = undeliveredY,
             debugImpulseX = debugX,
             debugImpulseY = debugY,
+            rocks = rocks.toList(),
+            capturedGrams = capturedGrams,
+            baselineRockGrams = baselineRockGrams ?: rocks.sumOf { it.massGrams },
         )
     }
 

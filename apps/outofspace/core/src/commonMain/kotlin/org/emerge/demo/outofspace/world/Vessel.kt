@@ -95,9 +95,46 @@ data class VesselState(
     val netImpulseY: Long = 0L,
     /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
     val debris: Debris = Debris.EMPTY,
+    /**
+     * Free-floating solids: rocks — see [Rock].
+     *
+     * A list of its own, and neither a machine nor debris, because it can be neither: [bodiesOf]
+     * derives bodies from the three built lists and would not see it, and [settleDebris] walks
+     * anything standing in vacuum off the rim and books it as vented, which is the correct rule for
+     * a spilled heap and exactly wrong for a rock.
+     *
+     * ⚠️ **Not part of "aboard".** A rock is not in [inTransitGrams] and not in [massGrams], so it
+     * neither breaks the mass balance nor slows the ship down while it is loose. Both of those change
+     * when it is *held* rather than merely present, which is the extractor's increment. Its mass has
+     * its own ledger meanwhile — see [rockGrams].
+     */
+    val rocks: List<Rock> = emptyList(),
     val tick: Long = 0L,
     val minedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
+    /**
+     * Cumulative grams of rock that have arrived from outside the world, and the rock mass the world
+     * started with. Together they are rock's answer to `mined == aboard + vented`:
+     *
+     *     rockGrams == baselineRockGrams + capturedGrams
+     *
+     * Its own ledger rather than a term in the ore balance, and that is the whole point of it. A
+     * rock is **new mass in a closed world**, and the obvious place to put it — [minedGrams] — is the
+     * one place it must not go: the miner is a stand-in that the extractor exists to delete, and
+     * building the hold on top of it would tie the replacement to the thing being replaced. See
+     * `docs/out-of-space-plan.md` §5f and open question 5.
+     *
+     * The extractor gains a third term here in H3, for mass that has left a rock and become ore, and
+     * at that point this is the ledger that proves nothing was created on the way across.
+     */
+    val capturedGrams: Long = 0L,
+    /**
+     * The rock mass the world started with, fixed at construction so [capturedGrams] has something
+     * to be measured against. The twin of [baselineJoules] and [baselineAirGrams], for the reason
+     * they both give: a quantity that can arrive from outside needs a fixed point, or "how much is
+     * here" is not a statement about anything.
+     */
+    val baselineRockGrams: Long = rocks.sumOf { it.massGrams },
     /**
      * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
      * away to space. The thermal counterpart of [minedGrams] and [ventedGrams], and they buy the
@@ -163,7 +200,7 @@ data class VesselState(
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
      */
-    val baselineJoules: Long = solidJoules(machines, conduits, bridges),
+    val baselineJoules: Long = solidJoules(machines, conduits, bridges, rocks),
     /**
      * Net energy that has arrived in the world inside newly built bodies, less what left inside
      * scrapped ones. Signed, and one term rather than two, because only the difference is ever read.
@@ -353,7 +390,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, conduits, bridges)
+    val storedJoules: Long get() = solidJoules(machines, conduits, bridges, rocks)
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
@@ -413,6 +450,19 @@ data class VesselState(
 
     /** Just the loose material, for the readout that distinguishes "stored" from "spilled". */
     val debrisGrams: Long get() = debris.totalGrams
+
+    /** Every gram of free-floating rock in the world — the left-hand side of the rock ledger. */
+    val rockGrams: Long get() = rocks.sumOf { it.massGrams }
+
+    /**
+     * The ship's acceleration in its own frame, which is what makes the vessel frame a non-inertial
+     * one and is therefore the only part of the ship a free rock can feel.
+     *
+     * The same quantity [experiencedGravity] subtracts from the plating for the gas, pulled out and
+     * named because a rock outside the hull needs *this* half and must not be handed the plating —
+     * see [feltBy]. Two consumers of one term beats two derivations of it.
+     */
+    val frameAcceleration: Frac2 get() = frameAcceleration(netImpulseX, netImpulseY, massGrams)
 
     fun withMachine(index: Int, machine: Machine?): VesselState =
         copy(machines = machines.toMutableList().also { it[index] = machine })

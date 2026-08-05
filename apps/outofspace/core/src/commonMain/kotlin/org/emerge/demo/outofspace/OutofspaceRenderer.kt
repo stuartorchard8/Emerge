@@ -23,6 +23,8 @@ import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
@@ -234,6 +236,12 @@ class OutofspaceRenderer {
         // Things that have left the world, over the track they left from and under the overlay.
         drawDepartures(state)
 
+        // Rocks over everything built, because a rock is not part of the vessel and is passing
+        // through — drawing it under the deck would read as a stain on the floor rather than as an
+        // object in the room. It has no tile of its own to be culled by: its position is a fraction
+        // of a tile in the vessel's frame, so it is drawn from that directly.
+        for (rock in state.rocks) drawRock(rock)
+
         // The overlay goes over the machines, not under them: the question it answers is "how hot is
         // it *there*", and putting it behind the thing you are asking about answers the wrong one.
         if (overlay != Overlay.None) {
@@ -315,6 +323,36 @@ class OutofspaceRenderer {
      * network and the whole point of the layer is that you can tell which run is which where they
      * cross. Nothing rides on it: a pipe carries a fluid field rather than packets.
      */
+    /**
+     * A rock, cell by cell, at whatever fraction of a tile it has drifted to.
+     *
+     * Cell by cell rather than as one box because the shape is the point — a rock is a blob and a
+     * box is a crate — and because it is what will still be true in H2, when the cells are what a
+     * collision is tested against. Drawing the bounding box now would be drawing something the sim
+     * does not believe in.
+     *
+     * Each cell is inset slightly and gets a lighter face, so a rock reads as rubble rather than as
+     * a solid slab of one colour at the zoom anyone plays at.
+     */
+    private fun drawRock(rock: Rock) {
+        val ox = rock.positionX.toFloat() / Flight.PER_TILE
+        val oy = rock.positionY.toFloat() / Flight.PER_TILE
+        for (cy in 0 until rock.height) {
+            for (cx in 0 until rock.width) {
+                if (!rock.cells[cy * rock.width + cx]) continue
+                val wx = (ox + cx + 0.5f) * tilePx
+                val wy = (oy + cy + 0.5f) * tilePx
+                rect(wx, wy, tilePx, tilePx, Colors.ROCK)
+                // A checker of two greys, keyed on the cell's own coordinates, so the grain does not
+                // crawl across the rock as it drifts. Keyed on the tile it happened to be over, it
+                // would shimmer every time it crossed a boundary.
+                if ((cx + cy) and 1 == 0) {
+                    rect(wx, wy, tilePx * Visual.ROCK_GRAIN, tilePx * Visual.ROCK_GRAIN, Colors.ROCK_GRAIN)
+                }
+            }
+        }
+    }
+
     private fun drawPipe(state: VesselState, tile: Int, x: Int, y: Int) {
         val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
         val cx = (x + 0.5f) * tilePx
@@ -833,6 +871,12 @@ class OutofspaceRenderer {
         const val TILE_LIGHT  = 0x141A24FFL
         const val TILE_DARK   = 0x111722FFL
 
+        // ── Rock ────────────────────────────────────────────────────────
+        // Warm and desaturated, so it sits apart from every built thing on the deck without
+        // competing with the ore and ingot colours a packet is read by.
+        const val ROCK        = 0x6B5F55FFL
+        const val ROCK_GRAIN  = 0x87796BFFL
+
         // ── Stopped machine states ──────────────────────────────────────
         const val STOPPED_BODY    = 0x1A1A20FFL
         const val STOPPED_INDICATOR = 0x8A3030FFL
@@ -903,6 +947,9 @@ class OutofspaceRenderer {
 
     /** Scales, thresholds, and offsets that drive the renderer's visual layout. */
     object Visual {
+        /** How much of a rock cell the lighter grain square covers. */
+        const val ROCK_GRAIN = 0.5f
+
         // ── Machine body dimensions ─────────────────────────────────────
         const val MACHINE_INSET = 0.94f
         const val STOP_INDICATOR_SCALE = 0.34f

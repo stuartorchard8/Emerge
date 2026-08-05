@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.render.torus.ui.Ui
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 import org.lwjgl.BufferUtils
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.opengl.GL11.*
@@ -166,6 +168,24 @@ object OutofspaceAgentHarness {
                     controller.thrustX = 0
                     controller.thrustY = 0
                     println("[agent] burned ${t[1]},${t[2]} for $n ticks -> tick ${controller.tick}")
+                }
+                // `gravity <x> <y>` in g, as thousandths — the plating dial, not the reading. Worth a
+                // command of its own after §5e: the sim spent its whole life at exactly one g and had
+                // a truncation cliff sitting at that value, so being able to say "run this at nought
+                // g" from a script is the cheapest guard against the next one.
+                "gravity" -> {
+                    val gx = (t[1].toDouble() * Int.MAX_VALUE).toLong()
+                    val gy = (t[2].toDouble() * Int.MAX_VALUE).toLong()
+                    controller.reset(state.copy(gravity = Frac2(Frac(gx), Frac(gy))))
+                    println("[agent] plating gravity -> ${t[1]}, ${t[2]} g")
+                }
+                // `rock <x> <y> [radius]` — the stand-in for capture until H4, same edit the F6 key
+                // queues, so a script and a player put a rock in the world the same way.
+                "rock" -> {
+                    val at = index(t[1], t[2])
+                    controller.dropRock(at)
+                    settle()
+                    println("[agent] rock at (${t[1]},${t[2]}) — ${state.rocks.size} adrift, ${state.rockGrams}g")
                 }
                 "camera" -> camera(t)
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })
@@ -449,6 +469,22 @@ object OutofspaceAgentHarness {
                 state.atmosphereJoules + state.airVentedJoules - state.solidToAirJoules -
                     state.baselineAirJoules
                 ).toDouble()
+            // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
+            // -- and the right thing for a script to assert, since `minedGrams` on its own is a fact
+            // about how long the starter vessel's miner has been running.
+            "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.minedGrams).toDouble()
+            // Rock, and its ledger as one number: `rockBalance` is zero or mass has been created
+            // or destroyed out there — see [VesselState.capturedGrams].
+            "rockCount" -> state.rocks.size.toDouble()
+            "rockGrams" -> state.rockGrams.toDouble()
+            "capturedGrams" -> state.capturedGrams.toDouble()
+            "rockBalance" -> (state.rockGrams - state.baselineRockGrams - state.capturedGrams).toDouble()
+            // The first rock, in tiles, so a script can say where it went and how fast. Zero when
+            // there is none, which reads as "nothing out there" rather than failing the lookup.
+            "rockX" -> (state.rocks.firstOrNull()?.centreX ?: 0L).toDouble() / Flight.PER_TILE
+            "rockY" -> (state.rocks.firstOrNull()?.centreY ?: 0L).toDouble() / Flight.PER_TILE
+            "rockVX" -> (state.rocks.firstOrNull()?.velocityX ?: 0L).toDouble() / Flight.PER_TILE
+            "rockVY" -> (state.rocks.firstOrNull()?.velocityY ?: 0L).toDouble() / Flight.PER_TILE
             "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()
             "hottestAirK" -> (0 until state.grid.size).maxOf { state.airKelvinAt(it) }.toDouble()
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
@@ -489,6 +525,8 @@ object OutofspaceAgentHarness {
             "tick", "machines", "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "minedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
+            "massBalance", "rockCount", "rockGrams", "capturedGrams", "rockBalance",
+            "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY", "momentumBalance",
             "massGrams", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
