@@ -872,5 +872,66 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
  * [remapped] for the actual move, so that the ledgers stay exact.
  */
 fun VesselState.fitGrid(pad: Int = 4): VesselState {
-    TODO("P2: fit the grid to the vessel — see GridFitTest for the contract")
+    // ── 1. Compute the bounding box of everything that must be enclosed ──
+    var minX = Int.MAX_VALUE
+    var minY = Int.MAX_VALUE
+    var maxX = Int.MIN_VALUE
+    var maxY = Int.MIN_VALUE
+
+    fun cover(x: Int, y: Int, reach: Int) {
+        if (x - reach < minX) minX = x - reach
+        if (y - reach < minY) minY = y - reach
+        if (x + reach > maxX) maxX = x + reach
+        if (y + reach > maxY) maxY = y + reach
+    }
+
+    // Machines: footprint, not anchor — a smelter is stored at its centre
+    for (i in machines.indices) {
+        val m = machines[i] ?: continue
+        cover(grid.xOf(i), grid.yOf(i), m.kind.size / 2)
+    }
+
+    // Bridges and conduit segments: their anchor is the tile they occupy
+    for (i in bridges.indices) {
+        if (bridges[i] == null) continue
+        cover(grid.xOf(i), grid.yOf(i), 0)
+    }
+    for (c in Conduit.entries) {
+        val layer = conduits[c]
+        for (i in layer.indices) {
+            if (layer[i] == null) continue
+            cover(grid.xOf(i), grid.yOf(i), 0)
+        }
+    }
+
+    // Debris tiles
+    for (tile in debris.tiles()) cover(grid.xOf(tile), grid.yOf(tile), 0)
+
+    // Rocks are deliberately excluded (§8): they live outside the world by design,
+    // overlapsHull bounds-checks every tile it tests and floors negatives, so
+    // "anything off the grid is open space, not wall."
+
+    // If nothing is placed, the grid stays as-is
+    if (minX > maxX) return this
+
+    // ── 2. Expand by pad on every side ────────────────────────────────────
+    val nx0 = minX - pad
+    val ny0 = minY - pad
+    val nx1 = maxX + pad
+    val ny1 = maxY + pad
+    val newW = nx1 - nx0 + 1
+    val newH = ny1 - ny0 + 1
+
+    // ── 3. Early exit: already exactly the fitted shape ──────────────────
+    if (grid.width == newW && grid.height == newH && nx0 == 0 && ny0 == 0) return this
+
+    // ── 5. Build the new grid and delegate to remapped ───────────────────
+    val newGrid = Grid(newW, newH)
+    // dx/dy are "where the old origin lands in the new grid"
+    // The old grid is always origin-anchored, so its origin is (0, 0)
+    val dx = 0 - nx0
+    val dy = 0 - ny0
+    return remapped(newGrid, dx, dy)
 }
+
+

@@ -184,9 +184,13 @@ class GridFitTest {
     private fun assertBalanced(s: VesselState, whenever: String) {
         assertEquals(0L, s.airBalance, "airBalance $whenever")
         assertEquals(0L, s.airJouleBalance, "airJouleBalance $whenever")
+        // `extracted == aboard + vented`, per VesselState's own doc. **Aboard is
+        // `inTransitGrams`, not `massGrams`** — the latter adds the fabric of the ship itself, which
+        // no extractor ever produced, so it can never be zero. Stated wrongly here first time round,
+        // which cost a qwen session; the rest of the suite says it correctly, e.g. VesselSimTest:61.
         assertEquals(
             0L,
-            s.massGrams + s.ventedGrams - s.extractedGrams,
+            s.inTransitGrams + s.ventedGrams - s.extractedGrams,
             "massBalance $whenever",
         )
         assertEquals(
