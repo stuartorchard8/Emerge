@@ -1,14 +1,19 @@
-# A rock exists — increment H1. Its own grid, its own momentum, no rotation, and it touches nothing.
+# A rock exists — increment H1, restated in the world frame by H2a.
 #
 # What to read: the rock falls when it is over the deck, does NOT fall when it is out in open space,
 # and slides astern when the engine lights even though nothing pushed it. That last one is the whole
-# increment: the vessel's frame is accelerating, so a rock genuinely at rest in the world has to
-# appear to accelerate the other way, and that apparent motion is the same pseudo-force the gas has
-# been getting since increment G.
+# increment, and since H2a it is stated the honest way round: the rock's *velocity* is zero, because
+# nothing touched it, and its *position on the grid* walks toward the stern because the ship left.
+# `rockVX` is through the world; `rockX` is which tile it is over.
 #
 # `rockBalance` must stay 0. A rock is new mass in a closed world and the only thing keeping that
 # honest is that `capturedGrams` admits every gram of it.
 new
+
+# Deck plating, explicitly. A vessel has none since H1b — the only gravity in this game is thrust —
+# and this half of the script is about the *other* half of the rule: the plating reaches a rock while
+# it is over the deck. So the script has to switch it on to have anything to check.
+gravity 0 1
 
 echo --- one rock, dropped amidships
 rock 18 10
@@ -54,13 +59,16 @@ expect rockVX = 0
 # picture — the world view can only ever show the vessel's own frame. Twenty ticks is where you can
 # still see it crossing the room.
 thrust 1 0 20
-expect rockVX < 0
+# It was dropped centred on tile 18, so a centre still at 18.5 would mean it had kept station.
+expect rockX < 18
+expect rockVX = 0
 camera centre 18 16 22
 shot rocks-astern
 
 thrust 1 0 40
 expect positionX > 0
-expect rockVX < 0
+expect rockX < 10
+expect rockVX = 0
 expect rockBalance = 0
 expect momentumBalance = 0
 # By now it is off the grid, and the nav panel is the only thing that can still say where it is.

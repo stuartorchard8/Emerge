@@ -58,7 +58,6 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.driftRocks
 import org.emerge.demo.outofspace.world.experiencedGravity
-import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.vesselMassGrams
@@ -186,17 +185,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // dropped falls this tick, and a pile in a room they just breached leaves with the air.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, felt)
 
-        // Rocks drift alongside the debris and under the same "down", but not under the same
-        // *number*: a rock outside the hull is past the end of the plating and feels only the
-        // frame's acceleration, whereas a heap on the deck is standing on the plating by definition.
-        // [feltBy] is where that split lives, and it is the reason this is not simply handed `felt`.
-        val rocksDrifted = driftRocks(
-            state.grid,
-            w.rocks,
-            state.gravity,
-            frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
-        )
-
         // ── Heat ──────────────────────────────────────────────────────────────
         //
         // Conduction runs **before** the fluid, and on the air as the edit pass left it. That order
@@ -310,6 +298,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // debris settles with it. Every one of those passes was written before there was an engine.
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
         val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+
+        // Rocks fly here, and not up beside the debris, because this is where the ship's own motion
+        // is known — and a rock's motion is now stated against the *world* while its position is
+        // stated on the *grid*, so drifting one needs the velocity of the grid itself. See [Rock].
+        //
+        // `state.velocityX` is the start-of-tick velocity, which is exactly what the ship's own
+        // position is advanced by below: the grid slides by the same amount for the rock as it does
+        // for the hull, because it is the same grid.
+        val rocksDrifted = driftRocks(state.grid, w.rocks, state.gravity, state.velocityX, state.velocityY)
 
         val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX
         val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY

@@ -28,26 +28,36 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * just closed at residual zero. A tumbling rock is worth wanting later and is not what makes the
  * extractor interesting.
  *
- * ### What holds it up, and what does not
+ * ### ⚠️ Two frames, on purpose: momentum is the world's, position is the ship's
  *
- * A rock is integrated exactly as the ship is — see [Flight]. Momentum is the stored quantity,
- * velocity is that over the mass, and only the position is state, so there is nothing to drift.
+ * [impulseX] is momentum **in the world frame**, and [positionX] is where the rock is **on the
+ * vessel's grid**. That looks like an inconsistency and is the opposite of one.
  *
- * ⚠️ **The plating does not reach it once it is outside the hull.** [feltBy] gives a rock the deck's
- * artificial gravity only while it is over the grid, and the frame's acceleration *always*. That
- * split is the physics rather than a convenience: the plating is a field the vessel makes and it
- * stops where the vessel does, whereas the acceleration term is not a force at all — it is the price
- * of writing everything in the frame of something that is speeding up, and it applies to a rock a
- * hundred tiles astern exactly as it applies to the air in the hold. Get that backwards and a
- * captured rock either sticks to the ship like a magnet or falls off the bottom of the universe.
+ * A position has to be in the grid's frame because the grid is what a position *means* here — which
+ * tile, which wall, which side of the hold. A momentum must not be, because the vessel's frame
+ * accelerates: the instant a rock and the ship exchange an impulse, that exchange changes the frame
+ * every *other* rock's velocity is measured against, and a reduced-mass term computed against a
+ * moving ruler goes missing without anything failing. In the world frame there is no pseudo-force
+ * to write down at all. A free rock has constant momentum, full stop.
+ *
+ * The astern drift then falls out of the position being relative rather than out of a force: the
+ * grid moves by the ship's velocity each tick, so [driftRocks] advances a rock by its velocity
+ * *minus the ship's*, and a rock genuinely at rest slides toward the stern of a burning ship
+ * because the stern is coming to meet it. That was H1's headline behaviour and it survives the move
+ * unchanged — see `RockTest`.
+ *
+ * ⚠️ **The plating does not reach it once it is outside the hull.** [platingFeltBy] gives a rock the
+ * deck's artificial gravity only while it is over the grid, and nothing at all outside it. The
+ * plating is a field the vessel makes and it stops where the vessel does. (H1 handed out the frame's
+ * acceleration alongside it, which was the same statement written in the vessel's frame; in the
+ * world frame that term simply does not exist.)
  *
  * ### What it does not do yet
  *
- * **Nothing.** It touches nothing, conducts with nothing, and blocks nothing — it flies through the
- * hull and out the far side, and that is increment H1 doing exactly one thing. Contact is H2, the
- * extractor is H3, and the fluid coupling — permeable, reading the pressure field and not writing to
- * it — is H5 and is cuttable. Its energy is counted in the solid ledger from the tick it appears, so
- * that when conduction does arrive there is nothing to reconcile.
+ * It conducts with nothing, and it blocks nothing: air flows straight through it and it displaces no
+ * gas — the permeable coupling is H5 and is cuttable. It still flies through the hull; contact is
+ * H2b. Its energy is counted in the solid ledger from the tick it appears, so that when conduction
+ * does arrive there is nothing to reconcile.
  */
 class Rock(
     /** The shape's bounding box, in cells. */
@@ -58,7 +68,10 @@ class Rock(
     /** The top-left corner of [cells], in the vessel's frame, in the billionths [Flight.PER_TILE] counts. */
     val positionX: Long,
     val positionY: Long,
-    /** Momentum in the vessel's frame, in gram·tiles per tick — the same unit the ship's is in. */
+    /**
+     * Momentum **in the world frame**, in gram·tiles per tick — the same unit the ship's is in, and
+     * deliberately not the same frame as [positionX]. See the class note.
+     */
     val impulseX: Long,
     val impulseY: Long,
     /** What it is made of, as proportions. The stand-in ore body until there is a reason for more. */
@@ -80,6 +93,7 @@ class Rock(
 
     val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
 
+    /** How fast it is going **through the world**, which is not how fast it crosses the grid. */
     val velocityX: Long get() = massGrams.let { if (it <= 0L) 0L else impulseX * Flight.PER_TILE / it }
     val velocityY: Long get() = massGrams.let { if (it <= 0L) 0L else impulseY * Flight.PER_TILE / it }
 
@@ -164,50 +178,51 @@ class Rock(
 }
 
 /**
- * What a rock at [centreX], [centreY] falls toward: the plating if it is over the deck, and the
- * frame's acceleration wherever it is.
+ * The only force a vessel exerts on a rock at a distance: the deck plating, and only over the deck.
  *
- * See [Rock]'s note for why those two are not the same kind of thing and must not be handed out
- * together. [platingGravity] is [VesselState.gravity], the *setting*; [acceleration] is the ship's
- * own `netImpulse / massGrams`, which is the term [experiencedGravity] subtracts for the gas.
+ * [platingGravity] is [VesselState.gravity], the *setting* — a field the ship makes, which is why it
+ * stops where the ship does. There is no second term. A rock's momentum is written in the world
+ * frame, and the world frame is inertial, so the vessel's own acceleration is not a force on
+ * anything: it shows up in [driftRocks] as the grid sliding under the rock instead. See [Rock].
  */
-fun feltBy(
-    grid: Grid,
-    centreX: Long,
-    centreY: Long,
-    platingGravity: Frac2,
-    acceleration: Frac2,
-): Frac2 {
+fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: Frac2): Frac2 {
     val tx = centreX / Flight.PER_TILE
     val ty = centreY / Flight.PER_TILE
     val aboard = centreX >= 0L && centreY >= 0L && tx < grid.width && ty < grid.height
-    val px = if (aboard) platingGravity.x.raw else 0L
-    val py = if (aboard) platingGravity.y.raw else 0L
-    return Frac2(Frac(px - acceleration.x.raw), Frac(py - acceleration.y.raw))
+    return if (aboard) platingGravity else Frac2(Frac(0L), Frac(0L))
 }
 
 /**
- * One tick of free flight for every rock: gravity into momentum, momentum into position.
+ * One tick of free flight for every rock: the grid slides under it, then the plating pulls.
  *
- * The same order and the same explicitness as the ship's, and for the same reason — the rock moves
- * by the velocity it had at the *start* of the tick, so this tick's push buys next tick's travel. A
+ * ⚠️ The two frames are both here and the arithmetic is where they meet. A rock's velocity is
+ * through the **world**; its position is on the **grid**; and the grid is itself moving at
+ * [shipVelocityX]. So what a position advances by is the *difference* of the two, and a rock at rest
+ * in the world drifts astern of a burning ship for the only reason it ever really did — the ship
+ * left, and the rock did not.
+ *
+ * The order and the explicitness are the ship's own — see [VesselState.positionX]: a rock moves by
+ * the velocity it had at the *start* of the tick, so this tick's push buys next tick's travel. A
  * body that got a free tick of its own acceleration would outrun the ship it is being compared
- * against, by a little, forever.
+ * against, by a little, forever. [shipVelocityX] is likewise the ship's start-of-tick velocity,
+ * which is the same number the ship's own position is advanced by in the same tick, so the two
+ * frames can never be half a tick out of step with each other.
  */
 fun driftRocks(
     grid: Grid,
     rocks: List<Rock>,
     platingGravity: Frac2,
-    acceleration: Frac2,
+    shipVelocityX: Long,
+    shipVelocityY: Long,
 ): List<Rock> {
     if (rocks.isEmpty()) return rocks
     return rocks.map { rock ->
         val mass = rock.massGrams
         if (mass <= 0L) return@map rock
-        val felt = feltBy(grid, rock.centreX, rock.centreY, platingGravity, acceleration)
+        val felt = platingFeltBy(grid, rock.centreX, rock.centreY, platingGravity)
         val moved = rock.copy(
-            positionX = rock.positionX + rock.velocityX,
-            positionY = rock.positionY + rock.velocityY,
+            positionX = rock.positionX + rock.velocityX - shipVelocityX,
+            positionY = rock.positionY + rock.velocityY - shipVelocityY,
         )
         moved.copy(
             impulseX = rock.impulseX + mass * felt.x.raw / Flight.FRAC_ONE,

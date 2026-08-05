@@ -481,6 +481,11 @@ object OutofspaceAgentHarness {
             "rockBalance" -> (state.rockGrams - state.baselineRockGrams - state.capturedGrams).toDouble()
             // The first rock, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
+            //
+            // ⚠️ Two frames, and the readouts inherit them: `rockX/rockY` are on the **grid** — which
+            // tile it is over — and `rockVX/rockVY` are through the **world**. A rock at rest reads
+            // as zero velocity while its position walks astern of a burning ship, and that is the
+            // model being honest rather than the instrument disagreeing with itself. See [Rock].
             "rockX" -> (state.rocks.firstOrNull()?.centreX ?: 0L).toDouble() / Flight.PER_TILE
             "rockY" -> (state.rocks.firstOrNull()?.centreY ?: 0L).toDouble() / Flight.PER_TILE
             "rockVX" -> (state.rocks.firstOrNull()?.velocityX ?: 0L).toDouble() / Flight.PER_TILE

@@ -42,7 +42,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 8
+    const val VERSION = 9
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -81,7 +81,12 @@ object Save {
         out.append("captured ").append(state.capturedGrams).append('\n')
         out.append("baselinerock ").append(state.baselineRockGrams).append('\n')
 
-        // One line per rock. Its shape is written as a run of 0s and 1s rather than packed, because
+        // One line per rock. Its momentum is in the **world** frame and its position is on the
+        // vessel's grid — see [Rock] for why those are deliberately different frames, and version 9
+        // for what it cost to change: a version 8 file's rock momentum was written in the vessel's
+        // frame, so loading one has to add the ship's own momentum back on.
+        //
+        // Its shape is written as a run of 0s and 1s rather than packed, because
         // the whole point of the format is that a person can read a world and retype part of it, and
         // a rock is the one thing here whose *shape* somebody will want to try changing by hand.
         for (r in state.rocks) {
@@ -492,6 +497,23 @@ object Save {
         // all, so the network loads empty rather than at some temperature nothing was ever at.
         val pipeAir =
             if (pipeJoules.any { it != 0L }) AirField.of(pipeGrams, pipeJoules) else AirField.of(pipeGrams)
+
+        // Version 9 moved a rock's momentum out of the vessel's frame and into the world's, and a
+        // frame change is exactly the kind of thing a version number is for: the numbers in a version
+        // 8 file are still correct, they are just answers to a different question. `p_world =
+        // p_vessel + m_rock · v_ship`, and the ship's velocity is its own momentum over its own mass
+        // — the same walk [VesselState.velocityX] makes, done here because a migration cannot ask
+        // the state it is building. A ship that was not moving loads unchanged, which is every save
+        // written before the debug engine existed.
+        val loaded = if (version >= 9 || rocks.isEmpty()) rocks.toList() else {
+            val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList(), Debris.of(piles))
+            if (shipMass <= 0L) rocks.toList() else rocks.map {
+                it.copy(
+                    impulseX = it.impulseX + it.massGrams * impulseX / shipMass,
+                    impulseY = it.impulseY + it.massGrams * impulseY / shipMass,
+                )
+            }
+        }
         return VesselState(
             grid = grid,
             machines = machines.toList(),
@@ -537,7 +559,7 @@ object Save {
             undeliveredImpulseY = undeliveredY,
             debugImpulseX = debugX,
             debugImpulseY = debugY,
-            rocks = rocks.toList(),
+            rocks = loaded,
             capturedGrams = capturedGrams,
             baselineRockGrams = baselineRockGrams ?: rocks.sumOf { it.massGrams },
         )

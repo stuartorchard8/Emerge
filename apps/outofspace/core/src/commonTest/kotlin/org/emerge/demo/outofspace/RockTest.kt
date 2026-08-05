@@ -16,10 +16,14 @@ import kotlin.test.assertTrue
  * A rock exists, falls, drifts and is accounted for — increment H1.
  *
  * The interesting half is not that it moves. It is **which gravity it moves under**: a rock over the
- * deck is standing on the plating, and a rock a hundred tiles astern is not, but *both* of them feel
- * the frame's acceleration, because that term is not a force at all — it is the price of writing the
- * world in the frame of something that is speeding up. Get the split backwards and a captured rock
+ * deck is standing on the plating, and a rock a hundred tiles astern is not, because the plating is a
+ * field the ship makes and it stops where the ship does. Get that backwards and a captured rock
  * either sticks to the ship like a magnet or falls off the bottom of the universe. See [Rock].
+ *
+ * ⚠️ Since H2a a rock's **momentum is in the world frame** while its **position is on the grid**, and
+ * the tests here are the ones that notice: a rock at rest now reads as a rock at rest, and the drift
+ * astern of a burning ship is the grid leaving rather than a pseudo-force pushing. The old version of
+ * this file could only check that to within a few per cent; it is exact now.
  *
  * ⚠️ Nothing here touches anything. A rock flies through the hull, conducts with nothing and blocks
  * nothing; contact is H2. Its **energy** is in the solid ledger from the tick it appears anyway, so
@@ -84,11 +88,12 @@ class RockTest {
     /**
      * Under thrust and with the plating off, the rock stands still and the **ship** moves.
      *
-     * This is the observation the whole increment is for, and it is stated in the rock's coordinates
-     * because those are the ship's: the vessel's frame is accelerating, so a rock that is genuinely
-     * at rest in the world appears to accelerate the other way. That apparent motion is the pseudo-
-     * force, it is the same term the gas already gets from [experiencedGravity], and it is what will
-     * make flying at an asteroid in H4 look like flying at an asteroid.
+     * This is the observation the whole increment is for, and H2a is what made it *cheap*. In the
+     * vessel's frame it took a pseudo-force to explain — the frame accelerates, so a rock genuinely
+     * at rest has to be given an equal and opposite apparent acceleration, and the old version of
+     * this test could only check that within a few per cent because the term was a tick behind. With
+     * the momentum written in the world frame there is nothing to explain and nothing to approximate:
+     * the rock's velocity is **exactly zero**, forever, and the drift astern is the grid leaving.
      *
      * Sign: the engine pushes the ship in +x, so everything not bolted to it falls behind — −x.
      */
@@ -99,25 +104,25 @@ class RockTest {
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreX
+        val from = controller.state.positionX
         controller.thrustX = 1
         repeat(TICKS) { controller.stepOnce() }
         controller.thrustX = 0
 
         val rock = controller.state.rocks.single()
-        assertTrue(controller.state.positionX > 0L, "the ship never fired, so this proved nothing")
+        val travelled = controller.state.positionX - from
+        assertTrue(travelled > 0L, "the ship never fired, so this proved nothing")
         assertTrue(
             rock.centreX < start,
             "the rock kept station with an accelerating ship: $start then ${rock.centreX}",
         )
-        // And it is genuinely at rest in the world: what it gained in the ship's frame should be
-        // very close to minus what the ship gained in its own. Not exact -- the ship's mass changes
-        // by nothing here but its felt acceleration is a tick behind, so a tick's worth of drift is
-        // expected and a run's worth is not.
-        val closing = -rock.velocityX
-        assertTrue(
-            abs(closing - controller.state.velocityX) * 20L < controller.state.velocityX,
-            "the rock is not keeping still in the world: closing $closing against ship " +
-                "${controller.state.velocityX}",
+        assertEquals(0L, rock.impulseX, "something pushed a rock nothing was touching")
+        assertEquals(0L, rock.impulseY)
+        // And the drift is the ship's own travel, exactly: same number, same tick, opposite sign,
+        // because it is one grid moving. Nothing here is approximate any more.
+        assertEquals(
+            travelled, start - rock.centreX,
+            "the rock and the grid disagree about how far the ship went",
         )
     }
 
