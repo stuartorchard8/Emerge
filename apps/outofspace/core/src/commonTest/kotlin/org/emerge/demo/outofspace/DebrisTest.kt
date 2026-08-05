@@ -34,7 +34,7 @@ class DebrisTest {
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state
-        val cfg = OutofspaceConfig(grid = state.grid)
+        val cfg = OutofspaceConfig(initialGrid = state.grid)
         val inputs = mapOf(PlayerId(0) to input)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, if (it == 0) inputs else emptyMap()) }
         return s
@@ -194,7 +194,7 @@ class DebrisTest {
     @Test
     fun `the world still never loses a gram when the player takes it apart`() {
         var s = workingVessel(Grid(40, 28))
-        val cfg = OutofspaceConfig(grid = s.grid)
+        val cfg = OutofspaceConfig(initialGrid = s.grid)
         s = run(s, 80)
 
         // Rip out every machine on one row of the working line, mid-flow.
@@ -217,7 +217,7 @@ class DebrisTest {
     fun `two runs of a world being dismantled are identical`() {
         fun digest(): String {
             var s = workingVessel(Grid(40, 28))
-            val cfg = OutofspaceConfig(grid = s.grid)
+            val cfg = OutofspaceConfig(initialGrid = s.grid)
             s = run(s, 300)
             val y = 12   // the row the starter vessel's main line runs along
             val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }

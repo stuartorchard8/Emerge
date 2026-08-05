@@ -108,7 +108,7 @@ class RockContactTest {
     @Test
     fun `a rock that lands on the deck settles and stays put`() {
         val controller = OutofspaceController(CFG, vacuumHull().copy(gravity = VesselState.PLATING_ONE_G))
-        controller.dropRock(CFG.grid.index(18, 12))
+        controller.dropRock(CFG.initialGrid.index(18, 12))
 
         repeat(TICKS) { controller.stepOnce() }
         val landed = controller.state.rocks.single()
@@ -158,7 +158,7 @@ class RockContactTest {
     @Test
     fun `a rock resting on the deck does not push the ship`() {
         val controller = OutofspaceController(CFG, vacuumHull().copy(gravity = VesselState.PLATING_ONE_G))
-        controller.dropRock(CFG.grid.index(18, 12))
+        controller.dropRock(CFG.initialGrid.index(18, 12))
 
         repeat(TICKS) { controller.stepOnce() }
         val settled = controller.state.vesselImpulseY
@@ -215,7 +215,7 @@ class RockContactTest {
      * rock*" claim below would be measuring the weather instead.
      */
     private fun vacuumHull(): VesselState {
-        val grid = CFG.grid
+        val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
         for (x in 1..WALL_X) { put(x, 6); put(x, 26) }

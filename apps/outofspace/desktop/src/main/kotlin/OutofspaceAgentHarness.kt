@@ -128,7 +128,7 @@ object OutofspaceAgentHarness {
                     // A script that plants its own rocks and then counts them has to be able to ask
                     // for an empty sky, or the field is in every one of its sums.
                     val rocks = t.getOrNull(1)?.toIntOrNull() ?: RockField.DEFAULT_COUNT
-                    controller.reset(starterVessel(controller.cfg.grid, rocks))
+                    controller.reset(starterVessel(controller.cfg.initialGrid, rocks))
                     println("[agent] new world, tick ${controller.tick}, ${state.rocks.size} rocks adrift")
                 }
                 "load" -> {
@@ -492,6 +492,10 @@ object OutofspaceAgentHarness {
         private fun reading(field: String): Double? = when (field) {
             "tick" -> controller.tick.toDouble()
             "machines" -> machineCount().toDouble()
+            "gridWidth" -> state.grid.width.toDouble()
+            "gridHeight" -> state.grid.height.toDouble()
+            "originX" -> state.positionX.toDouble() / Flight.PER_TILE
+            "originY" -> state.positionY.toDouble() / Flight.PER_TILE
             // Rooms and pipes together, because they share one ledger and `airBalance` below is
             // that ledger. `pipeGrams` separates them for a script that cares which side gas is on.
             "airGrams" -> state.atmosphereGrams.toDouble()
@@ -581,7 +585,8 @@ object OutofspaceAgentHarness {
         }
 
         private val FIELDS = listOf(
-            "tick", "machines", "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "extractedGrams",
+            "tick", "machines", "gridWidth", "gridHeight", "originX", "originY",
+            "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "extractedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "massBalance", "rockCount", "rockGrams", "capturedGrams", "rockBalance",

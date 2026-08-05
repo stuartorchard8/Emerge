@@ -39,7 +39,7 @@ class GaugeTest {
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
-        val cfg = OutofspaceConfig(grid = state.grid)
+        val cfg = OutofspaceConfig(initialGrid = state.grid)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
         return s
     }
@@ -101,7 +101,7 @@ class GaugeTest {
         var s = line(ore)
         val at = s.grid.index(6, 2)
         s = OutofspaceReducer.reduce(
-            OutofspaceConfig(grid = s.grid),
+            OutofspaceConfig(initialGrid = s.grid),
             s,
             mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.SetChannel(at, Channel.Green)))),
         )
@@ -121,7 +121,7 @@ class GaugeTest {
     @Test
     fun `a gauge conserves what passes through it`() {
         var s = workingVessel(Grid(40, 28))
-        val cfg = OutofspaceConfig(grid = s.grid)
+        val cfg = OutofspaceConfig(initialGrid = s.grid)
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {

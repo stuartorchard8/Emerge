@@ -60,7 +60,7 @@ class ThrustBalanceTest {
      */
     @Test
     fun `a sealed vessel keeps its momentum in the places it can be`() {
-        val controller = OutofspaceController(OutofspaceConfig(), starterVessel(OutofspaceConfig().grid))
+        val controller = OutofspaceController(OutofspaceConfig(), starterVessel(OutofspaceConfig().initialGrid))
         repeat(TICKS) {
             controller.stepOnce()
             assertBalanced(controller.state, "sealed, tick ${controller.state.tick}")
@@ -90,7 +90,7 @@ class ThrustBalanceTest {
     @Test
     fun `a breached vessel accounts for what it threw overboard`() {
         val cfg = OutofspaceConfig()
-        val grid = cfg.grid
+        val grid = cfg.initialGrid
         val controller = OutofspaceController(cfg, bareHull(grid))
         controller.remove(grid.index(BREACH_X, HULL_ROW))
 

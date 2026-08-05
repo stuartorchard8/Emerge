@@ -45,7 +45,7 @@ import kotlin.test.assertTrue
  */
 class VesselSimTest {
 
-    private val cfg = OutofspaceConfig(grid = Grid(40, 28))
+    private val cfg = OutofspaceConfig(initialGrid = Grid(40, 28))
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state
@@ -365,7 +365,7 @@ class VesselSimTest {
 
     @Test
     fun `a processor in front of the smelter is what makes ingots`() {
-        val s = run(workingVessel(cfg.grid), 480)
+        val s = run(workingVessel(cfg.initialGrid), 480)
         val ironIngots = s.stockpile[Form.IronIngot]
         assertTrue(ironIngots.total > 0L, "the full line should store iron: ${s.stockpile}")
         assertEquals(ironIngots.total, ironIngots[Species.Iron], "and the ingots should be pure iron")
@@ -492,8 +492,8 @@ class VesselSimTest {
     @Test
     fun `the tick rate changes how fast you watch, not what happens`() {
         fun play(hz: Int): String {
-            val c = OutofspaceConfig(grid = cfg.grid, ticksPerSecond = hz)
-            var s = starterVessel(c.grid)
+            val c = OutofspaceConfig(initialGrid = cfg.initialGrid, ticksPerSecond = hz)
+            var s = starterVessel(c.initialGrid)
             repeat(200) { s = OutofspaceReducer.reduce(c, s, emptyMap()) }
             return Save.write(s)
         }
@@ -503,7 +503,7 @@ class VesselSimTest {
 
     @Test
     fun `the world never loses a gram`() {
-        var s = workingVessel(cfg.grid)
+        var s = workingVessel(cfg.initialGrid)
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 97 == 0) assertBalanced(s, "tick ${s.tick}")
@@ -514,7 +514,7 @@ class VesselSimTest {
 
     @Test
     fun `species are conserved too, not merely total mass`() {
-        var s = workingVessel(cfg.grid)
+        var s = workingVessel(cfg.initialGrid)
         repeat(240) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         // Everything the extractors dug, versus everything that exists anywhere now. Vented material is
@@ -542,14 +542,14 @@ class VesselSimTest {
             for (m in s.machines) append('|').append(m?.toString() ?: "-")
         }
         assertEquals(
-            digest(run(starterVessel(cfg.grid), 600)),
-            digest(run(starterVessel(cfg.grid), 600)),
+            digest(run(starterVessel(cfg.initialGrid), 600)),
+            digest(run(starterVessel(cfg.initialGrid), 600)),
         )
     }
 
     @Test
     fun `packets on the track are always whole and never oversized`() {
-        var s = workingVessel(cfg.grid)
+        var s = workingVessel(cfg.initialGrid)
         repeat(160) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             for (r in s.rails) {

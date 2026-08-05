@@ -248,7 +248,7 @@ class BreachSymmetryTest {
         gravity: Frac2 = VesselState.PLATING_ONE_G,
     ): List<Lean> {
         val cfg = OutofspaceConfig()
-        val grid = cfg.grid
+        val grid = cfg.initialGrid
         val controller = OutofspaceController(cfg, bareHull(grid, gravity))
 
         controller.remove(grid.index(breachX, HULL_ROW))

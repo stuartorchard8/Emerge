@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
 class PipeFluidTest {
 
     private val grid = Grid(16, 10)
-    private val cfg = OutofspaceConfig(grid = grid)
+    private val cfg = OutofspaceConfig(initialGrid = grid)
 
     /** A sealed hull, so the room air has nowhere to go and cannot muddy the ledger. */
     private fun hulled(): List<Machine?> {

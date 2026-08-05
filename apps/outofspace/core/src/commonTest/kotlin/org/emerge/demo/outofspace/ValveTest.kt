@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
 class ValveTest {
 
     private val grid = Grid(20, 12)
-    private val cfg = OutofspaceConfig(grid = grid)
+    private val cfg = OutofspaceConfig(initialGrid = grid)
 
     /** A sealed hull, so room air stays put and the only way out of anywhere is the valve. */
     private fun hulled(): List<Machine?> {

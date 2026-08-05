@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 class PumpTest {
 
     private val grid = Grid(20, 12)
-    private val cfg = OutofspaceConfig(grid = grid)
+    private val cfg = OutofspaceConfig(initialGrid = grid)
 
     private fun hulled(): List<Machine?> {
         val m = arrayOfNulls<Machine>(grid.size)

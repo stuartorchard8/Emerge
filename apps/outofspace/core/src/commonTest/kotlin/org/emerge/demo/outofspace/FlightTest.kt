@@ -46,7 +46,7 @@ class FlightTest {
     @Test
     fun `a sealed vessel rings and does not depart`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
 
         var early = 0L
         var late = 0L
@@ -84,8 +84,8 @@ class FlightTest {
     @Test
     fun `a breached vessel accelerates away from the hole and keeps going`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
-        controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
 
         var opening = 0L
         var previousPosition = 0L
@@ -124,8 +124,8 @@ class FlightTest {
     @Test
     fun `thrust arrives before the exhaust does`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
-        controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
         controller.stepOnce()
 
         val s = controller.state
@@ -159,8 +159,8 @@ class FlightTest {
     @Test
     fun `the momentum ledger still balances while the ship is under way`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
-        controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
 
         repeat(TICKS) {
             controller.stepOnce()
@@ -210,8 +210,8 @@ class FlightTest {
         // to whatever gravity a hull already has and never overwrites it, and that claim needs a
         // non-zero one to be about anything. It reads as a fixture saying what it is testing, which
         // is what dropping the default bought.
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid).copy(gravity = VesselState.PLATING_ONE_G))
-        controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid).copy(gravity = VesselState.PLATING_ONE_G))
+        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
 
         var leanX = 0L
         var leanY = 0L
@@ -249,8 +249,8 @@ class FlightTest {
     @Test
     fun `a save remembers the voyage`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
-        controller.remove(cfg.grid.index(HULL_LEFT, BREACH_Y))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
         repeat(TICKS) { controller.stepOnce() }
 
         val played = controller.state
@@ -279,7 +279,7 @@ class FlightTest {
     @Test
     fun `the debug engine flies the ship and books what it mints`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
 
         controller.thrustX = 1
         repeat(BURN_TICKS) {
@@ -334,8 +334,8 @@ class FlightTest {
     @Test
     fun `the debug engine is an acceleration and not a push`() {
         val cfg = OutofspaceConfig()
-        val light = OutofspaceController(cfg, vacuumHull(cfg.grid, ballast = false))
-        val heavy = OutofspaceController(cfg, vacuumHull(cfg.grid, ballast = true))
+        val light = OutofspaceController(cfg, vacuumHull(cfg.initialGrid, ballast = false))
+        val heavy = OutofspaceController(cfg, vacuumHull(cfg.initialGrid, ballast = true))
 
         light.thrustX = 1
         heavy.thrustX = 1

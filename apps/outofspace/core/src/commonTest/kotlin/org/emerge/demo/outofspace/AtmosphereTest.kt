@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
  */
 class AtmosphereTest {
 
-    private fun cfgFor(grid: Grid) = OutofspaceConfig(grid = grid)
+    private fun cfgFor(grid: Grid) = OutofspaceConfig(initialGrid = grid)
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state

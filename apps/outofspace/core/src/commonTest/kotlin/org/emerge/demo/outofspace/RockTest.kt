@@ -34,7 +34,7 @@ class RockTest {
     @Test
     fun `a rock over the deck falls toward it`() {
         val controller = OutofspaceController(CFG, bareHull())
-        controller.dropRock(CFG.grid.index(18, 10))
+        controller.dropRock(CFG.initialGrid.index(18, 10))
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreY
@@ -67,7 +67,7 @@ class RockTest {
      */
     @Test
     fun `a rock in open space is not pulled by the deck plating`() {
-        val grid = CFG.grid
+        val grid = CFG.initialGrid
         val far = Rock.blob(
             radius = 2,
             positionX = grid.width * 4L * Flight.PER_TILE,
@@ -105,7 +105,7 @@ class RockTest {
     @Test
     fun `a burn leaves a free rock astern`() {
         val controller = OutofspaceController(CFG, bareHull().copy(gravity = VesselState.FREEFALL))
-        controller.dropRock(CFG.grid.index(18, 30))
+        controller.dropRock(CFG.initialGrid.index(18, 30))
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreX
@@ -146,7 +146,7 @@ class RockTest {
         val oreBefore = controller.state.extractedGrams
 
         repeat(3) { i ->
-            controller.dropRock(CFG.grid.index(6 + i * 8, 10))
+            controller.dropRock(CFG.initialGrid.index(6 + i * 8, 10))
             controller.stepOnce()
             val s = controller.state
             assertEquals(
@@ -177,7 +177,7 @@ class RockTest {
         repeat(4) { controller.stepOnce() }
         val before = controller.state.storedJoules
 
-        controller.dropRock(CFG.grid.index(18, 12))
+        controller.dropRock(CFG.initialGrid.index(18, 12))
         repeat(4) { controller.stepOnce() }
 
         val s = controller.state
@@ -193,8 +193,8 @@ class RockTest {
     @Test
     fun `a save remembers the rocks`() {
         val controller = OutofspaceController(CFG, bareHull())
-        controller.dropRock(CFG.grid.index(12, 9))
-        controller.dropRock(CFG.grid.index(24, 14))
+        controller.dropRock(CFG.initialGrid.index(12, 9))
+        controller.dropRock(CFG.initialGrid.index(24, 14))
         repeat(8) { controller.stepOnce() }
 
         val played = controller.state
@@ -210,7 +210,7 @@ class RockTest {
     }
 
     private fun bareHull(): VesselState {
-        val grid = CFG.grid
+        val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
         for (x in 1..33) { put(x, 6); put(x, 26) }

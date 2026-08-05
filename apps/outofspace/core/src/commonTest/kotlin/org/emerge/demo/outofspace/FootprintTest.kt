@@ -41,7 +41,7 @@ class FootprintTest {
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state
-        val cfg = OutofspaceConfig(grid = state.grid)
+        val cfg = OutofspaceConfig(initialGrid = state.grid)
         val inputs = mapOf(PlayerId(0) to input)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, if (it == 0) inputs else emptyMap()) }
         return s

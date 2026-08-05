@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 class ConduitLayersTest {
 
     private val grid = Grid(12, 6)
-    private val cfg = OutofspaceConfig(grid = grid)
+    private val cfg = OutofspaceConfig(initialGrid = grid)
 
     private fun empty(): VesselState =
         VesselState(grid, List(grid.size) { null })

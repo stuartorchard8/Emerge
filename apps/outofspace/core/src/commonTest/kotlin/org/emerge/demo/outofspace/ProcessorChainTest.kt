@@ -36,7 +36,7 @@ class ProcessorChainTest {
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
-        val cfg = OutofspaceConfig(grid = state.grid)
+        val cfg = OutofspaceConfig(initialGrid = state.grid)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
         return s
     }

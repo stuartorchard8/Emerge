@@ -31,7 +31,7 @@ import kotlin.test.assertTrue
  */
 class BodyHeatTest {
 
-    private fun cfgFor(grid: Grid) = OutofspaceConfig(grid = grid)
+    private fun cfgFor(grid: Grid) = OutofspaceConfig(initialGrid = grid)
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state

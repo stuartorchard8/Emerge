@@ -33,7 +33,7 @@ class EditorToolsTest {
      * mistake reads as the bellows being broken and is the fixture being wrong.
      */
     private val OPEN_TILE get() = grid.index(4, 7)
-    private val cfg = OutofspaceConfig(grid = grid)
+    private val cfg = OutofspaceConfig(initialGrid = grid)
 
     /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
     private fun layered(): OutofspaceController {

@@ -5,11 +5,10 @@ import org.emerge.demo.outofspace.world.Grid
 /** Fixed world parameters. */
 data class OutofspaceConfig(
     /**
-     * Generous, because machines are now rooms: a smelter is five tiles across and a refinery line
-     * of them is long. A grid this size is still trivial to sweep, and "a big bound with the hull
-     * drawn inside it" is what gives the expansion fantasy without a growable world.
+     * The grid size at construction — the only time this value matters.
+     * After that, [VesselState.grid] is the single source of truth.
      */
-    val grid: Grid = Grid(96, 60),
+    val initialGrid: Grid = Grid(96, 60),
     /**
      * How fast to run the world, and **nothing else**.
      *

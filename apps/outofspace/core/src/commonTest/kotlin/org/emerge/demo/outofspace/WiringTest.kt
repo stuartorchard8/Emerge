@@ -41,7 +41,7 @@ import kotlin.test.assertTrue
  */
 class WiringTest {
 
-    private val cfg = OutofspaceConfig(grid = Grid(16, 8))
+    private val cfg = OutofspaceConfig(initialGrid = Grid(16, 8))
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state

@@ -39,7 +39,7 @@ class BridgeTest {
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state
-        val cfg = OutofspaceConfig(grid = state.grid)
+        val cfg = OutofspaceConfig(initialGrid = state.grid)
         val inputs = mapOf(PlayerId(0) to input)
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, if (it == 0) inputs else emptyMap()) }
         return s
@@ -292,7 +292,7 @@ class BridgeTest {
     fun `a crossing world conserves and replays identically`() {
         fun digest(): String {
             var s = crossing(bridged = true)
-            val cfg = OutofspaceConfig(grid = grid)
+            val cfg = OutofspaceConfig(initialGrid = grid)
             repeat(600) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
             return buildString {
                 append(s.inTransitGrams).append('|').append(s.ventedGrams).append('|').append(s.diverters)

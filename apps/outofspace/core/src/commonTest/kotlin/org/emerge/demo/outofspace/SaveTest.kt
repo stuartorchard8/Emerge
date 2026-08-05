@@ -43,7 +43,7 @@ import kotlin.test.assertTrue
  */
 class SaveTest {
 
-    private val cfg = OutofspaceConfig(grid = Grid(40, 28))
+    private val cfg = OutofspaceConfig(initialGrid = Grid(40, 28))
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
@@ -56,7 +56,7 @@ class SaveTest {
     @Test
     fun `a loaded world runs on identically`() {
         // Long enough for the extractors to accrue a carry, the belts to fill and the first jam to form.
-        val played = run(starterVessel(cfg.grid), 400)
+        val played = run(starterVessel(cfg.initialGrid), 400)
 
         val reloaded = Save.read(Save.write(played))
         assertEquals(Save.write(played), Save.write(reloaded), "the reload differs at tick ${played.tick}")
@@ -74,9 +74,9 @@ class SaveTest {
      */
     @Test
     fun `air temperature survives a save`() {
-        val start = starterVessel(cfg.grid)
+        val start = starterVessel(cfg.initialGrid)
         val joules = start.air.copyJoules()
-        val hot = cfg.grid.index(cfg.grid.width / 2, cfg.grid.height / 2)
+        val hot = cfg.initialGrid.index(cfg.initialGrid.width / 2, cfg.initialGrid.height / 2)
         joules[hot] *= 3
         val played = run(start.copy(air = AirField.of(start.air.copyGrams(), joules)), 60)
 
@@ -87,13 +87,13 @@ class SaveTest {
 
     @Test
     fun `writing a loaded save gives back the same text`() {
-        val text = Save.write(starterVessel(cfg.grid))
+        val text = Save.write(starterVessel(cfg.initialGrid))
         assertEquals(text, Save.write(Save.read(text)))
     }
 
     @Test
     fun `the ledgers survive, so a leak cannot be laundered by saving`() {
-        val played = run(starterVessel(cfg.grid), 300)
+        val played = run(starterVessel(cfg.initialGrid), 300)
         val reloaded = Save.read(Save.write(played))
 
         assertEquals(played.extractedGrams, reloaded.extractedGrams)
@@ -215,7 +215,7 @@ class SaveTest {
             // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
-        ).withWiring(starterVessel(cfg.grid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
+        ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.index(7, 4)] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L)))
 
         val state = VesselState(grid, machines.toList())
@@ -252,13 +252,13 @@ class SaveTest {
 
     @Test
     fun `heat and air come back tile by tile, not just in total`() {
-        val played = run(starterVessel(cfg.grid), 200)
+        val played = run(starterVessel(cfg.initialGrid), 200)
         val back = Save.read(Save.write(played))
         assertEquals(played.storedJoules, back.storedJoules)
         assertEquals(played.atmosphereGrams, back.atmosphereGrams)
         // Body by body rather than tile by tile: solid heat lives on the machine and the segment
         // now, so the thing that has to survive a round trip is each object's own energy.
-        for (tile in 0 until cfg.grid.size) {
+        for (tile in 0 until cfg.initialGrid.size) {
             assertEquals(played.machines[tile]?.joules, back.machines[tile]?.joules, "machine joules differ at tile $tile")
             assertEquals(played.rails[tile]?.joules, back.rails[tile]?.joules, "segment joules differ at tile $tile")
             assertEquals(played.air.mixtureAt(tile), back.air.mixtureAt(tile), "air differs at tile $tile")
@@ -287,7 +287,7 @@ class SaveTest {
 
     @Test
     fun `a save from a future version is refused rather than misread`() {
-        val text = Save.write(starterVessel(cfg.grid)).replaceFirst("outofspace ${Save.VERSION}", "outofspace 99")
+        val text = Save.write(starterVessel(cfg.initialGrid)).replaceFirst("outofspace ${Save.VERSION}", "outofspace 99")
         val error = assertFailsWith<SaveError> { Save.read(text) }
         assertTrue(error.message!!.contains("version 99"), error.message!!)
     }

@@ -24,7 +24,7 @@ import org.emerge.sim.core.TickStepper
  */
 class OutofspaceController(
     val cfg: OutofspaceConfig = OutofspaceConfig(),
-    initial: VesselState = starterVessel(OutofspaceConfig().grid),
+    initial: VesselState = starterVessel(OutofspaceConfig().initialGrid),
 ) {
     private val stepper = TickStepper(cfg, initial, OutofspaceReducer)
     private val localPlayer = PlayerId(0)
@@ -115,7 +115,7 @@ class OutofspaceController(
      */
     fun dragTo(index: Int) {
         if (dragFrom < 0 || index == dragFrom || tool != Tool.Build) return
-        val grid = cfg.grid
+        val grid = state.grid
         if (index !in 0 until grid.size) return
         var at = dragFrom
         while (at != index) {
@@ -257,7 +257,7 @@ class OutofspaceController(
     }
 
     /** Replaces the world — what "new game" and "load" will call. */
-    fun reset(newState: VesselState = starterVessel(cfg.grid)) {
+    fun reset(newState: VesselState = starterVessel(cfg.initialGrid)) {
         selected = -1
         pending.clear()
         thrustX = 0
