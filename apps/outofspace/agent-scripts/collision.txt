@@ -1,0 +1,54 @@
+# A rock hits the ship and does not go through it — increment H2.
+#
+# What to read, in two scenes. **On the deck**: switch the plating on, drop a rock, and it falls,
+# bounces, and comes to rest on the floor instead of passing through it and out of the universe. It
+# has to *settle* rather than buzz, and the number that makes that true is derived from the gravity
+# rather than picked — see RockContact.restingSpeed.
+#
+# **Off the bow**: with the plating gone, which is the game's actual regime, the ship burns into a
+# rock that is minding its own business outside the hull. The keel hits it, the rock is knocked away,
+# and the ship *recoils* — `rockImpulse` is the momentum that is now in the rock and `momentumBalance`
+# stays zero throughout, which is what makes this an exchange rather than an animation.
+
+new
+gravity 0 1
+
+echo --- a rock dropped over the deck lands on it
+rock 18 10
+run 40
+expect rockCount = 1
+expect rockBalance = 0
+expect momentumBalance = 0
+# On the deck, not through it, and in the same place it will be in forty ticks.
+expect rockY > 21.49
+expect rockY < 21.51
+camera centre 18 18 22
+shot collision-landed
+
+echo --- and forty ticks later it is in exactly the same place
+run 40
+expect momentumBalance = 0
+# The same tile it was on forty ticks ago, to four decimal places. A rock with no resting rule sits
+# in a limit cycle here instead — bouncing a third of a tile, forever, with every ledger still zero.
+expect rockY > 21.49
+expect rockY < 21.51
+shot collision-settled
+
+echo --- now the plating is off and the ship flies into one
+new
+gravity 0 0
+rock 18 30
+run 1
+expect rockVY = 0
+expect rockImpulseY = 0
+
+# Down, into the rock hanging below the keel. The ship gets there in a few ticks at a quarter g.
+thrust 0 1 12
+expect rockImpulseY > 0
+expect rockVY > 0
+expect momentumBalance = 0
+# Knocked clear of the keel rather than swept along inside it.
+expect rockY > 27
+expect rockBalance = 0
+camera centre 18 24 22
+shot collision-struck

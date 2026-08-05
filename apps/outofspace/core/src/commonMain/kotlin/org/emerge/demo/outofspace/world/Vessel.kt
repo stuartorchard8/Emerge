@@ -265,6 +265,31 @@ data class VesselState(
     val debugImpulseX: Long = 0L,
     val debugImpulseY: Long = 0L,
     /**
+     * Cumulative momentum the vessel has handed the rocks — by hitting them, and by pulling on them
+     * with the deck plating. See [RockContact] and [driftRocks].
+     *
+     * The sixth store, and unlike [debugImpulseX] it is **not** an apology for a shortcut. Nothing is
+     * minted here: `+J` goes to the rock, `−J` to the ship, and the pair conserves by construction.
+     * The term exists because only one of those two halves is inside the ledger. [vesselImpulseX] is
+     * a ledger quantity and a rock's momentum is not, so an exchange with no name would read as the
+     * ship gaining momentum from nowhere — which is exactly the reading the ledger is for. So the
+     * identity becomes
+     *
+     *     vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + rock − debug == 0
+     *
+     * and `rock` is the same kind of thing [exhaustMomentumX] is: momentum that is genuinely
+     * somewhere else now. It stops being a separate store the day a rock is *held* rather than
+     * merely present, because then it is part of the ship and the exchange is internal.
+     *
+     * ⚠️ **The plating pays into it too**, and that is not tidiness. A field the vessel makes is a
+     * force the vessel exerts: charge it for the contact and not for the pull and a rock resting on
+     * the deck becomes a thruster — pushed down for free, pushed back up with a reaction — and the
+     * ledger balances the whole time, because the free half never enters it. Zero under freefall,
+     * which is every ship; it is the 1 g fixtures and H4's capture that would have found out.
+     */
+    val rockImpulseX: Long = 0L,
+    val rockImpulseY: Long = 0L,
+    /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.

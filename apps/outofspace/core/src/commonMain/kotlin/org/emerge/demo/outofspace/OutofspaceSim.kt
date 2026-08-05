@@ -57,6 +57,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.driftRocks
+import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.settleDebris
@@ -306,10 +307,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // `state.velocityX` is the start-of-tick velocity, which is exactly what the ship's own
         // position is advanced by below: the grid slides by the same amount for the rock as it does
         // for the hull, because it is the same grid.
-        val rocksDrifted = driftRocks(state.grid, w.rocks, state.gravity, state.velocityX, state.velocityY)
+        //
+        // It is also where a rock can hit something, because a contact is an exchange and the ship's
+        // half of it has to join `netImpulse` below in the same tick the rock's half is booked. The
+        // acceleration is passed for the resting threshold and is not a force — see [driftRocks].
+        val rocksDrifted = driftRocks(
+            state.grid,
+            structure,
+            w.rocks,
+            state.gravity,
+            state.velocityX,
+            state.velocityY,
+            mass,
+            frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
+        )
 
-        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX
-        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY
+        // Everything the vessel did to a rock, it pays for here: `−J` in the same breath as the `+J`
+        // the rock got, so momentum is conserved by construction and there is nothing to reconcile
+        // later. That includes the plating — see [driftRocks] for the momentum pump that finding it
+        // out prevented — and see [VesselState.rockImpulseX] for why a thing that conserves by
+        // construction still needs a name.
+        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX -
+            rocksDrifted.handedX
+        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY -
+            rocksDrifted.handedY
 
         return state.copy(
             machines = machines,
@@ -364,7 +385,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // while the shortcut is in use — see [VesselState.debugImpulseX].
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
-            rocks = rocksDrifted,
+            rocks = rocksDrifted.rocks,
+            rockImpulseX = state.rockImpulseX + rocksDrifted.handedX,
+            rockImpulseY = state.rockImpulseY + rocksDrifted.handedY,
             capturedGrams = w.capturedGrams,
             motion = w.motion.freeze(),
         )

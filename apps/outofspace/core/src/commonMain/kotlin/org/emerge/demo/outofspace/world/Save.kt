@@ -177,6 +177,7 @@ object Save {
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
             .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
+            .append(' ').append(state.rockImpulseX).append(' ').append(state.rockImpulseY)
             .append('\n')
         return out.toString()
     }
@@ -342,6 +343,8 @@ object Save {
         var undeliveredY = 0L
         var debugX = 0L
         var debugY = 0L
+        var rockImpulseX = 0L
+        var rockImpulseY = 0L
         val rocks = ArrayList<Rock>()
         var capturedGrams = 0L
         // Null rather than zero, so "no line" and "a line saying zero" stay different things: a file
@@ -473,6 +476,9 @@ object Save {
                     // Likewise: a world saved before the debug engine existed is a world in which
                     // nothing had cheated, and zero is what that means.
                     if (tokens.size > 8) { debugX = long(7); debugY = long(8) }
+                    // And again: before H2 nothing could hit anything, so nothing had been handed
+                    // to a rock. See [VesselState.rockImpulseX].
+                    if (tokens.size > 10) { rockImpulseX = long(9); rockImpulseY = long(10) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -559,6 +565,8 @@ object Save {
             undeliveredImpulseY = undeliveredY,
             debugImpulseX = debugX,
             debugImpulseY = debugY,
+            rockImpulseX = rockImpulseX,
+            rockImpulseY = rockImpulseY,
             rocks = loaded,
             capturedGrams = capturedGrams,
             baselineRockGrams = baselineRockGrams ?: rocks.sumOf { it.massGrams },

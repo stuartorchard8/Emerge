@@ -506,11 +506,18 @@ object OutofspaceAgentHarness {
             // cost the instrument rather than the physics.
             "debugImpulseX" -> state.debugImpulseX.toDouble()
             "debugImpulseY" -> state.debugImpulseY.toDouble()
+            // Momentum that is now in the rocks, because the hull hit them. A store rather than an
+            // apology: `+J` to the rock and `−J` to the ship conserve by construction, and this term
+            // is here because only the ship's half is inside the ledger. See [VesselState.rockImpulseX].
+            "rockImpulseX" -> state.rockImpulseX.toDouble()
+            "rockImpulseY" -> state.rockImpulseY.toDouble()
             "momentumBalance" -> (
                 state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
                     state.exhaustMomentumX + state.undeliveredImpulseX - state.debugImpulseX +
+                    state.rockImpulseX +
                     state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
-                    state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY
+                    state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY +
+                    state.rockImpulseY
                 ).toDouble()
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "massGrams" -> state.massGrams.toDouble()
@@ -533,7 +540,8 @@ object OutofspaceAgentHarness {
             "massBalance", "rockCount", "rockGrams", "capturedGrams", "rockBalance",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
-            "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY", "momentumBalance",
+            "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",
+            "rockImpulseX", "rockImpulseY", "momentumBalance",
             "massGrams", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
             "gravityX", "gravityY",
         )

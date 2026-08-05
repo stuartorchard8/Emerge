@@ -96,11 +96,16 @@ class RockTest {
      * the rock's velocity is **exactly zero**, forever, and the drift astern is the grid leaving.
      *
      * Sign: the engine pushes the ship in +x, so everything not bolted to it falls behind — −x.
+     *
+     * ⚠️ The rock is **outside the hull**, below the keel, and since H2 it has to be. Left amidships
+     * it drifts astern until the port bulkhead arrives and hits it, which is the right answer to a
+     * different question: the claim here is about a rock nothing is touching, so the fixture has to
+     * be one where nothing touches it.
      */
     @Test
     fun `a burn leaves a free rock astern`() {
         val controller = OutofspaceController(CFG, bareHull().copy(gravity = VesselState.FREEFALL))
-        controller.dropRock(CFG.grid.index(18, 16))
+        controller.dropRock(CFG.grid.index(18, 30))
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreX

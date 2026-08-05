@@ -193,7 +193,16 @@ fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: Frac
 }
 
 /**
- * One tick of free flight for every rock: the grid slides under it, then the plating pulls.
+ * What one tick did to every rock, and what it therefore did to the ship.
+ *
+ * [handedX] is every gram·tile of momentum the **vessel** gave the rocks this tick, by any means; the
+ * ship owes itself the negative of it, and booking both in the same breath is what makes the whole
+ * business conserve by construction. See [VesselState.rockImpulseX].
+ */
+class RockStep(val rocks: List<Rock>, val handedX: Long, val handedY: Long)
+
+/**
+ * One tick of flight for every rock: the grid slides under it, the hull stops it, the plating pulls.
  *
  * ⚠️ The two frames are both here and the arithmetic is where they meet. A rock's velocity is
  * through the **world**; its position is on the **grid**; and the grid is itself moving at
@@ -207,26 +216,67 @@ fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: Frac
  * against, by a little, forever. [shipVelocityX] is likewise the ship's start-of-tick velocity,
  * which is the same number the ship's own position is advanced by in the same tick, so the two
  * frames can never be half a tick out of step with each other.
+ *
+ * The travel is a **sweep** rather than a jump, so a rock cannot step over a bulkhead it was going
+ * fast enough to cross in one tick, and the hull bounces it — see [sweepRock]. The plating is
+ * applied after the sweep, for the same reason the position moves first: this tick's push is next
+ * tick's travel.
+ *
+ * ⚠️ [shipAcceleration] is here for one purpose and it is not a force. A rock's momentum is in the
+ * world frame and the ship's acceleration is not a force on it; what it *is* is the speed scale that
+ * decides when a bounce is too small to be worth having — see [RockContact.restingSpeed]. Passing
+ * gravity itself would be wrong under a burn, which is the only gravity this ship has.
+ *
+ * ### ⚠️ The plating is not free either, and finding that out was the point of writing this down
+ *
+ * Everything the vessel hands a rock is returned to [RockStep.handedX] and charged to the ship —
+ * **including the plating**, which is a field the vessel *makes* and must therefore pay for. The
+ * alternative is a momentum pump you could fly on: gravity pushes a resting rock down for nothing,
+ * the deck pushes it back up with a reaction, and the ship climbs forever with a rock sitting on the
+ * floor. And the ledger would not have caught it, because a contact-only store makes that reading
+ * balance. A rock at rest on a deck now costs the ship exactly nothing, which is what "at rest"
+ * means, and a rock in *free fall* over the deck genuinely does push the ship — the field is doing
+ * work and something has to be pushing back.
+ *
+ * In freefall the whole term is zero, so this is a statement about the fixtures and about H4's
+ * capture rather than about how the game plays today. It is here because a wrong version of it is
+ * invisible until it is enormous.
  */
 fun driftRocks(
     grid: Grid,
+    structure: StructureMap,
     rocks: List<Rock>,
     platingGravity: Frac2,
     shipVelocityX: Long,
     shipVelocityY: Long,
-): List<Rock> {
-    if (rocks.isEmpty()) return rocks
-    return rocks.map { rock ->
+    shipMassGrams: Long,
+    shipAcceleration: Frac2,
+): RockStep {
+    if (rocks.isEmpty()) return RockStep(rocks, 0L, 0L)
+    // What presses a rock against a surface in the grid's frame: the plating, less the ship's own
+    // acceleration. Exactly [experiencedGravity]'s quantity, and for exactly its reason.
+    val restX = RockContact.restingSpeed(platingGravity.x.raw - shipAcceleration.x.raw)
+    val restY = RockContact.restingSpeed(platingGravity.y.raw - shipAcceleration.y.raw)
+
+    var handedX = 0L
+    var handedY = 0L
+    val moved = rocks.map { rock ->
         val mass = rock.massGrams
         if (mass <= 0L) return@map rock
         val felt = platingFeltBy(grid, rock.centreX, rock.centreY, platingGravity)
-        val moved = rock.copy(
-            positionX = rock.positionX + rock.velocityX - shipVelocityX,
-            positionY = rock.positionY + rock.velocityY - shipVelocityY,
+        val platingX = mass * felt.x.raw / Flight.FRAC_ONE
+        val platingY = mass * felt.y.raw / Flight.FRAC_ONE
+        val swept = sweepRock(
+            grid, structure, rock,
+            shipVelocityX, shipVelocityY, shipMassGrams,
+            restX, restY,
         )
-        moved.copy(
-            impulseX = rock.impulseX + mass * felt.x.raw / Flight.FRAC_ONE,
-            impulseY = rock.impulseY + mass * felt.y.raw / Flight.FRAC_ONE,
+        handedX += swept.impulseX + platingX
+        handedY += swept.impulseY + platingY
+        swept.rock.copy(
+            impulseX = swept.rock.impulseX + platingX,
+            impulseY = swept.rock.impulseY + platingY,
         )
     }
+    return RockStep(moved, handedX, handedY)
 }

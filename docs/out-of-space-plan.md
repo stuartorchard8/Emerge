@@ -1236,7 +1236,7 @@ so that each one ends with something to look at, and each commit carries **all f
   accelerating, so the fixture is now a vacuum one. Same shape of error as §5e's: **a stronger
   assertion than the model makes is a test that will fail on correct behaviour.**
 - **H1b. Freefall** — ✅ **BUILT 2026-08-05.** The deck plating is gone. See §5g.
-- **H2. Collision** — grid/grid overlap against hull and deck, **with restitution**: a rock that hits
+- **H2. Collision** — ✅ **BUILT 2026-08-05.** See §5h. Grid/grid overlap against hull and deck, **with restitution**: a rock that hits
   the ship ricochets rather than sticking. `e = 0.5`, tuned for legibility rather than measured (rock
   on steel is really nearer 0.2–0.4, and a ricochet you cannot see is not worth having). Normal
   impulse only — frictionless, so a rock sliding along a wall keeps sliding — plus a resting
@@ -1310,6 +1310,57 @@ a test rather than fixed.
 
 Both are parked deliberately. **The gameplay loop comes first**; this is a fluid-tuning session and
 it should be one, not a detour inside an increment about rocks.
+
+---
+
+## 5h. Collision, and two things that balanced perfectly while being wrong (2026-08-05)
+
+Increment H2, in two commits. **H2a** moved a rock's momentum into the world frame, which the plan
+insisted on first and was right to: the position stays on the grid, because a position means *which
+wall*, and the momentum must not, because the vessel's frame accelerates and a reduced-mass term
+computed against a moving ruler goes missing without anything failing. What it bought immediately was
+sharper tests — the astern drift is now the ship's own travel *exactly*, same number, same tick,
+opposite sign, where before it was a pseudo-force checked to within a few per cent.
+
+**H2b/H2c** are the sweep and the exchange. Sub-stepped at half a tile so a fast approach cannot step
+over a bulkhead; the contact normal recovered by asking *would x alone have hit? would y alone?*,
+which gives the corner an honest answer rather than a preference; `e = 1/2`, frictionless, `+J` to the
+rock and `−J` to the ship.
+
+Both findings below had the same shape, and it is worth naming: **a conserved quantity that is exactly
+zero is not evidence that the model is right.** Both of these balanced perfectly the entire time.
+
+### ⚠️ A rock lying on the floor was a thruster
+
+Charge the ship for the *contact* and not for the *plating* and you get a momentum pump you could fly
+on: the field pushes a resting rock down for free, the deck pushes it back up with a reaction, and the
+ship climbs forever. `momentumBalance` stays at zero throughout, because the free half never enters
+the ledger at all — so the instrument that exists to catch exactly this cannot see it.
+
+The rule that fixes it is worth stating generally: **a field the vessel makes is a force the vessel
+exerts.** `rockImpulse` is therefore everything the ship hands a rock, by any means, and the ship pays
+for all of it. Zero under freefall, which is every ship — it is the 1 g fixtures and H4's capture that
+would have found out, later and less comfortably.
+
+### ⚠️ The resting threshold is `a / e`, not `a`
+
+A landed rock has to stop bouncing or it buzzes on the deck forever, and the threshold below which
+the bounce is dropped is *derived*: a bounce is worth having when the rock actually leaves, it departs
+at `e·v`, gravity pulls it back at `a` per tick, so it is airborne for at least one tick only if
+`v > a / e`. Set at `a` — the speed a resting rock *arrives* at, which is the plausible-looking wrong
+answer — the rock settles into a **perfect limit cycle**: two velocities, two heights a third of a
+tile apart, alternating forever, with every conserved quantity exactly right. Nothing but printing the
+position over sixty ticks would have found it, which is what found it.
+
+The general form is §5e's and §5g's, one more time: the interesting bugs here are all in *chains* and
+*factors*, not in expressions, and the instrument that finds them is a column of numbers over time.
+
+### What to go and look at
+
+`agent-scripts/collision.txt`, and `F6` in the running game. Two scenes: a rock dropped over the deck
+with the plating on, which falls, bounces and **stops**, in the same place forty ticks later; and the
+game's actual regime — plating off, the ship burning into a rock hanging below the keel, which is
+knocked clear while the ship visibly recoils. `momentumBalance` is zero in every frame of both.
 
 ---
 
