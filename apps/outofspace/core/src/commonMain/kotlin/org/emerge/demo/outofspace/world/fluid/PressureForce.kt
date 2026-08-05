@@ -4,63 +4,9 @@ package org.emerge.demo.outofspace.world.fluid
 class PressureForceResult(val vesselX: Long, val vesselY: Long)
 
 /**
- * The gas pushes itself down its own pressure gradient — which is what sound is.
- *
- * ### The term this restores, and what its absence cost
- *
- * [project] solves an elliptic problem, and that is genuinely the right tool for the *constraint*
- * part of pressure: every cell coupled to every other within one tick, so a room does not equalise
- * as a visible ripple. But a solve is a correction, not a force, and until this existed the
- * equation-of-state field from [tilePressure] reached the momentum field through exactly one path —
- * [wantedDivergence] — which is deliberately zero wherever a cell matches its neighbours.
- *
- * That is correct as a rest state and it is why a still vessel does not hum. It is also, on its own,
- * a sim with **no speed of sound**. Nothing carries "there is a hole at the far end of this deck"
- * across a uniform room, because a uniform room is precisely the case that asks for nothing. What
- * propagated instead was a diffusive front, one tile of accumulated pressure-difference at a time,
- * throttled further by [EXPANSION] capping a whole atmosphere at an eighth of a tile per tick — so
- * the one-percent differences a few tiles inside a breached room got about a thousandth of that. A
- * measured breach left most of the vessel sitting at exactly full ambient two hundred ticks in, and
- * took the better part of a thousand to half empty. That was not a tuning failure. It was arithmetic
- * doing what it was asked, and no constant in the projection could have fixed it.
- *
- * So the missing piece was the plainest one in fluid dynamics: `a = -∇p/ρ`. A cell beside a lower
- * one gets pushed toward it, every tick, whether or not anything else in the room agrees. Pressure
- * differences then travel as a **wave** at a speed this function sets, the projection goes back to
- * being the correction it is documented as, and a breach is felt vessel-wide in tens of ticks.
- *
- * ### Why the impulse is the bare pressure difference
- *
- * Momentum on a face is `grams × tiles/tick`, and the acceleration a gradient produces goes as
- * `1/ρ` — so the momentum it produces goes as `ρ × (1/ρ)`, and the density cancels. The impulse is
- * the pressure difference and nothing else. This is not a coincidence or a simplification; it is the
- * same cancellation that makes [project]'s density-weighted Laplacian hand back impulses in bare
- * pressure units, and the two passes agree about it for that reason. The *velocity* a light face
- * picks up is still larger than a heavy one's, because velocity is momentum over mass and the mass
- * is what differs.
- *
- * It also means the internal terms telescope exactly along every row and column: a sealed vessel of
- * gas at any distribution of pressures pushes on itself and goes precisely nowhere. That has to be
- * exact rather than approximate, or a stationary ship drifts, and integer arithmetic gives it for
- * free here because the same difference is added to one face and subtracted from the next.
- *
- * ### A face with nothing on it is not accelerated
- *
- * Not a guard against a division — there is no division — but against inventing momentum. Momentum
- * on an empty face has no gas to belong to, and [stepFluid] strips it at the end of the tick as
- * stranded, which would quietly book it as exhaust. Vacuum has no gradient force because vacuum has
- * nothing to push.
- *
- * ### The reaction, and where thrust actually comes from
- *
- * A closed face gets no impulse — gas does not flow through a bulkhead — but the push is real and
- * goes into the hull. Summed over a sealed vessel those terms cancel, so a pressurised ship sitting
- * in vacuum stays put. Breach one end and the term that would have cancelled is replaced by a
- * vacuum, and the vessel is pushed. That is the whole rocket, and it arrives here rather than in
- * [project] because this is where the pressure the gas *actually has* is applied; the projection
- * only ever knew about the correction on top.
- *
- * [mx] and [my] are edited in place.
+ * Pressure gradient force: `-∇p/ρ` (speed of sound). Impulse = bare pressure difference (ρ cancels).
+ * Vacuum faces get no force (no gas to push). Reaction on hull (rocket thrust emerges from breach).
+ * Internal terms telescope exactly (sealed vessel → zero net force).
  */
 fun applyPressureForce(
     edges: EdgeGrid,
@@ -107,53 +53,15 @@ fun applyPressureForce(
     return PressureForceResult(vesselX, vesselY)
 }
 
-/**
- * ### Why there is no velocity cap here any more
- *
- * There was one, and it is worth recording what it was for and why it went, because the argument for
- * it was sound and the measurement was not.
- *
- * The impulse being density-independent is right, and the velocity it implies is unbounded, and both
- * are consequences of the same cancellation. A face carrying a hundredth of ambient mass gets the full
- * push and therefore a hundred times the speed. Physically that is even roughly true — gas expanding
- * into vacuum really does accelerate hard — but an explicit transport scheme cannot integrate it, so
- * each face was held to half a tile per tick.
- *
- * That cost the exact telescoping this file leans on hardest. The cap was defended on the grounds that
- * it "only ever binds on a face with far less than ambient gas on it", which is true, and which does
- * not help: it put **5238 units into the momentum ledger over 120 ticks of a breached hull**, taken
- * off the gas and handed to nobody, on an axis where a sealed vessel is supposed to be exactly still.
- *
- * And it did not buy the invariant it was paying for. Measured with the cap in place, the field still
- * reached three tiles per tick and broke CFL on ninety of a hundred and twenty ticks — because this
- * pass is not the last one to touch a face. [project] and [advectMomentum] both add momentum after it,
- * and neither was capped. Bounding one term of a sum is not bounding the sum.
- *
- * So the bound moved to where the limit actually lives: [stepFluid] cuts the tick into as many pieces
- * as the fastest face needs, and transport stays inside CFL by taking shorter steps rather than by
- * being lied to about the speed. The gas is allowed to go as fast as the pressure says it does.
- */
+
 
 /** A tile's potential, or zero off the grid — space pushes back with nothing. */
 private fun beyond(potential: LongArray, tile: Int): Long =
     if (tile < 0) 0L else potential[tile]
 
 /**
- * Every tile's pressure in the impulse units the faces work in, converted **before** any difference
- * is taken.
- *
- * This is the whole of what makes the telescoping above exact, and it was worth an array. Converting
- * per face instead — `drop × SOUND_IMPULSE / AMBIENT_PRESSURE`, as this did — truncates each
- * difference separately, and a truncated sum of differences is not the difference of the sums. The
- * error is a fraction of a unit per face, it does not cancel, and along a column under gravity the
- * drops all lean the same way so it accumulates in one direction: a sealed motionless vessel booked
- * itself a fifth of its own impulse ledger in twelve ticks, all of it on the gravity axis, all of it
- * rounding. The x-axis looked perfect throughout, because there the drops alternate sign and the
- * truncation averages out — which is exactly how a bug like this hides.
- *
- * Differencing values that are each already whole numbers of impulse units telescopes exactly, in
- * integers, with no rounding left to accumulate. That is what the doc above always claimed and what
- * it now does.
+ * Pressure in impulse units, converted before differencing.
+ * Pre-conversion enables exact telescoping (per-face conversion truncates separately → rounding bias accumulates).
  */
 private fun potentialOf(pressure: LongArray): LongArray =
     LongArray(pressure.size) { pressure[it] * SOUND_IMPULSE / AMBIENT_PRESSURE }

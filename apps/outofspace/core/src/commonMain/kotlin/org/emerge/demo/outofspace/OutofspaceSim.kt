@@ -79,37 +79,9 @@ import org.emerge.demo.outofspace.world.fluid.gasCapacity
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 
-/**
- * The rules of the world.
- *
- * One tick, in order:
- *
- *  1. **Edits** — the player's placements land first, so a machine placed this tick works this tick.
- *  2. **Sense** — every sensor reads the tile it faces and raises its channel, giving one [Signals]
- *     snapshot that the whole tick then agrees on. Reading signals as they are computed would make a
- *     machine's behaviour depend on where it sits in the grid relative to its sensor.
- *  3. **Produce** — miners accrue ore into their buffers.
- *  4. **Process** — processors and smelters draw from their inputs and fill outputs.
- *  5. **Eject** — anything holding a full packet's worth of output pushes it out through the matching
- *     output **port**: a specific tile of the machine's footprint, facing a specific way.
- *  6. **Settle debris** — loose material falls toward gravity, and anything lying outside the hull
- *     goes overboard.
- *  7. **Advance the conduits** — every [Bridge.STEP_TICKS] ticks: shift every bridge along by a
- *     slot, then derive each layer's flow field from where its **input** ports are and move
- *     everything on it one step toward the nearest of them, offering each packet to the port under
- *     it first. A bridge steps with the layer because it *is* three tiles of the layer.
- *
- * Every machine is throttled by its RUN activation: rate × activation, and nothing at all at zero or
- * below. Activation is a *throttle rather than a switch* so that a weight means something beyond on
- * and off — half a signal is half a machine.
- *
- * Passes 4 and 5 walk the grid in row-major order, so when two machines compete to feed one tile the
- * lower index wins. Arbitrary, but *fixed* — which is what determinism actually requires.
- *
- * Delivery is one step per belt per advance rather than a chain resolved instantly. A full
- * downstream belt therefore costs its upstream neighbour a step of latency, which is exactly what
- * makes a jam crawl backwards up the line where you can watch it happen.
- */
+/** One tick: edits → sense → produce → process → eject → settle debris → advance conduits → fluid → heat → motion.
+ * Machines throttled by RUN activation (rate × activation). Row-major walk order for determinism.
+ * Belt delivery: one step per advance (not instant), so jams crawl backwards visually. */
 object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
 
     override fun reduce(
@@ -119,14 +91,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     ): VesselState {
         val w = Work(state)
 
-        // Sorted by PlayerId: two players editing on the same tick must be applied in the same order
-        // on every peer, and map iteration order is not a promise.
+        // Sorted by PlayerId for determinism across peers.
         for ((_, input) in inputs.entries.sortedBy { it.key.value }) {
             for (edit in input.edits) w.apply(edit)
         }
 
-        // Structure first: heat and (later) air both need to know what is wall and what is outside,
-        // and an edit this tick must be reflected in it this tick.
+        // Structure first: edits this tick must be reflected.
         val structure = StructureMap.derive(w.grid, w.machines)
         val occupancy = Occupancy(w.originOf.copyOf())
 
@@ -134,8 +104,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (i in w.machines.indices) {
                 when (val m = w.machines[i]) {
                     is Sensor -> {
-                        // Through the occupancy index, so a sensor pointed at any tile of a
-                        // five-tile furnace reads the furnace rather than nothing.
                         val target = w.grid.neighbour(i, m.facing)
                         val seen = if (target < 0) -1 else w.originOf[target]
                         if (seen >= 0) raise(m.channel, fullness(w.machines[seen]))
@@ -143,8 +111,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     else -> {}
                 }
             }
-            // A gauge's reading persists after the packet leaves, so purity is a steady signal
-            // rather than a flicker as lumps go past.
+            // Gauge persists after packet leaves.
             for (r in w.rails) {
                 val channel = r?.channel ?: continue
                 raise(channel, r.lastPurity)
@@ -163,9 +130,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        // Rails first, so a building that produced this tick can put its output on the track after
-        // the track moves. The alternative -- load, then move -- causes packets to instantly be transported away
-        // from the building in the same tick they were dropped.
+        // Rails first: produced output can go on the track after it moves.
         val ports = w.portsByTile(Conduit.Rail)
         if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
 
@@ -173,17 +138,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (port.kind == PortKind.Output) w.pushOut(tile, port)
         }
 
-        // What "down" is this tick: the plating plus the engine. Worked out once, from the impulse
-        // the *previous* tick booked, and handed to everything — the fluid, the drift and the debris
-        // all have to agree about which way is down or a pile settles against a gas.
-        //
-        // A tick behind, necessarily: this tick's thrust is not known until this tick's fluid has
-        // been solved, and the fluid has to be solved under some gravity. Explicit, like the rest of
-        // the tick. See [experiencedGravity].
+        // Felt gravity: plating + engine impulse from previous tick (fluid solved under this gravity). See [experiencedGravity].
         val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.massGrams)
 
-        // Settling runs after the edits and after structure is re-derived, so a pile the player just
-        // dropped falls this tick, and a pile in a room they just breached leaves with the air.
+        // After edits: dropped material falls this tick.
         w.ventedGrams += settleDebris(state.grid, structure, w.debris, felt)
 
         // ── Heat ──────────────────────────────────────────────────────────────
@@ -218,11 +176,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val plumbing = pipeApertures(edges, conduits)
         val volumes = pipeVolumes(state.grid, conduits)
 
-        // Valves first, before either layer is solved. A crossing delivers pressure into a cell, and
-        // it should be free to propagate away in the tick it arrived rather than sitting for one —
-        // the same reason conduction runs before the fluid. It also settles the ordering question
-        // between the two layers by making it moot: both of them see the exchange, so neither is
-        // privileged by going first. See [exchangeLayers].
+        // Valves first: pressure propagates immediately, both layers see exchange (see [exchangeLayers]).
         val crossed = exchangeLayers(
             edges = edges,
             openings = valveOpenings(state.grid, conduits),
@@ -239,9 +193,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeVolumes = volumes,
         )
 
-        // Pumps, alongside the valves and before either layer is solved, for the same reason. Gas
-        // arrives in the pipe as pressure and with no momentum: nothing tells it which way to go
-        // along the run, and the ordinary solver works that out on the next pass. See [applyPumps].
+        // Pumps alongside valves, before either layer solved (see [applyPumps]).
         val pumped = applyPumps(
             edges = edges,
             demands = pumpDemands(state.grid, w.machines, conduits, signals),
@@ -254,14 +206,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeVolumes = volumes,
         )
 
-        // On `w.airGrams`, which the edit pass has already shoved air around in — see [displaceAir].
+        // On airGrams (edited by [displaceAir]).
         val fluid = stepFluid(
             edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, felt, w.airJoules,
         )
 
-        // The pipes, on the same lattice and through the same solver — see [pipeApertures]. Their
-        // connectivity comes from what the player drew rather than from what is solid, and their
-        // cells are a fraction of a tile, which is the whole of what makes a pipe a pipe.
+        // Pipes: same solver, connectivity from player-drawn layout.
         val pipes = stepFluid(
             edges,
             plumbing,
@@ -272,31 +222,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             w.pipeJoules,
             volumes,
         )
-        // A pipe has no aperture onto the rim, so nothing can cross it. Checked rather than assumed:
-        // this is the one number that would silently drain the shared air ledger if it were wrong.
+        // Pipes cannot vent to rim (ledger check).
         require(pipes.ventedGrams == 0L && pipes.ventedJoules == 0L) {
             "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
         }
 
         // ── Flight ────────────────────────────────────────────────────────────
-        //
-        // What the gas handed the ship *this tick*, which is the force on it. The running total is
-        // the ship's momentum and the running total's increment is its thrust; both matter, and only
-        // one of them can be recovered from a single state — see [VesselState.netImpulseX].
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
         val debris = w.debris.snapshot()
         val mass = vesselMassGrams(machines, conduits, bridges, debris)
 
-        // The debug engine — a stand-in for a nozzle that does not exist yet, see [Edit.Thrust].
-        //
-        // Stated as an acceleration and multiplied by *this* tick's mass, so what the pilot feels is
-        // the same on a bare hull and a laden one, and a heavy hold is a sluggish ship without
-        // anything having to arrange it.
-        //
-        // It joins `netImpulse`, and that is the half worth watching: felt gravity is thrust as much
-        // as it is plating, so holding a key leans the whole atmosphere against the far wall and the
-        // debris settles with it. Every one of those passes was written before there was an engine.
+        // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
         val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
 
@@ -322,11 +259,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
         )
 
-        // Everything the vessel did to a rock, it pays for here: `−J` in the same breath as the `+J`
-        // the rock got, so momentum is conserved by construction and there is nothing to reconcile
-        // later. That includes the plating — see [driftRocks] for the momentum pump that finding it
-        // out prevented — and see [VesselState.rockImpulseX] for why a thing that conserves by
-        // construction still needs a name.
+        // Vessel pays for rock momentum here: `−J` for the `+J` the rock got (conserved by construction).
         val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX -
             rocksDrifted.handedX
         val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY -
@@ -347,42 +280,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             generatedJoules = w.generatedJoules,
             radiatedJoules = state.radiatedJoules + conducted.radiated,
             constructionJoules = w.constructionJoules,
-            // What the fabric gave the atmosphere this tick. Both ledgers read it, with opposite
-            // signs, which is what lets each of them still close on its own — see [SolidHeatStep].
+            // Solid→air energy (see [SolidHeatStep]).
             solidToAirJoules = state.solidToAirJoules + conducted.toAir,
             air = fluid.air,
             pipeAir = pipes.air,
             pipeMomentum = MomentumField.of(edges, pipes.momentumX, pipes.momentumY),
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
-            // Its own ledger rather than folded into `radiatedJoules`, for the same reason the air's
-            // mass has one separate from the ore's: `atmosphere + vented == baseline` is a cleaner
-            // statement than a combined total, and a break in one does not obscure the other.
+            // Separate from radiatedJoules: cleaner ledger.
             airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
             momentum = MomentumField.of(edges, fluid.momentumX, fluid.momentumY),
-            // Gas leaning on a pipe elbow pushes the ship exactly as gas leaning on a bulkhead does.
-            // Same term, because it is the same physics happening one layer over.
-            // Gas shoved into the closed end of a pipe leans on the fitting, and the fitting is
-            // bolted to the ship — see [exchangeLayers].
-            // A pump's intake stops the gas it draws, and the ship feels it — which is what makes a
-            // pump usable as a thruster. See [applyPumps].
+            // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
             vesselImpulseY = state.vesselImpulseY + netImpulseY,
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
-            // Explicit, like everything else in the tick: the ship moves by the velocity it had at
-            // the start of it, and the impulse this tick has just booked is what it will move by
-            // next. Integrating the new velocity instead would give the tick's thrust a free extra
-            // tick of travel, which is a small lie that compounds over a burn.
+            // Explicit integration: move by velocity at tick start.
             positionX = state.positionX + state.velocityX,
             positionY = state.positionY + state.velocityY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
-            // The fourth place momentum can be. Both layers report it: a pipe is the same solver.
+            // Undelivered impulse from both fluid layers.
             undeliveredImpulseX = state.undeliveredImpulseX + fluid.undeliveredX + pipes.undeliveredX,
             undeliveredImpulseY = state.undeliveredImpulseY + fluid.undeliveredY + pipes.undeliveredY,
-            // The fifth store, and the only one that is not physics. Booked in the same breath as
-            // the impulse it mints, so the two can never disagree and `momentumBalance` stays zero
-            // while the shortcut is in use — see [VesselState.debugImpulseX].
+            // Debug engine (non-physics, booked alongside thrust).
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
             rocks = rocksDrifted.rocks,
@@ -396,18 +316,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /** Full snapshots on the wire; a demo sending partial state would merge here instead. */
     override fun patchState(state: VesselState, delta: VesselState): VesselState = delta
 
-    /**
-     * What every pump is asking to move this tick: from the room it faces, into the pipe under it.
-     *
-     * Both ends are optional and a pump missing either simply does not appear in the list. No pipe
-     * beneath it has nowhere to push; facing the hull, or facing off the edge of the grid, has
-     * nothing to draw. Neither is an error — a half-built gas system is an ordinary state to leave a
-     * vessel in, and a pump that complains about it would be a pump you cannot build incrementally.
-     *
-     * Activation is applied here rather than in [applyPumps], so that everything about signals and
-     * throttling stays on this side of the boundary. It is a throttle rather than a switch, like
-     * every other machine: half a signal is half a pump.
-     */
+    /** Pump demands: room→pipe. Both ends optional (missing pump excluded). Activation applied here, not in [applyPumps]. */
     private fun pumpDemands(
         grid: Grid,
         machines: List<Machine?>,
@@ -435,13 +344,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun blocked(vararg outputs: Resource?): Boolean =
         outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
 
-    /**
-     * Grams for this tick: the machine's per-tick rate scaled by activation, which is a throttle
-     * rather than a switch. Zero or negative activation stops it.
-     *
-     * The scaling is where the only fraction in a machine's throughput lives, so [Rate] carries the
-     * remainder across ticks — see its note. A machine at full activation gets its rate untouched.
-     */
+    /** Grams this tick: rate × activation, with carry-over via [Rate]. */
     private fun throttled(gramsPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
         if (activation <= 0) 0L to carry
         else Rate.tick(gramsPerTick * activation, Signals.FULL, carry)
@@ -449,9 +352,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input = m.input ?: return m
         val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
-        // Backed up: a full output stops the machine rather than being hoarded. Note this catches
-        // the *tailings* side too, so a processor with nowhere to put its waste stops, and the jam
-        // travels back up the line where it can be seen.
+        // Full output blocks the machine (catches tailings too).
         if (blocked(m.product, m.tailings)) return m.copy(carry = carry)
         val chunkMass = minOf(grams, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
@@ -480,9 +381,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
         heat(at, chunkMass * heatPerGram(m))
         val r = smelt(chunk)
-        // A smelter holds one kind of ingot at a time. If this chunk's dominant species differs from
-        // what is already waiting, stall rather than quietly mixing two metals — a stopped machine is
-        // the honest signal that the orebody changed under it.
+        // Smelter stalls if dominant species differs (stopped machine signals ore change).
         val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
         val slag = m.slag.merged(r.slag) ?: return m.copy(carry = carry)
 
@@ -494,15 +393,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
     }
 
-    /**
-     * The new contents of an output buffer after addition is merged in, or null if the two forms
-     * cannot coexist.
-     *
-     * The wrapper exists because "nothing to add, buffer still empty" and "these cannot mix" are
-     * *both* naturally expressed as a null buffer, and conflating them made every machine stall
-     * whenever one of its two output streams happened to be empty — which for an all-slag smelt is
-     * always. Distinguishing the two is the whole job of this type.
-     */
+/** Buffer merge: new contents, or null if forms cannot coexist. Null vs Merge(null) distinguishes "empty" from "cannot mix". */
     private class Merge(val buffer: Resource?)
 
     private fun Resource?.merged(addition: Resource): Merge? = when {
@@ -540,23 +431,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         Species.Titanium to 110L,
     )
 
-    /**
-     * Mutable scratch for one tick. The incoming [VesselState] is never touched — this copies the
-     * machine list up front and hands back a fresh one, so the reducer stays pure while the passes
-     * inside it can still see each other's work.
-     */
+    /** Mutable scratch for one tick (reducer stays pure). */
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         var minedGrams: Long = state.minedGrams
         val debris: DebrisWork = DebrisWork(state.debris)
-        /**
-         * The conduit layers, one editable grid each — see [Conduits].
-         *
-         * An array of lists rather than a [Conduits] because this is the working copy and every edit
-         * writes one slot; rebuilding an immutable structure per laid tile would be the one place in
-         * the reducer that allocates per keystroke.
-         */
+        // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
 
@@ -574,12 +455,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
 
-        /**
-         * Which way the debug engine is firing this tick, as a direction — see [Edit.Thrust].
-         *
-         * Summed rather than replaced, so two keys held at once give a diagonal, and clamped when it
-         * is turned into an impulse so that holding four does not give a stronger push than two.
-         */
+        // Debug engine direction, summed + clamped (see [Edit.Thrust]).
         var thrustDx: Int = 0
         var thrustDy: Int = 0
 
@@ -587,11 +463,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val rocks: MutableList<Rock> = state.rocks.toMutableList()
         var capturedGrams: Long = state.capturedGrams
 
-        /**
-         * This tick's air, mutable so that the edit pass and the fluid pass work on one array. An
-         * edit that changes whether a tile can hold air has to move that air *before* the flow runs,
-         * or it is stranded in a wall for as long as the wall stands.
-         */
+        // Mutable: edit pass moves air before fluid pass runs.
         val airGrams: LongArray = state.air.copyGrams()
 
         /** This tick's air temperature, as energy — mutable for the same reason [airGrams] is. */
@@ -607,20 +479,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
         val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 
-        /**
-         * This tick's record of what moved where, for the renderer alone — see [Motion].
-         *
-         * Built from the rails as they were before anything happened, so a packet ejected by a
-         * machine during this tick is correctly reported as having appeared rather than as having
-         * always been there.
-         */
+        // Motion log for renderer, built from pre-tick rail state.
         val motion: MotionLog = MotionLog(state.rails)
 
 
-        /**
-         * tile -> the index its machine is stored at, or -1. Maintained as edits land rather than
-         * re-derived per edit, so a tick that places twenty things stays linear.
-         */
+        // tile → machine index (maintained incrementally for O(n)).
         val originOf: IntArray = IntArray(state.grid.size).also { o ->
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
@@ -662,13 +525,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         fun scrapped(joules: Long) { constructionJoules -= joules }
 
-        /**
-         * Puts each body's new energy back where it came from.
-         *
-         * Through [Body.slot] and [Body.at] rather than by rebuilding the lists, so the conduction
-         * pass never has to know which of three collections a thing lives in — that is the one
-         * question the slot exists to answer.
-         */
+        /** Apply conduction results back to machines/segments/bridges. */
         fun applyBodyHeat(bodies: List<Body>, joules: LongArray) {
             for (i in bodies.indices) {
                 val body = bodies[i]
@@ -685,19 +542,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        /**
-         * Whatever was in a pipe cell, let out into the room — because that is what cutting a pipe
-         * does.
-         *
-         * The gas and its heat both move to the same tile of the vessel's own atmosphere. Not
-         * deleted, because [air] and [pipeAir] share one ledger and deleting a gram here would read
-         * downstream as a leak; and not refused like a build over a sealed room, because a player
-         * pulling a pipe apart has every right to and the gas has somewhere obvious to go.
-         *
-         * If that tile is outside the hull the gas is now loose in vacuum, and the next fluid step
-         * vents it through the rim and books it as vented. That needs no case of its own here, which
-         * is the point of putting it in the room rather than inventing a second exit.
-         */
+        // Cut pipe: release gas+heat into room (not deleted — shared ledger).
         fun cutOpen(tile: Int) {
             val base = tile * Species.COUNT
             for (sp in Species.GASES) {
@@ -716,19 +561,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Place -> {
                     if (edit.index !in machines.indices) return
                     when (edit.kind) {
-                        // Every placement books the energy the new body brings with it: a tile of
-                        // track is a tile of iron at room temperature, and that heat is arriving in
-                        // the world rather than being conjured out of the ledger.
+                        // Book energy for new body (heat arriving, not conjured).
                         MachineKind.Rail, MachineKind.Pipe -> {
                             val c = edit.kind.conduit!!
                             if (layer(c)[edit.index] == null) {
                                 layer(c)[edit.index] = Segment(c).also { built(it.joules) }
                             }
                         }
-                        // Unlike a gauge, this upgrades a run that is already there rather than
-                        // only laying a fresh tile. A valve is almost always something you add to
-                        // plumbing you have already drawn, and refusing that would mean tearing up a
-                        // tile of pipe to put a tap on it.
+                        // Valve: upgrade existing pipe or lay new.
                         MachineKind.Valve -> {
                             val existing = layer(Conduit.Pipe)[edit.index]
                             layer(Conduit.Pipe)[edit.index] =
@@ -751,9 +591,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     line[edit.to]?.let { line[edit.to] = it.cutFrom(dir.opposite) }
                 }
                 is Edit.Rotate -> {
-                    // Rotating about the centre leaves the covered tiles alone -- footprints are
-                    // square -- so only the ports move. That is the whole reason machines anchor at
-                    // their centre rather than a corner.
+                    // Rotation: footprints square, so covered tiles unchanged — only ports move.
                     val at = originAt(edit.index) ?: return
                     val m = machines[at]
                     if (m is Directed) machines[at] = m.rotated()
@@ -783,19 +621,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         if (c == Conduit.Pipe) cutOpen(edit.index)
                         line[edit.index] = null
                         scrapped(segment.joules)
-                        // Cut the far half of every join too. Leaving them would let a later tile of
-                        // track laid here inherit connections the player never drew.
+                        // Cut far halves of joins (prevent phantom connections).
                         for (dir in Direction.ALL) {
                             val n = grid.neighbour(edit.index, dir)
                             if (n >= 0) line[n]?.let { line[n] = it.cutFrom(dir.opposite) }
                         }
                         return
                     }
-                    // Clicking any tile of a machine removes the whole machine, not a slice of it.
+                    // Whole machine removed (not a slice). Holding drops to deck.
                     val at = originAt(edit.index) ?: return
-                    // Whatever it was holding falls on the deck. Deleting it instead would be a
-                    // genuine leak, and the mass balance said so -- the answer is somewhere for the
-                    // material to go, not an exemption for the player's own edits.
                     debris.spill(at, spoilsOf(machines[at]))
                     for (t in coveredTiles(grid, at, machines[at]!!.kind.size)) originOf[t] = -1
                     scrapped(machines[at]!!.joules)
@@ -813,7 +647,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[at] = m.withWiring(m.wiring.with(edit.action, current))
                 }
                 is Edit.SetChannel -> {
-                    // A gauge is track, so it is retuned before whatever is under it.
                     val gauge = rails[edit.index]
                     if (gauge != null && gauge.isGauge) {
                         rails[edit.index] = gauge.copy(channel = edit.channel)
@@ -825,23 +658,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         else -> {}
                     }
                 }
-                // Accumulated rather than acted on, because the impulse it is worth depends on the
-                // ship's mass and the ship's mass is not final until the edit pass has finished
-                // building and scrapping things. Spent in the flight section at the end of the tick.
+                // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.index, edit.radius)
             }
         }
 
-        /**
-         * Drops a rock into the world, centred on [at] — the stand-in for capture, see [Edit.DropRock].
-         *
-         * Two ledgers are told about it in the same breath as it is created, and that is the whole of
-         * what makes this a placeholder rather than a leak. Its **mass** is new to a closed world and
-         * goes to [capturedGrams]; its **energy** is new to the solid ledger and goes through
-         * [built], which is the same term a freshly placed wall's room-temperature heat goes
-         * through, because it is the same fact — a body carries its energy with it.
-         */
+        /** Drop a rock at [at] (capture placeholder). Mass → capturedGrams, energy → built. */
         private fun dropRock(at: Int, radius: Int) {
             if (at !in machines.indices) return
             // The click names the centre tile, and the rock's position is its top-left corner, so
@@ -859,26 +682,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             built(rock.joules)
         }
 
-        /**
-         * Puts a building on the deck. The click names its *centre*, and the footprint grows around
-         * it.
-         */
+        /** Place building (click names centre, footprint grows around it). */
         private fun placeBuilding(at: Int, kind: MachineKind, facing: Direction) {
             val size = kind.size
             if (!footprintFits(grid, at, size)) return
             val covered = coveredTiles(grid, at, size)
-            // Placing over anything occupied is a no-op, so a stray click cannot destroy a machine —
-            // and everything inside it — by accident. With footprints that check has to cover every
-            // tile, not just the one under the cursor.
+            // Over anything occupied = no-op (footprint check, not just cursor tile).
             if (covered.any { originOf[it] >= 0 }) return
             val built = newMachine(kind, facing)
             if (portsClash(portsOf(grid, built, at))) return
 
-            // Every deck machine is solid, so the air standing where it is about to be has to go
-            // somewhere first. It is the last check because it is the only one that can fail on
-            // account of the *air* rather than the geometry: air with nowhere to go means the build
-            // is refused, which is the only answer that neither destroys it nor buries it.
-            // Through `originOf` rather than `machines`, so the covered tiles of a footprint whose
+            // Every deck machine is solid — air must have somewhere to go. Last check (air, not geometry).
             // centre is elsewhere count as solid too.
             if (!tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
 
@@ -906,17 +720,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             built(built.joules)
         }
 
-        /**
-         * Whether any of [proposed] would land on a port of the same conduit that already exists.
-         *
-         * One rule, applied to buildings and bridges alike, and it does **not** care whether the two
-         * are inputs or outputs: *any* two ports of one conduit on one tile clash. A bridge end over
-         * a tank's input is exactly as ambiguous as a bridge end over another bridge's end — the
-         * segment on that tile could not say which of the two it belongs to.
-         *
-         * Ports of *different* conduits may share a tile freely. A rail port and a pipe port are on
-         * different networks, so there is nothing to be ambiguous about.
-         */
+        /** Any two ports of the same conduit on one tile clash. */
         private fun portsClash(proposed: List<Port>): Boolean {
             val existing = portsByTile(Conduit.Rail)
             return proposed.any { p -> existing[p.tile].orEmpty().any { it.conduit == p.conduit } }
@@ -928,13 +732,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return Direction.ALL.firstOrNull { grid.neighbour(from, it) == to }
         }
 
-        /**
-         * One step of a drag: track at both ends, joined.
-         *
-         * Both halves of the link are set here and nowhere else, which is what keeps connection
-         * symmetric by construction rather than by a rule somebody has to remember. A gauge keeps its
-         * channel — drawing a line through one connects it up without retuning it.
-         */
+        /** Draw a conduit line (both halves linked symmetrically; gauges keep channel). */
         private fun layConduit(from: Int, to: Int, conduit: Conduit) {
             val dir = adjacency(from, to) ?: return
             // Each layer is its own grid, so a pipe drawn across a rail is a crossing rather than a
@@ -951,12 +749,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun originAt(tile: Int): Int? =
             if (tile !in originOf.indices) null else originOf[tile].takeIf { it >= 0 }
 
-        /**
-         * Digs. [minedGrams] is incremented **here**, not when a packet ships, because that is the
-         * moment matter enters the world — counting it at the belt instead would leave whatever sits
-         * in the miner's buffer unaccounted for, and the world-conservation invariant would be a
-         * statement about shipping rather than about mass.
-         */
+        /** Mine (minedGrams incremented here — moment matter enters the world). */
         fun produce(cfg: OutofspaceConfig, m: Miner, activation: Int): Miner {
             val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
             if (m.buffer.mass >= Miner.BUFFER_CAP) return m.copy(carry = carry)  // backed up: stop digging
@@ -967,13 +760,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m.copy(buffer = Resource(Form.Ore, m.buffer.mixture + dug), carry = carry)
         }
 
-        /**
-         * Every port on the layer, keyed by the tile it sits on.
-         *
-         * Bridges are folded in beside buildings rather than handled apart, which is exactly why a
-         * bridge needs no special case: to the network it is a thing with an input port and an
-         * output port, indistinguishable from a smelter with fewer buffers.
-         */
+        /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
         fun portsByTile(conduit: Conduit): Map<Int, List<Port>> {
             val out = HashMap<Int, MutableList<Port>>()
             fun add(port: Port) {
@@ -990,18 +777,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return out
         }
 
-        /**
-         * Puts a packet from an output port onto the track **at the port's own tile**.
-         *
-         * This is what "ports behind the buildings" means in one line. Material does not cross into a
-         * neighbouring tile; the conduit is threaded underneath the building and the building reaches
-         * down into it. A machine with no track under its output port simply backs up, however much
-         * conveyor is butted against its outside.
-         *
-         * Where the tile already holds a partial packet the building **tops it up** rather than
-         * waiting for it to leave — but only where the two can genuinely combine, which for solids
-         * means powder. A full packet blocks.
-         */
+        /** Place output packet at port tile (ports behind buildings). Tops up partial packets where possible. */
         fun pushOut(tile: Int, port: Port) {
             val segment = rails[tile] ?: return
             // Bridges are not ejected from here. They are conduit, so they set their load down as
@@ -1074,28 +850,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return merged.rejected == null
         }
 
-        /**
-         * Moves everything on one conduit one step.
-         *
-         * The flow field is derived fresh: sinks are the **input** ports that actually have a track
-         * under them, so connecting or cutting one tile re-decides which way a whole run points,
-         * with no cache to invalidate.
-         */
+        /** Advance all conduits one step (flow derived from input ports). */
         fun advanceRails(ports: Map<Int, List<Port>>) {
-            // A bridge sets down what it has been carrying *first*, before anything shifts.
-            //
-            // This is the whole of why a bridge's three slots are three real slots. Draining the
-            // exit at the end of the step instead — which is where machine ejection happens, and
-            // where this used to live — leaves the slot occupied when the shift runs, so the packet
-            // behind it cannot advance and the bridge delivers once every two steps with a slot
-            // standing idle between. Draining first frees the slot the shift is about to want.
+            // Bridges drain first (three real slots, not one).
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output && port.fromBridge) depositFromBridge(tile, port)
             }
 
-            // A bridge is three tiles of the layer, so it steps when the layer steps — and *before*
-            // the track does, so the slot a packet vacates is free for the one behind it in the same
-            // step. Exactly the reason the track itself is walked most-downstream first.
+            // Bridge steps with layer (slots freed for track).
             for (i in bridges.indices) {
                 val b = bridges[i] ?: continue
                 if (b.conduit != Conduit.Rail) continue
@@ -1107,17 +869,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(i, Motion.SLOT_MIDDLE)
             }
 
-            // Split by whether the consumer can take anything at all. A full one still pulls, but
-            // only once no accepting one is reachable — so traffic runs *past* a full machine to
-            // reach a working one, and backs up against it when there is nowhere else to be.
+            // Split: accepting vs full consumers (traffic runs past full to working).
             val inputs = ports.entries
                 .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
             val (accepting, full) = inputs.partition { tile ->
                 ports[tile].orEmpty().any { it.kind == PortKind.Input && hasRoom(it) }
             }
-            // Where material enters the layer. A bridge's far end counts, which is what gives the
-            // run on the other side of a crossing a direction of its own.
+            // Sources (bridge far end gives crossing run its own direction).
             val sources = ports.entries
                 .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
                 .map { it.key }
@@ -1169,7 +928,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Processor -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
                 is Smelter -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
                 is Storage -> (m.contents?.mass ?: 0L) < Storage.CAP
-                // A vent is a hole in the hull; it never fills up.
                 is Vent -> true
                 else -> false
             }
@@ -1187,10 +945,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return if (deliver(port.owner, dest, packet)) null else packet
         }
 
-        /**
-         * Only whole packets leave a buffer, so track carries uniform lumps and a trickle of output
-         * does not spray the network with crumbs. [limit] caps it to the room actually available.
-         */
+        /** Take whole packets (limit caps to available room). */
         private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_GRAMS): Pair<SolidPacket, Resource>? {
             val want = minOf(Capacity.PACKET_GRAMS, limit)
             if (want <= 0L || buffer.mass < want) return null
@@ -1226,7 +981,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[target] = destination.copy(ventedGrams = destination.ventedGrams + packet.mass)
                     true
                 }
-                // Miners take no input, and a wall is not a hopper.
+                // Miners take no input.
                 else -> false
             }
         }
@@ -1253,7 +1008,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Vent -> Vent()
             MachineKind.Pump -> Pump(facing)
             MachineKind.Hull -> Hull()
-            // Fittings are placed onto their layer directly and never come through here.
+            // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> Hull()
         }
     }

@@ -1,21 +1,11 @@
 package org.emerge.demo.outofspace.world.fluid
 
 /**
- * What pressure did this tick: what the gas gained, and what the ship gained.
+ * What pressure did this tick: fluid impulse and vessel impulse, computed independently
+ * so the ledger can check conservation. They sum to zero wherever the gas is contiguous.
  *
- * The two are computed **independently** — the fluid's from the gradient across every open face, the
- * vessel's from the gas leaning on every bulkhead — and they must come out exactly equal and
- * opposite wherever the gas is contiguous. Defining one as the negative of the other would make
- * Newton's third law true by fiat and test nothing; computing both and comparing them is a real
- * check that the discretisation is sound, and it is the check the rocket rests on.
- *
- * They part company at a vacuum boundary, and [undeliveredX] and [undeliveredY] are exactly how far —
- * see below. The three always sum to zero: `fluid + vessel + undelivered == 0`, on both axes, every
- * tick, exactly.
- *
- * [vesselX] and [vesselY] carry a second term on top of that lean: the momentum a bulkhead **stopped**
- * — see the note where closed faces are pinned. Leaning and stopping are both things a wall does to
- * gas, and both are impulses on the hull, so they belong in the same number.
+ * At a vacuum boundary the terms diverge; [undeliveredX/Y] captures that shortfall.
+ * [vesselX] and [vesselY] include both the lean on bulkheads and the momentum walls stop.
  */
 class ProjectionResult(
     val vesselX: Long,
@@ -23,115 +13,29 @@ class ProjectionResult(
     val fluidX: Long,
     val fluidY: Long,
     /**
-     * The impulse the solve worked out and had nowhere to put.
+     * Impulse the solve worked out and had nowhere to put.
      *
-     * A face that is **open but has no gas on it** still has a solved pressure difference across it,
-     * and there is nothing for that to act on: no fluid to accelerate, and no wall to take the
-     * reaction. It is skipped, and skipping it is what makes the remaining impulses stop telescoping,
-     * so the shortfall shows up as the gas and the hull disagreeing. This is that shortfall, measured
-     * rather than absorbed.
-     *
-     * It happens in the plume front, where the outermost tile holding gas sits beside vacuum that the
-     * solve has nonetheless given a pressure — because that vacuum tile is coupled to the gas through
-     * the face they share, which does have mass. On a breached bare hull it is 136 at tick 1, 3 by
-     * tick 3, and 238 over 120 ticks against a vessel impulse of 25310. It does not accumulate,
-     * because it is a property of the front rather than of the volume behind it.
-     *
-     * ### Why it is named rather than fixed
-     *
-     * Two fixes were built and measured and both cost more than the term does. Pinning `p = 0` on
-     * massless tiles — the textbook free-surface boundary condition — very nearly closes it and stops
-     * blowout dead, because the vacuum side of the interface needs a solved pressure for the gradient
-     * that drives the vent to exist at all. Handing the impulse to the massless faces anyway and
-     * letting [stepFluid]'s stranded-momentum sweep write it off closes the ledger *exactly*, and does
-     * it by injecting momentum into vacuum: the midships plume lean goes from 1% to 6%, the bow's from
-     * 5% to 19%, and a pump stops working.
-     *
-     * So it is reported. That makes the ledger identity exact — see `ThrustBalanceTest` — and it makes
-     * the size of the term a direct measurement of how much of the thrust figure is discretisation
-     * rather than physics. ⚠️ It is expected to **grow** once the vessel moves: thrust becomes
-     * experienced gravity, which pushes the atmosphere toward the breach, which makes a bigger and
-     * faster plume, which is more plume front. Watch it there.
+     * An open face with no gas on it has a pressure difference but nothing to act on.
+     * It occurs at plume fronts where gas-adjacent vacuum tiles get a solved pressure.
+     * Named rather than fixed: pinning p=0 on massless tiles nearly closes blowout but
+     * breaks vent gradients. Reported size measures discretisation error in thrust.
      */
     val undeliveredX: Long,
     val undeliveredY: Long,
 )
 
 /**
- * Pressure: makes the velocity field consistent with what the gas is actually trying to do.
+ * Pressure projection: makes the velocity field consistent with the pressure gradient.
  *
- * ### Why solve, rather than just push down the gradient
+ * Solves toward a target divergence (not zero) to handle compressible gas: cells beside vacuum
+ * expand, uniform rooms stay still. Uses `1/ρ` density weighting so the solved field is in
+ * momentum units and impulses telescope exactly along rows/columns (conservation holds regardless
+ * of density variation).
  *
- * The cheap version of pressure is to read it off the equation of state and accelerate each face by
- * the difference across it. That works, and it is *local*: a pressure change travels one tile per
- * tick. On a vessel a hundred tiles across, a door opening at one end is not felt at the other for a
- * hundred ticks, and a room equalises as a slow visible ripple rather than as a draught. That is the
- * same defect the relaxation in `stepAir` has, and no tuning removes it, because it is a property of
- * the scheme and not of the numbers in it.
+ * Damped Jacobi iteration: undamped oscillates forever on small gas/vacuum domains. Each sweep
+ * moves 2/3 toward the plain Jacobi answer.
  *
- * Solving makes pressure **elliptic** — every cell couples to every other within the single tick.
- * That is what a pressure field physically is: not a substance that propagates, but whatever field
- * simultaneously satisfies the constraint everywhere at once.
- *
- * ### Compressible, via a target divergence
- *
- * The textbook projection drives divergence to **zero**, which is the statement that the fluid cannot
- * be compressed — right for a liquid, wrong for the gas in a spacecraft, where a room at two
- * atmospheres decompressing into one at one atmosphere is the entire subject. So it solves toward a
- * *target* divergence instead, taken from how far a cell's pressure sits above its neighbours'. A
- * cell in a uniform room asks for nothing and the solve reduces to the incompressible one, so a
- * still room stays still. A cell beside vacuum asks for a great deal, and gets a blowout.
- *
- * Written as a parameter rather than a special case because **a liquid is the same solve with the
- * target fixed at zero.** Increment E adds a free surface, not a second solver.
- *
- * ### Density-weighted, which is not a detail
- *
- * The Laplacian carries `1/ρ` coefficients rather than constant ones. The tempting simplification is
- * to solve for `p/ρ` with uniform coefficients — it is the same equation when density is uniform,
- * and the integer arithmetic is tidier. It also quietly destroys the thrust ledger. With constant
- * coefficients the quantity that telescopes along a row is `p/ρ`, so the *momentum* impulses do not
- * cancel where density varies, and a sealed vessel full of gas of uneven density slowly accelerates
- * itself. Density is never uniform in the situations this exists for — a breach, a hot exhaust — so
- * the tidier version fails precisely where it is being relied on.
- *
- * With `1/ρ` weights the solved field is in **momentum units**, the impulse across a face is simply
- * the pressure difference, and those differences telescope exactly along every row and column. That
- * exactness survives the integer division in the solve: an imprecise pressure field makes the
- * divergence correction approximate, but conservation holds regardless, because it is a property of
- * the shape of the sum rather than of the values in it.
- *
- * ### Jacobi, damped
- *
- * Each sweep reads the previous field and writes a new one, so no cell sees a neighbour that has
- * already moved. Gauss-Seidel — Lague's choice — updates in place and converges in fewer sweeps, at
- * the price of the answer depending on visiting order. A poor trade twice over: it breaks the
- * snapshot-then-apply discipline the rest of the sim keeps, and it cannot be handed to more than one
- * thread. Sweeps are cheap; ordering guarantees are not.
- *
- * Undamped Jacobi, however, **does not converge here at all**, and the way it fails is worth
- * recording because it looks like nothing rather than like an explosion. Take the smallest
- * interesting case: a full tile beside an empty one, sealed on both far sides. Undamped, each sweep
- * swaps the sign of the pressure difference — the iteration matrix has an eigenvalue of exactly −1 —
- * so the field flips back and forth and after any *even* number of sweeps it is precisely zero
- * again. Zero pressure means zero impulse, which means gas sitting next to a vacuum and calmly
- * staying put. Nothing warns; the sim simply does not do the most obvious thing it exists to do.
- *
- * [DAMPING] fixes it by moving only part of the way each sweep, which drags that eigenvalue to −1/3.
- * The remaining eigenvalue of 1 is the constant offset every all-walls problem has, and it is
- * harmless because only pressure *differences* are ever read.
- *
- * ### Walls, and where thrust comes from
- *
- * A closed face never moves — gas does not flow through a bulkhead — so its momentum is pinned at
- * zero rather than given a pressure force. The force is still real: it goes into the wall, and the
- * wall is the ship. A sealed vessel's wall terms cancel and it goes nowhere. Put a hole in one end
- * and one of those terms is replaced by vacuum, so they no longer cancel, and the vessel is pushed.
- * Thrust arrives here as a consequence of the arithmetic rather than as a feature anyone added.
- *
- * [mx] and [my] are edited in place. [pressure] is the equation-of-state field from [tilePressure]
- * and [tileGrams] the density field; they are separate arguments because they are separate physics —
- * see [tilePressure] for why conflating them is what forced `stratifyColumns` to exist.
+ * Closed faces pin momentum at zero; the reaction goes into the vessel. [mx] and [my] edited in place.
  */
 fun project(
     edges: EdgeGrid,
@@ -144,26 +48,18 @@ fun project(
 ): ProjectionResult {
     val grid = edges.grid
 
-    // ── A bulkhead carries no flow, and what it stopped it keeps ──
+    // ── A bulkhead carries no flow; momentum it stopped goes to the hull ──
     //
-    // Enforced rather than assumed, because momentum arrives on closed faces every tick:
-    // [advectMomentum] works on a dual grid and knows nothing about apertures, so gas flowing toward a
-    // wall hands its momentum to the face the wall is on. Zeroing that face is right — nothing flows
-    // through a bulkhead — but the momentum did not stop existing when the gas hit the hull. It went
-    // into the hull, which is what a wall *is*: the thing that takes what it stops.
-    //
-    // Erasing it instead was worth 2040 units of the ledger over 120 ticks of a breached vessel, all
-    // of it on the gravity axis, because an atmosphere sitting on a deck advects downward into the
-    // floor every single tick and the floor was throwing the impact away.
+    // Gas flowing toward a wall hands its momentum to the closed face. Zeroing the face is right,
+    // but the momentum goes into the hull, not into nothing. Summing what was stopped before
+    // zeroing so the hull ledger gets it.
     var stoppedX = 0L
     var stoppedY = 0L
     for (e in 0 until edges.xEdgeCount) if (!apertures.isXOpen(e)) { stoppedX += mx[e]; mx[e] = 0L }
     for (e in 0 until edges.yEdgeCount) if (!apertures.isYOpen(e)) { stoppedY += my[e]; my[e] = 0L }
 
-    // ── How strongly each face couples the cells either side: aperture over density ──
-    //
-    // A face with no gas on it couples nothing, whatever its aperture. That is not a special case
-    // being handled, it is the physics: pressure is transmitted by the fluid, and there is none.
+    // ── Coupling strength per face: aperture over density ──
+    // A face with no gas couples nothing.
     val wx = LongArray(edges.xEdgeCount) { coupling(apertures.xAt(it), xFaceGrams(edges, tileGrams, it)) }
     val wy = LongArray(edges.yEdgeCount) { coupling(apertures.yAt(it), yFaceGrams(edges, tileGrams, it)) }
 
@@ -199,23 +95,20 @@ fun project(
             val up = edges.upEdgeOf(tile)
             val down = edges.downEdgeOf(tile)
 
-            // Minus the residual: a cell that wants to expand has a positive target, hence a
-            // negative residual, hence a pressure *above* its neighbours — which is what pushes gas
-            // out of it. Getting this sign wrong makes a high-pressure cell suck inward, which looks
-            // plausible for about one frame.
+        // Negative residual: positive target → pressure above neighbours → pushes gas out.
             var sum = -residual[tile]
             sum += wx[left] * beyond(p, edges.xEdgeBefore(left))
             sum += wx[right] * beyond(p, edges.xEdgeAfter(right))
             sum += wy[up] * beyond(p, edges.yEdgeBefore(up))
             sum += wy[down] * beyond(p, edges.yEdgeAfter(down))
-            // Damped, and it is not optional -- see [DAMPING].
+            // Damped by 2/3 each sweep — undamped oscillates.
             val jacobi = sum / coupled[tile]
             next[tile] = p[tile] + (jacobi - p[tile]) * DAMPING_NUMERATOR / DAMPING_DENOMINATOR
         }
         val swap = p; p = next; next = swap
     }
 
-    // ── Push the fluid down the gradient ──
+    // ── Push fluid down the pressure gradient ──
     var fluidX = 0L
     var fluidY = 0L
     // An open face with no gas on it is the one case where the impulse goes nowhere. It is measured
@@ -244,11 +137,9 @@ fun project(
     }
 
 
-    // ── And let the bulkheads take the reaction ──
+    // ── Bulkheads take the reaction ──
     //
-    // Worked out from the walls themselves rather than from what the fluid gained, so that the two
-    // can be compared. Only faces shut by an *aperture* count: a face uncoupled merely because there
-    // is no gas on it is not a wall, it is empty space, and empty space cannot be pushed against.
+    // Only faces shut by an aperture count; a face uncoupled because there's no gas is empty space.
     var vesselX = 0L
     var vesselY = 0L
     for (e in 0 until edges.xEdgeCount) {
@@ -272,39 +163,12 @@ fun project(
 }
 
 /**
- * How much this cell wants to expand, from how far its pressure sits above its neighbours' **as a
- * fraction of the pressure actually there**.
+ * How much this cell wants to expand: pressure above neighbours as a fraction of the local
+ * pressure scale.
  *
- * Relative to the neighbourhood rather than to a fixed reference, so it needs no notion of what
- * "normal" is and behaves correctly at a breach without anybody special-casing one: the neighbour is
- * vacuum, the difference is everything the cell has, and it tries to empty itself. A cell in a
- * uniform room differs from its neighbours by nothing and asks for nothing, which is the rest state
- * — and the rest state has to be exactly right, or a still vessel hums.
- *
- * ### Why the divisor is the local pressure and not [AMBIENT_PRESSURE]
- *
- * It was ambient, and that made the whole scheme quietly **incompressible wherever the gas was
- * thin** — which is to say, in exactly the plume a breach exists to produce. A cell at a hundredth of
- * an atmosphere beside vacuum has a pressure *ratio* of infinity and should blow itself apart, but
- * as an absolute difference it is a hundredth of ambient, so scaling by ambient asked for a
- * hundredth of the expansion. Meanwhile the gas there was moving at most of a tile per tick. The
- * solve therefore spent its sweeps enforcing `divergence ≈ 0` on a supersonic plume.
- *
- * An incompressible fluid cannot expand, so it can only go somewhere, and the somewhere available
- * was sideways: the vented gas ran along the hull and wrapped around the vessel in a broad coherent
- * sheet instead of radiating away into space. That is what it looked like from the outside, and it
- * looked like a boundary condition bug — the grid rim behaving as a wall — because a fluid that
- * cannot expand behaves exactly as though something is containing it. Nothing was containing it. It
- * had simply been told it could not change density.
- *
- * Dividing by the local pressure scale instead makes the target **scale-free**: a tenth of an
- * atmosphere venting into vacuum expands as hard as a full one does, which is correct, and is the
- * only version that stays right across the six orders of magnitude between a pressurised deck and
- * the far end of an exhaust plume. Gas expanding into vacuum is the most compressible situation
- * there is, and the previous form treated it as the least.
- *
- * Inside an intact vessel this changes nothing measurable — the local scale *is* roughly ambient
- * there, so the two divisors agree — which is why a still room still asks for exactly nothing.
+ * Relative to neighbours, not an absolute reference. A cell beside vacuum asks for full expansion;
+ * a uniform room asks for nothing. Dividing by local pressure (not ambient) makes the target
+ * scale-free so thin gas expands as hard as dense gas.
  */
 private fun wantedDivergence(
     edges: EdgeGrid,
@@ -335,12 +199,8 @@ private fun wantedDivergence(
 }
 
 /**
- * A face's coupling strength: its open area divided by the mass on it.
- *
- * This is the `1/ρ` in the density-weighted Laplacian, pre-multiplied by [
- * MomentumField.SPEED_LIMIT_RAW] so that the solved pressure lands in momentum units and the impulse
- * across a face is the bare pressure difference. For ordinary air on a fully open face it comes to
- * about two million, which leaves plenty of headroom below a `Long` once multiplied by a pressure.
+ * A face's coupling: open area divided by mass, scaled so solved pressure lands in
+ * momentum units.
  */
 private fun coupling(aperture: Int, faceGrams: Long): Long {
     if (aperture == 0 || faceGrams <= 0L) return 0L
@@ -354,34 +214,14 @@ private fun beyond(p: LongArray, tile: Int): Long = if (tile < 0) 0L else p[tile
 private fun velocityRaw(momentum: Long, faceGrams: Long): Long =
     if (faceGrams <= 0L) 0L else momentum * MomentumField.SPEED_LIMIT_RAW / faceGrams
 
-/**
- * How many Jacobi sweeps a tick gets.
- *
- * Jacobi spreads influence about one tile per sweep, so this does not fully converge a hundred-tile
- * vessel within a tick — but a partly-solved pressure field is a *smoothed* one rather than a wrong
- * one, and the next tick resumes from a better guess. What matters is that pressure reaches twenty
- * tiles per tick instead of one.
- */
+/** Jacobi sweeps per tick. Spreads influence ~1 tile per sweep; a partly-solved field is a smoothed one
+ * that the next tick resumes from. */
 const val JACOBI_ITERATIONS = 20
 
-/**
- * How far toward the plain Jacobi answer each sweep moves: two thirds.
- *
- * The textbook weight, and the one that minimises the worst eigenvalue for this stencil. Undamped —
- * a weight of one — the solve oscillates forever rather than converging; see the note on the class.
- */
+/** Damping per Jacobi sweep: 2/3. Undamped (weight=1) oscillates forever on small domains. */
 private const val DAMPING_NUMERATOR = 2L
 private const val DAMPING_DENOMINATOR = 3L
 
-/**
- * The divergence a cell asks for when its neighbours are **vacuum**: an eighth of a tile per tick.
- *
- * Pinned by the extreme case on purpose, because the extreme case is the one anybody will look at. A
- * sealed room opened to vacuum is exactly this situation, and an eighth empties it over something
- * like ten ticks — fast enough to read as explosive, slow enough to watch happen.
- *
- * It is a *ratio* that reaches this, not an absolute difference — see [wantedDivergence] — so a thin
- * plume venting into emptier space asks for the same eighth that a pressurised deck does. That is
- * the point of it: expansion into vacuum does not get gentler because there is less gas doing it.
- */
+/** Divergence target when neighbours are vacuum: an eighth of a tile per tick. A ratio, not absolute,
+ * so thin plumes expand as hard as pressurised decks. */
 private val EXPANSION: Long = MomentumField.SPEED_LIMIT_RAW / 8

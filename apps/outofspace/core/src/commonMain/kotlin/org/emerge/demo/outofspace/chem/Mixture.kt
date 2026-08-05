@@ -1,19 +1,8 @@
 package org.emerge.demo.outofspace.chem
 
 /**
- * A quantity of matter: how many grams of each [Species] are present.
- *
- * **Mass is an integer.** Floats would make the same world diverge between two machines, and would
- * make conservation approximate — and "where did the mass go" is the only bug this simulation is
- * really capable of having. Integers make conservation checkable exactly, which is the whole point.
- *
- * Every operation that divides a mixture is defined as *"compute one output; the other is the
- * remainder"* ([minus]). That makes conservation structural rather than something to be tested for:
- * there is no arithmetic path that can lose a gram. Splits use [apportion], which distributes an
- * exact total by largest-remainder, so proportions are as close as integers allow without the sum
- * ever drifting.
- *
- * Instances are immutable. The backing array is never handed out.
+ * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
+ * Immutable. Splits use apportion() (largest-remainder). Operations: +, -, take, scaledTo.
  */
 class Mixture private constructor(private val grams: LongArray) {
 
@@ -140,17 +129,8 @@ class Mixture private constructor(private val grams: LongArray) {
 }
 
 /**
- * Distributes exactly [target] across [weights] in proportion to them — the largest-remainder
- * (Hamilton) method.
- *
- * Each entry gets its floored share, then the leftover units go one each to the entries with the
- * largest discarded fractions, ties broken by index. The result sums to [target] exactly, which is
- * what lets a proportional split conserve mass; naive rounding would lose or invent a gram per
- * split, and this simulation performs a great many splits.
- *
- * [target] may exceed the sum of the weights — this is proportional *distribution*, so scaling a
- * recipe up is as valid as splitting a pile down. Callers that must not exceed what is actually
- * present enforce that themselves ([Mixture.take] does).
+ * Distribute [target] across [weights] proportionally (largest-remainder/Hamilton method).
+ * Sum = [target] exactly (floored share + leftover to largest fractional parts). target may exceed weight sum (scaling valid).
  */
 internal fun apportion(weights: LongArray, target: Long): LongArray {
     val out = LongArray(weights.size)

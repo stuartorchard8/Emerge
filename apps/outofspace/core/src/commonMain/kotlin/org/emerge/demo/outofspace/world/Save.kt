@@ -16,28 +16,10 @@ import org.emerge.sim.core.physics.primitives.Frac2
 class SaveError(message: String) : Exception(message)
 
 /**
- * The whole world as text, and back again.
+ * Save/load: the whole world as text. Format is line-oriented, greppable, diffable, and hand-editable.
  *
- * ### Why text
- * A save here is not primarily a convenience for the player — it is a way to **hand a broken world to
- * someone else**. "The junction at (34, 12) does the wrong thing" costs a paragraph to describe, a
- * reconstruction to reproduce, and gets it subtly wrong about half the time; a file gets it exactly
- * right and costs nothing. That is worth more than compactness, so the format is line-oriented,
- * greppable and diffable: two saves of the same factory differ on the lines that actually changed,
- * and a machine can be retyped by hand to try something.
- *
- * ### What is written
- * Only what the world cannot re-derive. [VesselState.structure], [VesselState.occupancy] and
- * [VesselState.signals] are all recomputed from the machines every tick, so writing them would be
- * writing a cache — and a cache in a save file is a cache that can disagree with the thing it caches.
- * The **ledgers are written**, including the two baselines, precisely because they are not derivable:
- * `mined == aboard + vented` is only a statement about this world's history, and a load that reset
- * them would silently forgive every leak that happened before the save.
- *
- * ### Round-tripping is the test
- * Saving, loading and running on must produce the same world as never having saved at all. The suite
- * asserts exactly that by running two copies for a while and comparing their *text* — which is a
- * sharper check than comparing states, because it fails on anything the format forgot to carry.
+ * Only writes non-derivable state (ledgers, baselines, rock momentum). Structure/occupancy/signals
+ * are recomputed from machines each tick. Round-trip test: save/load/run must match never-saved.
  */
 object Save {
 
@@ -60,11 +42,9 @@ object Save {
         out.append("outofspace ").append(VERSION).append('\n')
         out.append("grid ").append(state.grid.width).append(' ').append(state.grid.height).append('\n')
         out.append("gravity ").append(state.gravity.x.raw).append(' ').append(state.gravity.y.raw).append('\n')
-        // Where it has got to. Absent means the origin, which is where every world starts.
+        // Position absent = origin.
         out.append("position ").append(state.positionX).append(' ').append(state.positionY).append('\n')
-        // Last tick's thrust, which is not a ledger but is still not derivable: it is what the felt
-        // gravity is worked out from, so a world reloaded without it would coast for one tick under
-        // the plating alone and then diverge from the one that was never saved.
+        // Felt gravity baseline; a world reloaded without it coasts for one tick under plating alone.
         out.append("thrust ").append(state.netImpulseX).append(' ').append(state.netImpulseY).append('\n')
         out.append("tick ").append(state.tick).append('\n')
         out.append("mined ").append(state.minedGrams).append('\n')
@@ -76,19 +56,11 @@ object Save {
         out.append("construction ").append(state.constructionJoules).append('\n')
         out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
-        // The rock ledger's fixed point and its running admission — see [VesselState.capturedGrams].
-        // Absent in a file written before rocks existed, which is a world in which both were zero.
+        // Rock ledger: fixed point + running admission (absent = zero before rocks existed).
         out.append("captured ").append(state.capturedGrams).append('\n')
         out.append("baselinerock ").append(state.baselineRockGrams).append('\n')
 
-        // One line per rock. Its momentum is in the **world** frame and its position is on the
-        // vessel's grid — see [Rock] for why those are deliberately different frames, and version 9
-        // for what it cost to change: a version 8 file's rock momentum was written in the vessel's
-        // frame, so loading one has to add the ship's own momentum back on.
-        //
-        // Its shape is written as a run of 0s and 1s rather than packed, because
-        // the whole point of the format is that a person can read a world and retype part of it, and
-        // a rock is the one thing here whose *shape* somebody will want to try changing by hand.
+        // Rock momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
         for (r in state.rocks) {
             out.append("rock ").append(r.width).append(' ').append(r.height)
                 .append(' ').append(r.positionX).append(' ').append(r.positionY)
@@ -131,32 +103,21 @@ object Save {
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
 
-        // Solid heat has no line of its own any more. It lives on the machine and the segment,
-        // written as their `k=` field, because that is where the energy lives in the world — see
-        // [Body]. A separate per-tile block would be a second place for it to be, and the two would
-        // disagree the first time somebody hand-edited one of them.
-
-        // Air gets a line per tile: a mixture is wordy, and the air in one room is a thing you want
-        // to be able to read and edit.
+        // Solid heat lives on machines/segments (their `k=` field), not a separate per-tile block.
+        // Air per tile: mixture is wordy but readable/editable.
         for (tile in 0 until state.grid.size) {
             val mix = state.air.mixtureAt(tile)
             if (mix.isEmpty) continue
             out.append("air ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
 
-        // How hot that air is. Packed sparsely like heat, and written after the air itself because
-        // it only means anything against the mass it belongs to. A world saved before version 4 has
-        // no line here and loads at room temperature, which is what it was simulating.
+        // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyJoules())
         out.append("airventedheat ").append(state.airVentedJoules).append('\n')
         out.append("baselineairheat ").append(state.baselineAirJoules).append('\n')
 
-        // How that air is moving. Packed like heat, and for the same reason: a still vessel writes
-        // none of it at all. Saved rather than left to be re-derived because momentum is the fluid's
-        // memory -- a world reloaded without it resumes becalmed, and a draught that had to build
-        // up again from rest is a different world from the one that was saved.
-        // What is in the pipes, written exactly like the room air above it and only where there is
-        // any: an empty network costs nothing, which is what every world has until something pumps.
+        // Packed like heat. Momentum saved because reloading without it resumes becalmed.
+        // Pipes: same format, empty network = zero cost.
         for (tile in 0 until state.grid.size) {
             val mix = state.pipeAir.mixtureAt(tile)
             if (mix.isEmpty) continue
@@ -169,10 +130,7 @@ object Save {
         writeSparse(out, "momx", state.momentum.copyX())
         writeSparse(out, "momy", state.momentum.copyY())
 
-        // Eight values since the ledger gained its fifth store. Appended rather than versioned, twice
-        // now: a file written with four is a world whose undelivered impulse was zero and one written
-        // with six is a world nobody had used the debug engine in, and in both cases absent reads
-        // correctly as zero — see the optional pairs below.
+        // Ten impulse values (ledger grew). Appended, not versioned: absent reads as zero.
         out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
@@ -347,14 +305,10 @@ object Save {
         var rockImpulseY = 0L
         val rocks = ArrayList<Rock>()
         var capturedGrams = 0L
-        // Null rather than zero, so "no line" and "a line saying zero" stay different things: a file
-        // from before rocks existed must derive its baseline from the rocks it has (none), and a file
-        // that says zero is a world whose rocks all arrived after it started.
+        // Null = no line (rocks didn't exist yet). Zero = rocks all arrived after world started.
         var baselineRockGrams: Long? = null
 
-        // Absent means freefall, which is what a vessel with its engines off has — and what
-        // every world written before the plating was dropped meant by "one g" is still written out
-        // explicitly, so an old save keeps the gravity it was played under.
+        // Absent = freefall. Older saves store one-g explicitly.
         var gravity = VesselState.FREEFALL
         var positionX = 0L
         var positionY = 0L
@@ -405,8 +359,7 @@ object Save {
                     if (machines[t] != null) fail("two machines at tile $t")
                     machines[t] = readMachine(tokens.drop(2), version, ::fail)
                 }
-                // `rail` is the version 5 spelling and still read: the record carries its own
-                // conduit either way, so an old file lands on the right layer with no migration.
+                // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
                     val t = tile(1)
                     val segment = readSegment(tokens.drop(2), ::fail)
@@ -426,11 +379,7 @@ object Save {
                     val pile = piles.getOrPut(tile(1)) { mutableListOf() }
                     for (i in 2 until tokens.size) pile.add(readResource(tokens[i], ::fail))
                 }
-                // Version 4 and earlier stored heat per *tile*. There is no honest way to
-                // redistribute a tile's joules over the bodies standing on it — the field averaged
-                // them in the first place, which is the reason it was replaced — so the line is
-                // parsed for well-formedness and dropped, and every body loads at ambient. Silently
-                // ignoring an unknown key instead would let a genuine typo through.
+                // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
                     if (eq < 0) fail("expected tile=joules, got '${tokens[i]}'")
@@ -470,14 +419,9 @@ object Save {
                 "impulse" -> {
                     impulseX = long(1); impulseY = long(2)
                     exhaustX = long(3); exhaustY = long(4)
-                    // Absent in files written before the ledger had a fourth store, and zero is the
-                    // right reading of absent: nothing had been counted there yet.
+                    // Absent = zero (ledger had fewer stores).
                     if (tokens.size > 6) { undeliveredX = long(5); undeliveredY = long(6) }
-                    // Likewise: a world saved before the debug engine existed is a world in which
-                    // nothing had cheated, and zero is what that means.
                     if (tokens.size > 8) { debugX = long(7); debugY = long(8) }
-                    // And again: before H2 nothing could hit anything, so nothing had been handed
-                    // to a rock. See [VesselState.rockImpulseX].
                     if (tokens.size > 10) { rockImpulseX = long(9); rockImpulseY = long(10) }
                 }
                 "air" -> {
@@ -495,22 +439,14 @@ object Save {
             grid.size,
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
         )
-        // Built from both arrays together, so a save that carries temperature keeps it and one that
-        // predates temperature gets the room-temperature default rather than a world at absolute
-        // zero. See AirField.of for why the two are one value.
+        // Built from both arrays together: save with temp keeps it, older gets ambient (not absolute zero).
         val air = if (airJoules.any { it != 0L }) AirField.of(airGrams, airJoules) else AirField.of(airGrams)
         // Same rule as the room air, and it matters more here: a version 6 file has no pipe lines at
         // all, so the network loads empty rather than at some temperature nothing was ever at.
         val pipeAir =
             if (pipeJoules.any { it != 0L }) AirField.of(pipeGrams, pipeJoules) else AirField.of(pipeGrams)
 
-        // Version 9 moved a rock's momentum out of the vessel's frame and into the world's, and a
-        // frame change is exactly the kind of thing a version number is for: the numbers in a version
-        // 8 file are still correct, they are just answers to a different question. `p_world =
-        // p_vessel + m_rock · v_ship`, and the ship's velocity is its own momentum over its own mass
-        // — the same walk [VesselState.velocityX] makes, done here because a migration cannot ask
-        // the state it is building. A ship that was not moving loads unchanged, which is every save
-        // written before the debug engine existed.
+        // V9: rock momentum moved from vessel frame to world frame. `p_world = p_vessel + m_rock · v_ship`.
         val loaded = if (version >= 9 || rocks.isEmpty()) rocks.toList() else {
             val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList(), Debris.of(piles))
             if (shipMass <= 0L) rocks.toList() else rocks.map {
@@ -596,10 +532,7 @@ object Save {
         fun num(key: String, fallback: Long): Long =
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
 
-        // Version 1 stated a machine's throughput per *second*; version 2 states it per tick, which
-        // is the only unit the sim has. An old file's number is therefore divided by the rate those
-        // files ran at, so a v1 factory keeps the throughput it was built with instead of silently
-        // speeding up fourfold. Defaults are already per tick, so they are not converted.
+        // V1 rate was per second; V2+ is per tick. Convert v1 by dividing by V1_TICKS_PER_SECOND.
         fun rate(fallback: Long): Long {
             val stored = num("rate", fallback * V1_TICKS_PER_SECOND)
             return if (version < 2) stored / V1_TICKS_PER_SECOND else num("rate", fallback)
@@ -611,9 +544,7 @@ object Save {
                 conduit = f["conduit"]?.let { name ->
                     Conduit.entries.firstOrNull { it.name == name } ?: fail("unknown conduit '$name'")
                 } ?: Conduit.Rail,
-                // `held` is what a bridge's single slot was called before it became the three tiles
-                // it looks like. Read as the entry slot so an older save loads its material rather
-                // than quietly dropping it — which would look like a leak, not a format change.
+                // `held` = v5 bridge slot name; read as entry so old saves load material.
                 entry = (f["in"] ?: f["held"])?.let { readPacket(it, fail) },
                 middle = f["span"]?.let { readPacket(it, fail) },
                 exit = f["out"]?.let { readPacket(it, fail) },
@@ -653,11 +584,7 @@ object Save {
                 fail("$kindName is a conduit, not a machine")
         }
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: Wiring.RUNNING
-        // A file that predates the body model says nothing about a machine's own heat, so it gets
-        // the room-temperature default its constructor already supplied. The old per-tile `heat`
-        // lines are read and discarded: they described a field that no longer exists, and
-        // reinterpreting a tile's joules as a body's would be exactly the misreading the version
-        // number is there to prevent.
+        // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
         val heated = f["k"]?.let { j ->
             machine.withJoules(j.toLongOrNull() ?: fail("bad joules '$j'"))
         } ?: machine

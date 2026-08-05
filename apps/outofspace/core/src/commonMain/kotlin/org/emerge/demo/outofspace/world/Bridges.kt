@@ -4,35 +4,9 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.world.MachineKind.Bridge
 
 /**
- * A three-tile span that takes material in on one side and puts it out on the other,
- * leaving everything between its two connections clear.
- *
- * It is how two runs of the same conduit cross. And it needs no special case anywhere in the network
- * code, because it is not one: it occupies **nothing on any layer**, so a run passing beneath it is
- * unconnected for the ordinary reason — the two share no port. "Hopping over" is what that looks
- * like from the outside; there is no hop in the model.
- *
- * ### It is three tiles of track, and it behaves like three tiles of track
- *
- * A bridge carries [entry], [middle] and [exit]: one slot per tile it spans, shifted one place along
- * per conduit step by [advanced], in step with everything else on the layer. A packet is picked up
- * off the track at the input port, crosses the tile being hopped, reaches the far end and is put
- * down on the track there — three steps, which is exactly what the same three tiles of ordinary rail
- * would have cost.
- *
- * It held **one** packet for a while, and that was the wrong shape twice over. It made a bridge a
- * bottleneck rather than a detour — three tiles of throughput squeezed into one slot — and it made
- * the span a place where material vanished for a tick and reappeared, which is precisely the
- * wormhole reading the latency was there to avoid. Three slots cost the same latency the track costs
- * and are honest about where the material is, which is what lets the renderer just draw it.
- *
- * Its ports sit at its **own two ends**. They spent a while flanking the span instead, because
- * segments used to join by mere adjacency and track at a bridge's end would have sat next to the run
- * it was meant to be hopping over — merging the two regardless of ports. Explicit links removed that
- * reason, and the ports came home.
- *
- * Those two ports are the only thing constraining where it can go: no two ports of the same conduit
- * may share a tile, or which of them a segment feeds would be ambiguous.
+ * Bridge: 3-tile span for crossing conduit runs. Occupies no layer (no special network cases).
+ * Three slots (entry/middle/exit): honest about material position, not a bottleneck.
+ * Ports at bridge's own ends (constrains placement: no two same-conduit ports on one tile).
  */
 data class Bridge(
     override val facing: Direction,

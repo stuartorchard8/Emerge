@@ -3,16 +3,8 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Resource
 
 /**
- * A mineral processor: the **concentrate leaves by the facing side** and the **tailings by the side
- * clockwise of it**. Never backwards — the input arrives that way.
- *
- * That direction contract is what makes a straight-through chain work: feed one processor's output
- * into the next and purity climbs (41% iron becomes 75%, then 100%), at the cost of throwing more
- * and more still-useful material into the tailings. Wasteful and effective, which is the trade the
- * machine exists to offer. Each stage needs somewhere for its tailings to go, or it backs up.
- *
- * Deliberately slower than a miner, so a naively built line jams and the player has to think about
- * throughput. That is the other lesson it teaches.
+ * Mineral processor: concentrate out facing side, tailings out clockwise-side.
+ * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material). Slower than miner (jam = throughput lesson).
  */
 data class Processor(
     override val facing: Direction,

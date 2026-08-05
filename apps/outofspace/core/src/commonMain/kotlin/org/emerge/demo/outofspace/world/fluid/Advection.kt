@@ -29,61 +29,13 @@ class MassFlux(val x: LongArray, val y: LongArray) {
 class AdvectionResult(val flux: MassFlux, val ventedGrams: Long)
 
 /**
- * Moves gas along the velocity field, in flux form, conserving every gram by construction.
+ * Moves gas along the velocity field using donor-cell upwind flux, conserving every gram by
+ * construction. One cell gives, the other receives the same number.
  *
- * ### Why not the usual scheme
+ * Asks first (computes all fluxes against one snapshot), pays after (applies in a single pass).
+ * Over-subscribed cells are apportioned fairly. Space is a sink; vented mass is reported.
  *
- * The textbook step here — and Lague's — is semi-Lagrangian: for each cell trace backwards along the
- * velocity, bilinearly sample the field, and take what you find. It is unconditionally stable and it
- * is the reason most fluid sims can take large steps. It is also not conservative in any sense: the
- * amount arriving somewhere has no arithmetic relationship to the amount leaving anywhere, so mass
- * drifts, and the drift is invisible until you go looking for it. This project's whole position is
- * that "where did the mass go" must be answerable exactly, so the scheme has to be one where a gram
- * arriving *is* the gram that left.
- *
- * So: **donor-cell upwind flux**. Each face computes how much crosses it, one cell gives that up and
- * the other receives it, and it is the same number. Conservation is then structural, exactly as
- * [org.emerge.demo.outofspace.chem.Mixture.minus] makes it structural for splitting a pile. The price
- * is that upwind advection is diffusive — a sharp front smears over a few tiles as it travels — and
- * that is a price worth paying, because a slightly soft plume that conserves mass is a better
- * foundation than a crisp one that does not.
- *
- * ### Not taking more than is there
- *
- * A cell has four faces, and the CFL condition only says that *each* of them moves less than a tile
- * per tick. A cell with fluid leaving in all four directions at once can therefore be asked for
- * several times what it holds. Every flux is computed against the same snapshot and applied together
- * — the order-independence the rest of the sim keeps — so this cannot be papered over by draining
- * cells in a lucky order.
- *
- * The fix is to ask first and pay afterwards: total each cell's requested outflow, and where it
- * exceeds what the cell has, [apportion] the cell's actual contents across its outgoing faces. That
- * scales the requests down in proportion, sums to exactly what was available, and — being the same
- * largest-remainder split used everywhere else — cannot lose a gram to rounding. A cell that is
- * over-subscribed simply empties, which is the physically right answer.
- *
- * ### Boundaries
- *
- * Space has no gas in it, so a face on the rim of the grid never carries anything inward. Outward it
- * carries whatever the flux says, and that mass leaves the world and is reported as [
- * AdvectionResult.ventedGrams] so the vessel's air ledger still closes. Increment D turns that same
- * number into thrust; here it is only bookkeeping.
- *
- * ### A fraction of a tick
- *
- * [subSteps] says how many of these this tick is being cut into, and every flux is that much smaller.
- * One — the default — is the whole tick and the arithmetic below is unchanged.
- *
- * It exists because the CFL condition this pass rests on is a statement about *distance per step*, not
- * per tick: a face moving at three tiles a tick is fine if the step is a third of a tick. The scaling
- * belongs here rather than on the velocity field because the velocity is real — the gas genuinely is
- * going that fast — and what has to shrink is how long it is allowed to go on doing it before the
- * density it is moving through is recomputed. See [stepFluid] for how the count is chosen.
- *
- * [grams] is `tiles × Species.COUNT` and is **edited in place**, matching [
- * org.emerge.demo.outofspace.world.stepAir]'s convention. Mass moved across a face is a proportional
- * sample of the donor over [apportion], so a draught carries the room's actual mix rather than
- * skimming one gas off the top.
+ * [subSteps] cuts each flux proportionally for CFL safety. [grams] edited in place.
  */
 fun advectMass(
     edges: EdgeGrid,
@@ -143,17 +95,8 @@ fun advectMass(
 }
 
 /**
- * Grams crossing a face in one tick: the donor's density, times how fast it is going, times how much
- * of the face is open.
- *
- * A tile is one unit of area and a tick is one unit of time — divided by [subSteps] where the tick is
- * being taken in pieces — which is what lets this be a product rather than an integration: the choice
- * to make the tick the unit paying off again. [speedRaw] is
- * a [org.emerge.sim.core.physics.primitives.Frac] raw value, so dividing by [
- * MomentumField.SPEED_LIMIT_RAW] converts it to a fraction of a tile per tick.
- *
- * The intermediate product is bounded by `grams × 2^31`, so a tile would have to hold four billion
- * grams to overflow a `Long`. A tile holds about a kilogram.
+ * Grams across a face: density × speed × aperture / subSteps. Speed in Frac raw units.
+ * Intermediate bounded by grams × 2^31 (tile holds ~kilogram, far from overflow).
  */
 private fun fluxAcross(donorGrams: Long, speedRaw: Long, aperture: Int, subSteps: Int): Long {
     if (donorGrams <= 0L) return 0L
@@ -166,12 +109,8 @@ private fun fluxAcross(donorGrams: Long, speedRaw: Long, aperture: Int, subSteps
 }
 
 /**
- * Scales each cell's outgoing fluxes down to what the cell actually holds.
- *
- * Only cells that are over-subscribed are touched, and a cell's shares are recomputed from its four
- * faces rather than tracked as the fluxes are built, so this stays a pure function of the snapshot.
- * Every face has exactly one donor, so no face is adjusted twice and the result does not depend on
- * the order tiles are visited.
+ * Scales over-subscribed cells' outgoing fluxes down to what they hold. Pure function of the
+ * snapshot; result independent of visit order.
  */
 private fun limitToWhatIsThere(
     edges: EdgeGrid,
@@ -220,10 +159,7 @@ private fun limitToWhatIsThere(
 }
 
 /**
- * Moves [amount] grams from one tile to another as a proportional sample of the donor's mix.
- *
- * An [acceptor] of -1 is space: the mass leaves the donor and is returned as vented rather than
- * arriving anywhere. That is the only path by which gas legitimately stops existing.
+ * Moves [amount] grams as a proportional sample of the donor's mix. Acceptor -1 = space (vented).
  */
 private fun moveGas(
     grams: LongArray,

@@ -59,7 +59,7 @@ class OutofspaceRenderer {
     var tilePx = 34f
         private set
 
-    // One flat batch, refilled each frame.
+    // Flat batch (refilled each frame).
     private val centers = FloatArray(MAX_RECTS * 2)
     private val halfSizes = FloatArray(MAX_RECTS * 2)
     private val colors = FloatArray(MAX_RECTS * 4)
@@ -71,11 +71,7 @@ class OutofspaceRenderer {
         GPU.setViewport(0, 0, resW.toInt(), resH.toInt())
     }
 
-    /**
-     * Centres the camera on what has actually been built, falling back to the middle of the grid
-     * when nothing has. Centring on the grid instead would open the game looking at empty floor
-     * beside the vessel, which is a poor first impression of a game about the vessel.
-     */
+    /** Centre on built area (fallback: grid centre). */
     fun centreOn(state: VesselState) {
         var minX = Int.MAX_VALUE
         var minY = Int.MAX_VALUE
@@ -99,14 +95,7 @@ class OutofspaceRenderer {
         }
     }
 
-    /**
-     * Points the camera at a tile, optionally at a stated zoom — the scripted equivalent of panning
-     * and scrolling until you can see the thing.
-     *
-     * Separate from [centreOn] because the two answer different questions: that one frames the whole
-     * vessel, this one frames *the tile you are arguing about*. A headless capture has no pointer to
-     * scroll with, so without this it can only ever show the whole ship.
-     */
+    /** Focus on a tile at a stated zoom (scripted panning). */
     fun focusOn(tileX: Float, tileY: Float, pixelsPerTile: Float = tilePx) {
         camX = tileX
         camY = tileY
@@ -141,13 +130,7 @@ class OutofspaceRenderer {
         return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    /**
-     * How far through the current tick the clock is, 0 to 1 — see [OutofspaceController.tickAlpha].
-     *
-     * Held as a field rather than threaded through every draw call because almost everything that
-     * draws a packet needs it. Defaults to 1, which is "the tick has landed": a caller that does not
-     * pass one gets the world exactly as the sim left it, which is what the tests want.
-     */
+    /** Tick progress 0–1 (see [OutofspaceController.tickAlpha]). Defaults to 1 (tests). */
     private var alpha: Float = 1f
 
     fun draw(
@@ -164,21 +147,20 @@ class OutofspaceRenderer {
         count = 0
 
         val grid = state.grid
-        // Only the tiles actually on screen. Free at this size; the habit is what matters.
+        // On-screen tiles only.
         val halfW = resW / (2f * tilePx)
         val halfH = resH / (2f * tilePx)
         val minX = max(0, floor(camX - halfW).toInt())
         val maxX = minOf(grid.width - 1, floor(camX + halfW).toInt() + 1)
         val minY = max(0, floor(camY - halfH).toInt())
         val maxY = minOf(grid.height - 1, floor(camY + halfH).toInt() + 1)
-        // Machines are drawn from their centre tile, so one whose centre is just off-screen can
-        // still have half its body on it. Widen the machine pass by the largest footprint's reach.
+        // Machines drawn from centre; widen pass by MAX_REACH.
         val mMinX = max(0, minX - MAX_REACH)
         val mMaxX = minOf(grid.width - 1, maxX + MAX_REACH)
         val mMinY = max(0, minY - MAX_REACH)
         val mMaxY = minOf(grid.height - 1, maxY + MAX_REACH)
 
-        // Floor, so the buildable area reads as a place rather than as a void.
+        // Floor (buildable area).
         for (y in minY..maxY) {
             for (x in minX..maxX) {
                 val shade = if ((x + y) and 1 == 0) Colors.TILE_LIGHT else Colors.TILE_DARK
@@ -186,8 +168,7 @@ class OutofspaceRenderer {
             }
         }
 
-        // Debris under the machines: it lies on the deck, and a conveyor spanning a heap should read
-        // as running over it rather than as being buried by it.
+        // Debris under machines (on deck).
         if (!state.debris.isEmpty) {
             for (tile in state.debris.tiles()) {
                 val x = grid.xOf(tile)
@@ -204,28 +185,21 @@ class OutofspaceRenderer {
             }
         }
 
-        // Pipes under the track, because the track is the layer with things riding on it and so the
-        // one that has to stay legible. Drawn thinner, so a crossing reads as two runs at different
-        // depths rather than as a junction.
+        // Pipes under track (thinner, different depth).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 drawPipe(state, grid.index(x, y), x, y)
             }
         }
 
-        // Track over the buildings, because it runs on top of the deck rather than being buried by
-        // it — and because a run threaded under a smelter is unreadable if the smelter covers it.
+        // Track over buildings (on deck).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 drawRail(state, grid.index(x, y), x, y)
             }
         }
 
-        // Bridges last of all, because a bridge is the one thing that is genuinely *above* the track.
-        //
-        // They get their own pass because they live on their own list. `drawMachine` has always had a
-        // Bridge branch, but nothing ever reached it: that loop walks `state.machines`, and a bridge
-        // is never in it. It was drawing correctly and invisibly.
+        // Bridges last (above track).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val index = grid.index(x, y)
@@ -233,17 +207,13 @@ class OutofspaceRenderer {
             }
         }
 
-        // Things that have left the world, over the track they left from and under the overlay.
+        // Departures.
         drawDepartures(state)
 
-        // Rocks over everything built, because a rock is not part of the vessel and is passing
-        // through — drawing it under the deck would read as a stain on the floor rather than as an
-        // object in the room. It has no tile of its own to be culled by: its position is a fraction
-        // of a tile in the vessel's frame, so it is drawn from that directly.
+        // Rocks over built (not part of vessel).
         for (rock in state.rocks) drawRock(rock)
 
-        // The overlay goes over the machines, not under them: the question it answers is "how hot is
-        // it *there*", and putting it behind the thing you are asking about answers the wrong one.
+        // Overlay over machines.
         if (overlay != Overlay.None) {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
@@ -261,13 +231,9 @@ class OutofspaceRenderer {
             }
         }
 
-        // Flow is a vector, so it gets drawn rather than tinted — over its own backdrop, which is
-        // there to darken the deck so faint air is still visible against it.
+        // Flow vectors over backdrop.
         if (overlay == Overlay.Flow) {
-            // Scaled to the fastest tile *on screen*, not to a fixed constant. A fixed one has to be
-            // chosen for either a settling room or an exhaust plume and is useless for the other,
-            // and the first attempt at this overlay was exactly that: a hard-coded ceiling against
-            // which ordinary circulation was uniformly black.
+            // Scaled to fastest tile on screen (not fixed — ordinary circulation needs variable scale).
             var peak = 0f
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
@@ -311,7 +277,7 @@ class OutofspaceRenderer {
             Visual.DEBRIS_TOP_WIDTH * tilePx, h * tilePx,
             packetColor(state.debris.mixtureAt(tile).dominant),
         )
-        // A dark line along the top, so a heap does not read as a solid block of material.
+        // Dark top line (heap readability).
         rect((x + 0.5f) * tilePx, (y + 1f - h) * tilePx, Visual.DEBRIS_TOP_WIDTH * tilePx, Visual.DEBRIS_TOP_HEIGHT * tilePx, Colors.DEBRIS_TOP)
     }
 
@@ -343,9 +309,7 @@ class OutofspaceRenderer {
                 val wx = (ox + cx + 0.5f) * tilePx
                 val wy = (oy + cy + 0.5f) * tilePx
                 rect(wx, wy, tilePx, tilePx, Colors.ROCK)
-                // A checker of two greys, keyed on the cell's own coordinates, so the grain does not
-                // crawl across the rock as it drifts. Keyed on the tile it happened to be over, it
-                // would shimmer every time it crossed a boundary.
+                // Cell-local checker (grain doesn't crawl as rock drifts).
                 if ((cx + cy) and 1 == 0) {
                     rect(wx, wy, tilePx * Visual.ROCK_GRAIN, tilePx * Visual.ROCK_GRAIN, Colors.ROCK_GRAIN)
                 }
@@ -368,27 +332,18 @@ class OutofspaceRenderer {
             )
         }
         rect(cx, cy, Visual.PIPE_DIAMETER * tilePx, Visual.PIPE_DIAMETER * tilePx, color)
-        // A valve wears a bright collar, the way a gauge wears its channel: wider than the pipe so it
-        // reads at a glance against a long run, and centred so it does not hide which arms are joined.
+        // Valve: bright collar (wider than pipe, centred).
         if (segment.isValve) {
             rect(cx, cy, Visual.VALVE_COLLAR * tilePx, Visual.VALVE_COLLAR * tilePx, Colors.VALVE_CORE)
         }
     }
 
-    /**
-     * One tile of track, and whatever is riding on it.
-     *
-     * Drawn as a thin spine rather than a tile-filling block: it has to read as *running over* the
-     * building beneath without hiding it, since the whole point of the layer is that both are there.
-     * A gauge wears its channel as a collar.
-     */
+    /** Track tile + packet (thin spine, gauge collar). */
     private fun drawRail(state: VesselState, tile: Int, x: Int, y: Int) {
         val segment = state.rails[tile] ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        // Only the arms that are actually **joined**, so the picture is the graph. Track is no longer
-        // connected by touching, and drawing a full cross on every tile would say the opposite of
-        // what the network does — two lines running side by side would look like one grid.
+        // Only joined arms (not touching — two lines side by side stay separate).
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
             rect(
@@ -406,13 +361,12 @@ class OutofspaceRenderer {
         val packet = segment.held ?: return
         val motion = state.motion
 
-        // Where it was standing a tick ago, as an offset in tiles from where it is now. A packet
-        // that slid in from a neighbour starts back there and arrives exactly as the tick lands.
+        // Previous position (offset in tiles; packet slides from there).
         val came = motion.arrivedFrom(tile)
         val backX = if (came == null) 0f else -came.dx.toFloat()
         val backY = if (came == null) 0f else -came.dy.toFloat()
 
-        // A packet the port has just set down grows in from nothing rather than blinking into being.
+        // New packet: scales in (no blink).
         val scale = if (motion.appearedAt(tile)) alpha else 1f
 
         drawPacket(
@@ -424,17 +378,7 @@ class OutofspaceRenderer {
         )
     }
 
-    /**
-     * One lump of material, at fractional tile coordinates.
-     *
-     * [mass] sets how big it is, so a line of half-packets looks like one — and interpolating the
-     * mass rather than snapping it is what keeps a packet being drawn into a machine, or topped up
-     * from one, from popping between two sizes.
-     *
-     * [scale] is separate and multiplies on top: it is the appearing and disappearing, and unlike
-     * the mass it really does go to zero. Keeping the two apart is what lets a half-full packet
-     * shrink away to nothing *from* half size rather than jumping to full first.
-     */
+    /** Material lump at fractional tile coords. [mass] = size (interpolated), [scale] = appear/disappear. */
     private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, dominant: Species?) {
         if (scale <= 0f) return
         val fill = (mass / Capacity.PACKET_GRAMS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
@@ -444,11 +388,7 @@ class OutofspaceRenderer {
 
     private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
 
-    /**
-     * A bridge: an elevated track spanning its three tiles, drawn over any track it crosses.
-     *
-     * Off-color to signify that it is not part of the lower track except for its ports.
-     */
+    /** Bridge: elevated track (off-color, not part of lower track). */
     private fun drawBridge(state: VesselState, index: Int, b: Bridge, x: Int, y: Int) {
         val horizontal = b.facing.dx != 0
         val long = if (horizontal) Visual.BRIDGE_SPAN_X else Visual.BRIDGE_SPAN_Y
@@ -457,12 +397,7 @@ class OutofspaceRenderer {
         val cy = (y + 0.5f) * tilePx
         drawPorts(state, index, b)
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(MachineKind.Bridge))
-        // One slot per tile spanned, drawn where that tile is: material crossing a bridge is visibly
-        // travelling along it rather than disappearing into the middle and reappearing.
-        //
-        // The entry slot never animates: a bridge's ports are at ±1, exactly where the entry and
-        // exit slots are drawn, so a packet stepping onto a bridge changes layer without changing
-        // place. The two shifts *along* the span are real travel, and those slide.
+        // One slot per tile (entry fixed, middle+exit slide along span).
         val slots = listOf(
             Triple(-1f, b.entry, Motion.SLOT_ENTRY),
             Triple(0f, b.middle, Motion.SLOT_MIDDLE),
@@ -504,8 +439,7 @@ class OutofspaceRenderer {
 
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
         val n = m.kind.size
-        // A machine with no activation is stopped, and saying so on the tile is the answer to the
-        // only question wiring ever raises: why is this not running?
+        // No activation = stopped (red tile).
         if (m !is Sensor && m.wiring.activation(Action.Run, state.signals) <= 0) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
@@ -513,7 +447,7 @@ class OutofspaceRenderer {
             return
         }
         when (m) {
-            // Never reached: bridges are not on the deck list. They have their own pass.
+            // Bridges not on deck list (separate pass).
             is Bridge -> Unit
             is Miner -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Miner))
@@ -529,9 +463,7 @@ class OutofspaceRenderer {
             }
             is Storage -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Storage))
-                // A tank shows its level as a rising fill, not a thin bar, and now it rises through
-                // a room-sized body -- which is what makes a nearly-full warehouse legible across
-                // the deck rather than a detail you have to hover to read.
+            // Tank: room-sized fill (legible at distance).
                 val level = (m.contents?.mass ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
                     val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
@@ -546,13 +478,11 @@ class OutofspaceRenderer {
             is Hull -> tileRect(x, y, 1f, kindColor(MachineKind.Hull))
             is Sensor -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Sensor))
-                // The eye faces what it watches, and wears the colour it broadcasts on.
+                // Sensor: faces target, wears broadcast colour.
                 edgeMark(x, y, m.facing, m.channel.color)
                 tileRect(x, y, Visual.SENSOR_EYE_SCALE, m.channel.color)
             }
-            // The intake gets an arrow, because facing is the whole of what a pump's orientation
-            // means — which room it empties — and a square with no direction on it would leave the
-            // player guessing.
+            // Pump intake: arrow shows facing (room direction).
             is Pump -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Pump))
                 intakeArrow(x, y, m.facing)
@@ -753,14 +683,12 @@ class OutofspaceRenderer {
      */
     private fun drawFlow(state: VesselState, tile: Int, x: Int, y: Int, peak: Float) {
         val speed = state.flow.speedAt(tile)
-        // Still air has no direction to draw, and the unit vector below would be 0/0. This is a
-        // guard on the arithmetic, not a visibility threshold — that is FLOW_MIN_FRACTION, which is
-        // free to be zero precisely because this is here.
+        // Still air guard (0/0). Visibility threshold is FLOW_MIN_FRACTION.
         if (speed <= 0f) return
         val fraction = speed / peak
         if (fraction < Visual.FLOW_MIN_FRACTION) return
 
-        // Unit direction. `speed` is the magnitude of exactly this pair, so it is what normalises it.
+        // Unit direction (speed = magnitude of this pair).
         val scale = MomentumField.SPEED_LIMIT_RAW.toFloat() * speed
         val dx = state.flow.xAt(tile).toFloat() / scale
         val dy = state.flow.yAt(tile).toFloat() / scale
@@ -769,13 +697,11 @@ class OutofspaceRenderer {
         val cy = (y + 0.5f) * tilePx
         val reach = fraction * Visual.FLOW_MAX_REACH
 
-        // Head first: `i` runs from FLOW_SEGMENTS steps *ahead* of the tile centre back to the same
-        // distance behind it, so the streak straddles the tile with its bright end leading.
+        // Streak: FLOW_SEGMENTS ahead→behind, bright end leading.
         val steps = Visual.FLOW_SEGMENTS
         for (i in -steps until steps) {
             val along = -reach * i / (steps - 1)
-            // Full size and opacity at the head, fading to nothing at the tail. With no arrowhead
-            // available, the fade is the entire signal for which end is the front.
+            // Fade: full at head, zero at tail (front indicator).
             val taper = 1f - (i + steps).toFloat() / (2 * steps)
             val size = Visual.FLOW_HEAD_SIZE * taper * tilePx
             rect(
@@ -872,8 +798,7 @@ class OutofspaceRenderer {
         const val TILE_DARK   = 0x111722FFL
 
         // ── Rock ────────────────────────────────────────────────────────
-        // Warm and desaturated, so it sits apart from every built thing on the deck without
-        // competing with the ore and ingot colours a packet is read by.
+        // Warm, desaturated.
         const val ROCK        = 0x6B5F55FFL
         const val ROCK_GRAIN  = 0x87796BFFL
 
@@ -885,7 +810,7 @@ class OutofspaceRenderer {
         const val OVERLAY_VACUUM  = 0x05070CD0L
         const val OVERLAY_EMPTY   = 0x120A10D8L
 
-        /** Ends of the diverging ramp: thin air toward blue, dense air toward orange. */
+        /** Thin → blue, dense → orange. */
         const val THIN_R_TARGET  = 0x40
         const val THIN_G_TARGET  = 0x90
         const val THIN_B_TARGET  = 0xE0
@@ -893,7 +818,7 @@ class OutofspaceRenderer {
         const val DENSE_G_TARGET = 0x90
         const val DENSE_B_TARGET = 0x30
 
-        /** A near-opaque wash under the flow streaks, so faint air still stands out from the deck. */
+        // Faint air visibility.
         const val FLOW_BACKDROP = 0x0A0D14E0L
         const val FLOW_ALPHA = 224f
 

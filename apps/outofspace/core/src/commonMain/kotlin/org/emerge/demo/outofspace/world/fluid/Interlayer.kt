@@ -4,15 +4,9 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Temperature
 
 /**
- * What crossed between the two bodies of fluid, and what the vessel felt for it.
+ * What crossed between room and pipe, and vessel impulse from momentum absorption.
  *
- * [grams] and [joules] are signed **room-to-pipe**: positive means the rooms lost that much to the
- * plumbing. Signed rather than two counters because the quantity really is one flow that can run
- * either way, and a valve that alternates direction should read as a small net number rather than as
- * two large ones that have to be subtracted to mean anything.
- *
- * [vesselX] and [vesselY] are momentum absorbed by the fitting — see [exchangeLayers] for when that
- * happens and why it is not simply a loss.
+ * [grams] and [joules] are signed room-to-pipe (positive = room lost mass/energy).
  */
 class InterlayerStep(
     val grams: Long,
@@ -22,67 +16,13 @@ class InterlayerStep(
 )
 
 /**
- * Lets gas cross between a room and the pipe sharing its tile, wherever something has opened a way.
+ * Lets gas cross between a room and a pipe on the same tile wherever an opening exists.
  *
- * ### Why this cannot be a face
+ * Relaxation, not advection: cells at the same place equalise by pressure capacity
+ * (volume/temperature). Momentum rides the same fluxes; shut acceptor faces send momentum to vessel.
+ * Called before [stepFluid] so pressure can propagate in the arriving tick.
  *
- * Every other transfer in this package happens across an [ApertureField] face, between two cells that
- * are side by side. This one is between two cells at the **same place** — the room's air and the
- * pipe's contents both occupy tile `t`, which is the whole reason the pipe layer had to be a second
- * field. There is no edge between them, no direction to point along, and therefore no velocity: the
- * lattice simply has no axis for "downward through the layers".
- *
- * So this is a **relaxation**, not an advection, and that is a real modelling choice rather than a
- * convenience. Gas crossing a valve does not get to arrive going somewhere; it equalises. A pressure
- * wave running along a pipe is inertial, because that happens on faces the ordinary solver owns, but
- * the crossing itself is not. The honest version would give a valve its own small axis of momentum,
- * and would be worth building only once something needs the ringing.
- *
- * ### What equalising means when the two cells are different sizes
- *
- * The whole point of a pipe is that it is small (see [VolumeField]), so "let them reach the same
- * pressure" has to respect that. Each side is characterised by a **capacity** — how many moles it
- * takes to raise it by one unit of pressure — which is its volume over its temperature. Conserving
- * total moles and equalising pressure gives a split in proportion to those capacities, and the
- * transfer is the difference between what a side has and its share.
- *
- * That is what makes this stable without a damping constant. Opening a room onto an empty pipe an
- * eighth its size moves an eighth of the room's air *at most*, because that is all the pipe can hold
- * at the pressure they meet at. A relaxation written the obvious way — move a fixed fraction of the
- * gap — would need a tuning number to stop it emptying the room, and would get the equilibrium wrong.
- *
- * Temperature is in the capacity because it belongs there: hot gas takes fewer moles to reach a given
- * pressure, so a hot pipe accepts less. Composition rides along in proportion, which is the only
- * defensible reading of a well-mixed cell handing over a share of itself.
- *
- * ### Momentum, and the one place it is destroyed on purpose
- *
- * Both layers share the lattice, so a pipe cell's faces *are* the room cell's faces — same edge
- * indices, same basis. Momentum crossing with the gas therefore needs no interpolation at all: the
- * donor's share of each face is handed to the acceptor on the identical face. That matters, because
- * the face-to-tile-to-face round trip every other coupling scheme would need is exactly the low-pass
- * smear [advectMomentum] warns about, and it would quietly launder a jet into a breeze.
- *
- * A face is shared between two cells, so a cell's own share of it is half — hence the halving.
- *
- * Where the acceptor's face is **shut**, there is nowhere for the flow to continue, and the momentum
- * is booked to the vessel instead of being carried. This is the dead-end case: gas shoved into the
- * closed end of a pipe pushes on the fitting, and the fitting is bolted to the ship. That is the same
- * accounting [applyDrag] does, and it is not a loss — leaving the momentum on a face no gas can use
- * would let a sealed stub quietly hoard a shove, which is the failure the stranded-momentum sweep at
- * the end of [stepFluid] exists to prevent.
- *
- * The reverse case is the one worth wanting: a pipe blowing into a room hands its momentum to open
- * room faces, so the gas arrives **going somewhere** and leans on whatever is in front of it.
- *
- * ### Ordering
- *
- * Called before either layer's [stepFluid], for the reason conduction runs before the fluid: a
- * pressure delivered into a cell should be free to propagate away in the tick it arrived, rather than
- * sitting for one. Running it afterwards would work and would lag every valve by a tick.
- *
- * [openings] is per tile: [ApertureField.CLOSED] for the overwhelming majority, and how wide the way
- * is where something has opened one. Every array is **edited in place**.
+ * [openings] is per tile (CLOSED = no opening). All arrays edited in place.
  */
 fun exchangeLayers(
     edges: EdgeGrid,
@@ -159,13 +99,8 @@ fun exchangeLayers(
 }
 
 /**
- * The fraction of a cell that is leaving, kept as a ratio rather than evaluated.
- *
- * Every quantity the crossing carries — each species' grams, the energy, each face's momentum — is
- * the same fraction of a different total, and rounding the fraction once and reusing it would round
- * every one of those to a coarser grid than it needs. Multiplying then dividing keeps each of them
- * to its own precision, which is what stops a trace species being rounded out of existence on the way
- * through a valve.
+ * Fraction of a cell leaving, kept as a ratio. Multiplying then dividing keeps each quantity
+ * (species grams, energy, momentum) at its own precision without rounding out trace species.
  */
 internal class Share(val part: Long, val whole: Long) {
     fun of(quantity: Long): Long = quantity * part / whole
@@ -176,10 +111,8 @@ internal class Moved(val grams: Long, val joules: Long)
 private class Push(val x: Long, val y: Long)
 
 /**
- * Moves [share] of one cell's gas, species by species, with the energy that was riding on it.
- *
- * The two tiles are separate because a pump's are: a valve exchanges between the two cells at one
- * place, and a pump draws from the room beside it into the pipe beneath it.
+ * Moves [share] of one cell's gas species-by-species, with energy. Tiles separate for pump usage
+ * (draws from adjacent tile), same tile for valve (exchanges at one place).
  */
 internal fun handOver(
     share: Share,
@@ -202,8 +135,7 @@ internal fun handOver(
         grams += take
     }
 
-    // Energy moves as a fraction of what the donor holds, not as `mass × temperature`: the first
-    // conserves exactly and the second accumulates the rounding of a division per tick per valve.
+    // Energy as a fraction of donor (exact), not mass × temperature (accumulates rounding error).
     var joules = 0L
     if (donorJoules != null && acceptorJoules != null) {
         joules = share.of(donorJoules[donorTile])
@@ -214,9 +146,7 @@ internal fun handOver(
 }
 
 /**
- * Hands the donor's share of each of the tile's four faces to the acceptor, or to the ship.
- *
- * See [exchangeLayers] for why a shut face on the acceptor's side means the vessel takes it.
+ * Hands donor's share of each face to acceptor, or to vessel if acceptor face is shut.
  */
 private fun handOverMomentum(
     edges: EdgeGrid,
@@ -253,18 +183,12 @@ private fun handOverMomentum(
 }
 
 /**
- * Moles per unit of pressure: how much gas this cell swallows before it pushes back as hard as its
- * neighbour. Volume over temperature, which is `PV = nRT` rearranged for the quantity being solved
- * for.
- *
- * Scaled so that a whole tile at room temperature is a comfortably large integer rather than a
- * handful of units, because the split between the two sides is a ratio of these and a ratio of small
- * integers is a coarse one.
+ * Moles per unit of pressure (volume/temperature). Scaled for comfortable integers.
  */
 internal fun pressureCapacity(volume: Int, kelvin: Int): Long =
     volume.toLong() * Temperature.AMBIENT_KELVIN / maxOf(kelvin, 1)
 
-/** One cell's gas temperature, with the same "no gas reads as ambient" convention as [gasKelvin]. */
+/** Cell gas temperature. No gas → ambient (same convention as [gasKelvin]). */
 internal fun kelvinAt(grams: LongArray, gasJoules: LongArray?, tile: Int): Int {
     if (gasJoules == null) return Temperature.AMBIENT_KELVIN
     val capacity = gasCapacityAt(grams, tile)

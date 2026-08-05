@@ -5,23 +5,8 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 
 /**
- * Matter in transit: a discrete lump moving along a belt or through a pipe, ONI-style.
- *
- * Packets rather than flow rates because a packet is a *thing you can see*. You can watch it move,
- * point at it, and read what is in it — which is the whole reason this game is side-on. A continuous
- * throughput number would be easier to simulate and impossible to look at.
- *
- * ### Solid or fluid, not solid/liquid/gas
- * Solids ride belts; liquids and gases share pipes. Liquid and gas differ at the *ends* of a network
- * — lifting a liquid against gravity and compressing a gas are different machines with different
- * costs — but the pipe between them carries either, so the transport layer only needs the two-way
- * split. See [org.emerge.demo.outofspace.chem.Phase].
- *
- * ### Why a solid packet has a [Form] and a fluid packet does not
- * It matters enormously whether a solid is an ingot or a structural frame, so a solid packet carries
- * a whole [Resource]. A fluid is only ever "whatever was at the source" — an amalgam with no
- * identity beyond its composition — so a fluid packet is a bare [Mixture]. That asymmetry is real,
- * not an oversight.
+ * Matter in transit: discrete lumps on belts/pipes. Solid=Resource (Form matters), fluid=Mixture (source-dependent).
+ * Two categories: solid (belts) and fluid (pipes carry both).
  */
 sealed interface Packet {
     /** What is in it, species by species. */
@@ -55,25 +40,10 @@ data class FluidPacket(override val contents: Mixture) : Packet {
 }
 
 /**
- * How much a packet, belt slot or pipe segment can hold.
- *
- * **Everything goes through [quantityOf] rather than reading mass directly.** Today quantity *is*
- * mass in grams, but volume is the truer measure and the intent is to move to it — so this one
- * function is where that change happens, and nothing else needs to know.
- *
- * A caveat worth recording before that switch: volume works for solids and liquids and is
- * meaningless for gases. A gas has no volume of its own; it fills whatever it is in, and "a litre of
- * gas" says nothing without a pressure. So the likely end state is **volume for solids and liquids,
- * mass for gases** — the door left open here is per-phase, not global, and [quantityOf] takes the
- * whole packet rather than a mass so it can make that distinction when the time comes.
+ * Capacity: max grams per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
  */
 object Capacity {
-    /**
-     * The most one packet may hold, in grams. Matches the Godot conveyor's 1 kg lumps.
-     *
-     * Packet size and throughput are separate dials: this caps how much rides in one lump, while
-     * [Rate] decides how often lumps are produced. Both are data, not physics.
-     */
+    /** Max grams per packet: 1000 (matches Godot conveyor 1kg lumps). Separate from Rate (throughput). */
     const val PACKET_GRAMS: Long = 1_000L
 
     /** The measure capacity is expressed in. Mass today; see the class note for why it is a function. */

@@ -4,35 +4,9 @@ package org.emerge.demo.outofspace.world.fluid
 class DragResult(val vesselX: Long, val vesselY: Long)
 
 /**
- * Bleeds momentum out of the air, so that a disturbed room eventually stops moving.
- *
- * ### Why anything settles at all
- *
- * The atmosphere this replaced was pure diffusion: it had no momentum, so it could only ever
- * approach equilibrium and never overshoot it. Give the gas inertia and that free lunch ends. A slug
- * of air pushed into a sealed room arrives with momentum, compresses the far end, is pushed back,
- * and — with nothing to dissipate into — does it again forever. The first run of the new solver had
- * a test room still visibly sloshing after eighty ticks, the wave having crossed and recrossed with
- * no sign of stopping. That is not a bug in the fluid model. It is what a fluid model *is*, and it is
- * what real air would do if it were frictionless.
- *
- * Real air is not. It rubs against the hull and against itself, and the motion turns into heat. This
- * is that, at the crudest useful fidelity: a fixed fraction of every face's momentum, every tick.
- *
- * ### It is drag, not viscosity, and the difference is admitted
- *
- * Proper viscosity smooths velocity *differences* — it damps shear while leaving a uniform drift
- * alone. This damps everything equally, including a whole room moving together, which is really wall
- * friction rather than an internal property of the gas. For a vessel where every parcel of air is
- * within a few tiles of a bulkhead that is close enough to the truth to be worth its simplicity, and
- * the honest version can replace it later without anything above having to change.
- *
- * ### Where the momentum goes
- *
- * To the ship. Momentum is not destroyed by friction — it is handed to whatever is doing the
- * rubbing, and that is the hull. Quietly scaling the field down instead would leak momentum out of
- * the ledger, and the ledger is the thing that makes thrust trustworthy. A room circulating with no
- * net momentum damps symmetrically and hands over nothing, which is the answer a sealed vessel needs.
+ * Drag: fixed fraction of each face's momentum, every tick.
+ * Replaces pure diffusion (frictionless sloshing). Damps all motion equally (wall friction, not true viscosity).
+ * Momentum goes to ship (not destroyed — ledger closed).
  */
 fun applyDrag(edges: EdgeGrid, mx: LongArray, my: LongArray): DragResult {
     var takenX = 0L

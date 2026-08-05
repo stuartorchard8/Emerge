@@ -8,15 +8,7 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.logistics.mergeInto
 
 /**
- * Where a fork last sent material, so the next packet goes the other way.
- *
- * ONI resolves a junction by whichever branch its iteration happens to favour, which is why priority
- * there is a folklore skill rather than a mechanic. A fork here is a **diverter**: it remembers, and
- * it alternates. That makes a three-way split genuinely even instead of evenly-ish, and it makes the
- * answer a property of the junction rather than of the array.
- *
- * Stored per fork tile, and only for tiles that actually fork, so this stays empty in almost every
- * world.
+ * Diverter: per-fork tile remembers last branch, alternates (genuinely even 3-way split).
  */
 class Diverters private constructor(internal val cursor: Map<Int, Int>) {
 
@@ -39,47 +31,9 @@ class Diverters private constructor(internal val cursor: Map<Int, Int>) {
 }
 
 /**
- * Moves everything on one conduit layer one step, offering each packet to whatever sits under it
- * first.
- *
- * The order is the whole design, and it is two rules:
- *
- *  1. **A tile's own port gets first refusal.** A packet passing under a building's input is taken
- *     if the building has room — that is what makes "the first input along the run wins" true, and
- *     with [FlowField.order] walking outward from the sink it is a statement about the pipe rather
- *     than about the array.
- *  2. **Nearest to a sink moves first**, so the tile ahead is always empty by the time the one
- *     behind it tries to move up. A packed run advances by one along its whole length in a single
- *     pass rather than crawling a tile per tick.
- *
- * That second rule is an *optimisation*, and it is not always achievable. [FlowField.order] ranks a
- * tile by the measure it actually moves by, and where a run uses both rules at once — which is what
- * a machine's output port partway along a line produces, since it makes that tile a source and
- * leaves everything behind it with no forward — the two rankings interleave and a tile can be walked
- * *after* the tile that feeds it. So the one-step-per-pass guarantee is enforced here instead, by
- * `arrived`: a packet that landed on a tile this pass does not move again, whatever the order said.
- * Without it a packet crossing such a port jumps two tiles in a tick and appears to skip over it.
- *
- * Material on a tile the field never reached does not move at all: it is on a run with no consumer,
- * and there is nowhere for it to go that would be an improvement.
- *
- * A packet that cannot move because the tile ahead is occupied will **squash into it** where the two
- * can combine at all, so a blocked run bunches up toward its destination rather than standing in a
- * queue of gaps. ONI does this too, and gets it free because materials there cannot mix.
- *
- * Here they can, and what decides it is [Form.isPowder]. Two lots of ore tip together into one lot
- * at a purity in between, because that is what powder does and there is no way back from it. Two
- * ingots stay two ingots however hard they are pressed together, and two *different* forms never
- * combine at all.
- *
- * That is not a limitation to work around — it is the mechanic. Merging a line of 41% ore into one
- * carrying 75% concentrate destroys the refining that separated them, so keeping streams apart is
- * something the player has to actually do. Sending four kinds of ingot down one belt, by contrast,
- * is merely untidy.
- *
- * @param absorb offered every packet on the tile it currently occupies; returns what is left, or
- *   null when the whole packet was taken.
- * @return the number of packets that moved or merged, which is only useful for tests.
+ * Advance segments one step: port-first refusal, then nearest-to-sink-first (single-pass shuffle).
+ * `arrived` prevents double-move when rankings interleave (machine output mid-line).
+ * Powder packets squash/merge; ingots stay separate (player must keep streams apart).
  */
 fun advanceSegments(
     flow: FlowField,

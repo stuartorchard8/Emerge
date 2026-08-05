@@ -7,22 +7,8 @@ data class Trigger(val channel: Channel, val weightPermille: Int) {
 }
 
 /**
- * How a machine's actions are driven: `activation = Σ(signal × weight)`, clamped to ±1000.
- *
- * This is the Godot vessel's `action_triggers` grammar, unchanged. It is a small, complete dataflow
- * language — enough to express "run unless the buffer is full", "run only while the smelter is
- * hungry", and inverted control by a negative weight — without needing a scripting language or a
- * graph editor.
- *
- * ### It is proportional, not digital
- * `ALWAYS − RED` does not stop a machine when RED arrives; it *fades* it out as RED rises, because
- * activation throttles the rate. A miner filling a tank therefore slows as the tank fills and
- * approaches full asymptotically rather than slamming shut. That is the more interesting behaviour
- * and it is deliberate.
- *
- * What the grammar cannot say is a **threshold** — "stop when the tank is past 90%" needs a
- * comparison, and there is no comparison here. That gap is known and deliberate for now; adding
- * `WHEN RED > 900` later is a new kind of term, not a change to this arithmetic.
+ * Machine action drivers: activation = Σ(signal × weight), clamped ±1000.
+ * Proportional (not digital): ALWAYS-RED fades out as RED rises (asymptotic approach, not slam). No threshold support (yet).
  */
 data class Wiring(val byAction: Map<Action, List<Trigger>> = DEFAULT) {
 

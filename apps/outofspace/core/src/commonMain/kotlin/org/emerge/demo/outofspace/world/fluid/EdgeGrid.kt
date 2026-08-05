@@ -3,36 +3,11 @@ package org.emerge.demo.outofspace.world.fluid
 import org.emerge.demo.outofspace.world.Grid
 
 /**
- * The staggered grid: scalars at tile centres, vectors on the **faces between tiles**.
- *
- * This is the one piece of structure taken wholesale from Sebastian Lague's smoke sim, and it is
- * taken because the alternative has a known pathology. Storing velocity at tile centres — the
- * obvious layout — decouples a cell's pressure from its immediate neighbours, because a centred
- * difference skips over them. The field then splits into two independent interleaved lattices and
- * settles into a checkerboard which never equalises. That is not a hypothetical: it is exactly the
- * failure `AirField.STABLE_SHARE` documents having hit from the other direction. Putting the vector
- * quantity *on the face* makes every difference a difference between actual neighbours, and the
- * checkerboard has nowhere to live.
- *
- * The cost is that there are two sets of faces with different counts, and that a face's identity is
- * "between these two tiles" rather than "at this tile". Hence this class: everything that follows
- * iterates over **edges**, and this is the only place that knows how an edge is numbered.
- *
- * ### The conventions, once, so nothing downstream has to guess
- *
- * - An **x-edge** `(x, y)` is the vertical face between tile `(x-1, y)` and tile `(x, y)`. `x` runs
- *   `0..width` inclusive, so there is one more column of faces than of tiles.
- * - A **y-edge** `(x, y)` is the horizontal face between tile `(x, y-1)` and tile `(x, y)`. `y` runs
- *   `0..height` inclusive.
- * - Positive is toward **+x** and **+y**. Since [org.emerge.demo.outofspace.world.Direction] has +y
- *   pointing *down* — the world is side-on and screen-down is gravity-down — positive y-momentum is
- *   momentum heading toward the floor. The one place that surprises people, and it surprises them
- *   here rather than in four separate call sites.
- * - `before` is the tile on the negative side of a face, `after` the tile on the positive side.
- *   Either may be `-1`, meaning the face is on the boundary of the grid and looks out at space.
- *
- * Pure geometry. It holds no field data and never changes, so a [VesselState][
- * org.emerge.demo.outofspace.world.VesselState] can derive one and hand it around freely.
+ * Staggered grid: scalars at tile centres, vectors on faces between tiles.
+ * Prevents checkerboard pressure (centred velocity decouples neighbours).
+ * x-edge (x,y): vertical face between (x-1,y) and (x,y). y-edge (x,y): horizontal face between (x,y-1) and (x,y).
+ * +y = down (screen-down = gravity-down). before = negative side, after = positive side (-1 = grid boundary).
+ * Pure geometry, immutable, derived from VesselState.
  */
 class EdgeGrid(val grid: Grid) {
 

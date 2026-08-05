@@ -6,39 +6,10 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 
 /**
- * The pipe network as something the fluid solver can run on: what is connected to what, and how much
- * room the gas in it has.
- *
- * ### Why a second field and not a sealed region of the first
- *
- * The plan said pipes would be the same solver on a sealed sub-region of the vessel's own grid, with
- * a narrow aperture standing in for the narrowness of a pipe. That is wrong, and it is wrong for the
- * reason the body model already found once: **a tile is not a thing.** Conduits are layers precisely
- * so that a corridor can have a pipe running along it — and then that tile has to hold both the
- * corridor's air and the pipe's contents, at different pressures, at different temperatures, made of
- * different things. One fluid cell per tile can represent one of them.
- *
- * So the pipe layer is its own field: its own grams, its own momentum, its own energy. What it is
- * *not* is its own solver. It runs on the same lattice, so a pipe cell's momentum is a vector in the
- * same basis as the room's, and every pass in this package applies to it unchanged — which is what
- * the aperture-as-area decision bought, just one layer over from where it expected to spend it.
- *
- * ### Connectivity comes from the drawing, not from the geometry
- *
- * This is the whole difference between the two fields. The vessel's apertures are derived from what
- * is *solid* — [ApertureField.derive] asks the [org.emerge.demo.outofspace.world.StructureMap]. A
- * pipe conducts where the player **drew a link**, which is a fact about [
- * org.emerge.demo.outofspace.world.Segment.links] and cannot be recovered from which tiles are
- * occupied: two pipe runs can lie side by side, touching, and be separate plumbing. That is why the
- * solver had to stop deriving its own connectivity.
- *
- * ### Bridges are not here
- *
- * Deliberately, and not as an oversight. A rail bridge works because a packet is a discrete thing
- * that can be handed across a span; a fluid is a continuum, and a bridge carrying one wants either a
- * third field or a small one-dimensional solver of its own inside the span. Neither is worth
- * guessing at before the two-layer case works. A pipe bridge is simply not offered, so nothing here
- * has to pretend to support one.
+ * Pipe network for fluid solver: own grams/momentum/energy, same lattice as room (not separate solver).
+ * Connectivity: from Segment.links (drawn), not derived from StructureMap (two pipes can touch and be separate).
+ * Volume: 1/8 tile per cell (tuned; narrowness = behaviour).
+ * No pipe bridges (fluid is continuum; rail bridge = discrete packet crossing).
  */
 
 /**

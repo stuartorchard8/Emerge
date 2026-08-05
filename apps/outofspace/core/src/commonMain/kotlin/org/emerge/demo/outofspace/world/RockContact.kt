@@ -1,35 +1,10 @@
 package org.emerge.demo.outofspace.world
 
 /**
- * What happens when a rock meets the hull: a swept overlap test, and a normal impulse with
- * restitution — increment H2.
- *
- * ### It ricochets, and that is a decision
- *
- * The cheap version of contact is "lands and stays landed", and it is a corner cut: a rock is a
- * heavy object arriving fast, and a heavy object arriving fast bounces. [RESTITUTION_NUM] over
- * [RESTITUTION_DEN] is a half, which is **tuned for legibility rather than measured** — rock on
- * steel is really nearer 0.2 to 0.4, and a ricochet you cannot see is not worth having. It is one
- * number, in one place, and the day the plan wants a material property instead of a constant it
- * becomes one.
- *
- * ### The exchange needs no ledger term of its own, and gets one anyway
- *
- * `+J` to the rock and `−J` to the ship conserves momentum *by construction*, which is the whole
- * difference between this and the debug engine: nothing is minted, so nothing has to be confessed.
- * But the ship's half lands in [VesselState.vesselImpulseX], and that quantity is one term of the
- * momentum ledger while the rock's half is not in the ledger at all — so without a term for it, the
- * ledger would read the exchange as the ship gaining momentum from nowhere. [VesselState.rockImpulseX]
- * is therefore a **store and not an apology**: it is exactly the momentum that is now in the rocks,
- * the same way `exhaust` is exactly the momentum that is now in space. The plating pays into the same
- * store, and [driftRocks] says why that turned out to matter.
- *
- * ### Axis-aligned, frictionless, and both for the same reason
- *
- * A rock does not rotate — see [Rock] — so a contact has no torque to produce and a tangential
- * impulse would have nowhere to put the angular momentum it implies. Normal impulse only: a rock
- * sliding along a wall keeps sliding. The normal is an axis, because the shapes are grids and
- * because the alternative is a contact manifold, which is a rigid-body engine.
+ * Rock-hull contact: swept overlap test + normal impulse with restitution (H2).
+ * Ricochet: restitution=0.5 (tuned for legibility, not measured; rock on steel ~0.2-0.4).
+ * Exchange: +J to rock, -J to ship (ledger closed via rockImpulseX store, not apology).
+ * Axis-aligned, frictionless (no rotation → no torque; grids → axes, not contact manifolds).
  */
 object RockContact {
 
@@ -57,32 +32,8 @@ object RockContact {
     const val REST_FLOOR: Long = Flight.PER_TILE / 1000L
 
     /**
-     * Below what closing speed the bounce is dropped and the contact simply stops the rock.
-     *
-     * ⚠️ **Not a magic number, and not a guess either — it is derived, and the derivation is the
-     * whole of it.** A bounce is worth having when the rock actually *leaves*: it departs at `e·v`
-     * and whatever is pressing it into the surface pulls it back at `a` per tick, so it is airborne
-     * for at least one tick only if `e·v > a`. Hence
-     *
-     *     v > a / e
-     *
-     * and below that the "bounce" begins and ends inside a single tick, which is not a ricochet — it
-     * is a rock buzzing on the floor, which is what this is here to prevent.
-     *
-     * The factor is what a first version got wrong, and it was instructive: with the threshold at
-     * `a` rather than `a / e`, a landed rock sat in a **perfect limit cycle**, alternating between
-     * two velocities and two heights a third of a tile apart, forever. It was not drifting and it
-     * was not exploding — every conserved quantity was exactly right — so nothing but looking at the
-     * numbers over time would have found it. `a` is the speed a resting rock arrives at; `a / e` is
-     * the speed it has to arrive at to leave again.
-     *
-     * Deriving it from the acceleration rather than fixing it also means it stays right when the
-     * gravity changes, and the gravity here is the engine, so it changes whenever the player touches
-     * a key.
-     *
-     * [accelerationRaw] is a [org.emerge.sim.core.physics.primitives.Frac] component in tiles per
-     * tick per tick; the result is in the billionths of a tile per tick that [Flight.PER_TILE]
-     * counts.
+     * Resting threshold: v > a/e (below this, bounce ends in one tick = buzzing).
+     * REST_FLOOR = perTick/1000 (terminates asymptote in freefall). One rounding chain (§5g).
      */
     fun restingSpeed(accelerationRaw: Long): Long {
         val a = if (accelerationRaw < 0L) -accelerationRaw else accelerationRaw
@@ -140,34 +91,10 @@ private fun floorTile(v: Long): Long =
     if (v >= 0L) v / Flight.PER_TILE else -((-v + Flight.PER_TILE - 1L) / Flight.PER_TILE)
 
 /**
- * Sweeps one rock across the grid for a tick and bounces it off whatever it hits.
- *
- * ### What moves, and against what
- *
- * The rock's momentum is the **world's** and its position is the **grid's** — see [Rock] — so what
- * this sweeps by is the difference, and what a contact is *about* is the difference too: a wall
- * bolted to a ship doing five tiles a tick is not a thing a rock doing five tiles a tick collides
- * with. Every velocity below is therefore relative to the vessel, and the impulse that comes out is
- * absolute, because that is the thing that gets conserved.
- *
- * ### The normal comes from which move was blocked
- *
- * Having found an overlap, the axis is recovered by asking the same question twice more — would
- * moving in x alone have hit? would moving in y alone? — which is exact, cheap, and gives the corner
- * case an honest answer instead of a preference: a rock that fits through neither gap on its own but
- * overlaps when it takes both is in a corner, and stops on both axes.
- *
- * ### Where the half-tick of lag is
- *
- * [shipVelocityX] is fixed for the whole tick, so a rock that bounces does not see the ship's own
- * recoil until the next one. That is the same explicitness the rest of the tick is written with —
- * this tick's forces buy next tick's travel — and at a mass ratio of six to one the recoil is a
- * fraction of the closing speed anyway.
- *
- * ⚠️ A rock that is **already** inside a wall when the tick begins is left alone entirely, and flies
- * as it did before H2. Anything else wedges it: every escape route is also an overlap, so the rock
- * would be pinned by the very test meant to free it. Dropping one on a bulkhead with `F6` is the way
- * to see it, and "it drifts out" beats "it is stuck in the wall forever".
+ * Sweep one rock: relative velocity (rock world-frame, ship grid-frame), bounce off hull.
+ * Normal: ask x-only and y-only overlap separately (exact corner case, no preference).
+ * shipVelocityX fixed per tick (explicitness: forces buy next tick's travel).
+ * ⚠️ Rock already inside wall = left alone (escape route = overlap → wedging).
  */
 fun sweepRock(
     grid: Grid,
@@ -207,8 +134,7 @@ fun sweepRock(
     for (k in 0 until steps) {
         val rvx = relative(ix, shipVelocityX)
         val rvy = relative(iy, shipVelocityY)
-        // A partition of the remaining travel rather than a repeated division, so the sub-steps add
-        // up to the whole move and a rock does not lose a billionth of a tile per tick to rounding.
+        // Partition (not repeated division) so sub-steps sum exactly to full move (no rounding loss).
         val dx = rvx * (k + 1) / steps - rvx * k / steps
         val dy = rvy * (k + 1) / steps - rvy * k / steps
         val nx = px + dx
@@ -246,18 +172,8 @@ fun sweepRock(
 }
 
 /**
- * The impulse that turns a closing speed of [rv] into a departing one of `−e·rv`.
- *
- * `Δv_relative = J/μ`, so `J = −(1 + e)·rv·μ`, and the reduced mass is what makes that one line
- * cover both halves of the exchange: the ship gets `−J` and its own velocity changes by `−J/M`, and
- * the two together come to exactly `(1 + e)` times the approach. Below [rest] the restitution is
- * dropped rather than scaled, which stops the rock dead — see [RockContact.restingSpeed].
- *
- * ⚠️ One rounded chain, not two — §5g's lesson, and this is precisely the shape that produced it: a
- * multiply by a fraction followed by a divide by a scale. Written as a single expression it
- * truncates *once*, toward zero, so a bounce is very slightly under-delivered and never
- * over-delivered. Losing a billionth of a tile per tick of relative speed is a rock that settles;
- * gaining one is a rock that climbs the wall.
+ * Normal impulse: J = −(1+e)·rv·μ (below restingSpeed: drop restitution = stop dead).
+ * One rounded chain (not two) — truncate once toward zero (settles, never over-delivers).
  */
 private fun normalImpulse(rv: Long, mu: Long, rest: Long): Long {
     if (rv == 0L) return 0L

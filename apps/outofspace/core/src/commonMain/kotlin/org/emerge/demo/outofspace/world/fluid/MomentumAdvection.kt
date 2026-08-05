@@ -6,60 +6,13 @@ import org.emerge.demo.outofspace.chem.apportion
 class MomentumEscape(val x: Long, val y: Long)
 
 /**
- * Carries momentum along with the mass that is moving, conserving it exactly.
+ * Carries momentum along with advecting mass, conserving exactly.
  *
- * ### The awkward bit, stated plainly
+ * Uses a staggered/dual grid: each face's momentum lives in a dual cell bounded by four dual faces.
+ * Iterates over dual faces (not cells), so every transfer is one subtraction + one matching addition.
+ * Momentum per face = donor momentum × fraction of donor mass that moved.
  *
- * Mass lives in tiles and momentum lives on faces, so the two cannot be advected by the same sweep.
- * A tile's mass has four faces to leave by and that is the end of it; a face's momentum has to be
- * moved through a control volume that is *offset half a tile* from the grid everything else is
- * written against. This is the standard price of a staggered grid and it is the reason most game
- * fluid sims quietly do not conserve momentum: the easy scheme is to interpolate face momenta to
- * tile centres, advect them there, and interpolate back. That round trip is a low-pass filter
- * applied once per tick. It conserves the total, so it looks correct in a ledger, and it smears a
- * jet into a warm smudge within a few tiles — which for a rocket exhaust destroys the only thing
- * anybody cares about while passing every test that only checks the sum.
- *
- * So the control volumes are built properly. Each x-face is a cell of the *dual* grid, and the faces
- * of that dual cell fall in two families:
- *
- * - **Along x:** the dual face sits at a tile centre and separates that tile's left and right faces.
- *   Mass crosses it at the mean of the two primal fluxes either side. There is one per column of
- *   tiles *plus one at each end*, because a dual cell centred on a rim face overhangs the grid by
- *   half a tile and that overhang has an outer wall — which is the wall momentum leaves through.
- *   Omitting the two of them does not leak momentum, it strands it: the rim accumulates everything
- *   that reaches it and never lets go, which reads as a vessel that cannot be pushed.
- * - **Along y:** the dual face sits at a tile corner and separates one x-face from the x-face above
- *   it. Mass crosses it at the mean of the two primal y-fluxes either side.
- *
- * The y-momentum field gets the mirror image of both.
- *
- * ### Why it conserves
- *
- * The pass iterates over **dual faces, not dual cells**, and every transfer is one subtraction and
- * one matching addition. So conservation does not depend on two neighbouring cells agreeing about a
- * shared face — there is only ever one number, applied twice with opposite signs. That is the same
- * discipline the mass pass keeps, and the reason both can be asserted with exact equalities.
- *
- * Momentum crossing a dual face is the donor's momentum scaled by the *fraction of the donor's mass*
- * that moved: mass carries momentum, so if a tenth of the mass on a face leaves, a tenth of its
- * momentum goes with it. That framing is what keeps the whole thing in integers, and it makes the
- * bound obvious — a face cannot give away more momentum than it has, because it cannot give away
- * more mass than it has.
- *
- * A dual cell can still be drained by all four of its faces at once, exactly as a tile can, so the
- * same ask-first-pay-afterwards clamp applies, using the same [apportion].
- *
- * ### Off the grid
- *
- * A dual face on the rim has a donor but no acceptor. That momentum leaves the world, and it is
- * returned as [MomentumEscape] rather than being dropped, because it is not waste — it is the
- * reaction the vessel gets. Increment D turns it into thrust and torque. Nothing comes back the
- * other way: space is empty and has no momentum to give.
- *
- * [mx] and [my] are the working momentum arrays, **edited in place**. [tileGrams] and [flux] must
- * both be from the same snapshot as each other — the mass field *before* [advectMass] moved it, and
- * the fluxes that pass computed.
+ * [mx] and [my] edited in place. [tileGrams] and [flux] must be from the same snapshot.
  */
 fun advectMomentum(
     edges: EdgeGrid,
@@ -80,13 +33,8 @@ fun advectMomentum(
         edges.xEdgeCount,
     )
 
-    // Along x: a dual face at each column centre, between the x-faces either side of it.
-    //
-    // The column index runs one *past* the grid at both ends. A dual cell is centred on a face, so
-    // the one belonging to a rim face sticks half a tile out into space, and that overhanging half
-    // has an outer wall which is where momentum leaves the world. Iterating only over real tiles
-    // silently omits those two walls, and the symptom is not a leak but the opposite — momentum
-    // arrives at the rim and piles up there forever, because it has been given no way out.
+    // Along x: a dual face at each column centre, between the x-faces either side.
+    // Column index runs one past the grid at both ends for rim momentum escape.
     for (y in 0 until grid.height) {
         for (column in -1..grid.width) {
             val left = if (column < 0) -1 else edges.xEdge(column, y)
@@ -179,11 +127,7 @@ private fun meanPresent(a: Long, b: Long): Long = when {
 
 /**
  * Momentum transfers collected across dual faces, then clamped per donor and applied.
- *
- * The two-pass shape is the same as the mass pass's, and for the same reason: every transfer is
- * computed against one snapshot, so a dual cell can be over-subscribed and there is no lucky
- * visiting order that avoids it. Requests are gathered, each donor's are scaled to what it actually
- * holds, and only then is anything moved.
+ * Two-pass: gather requests against one snapshot, clamp, apply.
  */
 private class Transfers(capacity: Int, faceCount: Int) {
     val donor = IntArray(capacity)
@@ -191,24 +135,12 @@ private class Transfers(capacity: Int, faceCount: Int) {
     val amount = LongArray(capacity)
     var count = 0
 
-    /**
-     * Which transfers each face is the donor of, four slots per face.
-     *
-     * Four is not a guess: a dual cell is bounded by exactly four dual faces — one at the tile centre
-     * either side of it, and one at the corner above and below — so a face can be asked to give
-     * momentum away at most four times. Fixing the stride turns the clamp below from a scan of every
-     * transfer per over-subscribed face into a constant-time lookup.
-     */
+    /** Which transfers each face donates to: four slots per face (one per dual face of dual cell). */
     private val donatedBy = IntArray(faceCount * SLOTS) { -1 }
     private val donations = IntArray(faceCount)
 
-    /**
-     * Records the momentum that [crossing] grams of mass would carry from one face to the other.
-     *
-     * The donor is the upwind face — the one the mass is coming *from*. Momentum moves in whichever
-     * direction the mass does, regardless of which way the momentum itself points: a face moving
-     * leftward still hands its leftward momentum to the face downwind of the mass flow.
-     */
+    /** Records momentum that [crossing] grams of mass carries from one face to the other.
+     * Donor = upwind face. Momentum follows mass direction regardless of its own direction. */
     fun request(crossing: Long, before: Int, after: Int, momentum: LongArray, gramsBefore: Long, gramsAfter: Long) {
         if (crossing == 0L) return
         val from = if (crossing > 0L) before else after

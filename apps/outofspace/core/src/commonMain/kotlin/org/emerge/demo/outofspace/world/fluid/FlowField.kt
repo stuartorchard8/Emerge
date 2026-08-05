@@ -3,26 +3,8 @@ package org.emerge.demo.outofspace.world.fluid
 import kotlin.math.sqrt
 
 /**
- * The air's velocity **at tile centres**, in tiles per tick — the staggered field collapsed back
- * into something that can be drawn and read.
- *
- * Nothing in the simulation uses this. Momentum lives on faces because that is the only layout in
- * which pressure couples to its actual neighbours (see [EdgeGrid]), and every pass is written against
- * that. But a face is a boundary rather than a place, and "which way is the air moving *here*" is a
- * question about a place. Asked of the raw arrays it has no answer: a tile has four faces and any one
- * of them on its own is half the story.
- *
- * So this averages each opposing pair. That is the standard reconstruction, and it is worth naming
- * what it costs: a tile whose left face flows in at the same rate its right face flows out reads as
- * *still*, because on the whole it is — the air is passing through rather than moving. Divergence,
- * which is the other thing that pair of faces knows, is deliberately not recovered here. The pressure
- * solve is what watches divergence, and a flow picture that also tried to show it would show neither.
- *
- * ### Why this is derived and not stored
- *
- * The same reason [MomentumField] stores momentum rather than velocity. This is a lossy view of the
- * state, built on demand from the state; keeping a copy would mean two things that could disagree,
- * and the one that gets drawn would be the one nobody checks.
+ * Tile-centre velocities (tiles/tick). Derived from face momenta (averaged opposing pairs).
+ * Not stored: lossy reconstruction from state (avoiding two sources that could disagree).
  */
 class FlowField(
     private val x: LongArray,
@@ -55,11 +37,8 @@ class FlowField(
     companion object {
 
         /**
-         * Reconstructs tile-centre velocities from the face momenta.
-         *
-         * Each face's velocity is momentum over the mass on that face, exactly as the sim computes
-         * it — not momentum over the tile's mass, which would read a face between a full tile and an
-         * empty one at the wrong speed and make every draught look fastest where it is thinnest.
+         * Reconstruct tile-centre velocities from face momenta.
+         * Face velocity = momentum / face-mass (not tile-mass — avoids reading empty-face draughts as fastest).
          */
         fun derive(edges: EdgeGrid, momentum: MomentumField, tileGrams: LongArray): FlowField {
             val size = edges.grid.size

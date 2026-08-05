@@ -1,27 +1,12 @@
 package org.emerge.demo.outofspace.world
 
 /**
- * One connection point on a machine: a specific tile of its footprint, facing a specific way.
- *
- * **This is the whole reason footprints came first.** A port is a property of a *tile*, so a
- * one-tile machine can only ever have ports that overlap each other, and "where does this connect"
- * collapses back into "which way is it pointing". Give a building nine tiles and its input and its
- * two output streams are three different places you have to route to — which is the mechanic, not a
- * detail of it.
- *
- * Connectivity being a property of ports rather than of tiles is also what makes a crossing free
- * later: two runs that share a tile but not a port are simply not connected, and nothing has to know
- * about the special case.
+ * Machine connection point: specific tile of footprint, facing specific way.
+ * Port is a property of a tile (footprints enable this). Two ports share tile only if different conduits.
  */
 data class Port(
     val tile: Int,
-    /**
-     * Which way the port faces.
-     *
-     * **Not** how it connects — a port binds to whatever segment shares its own tile, because
-     * conduits run *underneath* buildings rather than butting up against them. This is which face of
-     * the building the fitting is on, which is what gets drawn and what orients a bridge.
-     */
+    /** Facing direction (not connection direction — conduits run underneath buildings). Determines draw orientation. */
     val side: Direction,
     val kind: PortKind,
     val stream: Stream = Stream.Product,
@@ -47,25 +32,12 @@ private data class LocalPort(
 )
 
 /**
- * Where each kind of machine connects, described once in its own frame and rotated into the world.
- *
- * Describing them unrotated is what keeps this readable: a processor takes material in at the back,
- * sends concentrate out the front and drops tailings out of the floor, and that sentence is true
- * whichever way the machine is turned. The alternative — four handwritten variants per machine — is
- * four chances to get one of them wrong, and a bug that only shows up in one orientation.
+ * Machine connection points in local frame, rotated into world. Unrotated definition (one variant per machine, not per orientation).
  */
 private fun localPorts(machine: Machine): List<LocalPort> {
     val r = machine.kind.reach
     return when (machine) {
-        // A bridge is three tiles long and connects at its own two ends, one either side of the tile
-        // it hops.
-        //
-        // These sat two tiles further out for a while, flanking the span, because segments used to
-        // join to each other by mere adjacency: track at a bridge's end sat *next to* the track it
-        // was meant to be hopping over, and the two runs merged regardless of ports. Explicit links
-        // removed the reason — a line crossing underneath is now unconnected because nobody drew a
-        // join, which is the ordinary rule and not a clearance the bridge has to buy. So the ports
-        // came home, and a bridge is the three tiles it looks like.
+        // Bridge: 3 tiles, connects at ends.
         is Bridge -> listOf(
             LocalPort(-1, 0, Direction.Left, PortKind.Input, conduit = machine.conduit),
             LocalPort(1, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),

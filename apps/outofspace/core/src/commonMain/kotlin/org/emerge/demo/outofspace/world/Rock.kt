@@ -5,59 +5,10 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
- * A free-floating solid: a rock, with its own grid, its own momentum and its own temperature.
- *
- * ### Why this needed a new home rather than a new machine
- *
- * [Body] is not stored. [bodiesOf] *derives* it every tick from the machines, the conduits and the
- * bridges, which is exactly what stops a body's energy and a body's capacity ever disagreeing — and
- * it means a thing in none of those three lists cannot exist. Nor can a rock be [Debris]: the
- * settling pass walks anything standing in [Structure.Vacuum] straight off the rim and books it as
- * vented, on the grounds that there is no deck out there to land on, so a rock represented that way
- * would be thrown overboard on the tick it appeared.
- *
- * So rocks are their own list on [VesselState], with their own ledger — see [VesselState.rockGrams].
- *
- * ### Its own grid, and no rotation
- *
- * [cells] is the rock's shape on its own little lattice, axis-aligned with the vessel's and offset
- * from it by a fraction of a tile. That is the whole of the "grid/grid" part, and the axis-alignment
- * is a **decision** rather than a limitation — see `docs/out-of-space-plan.md` §5f. Rotation means
- * arbitrary-angle overlap, angular momentum, torque from off-centre contacts and a rock whose cells
- * no longer line up with the fluid cells they sit in, all landing on a momentum ledger that only
- * just closed at residual zero. A tumbling rock is worth wanting later and is not what makes the
- * extractor interesting.
- *
- * ### ⚠️ Two frames, on purpose: momentum is the world's, position is the ship's
- *
- * [impulseX] is momentum **in the world frame**, and [positionX] is where the rock is **on the
- * vessel's grid**. That looks like an inconsistency and is the opposite of one.
- *
- * A position has to be in the grid's frame because the grid is what a position *means* here — which
- * tile, which wall, which side of the hold. A momentum must not be, because the vessel's frame
- * accelerates: the instant a rock and the ship exchange an impulse, that exchange changes the frame
- * every *other* rock's velocity is measured against, and a reduced-mass term computed against a
- * moving ruler goes missing without anything failing. In the world frame there is no pseudo-force
- * to write down at all. A free rock has constant momentum, full stop.
- *
- * The astern drift then falls out of the position being relative rather than out of a force: the
- * grid moves by the ship's velocity each tick, so [driftRocks] advances a rock by its velocity
- * *minus the ship's*, and a rock genuinely at rest slides toward the stern of a burning ship
- * because the stern is coming to meet it. That was H1's headline behaviour and it survives the move
- * unchanged — see `RockTest`.
- *
- * ⚠️ **The plating does not reach it once it is outside the hull.** [platingFeltBy] gives a rock the
- * deck's artificial gravity only while it is over the grid, and nothing at all outside it. The
- * plating is a field the vessel makes and it stops where the vessel does. (H1 handed out the frame's
- * acceleration alongside it, which was the same statement written in the vessel's frame; in the
- * world frame that term simply does not exist.)
- *
- * ### What it does not do yet
- *
- * It conducts with nothing, and it blocks nothing: air flows straight through it and it displaces no
- * gas — the permeable coupling is H5 and is cuttable. It still flies through the hull; contact is
- * H2b. Its energy is counted in the solid ledger from the tick it appears, so that when conduction
- * does arrive there is nothing to reconcile.
+ * Free-floating solid (rock). Own grid, momentum, temperature.
+ * ⚠️ Two frames: [impulseX/Y] in world frame, [positionX/Y] in vessel's grid frame.
+ * Astern drift: grid moves by ship velocity each tick, so rocks drift relative to ship.
+ * Not stored in bodiesOf (derives from machines/conduits/bridges), not Debris (settling would vent it).
  */
 class Rock(
     /** The shape's bounding box, in cells. */
@@ -68,10 +19,7 @@ class Rock(
     /** The top-left corner of [cells], in the vessel's frame, in the billionths [Flight.PER_TILE] counts. */
     val positionX: Long,
     val positionY: Long,
-    /**
-     * Momentum **in the world frame**, in gram·tiles per tick — the same unit the ship's is in, and
-     * deliberately not the same frame as [positionX]. See the class note.
-     */
+    /** Momentum in world frame (not vessel frame — ship's frame accelerates). */
     val impulseX: Long,
     val impulseY: Long,
     /** What it is made of, as proportions. The stand-in ore body until there is a reason for more. */
@@ -202,45 +150,10 @@ fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: Frac
 class RockStep(val rocks: List<Rock>, val handedX: Long, val handedY: Long)
 
 /**
- * One tick of flight for every rock: the grid slides under it, the hull stops it, the plating pulls.
- *
- * ⚠️ The two frames are both here and the arithmetic is where they meet. A rock's velocity is
- * through the **world**; its position is on the **grid**; and the grid is itself moving at
- * [shipVelocityX]. So what a position advances by is the *difference* of the two, and a rock at rest
- * in the world drifts astern of a burning ship for the only reason it ever really did — the ship
- * left, and the rock did not.
- *
- * The order and the explicitness are the ship's own — see [VesselState.positionX]: a rock moves by
- * the velocity it had at the *start* of the tick, so this tick's push buys next tick's travel. A
- * body that got a free tick of its own acceleration would outrun the ship it is being compared
- * against, by a little, forever. [shipVelocityX] is likewise the ship's start-of-tick velocity,
- * which is the same number the ship's own position is advanced by in the same tick, so the two
- * frames can never be half a tick out of step with each other.
- *
- * The travel is a **sweep** rather than a jump, so a rock cannot step over a bulkhead it was going
- * fast enough to cross in one tick, and the hull bounces it — see [sweepRock]. The plating is
- * applied after the sweep, for the same reason the position moves first: this tick's push is next
- * tick's travel.
- *
- * ⚠️ [shipAcceleration] is here for one purpose and it is not a force. A rock's momentum is in the
- * world frame and the ship's acceleration is not a force on it; what it *is* is the speed scale that
- * decides when a bounce is too small to be worth having — see [RockContact.restingSpeed]. Passing
- * gravity itself would be wrong under a burn, which is the only gravity this ship has.
- *
- * ### ⚠️ The plating is not free either, and finding that out was the point of writing this down
- *
- * Everything the vessel hands a rock is returned to [RockStep.handedX] and charged to the ship —
- * **including the plating**, which is a field the vessel *makes* and must therefore pay for. The
- * alternative is a momentum pump you could fly on: gravity pushes a resting rock down for nothing,
- * the deck pushes it back up with a reaction, and the ship climbs forever with a rock sitting on the
- * floor. And the ledger would not have caught it, because a contact-only store makes that reading
- * balance. A rock at rest on a deck now costs the ship exactly nothing, which is what "at rest"
- * means, and a rock in *free fall* over the deck genuinely does push the ship — the field is doing
- * work and something has to be pushing back.
- *
- * In freefall the whole term is zero, so this is a statement about the fixtures and about H4's
- * capture rather than about how the game plays today. It is here because a wrong version of it is
- * invisible until it is enormous.
+ * Rock drift: grid moves by ship velocity, rock advances by (rock - ship) velocity.
+ * Sweep (not jump) prevents bulkhead stepping. Plating applied after sweep (tick ordering).
+ * ⚠️ shipAcceleration only for restingSpeed threshold (not a force on world-frame momentum).
+ * ⚠️ Plating costs the ship (prevents momentum pump from gravity).
  */
 fun driftRocks(
     grid: Grid,

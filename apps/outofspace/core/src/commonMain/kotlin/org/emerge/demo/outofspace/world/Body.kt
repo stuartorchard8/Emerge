@@ -16,44 +16,9 @@ enum class BodySlot {
 }
 
 /**
- * One solid object with one temperature: a wall, a furnace, a tile of track.
- *
- * ### Why an object and not a tile
- *
- * A tile is not a thing. A tile can hold an iron rail, a copper pipe and a titanium machine at once,
- * because conduits are layers and layers exist so that several things can share the floor. Giving
- * that tile one temperature and one heat capacity — which is what the field this replaces did — is
- * an average over three objects that have different masses, different specific heats and different
- * conductances, and the average is wrong in the direction that matters: it makes the copper as slow
- * as the firebrick and the firebrick as leaky as the copper, so no routing decision the player makes
- * about heat can ever pay off.
- *
- * So the body is the unit. A five-tile smelter is **one** body at one temperature over
- * twenty-five tiles, which is what a furnace is; a run of track is one body per tile, which is what
- * track is, and the run comes back as a run because the tiles are joined.
- *
- * ### Where the energy lives
- *
- * On the object itself — [Machine.joules], [Segment.joules] — and not in a field beside them.
- *
- * That is the same decision, for the same reason, as the atmosphere's heat living inside
- * [AirField]. When energy is the stored quantity and temperature is derived, a parallel array keyed
- * by tile index is desynchronised by exactly one operation: `copy(machines = …)`. Replace the deck
- * and the joules stay behind, now being read against a different capacity — pull a smelter and drop
- * a rail on the tile and the rail is at four thousand kelvin, having inherited a furnace's energy.
- * A save load, a test fixture and every player edit all go through that operation. There is no
- * discipline that survives it; there is only a shape that makes it impossible.
- *
- * Energy on the object costs a field on eight data classes and makes the whole class of bug
- * unreachable, because a body's capacity and a body's energy are properties of the same value.
- *
- * ### Touching
- *
- * [permeable] is what decides who conducts with whom, and it is not quite a physical claim — see
- * [contactsOf]. Impermeable things fill their tile, so they touch across tile faces. Permeable
- * things are fittings threaded through a tile that is otherwise open, so they touch what shares
- * their tile and the air in it, and reach their neighbours only along the network they were drawn
- * into.
+ * One solid object with one temperature (wall, furnace, track tile).
+ * Energy stored on object (Machine.joules/Segment.joules), not tile-field (prevents desync on copy).
+ * [permeable] controls conduction contacts (impermeable = tile-face; permeable = tile-sharing + air).
  */
 class Body(
     val slot: BodySlot,
@@ -66,22 +31,9 @@ class Body(
     val permeable: Boolean,
     /** Thermal energy, in the millijoules [Material] documents. */
     val joules: Long,
-    /**
-     * Millijoules per kelvin — how much of the thing there is, times what its stuff costs to warm.
-     *
-     * From [MachineKind.thermalTiles] rather than from [tiles], which are clipped to the grid. What
-     * a machine is made of does not change when it is built near the rim, and a capacity that did
-     * would make the same furnace hold different amounts of heat in different berths.
-     */
+    /** Millijoules/kelvin. Uses MachineKind.thermalTiles (not tiles[]) to avoid grid-edge clipping. */
     val capacity: Long,
-    /**
-     * Which layer a fitting is on; null for anything that is not one.
-     *
-     * [slot] and [at] used to identify a body on their own, and stopped doing so the moment a tile
-     * could hold a rail *and* a pipe — two fittings, same slot, same index, different objects. This
-     * is the third component of the key, and the conduction pass needs it to put the right joules
-     * back on the right layer.
-     */
+    /** Fitting's conduit layer; null for non-fittings. Third key component (slot+at+conduit). */
     val conduit: Conduit? = null,
     /**
      * A fitting's [Segment.links], carried rather than looked up.

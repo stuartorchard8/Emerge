@@ -8,28 +8,14 @@ import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
 import org.emerge.demo.outofspace.world.fluid.millimolesOf
 
 /**
- * The air, tile by tile: grams of each gas species in every enclosed tile.
- *
- * Stored as one flat `LongArray` of `tiles × species` rather than a `Mixture` per tile. A mixture per
- * tile would allocate a thousand small objects every tick, and this is the field that will be touched
- * most often once life support and combustion exist.
- *
- * Grams again, and integers again, for the reasons [Mixture] already gives. Mass is what is stored;
- * [pressureAt] and [densityAt] are the two different things derived from it, and keeping them
- * distinct is what lets a heavy gas settle without a rule telling it to.
+ * Air: flat LongArray (tiles × species), integers (exact conservation).
+ * pressureAt = millimoles (not mass — lets heavy gas sink). densityAt = mass/volume.
  */
 class AirField(private val grams: LongArray, private val joules: LongArray) {
 
     fun gramsOf(tile: Int, species: Species): Long = grams[tile * Species.COUNT + species.ordinal]
 
-    /**
-     * Pressure in a tile, in the millimoles [tilePressure] counts.
-     *
-     * **Not mass.** Pressure goes as the number of particles and density as their weight, and this
-     * used to return the mass on the grounds that every tile is the same volume — right about
-     * density, wrong about pressure, and the difference is exactly what lets a heavy gas sink. See
-     * [tilePressure] for why conflating the two is what forced the old `stratifyColumns` to exist.
-     */
+    /** Pressure in millimoles (particle count, not mass — heavy gases sink). */
     fun pressureAt(tile: Int): Long = millimolesOf(grams, tile)
 
     /**
@@ -89,11 +75,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
     override fun hashCode(): Int = 31 * grams.contentHashCode() + joules.contentHashCode()
 
     companion object {
-        /**
-         * What a sealed tile holds at one atmosphere: a kilogram of ordinary air, roughly Earth's
-         * mix by mass. The numbers matter less than their ratios, which are what the inspector shows
-         * and what life support will have to hold steady.
-         */
+        /** 1-tile at 1 atm: ~1kg ordinary air (N₂:O₂:CO₂ ≈ 755:232:13 by mass). */
         val AMBIENT_AIR: Mixture = Mixture.of(
             Species.Nitrogen to 755L,
             Species.Oxygen to 232L,
@@ -134,33 +116,8 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
 }
 
 /**
- * Tries to shove the air out of an area that is about to stop being air, and reports whether it
- * could.
- *
- * A solid tile is not part of the atmosphere: the fluid pass shuts every face of one, so air
- * left inside one is neither flowing nor vented — it is simply frozen, invisible, and waiting to
- * reappear the moment the thing on top of it is removed. Building over a room has to *move* that air
- * rather than swallow it, and it has to move it without deleting a gram, because the vessel's air
- * ledger is a conservation invariant and the player's own edits are not exempt from it.
- *
- * **All or nothing.** If any of [area] holds air that cannot reach open space, nothing is moved and
- * this returns `false` — the caller's job is then to refuse the build. That is the honest rule: the
- * alternative is either destroying the air or leaving it stranded under the new machine, and both of
- * those are the bug this exists to prevent. An area holding no air at all succeeds trivially, so
- * building in vacuum or in an evacuated room is never blocked.
- *
- * Where the air goes is decided by **distance through the area to each way out**. The exits are the
- * permeable tiles touching [area]; a breadth-first walk inward from them gives every tile of the
- * area its distance to each one, and a tile's air is split between the exits in inverse proportion
- * to those distances. So air at the far end of a long machine leaves by the near door rather than
- * being teleported evenly to both ends, and a tile with only one way out sends everything there.
- *
- * The walk is confined to [area] on purpose: distance is how far the air has to travel *through the
- * space being taken away*, which is what decides which way it gets pushed. Once it is out it is the
- * flow pass's problem, and the flow pass runs on the same array immediately afterwards.
- *
- * [permeable] is asked about tiles rather than a [StructureMap] being passed, because this runs
- * *during* the edit pass, before the structure for the tick has been derived.
+ * Displace air from [area] to permeable exits. All-or-nothing (refuses if any air can't reach space).
+ * Air splits by inverse-distance through area (far tiles exit near door). Runs during edit pass (permeable param, not StructureMap).
  */
 fun tryDisplaceAir(
     grid: Grid,

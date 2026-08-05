@@ -4,64 +4,16 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Temperature
 
 /**
- * How hot the gas is: thermal energy that belongs to the atmosphere, travels with it, and sets its
- * pressure.
- *
- * ### Why the gas's heat is not in the same place as the fabric's
- *
- * The first attempt put the gas's energy into a per-tile joules field and made a tile's heat
- * capacity include its air. One field, one temperature per room, air and fittings in equilibrium —
- * which is defensible physics at this grain, and it broke immediately for a reason worth writing
- * down.
- *
- * When capacity depends on the air and **energy is the stored quantity with temperature derived**,
- * changing the air silently changes the temperature. `state.copy(air = …)` — a save load, a test
- * fixture, a scenario — would leave the joules alone and reinterpret them against a new capacity. A
- * room given ten kilograms of oxygen read as 57K and stopped behaving like a gas at all. There is no
- * way to make that safe while the two are separate fields on the same object, because `copy` is
- * exactly the operation that lets them disagree.
- *
- * So the gas's energy lives with the gas. It is impossible to move air without moving its heat,
- * because the same pass does both, and the invariant is structural rather than remembered. The same
- * argument, applied to solids, is why a machine's heat lives on the machine — see
- * [org.emerge.demo.outofspace.world.Body].
- *
- * A tile therefore has one air temperature and as many fabric temperatures as there are things
- * standing in it. They are **coupled**, by [org.emerge.demo.outofspace.world.stepSolidHeat], which
- * conducts across every contact and books the net crossing so that both ledgers still close on
- * their own. A wall hotter than the room it is heating is not two numbers disagreeing; it is what a
- * wall heating a room looks like.
- *
- * ### Why energy is the thing that moves
- *
- * Advecting temperature — Lague's scheme, where temperature is a channel of the smoke texture
- * sampled along with everything else — is right for incompressible passive dye and wrong here, for
- * the same reason storing velocity instead of momentum was wrong: an intensive quantity averaged
- * between unlike cells creates and destroys the extensive one behind it. Two tiles at 300K holding
- * different amounts of gas hold different energies, and any scheme that mixes their temperatures has
- * to invent or lose joules to do it.
- *
- * So joules move, in flux form, as the fraction of the donor's gas that left — the identical rule
- * [advectMomentum] uses, for the identical reason. A tenth of the air leaves, a tenth of the air's
- * heat goes with it, and the arithmetic is one subtraction and one matching addition.
+ * Gas thermal energy: belongs to atmosphere, travels with it, sets pressure.
+ * Not in tile-field (copy(air=...) would leave joules stale — temperature derived from capacity).
+ * Coupled to fabric via stepSolidHeat conduction.
+ * Joules move (not temperature): advected as fraction of donor's gas (prevents energy creation/destruction).
  */
 
 /**
- * Heat capacity of the gas in each tile, in **milli**joules per kelvin. Zero where there is no gas.
- *
- * Milli, and not the obvious joules-per-kelvin, because [Species.specificHeat] is per *kilogram* and
- * the mass is in grams — so the honest figure needs a division by a thousand, and doing it here
- * quantises the capacity to whole joules per kelvin. That sounds harmless and is not: a tile holding
- * less than a gram floors to zero capacity and reads as ambient, while two grams floors to one and
- * reads its entire energy as a single kelvin's worth. The step between them is a cliff, it lands
- * exactly in the thin outer edge of a venting plume, and it showed up as `BreachSymmetryTest`
- * finding trace species leaning by a fifth.
- *
- * So the scale is not divided out at all. The gas's *energy* is carried in millijoules to match, and
- * temperature is then a plain division of like by like — exact at ambient, which is what lets
- * [stepFluid] promise that a vessel at room temperature runs identically to the isothermal sim. A
- * tile of ordinary air is about a million of these units and holds a third of a billion millijoules,
- * nowhere near troubling a `Long`.
+ * Gas heat capacity per tile: millijoules/kelvin (zero if no gas).
+ * Millijoule scale matches Species.specificHeat (per kg). Avoids joule-scale quantization cliff (<1g→0, 2g→1).
+ * joules/capacity exact at ambient (stepFluid: room-temp vessel = isothermal).
  */
 fun gasCapacity(tileCount: Int, grams: LongArray, species: List<Species> = Species.GASES): LongArray =
     LongArray(tileCount) { gasCapacityAt(grams, it, species) }
@@ -74,23 +26,10 @@ fun gasCapacityAt(grams: LongArray, tile: Int, species: List<Species> = Species.
     return sum
 }
 
-/**
- * What both the gas's heat capacity and its energy are scaled by, so the two divide cleanly.
- *
- * [Species.specificHeat] is per kilogram and mass is in grams, so a factor of a thousand has to go
- * somewhere. Putting it in the *unit* rather than in a division keeps `joules / capacity` exact.
- */
+/** Capacity/energy scale: 1000 (matches Species.specificHeat per-kg → gram units). */
 const val CAPACITY_SCALE = 1000L
 
-/**
- * Temperature of the gas in each tile, in kelvin.
- *
- * A tile with no gas has no gas temperature, and reads as [Temperature.AMBIENT_KELVIN] rather than as
- * space. That is not a dodge around dividing by zero: [tilePressure] multiplies by this, and nothing
- * times a temperature is still nothing, so the value is only ever a placeholder for an absent
- * quantity. Ambient is the placeholder that makes an empty tile behave identically to how it did
- * before temperature existed, which is what [stepFluid] guarantees for a vessel at room temperature.
- */
+/** Gas temperature per tile (kelvin). Empty tiles read AMBIENT_KELVIN (placeholder for absent gas; tilePressure multiplies this). */
 fun gasKelvin(gasJoules: LongArray, capacity: LongArray): IntArray =
     IntArray(gasJoules.size) {
         if (capacity[it] <= 0L) Temperature.AMBIENT_KELVIN else (gasJoules[it] / capacity[it]).toInt()

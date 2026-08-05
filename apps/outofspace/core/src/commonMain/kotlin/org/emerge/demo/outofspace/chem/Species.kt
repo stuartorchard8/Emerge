@@ -1,16 +1,8 @@
 package org.emerge.demo.outofspace.chem
 
 /**
- * Whether a species is a solid, a liquid or a gas **at the conditions the game currently models**.
- *
- * It is a fixed property of the species today because there is no temperature yet. When Phase 4
- * arrives, phase becomes a function of `(species, temperature, pressure)` and iron gets to melt —
- * so read [Species.phase] as "what this normally is", and never assume it can't change.
- *
- * The split that matters for logistics is **solid vs fluid**, not the three-way one: solids travel
- * as discrete items on belts, fluids flow through pipes. Liquid and gas differ at the *ends* of the
- * network — a pump that lifts a liquid against gravity and one that compresses a gas are different
- * machines — but the pipe between them carries either.
+ * Phase: solid/liquid/gas at current conditions (phase is fixed; future: function of temp+pressure).
+ * Logistics split: solid (belts) vs fluid (pipes carry both).
  */
 enum class Phase {
     Solid,
@@ -23,23 +15,10 @@ enum class Phase {
 }
 
 /**
- * Everything the world is made of, at the granularity the simulation tracks.
- *
- * There is no "iron ore" species — ore is a [Mixture] that happens to be mostly [Iron]. Purity is a
- * property of a pile of stuff, not a name attached to it, and that is what makes refining a real
- * decision rather than a lookup.
- *
- * Declaration order is part of the contract: it fixes the iteration order of every [Mixture]
- * operation and breaks ties in [Mixture.dominant]. Reordering this enum changes simulation results.
- * **Append new species at the end.**
- *
- * [molarMass] is grams per mole, near enough. It is what makes a gas heavy or light, and therefore
- * what makes carbon dioxide pool at the floor and nitrogen ride above it.
- *
- * [specificHeat] is joules per kilogram per kelvin, near enough, at constant pressure. It is the
- * other half of that story: [molarMass] says how much a parcel weighs for its pressure, and this
- * says how much warming it costs. Both are needed together, because what rises is a parcel that is
- * light *for its pressure*, and heating is how a parcel gets that way.
+ * World composition species (simulation granularity).
+ * Ore = Mixture mostly-Iron (purity = property of pile, not a species — refining is real decision).
+ * Declaration order = Mixture iteration order + dominant tie-break. **Append only.**
+ * molarMass = g/mol (settling). specificHeat = J/kg/K (heating cost).
  */
 enum class Species(val phase: Phase, val molarMass: Int, val specificHeat: Int) {
     // ── Minerals: everything that comes out of the ground ──

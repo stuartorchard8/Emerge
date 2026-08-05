@@ -1,67 +1,17 @@
 package org.emerge.demo.outofspace.world
 
-/**
- * What one tick of solid conduction did.
- *
- * [joules] is the new energy of each body, in the same order [bodiesOf] returned them. [radiated] is
- * what left for space, and [toAir] is the **net** energy that crossed into the atmosphere — negative
- * when the air was the warmer side and heated the fabric instead.
- *
- * [toAir] exists because coupling the two fields joins two ledgers that were previously independent,
- * and a transfer that is not counted is indistinguishable from a leak in both of them at once. With
- * it, each side still closes on its own: the solids' balance gains a term for what they gave the
- * air, and the air's balance gains the matching one. See [VesselState.solidToAirJoules].
- */
+/** Result of one solid conduction tick. [joules]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
 class SolidHeatStep(val joules: LongArray, val radiated: Long, val toAir: Long)
 
 /**
- * Advances every solid body's temperature one tick: conduction between things that touch, exchange
- * with the air, and radiation from whatever is exposed to space.
+ * Advances every solid body's temperature one tick: conduction between touching bodies, exchange with air,
+ * and radiation from exposed surfaces.
  *
- * ### What touches what
+ * Contact rules: shared tiles always touch; impermeable bodies touch across tile faces; permeable fittings
+ * touch only their own tile; fittings link to linked fittings (per [Segment.links]).
  *
- * This is the whole model, and it is a contact graph rather than a stencil over the grid.
- *
- *  - **Anything sharing a tile touches.** A rail threaded under a smelter, a pipe crossing a
- *    machine, two conduit layers on the same tile: all in contact. It is not physically grounded —
- *    three objects are not really occupying one cubic metre — but a tile is a bookkeeping unit, not
- *    a volume, and the behaviour it produces is the right one: things built on top of each other
- *    share their heat.
- *  - **Impermeable bodies touch across tile faces.** A wall conducts into the wall beside it and
- *    into the machine beside that, because both fill their tiles and the tiles abut. Contact is
- *    counted **per face**, so two footprints meeting along five tiles conduct five times as fast as
- *    two meeting at one — which is what a bigger joint is.
- *  - **Impermeable bodies touch the air in the tiles beside them.** That is the only way heat
- *    reaches a room: through its walls and the casings of what stands in it.
- *  - **Permeable fittings touch only their own tile** — what shares it, and the air in it. A rail is
- *    threaded through a tile that is otherwise open, so its neighbour across the tile face is air
- *    that the fluid pass is already moving, and pretending the rail also touches the *next* tile's
- *    contents would give the fitting a second, faster path that bulk flow does not have.
- *  - **Fittings touch the fittings they are joined to.** Two tiles of track sitting beside each
- *    other are not connected; two the player *drew a line through* are. Heat follows the same rule
- *    the material does, because it is the same rule — see [Segment.links]. A long copper run is
- *    therefore a thermal short circuit along its length and nothing at all across it, which is what
- *    a cable is and what makes where you route it a decision.
- *
- * A bridge needs no case of its own here. It spans three tiles, and the segments it joins to sit on
- * the two ends, so the shared-tile rule already connects it to the run at either side.
- *
- * ### Jacobi, and pay-afterwards
- *
- * Every flux is computed against one snapshot of the temperatures and applied afterwards, so the
- * answer cannot depend on the order the contact list happens to be in. Reading and writing the live
- * array instead is a Gauss-Seidel sweep, and a Gauss-Seidel sweep over a row-major grid is a leftward
- * bias that conserves energy perfectly while being visibly, unfixably asymmetric. This project has
- * shipped that bug three times — in `applySpeciesDrift`, in the gas heat clamp, and in the field this
- * function replaces — so the snapshot is not a nicety.
- *
- * Each flux is capped at the amount that would *equalise* the two sides, and then every node's total
- * outgoing energy is scaled down if it was asked for more than it holds above the temperature of
- * space. The cap is what stops a large gap plus a coarse timestep sending more heat than exists and
- * ringing; the scaling is what makes a tile drained by six contacts at once still conserve. Both are
- * against the snapshot, never the live array, for the reason above.
- *
- * [airJoules] is edited in place. [airCapacity] must be from the same instant.
+ * Jacobi solve: all fluxes computed against a snapshot, then applied — avoids Gauss-Seidel leftward bias.
+ * Each flux capped at equalisation amount; total outgoing energy scaled if requested exceeds available.
  */
 fun stepSolidHeat(
     grid: Grid,
@@ -74,9 +24,7 @@ fun stepSolidHeat(
     val tileCount = grid.size
     if (bodyCount == 0) return SolidHeatStep(LongArray(0), 0L, 0L)
 
-    // ── Nodes: every body, then every tile of air. One array so a contact needs no idea which
-    // kind of thing is on either end of it, which is what keeps solid-to-air from being a
-    // second, subtly different exchange rule. ──
+    // ── Nodes: bodies + air tiles in one array. ──
     val nodeCount = bodyCount + tileCount
     val capacity = LongArray(nodeCount)
     val kelvin = IntArray(nodeCount)
@@ -99,7 +47,6 @@ fun stepSolidHeat(
         val k = body.material.conductance
 
         for (tile in body.tiles) {
-            // Everything else on this tile, whatever layer it is on.
             for (i in tiles.startOf(tile) until tiles.endOf(tile)) {
                 val other = tiles.id(i)
                 if (other <= b) continue // each unordered pair once
@@ -112,14 +59,12 @@ fun stepSolidHeat(
                 continue
             }
 
-            // An impermeable body fills its tile, so it reaches across the faces of it.
+            // Impermeable: reaches across tile faces.
             for (dir in Direction.ALL) {
                 val next = grid.neighbour(tile, dir)
                 if (next < 0) continue
                 if (structure.isImpermeable(next)) {
-                    // The solid on the far side, if it is not this same body wrapping around.
-                    // Registered once per *face* rather than once per pair: a five-tile joint
-                    // conducts five times as hard as a one-tile one, which is what a bigger joint is.
+                    // Once per face, not per pair.
                     for (i in tiles.startOf(next) until tiles.endOf(next)) {
                         val other = tiles.id(i)
                         if (other <= b || bodies[other].permeable) continue
@@ -131,13 +76,8 @@ fun stepSolidHeat(
             }
         }
 
-        // Track joined to track: heat runs along a drawn line and not across an undrawn one.
-        //
-        // On its *own* layer, and only there. A pipe crossing a rail shares the tile — so the two
-        // already conduct, through the same-tile contact above, exactly as much as touching metal
-        // should. What they must not do is pass heat *along* each other's runs, which is what a
-        // conduit-blind lookup would have done the moment two layers overlapped: draw a pipe across
-        // a rail and the rail would start conducting down the pipe.
+        // Track-to-track: heat follows drawn links, not undrawn adjacencies.
+        // Per-layer only — a pipe crossing a rail conducts through the tile but must not conduct along the rail's run.
         if (body.slot == BodySlot.Fitting && body.conduit != null) {
             for (dir in Direction.ALL) {
                 if (!body.linkedTo(dir)) continue
@@ -165,25 +105,16 @@ fun stepSolidHeat(
         val dT = if (gap > 0) gap else -gap
 
         val wanted = conductance * dT
-        // The most that can cross before the two are equal: dT * Ca*Cb / (Ca+Cb).
-        //
-        // The harmonic mean is computed *first* and the gap applied to it afterwards. The other
-        // order — gap times one capacity, then divided — floors to zero whenever one side is much
-        // smaller than the other, which is precisely the copper-fitting-against-a-hull case, and
-        // silently freezes exactly the contacts the material model was built to make interesting.
-        // The mean is never larger than the smaller capacity, so the multiply cannot overflow.
         val harmonic = capacity[hot] * capacity[cold] / (capacity[hot] + capacity[cold])
         transfers.add(hot, cold, minOf(wanted, harmonic * dT))
     }
 
-    // ── Radiation: whatever is exposed to space loses heat to it, permanently ──
+    // ── Radiation to space ──
     for (b in bodies.indices) {
         val body = bodies[b]
         var exposure = 0
         for (tile in body.tiles) {
             if (body.permeable) {
-                // A fitting outside the hull is simply in space; a fitting inside it is not exposed
-                // at all, because the air and the walls are in the way.
                 if (!structure.isContained(tile)) exposure++
                 continue
             }
@@ -223,13 +154,7 @@ fun stepSolidHeat(
 /** The acceptor id meaning "out of the world" — see the radiation block. */
 private const val SPACE = -1
 
-/**
- * Which bodies stand on which tile, as a compressed row: counts, a prefix sum, then the ids.
- *
- * A list per tile would allocate a thousand small objects every tick on the one grid-sized structure
- * that is rebuilt from scratch each time. Two passes over a short body list costs nothing and the
- * ids come out in body order, which is what makes the contact walk deterministic.
- */
+/** Bodies-per-tile, compressed row format: counts, prefix sum, ids. */
 private class TileBodies(tileCount: Int, bodies: List<Body>) {
     private val start = IntArray(tileCount + 1)
     private val ids: IntArray
@@ -255,12 +180,7 @@ private class TileBodies(tileCount: Int, bodies: List<Body>) {
     fun endOf(tile: Int): Int = start[tile + 1]
     fun id(slot: Int): Int = ids[slot]
 
-    /**
-     * The fitting of one layer on a tile, or -1.
-     *
-     * Keyed by layer as well as tile, because a link is a statement about one network. Track joins to
-     * track and pipe to pipe; neither joins to the other however neatly they overlap.
-     */
+    /** Fitting of a layer on a tile, or -1. */
     fun fittingAt(conduit: Conduit, tile: Int): Int = fitting[conduit.ordinal * tileCount + tile]
 }
 
@@ -285,14 +205,7 @@ private class Contacts {
     }
 }
 
-/**
- * Ask-first-pay-afterwards, the same discipline the mass, momentum and gas-heat passes keep.
- *
- * A node can be drained by every contact it has at once and every flux was computed against one
- * snapshot, so the requests have to be totalled and scaled before any of them is honoured. The scale
- * is against what the node holds *above the temperature of space*, which is the energy it actually
- * has to give.
- */
+/** Ask-first-pay-afterwards: requests tallied and scaled against available (above space temp) before applying. */
 private class Transfers(capacity: Int, nodeCount: Int) {
     private val amount = LongArray(capacity)
     private val from = IntArray(capacity)
@@ -326,29 +239,9 @@ private class Transfers(capacity: Int, nodeCount: Int) {
     }
 }
 
-/**
- * How much heat a machine dumps into itself per gram it works on, in the millijoules [Material]
- * documents.
- *
- * Tying heat to *work done* rather than to a per-second rate means it needs no clock and no carry of
- * its own: the material flow is already modelled exactly, so the heat that flow implies is exact
- * too. A throttled machine warms its surroundings proportionally less, for free.
- *
- * It goes into the **machine**, not the tile. That is the change the body model buys: a furnace's
- * waste heat is now in the furnace, so it has to conduct out through firebrick and into the air
- * before the room feels it, and lagging or exposing the thing actually changes the answer.
- */
+/** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
 fun heatPerGram(machine: Machine?): Long = when (machine) {
-    // Four hundred joules a gram. Ten times what the per-tile field charged, and the increase is a
-    // consequence of the model rather than a tuning whim: the same furnace used to be one tile's
-    // worth of thermal mass and is now twenty-five tiles of firebrick, which is the heaviest thing
-    // in the game. At the old figure it warmed by eight kelvin in two minutes of full production,
-    // which is both wrong — smelting iron genuinely costs of order a megajoule a kilogram — and
-    // inert, since nothing downstream can feel eight kelvin.
-    //
-    // Where it settles is set by the casing, not by this: at full rate a furnace loses about
-    // 104 kJ/K/tick through its twenty exposed faces, so it comes to rest a few hundred kelvin over
-    // the room. Hot enough to matter, not hot enough to be the only thing that matters.
+    // 400 kJ/g. Smelting costs ~1 MJ/kg.
     is Smelter -> 400_000L
     is Processor -> 40_000L    // crushing and grinding
     is Miner -> 20_000L

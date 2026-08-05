@@ -17,26 +17,13 @@ import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
-/**
- * The in-game UI, built with the shared immediate-mode toolkit.
- *
- * The wiring panel is the interesting one. It is the same *sentence* as Cyto's gene editor —
- * `WHEN <channel> AT <weight>` instead of `WHEN <condition> DO <action>` — and it is built on the
- * same `clauseRow` widget, three tappable tokens in a row. Reusing that shape rather than inventing
- * a node graph is the largest single saving available here, and it means the mechanic arrives
- * already legible to anyone who has met the other game.
- */
+/** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
 
     var onTogglePause: () -> Unit = {}
     var onReset: () -> Unit = {}
 
-    /**
-     * Saving is a **host** capability, not a game one: the sim knows how to turn a world into text
-     * ([org.emerge.demo.outofspace.world.Save]) but nothing in shared code knows what a file is. A
-     * host that can write one sets [canSave] and the two buttons appear; the others simply do not
-     * offer what they cannot do, which beats a button that quietly fails.
-     */
+    /** Save/load (host capability — requires file system access). */
     var canSave: Boolean = false
     var onSave: () -> Unit = {}
     var onLoad: () -> Unit = {}
@@ -51,7 +38,7 @@ class OutofspaceHud {
     fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: Int = -1) {
         val s = controller.state
         ui.frame {
-            // Drawn first, so every panel occludes it rather than the other way round.
+            // Drawn first (occludes everything).
             navView(s)
             panel(Anchor.TopLeft) {
                 title("OUT OF SPACE")
@@ -64,27 +51,20 @@ class OutofspaceHud {
                 keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
                 keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
                 keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
-                // What anything loose aboard is falling toward, which is the plating plus the engine.
-                // In milli-g, because a breach is worth a fraction of one and a readout in whole g
-                // would show nothing happening while quite a lot happens.
+                // Felt gravity (milli-g for breach sensitivity).
                 keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
-                // The debug engine's running total, shown whenever it is not zero and hidden when it
-                // is, so the readout is an admission rather than furniture — see [Edit.Thrust]. The
-                // ledger stays balanced *because* this is counted, which is the whole arrangement.
+                // Debug engine (hidden when zero).
                 if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
                     keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
                 }
-                // Hidden until there is one, because an empty section is a section the eye learns to
-                // stop reading — and this panel already asks a lot of it.
+                // Rocks (hidden when empty).
                 if (s.rocks.isNotEmpty()) {
                     gap()
                     title("ROCKS")
                     keyValue("Adrift", "${s.rocks.size}")
                     keyValue("Mass", grams(s.rockGrams))
                     keyValue("Captured", grams(s.capturedGrams))
-                    // Rock's answer to `mined == aboard + vented`, and it gets its own line for the
-                    // same reason the others do: a leak that shows up as a word is a leak somebody
-                    // notices, and a leak buried in a number is one that gets explained away.
+                    // Rock balance check (mined == aboard + vented).
                     val rockBalanced = s.rockGrams == s.baselineRockGrams + s.capturedGrams
                     row(
                         if (rockBalanced) "balanced" else "LEAK",
@@ -98,8 +78,7 @@ class OutofspaceHud {
                 keyValue("- in storage", grams(s.stockpile.totalGrams))
                 keyValue("- spilled", grams(s.debrisGrams))
                 keyValue("Vented", grams(s.ventedGrams))
-                // Storage is part of "aboard", not a term beside it: the stockpile is a view over the
-                // storages rather than a separate account, so adding it here would double-count.
+                // Storage is a view over storages (part of "aboard").
                 val balanced = s.minedGrams == s.inTransitGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
@@ -117,10 +96,7 @@ class OutofspaceHud {
                 val heatBalanced = s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
                     s.generatedJoules - s.constructionJoules == s.baselineJoules
                 row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
-                // The atmosphere's energy keeps its own ledger, for the same reason its mass does:
-                // a break in one should not obscure the other. Two ways out now: overboard with
-                // venting gas, and back into the fabric — so what the solids say they gave the air
-                // appears here with the opposite sign, and both sides have to close on their own.
+                // Atmosphere energy ledger (separate from mass ledger).
                 val airHeatBalanced =
                     s.atmosphereJoules + s.airVentedJoules - s.solidToAirJoules == s.baselineAirJoules
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
@@ -176,8 +152,7 @@ class OutofspaceHud {
                     }
                     gap()
                     row("click place · right-click remove", 0x9A9A9AFFL)
-                    // Track connects by being dragged, not by touching, so this is not a shortcut —
-                    // it is the only way to build a run, and the player has to be told.
+                    // Track: drag to connect (not by touching).
                     if (controller.brush.conduit != null) {
                         row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
                     }
@@ -187,8 +162,7 @@ class OutofspaceHud {
                     row("a sensor reads the tile it faces", 0x9A9A9AFFL)
                 }
                 row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
-                // In the engine's own colour, and named as debug, because it is a stand-in that has
-                // to look like one — a key nobody can find is a key nobody can tell you is wrong.
+                // Debug engine row (yellow, named).
                 row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
@@ -212,22 +186,7 @@ class OutofspaceHud {
         }
     }
 
-    /**
-     * **Where the ship is**, which nothing else in the game can show you.
-     *
-     * Zooming out does not answer this. The grid *is* the vessel's frame — it travels with the ship
-     * and nothing on it moves because the ship does — so the widest possible view of the world shows
-     * a small hull in an empty box no matter how far the vessel has flown. Open space has no
-     * representation at all without this, and from increment H1 there will be things in it.
-     *
-     * The ship is fixed at the centre and the world slides under it, because that is the honest
-     * frame and it is the one the grid already uses. See `docs/out-of-space-plan.md` §5f.
-     *
-     * ⚠️ **Two scales, deliberately.** Distance and velocity cannot share one: at a range wide
-     * enough to hold a journey, a tile per tick of speed is a fraction of a pixel, and at a scale
-     * that shows the speed the journey is off the screen. So the ring is distance and the needle is
-     * speed, and the needle says what it is worth in text rather than pretending to be a distance.
-     */
+    /** Ship nav: origin marker + velocity needle (two scales — distance vs velocity). */
     private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState) = canvas {
         val size = 190f * density
         val pad = 10f * density
@@ -236,33 +195,26 @@ class OutofspaceHud {
         val cx = x0 + size / 2f
         val cy = y0 + size / 2f
 
-        // Opaque, and that is not a style choice. At any alpha the hull behind it shows through, and
-        // the one thing this panel exists to say is that the world behind it is *not* where the ship
-        // is — a nav view you can see the deck through is telling you the opposite of the truth.
+        // Opaque background (hull must not show through).
         rect(x0, y0, size, size, 0x080D14FFL)
         border(x0, y0, size, size, 1f * density, 0x3A4A66FFL)
-        // A crosshair rather than a grid: this is a bearing instrument, and ruled squares at a range
-        // that changes would read as a scale that does not.
+        // Crosshair (not grid — bearing instrument).
         rect(x0 + 2f * density, cy, size - 4f * density, 1f * density, 0x1C2740FFL)
         rect(cx, y0 + 2f * density, 1f * density, size - 4f * density, 0x1C2740FFL)
 
         val perPx = (size / 2f - 6f * density) / NAV_RANGE_TILES
 
-        // Where the journey started, and for now the only thing out there. It is what makes the
-        // panel show *motion* rather than a dot in a box, and rocks join it in H1.
+        // Origin marker (shows motion, not position).
         val ox = cx - s.positionX.toFloat() / Flight.PER_TILE * perPx
         val oy = cy - s.positionY.toFloat() / Flight.PER_TILE * perPx
         if (ox > x0 && ox < x0 + size && oy > y0 && oy < y0 + size) {
             val d = 2.5f * density
             rect(ox - d, oy - d, d * 2f, d * 2f, 0x5A82A8FFL)
-            // Above the marker, not below it. Below puts the word across the centre of the box for
-            // every ship that has flown up and to the right of where it started, which is where the
-            // ship marker lives — and the label would then be drawn over the thing it is not naming.
+            // Label above marker (avoids overlap).
             label("origin", ox, oy - d - 9f * density, 8f * density, 0x5A82A8FFL)
         }
 
-        // The needle. Its own scale — see the note above — and drawn from the ship outward, so a
-        // vessel under way points where it is going and a stationary one shows nothing at all.
+        // Velocity needle (drawn from ship outward; stationary = nothing).
         val vx = s.velocityX.toFloat() / Flight.PER_TILE
         val vy = s.velocityY.toFloat() / Flight.PER_TILE
         val needle = size / 2f - 8f * density
@@ -272,11 +224,7 @@ class OutofspaceHud {
             line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
         }
 
-        // Rocks, which live in the vessel's frame rather than in open space — so they are plotted
-        // against the middle of the grid rather than against the ship's travelled position. Both are
-        // ship-relative offsets in tiles, which is what makes it coherent to draw them on one panel:
-        // the origin marker says where you started relative to you now, and a rock dot says where a
-        // rock is relative to you now.
+        // Rocks (vessel-frame, plotted against grid center).
         for (rock in s.rocks) {
             val rx = cx + (rock.centreX.toFloat() / Flight.PER_TILE - s.grid.width / 2f) * perPx
             val ry = cy + (rock.centreY.toFloat() / Flight.PER_TILE - s.grid.height / 2f) * perPx
@@ -285,8 +233,7 @@ class OutofspaceHud {
             rect(rx - d, ry - d, d * 2f, d * 2f, 0x9A8A72FFL)
         }
 
-        // The ship, last, so nothing is drawn over it — and on a dark pad, so it stays legible when
-        // the needle or a marker passes under it.
+        // Ship (drawn last, legible over everything).
         val h = 2.5f * density
         rect(cx - h - density, cy - h - density, (h + density) * 2f, (h + density) * 2f, 0x080D14FFL)
         rect(cx - h, cy - h, h * 2f, h * 2f, 0xFFFFFFFFL)
@@ -308,10 +255,7 @@ class OutofspaceHud {
         rect(x + w - t, y, t, h, color)
     }
 
-    /**
-     * A line, as a chain of squares, because the canvas draws axis-aligned rectangles and a velocity
-     * does not point along an axis. Stepped by half a thickness so the chain has no gaps in it.
-     */
+    /** Line as stepped chain of squares (no axis alignment). */
     private fun org.emerge.render.torus.ui.CanvasBuilder.line(
         x0: Float, y0: Float, x1: Float, y1: Float, t: Float, color: Long,
     ) {
@@ -324,23 +268,13 @@ class OutofspaceHud {
         }
     }
 
-    /**
-     * What is actually inside the thing under the pointer.
-     *
-     * Ore is a *mixture*, and until this existed nothing in the game said so — you could watch a
-     * refinery run for an hour and never learn that its ore was 41% iron, let alone that the
-     * concentrate leaving the front was 75%. Every buffer is listed separately, because "this
-     * processor holds 6kg" is far less useful than knowing which of its three buffers is the stuck
-     * one.
-     */
+    /** Contents of machine/tile under pointer (mixture breakdown per buffer). */
     private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
         if (index < 0) return
         val s = controller.state
         val machine = s.machineCovering(index)
         val spill = s.debris[index]
-        // A bare tile with a heap on it is still worth inspecting -- otherwise the material you just
-        // dumped on the deck would be visible but unreadable, which is the gap the analyser existed
-        // to close in the first place.
+        // Bare tile with debris (still inspectable).
         if (machine == null && spill.isEmpty() && s.railAt(index) == null) return
         val grid = s.grid
 
@@ -357,9 +291,7 @@ class OutofspaceHud {
                 }
                 gap()
             }
-            // The track on this tile, and anything riding on it. Listed before the building because
-            // it is literally on top of it, and because a run threaded under a machine is otherwise
-            // impossible to read.
+            // Rail on this tile (listed before machine — on top).
             val segment = s.railAt(index)
             if (segment != null) {
                 title(if (segment.isGauge) "GAUGE" else "RAIL")
@@ -398,10 +330,7 @@ class OutofspaceHud {
         }
     }
 
-    /**
-     * Where the tile sits and how hot it is — the two facts that will matter most once air arrives,
-     * and the ones with nowhere else to live.
-     */
+    /** Tile conditions: location + temperature. */
     private fun org.emerge.render.torus.ui.PanelBuilder.tileConditions(
         controller: OutofspaceController,
         index: Int,
@@ -419,10 +348,7 @@ class OutofspaceHud {
             0x9A9A9AFFL,
             if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
         )
-        // Every solid thing standing here, each with its own temperature. A tile can hold a rail, a
-        // conduit and a machine at once, and one averaged TEMP for the three of them was exactly the
-        // reading the body model exists to stop giving — a cold copper line under a furnace is the
-        // interesting case, and an average erases it.
+        // Each solid body's temp (not averaged — cold line under furnace is interesting).
         for (body in s.bodies) {
             if (index !in body.tiles) continue
             val k = body.kelvin
@@ -433,8 +359,7 @@ class OutofspaceHud {
                 if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        // Wherever there is gas, not only inside — a vented plume is out in the vacuum by definition,
-        // and it was the one thing the fluid sim does that the inspector could not be pointed at.
+        // Gas (interior + vented plumes).
         val density = s.air.densityAt(index)
         if (structure == Structure.Interior || density > 0L) {
             val percent = s.pressurePercentAt(index)
@@ -448,13 +373,9 @@ class OutofspaceHud {
                     else -> 0x9ED0B0FFL
                 },
             )
-            // Beside pressure, because the two being different is the whole point: equal readings
-            // mean ordinary air, and a gap between them means the tile has been sorted by weight.
+            // Density beside pressure (gap = weight sorting).
             keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
-            // The air's own temperature, which is its own number and not the fabric's above. The two
-            // are coupled now, so a gap between them is a wall heating a room rather than two
-            // unrelated readings. This is the one the fluid acts on -- it is what sets pressure, so a
-            // tile reading hot and over-pressured is a tile that is about to rise.
+            // Air temperature (fluid acts on this — sets pressure).
             if (density > 0L) {
                 val airK = s.airKelvinAt(index)
                 keyValue(
@@ -473,14 +394,7 @@ class OutofspaceHud {
         }
     }
 
-    /**
-     * Which way a tile's air is going, as an eight-point compass arrow.
-     *
-     * A bearing rather than two signed components, because "is it leaving through that breach" is the
-     * question, and reading a sign pair as a direction is a step the panel can take for the player.
-     * **+y is down** — see [org.emerge.demo.outofspace.world.fluid.EdgeGrid] — so the vertical glyphs
-     * are the opposite way round from what the arithmetic first suggests.
-     */
+    /** Air direction as 8-point compass (+y is down). */
     private fun bearing(s: VesselState, index: Int): String {
         val x = s.flow.xAt(index)
         val y = s.flow.yAt(index)
@@ -492,12 +406,7 @@ class OutofspaceHud {
         return horizontal + vertical
     }
 
-    /**
-     * A mixture as percentages, richest first — `IRON 41%  SILI 30%  COPP 18%  TITA 11%`.
-     *
-     * Percentages rather than masses because the question being asked is almost always "how clean is
-     * this", and four-letter species keep the line narrow enough not to stretch the panel.
-     */
+    /** Mixture as percentages, richest first (4-letter species abbrev). */
     private fun composition(mixture: Mixture): String {
         if (mixture.isEmpty) return "empty"
         val total = mixture.total
@@ -507,13 +416,7 @@ class OutofspaceHud {
             .joinToString("  ") { "${it.name.take(4).uppercase()} ${mixture[it] * 100 / total}%" }
     }
 
-    /**
-     * The wiring editor: one tappable sentence per term of `RUN = Σ(signal × weight)`.
-     *
-     * Tapping the channel cycles it, tapping the weight cycles the ladder, tapping the `×` removes
-     * the term. Cycling rather than opening a dropdown keeps the whole editor to three tap targets
-     * per row, which is what makes it work under a thumb.
-     */
+    /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
     private fun org.emerge.render.torus.ui.UiBuilder.wiringPanel(controller: OutofspaceController) {
         if (controller.tool != Tool.Wire) return
         val index = controller.selected
@@ -521,8 +424,7 @@ class OutofspaceHud {
         val machine = controller.state[index] ?: return
         val grid = controller.state.grid
 
-        // Bottom-right rather than centred: a centre anchor centres on the *screen*, which is the
-        // wrong centre when the build palette owns the bottom-left corner — they overlapped.
+        // Bottom-right (not centred — build palette owns bottom-left).
         panel(Anchor.BottomRight, rowHeight = 20f) {
             title("WIRING  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
 
@@ -605,12 +507,7 @@ class OutofspaceHud {
     private fun grams(g: Long): String =
         if (g < 10_000L) "${g}g" else "${g / 1000}.${(g % 1000) / 100}kg"
 
-    /**
-     * A distance or a speed in [Flight.PER_TILE]'s billionths, to six decimal places of a tile.
-     *
-     * Six because a bare breached hull picks up about a quarter of a millionth of a tile per tick
-     * per tick, and a readout that rounded that to zero would report an engine as broken.
-     */
+    /** Distance/speed in PER_TILE billionths, to 6 decimals (breach sensitivity). */
     private fun tiles(v: Long): String {
         val sign = if (v < 0L) "-" else ""
         val a = if (v < 0L) -v else v
@@ -622,15 +519,7 @@ class OutofspaceHud {
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {
-        /**
-         * Half-width of the nav view, in tiles.
-         *
-         * A **provisional** number, and the plan says so: how far apart rocks want to be and how
-         * fast a ship actually travels are both unknown until H1 flies, and picking a range before
-         * there is anything to see at it would be picking it from nothing. Two hundred and fifty-six
-         * is about twenty seconds of held debug thrust, which makes the origin marker drift visibly
-         * without leaving immediately. It becomes a dial when there is a reason to turn one.
-         */
+        /** Nav view half-width (provisional — 20s debug thrust). */
         const val NAV_RANGE_TILES: Float = 256f
 
         /** The speed at which the needle is fully extended, in tiles per tick. Provisional likewise. */
