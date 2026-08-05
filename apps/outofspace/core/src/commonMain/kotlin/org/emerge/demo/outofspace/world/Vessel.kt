@@ -856,3 +856,21 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         baselineRockGrams = baselineRockGrams,
     )
 }
+
+/**
+ * The same world on a grid fitted to what it contains: the bounding box of every placed thing,
+ * plus [pad] tiles on every side. Returns `this` unchanged if the grid is already that shape.
+ *
+ * **Not yet implemented.** The contract is `GridFitTest`, which is written and failing; see
+ * `apps/outofspace/PLAN_dynamic_grid.md` §8 and §10 for the reasoning behind each assertion there.
+ * The two constraints a first attempt lost, stated once more because they are the whole job:
+ *
+ * - The box encloses machine **footprints**, not anchors. `RockField.boundsOf` has this right.
+ * - The box does **not** enclose rocks. They live outside the world by design.
+ *
+ * It must be free to grow the grid as well as shrink it — P3 needs growth — and it must reach
+ * [remapped] for the actual move, so that the ledgers stay exact.
+ */
+fun VesselState.fitGrid(pad: Int = 4): VesselState {
+    TODO("P2: fit the grid to the vessel — see GridFitTest for the contract")
+}
