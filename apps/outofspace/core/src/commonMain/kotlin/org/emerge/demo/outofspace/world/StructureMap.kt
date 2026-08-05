@@ -36,15 +36,21 @@ class StructureMap(private val kinds: ByteArray) {
          * Flood-fills space in from every edge tile, stopping at anything solid. Anything not
          * reached and not solid is interior.
          *
-         * Every deck machine blocks, over its whole footprint — a smelter is a solid object, and a
-         * tile of solid object is not somewhere air can be. Conduits are not in this list at all:
-         * rails and bridges live on their own layers and share a tile with the deck beneath them, so
-         * a belt running through a room does not divide it.
+         * Almost every deck machine blocks, over its whole footprint — a smelter is a solid object,
+         * and a tile of solid object is not somewhere air can be. Conduits are not in this list at
+         * all: rails and bridges live on their own layers and share a tile with the deck beneath
+         * them, so a belt running through a room does not divide it.
+         *
+         * The exception is a [MachineKind.isPermeable] one, which is a plate and not a block: it is
+         * skipped entirely, so the tile it stands on is whatever the flood fill would have made it.
+         * Nothing downstream needs a case for it — air, heat and rock contact all read this map, and
+         * all three then treat the tile as the empty floor it is.
          */
         fun derive(grid: Grid, machines: List<Machine?>): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
+                if (m.kind.isPermeable) continue
                 val kind = if (m is Hull) Structure.Hull else Structure.Machine
                 for (t in coveredTiles(grid, i, m.kind.size)) kinds[t] = kind.ordinal.toByte()
             }

@@ -1,0 +1,81 @@
+# The extractor, and the death of the miner — increment H3.
+#
+# What to read: the starting world is a complete refinery that produces **nothing**, because the
+# thing at the head of the line no longer invents ore. Put a rock on the plate and the whole line
+# comes alive; leave it running and the rock is eaten cell by cell until what is left of it has
+# slid out of reach and the line goes quiet again. That is the loop closing, and it is the first
+# time in this game that mass has had to come from somewhere.
+#
+# The two ledgers are hinged together here and both have to stay at zero throughout:
+#
+#     massBalance   extracted == aboard + vented
+#     rockBalance   rockGrams == baselineRock + captured − extracted
+#
+# `extracted` is in both of them. That is the point: mass leaves a rock only by becoming ore, so a
+# gram invented in the crossing shows up as one of them going non-zero. There is no third place for
+# it to hide.
+
+new
+camera centre 12 12 26
+
+echo --- a refinery with nothing to eat
+expect rockCount = 0
+expect extractedGrams = 0
+run 60
+# Sixty ticks of a fully built, fully wired plant, and not one gram has been made.
+expect extractedGrams = 0
+expect stockpileGrams = 0
+expect massBalance = 0
+shot extractor-idle
+
+echo --- a rock on the plate
+# Dropped on the extractor's centre tile, so the rock covers exactly the five tiles the plate does.
+# It lands ON the machine rather than bouncing off it, which is what "permeable" buys: a solid deck
+# machine would be a wall the rock could never get on top of.
+rock 5 12
+expect rockCount = 1
+# 63kg of rock less the first 3kg cell: placing settles a tick, and the machine bites on the very
+# tick the rock arrives. There is no warm-up — a plate with something on it is working.
+expect rockGrams = 60000
+expect rockBalance = 0
+
+echo --- and the line comes alive
+run 120
+expect extractedGrams > 0
+# The rock is measurably smaller: what the extractor has is what the rock has lost.
+expect rockGrams < 63000
+expect rockBalance = 0
+expect massBalance = 0
+expect momentumBalance = 0
+shot extractor-working
+
+echo --- ore reaches the far end of the line as metal
+run 480
+expect stockpileGrams > 0
+expect massBalance = 0
+expect rockBalance = 0
+expect heatBalance = 0
+expect airBalance = 0
+shot extractor-stocked
+
+echo --- and what slides out from under the machine stops being ore
+# A vessel has no gravity, so nothing holds a rock down. The ship drifts out from under its own
+# feedstock at a couple of thousandths of a tile a tick — its air and its machinery are enough — and
+# the plate is exactly a rock across, so the far column eventually passes the edge and is out of
+# reach for good. Measured: eaten from 63kg to about 9kg by tick 400, and then still 9kg at 1300.
+#
+# That is the game rather than a defect. Keeping a rock on the plate is something the player does.
+run 600
+expect rockCount = 1
+expect rockGrams > 0
+expect rockGrams < 15000
+# Everything that came off it did become ore, and the books close on the remainder.
+expect rockBalance = 0
+expect massBalance = 0
+shot extractor-stranded
+
+echo --- and nothing more arrives, however long it is left
+run 240
+expect rockBalance = 0
+expect massBalance = 0
+expect momentumBalance = 0

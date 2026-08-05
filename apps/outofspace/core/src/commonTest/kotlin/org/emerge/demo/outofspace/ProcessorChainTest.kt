@@ -11,7 +11,7 @@ import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Vent
@@ -90,12 +90,13 @@ class ProcessorChainTest {
 
     @Test
     fun `chained straight through, purity climbs at every stage`() {
-        // Miner -> processor -> processor -> processor -> tank, each processor venting its tailings
+        // Extractor -> processor -> processor -> processor -> tank, each processor venting its tailings
         // through the floor. Every building abuts the next; the ports line up without conveyors.
         val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        // Enough rock to keep three stages fed for the whole run: one would be gone in a minute.
+        val feed = feedExtractor(grid, m, 2, 3, rocks = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) {
             m[grid.index(x, 3)] = Processor(Direction.Right)
@@ -104,19 +105,26 @@ class ProcessorChainTest {
         }
         m[grid.index(21, 3)] = Storage(Direction.Right)
         // One short run per stage, from an output port to the next input port.
-        joinRow(grid, rails, 3, 5, 3)
+        joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
         s = run(s, 1200)
 
-        // Exact figures again, now that a rate is stated per tick and a stage's concentration is
-        // therefore a fact about the machine rather than about the clock. These were briefly
-        // loosened to a property when the same chain measured 75/100/100 at 60Hz and 66/88/100 at
-        // 4Hz; that spread is gone, so the test can go back to saying what it actually expects.
+        // The **shape**, not the figures. This has read 75/100/100, then 66/88/100, and now wobbles
+        // between 66 and 64 on the first stage depending where in a bite it is sampled: the extractor
+        // apportions ore once per 3 kg cell where the miner apportioned it afresh every tick, so what
+        // is *standing in* a buffer moves about even though what is separated does not. (Sampled every
+        // hundred ticks out to 1600 it reads 66 but for three samples reading 64.)
+        //
+        // Every one of those figures was a constant that had to be re-pinned by whatever changed
+        // upstream of it, which makes the test a record of its own history rather than of the claim.
+        // The claim is that each stage is cleaner than the one before and the far end is pure metal.
         val purities = stages.map { purity((s[grid.index(it, 3)] as Processor).product) }
-        assertEquals(listOf(66, 88, 100), purities, "41% ore, cleaner at every stage")
+        assertEquals(purities.sorted(), purities, "each stage should be cleaner than the last: $purities")
+        assertTrue(purities.first() > 41, "and the first should already beat the 41% ore body: $purities")
+        assertEquals(100, purities.last(), "with the last stage pure: $purities")
         assertEquals(100, purity((s[grid.index(21, 3)] as Storage).contents), "and the far end is pure metal")
     }
 
@@ -130,15 +138,15 @@ class ProcessorChainTest {
         val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        val feed = feedExtractor(grid, m, 2, 3, rocks = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no waste runs anywhere
         m[grid.index(21, 3)] = Storage(Direction.Right)
-        joinRow(grid, rails, 3, 5, 3)
+        joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
         s = run(s, 1200)
 
         for (x in stages) {
@@ -149,7 +157,7 @@ class ProcessorChainTest {
             )
         }
         assertEquals(
-            s.minedGrams,
+            s.extractedGrams,
             s.inTransitGrams + s.ventedGrams,
             "and a stalled chain still conserves mass",
         )

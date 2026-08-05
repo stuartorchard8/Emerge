@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.OutofspaceReducer
 
-/** Starting world: complete refinery line (miner→processor→smelter→storage, waste vents). */
+/** Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents). */
 fun starterVessel(grid: Grid): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
     val rails = arrayOfNulls<Segment>(grid.size)
@@ -52,15 +52,15 @@ fun starterVessel(grid: Grid): VesselState {
     }
 
     // Plant: all face Right (input left, output right). Each machine output starts a new run.
-    val y = 12
+    val y = STARTER_PLATE_Y
 
-    put(5, y, Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY))   // covers x 4..6
+    put(STARTER_PLATE_X, y, Extractor(Direction.Right))   // covers x 3..7
     put(13, y, Processor(Direction.Right))                                  // covers x 12..14
     put(22, y, Smelter(Direction.Right))                                    // covers x 20..24
     put(29, y, Storage(Direction.Right))   // the inventory: what is in here is what you can build with
 
-    // Miner→Processor: gauge reads raw ore (AMBER).
-    rail(6, 12, y, mapOf(9 to Channel.Amber))
+    // Extractor→Processor: gauge reads raw ore (AMBER).
+    rail(7, 12, y, mapOf(9 to Channel.Amber))
     // Processor→Smelter: gauge reads concentrate (CYAN).
     rail(14, 20, y, mapOf(17 to Channel.Cyan))
     // Smelter's output to the tank.
@@ -73,10 +73,10 @@ fun starterVessel(grid: Grid): VesselState {
     column(22, y + 2, y + 5)
 
     // Wiring demo: 7 rows below.
-    val wy = y + 7
-    put(5, wy, Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY).withWiring(STOP_WHEN_RED))
+    val wy = STARTER_DEMO_PLATE_Y
+    put(STARTER_PLATE_X, wy, Extractor(Direction.Right).withWiring(STOP_WHEN_RED))
     put(11, wy, Storage(Direction.Right))
-    rail(6, 10, wy)
+    rail(7, 10, wy)
     // Sensor looks at tank bottom edge.
     put(11, wy + 2, Sensor(Direction.Up, Channel.Red))
 
@@ -94,8 +94,22 @@ fun starterVessel(grid: Grid): VesselState {
         put(right, hy, Hull())
     }
 
+    // No rock on either plate, and that is the increment showing through rather than an omission:
+    // an extractor has to be **given** something to eat. The starting world is a refinery with its
+    // feedstock missing, and F6 is how you supply it. See `docs/out-of-space-plan.md` §5i.
     return VesselState(grid = grid, machines = machines.toList(), conduits = Conduits.ofRails(rails.toList()))
 }
+
+/**
+ * Where the starter vessel's two extractor plates are.
+ *
+ * Named because a plate is now the only place ore can come from, so "put a rock on the plate" is a
+ * thing anything setting the world up has to be able to say without knowing the layout by heart —
+ * and the layout has moved before. See `apps/outofspace/agent-scripts/extractor.txt`.
+ */
+const val STARTER_PLATE_X = 5
+const val STARTER_PLATE_Y = 12
+const val STARTER_DEMO_PLATE_Y = STARTER_PLATE_Y + 7
 
 /** `RUN = ALWAYS − RED`: dig at full rate until something raises RED, then stop dead. */
 private val STOP_WHEN_RED = Wiring(

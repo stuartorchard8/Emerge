@@ -23,10 +23,10 @@ expect rockBalance = 0
 # The ore ledger must not have noticed. A rock does NOT go through the miner -- the extractor exists
 # to delete the miner, and hanging it off that ledger would weld the two together. See plan §5f.
 #
-# `massBalance` is the statement, not `minedGrams`: the starter vessel has a working miner, so mined
-# is never zero and asserting that it is measures the starter vessel rather than the rock. What has
-# to be true is that mined still equals aboard plus vented with sixty-three kilos of rock in the
-# room -- which is exactly the claim that the rock is in neither of those terms.
+# `massBalance` is the statement, not `extractedGrams`. Since H3 the two ledgers are hinged -- a rock
+# is where ore comes from -- so what has to be true is that the ore balance still closes with
+# sixty-three kilos of rock in the room, i.e. that a rock nobody has eaten yet is in neither of the
+# terms. The rock's own ledger says the rest, and it is checked on its own line.
 expect massBalance = 0
 
 echo --- and it falls, because it is over the plating

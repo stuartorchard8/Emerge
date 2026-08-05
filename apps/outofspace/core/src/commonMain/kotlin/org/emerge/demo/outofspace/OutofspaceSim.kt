@@ -44,7 +44,10 @@ import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
+import org.emerge.demo.outofspace.world.biteCell
+import org.emerge.demo.outofspace.world.reach
+import org.emerge.demo.outofspace.world.reachableCell
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Sensor
@@ -123,7 +126,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val m = w.machines[i] ?: continue
             val activation = m.wiring.activation(Action.Run, signals)
             w.machines[i] = when (m) {
-                is Miner -> w.produce(cfg, m, activation)
+                is Extractor -> w.leech(m, activation, i)
                 is Processor -> w.refine(cfg, m, activation, i)
                 is Smelter -> w.melt(cfg, m, activation, i)
                 else -> m
@@ -260,10 +263,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
 
         // Vessel pays for rock momentum here: `−J` for the `+J` the rock got (conserved by construction).
+        // Everything the vessel handed a rock this tick: the extractor took momentum off one
+        // (negative), contact and plating gave some to others.
+        val handedX = w.rockHandedX + rocksDrifted.handedX
+        val handedY = w.rockHandedY + rocksDrifted.handedY
         val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX -
-            rocksDrifted.handedX
+            handedX
         val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY -
-            rocksDrifted.handedY
+            handedY
 
         return state.copy(
             machines = machines,
@@ -271,7 +278,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bridges = bridges,
             diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
-            minedGrams = w.minedGrams,
+            extractedGrams = w.extractedGrams,
             debris = debris,
             ventedGrams = w.ventedGrams,
             signals = signals,
@@ -306,8 +313,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
             rocks = rocksDrifted.rocks,
-            rockImpulseX = state.rockImpulseX + rocksDrifted.handedX,
-            rockImpulseY = state.rockImpulseY + rocksDrifted.handedY,
+            rockImpulseX = state.rockImpulseX + handedX,
+            rockImpulseY = state.rockImpulseY + handedY,
             capturedGrams = w.capturedGrams,
             motion = w.motion.freeze(),
         )
@@ -419,7 +426,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * The orebody a new miner draws from, per kilogram. Mostly iron and far too dirty to smelt
+     * The orebody a new extractor draws from, per kilogram. Mostly iron and far too dirty to smelt
      * straight — 410g of iron against 590g of everything else — so a line that runs ore directly into
      * a smelter yields nothing but slag. Learning to put a processor in front is the first thing this
      * world teaches, and it teaches it without a tutorial.
@@ -435,7 +442,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
-        var minedGrams: Long = state.minedGrams
+        var extractedGrams: Long = state.extractedGrams
         val debris: DebrisWork = DebrisWork(state.debris)
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
@@ -462,6 +469,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Free-floating rock, and the running admission of how much of it came from outside. */
         val rocks: MutableList<Rock> = state.rocks.toMutableList()
         var capturedGrams: Long = state.capturedGrams
+
+        /**
+         * Momentum the vessel handed the rocks during the **machine** pass, which is negative: an
+         * extractor takes momentum off a rock rather than giving it any.
+         *
+         * Separate from what [driftRocks] hands out only because it happens earlier in the tick;
+         * the two are summed into one term below and mean the same thing. See [VesselState.rockImpulseX].
+         */
+        var rockHandedX: Long = 0L
+        var rockHandedY: Long = 0L
 
         // Mutable: edit pass moves air before fluid pass runs.
         val airGrams: LongArray = state.air.copyGrams()
@@ -520,6 +537,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             generatedJoules += joules
         }
 
+        /**
+         * Charges [joules] to the machine at [index] **without** counting it as generated.
+         *
+         * The difference from [heat] is the whole point: this is energy that was already in the
+         * world and has changed hands — a rock's heat arriving in the extractor that ate it. Booking
+         * it as generated would break the thermal balance by exactly the amount that moved.
+         */
+        fun absorb(index: Int, joules: Long) {
+            if (joules == 0L || index !in heatAdded.indices) return
+            heatAdded[index] += joules
+        }
+
         /** Books a body's energy in or out of the world as it is built or scrapped. */
         fun built(joules: Long) { constructionJoules += joules }
 
@@ -553,7 +582,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeJoules[tile] = 0L
         }
 
-        /** Where a machine instance currently sits — miners are charged heat by identity. */
+        /** Where a machine instance currently sits — extractors are charged heat by identity. */
         fun indexOf(machine: Machine): Int = machines.indexOfFirst { it === machine }
 
         fun apply(edit: Edit) {
@@ -692,9 +721,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val built = newMachine(kind, facing)
             if (portsClash(portsOf(grid, built, at))) return
 
-            // Every deck machine is solid — air must have somewhere to go. Last check (air, not geometry).
-            // centre is elsewhere count as solid too.
-            if (!tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
+            // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
+            // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
+            if (!kind.isPermeable && !tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
 
             machines[at] = built
             built(built.joules)
@@ -749,15 +778,81 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun originAt(tile: Int): Int? =
             if (tile !in originOf.indices) null else originOf[tile].takeIf { it >= 0 }
 
-        /** Mine (minedGrams incremented here — moment matter enters the world). */
-        fun produce(cfg: OutofspaceConfig, m: Miner, activation: Int): Miner {
+        /**
+         * Leech from whatever rock is lying on the plate at [at], and grind what has been leeched —
+         * the tick's only source of ore, and the moment mass crosses from the rock ledger to the ore
+         * one.
+         *
+         * ⚠️ **Three things leave the rock together and all three must be booked here**, because the
+         * rock is not part of the vessel and each of them lands in something that is:
+         *
+         *  - mass, which becomes ore and moves [VesselState.extractedGrams];
+         *  - heat, which goes into the casing and is a *transfer* rather than work, so it is
+         *    [absorb]ed and not [heat]ed — putting it through the generated-joules term would mint
+         *    energy that was already in the world;
+         *  - momentum, which the ship gains because the ore is now aboard and moving with it. The
+         *    ship therefore hands the rock the negative of it, which is what [rockHandedX] is for.
+         *
+         * Only the mass of it is obvious, and the other two are exactly the kind of half-exchange
+         * the ledgers exist to catch.
+         */
+        fun leech(m: Extractor, activation: Int, at: Int): Extractor {
             val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
-            if (m.buffer.mass >= Miner.BUFFER_CAP) return m.copy(carry = carry)  // backed up: stop digging
-            if (grams <= 0L) return m.copy(carry = carry)
-            val dug = m.composition.scaledTo(grams)
-            minedGrams += dug.total
-            heat(indexOf(m), dug.total * heatPerGram(m))
-            return m.copy(buffer = Resource(Form.Ore, m.buffer.mixture + dug), carry = carry)
+            // Backed up: stop working, holding whatever cell is already in the jaws. It is counted
+            // as aboard either way, so nothing is forfeit by waiting.
+            if (m.buffer.mass >= Extractor.BUFFER_CAP) return m.copy(carry = carry)
+
+            var input = m.input
+            if (input == null || input.mass <= 0L) {
+                val found = if (activation > 0) reachedRock(m, at) else -1
+                input = if (found < 0) null else bite(found, at)
+            }
+            if (input == null) return m.copy(input = null, carry = carry)
+            if (grams <= 0L) return m.copy(input = input, carry = carry)
+
+            // The same shape as a processor working a lump: take a chunk off the input buffer.
+            val chunk = input.mixture.take(minOf(grams, input.mass))
+            if (chunk.total <= 0L) return m.copy(input = input, carry = carry)
+            heat(at, chunk.total * heatPerGram(m))
+            return m.copy(
+                input = Resource(input.form, input.mixture - chunk).orNull(),
+                buffer = Resource(Form.Ore, m.buffer.mixture + chunk),
+                carry = carry,
+            )
+        }
+
+        /** The first rock with a cell over the plate at [at], or `-1`. */
+        private fun reachedRock(m: Extractor, at: Int): Int {
+            val reach = m.kind.reach
+            val x0 = grid.xOf(at) - reach
+            val y0 = grid.yOf(at) - reach
+            for (r in rocks.indices) {
+                if (reachableCell(rocks[r], x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
+            }
+            return -1
+        }
+
+        /**
+         * Takes one cell off rock [index], which is where mass enters the ore ledger — at the rock,
+         * not at the belt, so that the two balances are hinged on the same number. See
+         * [VesselState.capturedGrams].
+         */
+        private fun bite(index: Int, at: Int): Resource? {
+            val rock = rocks[index]
+            val reach = machines[at]!!.kind.reach
+            val cell = reachableCell(
+                rock, grid.xOf(at) - reach, grid.yOf(at) - reach,
+                grid.xOf(at) + reach, grid.yOf(at) + reach,
+            )
+            if (cell < 0) return null
+            val taken = biteCell(rock, cell)
+            extractedGrams += taken.grams
+            absorb(at, taken.joules)
+            // The rock lost this; the ship gained it, so the ship gave the rock the negative.
+            rockHandedX -= taken.impulseX
+            rockHandedY -= taken.impulseY
+            if (taken.rock == null) rocks.removeAt(index) else rocks[index] = taken.rock
+            return Resource(Form.Ore, rock.composition.scaledTo(taken.grams))
         }
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
@@ -822,7 +917,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Which of a machine's buffers drains through [port]. */
         private fun bufferFor(m: Machine, port: Port): Resource? = when (m) {
-            is Miner -> m.buffer
+            is Extractor -> m.buffer
             is Processor -> if (port.stream == Stream.Waste) m.tailings else m.product
             is Smelter -> if (port.stream == Stream.Waste) m.slag else m.refined
             is Storage -> m.contents
@@ -831,7 +926,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** That machine with the drained buffer replaced. */
         private fun withBuffer(m: Machine, port: Port, rest: Resource?): Machine = when (m) {
-            is Miner -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
+            is Extractor -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
             is Processor -> if (port.stream == Stream.Waste) m.copy(tailings = rest) else m.copy(product = rest)
             is Smelter -> if (port.stream == Stream.Waste) m.copy(slag = rest) else m.copy(refined = rest)
             is Storage -> m.copy(contents = rest)
@@ -981,7 +1076,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[target] = destination.copy(ventedGrams = destination.ventedGrams + packet.mass)
                     true
                 }
-                // Miners take no input.
+                // Extractors take no input: what they eat is lying on them.
                 else -> false
             }
         }
@@ -1000,7 +1095,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
 
         private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
-            MachineKind.Miner -> Miner(facing, DEFAULT_ORE_BODY)
+            MachineKind.Extractor -> Extractor(facing)
             MachineKind.Processor -> Processor(facing)
             MachineKind.Smelter -> Smelter(facing)
             MachineKind.Storage -> Storage(facing)

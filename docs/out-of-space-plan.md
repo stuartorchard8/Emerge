@@ -1251,10 +1251,8 @@ so that each one ends with something to look at, and each commit carries **all f
   momentum, the plating is an ordinary force where it reaches, and the astern drift falls out of
   position being relative. It should be bit-identical to H1, which is the check. It lands and stays landed, and
   `momentumBalance` stays zero because the ship gets what the rock loses.
-- **H3. The extractor** — 5×5 permeable background machine, leeching mass off the rocks on its tiles
-  into a `Mixture` that feeds the existing refining stages. **The miner is deleted here.** This is
-  where the loop closes, and it is deliberately before capture: retiring the miner is worth more than
-  the capture ceremony and does not depend on it.
+- **H3. The extractor** — ✅ **BUILT 2026-08-05.** 5×5 permeable plate, leeching mass off the rocks
+  lying on it into the existing refining stages. **The miner is deleted.** See §5i.
 - **H4. Capture** — the field outside, flying at a rock, the rock entering the grid.
 - **H5. Pressure on rocks** — the permeable coupling above. Last, so it can be cut.
 
@@ -1364,6 +1362,88 @@ knocked clear while the ship visibly recoils. `momentumBalance` is zero in every
 
 ---
 
+## 5i. The extractor, and a stand-in that removed itself (2026-08-05)
+
+**The miner is deleted.** Ore is no longer created; it is taken off a rock, and the world's ore
+ledger is now hinged to its rock ledger by a single shared term. `minedGrams` is `extractedGrams`,
+and it appears in both identities at once:
+
+```
+massBalance   extracted == aboard + vented
+rockBalance   rockGrams == baselineRockGrams + captured − extracted
+```
+
+Add them and everything but the baseline and the capture cancels, which is what makes the pair a
+proof rather than two hopeful sums: mass arrives from outside, sits in a rock, and leaves the rock
+only by becoming ore, so a gram invented in the crossing has nowhere to hide. The miner's problem was
+never that it was fake — see §5f — it was that it minted mass with no term admitting it.
+
+### The two choices that carry the machine
+
+**It is permeable**, and that is not a detail. A deck machine is solid: `StructureMap` marks its
+tiles `Machine`, air cannot be in them, and `overlapsHull` bounces a rock off them. An impermeable
+extractor is therefore a *wall a rock can never get on top of* — it could not do the one thing it
+exists to do. So `MachineKind.isPermeable` skips it in the flood fill entirely and the tile is
+whatever the fill would have made it. Nothing downstream needed a case: air, heat and rock contact
+all read that map and all three then treat the plate as the empty floor it is.
+
+**It eats whole cells.** A rock's mass is `filled × gramsPerTile` and nothing else, so there is no
+such thing as a rock that is 40% eaten; the only exact way to take mass off one is to remove a cell.
+That meets a rate in grams by giving the machine an `input` buffer holding **one 3 kg cell**, which
+it grinds into its output at `gramsPerTick` exactly as a processor works a lump. So the extractor
+reads like every other machine in the game — input, rate, output — the rock is never half-eaten, and
+the belt still fills in a smooth trickle rather than in 3 kg lurches. On screen you get both halves:
+the rock visibly pits away a cell at a time while the line runs steadily.
+
+⚠️ **Three things leave a rock in the same instant and all three have to be booked.** Only the mass
+is obvious. The heat goes into the casing and is a **transfer**, so it is `absorb`ed rather than
+`heat`ed — putting it through the generated-joules term would mint energy that was already in the
+world. And the momentum goes to the *ship*, because the ore is aboard now and moving with it, which
+means the ship hands the rock the negative of it through `rockImpulse`. Each share is taken as the
+remainder of one truncating divide (`whole − whole × (n−1) / n`) rather than as a multiply of its
+own, so the two halves add back to the original exactly — §5g's lesson applied before it could bite.
+
+### What it uncovered: nothing holds a rock down
+
+A vessel has no gravity (§5g), so a rock lying on a plate is not resting on anything. It keeps its
+world-frame momentum while the ship has a residual velocity of a couple of thousandths of a tile a
+tick — its own air and machinery are enough — and the plate is exactly a rock across. Measured: a
+63 kg rock is eaten to about 9 kg by tick 400 and stays there. The far column of cells has slid past
+the plate's edge and is out of reach for good.
+
+That is **gameplay, not a defect**: keeping a rock on the plate is something the player does, and
+holding one still is what H4's hold is for. Every ledger is zero the whole time; the stranded 9 kg is
+still counted as rock.
+
+### The wrong turn, which is the one worth writing down
+
+The first version of this made the extractor **grip** its rock — match its velocity to the ship's,
+booked through `rockImpulse` — because without it the starter vessel ate 12 kg and stopped. That is
+functionality nobody asked for, and it was cut. It then turned out the 12 kg stall had a *completely
+different cause*: the starter vessel's belt started one tile past the new 5-wide plate's output port,
+so the extractor filled its buffer and stopped for want of anywhere to put anything. The grip made a
+symptom go away and the symptom was two layers above the cause — §5e's exact mistake, in a plan that
+has the warning written into it. **A fix that works is not evidence of a diagnosis that is right.**
+
+### What is not pinned any more
+
+`ProcessorChainTest` used to assert exact purities. It has read `75/100/100`, then `66/88/100`, and
+now wobbles between 66 and 64 on the first stage depending where in a bite it is sampled — ore is
+apportioned once per 3 kg cell where the miner apportioned it afresh every tick, so what is *standing
+in* a buffer moves about even though what is separated does not. Every one of those figures was a
+constant re-pinned by whatever changed upstream, which makes the test a record of its own history. It
+now asserts the claim: each stage cleaner than the last, the far end pure.
+
+### What to go and look at
+
+`agent-scripts/extractor.txt`, and `F6` in the running game. The starting world is now a complete,
+fully wired refinery that produces **nothing**, because the thing at the head of the line no longer
+invents ore — that is the increment in one screen. Drop a rock on the plate and the whole line comes
+alive; leave it and the rock pits away until what is left of it has slid off the plate and the line
+goes quiet with a sliver of rock stranded an inch outside the machine that wanted it.
+
+---
+
 ## 6. Open questions
 
 1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
@@ -1383,9 +1463,9 @@ knocked clear while the ship visibly recoils. `momentumBalance` is zero in every
 4. **Off-axis gravity has never been run.** `applyBuoyancy` is the one function permitted to assume
    gravity is axis-aligned, and until §5d increment G nothing ever gave it a reason not to be.
    Diagonal thrust is the first thing that will, and it is scheduled rather than assumed to work.
-5. **Miners are a stand-in** and should not grow depth. Whatever eventually replaces them — imports
-   from outside the vessel, a mining rig on a surface — is a Phase 5 question, not a machine to
-   elaborate now.
+5. ~~**Miners are a stand-in** and should not grow depth.~~ *Answered by increment H3: the miner is
+   gone, and ore now comes off a rock that had to arrive from outside. What is still a stand-in is
+   how the rock gets here — `F6` — which is H4's question, not a machine to elaborate now.*
 
 *Settled:* the grid is a **fixed generous bound** with the vessel built inside it (much simpler for
 the Phase 4 atmosphere solver, and it still allows expansion); belts have **slots**; solids and

@@ -20,10 +20,13 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * the cheap insurance that keeps acceleration-derived gravity a later decision rather than a
  * rewrite: no code is allowed to assume "down" is a constant or implied by array order.
  *
- * [ventedGrams] and [minedGrams] exist so conservation can be checked across the *whole world*, not
- * just one operation. A vent is the only place matter legitimately leaves and a miner the only place
- * it legitimately arrives, so `mined == in-world + vented` must hold on every tick. That invariant
- * catches an entire category of logistics bug at once.
+ * [ventedGrams] and [extractedGrams] exist so conservation can be checked across the *whole world*,
+ * not just one operation. A vent is the only place matter legitimately leaves and an extractor the
+ * only place ore legitimately arrives, so `extracted == in-world + vented` must hold on every tick.
+ * That invariant catches an entire category of logistics bug at once.
+ *
+ * Since H3 nothing mints ore: [extractedGrams] is mass that came **off a rock**, so it is a term in
+ * the rock ledger too and the two balances are hinged together — see [capturedGrams].
  *
  * There is no separate "banked" term any more: the [Stockpile] is derived from the storages, so what
  * it holds is already counted in [inTransitGrams] and adding it again would double-count.
@@ -115,22 +118,24 @@ data class VesselState(
      */
     val rocks: List<Rock> = emptyList(),
     val tick: Long = 0L,
-    val minedGrams: Long = 0L,
+    val extractedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
     /**
      * Cumulative grams of rock that have arrived from outside the world, and the rock mass the world
-     * started with. Together they are rock's answer to `mined == aboard + vented`:
+     * started with. With [extractedGrams] they are rock's answer to `extracted == aboard + vented`:
      *
-     *     rockGrams == baselineRockGrams + capturedGrams
+     *     rockGrams == baselineRockGrams + capturedGrams − extractedGrams
      *
-     * Its own ledger rather than a term in the ore balance, and that is the whole point of it. A
-     * rock is **new mass in a closed world**, and the obvious place to put it — [minedGrams] — is the
-     * one place it must not go: the miner is a stand-in that the extractor exists to delete, and
-     * building the hold on top of it would tie the replacement to the thing being replaced. See
-     * `docs/out-of-space-plan.md` §5f and open question 5.
+     * The third term is H3's, and it is the *same* number the ore balance is measured against — that
+     * is what makes the pair a proof rather than two hopeful sums. Mass arrives from outside, sits in
+     * a rock, and leaves the rock only by becoming ore; add the two identities and everything but the
+     * baseline and the capture cancels, so a gram cannot be invented in the crossing without one of
+     * them going non-zero.
      *
-     * The extractor gains a third term here in H3, for mass that has left a rock and become ore, and
-     * at that point this is the ledger that proves nothing was created on the way across.
+     * The rock ledger was kept separate from the ore one deliberately while the miner still existed
+     * — a rock is **new mass in a closed world**, and building the hold on the stand-in it was meant
+     * to replace would have tied the replacement to the thing being replaced. The miner is gone now
+     * and the hinge is safe to fit. See `docs/out-of-space-plan.md` §5f and open question 5.
      */
     val capturedGrams: Long = 0L,
     /**
@@ -142,7 +147,7 @@ data class VesselState(
     val baselineRockGrams: Long = rocks.sumOf { it.massGrams },
     /**
      * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
-     * away to space. The thermal counterpart of [minedGrams] and [ventedGrams], and they buy the
+     * away to space. The thermal counterpart of [extractedGrams] and [ventedGrams], and they buy the
      * same thing: `stored + radiated − generated` must never move, so an energy leak is one
      * assertion away rather than a mystery.
      */
@@ -557,7 +562,7 @@ fun spoilsOf(machine: Machine?): List<Resource> =
 fun massIn(machine: Machine?): Long = when (machine) {
     null -> 0L
     is Bridge -> machine.mass
-    is Miner -> machine.buffer.mass
+    is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
@@ -577,7 +582,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
 fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
     is Bridge -> machine.carried.size * Signals.FULL / Bridge.SLOTS
-    is Miner -> (machine.buffer.mass * Signals.FULL / Miner.BUFFER_CAP).toInt()
+    is Extractor -> (machine.buffer.mass * Signals.FULL / Extractor.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
@@ -604,7 +609,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
                 label to Resource(form, p.contents)
             }
         }
-    is Miner -> listOf("BUFFER" to machine.buffer)
+    is Extractor -> listOfNotNull(machine.input?.let { "CRUSHING" to it }, "BUFFER" to machine.buffer)
     is Processor -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
         machine.product?.let { "CONCENTRATE" to it },
@@ -623,7 +628,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
 fun contentsOf(machine: Machine?): Mixture = when (machine) {
     null -> Mixture.EMPTY
     is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
-    is Miner -> machine.buffer.mixture
+    is Extractor -> (machine.input?.mixture ?: Mixture.EMPTY) + machine.buffer.mixture
     is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +

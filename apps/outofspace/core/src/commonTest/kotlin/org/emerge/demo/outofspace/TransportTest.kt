@@ -86,7 +86,7 @@ class TransportTest {
          * where material comes *in*.
          *
          * Leaving [from] empty is the "nobody is feeding this" case: material on the run drains
-         * downhill to the nearest consumer. That is a real situation (a belt whose miner was just
+         * downhill to the nearest consumer. That is a real situation (a belt whose extractor was just
          * torn out) and most of the tests below only care about the downstream half, so they say
          * nothing about sources. A test about a **fork** must name one, because which way is forward
          * at a junction is a fact about where material entered.
@@ -507,7 +507,7 @@ class TransportTest {
     @Test
     fun `a packet passing an output port partway along a run still moves only one tile`() {
         // A machine's output port sits on a tile of a run that already carries material — a second
-        // miner feeding a shared line, or a bridge putting material down on it. That tile is a
+        // extractor feeding a shared line, or a bridge putting material down on it. That tile is a
         // source, so depth there is zero and every tile *behind* it has no forward at all and falls
         // back to moving downhill. The two rules interleave in the traversal order, and the source
         // tile ends up walked after the tile that feeds it: the packet is moved into it and then

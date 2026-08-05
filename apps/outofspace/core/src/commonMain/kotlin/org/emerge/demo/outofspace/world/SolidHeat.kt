@@ -244,6 +244,6 @@ fun heatPerGram(machine: Machine?): Long = when (machine) {
     // 400 kJ/g. Smelting costs ~1 MJ/kg.
     is Smelter -> 400_000L
     is Processor -> 40_000L    // crushing and grinding
-    is Miner -> 20_000L
+    is Extractor -> 20_000L
     else -> 0L
 }

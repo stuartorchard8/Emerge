@@ -16,7 +16,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
@@ -121,15 +121,20 @@ class WiringTest {
 
     @Test
     fun `half activation is half throughput`() {
-        fun minedAfterASecond(w: Wiring): Long {
-            val grid = Grid(2, 1)
-            val miner = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY).withWiring(w) as Miner
-            return run(VesselState(grid, listOf(miner, null)), 4).minedGrams
+        // Measured at the **belt side** of the extractor, not at the rock. Mass comes off a rock in
+        // whole 3 kg cells, so `extractedGrams` moves in lurches that say nothing about a rate; what
+        // the throttle governs is how fast the cell in the jaws is ground into the buffer.
+        fun groundInASecond(w: Wiring): Long {
+            val grid = Grid(5, 5)
+            val machines = arrayOfNulls<Machine>(grid.size)
+            val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
+            val s = run(VesselState(grid, machines.toList(), rocks = feed), 4)
+            return (s[grid.index(2, 2)] as Extractor).buffer.mass
         }
-        assertEquals(1_000L, minedAfterASecond(wiring(Channel.Always to 1000)))
-        assertEquals(500L, minedAfterASecond(wiring(Channel.Always to 500)), "half the weight, half the ore")
-        assertEquals(250L, minedAfterASecond(wiring(Channel.Always to 250)))
-        assertEquals(0L, minedAfterASecond(wiring(Channel.Always to -1000)), "negative activation stops it")
+        assertEquals(1_000L, groundInASecond(wiring(Channel.Always to 1000)))
+        assertEquals(500L, groundInASecond(wiring(Channel.Always to 500)), "half the weight, half the ore")
+        assertEquals(250L, groundInASecond(wiring(Channel.Always to 250)))
+        assertEquals(0L, groundInASecond(wiring(Channel.Always to -1000)), "negative activation stops it")
     }
 
     @Test
@@ -154,7 +159,7 @@ class WiringTest {
 
     /**
      * `ALWAYS − RED` is a **proportional controller, not a cut-off**, and that is worth pinning down
-     * because it is easy to assume otherwise. As the tank fills, RED rises and the miner throttles
+     * because it is easy to assume otherwise. As the tank fills, RED rises and the extractor throttles
      * smoothly down; at 85% full it is running at 15%, still creeping upward. It approaches full
      * asymptotically and never overshoots.
      *
@@ -163,29 +168,43 @@ class WiringTest {
      * more interesting half and comparisons can be added without disturbing it.
      */
     @Test
-    fun `a miner wired ALWAYS minus RED throttles smoothly as the tank it fills gets full`() {
-        // Miner covers x 1..3 and pushes out at x=3; the tank covers 4..6 and takes it in at x=4.
-        // The sensor sits below the tank looking up at its bottom row.
+    fun `an extractor wired ALWAYS minus RED throttles smoothly as the tank it fills gets full`() {
+        // The extractor's plate covers x 0..4 and it pushes out at x=4; the tank covers 5..7 and
+        // takes it in at x=5. The sensor sits below the tank looking up at its bottom row.
         val grid = Grid(12, 8)
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-            .withWiring(wiring(Channel.Always to 1000, Channel.Red to -1000)) as Miner
+        val feed = feedExtractor(
+            grid, machines, 2, 3,
+            wiring = wiring(Channel.Always to 1000, Channel.Red to -1000),
+            rocks = 4,
+        )
         machines[grid.index(6, 3)] = Storage(Direction.Right)   // input port at (5, 3)
         machines[grid.index(6, 5)] = Sensor(Direction.Up, Channel.Red)
         val rails = arrayOfNulls<Segment>(grid.size)
-        joinRow(grid, rails, 3, 5, 3)
-        var s = VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails.toList()))
+        joinRow(grid, rails, 4, 5, 3)
+        var s = VesselState(
+            grid, machines.toList(),
+            conduits = Conduits.ofRails(rails.toList()),
+            rocks = feed,
+        )
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
         // period. What matters is the *shape*: the rate falls away as the tank fills.
-        val firstTenSeconds = run(s, 40).minedGrams
+        //
+        // Measured as **what has been ground out of the extractor**: everything taken off a rock,
+        // less the cell still in the jaws. Neither `extractedGrams` nor "mass aboard" would do — a
+        // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
+        // lurches that say nothing about a rate.
+        fun ground(w: VesselState): Long =
+            w.extractedGrams - ((w[grid.index(2, 3)] as Extractor).input?.mass ?: 0L)
+        val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
         s = run(s, 160)
         val red = s.signals[Channel.Red]
         assertTrue(red > 800, "the tank should be reading nearly full, got $red")
 
-        val lateRate = run(s, 40).minedGrams - s.minedGrams
+        val lateRate = ground(run(s, 40)) - ground(s)
         assertTrue(
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
@@ -195,7 +214,7 @@ class WiringTest {
 
     @Test
     fun `the starter vessel ships that same loop, working`() {
-        val s = run(starterVessel(Grid(40, 28)), 160)
+        val s = run(workingVessel(Grid(40, 28)), 160)
         assertTrue(s.signals[Channel.Red] > 800, "the demonstration storage should have nearly filled")
         // And the main line is unaffected by it.
         assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still stores iron")
@@ -206,7 +225,7 @@ class WiringTest {
     @Test
     fun `wiring edits add, change and remove terms`() {
         val grid = Grid(2, 1)
-        val base = VesselState(grid, listOf(Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY), null))
+        val base = VesselState(grid, listOf(Extractor(Direction.Right), null))
 
         val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(0, Action.Run, 99, Trigger(Channel.Red, -1000)))))
         assertEquals(2, added[0]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
@@ -224,18 +243,17 @@ class WiringTest {
         val grid = Grid(8, 6)
         val at = grid.index(3, 3)
         var s = VesselState(grid, List(grid.size) { null })
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Miner, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Extractor, Direction.Right))))
         assertEquals(listOf(Trigger(Channel.Always, 1000)), s[at]!!.wiring.triggers(Action.Run))
     }
 
     @Test
     fun `wiring survives rotation`() {
         val grid = Grid(2, 1)
-        val wired = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
-            .withWiring(wiring(Channel.Cyan to 750))
+        val wired = Extractor(Direction.Right).withWiring(wiring(Channel.Cyan to 750))
         var s = VesselState(grid, listOf(wired, null))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(0))))
-        assertEquals(Direction.Down, (s[0] as Miner).facing)
+        assertEquals(Direction.Down, (s[0] as Extractor).facing)
         assertEquals(listOf(Trigger(Channel.Cyan, 750)), s[0]!!.wiring.triggers(Action.Run))
     }
 
@@ -277,12 +295,12 @@ class WiringTest {
 
     @Test
     fun `the world still never loses a gram with sensors and wiring in play`() {
-        var s = starterVessel(Grid(40, 28))
+        var s = workingVessel(Grid(40, 28))
         repeat(240) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 89 == 0) {
                 assertEquals(
-                    s.minedGrams,
+                    s.extractedGrams,
                     s.inTransitGrams + s.ventedGrams,
                     "tick ${s.tick}",
                 )
@@ -293,7 +311,7 @@ class WiringTest {
     @Test
     fun `two runs of the wired world are identical`() {
         fun digest(s: VesselState) = buildString {
-            append(s.tick).append(s.minedGrams).append(s.ventedGrams).append(s.stockpile)
+            append(s.tick).append(s.extractedGrams).append(s.ventedGrams).append(s.stockpile)
             for (m in s.machines) append(m?.toString() ?: "-")
         }
         val grid = Grid(40, 28)

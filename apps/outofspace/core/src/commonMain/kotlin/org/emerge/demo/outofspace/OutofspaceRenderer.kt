@@ -16,7 +16,7 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Smelter
@@ -449,9 +449,12 @@ class OutofspaceRenderer {
         when (m) {
             // Bridges not on deck list (separate pass).
             is Bridge -> Unit
-            is Miner -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Miner))
-                fillBar(x, y, n, m.buffer.mass.toFloat() / Miner.BUFFER_CAP)
+            is Extractor -> {
+                // A tray, not a block. The recessed floor is what says "things go on top of this",
+                // and the rock pass draws over it — see [drawRock].
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Extractor))
+                bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
+                fillBar(x, y, n, m.buffer.mass.toFloat() / Extractor.BUFFER_CAP)
             }
             is Processor -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
@@ -802,6 +805,9 @@ class OutofspaceRenderer {
         const val ROCK        = 0x6B5F55FFL
         const val ROCK_GRAIN  = 0x87796BFFL
 
+        /** The extractor's recessed floor: the plate's colour, most of the way to the deck's. */
+        const val EXTRACTOR_FLOOR = 0x3A2C1EFFL
+
         // ── Stopped machine states ──────────────────────────────────────
         const val STOPPED_BODY    = 0x1A1A20FFL
         const val STOPPED_INDICATOR = 0x8A3030FFL
@@ -877,6 +883,8 @@ class OutofspaceRenderer {
 
         // ── Machine body dimensions ─────────────────────────────────────
         const val MACHINE_INSET = 0.94f
+        /** The extractor's floor, inside its rim. */
+        const val EXTRACTOR_FLOOR_INSET = 0.82f
         const val STOP_INDICATOR_SCALE = 0.34f
         const val SENSOR_EYE_SCALE = 0.3f
         const val VENT_CORE_SCALE = 0.4f
@@ -966,7 +974,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Gauge -> 0x39445AFFL
     MachineKind.Pipe -> 0x7A5A3AFFL
     MachineKind.Bridge -> 0x1A2030FFL
-    MachineKind.Miner -> 0x6B4A2AFFL
+    MachineKind.Extractor -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Storage -> 0x3A4A5AFFL

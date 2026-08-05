@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
@@ -38,15 +38,15 @@ class MotionTest {
         return s
     }
 
-    /** A miner at (2,3) feeding a run of track rightward into a tank at [tankX]. */
+    /** An extractor at (2,3), port at (4,3), feeding a run of track rightward into a tank at [tankX]. */
     private fun line(tankX: Int = 9): VesselState {
         val grid = cfg.grid
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        val feed = feedExtractor(grid, m, 2, 3)
         m[grid.index(tankX, 3)] = Storage(Direction.Right)
-        joinRow(grid, rails, 3, tankX - 1, 3)
-        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        joinRow(grid, rails, 4, tankX - 1, 3)
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -60,7 +60,7 @@ class MotionTest {
         val moving = (3..8).filter { s.rails[cfg.grid.index(it, 3)]?.held != null }
         assertTrue(moving.isNotEmpty(), "the line should be carrying something by now")
         // Everything on this run came from its left-hand neighbour, because that is the only way
-        // material can be moving: the miner is at the left end and the tank at the right.
+        // material can be moving: the extractor is at the left end and the tank at the right.
         for (x in moving) {
             val came = s.motion.arrivedFrom(cfg.grid.index(x, 3))
             assertTrue(
@@ -85,15 +85,15 @@ class MotionTest {
 
     @Test
     fun `a packet a machine put on the track is marked as having appeared`() {
-        // One tick at a time until the miner ejects, which is the moment being tested.
+        // One tick at a time until the extractor ejects, which is the moment being tested.
         var s = line()
         var appeared = -1
         repeat(40) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            val tile = cfg.grid.index(3, 3)
+            val tile = cfg.grid.index(4, 3)
             if (s.motion.appearedAt(tile)) { appeared = tile; return@repeat }
         }
-        assertTrue(appeared >= 0, "the miner never put anything on the track")
+        assertTrue(appeared >= 0, "the extractor never put anything on the track")
         assertNotNull(s.rails[appeared]?.held, "and what appeared should actually be there")
         assertEquals(0L, s.motion.previousMassAt(appeared), "a thing that appeared had no mass before")
         assertNull(s.motion.arrivedFrom(appeared), "it came from a port, not from a neighbour")
@@ -122,12 +122,17 @@ class MotionTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
-        m[grid.index(2, 3)] = Miner(Direction.Right, OutofspaceReducer.DEFAULT_ORE_BODY)
+        val feed = feedExtractor(grid, m, 2, 3)
         m[grid.index(11, 3)] = Storage(Direction.Right)
         bridges[grid.index(6, 3)] = Bridge(Direction.Right)
-        joinRow(grid, rails, 3, 5, 3)
+        joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
-        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bridges = bridges.toList())
+        return VesselState(
+            grid, m.toList(),
+            conduits = Conduits.ofRails(rails.toList()),
+            bridges = bridges.toList(),
+            rocks = feed,
+        )
     }
 
     @Test

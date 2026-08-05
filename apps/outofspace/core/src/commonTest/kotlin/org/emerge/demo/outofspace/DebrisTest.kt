@@ -193,7 +193,7 @@ class DebrisTest {
 
     @Test
     fun `the world still never loses a gram when the player takes it apart`() {
-        var s = starterVessel(Grid(40, 28))
+        var s = workingVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
         s = run(s, 80)
 
@@ -205,7 +205,7 @@ class DebrisTest {
         repeat(120) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             assertEquals(
-                s.minedGrams,
+                s.extractedGrams,
                 s.inTransitGrams + s.ventedGrams,
                 "tick ${s.tick}: dismantling must move mass, not destroy it",
             )
@@ -216,7 +216,7 @@ class DebrisTest {
     @Test
     fun `two runs of a world being dismantled are identical`() {
         fun digest(): String {
-            var s = starterVessel(Grid(40, 28))
+            var s = workingVessel(Grid(40, 28))
             val cfg = OutofspaceConfig(grid = s.grid)
             s = run(s, 300)
             val y = 12   // the row the starter vessel's main line runs along

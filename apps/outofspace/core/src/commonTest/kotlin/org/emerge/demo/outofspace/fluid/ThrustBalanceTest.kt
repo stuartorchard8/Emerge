@@ -111,17 +111,21 @@ class ThrustBalanceTest {
     private fun assertBalanced(s: VesselState, what: String) {
         val aboardX = s.momentum.totalX + s.pipeMomentum.totalX
         val aboardY = s.momentum.totalY + s.pipeMomentum.totalY
+        // The rock term belongs in the identity from H2 onward, and the starter vessel has rocks on
+        // its extractor plates from H3 onward — gripped, chewed and handing momentum back — so a
+        // sum without it now reads a legitimate exchange as the ship gaining momentum from nowhere.
+        // See [VesselState.rockImpulseX].
         assertEquals(
             0L,
-            s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX,
+            s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX + s.rockImpulseX,
             "$what: x — ship ${s.vesselImpulseX}, aboard $aboardX, exhaust ${s.exhaustMomentumX}, " +
-                "undelivered ${s.undeliveredImpulseX}",
+                "undelivered ${s.undeliveredImpulseX}, rock ${s.rockImpulseX}",
         )
         assertEquals(
             0L,
-            s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY,
+            s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY + s.rockImpulseY,
             "$what: y — ship ${s.vesselImpulseY}, aboard $aboardY, exhaust ${s.exhaustMomentumY}, " +
-                "undelivered ${s.undeliveredImpulseY}",
+                "undelivered ${s.undeliveredImpulseY}, rock ${s.rockImpulseY}",
         )
     }
 

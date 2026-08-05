@@ -134,15 +134,16 @@ class RockTest {
     /**
      * The rock ledger, which exists because a rock is **new mass in a closed world**.
      *
-     * `rockGrams == baselineRockGrams + capturedGrams`, checked while rocks are being created — and
-     * the ore balance has to stay closed *beside* it, untouched, because the two are separate
-     * ledgers on purpose. Putting a rock through [VesselState.minedGrams] would have been the easy
-     * way and would have welded the extractor to the miner it exists to delete.
+     * `rockGrams == baselineRockGrams + capturedGrams − extractedGrams`, checked while rocks are
+     * being created — and nothing has been extracted here, so the third term is zero and this is H1's
+     * identity unchanged. What must stay true beside it is that **arriving** is not **extracting**: a
+     * rock appearing in the world moves the rock ledger and leaves the ore ledger alone, because only
+     * an extractor may turn one into the other. See §5i.
      */
     @Test
     fun `rock mass is booked and the ore ledger never notices`() {
         val controller = OutofspaceController(CFG, bareHull())
-        val oreBefore = controller.state.minedGrams
+        val oreBefore = controller.state.extractedGrams
 
         repeat(3) { i ->
             controller.dropRock(CFG.grid.index(6 + i * 8, 10))
@@ -158,8 +159,8 @@ class RockTest {
         val s = controller.state
         assertEquals(3, s.rocks.size)
         assertTrue(s.capturedGrams > 0L, "nothing was ever captured, so this proved nothing")
-        assertEquals(oreBefore, s.minedGrams, "a rock went through the miner's ledger")
-        assertEquals(s.inTransitGrams + s.ventedGrams, s.minedGrams, "and the ore balance broke")
+        assertEquals(oreBefore, s.extractedGrams, "a rock arriving counted as ore extracted")
+        assertEquals(s.inTransitGrams + s.ventedGrams, s.extractedGrams, "and the ore balance broke")
     }
 
     /**

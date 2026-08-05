@@ -85,7 +85,7 @@ class GaugeTest {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4_000L))
         val s = run(line(ore), 120)
         assertEquals(4_000L, s.stockpile.totalGrams, "every gram arrived at the far end")
-        assertEquals(s.minedGrams + 4_000L, s.inTransitGrams + s.ventedGrams, "and none went missing")
+        assertEquals(s.extractedGrams + 4_000L, s.inTransitGrams + s.ventedGrams, "and none went missing")
     }
 
     @Test
@@ -111,7 +111,7 @@ class GaugeTest {
     @Test
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
-        val s = run(starterVessel(Grid(40, 28)), 600)
+        val s = run(workingVessel(Grid(40, 28)), 600)
         val raw = s.signals[Channel.Amber]
         val concentrated = s.signals[Channel.Cyan]
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
@@ -120,12 +120,12 @@ class GaugeTest {
 
     @Test
     fun `a gauge conserves what passes through it`() {
-        var s = starterVessel(Grid(40, 28))
+        var s = workingVessel(Grid(40, 28))
         val cfg = OutofspaceConfig(grid = s.grid)
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {
-                assertEquals(s.minedGrams, s.inTransitGrams + s.ventedGrams, "tick ${s.tick}")
+                assertEquals(s.extractedGrams, s.inTransitGrams + s.ventedGrams, "tick ${s.tick}")
             }
         }
     }

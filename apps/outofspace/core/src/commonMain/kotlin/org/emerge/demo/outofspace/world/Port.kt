@@ -46,7 +46,7 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         // A vent is a hole. It takes whatever is put into it, from whichever face.
         is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
-        is Miner -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
+        is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Processor -> listOf(

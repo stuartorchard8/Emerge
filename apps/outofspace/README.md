@@ -19,7 +19,7 @@ machines to sensors so the vessel runs itself.
 | `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
 | `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
-| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), miner, processor, smelter, fabricator, storage, sensor, node, vent. |
+| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), extractor, processor, smelter, fabricator, storage, sensor, node, vent. |
 | `world/Structure.kt` | `Structure` and `StructureMap` — hull, interior and vacuum, derived by flood fill from the grid edge. |
 | `world/Heat.kt` | `HeatField` (joules per tile), conduction, radiation to space, and per-gram machine heat. |
 | `world/Atmosphere.kt` | `AirField` (grams of each gas per tile), pressure flow, and `stratifyColumns`. |
@@ -100,8 +100,10 @@ isn't one yet.
 
 ## The invariant to keep
 
-`mined == in transit + banked + vented`, on every tick. A miner is the only place matter legitimately
-enters the world and a vent the only place it leaves, so that one line catches a whole category of
+`extracted == in transit + banked + vented`, on every tick, paired since increment H3 with
+`rockGrams == baselineRockGrams + captured − extracted`. An extractor is the only place ore enters
+the world and a vent the only place it leaves, and `extracted` is in **both** identities because ore
+only exists by coming off a rock — so the pair catches a whole category of
 logistics bug — a packet duplicated on handoff, a jam that eats a slot, a buffer overwritten instead
 of merged. It is asserted in the tests and shown live in the HUD, and it is the first thing to look
 at when something feels wrong.

@@ -243,13 +243,13 @@ class FootprintTest {
 
     @Test
     fun `the starter plant still runs end to end with every machine at its real size`() {
-        val s = run(org.emerge.demo.outofspace.world.starterVessel(Grid(40, 28)), 720)
+        val s = run(workingVessel(Grid(40, 28)), 720)
         assertTrue(s.stockpile[Form.IronIngot].total > 0L, "iron reaches the tank: ${s.stockpile}")
         assertEquals(
             s.stockpile[Form.IronIngot].total,
             s.stockpile[Form.IronIngot][Species.Iron],
             "and it is pure",
         )
-        assertEquals(s.minedGrams, s.inTransitGrams + s.ventedGrams, "conserving throughout")
+        assertEquals(s.extractedGrams, s.inTransitGrams + s.ventedGrams, "conserving throughout")
     }
 }

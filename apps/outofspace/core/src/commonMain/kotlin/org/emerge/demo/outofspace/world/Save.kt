@@ -24,7 +24,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 9
+    const val VERSION = 10
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -47,7 +47,7 @@ object Save {
         // Felt gravity baseline; a world reloaded without it coasts for one tick under plating alone.
         out.append("thrust ").append(state.netImpulseX).append(' ').append(state.netImpulseY).append('\n')
         out.append("tick ").append(state.tick).append('\n')
-        out.append("mined ").append(state.minedGrams).append('\n')
+        out.append("extracted ").append(state.extractedGrams).append('\n')
         out.append("vented ").append(state.ventedGrams).append('\n')
         out.append("generated ").append(state.generatedJoules).append('\n')
         out.append("radiated ").append(state.radiatedJoules).append('\n')
@@ -173,9 +173,9 @@ object Save {
                 put("span", m.middle?.let { writePacket(it) })
                 put("out", m.exit?.let { writePacket(it) })
             }
-            is Miner -> {
-                put("ore", writeMixture(m.composition))
+            is Extractor -> {
                 put("buffer", writeResource(m.buffer))
+                put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("rate", m.gramsPerTick.toString())
             }
@@ -315,7 +315,7 @@ object Save {
         var netImpulseX = 0L
         var netImpulseY = 0L
         var tick = 0L
-        var mined = 0L
+        var extracted = 0L
         var vented = 0L
         var generated = 0L
         var radiated = 0L
@@ -342,7 +342,8 @@ object Save {
                 "position" -> { positionX = long(1); positionY = long(2) }
                 "thrust" -> { netImpulseX = long(1); netImpulseY = long(2) }
                 "tick" -> tick = long(1)
-                "mined" -> mined = long(1)
+                // `mined` is v9's name for it: the same quantity, counted at the miner instead.
+                "mined", "extracted" -> extracted = long(1)
                 "vented" -> vented = long(1)
                 "generated" -> generated = long(1)
                 "radiated" -> radiated = long(1)
@@ -469,7 +470,7 @@ object Save {
             netImpulseY = netImpulseY,
             debris = Debris.of(piles),
             tick = tick,
-            minedGrams = mined,
+            extractedGrams = extracted,
             ventedGrams = vented,
             generatedJoules = generated,
             radiatedJoules = radiated,
@@ -522,7 +523,12 @@ object Save {
 
     private fun readMachine(tokens: List<String>, version: Int, fail: (String) -> Nothing): Machine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
-        val kind = MachineKind.ALL.firstOrNull { it.name == kindName } ?: fail("unknown machine '$kindName'")
+        // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
+        // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
+        // body of its own, because the rock it is standing on is the ore body now.
+        val kind = MachineKind.ALL.firstOrNull { it.name == kindName }
+            ?: (MachineKind.Extractor.takeIf { version < 10 && kindName == "Miner" })
+            ?: fail("unknown machine '$kindName'")
         val f = fields(tokens.drop(1), fail)
 
         fun facing(): Direction = f["facing"]?.let { name ->
@@ -549,10 +555,10 @@ object Save {
                 middle = f["span"]?.let { readPacket(it, fail) },
                 exit = f["out"]?.let { readPacket(it, fail) },
             )
-            MachineKind.Miner -> Miner(
+            MachineKind.Extractor -> Extractor(
                 facing = facing(),
-                composition = readMixture(f["ore"] ?: fail("a miner needs an ore body"), fail),
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
+                input = res("in"),
                 carry = num("carry", 0L),
                 gramsPerTick = rate(250L),
             )

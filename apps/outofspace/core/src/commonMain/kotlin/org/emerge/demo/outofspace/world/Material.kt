@@ -71,7 +71,7 @@ val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Hull -> Material.Steel
         MachineKind.Smelter -> Material.Firebrick
-        MachineKind.Miner, MachineKind.Processor, MachineKind.Storage,
+        MachineKind.Extractor, MachineKind.Processor, MachineKind.Storage,
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material

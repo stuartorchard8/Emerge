@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.chem.Resource
 
 /**
  * Mineral processor: concentrate out facing side, tailings out clockwise-side.
- * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material). Slower than miner (jam = throughput lesson).
+ * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material). Slower than extractor (jam = throughput lesson).
  */
 data class Processor(
     override val facing: Direction,

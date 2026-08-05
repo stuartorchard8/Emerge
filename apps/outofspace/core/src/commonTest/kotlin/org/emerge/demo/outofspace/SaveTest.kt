@@ -15,7 +15,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Wiring
-import org.emerge.demo.outofspace.world.Miner
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.SaveError
 import org.emerge.demo.outofspace.world.Segment
@@ -38,7 +38,7 @@ import kotlin.test.assertTrue
  * which went through a save file, must still agree after another few seconds of simulation. That is
  * a much sharper check than comparing the two states directly — a state comparison would pass while
  * quietly ignoring a field the format forgot, whereas anything the save loses shows up as divergence
- * the moment the sim reads it. A miner's fractional carry, a diverter's cursor and a gauge's last
+ * the moment the sim reads it. An extractor's fractional carry, a diverter's cursor and a gauge's last
  * reading are all invisible in a screenshot and all change the future.
  */
 class SaveTest {
@@ -55,7 +55,7 @@ class SaveTest {
 
     @Test
     fun `a loaded world runs on identically`() {
-        // Long enough for the miners to accrue a carry, the belts to fill and the first jam to form.
+        // Long enough for the extractors to accrue a carry, the belts to fill and the first jam to form.
         val played = run(starterVessel(cfg.grid), 400)
 
         val reloaded = Save.read(Save.write(played))
@@ -96,13 +96,13 @@ class SaveTest {
         val played = run(starterVessel(cfg.grid), 300)
         val reloaded = Save.read(Save.write(played))
 
-        assertEquals(played.minedGrams, reloaded.minedGrams)
+        assertEquals(played.extractedGrams, reloaded.extractedGrams)
         assertEquals(played.ventedGrams, reloaded.ventedGrams)
         assertEquals(played.inTransitGrams, reloaded.inTransitGrams)
         assertEquals(played.baselineJoules, reloaded.baselineJoules)
         assertEquals(played.baselineAirGrams, reloaded.baselineAirGrams)
         assertEquals(
-            reloaded.minedGrams,
+            reloaded.extractedGrams,
             reloaded.inTransitGrams + reloaded.ventedGrams,
             "the mass balance did not survive the round trip",
         )
@@ -207,27 +207,27 @@ class SaveTest {
     fun `a machine keeps its wiring, its buffers and its fractional carry`() {
         val grid = Grid(10, 10)
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(4, 4)] = Miner(
+        machines[grid.index(4, 4)] = Extractor(
             Direction.Right,
-            composition = Mixture.of(Species.Iron to 700L, Species.Carbon to 300L),
+            input = Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L)),
             buffer = Resource(Form.Ore, Mixture.of(Species.Iron to 123L)),
             carry = 37L,
-            // Any non-default wiring will do; the starter vessel's second miner is the one that has
+            // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
-        ).withWiring(starterVessel(cfg.grid).machines.first { it is Miner && it.wiring != Wiring.RUNNING }!!.wiring)
+        ).withWiring(starterVessel(cfg.grid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.index(7, 4)] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L)))
 
         val state = VesselState(grid, machines.toList())
         val back = Save.read(Save.write(state))
 
-        val miner = back[grid.index(4, 4)] as Miner
-        assertEquals(37L, miner.carry)
-        assertEquals(123L, miner.buffer.mass)
-        assertEquals(700L, miner.composition[Species.Iron])
+        val extractor = back[grid.index(4, 4)] as Extractor
+        assertEquals(37L, extractor.carry)
+        assertEquals(123L, extractor.buffer.mass)
+        assertEquals(700L, extractor.input?.mixture?.get(Species.Iron), "the cell in the jaws too")
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
-        assertEquals(2, miner.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
-        assertEquals(-1000, miner.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
+        assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
+        assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
 
         val tank = back[grid.index(7, 4)] as Storage
         assertEquals(Form.IronIngot, tank.contents?.form)
@@ -301,15 +301,15 @@ class SaveTest {
             grid 8 6
             machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
         """.trimIndent() + "\n"
-        val miner = assertNotNull(Save.read(v1).machines[20] as? Miner)
-        assertEquals(250L, miner.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
+        val extractor = assertNotNull(Save.read(v1).machines[20] as? Extractor)
+        assertEquals(250L, extractor.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
     }
 
     @Test
     fun `a version 1 save with no rate at all gets the current default`() {
         val v1 = "outofspace 1\ngrid 8 6\nmachine 20 Miner facing=Right ore=Iron=1000\n"
-        val miner = assertNotNull(Save.read(v1).machines[20] as? Miner)
-        assertEquals(Miner(Direction.Right, Mixture.EMPTY).gramsPerTick, miner.gramsPerTick)
+        val extractor = assertNotNull(Save.read(v1).machines[20] as? Extractor)
+        assertEquals(Extractor(Direction.Right).gramsPerTick, extractor.gramsPerTick)
     }
 
     @Test

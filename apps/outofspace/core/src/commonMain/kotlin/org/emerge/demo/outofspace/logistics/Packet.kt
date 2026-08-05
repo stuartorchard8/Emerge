@@ -56,7 +56,7 @@ object Capacity {
 /**
  * Scales a whole-gram rate by a fraction **without losing the fraction**.
  *
- * A machine's throughput is stated per *tick*, so the clock never enters this: a miner is 250 g/tick
+ * A machine's throughput is stated per *tick*, so the clock never enters this: an extractor is 250 g/tick
  * and that is a whole number by construction. What is not whole is a **throttle**. A processor run
  * at 45% of 125 g/tick owes 56.25 g, and there is no honest integer for that. Rounding it away every
  * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is

@@ -64,8 +64,10 @@ class OutofspaceHud {
                     keyValue("Adrift", "${s.rocks.size}")
                     keyValue("Mass", grams(s.rockGrams))
                     keyValue("Captured", grams(s.capturedGrams))
-                    // Rock balance check (mined == aboard + vented).
-                    val rockBalanced = s.rockGrams == s.baselineRockGrams + s.capturedGrams
+                    keyValue("Extracted", grams(s.extractedGrams))
+                    // What is left is what arrived less what the extractors have eaten.
+                    val rockBalanced =
+                        s.rockGrams == s.baselineRockGrams + s.capturedGrams - s.extractedGrams
                     row(
                         if (rockBalanced) "balanced" else "LEAK",
                         if (rockBalanced) 0x6ED09AFFL else 0xE05A4AFFL,
@@ -73,13 +75,13 @@ class OutofspaceHud {
                 }
                 gap()
                 title("MASS BALANCE")
-                keyValue("Mined", grams(s.minedGrams))
+                keyValue("Extracted", grams(s.extractedGrams))
                 keyValue("Aboard", grams(s.inTransitGrams))
                 keyValue("- in storage", grams(s.stockpile.totalGrams))
                 keyValue("- spilled", grams(s.debrisGrams))
                 keyValue("Vented", grams(s.ventedGrams))
                 // Storage is a view over storages (part of "aboard").
-                val balanced = s.minedGrams == s.inTransitGrams + s.ventedGrams
+                val balanced = s.extractedGrams == s.inTransitGrams + s.ventedGrams
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ATMOSPHERE")

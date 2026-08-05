@@ -138,7 +138,7 @@ class HeatTest {
 
     @Test
     fun `energy is conserved on every tick of a working vessel`() {
-        var s = starterVessel(Grid(40, 28))
+        var s = workingVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
         repeat(240) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())

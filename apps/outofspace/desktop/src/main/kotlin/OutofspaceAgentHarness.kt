@@ -50,7 +50,7 @@ import kotlin.math.roundToInt
  * new                        # fresh starter vessel
  * load <path> | save <path>  # the text save format (Save.kt) — how a world gets handed over
  * run <ticks>                # advance exactly N ticks. The ONLY clock; nothing here is real-time
- * brush <kind> [dir]         # RAIL/MINER/SMELTER/VENT/... and Right|Down|Left|Up
+ * brush <kind> [dir]         # RAIL/EXTRACTOR/SMELTER/VENT/... and Right|Down|Left|Up
  * place <x> <y>              # build with the current brush
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
  *                            # the same as placing each tile
@@ -451,7 +451,7 @@ object OutofspaceAgentHarness {
             "airVented" -> state.airVentedGrams.toDouble()
             "airBalance" -> (state.atmosphereGrams + state.airVentedGrams - state.baselineAirGrams).toDouble()
             "debrisGrams" -> state.debrisGrams.toDouble()
-            "minedGrams" -> state.minedGrams.toDouble()
+            "extractedGrams" -> state.extractedGrams.toDouble()
             "ventedGrams" -> state.ventedGrams.toDouble()
             "inTransitGrams" -> state.inTransitGrams.toDouble()
             "stockpileGrams" -> state.stockpile.totalGrams.toDouble()
@@ -470,15 +470,16 @@ object OutofspaceAgentHarness {
                     state.baselineAirJoules
                 ).toDouble()
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
-            // -- and the right thing for a script to assert, since `minedGrams` on its own is a fact
-            // about how long the starter vessel's miner has been running.
-            "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.minedGrams).toDouble()
+            // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
+            // about how long the starter vessel's extractor has been running.
+            "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.extractedGrams).toDouble()
             // Rock, and its ledger as one number: `rockBalance` is zero or mass has been created
             // or destroyed out there — see [VesselState.capturedGrams].
             "rockCount" -> state.rocks.size.toDouble()
             "rockGrams" -> state.rockGrams.toDouble()
             "capturedGrams" -> state.capturedGrams.toDouble()
-            "rockBalance" -> (state.rockGrams - state.baselineRockGrams - state.capturedGrams).toDouble()
+            "rockBalance" ->
+                (state.rockGrams - state.baselineRockGrams - state.capturedGrams + state.extractedGrams).toDouble()
             // The first rock, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
             //
@@ -534,7 +535,7 @@ object OutofspaceAgentHarness {
         }
 
         private val FIELDS = listOf(
-            "tick", "machines", "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "minedGrams",
+            "tick", "machines", "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "extractedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "massBalance", "rockCount", "rockGrams", "capturedGrams", "rockBalance",
