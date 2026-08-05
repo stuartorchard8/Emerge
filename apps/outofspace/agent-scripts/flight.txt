@@ -1,0 +1,47 @@
+# The debug engine and the nav view — increment H0, and the first thing in this game you can *fly*.
+#
+# What to read: the ship should leave the origin under a held key, keep going when the key comes up,
+# and turn around when the key is held the other way. `momentumBalance` must stay 0 the whole time,
+# and that is the interesting assertion rather than a formality — the engine mints momentum out of
+# nothing, and the only thing that keeps the ledger honest is that it books what it mints into
+# `debugImpulse`. Drop that term and this script fails loudly instead of the instrument going quiet.
+new
+
+echo --- at rest, at the origin
+expect positionX = 0
+expect debugImpulseX = 0
+expect momentumBalance = 0
+
+echo --- a burn to starboard
+thrust 1 0 60
+expect velocityX > 0
+expect positionX > 1
+expect debugImpulseX > 0
+expect momentumBalance = 0
+
+# Felt gravity is thrust as much as it is plating, so a burn leans the whole atmosphere against the
+# stern — which is the half of this that was already built and had never been driven by anything but
+# a hole in the wall. +x thrust is felt as a pull toward -x, so this is negative.
+expect gravityX < 0
+
+echo --- and it coasts, because there is nothing out here to slow it down
+run 60
+expect velocityX > 0
+expect momentumBalance = 0
+
+echo --- hard about
+thrust -1 0 120
+expect velocityX < 0
+expect momentumBalance = 0
+
+# Two keys at once is a diagonal, and the y axis has been untouched until now. Worth one line
+# because `applyBuoyancy` is the one pass permitted to assume gravity lies on an axis, and a
+# diagonal burn is the cheapest way to keep giving it a reason not to be — see plan §5e.
+echo --- a diagonal burn, which off-axis gravity has to survive
+thrust 1 1 60
+expect momentumBalance = 0
+expect airBalance = 0
+expect heatBalance = 0
+
+camera centre 20 12 26
+shot flight-nav

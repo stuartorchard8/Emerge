@@ -121,6 +121,32 @@ fun main() {
     }
 
     glfwSetKeyCallback(window) { _, key, _, action, _ ->
+        // The debug engine is a **throttle**, so it reads press and release rather than press alone,
+        // and it is read before the early return that everything else here sits behind.
+        //
+        // ⚠️ Arrows and not WASD, which is what the design conversation asked for: `W` has toggled
+        // between the build and wire tools since before there was anything to fly, and quietly
+        // stealing it would break a gesture that is in every screenshot and every script. Worth
+        // revisiting when there is a real engine and flying is a mode rather than a debug key.
+        val burn = when (key) {
+            GLFW_KEY_LEFT -> -1 to 0
+            GLFW_KEY_RIGHT -> 1 to 0
+            GLFW_KEY_UP -> 0 to -1
+            GLFW_KEY_DOWN -> 0 to 1
+            else -> null
+        }
+        if (burn != null) {
+            if (action == GLFW_RELEASE) {
+                // Cleared per axis rather than zeroed outright, so letting go of one of two held
+                // keys leaves the other still burning.
+                if (burn.first != 0) controller.thrustX = 0
+                if (burn.second != 0) controller.thrustY = 0
+            } else if (action == GLFW_PRESS) {
+                if (burn.first != 0) controller.thrustX = burn.first
+                if (burn.second != 0) controller.thrustY = burn.second
+            }
+            return@glfwSetKeyCallback
+        }
         if (action != GLFW_PRESS) return@glfwSetKeyCallback
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused

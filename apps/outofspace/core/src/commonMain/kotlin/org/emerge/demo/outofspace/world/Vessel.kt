@@ -206,6 +206,23 @@ data class VesselState(
     val undeliveredImpulseX: Long = 0L,
     val undeliveredImpulseY: Long = 0L,
     /**
+     * Cumulative momentum put into the ship by [org.emerge.demo.outofspace.Edit.Thrust] — the debug
+     * engine — rather than by any gas pushing on anything.
+     *
+     * The fifth store, and the only one that is not physics. It exists so that the shortcut is
+     * *legible*: the ledger identity becomes
+     * `vesselImpulse + momentum + pipeMomentum + exhaust + undelivered − debugImpulse == 0`,
+     * which is the old identity exactly whenever nothing has cheated, and the whole point is that a
+     * key which minted momentum without this term would make `momentumBalance` non-zero forever and
+     * so retire the one instrument that found §5e's truncation bug. An instrument you have learned
+     * to ignore is worse than no instrument.
+     *
+     * It also gives the stand-in a provable death: when a real engine lands in increment I, this
+     * returns to zero and the ship still moves.
+     */
+    val debugImpulseX: Long = 0L,
+    val debugImpulseY: Long = 0L,
+    /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.

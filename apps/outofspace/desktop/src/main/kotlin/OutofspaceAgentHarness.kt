@@ -155,6 +155,18 @@ object OutofspaceAgentHarness {
                         ?: error("unknown overlay '${t[1]}' (have ${Overlay.entries.map { it.label }})")
                     println("[agent] overlay -> ${overlay.label}")
                 }
+                // `thrust <dx> <dy> [ticks]` — hold the debug engine, run, let go. The same held
+                // state the arrow keys drive, so a script burns exactly as a player does rather
+                // than through a back door that could drift from what the game actually does.
+                "thrust" -> {
+                    controller.thrustX = t[1].toInt()
+                    controller.thrustY = t[2].toInt()
+                    val n = t.getOrNull(3)?.toInt() ?: 1
+                    repeat(n) { controller.stepOnce() }
+                    controller.thrustX = 0
+                    controller.thrustY = 0
+                    println("[agent] burned ${t[1]},${t[2]} for $n ticks -> tick ${controller.tick}")
+                }
                 "camera" -> camera(t)
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })
                 "probe" -> probe(index(t[1], t[2]))
@@ -447,11 +459,17 @@ object OutofspaceAgentHarness {
             // whole ledger as one number is `momentumBalance`, which is zero or something is wrong.
             "undeliveredX" -> state.undeliveredImpulseX.toDouble()
             "undeliveredY" -> state.undeliveredImpulseY.toDouble()
+            // The debug engine's cumulative cheating, which is subtracted rather than ignored: the
+            // identity has a fifth store now, and it reduces to the old one whenever nothing has
+            // fired. See [VesselState.debugImpulseX] for why a shortcut that did not book this would
+            // cost the instrument rather than the physics.
+            "debugImpulseX" -> state.debugImpulseX.toDouble()
+            "debugImpulseY" -> state.debugImpulseY.toDouble()
             "momentumBalance" -> (
                 state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
-                    state.exhaustMomentumX + state.undeliveredImpulseX +
+                    state.exhaustMomentumX + state.undeliveredImpulseX - state.debugImpulseX +
                     state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
-                    state.exhaustMomentumY + state.undeliveredImpulseY
+                    state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY
                 ).toDouble()
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "massGrams" -> state.massGrams.toDouble()
@@ -472,7 +490,7 @@ object OutofspaceAgentHarness {
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
-            "undeliveredX", "undeliveredY", "momentumBalance",
+            "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY", "momentumBalance",
             "massGrams", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
             "gravityX", "gravityY",
         )

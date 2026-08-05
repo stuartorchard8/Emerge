@@ -279,13 +279,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // What the gas handed the ship *this tick*, which is the force on it. The running total is
         // the ship's momentum and the running total's increment is its thrust; both matter, and only
         // one of them can be recovered from a single state — see [VesselState.netImpulseX].
-        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX
-        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY
-
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
         val debris = w.debris.snapshot()
         val mass = vesselMassGrams(machines, conduits, bridges, debris)
+
+        // The debug engine — a stand-in for a nozzle that does not exist yet, see [Edit.Thrust].
+        //
+        // Stated as an acceleration and multiplied by *this* tick's mass, so what the pilot feels is
+        // the same on a bare hull and a laden one, and a heavy hold is a sluggish ship without
+        // anything having to arrange it.
+        //
+        // It joins `netImpulse`, and that is the half worth watching: felt gravity is thrust as much
+        // as it is plating, so holding a key leans the whole atmosphere against the far wall and the
+        // debris settles with it. Every one of those passes was written before there was an engine.
+        val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+        val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+
+        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX
+        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY
 
         return state.copy(
             machines = machines,
@@ -335,6 +347,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The fourth place momentum can be. Both layers report it: a pipe is the same solver.
             undeliveredImpulseX = state.undeliveredImpulseX + fluid.undeliveredX + pipes.undeliveredX,
             undeliveredImpulseY = state.undeliveredImpulseY + fluid.undeliveredY + pipes.undeliveredY,
+            // The fifth store, and the only one that is not physics. Booked in the same breath as
+            // the impulse it mints, so the two can never disagree and `momentumBalance` stays zero
+            // while the shortcut is in use — see [VesselState.debugImpulseX].
+            debugImpulseX = state.debugImpulseX + thrustX,
+            debugImpulseY = state.debugImpulseY + thrustY,
             motion = w.motion.freeze(),
         )
     }
@@ -519,6 +536,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
+
+        /**
+         * Which way the debug engine is firing this tick, as a direction — see [Edit.Thrust].
+         *
+         * Summed rather than replaced, so two keys held at once give a diagonal, and clamped when it
+         * is turned into an impulse so that holding four does not give a stronger push than two.
+         */
+        var thrustDx: Int = 0
+        var thrustDy: Int = 0
 
         /**
          * This tick's air, mutable so that the edit pass and the fluid pass work on one array. An
@@ -758,6 +784,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         else -> {}
                     }
                 }
+                // Accumulated rather than acted on, because the impulse it is worth depends on the
+                // ship's mass and the ship's mass is not final until the edit pass has finished
+                // building and scrapping things. Spent in the flight section at the end of the tick.
+                is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
             }
         }
 

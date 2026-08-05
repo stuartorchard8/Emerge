@@ -48,6 +48,19 @@ class OutofspaceController(
     /** Which overlay the world is being viewed through. A view preference, so it lives here. */
     var overlay: Overlay = Overlay.None
 
+    /**
+     * Which way the debug engine is being held, −1, 0 or 1 per axis — see [Edit.Thrust].
+     *
+     * **Held state rather than queued edits**, and that is the difference between a throttle and a
+     * trigger. A host sets this when a key goes down and clears it when the key comes up; the
+     * controller turns it into one [Edit.Thrust] per tick for as long as it is held, so the burn
+     * lasts exactly as long as the finger and is the same length whether the display is running at
+     * 30 Hz or 144. Pushing an edit per key *event* would give one tick of thrust per press, and
+     * pushing one per frame would make a fast machine a faster ship.
+     */
+    var thrustX: Int = 0
+    var thrustY: Int = 0
+
     /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
     var selected: Int = -1
         private set
@@ -209,16 +222,23 @@ class OutofspaceController(
     }
 
     private fun takeInput(): OutofspaceInput {
-        if (pending.isEmpty()) return OutofspaceInput.EMPTY
-        val input = OutofspaceInput(pending.toList())
+        // The engine fires on every tick it is held, so it is added here rather than queued — see
+        // [thrustX]. It goes on the *end*, after this tick's builds, which is the order the reducer
+        // wants anyway: the impulse is worked out against the mass the edits leave behind.
+        val firing = thrustX != 0 || thrustY != 0
+        if (pending.isEmpty() && !firing) return OutofspaceInput.EMPTY
+        val edits = ArrayList<Edit>(pending)
+        if (firing) edits.add(Edit.Thrust(thrustX, thrustY))
         pending.clear()
-        return input
+        return OutofspaceInput(edits)
     }
 
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterVessel(cfg.grid)) {
         selected = -1
         pending.clear()
+        thrustX = 0
+        thrustY = 0
         accumulator = 0f
         stepper.reset(newState, Tick(0))
     }

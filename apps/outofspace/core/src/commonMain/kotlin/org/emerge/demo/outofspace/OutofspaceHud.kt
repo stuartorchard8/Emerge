@@ -51,6 +51,8 @@ class OutofspaceHud {
     fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: Int = -1) {
         val s = controller.state
         ui.frame {
+            // Drawn first, so every panel occludes it rather than the other way round.
+            navView(s)
             panel(Anchor.TopLeft) {
                 title("OUT OF SPACE")
                 keyValue("Tick", s.tick.toString())
@@ -101,6 +103,12 @@ class OutofspaceHud {
                 // In milli-g, because a breach is worth a fraction of one and a readout in whole g
                 // would show nothing happening while quite a lot happens.
                 keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
+                // The debug engine's running total, shown whenever it is not zero and hidden when it
+                // is, so the readout is an admission rather than furniture — see [Edit.Thrust]. The
+                // ledger stays balanced *because* this is counted, which is the whole arrangement.
+                if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
+                    keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
+                }
                 gap()
                 title("SIGNALS")
                 for (channel in Channel.EMITTABLE) {
@@ -162,6 +170,9 @@ class OutofspaceHud {
                     row("a sensor reads the tile it faces", 0x9A9A9AFFL)
                 }
                 row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
+                // In the engine's own colour, and named as debug, because it is a stand-in that has
+                // to look like one — a key nobody can find is a key nobody can tell you is wrong.
+                row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
@@ -181,6 +192,105 @@ class OutofspaceHud {
                 button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
                 button("RESET", 0xCC3333FFL) { onReset() }
             }
+        }
+    }
+
+    /**
+     * **Where the ship is**, which nothing else in the game can show you.
+     *
+     * Zooming out does not answer this. The grid *is* the vessel's frame — it travels with the ship
+     * and nothing on it moves because the ship does — so the widest possible view of the world shows
+     * a small hull in an empty box no matter how far the vessel has flown. Open space has no
+     * representation at all without this, and from increment H1 there will be things in it.
+     *
+     * The ship is fixed at the centre and the world slides under it, because that is the honest
+     * frame and it is the one the grid already uses. See `docs/out-of-space-plan.md` §5f.
+     *
+     * ⚠️ **Two scales, deliberately.** Distance and velocity cannot share one: at a range wide
+     * enough to hold a journey, a tile per tick of speed is a fraction of a pixel, and at a scale
+     * that shows the speed the journey is off the screen. So the ring is distance and the needle is
+     * speed, and the needle says what it is worth in text rather than pretending to be a distance.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState) = canvas {
+        val size = 190f * density
+        val pad = 10f * density
+        val x0 = (screenW - size) / 2f
+        val y0 = screenH - size - pad
+        val cx = x0 + size / 2f
+        val cy = y0 + size / 2f
+
+        // Opaque, and that is not a style choice. At any alpha the hull behind it shows through, and
+        // the one thing this panel exists to say is that the world behind it is *not* where the ship
+        // is — a nav view you can see the deck through is telling you the opposite of the truth.
+        rect(x0, y0, size, size, 0x080D14FFL)
+        border(x0, y0, size, size, 1f * density, 0x3A4A66FFL)
+        // A crosshair rather than a grid: this is a bearing instrument, and ruled squares at a range
+        // that changes would read as a scale that does not.
+        rect(x0 + 2f * density, cy, size - 4f * density, 1f * density, 0x1C2740FFL)
+        rect(cx, y0 + 2f * density, 1f * density, size - 4f * density, 0x1C2740FFL)
+
+        val perPx = (size / 2f - 6f * density) / NAV_RANGE_TILES
+
+        // Where the journey started, and for now the only thing out there. It is what makes the
+        // panel show *motion* rather than a dot in a box, and rocks join it in H1.
+        val ox = cx - s.positionX.toFloat() / Flight.PER_TILE * perPx
+        val oy = cy - s.positionY.toFloat() / Flight.PER_TILE * perPx
+        if (ox > x0 && ox < x0 + size && oy > y0 && oy < y0 + size) {
+            val d = 2.5f * density
+            rect(ox - d, oy - d, d * 2f, d * 2f, 0x5A82A8FFL)
+            // Above the marker, not below it. Below puts the word across the centre of the box for
+            // every ship that has flown up and to the right of where it started, which is where the
+            // ship marker lives — and the label would then be drawn over the thing it is not naming.
+            label("origin", ox, oy - d - 9f * density, 8f * density, 0x5A82A8FFL)
+        }
+
+        // The needle. Its own scale — see the note above — and drawn from the ship outward, so a
+        // vessel under way points where it is going and a stationary one shows nothing at all.
+        val vx = s.velocityX.toFloat() / Flight.PER_TILE
+        val vy = s.velocityY.toFloat() / Flight.PER_TILE
+        val needle = size / 2f - 8f * density
+        val speed = kotlin.math.sqrt(vx * vx + vy * vy)
+        if (speed > 0f) {
+            val reach = needle * (speed / NAV_FULL_SCALE_SPEED).coerceAtMost(1f)
+            line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
+        }
+
+        // The ship, last, so nothing is drawn over it — and on a dark pad, so it stays legible when
+        // the needle or a marker passes under it.
+        val h = 2.5f * density
+        rect(cx - h - density, cy - h - density, (h + density) * 2f, (h + density) * 2f, 0x080D14FFL)
+        rect(cx - h, cy - h, h * 2f, h * 2f, 0xFFFFFFFFL)
+
+        label("NAV  ·  ${NAV_RANGE_TILES.toInt()} tiles", cx, y0 + 3f * density, 9f * density, 0x7A8A9AFFL)
+        label(
+            "${tiles(s.positionX)}, ${tiles(s.positionY)}",
+            cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
+        )
+    }
+
+    /** A hollow box, which the canvas has no primitive for: four rectangles is the whole of it. */
+    private fun org.emerge.render.torus.ui.CanvasBuilder.border(
+        x: Float, y: Float, w: Float, h: Float, t: Float, color: Long,
+    ) {
+        rect(x, y, w, t, color)
+        rect(x, y + h - t, w, t, color)
+        rect(x, y, t, h, color)
+        rect(x + w - t, y, t, h, color)
+    }
+
+    /**
+     * A line, as a chain of squares, because the canvas draws axis-aligned rectangles and a velocity
+     * does not point along an axis. Stepped by half a thickness so the chain has no gaps in it.
+     */
+    private fun org.emerge.render.torus.ui.CanvasBuilder.line(
+        x0: Float, y0: Float, x1: Float, y1: Float, t: Float, color: Long,
+    ) {
+        val dx = x1 - x0
+        val dy = y1 - y0
+        val steps = (kotlin.math.sqrt(dx * dx + dy * dy) / (t / 2f)).toInt().coerceIn(1, 400)
+        for (i in 0..steps) {
+            val f = i.toFloat() / steps
+            rect(x0 + dx * f - t / 2f, y0 + dy * f - t / 2f, t, t, color)
         }
     }
 
@@ -480,4 +590,20 @@ class OutofspaceHud {
 
     /** A [Frac] gravity as thousandths of the one g [VesselState.DEFAULT_GRAVITY] means. */
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
+
+    companion object {
+        /**
+         * Half-width of the nav view, in tiles.
+         *
+         * A **provisional** number, and the plan says so: how far apart rocks want to be and how
+         * fast a ship actually travels are both unknown until H1 flies, and picking a range before
+         * there is anything to see at it would be picking it from nothing. Two hundred and fifty-six
+         * is about twenty seconds of held debug thrust, which makes the origin marker drift visibly
+         * without leaving immediately. It becomes a dial when there is a reason to turn one.
+         */
+        const val NAV_RANGE_TILES: Float = 256f
+
+        /** The speed at which the needle is fully extended, in tiles per tick. Provisional likewise. */
+        const val NAV_FULL_SCALE_SPEED: Float = 2f
+    }
 }

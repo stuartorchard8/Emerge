@@ -39,4 +39,36 @@ sealed interface Edit {
 
     /** Retunes a sensor to a different channel. */
     data class SetChannel(val index: Int, val channel: Channel) : Edit
+
+    /**
+     * **A stand-in engine**: fires the ship one tick's worth in ([dx], [dy]), each of which is −1, 0
+     * or 1. See `docs/out-of-space-plan.md` §5f.
+     *
+     * A real engine is a nozzle, a high-pressure exhaust and the CFL wall §5b left standing, and
+     * building one before the gameplay loop closes means tuning a subsystem that every later change
+     * detunes again. This is the loop's placeholder, and the plan's rule for placeholders is that
+     * they are allowed to be fake and not allowed to be *silent* — everything it mints is counted in
+     * [org.emerge.demo.outofspace.world.VesselState.debugImpulseX], the ledger's fifth store, so
+     * `momentumBalance` stays exactly zero and stays worth reading. The miner is the cautionary
+     * version of the same idea: fine as a stand-in, and a problem because it minted mass quietly.
+     *
+     * A **direction** rather than an impulse, because what should feel the same between a bare hull
+     * and a laden one is the acceleration, not the push. The reducer multiplies by the ship's own
+     * mass, so [DEBUG_THRUST_MILLI_G] is what the pilot actually experiences either way — and a
+     * heavy hold is a sluggish ship without anything having to say so.
+     */
+    data class Thrust(val dx: Int, val dy: Int) : Edit
+
+    companion object {
+        /**
+         * What [Thrust] is worth, in thousandths of one tile per tick per tick.
+         *
+         * Twenty, which is two per cent of the deck plating and about thirty times what a bare
+         * breached hull manages. Big enough to fly a vessel across the nav panel in a few seconds of
+         * held key, small enough that the atmosphere leans into it and sloshes rather than being
+         * slammed against the stern — the felt gravity is the interesting half of this, and a
+         * thruster that pinned every loose gram to one wall would hide it.
+         */
+        const val DEBUG_THRUST_MILLI_G: Long = 20L
+    }
 }

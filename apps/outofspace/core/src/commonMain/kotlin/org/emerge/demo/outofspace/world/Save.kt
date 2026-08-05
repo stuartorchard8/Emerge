@@ -146,12 +146,14 @@ object Save {
         writeSparse(out, "momx", state.momentum.copyX())
         writeSparse(out, "momy", state.momentum.copyY())
 
-        // Six values since the ledger gained its fourth store. Appended rather than versioned: a file
-        // written with four is a world whose undelivered impulse was zero, which reads correctly as
-        // absent — see the optional pair below.
+        // Eight values since the ledger gained its fifth store. Appended rather than versioned, twice
+        // now: a file written with four is a world whose undelivered impulse was zero and one written
+        // with six is a world nobody had used the debug engine in, and in both cases absent reads
+        // correctly as zero — see the optional pairs below.
         out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
+            .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
             .append('\n')
         return out.toString()
     }
@@ -315,6 +317,8 @@ object Save {
         var exhaustY = 0L
         var undeliveredX = 0L
         var undeliveredY = 0L
+        var debugX = 0L
+        var debugY = 0L
 
         var gravity = VesselState.DEFAULT_GRAVITY
         var positionX = 0L
@@ -416,6 +420,9 @@ object Save {
                     // Absent in files written before the ledger had a fourth store, and zero is the
                     // right reading of absent: nothing had been counted there yet.
                     if (tokens.size > 6) { undeliveredX = long(5); undeliveredY = long(6) }
+                    // Likewise: a world saved before the debug engine existed is a world in which
+                    // nothing had cheated, and zero is what that means.
+                    if (tokens.size > 8) { debugX = long(7); debugY = long(8) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -483,6 +490,8 @@ object Save {
             exhaustMomentumY = exhaustY,
             undeliveredImpulseX = undeliveredX,
             undeliveredImpulseY = undeliveredY,
+            debugImpulseX = debugX,
+            debugImpulseY = debugY,
         )
     }
 

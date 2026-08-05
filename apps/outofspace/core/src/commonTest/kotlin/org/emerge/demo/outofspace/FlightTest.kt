@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
@@ -254,6 +256,105 @@ class FlightTest {
         assertEquals(played.velocityX, loaded.velocityX, "velocity is derived, so it has to survive too")
     }
 
+    /**
+     * The debug engine flies the ship, and the ledger stays closed while it cheats.
+     *
+     * That second half is the whole reason [Edit.Thrust] has a store of its own. `momentumBalance` is
+     * the instrument that found §5e's truncation bug, and a key that put momentum into the ship
+     * without booking it would make that number non-zero forever — retiring the instrument to buy a
+     * shortcut, which is a bad trade at any price. So the identity gains a fifth term and stays an
+     * identity, and it is checked on every tick of the burn rather than at the end of it.
+     */
+    @Test
+    fun `the debug engine flies the ship and books what it mints`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, bareHull(cfg.grid))
+
+        controller.thrustX = 1
+        repeat(BURN_TICKS) {
+            controller.stepOnce()
+            val s = controller.state
+            assertEquals(
+                0L,
+                s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX +
+                    s.exhaustMomentumX + s.undeliveredImpulseX - s.debugImpulseX,
+                "tick ${s.tick}: the debug engine minted ${s.debugImpulseX} and the books do not say so",
+            )
+        }
+        controller.thrustX = 0
+
+        val flying = controller.state
+        assertTrue(flying.debugImpulseX > 0L, "nothing was ever minted, so this proved nothing")
+        assertTrue(flying.velocityX > 0L, "the engine fired and the ship did not move")
+        assertTrue(flying.positionX > Flight.PER_TILE, "it should be a tile clear by now: ${flying.positionX}")
+
+        // Letting go coasts. There is nothing to slow a ship down out here, so the velocity it had
+        // when the key came up is the velocity it keeps — and the debug store stops growing, which is
+        // what says the engine is off rather than merely quiet.
+        val speed = flying.velocityX
+        val minted = flying.debugImpulseX
+        repeat(BURN_TICKS) { controller.stepOnce() }
+        assertEquals(minted, controller.state.debugImpulseX, "the engine kept firing after the key came up")
+        assertTrue(
+            abs(controller.state.velocityX - speed) * 20L < speed,
+            "the ship coasted at ${controller.state.velocityX} having been at $speed",
+        )
+
+        // And a save carries the admission. A file that dropped it would load a world whose ledger
+        // was permanently out by exactly the amount somebody had cheated, which reads as a leak.
+        val loaded = Save.read(Save.write(controller.state))
+        assertEquals(controller.state.debugImpulseX, loaded.debugImpulseX)
+        assertEquals(controller.state.debugImpulseY, loaded.debugImpulseY)
+    }
+
+    /**
+     * The engine is stated as an **acceleration**, so a heavy ship needs a bigger push for the same
+     * flight — and gets one, without anything having to arrange it.
+     *
+     * Measured in vacuum, deliberately. With air aboard the two hulls slosh differently, the
+     * comparison acquires a tolerance, and a tolerance is where a test stops saying what it means.
+     * Empty, the velocity is exactly the debug store over the mass, so both halves are exact: the
+     * same speed, out of a strictly larger impulse.
+     *
+     * This is the property that makes a laden hold a sluggish ship for free once H1 puts rocks in
+     * `cargoGrams` — the mass a thrust is divided by is the same walk as the mass the conservation
+     * check compares, and it always has been.
+     */
+    @Test
+    fun `the debug engine is an acceleration and not a push`() {
+        val cfg = OutofspaceConfig()
+        val light = OutofspaceController(cfg, vacuumHull(cfg.grid, ballast = false))
+        val heavy = OutofspaceController(cfg, vacuumHull(cfg.grid, ballast = true))
+
+        light.thrustX = 1
+        heavy.thrustX = 1
+        repeat(BURN_TICKS) { light.stepOnce(); heavy.stepOnce() }
+
+        assertTrue(heavy.state.massGrams > light.state.massGrams, "the ballast weighed nothing")
+        assertEquals(
+            light.state.velocityX, heavy.state.velocityX,
+            "same engine, same acceleration, different mass — and different speeds",
+        )
+        assertTrue(
+            heavy.state.debugImpulseX > light.state.debugImpulseX,
+            "the heavy ship reached the same speed without being pushed any harder",
+        )
+    }
+
+    /** A hull with no air in it, so a burn is arithmetic rather than a measurement. */
+    private fun vacuumHull(grid: Grid, ballast: Boolean): VesselState {
+        val machines = arrayOfNulls<Machine>(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
+        for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
+        if (ballast) for (x in HULL_LEFT..HULL_RIGHT) for (y in HULL_TOP + 1 until BREACH_Y) put(x, y)
+        return VesselState(
+            grid = grid,
+            machines = machines.toList(),
+            air = AirField.of(LongArray(grid.size * Species.COUNT)),
+        )
+    }
+
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
     private fun bareHull(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
@@ -268,6 +369,9 @@ class FlightTest {
     private companion object {
         /** 120 ticks of a 35×33 fluid solve, which is about three quarters of a second. */
         const val TICKS = 120
+
+        /** Long enough for a burn to be a tile clear of the origin, and short enough to be free. */
+        const val BURN_TICKS = 60
 
         /** Twice that, for the one question — does it diverge? — that a short run cannot answer. */
         const val LONG_TICKS = 240
