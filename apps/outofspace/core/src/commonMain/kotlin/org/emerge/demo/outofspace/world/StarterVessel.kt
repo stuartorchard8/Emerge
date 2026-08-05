@@ -109,7 +109,7 @@ fun starterVessel(
     // an extractor has to be **given** something to eat. What H4 changes is where you get one — the
     // ore is out there in the field now, and the vessel flies to it. See §5i and [RockField].
     val built = machines.toList()
-    val state = VesselState(
+    return VesselState(
         grid = grid,
         machines = built,
         conduits = Conduits.ofRails(rails.toList()),
@@ -118,7 +118,6 @@ fun starterVessel(
         // that had none and reads as mass conjured out of nothing — see `workingVessel`.
         rocks = RockField.scatter(grid, built, rocks, rockSeed, OutofspaceReducer.DEFAULT_ORE_BODY),
     )
-    return state.fitGrid()
 }
 
 /**

@@ -248,10 +248,16 @@ Each phase ends with a green suite. Nothing here needs a flag day.
 ~~it by a known offset, and asserts: every machine/segment/bridge/pile/diverter landed where it should;~~
 ~~the fields are identical modulo the shift; the edge fields are identical on both axes; rocks moved~~
 ~~exactly `dx` tiles; every ledger identity holds; and a round trip through a `+4/-4` pair is the~~
-~~identity. Nothing calls it yet.~~ **This is the phase that must not be rushed** — it is the only one
-~~where a bug is cheap to find.~~ **DONE 2026-08-05** (21 tests: identity, each field type, all 6
-ledger balances, round-trip, vacuum init, negative offset; edge y-face boundary at height was the
-trickiest fix — `yEdgeCount = width * (height+1)` so loops go `0..height`). ~One day.~
+~~identity. Nothing calls it yet.~~ **DONE 2026-08-06** (21 tests: identity, each field type, all six
+ledger balances, round-trip, vacuum init, negative offset). The y-face boundary was the trap, as
+predicted: `yEdgeCount = width * (height + 1)`, so those loops run `0..height`, not `0 until height`.
+
+⚠️ **Two known gaps, both deferred deliberately.** `remapped` *silently discards* on a shrink rather
+than venting per §5 — acceptable only while nothing shrinks, so P2 must not introduce a shrink
+without §5 arriving with it. And `motion` is carried through by `copy()` despite the comment saying
+it is dropped; it is `Motion.NONE` at construction so it is harmless today, but it is a per-tile
+array sized to the *old* grid and will hand the renderer the wrong length the first time a resize
+happens mid-play. Fix it in P3, before growth is live. ~One day.~
 
 **P2 — Fit at construction and load.** `fitGrid(state, pad = 4)` returning a remapped state; called
 by `starterVessel` and by `Save.read`. The starter vessel's grid stops being `Grid(96, 60)` and
@@ -272,7 +278,14 @@ possible if we ever want it.
 
 - Every existing test green, with the starter vessel on a fitted grid.
 - A new `GridFitTest`: fit is idempotent; a vessel built one tile from an edge grows rather than
-  clipping; the pad is exactly 4 on all four sides after an explicit fit; a rock is inside the box.
+  clipping; the pad is exactly 4 on all four sides after an explicit fit; a rock **outside** the box
+  leaves the box unchanged, and the box is drawn to machine **footprints**, not anchors.
+
+  ⚠️ This bullet used to read *"a rock is inside the box"*, contradicting §8, which spends a section
+  establishing the opposite. That contradiction is not hypothetical: a first attempt at P2 read this
+  line, enclosed the rock field, and fitted the starter vessel to 92×50 instead of 41×31 — losing the
+  entire performance case in §1 while passing its own tests. **Where two sections of a plan disagree,
+  the plan is the bug.**
 - `momentumBalance`, `massBalance`, `airBalance`, `airHeatBalance`, `heatBalance`, `rockBalance` all
   zero across a resize — the whole point of having six of them.
 - A determinism check: a world built, grown three times and fitted digests identically to the same

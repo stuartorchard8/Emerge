@@ -53,7 +53,7 @@ class RockFieldTest {
     @Test
     fun `no rock overlaps the vessel`() {
         val s = starterVessel(grid)
-        val occupancy = Occupancy.derive(s.grid, s.machines)
+        val occupancy = Occupancy.derive(grid, s.machines)
 
         for (rock in s.rocks) {
             for (cy in 0 until rock.height) {
@@ -61,9 +61,9 @@ class RockFieldTest {
                     if (!rock.cells[cy * rock.width + cx]) continue
                     val x = (rock.positionX / org.emerge.demo.outofspace.world.Flight.PER_TILE).toInt() + cx
                     val y = (rock.positionY / org.emerge.demo.outofspace.world.Flight.PER_TILE).toInt() + cy
-                    assertTrue(s.grid.inBounds(x, y), "a rock started off the grid at ($x, $y)")
+                    assertTrue(grid.inBounds(x, y), "a rock started off the grid at ($x, $y)")
                     assertTrue(
-                        occupancy.isFree(s.grid.index(x, y)),
+                        occupancy.isFree(grid.index(x, y)),
                         "a rock started inside the vessel at ($x, $y)",
                     )
                 }
