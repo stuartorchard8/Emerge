@@ -240,8 +240,9 @@ Expect it, and do not "fix" it by re-growing the box.
 
 Each phase ends with a green suite. Nothing here needs a flag day.
 
-**P0 — Prerequisites.** Fix `dragTo` to read `state.grid`. Rename `cfg.grid` → `initialGrid`. Add
-`gridWidth`/`gridHeight`/`origin` readouts to the harness. *No behaviour change.* Half a day.
+**P0 — Prerequisites.** ~~Fix `dragTo` to read `state.grid`.~~ ~~Rename `cfg.grid` → `initialGrid`.~~
+~~Add `gridWidth`/`gridHeight`/`originX`/`originY` readouts to the harness.~~ *No behaviour change.*
+~~Half a day.~~ **DONE 2026-08-05** (25 files, 95 insertions, 91 deletions, suite green).
 
 **P1 — `remapped`, tested in isolation.** The function, plus a test file that builds a world, remaps
 it by a known offset, and asserts: every machine/segment/bridge/pile/diverter landed where it should;
@@ -284,7 +285,7 @@ possible if we ever want it.
 
 | Phase | | |
 |---|---|---|
-| P0 prerequisites | 0.5d | no behaviour change |
+| ~~P0 prerequisites~~ | ~~0.5d~~ | ~~no behaviour change~~ | **DONE** ✓ |
 | P1 `remapped` + tests | 1.0d | the load-bearing phase |
 | P2 fit at construction/load | 1.0d | most of the script fallout lands here |
 | P3 grow on demand | 0.5d | |
