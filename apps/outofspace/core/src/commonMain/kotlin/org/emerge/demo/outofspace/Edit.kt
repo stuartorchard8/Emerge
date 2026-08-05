@@ -11,7 +11,13 @@ import org.emerge.demo.outofspace.world.Trigger
 sealed interface Edit {
     data class Place(val index: Int, val kind: MachineKind, val facing: Direction) : Edit
     data class Rotate(val index: Int) : Edit
-    data class Remove(val index: Int) : Edit
+    /**
+     * Takes something off a tile — one layer of it, or a named one, or all of it.
+     *
+     * [layer] defaults to [DeleteLayer.Top], which is the blind one-layer-per-click behaviour every
+     * caller had before the delete tool existed, so nothing that predates it changes meaning.
+     */
+    data class Remove(val index: Int, val layer: DeleteLayer = DeleteLayer.Top) : Edit
 
     /** Lay conduit between adjacent tiles [from]→[to] (one drag step). Missing track laid at ends. Non-adjacent = ignored (no pathfind). */
     data class Lay(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
@@ -31,9 +37,34 @@ sealed interface Edit {
     /** Drop rock at [index] (centred on tile). Mints mass → books to capturedGrams. Not via extractedGrams (extractor replacement). */
     data class DropRock(val index: Int, val radius: Int = DEFAULT_ROCK_RADIUS) : Edit
 
+    /**
+     * Puts [INJECT_GRAMS] of room-temperature air into a tile — the debug bellows.
+     *
+     * **It mints matter, and that is the whole difficulty with it.** Every other way gas enters this
+     * world is a transfer from somewhere else, which is why `atmosphere + vented == baseline` can be
+     * asserted on every tick and why a leak is one assertion away rather than a mystery. Gas from
+     * nowhere makes that identity false forever, and an instrument that reads LEAK whatever happens
+     * is an instrument nobody looks at again.
+     *
+     * So it is booked, exactly as [Thrust] is booked into `debugImpulseX`: the balance becomes
+     * `atmosphere + vented − injected == baseline`, which is the old identity precisely whenever
+     * nothing has cheated. See [org.emerge.demo.outofspace.world.VesselState.injectedAirGrams].
+     *
+     * One edit per tick for as long as the button is held — see [OutofspaceController.injectTile] —
+     * so the rate is a rate rather than a function of the frame rate.
+     */
+    data class Inject(val index: Int, val grams: Long = INJECT_GRAMS) : Edit
+
     companion object {
         /** Thrust magnitude: 250 milli-g (quarter gravity). Settles rooms over tens of ticks. */
         const val DEBUG_THRUST_MILLI_G: Long = 250L
+
+        /**
+         * What one tick of the injector delivers: a kilogram, which is about what a tile holds at one
+         * atmosphere. So a held button fills a room at roughly a tile a tick — fast enough to be a
+         * tool and slow enough to watch the front move.
+         */
+        const val INJECT_GRAMS: Long = 1000L
 
         /** Rock radius: 2 cells (5 tiles across, 21 cells). Fits through doorways. */
         const val DEFAULT_ROCK_RADIUS: Int = 2

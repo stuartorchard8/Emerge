@@ -87,7 +87,10 @@ class OutofspaceHud {
                 title("ATMOSPHERE")
                 keyValue("Aboard", grams(s.atmosphereGrams))
                 keyValue("Lost", grams(s.airVentedGrams))
-                val airBalanced = s.atmosphereGrams + s.airVentedGrams == s.baselineAirGrams
+                // Only shown once it is non-zero: the bellows is a debug tool, and a row reading
+                // "injected 0g" on every world that never touched it is a row nobody reads.
+                if (s.injectedAirGrams != 0L) keyValue("Injected", grams(s.injectedAirGrams))
+                val airBalanced = s.airBalance == 0L
                 row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ENERGY")
@@ -153,17 +156,37 @@ class OutofspaceHud {
                         ) { controller.brush = kind }
                     }
                     gap()
-                    row("click place · right-click remove", 0x9A9A9AFFL)
+                    row("click or drag to place", 0x9A9A9AFFL)
                     // Track: drag to connect (not by touching).
                     if (controller.brush.conduit != null) {
                         row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
                     }
-                    row("R rotate brush · middle-drag pan", 0x9A9A9AFFL)
+                    row("R rotate brush", 0x9A9A9AFFL)
+                } else if (controller.tool == Tool.Delete) {
+                    title("DELETE  ·  ${controller.deleteLayer.label}")
+                    actionRow(
+                        DeleteLayer.entries.map { layer ->
+                            Triple(
+                                if (layer == controller.deleteLayer) "> ${layer.label}" else layer.label,
+                                if (layer == controller.deleteLayer) 0xA5453AFFL else 0x232A38FFL,
+                            ) { controller.deleteLayer = layer }
+                        },
+                    )
+                    gap()
+                    row("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
+                    row("TOP takes one layer at a time", 0x9A9A9AFFL)
+                } else if (controller.tool == Tool.Inject) {
+                    title("INJECT  ·  ${Edit.INJECT_GRAMS}G / TICK")
+                    row("hold over a permeable tile", 0x9A9A9AFFL)
+                    // Named as debug in the same yellow the engine row uses, because it is the same
+                    // kind of lie: it makes matter, and says so in the atmosphere panel.
+                    row("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
                 } else {
                     row("click a machine to wire it", 0x9A9A9AFFL)
                     row("a sensor reads the tile it faces", 0x9A9A9AFFL)
                 }
-                row("W tool · wheel zoom · space pause", 0x9A9A9AFFL)
+                row("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
+                row("space pause", 0x9A9A9AFFL)
                 // Debug engine row (yellow, named).
                 row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)

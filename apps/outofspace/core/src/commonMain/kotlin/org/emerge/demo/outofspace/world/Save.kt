@@ -114,6 +114,10 @@ object Save {
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyJoules())
         out.append("airventedheat ").append(state.airVentedJoules).append('\n')
+        // The debug bellows' admission. Appended rather than versioned, like the impulse line:
+        // absent reads as zero, which is exactly what a world that never cheated has.
+        out.append("airinjected ").append(state.injectedAirGrams)
+            .append(' ').append(state.injectedAirJoules).append('\n')
         out.append("baselineairheat ").append(state.baselineAirJoules).append('\n')
 
         // Packed like heat. Momentum saved because reloading without it resumes becalmed.
@@ -321,6 +325,8 @@ object Save {
         var radiated = 0L
         var airVented = 0L
         var airVentedJoules = 0L
+        var injectedAirGrams = 0L
+        var injectedAirJoules = 0L
         var baselineAirJoules: Long? = null
         var baselineJoules: Long? = null
         var construction = 0L
@@ -349,6 +355,7 @@ object Save {
                 "radiated" -> radiated = long(1)
                 "airvented" -> airVented = long(1)
                 "airventedheat" -> airVentedJoules = long(1)
+                "airinjected" -> { injectedAirGrams = long(1); injectedAirJoules = long(2) }
                 "baselineairheat" -> baselineAirJoules = long(1)
                 "baselinejoules" -> baselineJoules = long(1)
                 "construction" -> construction = long(1)
@@ -492,6 +499,8 @@ object Save {
             // Both fields, because they share one ledger — see VesselState.baselineAirGrams.
             baselineAirGrams = baselineAir ?: (air.totalGrams + pipeAir.totalGrams),
             airVentedJoules = airVentedJoules,
+            injectedAirGrams = injectedAirGrams,
+            injectedAirJoules = injectedAirJoules,
             baselineAirJoules = baselineAirJoules ?: (air.totalJoules + pipeAir.totalJoules),
             momentum = MomentumField.of(edges, momentumX, momentumY),
             vesselImpulseX = impulseX,

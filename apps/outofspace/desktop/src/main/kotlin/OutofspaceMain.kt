@@ -3,6 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Save
@@ -55,6 +56,9 @@ fun main() {
 
     var leftDown = false
     var middleDown = false
+    var rightDown = false
+    // Held, not evented: a key repeat is a stutter and a key event is a step, and panning is neither.
+    val panKeys = BooleanArray(4)   // W, A, S, D
     var uiConsumed = false
     var lastX = 0f
     var lastY = 0f
@@ -71,19 +75,28 @@ fun main() {
                 uiConsumed = ui.hitTestDown(px, py)
                 if (!uiConsumed) {
                     val tile = renderer.tileIndexAt(px, py, controller.state)
-                    if (tile >= 0) { controller.apply(tile); lastPainted = tile }
+                    if (tile >= 0) {
+                        controller.apply(tile)
+                        lastPainted = tile
+                        // The bellows is a hold, so pressing merely opens the valve — the
+                        // controller emits one edit a tick for as long as this stays set.
+                        if (controller.tool == Tool.Inject) controller.injectTile = tile
+                    }
                 }
             } else {
                 leftDown = false
                 lastPainted = -1
                 controller.endDrag()
+                controller.injectTile = -1
                 if (uiConsumed) { ui.hitTestUp(px, py); ui.releaseHold() }
                 uiConsumed = false
             }
 
-            GLFW_MOUSE_BUTTON_RIGHT -> if (action == GLFW_PRESS) {
-                val tile = renderer.tileIndexAt(px, py, controller.state)
-                if (tile >= 0) controller.remove(tile)
+            // Panning, which is what every other game does with this button. Deleting used to live
+            // here and now has a tool of its own — see [Tool].
+            GLFW_MOUSE_BUTTON_RIGHT -> {
+                rightDown = action == GLFW_PRESS
+                lastX = px; lastY = py
             }
 
             GLFW_MOUSE_BUTTON_MIDDLE -> {
@@ -100,8 +113,15 @@ fun main() {
         val dx = px - lastX
         val dy = py - lastY
         when {
-            middleDown -> renderer.panByPixels(dx, dy)
+            middleDown || rightDown -> renderer.panByPixels(dx, dy)
             leftDown && uiConsumed -> ui.dragTo(px, py)
+            // A held bellows follows the pointer, so gas is laid along the drag.
+            leftDown && controller.tool == Tool.Inject -> controller.injectTile = hovered
+            // Deleting drags like building does — a run of track comes up in one gesture.
+            leftDown && controller.tool == Tool.Delete -> if (hovered >= 0 && hovered != lastPainted) {
+                controller.remove(hovered)
+                lastPainted = hovered
+            }
             // Painting a run of machines is a Build-tool gesture; a wire drag would just thrash
             // the selection, so dragging does nothing while wiring.
             // Painting a run of machines is a Build-tool gesture. For conduit it is more than that:
@@ -121,13 +141,27 @@ fun main() {
     }
 
     glfwSetKeyCallback(window) { _, key, _, action, _ ->
-        // The debug engine is a **throttle**, so it reads press and release rather than press alone,
-        // and it is read before the early return that everything else here sits behind.
+        // WASD pans the camera. Held rather than evented, for the reason [panKeys] gives, so it is
+        // read before the early return that everything else here sits behind.
         //
-        // ⚠️ Arrows and not WASD, which is what the design conversation asked for: `W` has toggled
-        // between the build and wire tools since before there was anything to fly, and quietly
-        // stealing it would break a gesture that is in every screenshot and every script. Worth
-        // revisiting when there is a real engine and flying is a mode rather than a debug key.
+        // ⚠️ This is what took `W` off the tool toggle, which now lives on `Q`. The old comment here
+        // said stealing `W` would break a gesture that is in every screenshot — it does, and it is
+        // still the right trade: WASD is what a hand rests on, and the toggle is one key either way.
+        // The debug engine keeps the arrows.
+        val pan = when (key) {
+            GLFW_KEY_W -> 0
+            GLFW_KEY_A -> 1
+            GLFW_KEY_S -> 2
+            GLFW_KEY_D -> 3
+            else -> -1
+        }
+        if (pan >= 0) {
+            if (action == GLFW_PRESS) panKeys[pan] = true
+            else if (action == GLFW_RELEASE) panKeys[pan] = false
+            return@glfwSetKeyCallback
+        }
+
+        // The debug engine is a **throttle**, so it reads press and release rather than press alone.
         val burn = when (key) {
             GLFW_KEY_LEFT -> -1 to 0
             GLFW_KEY_RIGHT -> 1 to 0
@@ -152,7 +186,14 @@ fun main() {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
             GLFW_KEY_R -> controller.rotateBrush()
             GLFW_KEY_H -> controller.overlay = controller.overlay.next
-            GLFW_KEY_W -> controller.tool = if (controller.tool == Tool.Build) Tool.Wire else Tool.Build
+            // Cycles rather than toggles, since there are four tools now. `W` used to do this and
+            // is WASD's now.
+            GLFW_KEY_Q -> controller.tool = Tool.entries[(controller.tool.ordinal + 1) % Tool.entries.size]
+            // The delete tool's aim: which layer comes off. Does nothing under the other tools.
+            GLFW_KEY_E -> if (controller.tool == Tool.Delete) {
+                val all = DeleteLayer.entries
+                controller.deleteLayer = all[(controller.deleteLayer.ordinal + 1) % all.size]
+            }
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             // A debug drop, alongside the debug engine, until capture is a thing you fly at in H4.
             // It needs the pointer, so it does nothing when the pointer is off the grid rather than
@@ -185,6 +226,16 @@ fun main() {
         if (now - lastFpsTime >= 1.0) { fps = frames.toFloat(); frames = 0; lastFpsTime = now }
 
         ui.advanceClock(delta)
+
+        // Keyboard pan, integrated against real time so the camera crosses the same distance a
+        // second on any machine. Pixels, because that is what [panByPixels] speaks and what keeps
+        // the speed constant on screen rather than in tiles as the zoom changes.
+        if (panKeys.any { it }) {
+            val step = KEY_PAN_PIXELS_PER_SECOND * delta
+            val dx = (if (panKeys[1]) step else 0f) - (if (panKeys[3]) step else 0f)
+            val dy = (if (panKeys[0]) step else 0f) - (if (panKeys[2]) step else 0f)
+            renderer.panByPixels(dx, dy)
+        }
         if (leftDown && uiConsumed) {
             val (px, py) = cursorPixel(window)
             ui.updateHold(px, py, delta)
@@ -204,6 +255,15 @@ fun main() {
     glfwDestroyWindow(window)
     glfwTerminate()
 }
+
+/**
+ * How fast WASD moves the camera, in framebuffer pixels a second.
+ *
+ * Pixels rather than tiles, so the world slides past at the same rate whatever the zoom — a
+ * tiles-per-second pan crawls when zoomed in and is unusable when zoomed out, which is the wrong way
+ * round on both counts.
+ */
+private const val KEY_PAN_PIXELS_PER_SECOND = 900f
 
 /**
  * Where a save goes: one well-known file beside wherever the game was started.

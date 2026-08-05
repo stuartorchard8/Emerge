@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
@@ -58,7 +59,10 @@ import kotlin.math.roundToInt
  * place <x> <y>              # build with the current brush
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
  *                            # the same as placing each tile
- * remove <x> <y> | rotate <x> <y>
+ * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
+ * rotate <x> <y>
+ * inject <x> <y> [ticks]     # debug bellows: 1kg of air a tick into a permeable tile. Mints matter
+ *                            # and admits it — `airBalance` stays 0, `injectedAir` is the admission
  * overlay <name>             # PLAIN/HEAT/AIR/PRESSURE/DENSITY/FLOW — what `shot` draws through
  * camera fit|centre <x> <y>|zoom <tilePx>|pan <dx> <dy>
  * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|debris|
@@ -160,8 +164,42 @@ object OutofspaceAgentHarness {
                     settle()
                     println("[agent] drag (${t[1]},${t[2]}) -> (${t[3]},${t[4]}) with ${controller.brush.label}")
                 }
-                "remove" -> { controller.remove(index(t[1], t[2])); settle() }
+                "remove" -> {
+                    // Optional third argument names the layer, so a script can take the pipes out of
+                    // a room and leave the deck — the delete tool's aim, driven from a script.
+                    val layer = t.getOrNull(3)?.let { name ->
+                        DeleteLayer.entries.firstOrNull { it.name.equals(name, true) }
+                            ?: error("unknown layer '$name' (have ${DeleteLayer.entries.map { it.label }})")
+                    } ?: DeleteLayer.Top
+                    controller.remove(index(t[1], t[2]), layer)
+                    settle()
+                }
+                // One tick of the debug bellows per `inject`, which is what holding the button for
+                // one tick does. `inject <x> <y> [ticks]` for a longer breath.
+                "inject" -> {
+                    val at = index(t[1], t[2])
+                    val ticks = t.getOrNull(3)?.toIntOrNull() ?: 1
+                    repeat(ticks) {
+                        controller.injectTile = at
+                        controller.stepOnce()
+                    }
+                    controller.injectTile = -1
+                    println("[agent] injected ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
+                        "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
+                }
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
+                // What a left-click means, and what the bottom-left panel is therefore showing.
+                // Presentation only — every command here drives the controller directly — but a
+                // screenshot of the delete panel is not reachable any other way.
+                "tool" -> {
+                    controller.tool = Tool.entries.firstOrNull { it.name.equals(t[1], true) }
+                        ?: error("unknown tool '${t[1]}' (have ${Tool.entries.map { it.label }})")
+                    t.getOrNull(2)?.let { name ->
+                        controller.deleteLayer = DeleteLayer.entries.firstOrNull { it.name.equals(name, true) }
+                            ?: error("unknown layer '$name'")
+                    }
+                    println("[agent] tool -> ${controller.tool.label} (${controller.deleteLayer.label})")
+                }
                 "overlay" -> {
                     overlay = Overlay.entries.firstOrNull { it.name.equals(t[1], true) || it.label.equals(t[1], true) }
                         ?: error("unknown overlay '${t[1]}' (have ${Overlay.entries.map { it.label }})")
@@ -447,7 +485,7 @@ object OutofspaceAgentHarness {
                 lastAir = air
             }
             println("[agent]   baseline air ${state.baselineAirGrams}g, vented ${state.airVentedGrams}g " +
-                "(balance ${state.atmosphereGrams + state.airVentedGrams - state.baselineAirGrams}g)")
+                "(balance ${state.airBalance}g)")
         }
 
         // ── observations ─────────────────────────────────────────────────────────────
@@ -459,7 +497,8 @@ object OutofspaceAgentHarness {
             "airGrams" -> state.atmosphereGrams.toDouble()
             "pipeGrams" -> state.pipeAir.totalGrams.toDouble()
             "airVented" -> state.airVentedGrams.toDouble()
-            "airBalance" -> (state.atmosphereGrams + state.airVentedGrams - state.baselineAirGrams).toDouble()
+            "injectedAir" -> state.injectedAirGrams.toDouble()
+            "airBalance" -> state.airBalance.toDouble()
             "debrisGrams" -> state.debrisGrams.toDouble()
             "extractedGrams" -> state.extractedGrams.toDouble()
             "ventedGrams" -> state.ventedGrams.toDouble()
@@ -475,10 +514,7 @@ object OutofspaceAgentHarness {
                 state.storedJoules + state.radiatedJoules + state.solidToAirJoules -
                     state.generatedJoules - state.constructionJoules - state.baselineJoules
                 ).toDouble()
-            "airHeatBalance" -> (
-                state.atmosphereJoules + state.airVentedJoules - state.solidToAirJoules -
-                    state.baselineAirJoules
-                ).toDouble()
+            "airHeatBalance" -> state.airJouleBalance.toDouble()
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
             // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
             // about how long the starter vessel's extractor has been running.

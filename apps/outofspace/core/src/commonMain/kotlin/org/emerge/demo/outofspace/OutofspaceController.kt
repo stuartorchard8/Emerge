@@ -39,11 +39,11 @@ class OutofspaceController(
     var brush: MachineKind = MachineKind.Rail
     var brushFacing: Direction = Direction.Right
 
-    /**
-     * Build or wire. Two tools rather than a modifier key, because wiring is a mode you stay in for
-     * a while and a held key is a poor way to express that — and there is no modifier key on a phone.
-     */
+    /** What a left-click does — see [Tool]. */
     var tool: Tool = Tool.Build
+
+    /** Which layer the delete tool takes off. Only read while [tool] is [Tool.Delete]. */
+    var deleteLayer: DeleteLayer = DeleteLayer.Top
 
     /** Which overlay the world is being viewed through. A view preference, so it lives here. */
     var overlay: Overlay = Overlay.None
@@ -60,6 +60,16 @@ class OutofspaceController(
      */
     var thrustX: Int = 0
     var thrustY: Int = 0
+
+    /**
+     * The tile the debug bellows is being held over, or -1 — see [Edit.Inject].
+     *
+     * Held state for [thrustX]'s reason, and it carries a *tile* rather than a boolean because the
+     * thing being held is a pointer: a host sets this to whatever is under the cursor each frame, so
+     * dragging while injecting lays gas along the drag. One edit per tick regardless, so a 144 Hz
+     * machine and a 30 Hz one fill a room at the same rate.
+     */
+    var injectTile: Int = -1
 
     /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
     var selected: Int = -1
@@ -88,6 +98,10 @@ class OutofspaceController(
             // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
             // selects the furnace rather than nothing.
             Tool.Wire -> selected = state.occupancy[index]
+            Tool.Delete -> remove(index)
+            // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
+            // pushed one edit here would inject twice on the tick the button went down.
+            Tool.Inject -> {}
         }
     }
 
@@ -162,9 +176,11 @@ class OutofspaceController(
     fun dropRock(index: Int) = pending.add(Edit.DropRock(index))
 
     fun rotate(index: Int) = pending.add(Edit.Rotate(index))
-    fun remove(index: Int) {
+
+    /** Takes [deleteLayer] off a tile. Named explicitly by callers that mean a specific layer. */
+    fun remove(index: Int, layer: DeleteLayer = deleteLayer) {
         if (index == selected) selected = -1
-        pending.add(Edit.Remove(index))
+        pending.add(Edit.Remove(index, layer))
     }
 
     fun cycleBrush(delta: Int) {
@@ -229,8 +245,12 @@ class OutofspaceController(
         // [thrustX]. It goes on the *end*, after this tick's builds, which is the order the reducer
         // wants anyway: the impulse is worked out against the mass the edits leave behind.
         val firing = thrustX != 0 || thrustY != 0
-        if (pending.isEmpty() && !firing) return OutofspaceInput.EMPTY
+        val injecting = injectTile >= 0
+        if (pending.isEmpty() && !firing && !injecting) return OutofspaceInput.EMPTY
         val edits = ArrayList<Edit>(pending)
+        // Before the thrust for no reason beyond a fixed order, and after this tick's builds so a
+        // tile that was walled off a moment ago is walled off for this breath too.
+        if (injecting) edits.add(Edit.Inject(injectTile))
         if (firing) edits.add(Edit.Thrust(thrustX, thrustY))
         pending.clear()
         return OutofspaceInput(edits)
@@ -242,6 +262,7 @@ class OutofspaceController(
         pending.clear()
         thrustX = 0
         thrustY = 0
+        injectTile = -1
         accumulator = 0f
         stepper.reset(newState, Tick(0))
     }

@@ -67,7 +67,10 @@ import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.vesselMassGrams
 import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
+import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
+import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
 import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.demo.outofspace.world.fluid.ApertureField
 import org.emerge.demo.outofspace.world.fluid.PumpDemand
@@ -295,6 +298,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
             // Separate from radiatedJoules: cleaner ledger.
             airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
+            // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
+            injectedAirGrams = w.injectedAirGrams,
+            injectedAirJoules = w.injectedAirJoules,
             momentum = MomentumField.of(edges, fluid.momentumX, fluid.momentumY),
             // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
@@ -462,6 +468,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val diverters: DiverterWork = DiverterWork(state.diverters)
         var ventedGrams: Long = state.ventedGrams
 
+        /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
+        var injectedAirGrams: Long = state.injectedAirGrams
+        var injectedAirJoules: Long = state.injectedAirJoules
+
         // Debug engine direction, summed + clamped (see [Edit.Thrust]).
         var thrustDx: Int = 0
         var thrustDy: Int = 0
@@ -625,44 +635,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val m = machines[at]
                     if (m is Directed) machines[at] = m.rotated()
                 }
-                is Edit.Remove -> {
+                is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
                     // smelter should not also demolish the smelter, and there is no other way to
                     // reach the track once it is threaded underneath.
-                    val bridge = bridges[edit.index]
-                    if (bridge != null) {
-                        // Every slot: a bridge taken apart mid-span drops all three lumps, or the
-                        // conservation invariant would read the dismantle as a leak.
-                        if (bridge.carried.isNotEmpty()) {
-                            debris.spill(edit.index, bridge.carried.map { asResource(it) })
-                        }
-                        bridges[edit.index] = null
-                        scrapped(bridge.joules)
-                        return
+                    //
+                    // One layer per click, because a tile can hold several and taking them all at
+                    // once would remove things the player could not see they were pointing at. A
+                    // player who *does* mean all of them now has a way to say so.
+                    DeleteLayer.Top -> {
+                        if (removeBridge(edit.index)) return
+                        for (c in Conduit.entries) if (removeConduit(edit.index, c)) return
+                        removeMachine(edit.index)
                     }
-                    // One fitting per click, in layer order, for the same reason the track comes off
-                    // before the smelter under it: a tile can hold several and removing them all at
-                    // once would take away things the player could not see they were pointing at.
-                    for (c in Conduit.entries) {
-                        val line = layer(c)
-                        val segment = line[edit.index] ?: continue
-                        segment.held?.let { debris.spill(edit.index, listOf(asResource(it))) }
-                        if (c == Conduit.Pipe) cutOpen(edit.index)
-                        line[edit.index] = null
-                        scrapped(segment.joules)
-                        // Cut far halves of joins (prevent phantom connections).
-                        for (dir in Direction.ALL) {
-                            val n = grid.neighbour(edit.index, dir)
-                            if (n >= 0) line[n]?.let { line[n] = it.cutFrom(dir.opposite) }
-                        }
-                        return
+                    DeleteLayer.Bridge -> removeBridge(edit.index)
+                    DeleteLayer.Rail -> removeConduit(edit.index, Conduit.Rail)
+                    DeleteLayer.Pipe -> removeConduit(edit.index, Conduit.Pipe)
+                    DeleteLayer.Deck -> removeMachine(edit.index)
+                    DeleteLayer.All -> {
+                        removeBridge(edit.index)
+                        for (c in Conduit.entries) removeConduit(edit.index, c)
+                        removeMachine(edit.index)
                     }
-                    // Whole machine removed (not a slice). Holding drops to deck.
-                    val at = originAt(edit.index) ?: return
-                    debris.spill(at, spoilsOf(machines[at]))
-                    for (t in coveredTiles(grid, at, machines[at]!!.kind.size)) originOf[t] = -1
-                    scrapped(machines[at]!!.joules)
-                    machines[at] = null
                 }
                 is Edit.Wire -> {
                     val at = originAt(edit.index) ?: return
@@ -690,7 +684,82 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.index, edit.radius)
+                is Edit.Inject -> inject(edit.index, edit.grams)
             }
+        }
+
+        /**
+         * Takes a bridge off a tile. True if there was one, which is what makes [DeleteLayer.Top]'s
+         * cascade readable as "the first layer that had anything".
+         */
+        private fun removeBridge(at: Int): Boolean {
+            val bridge = bridges.getOrNull(at) ?: return false
+            // Every slot: a bridge taken apart mid-span drops all three lumps, or the conservation
+            // invariant would read the dismantle as a leak.
+            if (bridge.carried.isNotEmpty()) debris.spill(at, bridge.carried.map { asResource(it) })
+            bridges[at] = null
+            scrapped(bridge.joules)
+            return true
+        }
+
+        /** Takes one conduit layer off a tile, cutting the far halves of its joins. */
+        private fun removeConduit(at: Int, c: Conduit): Boolean {
+            val line = layer(c)
+            val segment = line.getOrNull(at) ?: return false
+            segment.held?.let { debris.spill(at, listOf(asResource(it))) }
+            if (c == Conduit.Pipe) cutOpen(at)
+            line[at] = null
+            scrapped(segment.joules)
+            // Cut far halves of joins (prevent phantom connections).
+            for (dir in Direction.ALL) {
+                val n = grid.neighbour(at, dir)
+                if (n >= 0) line[n]?.let { line[n] = it.cutFrom(dir.opposite) }
+            }
+            return true
+        }
+
+        /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
+        private fun removeMachine(at: Int): Boolean {
+            val origin = originAt(at) ?: return false
+            val machine = machines[origin] ?: return false
+            debris.spill(origin, spoilsOf(machine))
+            for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = -1
+            scrapped(machine.joules)
+            machines[origin] = null
+            return true
+        }
+
+        /**
+         * One tick of the debug bellows: room-temperature gas appears in a tile, and is admitted to.
+         *
+         * Refused where there is no room to put it — a tile inside a solid machine or outside the
+         * hull has no gas volume, and filling one would be pressurising a wall. The refusal is silent
+         * and books nothing, so a held button over a wall does exactly nothing rather than quietly
+         * accumulating a debt.
+         */
+        private fun inject(at: Int, grams: Long) {
+            if (at !in 0 until grid.size || grams <= 0L) return
+            if (originOf[at] >= 0 && machines[originOf[at]]?.kind?.isPermeable == false) return
+            val base = at * Species.COUNT
+            val shares = AirField.AMBIENT_AIR.scaledTo(grams)
+            // The parcel on its own, so its heat can be worked out from what actually arrived rather
+            // than from the tile it is arriving in — that gas is already at its own temperature.
+            val parcel = LongArray(Species.COUNT)
+            var added = 0L
+            for (s in Species.GASES) {
+                val g = shares[s]
+                parcel[s.ordinal] = g
+                airGrams[base + s.ordinal] += g
+                added += g
+            }
+            if (added <= 0L) return
+            // The heat comes in with the gas, at the temperature everything else here is. Derived
+            // from the grams rather than defaulted to zero, which is [AirField.of]'s rule: gas that
+            // arrived with no energy is gas at absolute zero, and it stops behaving like a gas.
+            val joules = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+            airJoules[at] += joules
+            injectedAirGrams += added
+            injectedAirJoules += joules
         }
 
         /** Drop a rock at [at] (capture placeholder). Mass → capturedGrams, energy → built. */

@@ -156,6 +156,25 @@ data class VesselState(
     /** Cumulative grams of atmosphere lost to space. Air's counterpart to [radiatedJoules]. */
     val airVentedGrams: Long = 0L,
     /**
+     * Cumulative grams of atmosphere put into the world by [org.emerge.demo.outofspace.Edit.Inject]
+     * — the debug bellows — rather than by any gas coming from anywhere.
+     *
+     * The air ledger's [debugImpulseX], and it is here for that term's reason exactly. The identity
+     * becomes
+     *
+     *     atmosphere + airVented − injected == baselineAir
+     *
+     * which is the old identity precisely whenever nothing has cheated. A tool that minted gas
+     * without this term would make `airBalance` non-zero for the rest of the world's life, and an
+     * instrument you have learned to ignore is worse than no instrument.
+     *
+     * It also gives the shortcut a provable death: when air comes from a tank or a cracker instead,
+     * this returns to zero and rooms still fill.
+     */
+    val injectedAirGrams: Long = 0L,
+    /** The heat that came in with it — [injectedAirGrams]'s twin, for the energy ledger. */
+    val injectedAirJoules: Long = 0L,
+    /**
      * The channel values computed this tick. Kept in the snapshot rather than recomputed by the
      * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
      * drawn dimmed when its activation is zero, which is the answer to "why has this stopped".
@@ -443,6 +462,31 @@ data class VesselState(
      * nothing fails until something moves.
      */
     val atmosphereJoules: Long get() = air.totalJoules + pipeAir.totalJoules
+
+    /**
+     * How far the air ledger is out: `atmosphere + vented − injected − baseline`, which is **zero**,
+     * always, on a world nothing has broken.
+     *
+     * One property rather than the sum written out at each of the four places that wanted it — the
+     * HUD, the harness, the fixtures and the tests. That is not tidiness: [atmosphereJoules] arrived
+     * a whole increment after [atmosphereGrams] because the two were summed at separate call sites
+     * and only one of them learned about the pipes, and nothing failed until gas moved. Two
+     * quantities that share a baseline have to be summed in one place, or eventually they are not
+     * summed the same way.
+     */
+    val airBalance: Long get() = atmosphereGrams + airVentedGrams - injectedAirGrams - baselineAirGrams
+
+    /**
+     * The same statement about the air's energy — [airBalance]'s twin, and zero for its reasons.
+     *
+     * ⚠️ It carries **one term the mass identity does not**: [solidToAirJoules]. Heat crosses between
+     * the fabric and the gas and mass never does, so what the solid ledger says it gave, this one has
+     * to be holding. Leave it out and a warm room reads as a leak — which is exactly what the first
+     * version of this property did.
+     */
+    val airJouleBalance: Long
+        get() = atmosphereJoules + airVentedJoules - solidToAirJoules - injectedAirJoules -
+            baselineAirJoules
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =
