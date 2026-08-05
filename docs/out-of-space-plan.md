@@ -1291,8 +1291,8 @@ Not an increment — the affordances needed to design a vessel by hand rather th
   comes from a tank instead. ⚠️ The air *energy* identity carries a term the mass one does not —
   `solidToAirJoules` — and leaving it out reads a warm room as a leak.
 - 📋 **The grid fits the vessel** — scoped, not built. See `apps/outofspace/PLAN_dynamic_grid.md`.
-  ~3.5 days. ⚠️ Its performance argument does **not** land until rocks stream rather than being
-  scattered once, because the box has to enclose the rock field too.
+  ~3.5 days. The box covers built tiles only — rocks live outside the grid by design, and
+  `overlapsHull` says so.
 
 ---
 

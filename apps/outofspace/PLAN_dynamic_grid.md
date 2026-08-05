@@ -26,7 +26,8 @@ every side, and it changes shape when the vessel does.
    consequence.
 2. **The default world gets much smaller.** A starter vessel is 33×23; padded that is 41×31, which is
    1271 tiles against 5760 — a 4.5× cut in everything that is per-tile per-tick. The fluid solve is
-   the bulk of the tick, so this is real.
+   the bulk of the tick, so this is real, and it arrives immediately: rocks live outside the grid
+   quite happily (§8), so the box does not have to cover the field.
 3. **The hull can never touch the grid edge**, which today is a silent trap: `StructureMap` derives
    "inside" by flooding inward *from the grid boundary*, so a hull built flush against it cannot be
    flooded around and the whole ship reads as interior. A guaranteed pad of 4 makes that
@@ -203,27 +204,37 @@ work.
 
 ## 8. What the box encloses
 
-Not just built tiles. The bounding box is the union of:
+Every tile covered by a machine (**footprint**, not anchor — a smelter reaches two past its centre;
+`RockField.boundsOf` already has this right and is the thing to copy), every tile carrying a conduit
+segment or a bridge, and every tile holding debris.
 
-- every tile covered by a machine (**footprint**, not anchor — a smelter reaches two past its centre;
-  `RockField.boundsOf` already makes this mistake available to copy from),
-- every tile carrying a conduit segment or a bridge,
-- every tile holding debris,
-- **every rock**, plus its own pad.
+**Not rocks.** An earlier draft of this plan required the box to enclose the rock field, on the
+grounds that a rock outside the grid would drift through the hull. That is wrong, and the code is
+explicit about it:
 
-The last one is the non-obvious one and it is not optional. Rocks are the whole of H4 and they live
-*outside* the hull by definition. A box drawn around the vessel alone would put the field outside the
-world, where `sweepRock` cannot see structure and a rock would drift through the hull. A vessel that
-flies to a rock must have that rock inside its grid before it arrives.
+- `overlapsHull` bounds-checks every tile it tests (`if (tx < 0 || tx >= grid.width) continue`) and
+  floors negatives correctly, with the comment *"a rock goes negative"*. Its doc already settles the
+  question: *"Anything off the grid is open space, not wall."*
+- More to the point, **the hull is inside the grid**. A rock can only reach it by overlapping hull
+  tiles, which are in-bounds by construction — with a pad of 4, in-bounds with room to spare. There
+  is no path from "off-grid and untested" to "inside the hull" that does not cross tested tiles, and
+  `MAX_SUBSTEP` is what stops it being stepped over. That is independent of where the boundary is.
+- The approach works for the same reason. The grid is the vessel's frame and travels with it, so a
+  distant rock has a negative grid position that walks toward the ship as the ship flies at it and
+  crosses into bounds on its own.
 
-⚠️ This means the grid is at least as big as the rock field is spread out, which for the current
-12-rock scatter is most of the existing 96×60. **So the performance dividend in §1 does not arrive
-until rocks stream in and out of a region around the ship rather than being scattered once over a
-fixed map** — which is exactly the despawn/respawn work that is deliberately not built yet. The
-editor benefit arrives immediately; the performance benefit waits on that. Do not let the second one
-justify the first.
+Rocks are therefore free to live outside the world, which is what H4 already assumes and what the
+renderer already does (it draws every rock, unculled).
 
----
+⚠️ **Consequence for the discard rule in §5:** debris still must not be discarded, but a rock leaving
+the box is *ordinary* and books nothing. It is neither in `massGrams` nor in `inTransitGrams` while
+loose, and its own ledger is positional-free — see `VesselState.rocks`.
+
+⚠️ **One real behaviour change, small:** `platingFeltBy` treats "centre is on the grid" as "over the
+deck", so a fitted grid shrinks the plating's reach from the whole 96×60 to vessel+4. That is *more*
+correct — a field the ship makes should stop where the ship does — but it will move the numbers in
+any fixture that sets `PLATING_ONE_G` and puts a rock far out, which is most of `RockContactTest`.
+Expect it, and do not "fix" it by re-growing the box.
 
 ## 9. Phases
 
