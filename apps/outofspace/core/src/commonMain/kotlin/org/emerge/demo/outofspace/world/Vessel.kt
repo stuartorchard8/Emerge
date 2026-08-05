@@ -683,3 +683,176 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Vent -> Mixture.EMPTY
     is Pump -> Mixture.EMPTY
 }
+
+/**
+ * The same world on a different lattice, translated by (dx, dy) tiles.
+ *
+ * Cells that exist in both grids keep everything; cells only in the new one are vacuum.
+ * The old origin lands at (dx, dy) in the new grid, so growing left by 4 is dx = +4.
+ */
+fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
+    require(newGrid.size > 0) { "new grid must be non-empty" }
+
+    val oldW = grid.width
+    val oldH = grid.height
+    val oldSize = grid.size
+
+    // ── helpers ───────────────────────────────────────────────────────────
+    fun remapTile(ox: Int, oy: Int): Int? {
+        val nx = ox + dx
+        val ny = oy + dy
+        return if (newGrid.inBounds(nx, ny)) newGrid.index(nx, ny) else null
+    }
+
+    // ── 1. Tile-indexed lists: machines, bridges ─────────────────────────
+    val newMachines = MutableList(newGrid.size) { null as Machine? }
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val ni = remapTile(ox, oy) ?: continue
+        val oi = grid.index(ox, oy)
+        newMachines[ni] = machines[oi]
+    }
+    val newBridges = MutableList(newGrid.size) { null as Bridge? }
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val ni = remapTile(ox, oy) ?: continue
+        val oi = grid.index(ox, oy)
+        newBridges[ni] = bridges[oi]
+    }
+
+    // ── 2. Conduits: remap each layer ────────────────────────────────────
+    var newConduits = Conduits.empty(newGrid.size)
+    for (c in Conduit.entries) {
+        val oldLayer = conduits[c]
+        val newLayer = MutableList(newGrid.size) { null as Segment? }
+        for (ox in 0 until oldW) for (oy in 0 until oldH) {
+            val ni = remapTile(ox, oy) ?: continue
+            val oi = grid.index(ox, oy)
+            newLayer[ni] = oldLayer[oi]
+        }
+        newConduits = newConduits.with(c, newLayer)
+    }
+
+    // ── 3. Sparse maps: debris, diverters ────────────────────────────────
+    val newDebrisMap = HashMap<Int, List<Resource>>()
+    for (oldTile in debris.tiles()) {
+        val ox = grid.xOf(oldTile)
+        val oy = grid.yOf(oldTile)
+        val ni = remapTile(ox, oy)
+        if (ni != null) newDebrisMap[ni] = debris[oldTile]
+    }
+    val newDebris = Debris.of(newDebrisMap)
+
+    val newDiverterMap = HashMap<Int, Int>()
+    for ((oldTile, cursor) in diverters.cursor) {
+        val ox = grid.xOf(oldTile)
+        val oy = grid.yOf(oldTile)
+        val ni = remapTile(ox, oy)
+        if (ni != null) newDiverterMap[ni] = cursor
+    }
+    // diverters cursor is internal, accessible from same module
+    val newDiverters = Diverters.of(newDiverterMap)
+
+    // ── 4. Dense field arrays: air / pipeAir (grams + joules) ────────────
+    fun remapAirField(src: AirField): AirField {
+        val newGrams = LongArray(newGrid.size * Species.COUNT)
+        val oldJoules = src.copyJoules()
+        val newJoules = LongArray(newGrid.size)
+        for (ox in 0 until oldW) for (oy in 0 until oldH) {
+            val ni = remapTile(ox, oy) ?: continue
+            val oi = grid.index(ox, oy)
+            val baseN = ni * Species.COUNT
+            val baseO = oi * Species.COUNT
+            for (s in Species.entries) {
+                newGrams[baseN + s.ordinal] = src.gramsOf(oi, Species.entries[s.ordinal])
+            }
+            newJoules[ni] = oldJoules[oi]
+        }
+        return AirField.of(newGrams, newJoules)
+    }
+    val newAir = remapAirField(air)
+    val newPipeAir = remapAirField(pipeAir)
+
+    // ── 5. Edge fields: momentum, pipeMomentum ───────────────────────────
+    val oldMomentumEdges = EdgeGrid(grid)
+    val newMomentumEdges = EdgeGrid(newGrid)
+    val newMomentumX = LongArray(newMomentumEdges.xEdgeCount)
+    val newMomentumY = LongArray(newMomentumEdges.yEdgeCount)
+    val srcX = momentum.copyX()
+    val srcY = momentum.copyY()
+    // x-faces: (x, y) where x ∈ [0, oldW], y ∈ [0, oldH)
+    for (oy in 0 until oldH) for (ox in 0..oldW) {
+        val oldEdge = oldMomentumEdges.xEdge(ox, oy)
+        val nx = ox + dx
+        val ny = oy + dy
+        if (ny >= 0 && ny < newGrid.height && nx >= 0 && nx <= newGrid.width) {
+            val newEdge = newMomentumEdges.xEdge(nx, ny)
+            newMomentumX[newEdge] = srcX[oldEdge]
+        }
+    }
+    // y-faces: (x, y) where x ∈ [0, oldW), y ∈ [0, oldH]
+    for (ox in 0 until oldW) for (oy in 0..oldH) {
+        val oldEdge = oldMomentumEdges.yEdge(ox, oy)
+        val nx = ox + dx
+        val ny = oy + dy
+        if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
+            val newEdge = newMomentumEdges.yEdge(nx, ny)
+            newMomentumY[newEdge] = srcY[oldEdge]
+        }
+    }
+    val newMomentum = MomentumField.of(newMomentumEdges, newMomentumX, newMomentumY)
+
+    val oldPipeEdges = EdgeGrid(grid)
+    val newPipeEdges = EdgeGrid(newGrid)
+    val newPipeMomentumX = LongArray(newPipeEdges.xEdgeCount)
+    val newPipeMomentumY = LongArray(newPipeEdges.yEdgeCount)
+    val psrcX = pipeMomentum.copyX()
+    val psrcY = pipeMomentum.copyY()
+    for (oy in 0 until oldH) for (ox in 0..oldW) {
+        val oldEdge = oldPipeEdges.xEdge(ox, oy)
+        val nx = ox + dx
+        val ny = oy + dy
+        if (ny >= 0 && ny < newGrid.height && nx >= 0 && nx <= newGrid.width) {
+            val newEdge = newPipeEdges.xEdge(nx, ny)
+            newPipeMomentumX[newEdge] = psrcX[oldEdge]
+        }
+    }
+    for (ox in 0 until oldW) for (oy in 0..oldH) {
+        val oldEdge = oldPipeEdges.yEdge(ox, oy)
+        val nx = ox + dx
+        val ny = oy + dy
+        if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
+            val newEdge = newPipeEdges.yEdge(nx, ny)
+            newPipeMomentumY[newEdge] = psrcY[oldEdge]
+        }
+    }
+    val newPipeMomentum = MomentumField.of(newPipeEdges, newPipeMomentumX, newPipeMomentumY)
+
+    // ── 6. Rocks: shift positions ────────────────────────────────────────
+    val newRocks = rocks.map {
+        it.copy(
+            positionX = it.positionX + dx * Flight.PER_TILE.toLong(),
+            positionY = it.positionY + dy * Flight.PER_TILE.toLong(),
+        )
+    }
+
+    // ── 7. Motion: dropped on resize (renderer will re-animate from zero)
+    //    Baselines: passed through unchanged — they are conservation constants
+
+    return copy(
+        grid = newGrid,
+        machines = newMachines,
+        conduits = newConduits,
+        bridges = newBridges,
+        debris = newDebris,
+        diverters = newDiverters,
+        air = newAir,
+        pipeAir = newPipeAir,
+        momentum = newMomentum,
+        pipeMomentum = newPipeMomentum,
+        rocks = newRocks,
+        // baselines passed through explicitly to avoid recompute on copy
+        baselineAirGrams = baselineAirGrams,
+        baselineAirJoules = baselineAirJoules,
+        baselineJoules = baselineJoules,
+        baselineRockGrams = baselineRockGrams,
+    )
+}
