@@ -198,8 +198,19 @@ class DebrisTest {
         s = run(s, 80)
 
         // Rip out every machine on one row of the working line, mid-flow.
-        val y = 12   // the row the starter vessel's main line runs along
-        val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
+        // Find a row that actually has machines after grid fitting.
+        var plateY = -1
+        for (y in 0 until s.grid.height) {
+            for (x in 3..30) {
+                if (s.machines[s.grid.index(x, y)] != null) {
+                    plateY = y
+                    break
+                }
+            }
+            if (plateY >= 0) break
+        }
+        assertTrue(plateY >= 0, "found a row with machines to dismantle")
+        val edits = (3..30).map { Edit.Remove(s.grid.index(it, plateY)) }
         s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
 
         repeat(120) {
@@ -219,8 +230,18 @@ class DebrisTest {
             var s = workingVessel(Grid(40, 28))
             val cfg = OutofspaceConfig(initialGrid = s.grid)
             s = run(s, 300)
-            val y = 12   // the row the starter vessel's main line runs along
-            val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
+            // Find a row that actually has machines after grid fitting.
+            var plateY = -1
+            for (y in 0 until s.grid.height) {
+                for (x in 3..30) {
+                    if (s.machines[s.grid.index(x, y)] != null) {
+                        plateY = y
+                        break
+                    }
+                }
+                if (plateY >= 0) break
+            }
+            val edits = (3..30).map { Edit.Remove(s.grid.index(it, plateY)) }
             s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
             s = run(s, 120)
             return buildString {
