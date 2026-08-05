@@ -244,12 +244,14 @@ Each phase ends with a green suite. Nothing here needs a flag day.
 ~~Add `gridWidth`/`gridHeight`/`originX`/`originY` readouts to the harness.~~ *No behaviour change.*
 ~~Half a day.~~ **DONE 2026-08-05** (25 files, 95 insertions, 91 deletions, suite green).
 
-**P1 — `remapped`, tested in isolation.** The function, plus a test file that builds a world, remaps
-it by a known offset, and asserts: every machine/segment/bridge/pile/diverter landed where it should;
-the fields are identical modulo the shift; the edge fields are identical on both axes; rocks moved
-exactly `dx` tiles; every ledger identity holds; and a round trip through a `+4/-4` pair is the
-identity. Nothing calls it yet. **This is the phase that must not be rushed** — it is the only one
-where a bug is cheap to find. One day.
+**P1 — `remapped`, tested in isolation.** ~~The function, plus a test file that builds a world, remaps~~
+~~it by a known offset, and asserts: every machine/segment/bridge/pile/diverter landed where it should;~~
+~~the fields are identical modulo the shift; the edge fields are identical on both axes; rocks moved~~
+~~exactly `dx` tiles; every ledger identity holds; and a round trip through a `+4/-4` pair is the~~
+~~identity. Nothing calls it yet.~~ **This is the phase that must not be rushed** — it is the only one
+~~where a bug is cheap to find.~~ **DONE 2026-08-05** (21 tests: identity, each field type, all 6
+ledger balances, round-trip, vacuum init, negative offset; edge y-face boundary at height was the
+trickiest fix — `yEdgeCount = width * (height+1)` so loops go `0..height`). ~One day.~
 
 **P2 — Fit at construction and load.** `fitGrid(state, pad = 4)` returning a remapped state; called
 by `starterVessel` and by `Save.read`. The starter vessel's grid stops being `Grid(96, 60)` and
