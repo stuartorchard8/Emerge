@@ -1120,6 +1120,118 @@ together or not at all.
 
 ---
 
+## 5f. Rocks, and the shortcuts taken on purpose (2026-08-05)
+
+Increment H is "capture and the hold", and a look at the tree before starting it turned up four
+things the design above does not say, all of which are about the same absence: **there is nowhere for
+a free-floating solid to be.**
+
+- `Body` is not stored. `bodiesOf` *derives* it every tick from `machines`, `conduits` and `bridges`,
+  which is exactly why the heat model cannot desynchronise — and it means a rock outside those three
+  lists does not exist. Whatever home a rock gets has to answer to `solidJoules`/`baselineJoules` on
+  the tick it appears or the thermal ledger breaks immediately.
+- **The grid is the vessel's frame and the asteroid field is not.** The ship's position is in open
+  space; the grid travels with it and nothing on it moves because the ship does. "Flying to a rock" is
+  the ship's position changing while the grid stands still, and the rock is *placed into* the grid as
+  the ship reaches it. That is open question 1 arriving with something at stake.
+- **Debris cannot be the mechanism.** `settleDebris` walks anything in `Structure.Vacuum` straight off
+  the rim into `ventedGrams` — there is no deck out there to land on, and a test says so. A rock
+  represented as debris is thrown overboard on the tick it appears.
+- **A rock is new mass in a closed world.** The balance is `mined == inTransitGrams + vented`. Matter
+  arriving from outside needs a named term, and it must not be `minedGrams`, because the miner is a
+  stand-in the hold is meant to *replace* (open question 5). Don't build the hold on it.
+
+### The two simplifications, chosen rather than discovered
+
+**Rocks do not rotate.** A rock has its own grid and its own shape, axis-aligned with the vessel's,
+offset by a sub-tile amount. Overlap is then an integer box test plus a fraction, and a rock carries
+momentum and no angular momentum. Rotation is a rigid-body engine — arbitrary-angle grid overlap,
+torque from off-centre contact, and tiles that no longer line up with the fluid cells they sit in —
+landing on a momentum ledger that only just closed at residual zero. Same move, and the same reason,
+as "the first engine is axis-aligned, on purpose": a tumbling rock is a good thing to want and it is
+not what makes the extractor interesting.
+
+**A rock is permeable to air.** It reads the pressure field and does not write to it: air flows
+through the tiles it occupies, it displaces nothing, it blocks nothing. It samples the pressure
+gradient over its footprint, turns that into force on its own momentum, and the equal-and-opposite
+goes back to the faces it was read from.
+
+The alternative is a **moving boundary** — an aperture map changing every tick, cells opening and
+closing as the rock passes, and a pressure solve whose domain moved since it last ran. That is the
+genuinely hard version of solid-fluid coupling and it is out of proportion to what it buys. Permeable
+still gives the readable behaviour: a rock drifting toward a breach, a rock pinned against the stern
+under thrust. Making it impermeable later is *additive*, so this degrades in the right direction, and
+the moment to spend the budget is when there is something on screen that reads wrong.
+
+### The debug thruster, and the rule it has to obey
+
+Building a real engine — a nozzle, high-pressure exhaust, a CFL wall — before the loop closes is
+tuning a subsystem that every later change will detune again. So the ship gets a **debug thruster**:
+a key that puts impulse straight into the vessel, as if a rocket had fired, with no rocket.
+
+⚠️ **It must book what it mints.** `momentumBalance` is the instrument that caught the truncation bug
+in §5e, and a key that creates momentum from nowhere makes that number non-zero forever — at which
+point the instrument is dead, because the reading has become one you have learned to ignore. So
+`debugImpulse` is a **fifth named store** beside `undelivered`, and the identity becomes
+
+```
+vesselImpulse + momentum + pipeMomentum + exhaust + undelivered − debugImpulse == 0
+```
+
+which reduces to exactly the old one when nothing has cheated. Same walk as `ventedGrams`: it is not
+a leak if it is counted.
+
+That also gives the shortcut a clean death. When the real engine lands in increment I, the check is
+that `debugImpulse` returns to zero and the ship still moves — the stand-in removes itself provably
+instead of lingering as a suspicious extra term.
+
+The general form is worth stating, because the miner was the same thing and earned its keep for
+months: **a stand-in that closes the loop beats a real subsystem that doesn't.** The miner's problem
+was never that it was fake. It was that it minted mass silently.
+
+### The nav view is not a convenience
+
+Zooming out does not show you space. The grid *is* the vessel's frame and the void tiles around the
+hull are part of it, so a far zoom-out shows a small ship interior in an empty box. **Open space has
+no representation at all**, and until it has one the ship's position, its velocity and everything
+outside the hull are invisible.
+
+So a nav panel is the instrument that makes the two frames legible instead of baffling — including
+the transition where a rock crosses out of open space and is placed into the grid, which is the thing
+in H most likely to read as janky. Ship fixed at the centre with the world sliding under it, because
+that is the honest frame and it is how the grid already behaves. Velocity as a vector. Rocks as dots.
+A range dial, with the default deferred until there is something to look at: how far apart rocks want
+to be and how fast the ship actually goes are not known until H1 flies.
+
+No fog of war and no detection mechanic. This is an instrument, and if scanning ever becomes a
+mechanic it works by taking something away from a view that already works.
+
+### The increments, sized to be watched
+
+Increment G was sized as a *mechanism* and was therefore dark until it was finished. These are sized
+so that each one ends with something to look at, and each commit carries **all four** of:
+
+1. Something you can do in the running game with a key or the mouse. Not a test that passes.
+2. A named script in `apps/outofspace/agent-scripts/` that drives exactly that, with `expect`s, so the
+   claim can be re-run rather than believed.
+3. A screenshot that has actually been opened and looked at before the change is called working.
+4. A paragraph in the handoff saying what to go and look at.
+
+- **H0. The debug thruster and the nav view** — arrow keys put impulse into the ship, `debugImpulse`
+  books it, the nav panel shows position and velocity. You can fly, and see that you are flying.
+- **H1. A rock** — own grid, no rotation, momentum, reads `feltGravity`. On the nav panel from the
+  moment it exists.
+- **H2. Collision** — grid/grid overlap against hull and deck. It lands and stays landed, and
+  `momentumBalance` stays zero because the ship gets what the rock loses.
+- **H3. The extractor** — 5×5 permeable background machine, leeching mass off the rocks on its tiles
+  into a `Mixture` that feeds the existing refining stages. **The miner is deleted here.** This is
+  where the loop closes, and it is deliberately before capture: retiring the miner is worth more than
+  the capture ceremony and does not depend on it.
+- **H4. Capture** — the field outside, flying at a rock, the rock entering the grid.
+- **H5. Pressure on rocks** — the permeable coupling above. Last, so it can be cut.
+
+---
+
 ## 6. Open questions
 
 1. **What is outside the hull?** Vacuum as a special tile, or genuinely absent tiles? This decides
