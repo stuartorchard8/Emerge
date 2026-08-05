@@ -1275,6 +1275,25 @@ so that each one ends with something to look at, and each commit carries **all f
   never mentioned would be measuring something it did not choose.
 - **H5. Pressure on rocks** — the permeable coupling above. Last, so it can be cut.
 
+### Editor tools (2026-08-05)
+
+Not an increment — the affordances needed to design a vessel by hand rather than in `StarterVessel`.
+
+- ✅ **Aimed delete.** A tile holds a bridge, a pipe, a rail and a machine at once, and the only way
+  to reach the track under a smelter was to click repeatedly. `Edit.Remove` takes a `DeleteLayer`;
+  `TOP` is the old blind one-layer-per-click and is still the default, so nothing that predates it
+  changed meaning.
+- ✅ **Right-drag and WASD pan.** Deleting used to own the right button. `W` moved off the tool
+  toggle, which cycles on `Q`; the debug engine keeps the arrows.
+- ✅ **The debug bellows** (`Edit.Inject`) — 1 kg of room-temperature air a tick into a permeable
+  tile, held. It mints matter and **admits it**: `atmosphere + vented − injected == baseline`, booked
+  exactly as `debugImpulseX` books the debug engine, and it dies the same provable death when air
+  comes from a tank instead. ⚠️ The air *energy* identity carries a term the mass one does not —
+  `solidToAirJoules` — and leaving it out reads a warm room as a leak.
+- 📋 **The grid fits the vessel** — scoped, not built. See `apps/outofspace/PLAN_dynamic_grid.md`.
+  ~3.5 days. ⚠️ Its performance argument does **not** land until rocks stream rather than being
+  scattered once, because the box has to enclose the rock field too.
+
 ---
 
 ## 5g. Freefall, and a constant that was an off switch (2026-08-05)

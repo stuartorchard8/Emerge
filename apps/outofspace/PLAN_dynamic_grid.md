@@ -1,0 +1,300 @@
+# The grid fits the vessel
+
+*Plan, 2026-08-05. Nothing built. Companion to `docs/out-of-space-plan.md` — this is one item, at
+length, because it touches more of the world than anything since the fluid layer.*
+
+---
+
+## 1. What this is for
+
+The grid is `Grid(96, 60)` and always has been. It was chosen as "a generous bound with the hull
+drawn inside it", and `Grid`'s own doc says why: *fixed rather than growable because the atmosphere
+solver is far simpler over fixed bounds, and because a generous bound gets the expansion fantasy
+without the machinery.*
+
+That was right while the vessel was a fixture. It stops being right the moment vessels are
+**authored**, because a bound chosen once cannot be the right bound for a ship that has not been
+designed yet. A long vessel wastes six thousand tiles of height; a tall one wastes them in width; and
+either way every tick sweeps, floods, diffuses and projects across the waste.
+
+**Goal.** The grid is always exactly the vessel's bounding box plus a constant padding of 4 tiles on
+every side, and it changes shape when the vessel does.
+
+**What that buys, in order of how much it matters:**
+
+1. **A designed vessel gets a grid its own shape.** This is the point. Everything else is a
+   consequence.
+2. **The default world gets much smaller.** A starter vessel is 33×23; padded that is 41×31, which is
+   1271 tiles against 5760 — a 4.5× cut in everything that is per-tile per-tick. The fluid solve is
+   the bulk of the tick, so this is real.
+3. **The hull can never touch the grid edge**, which today is a silent trap: `StructureMap` derives
+   "inside" by flooding inward *from the grid boundary*, so a hull built flush against it cannot be
+   flooded around and the whole ship reads as interior. A guaranteed pad of 4 makes that
+   unrepresentable.
+
+**What it does not buy, and must not be sold as:** it is not a fix for anything currently wrong. Every
+ledger balances today. This is an editor affordance with a performance dividend.
+
+---
+
+## 2. The decision that shapes everything else
+
+There are two versions of this feature and they differ by an order of magnitude in cost.
+
+**A. Continuous fit.** Every tick, compute the bounding box; if it differs, remap the world. The grid
+breathes as you build and as you delete.
+
+**B. Grow-on-demand, fit-on-event.** The grid **grows** whenever an edit would come within the pad of
+an edge, and is **fitted exactly** only at defined moments: world creation, save load, and an explicit
+"fit" command. It never shrinks during play.
+
+**Recommendation: B.** Three reasons, in descending order of force.
+
+- **Shrinking is the half that costs the ledger.** Growing adds vacuum tiles at zero grams, zero
+  joules and zero momentum, so no baseline moves and no identity is touched. Shrinking discards cells
+  that may hold gas, heat and face momentum, every gram of which has to be booked somewhere or
+  `airBalance` breaks — see §5. Booking it as vented is defensible ("it went overboard") but it means
+  a plume crossing the boundary as the grid contracts reads as a vent, which is a lie told by a
+  mechanism whose whole job is to not tell lies.
+- **A shifting origin invalidates every absolute coordinate in the project.** See §6. This is the
+  largest single cost of the whole item and it is proportional to how often the origin moves.
+  Fit-on-event moves it at moments where nothing is mid-measurement; continuous fit moves it whenever
+  the player deletes the leftmost wall.
+- **Continuous fit buys the least.** The player's actual complaint is "the grid is the wrong size and
+  shape for my vessel". Fitting at load and on demand answers that completely. Reclaiming four tiles
+  the moment a wall comes down answers nothing anybody asked.
+
+The rest of this plan assumes B, and notes where A would differ.
+
+---
+
+## 3. What is indexed by the grid
+
+Everything below has to be remapped by one function. This list was assembled by reading every field
+of `VesselState` and every consumer of `Grid`; the third column is what makes it interesting.
+
+| What | Shape | The catch |
+|---|---|---|
+| `machines` | `List<Machine?>`, one per tile | Anchors only — a machine is stored once at its centre. Remapping the anchor moves the whole footprint, which is correct and free. |
+| `conduits` | one `List<Segment?>` per layer | Four layers. `Conduits.empty(n)` is sized from the tile count. |
+| `bridges` | `List<Bridge?>` | Same shape. |
+| `debris` | `Map<tile, List<Resource>>` | Sparse — rekey, do not resize. |
+| `diverters` | `Map<tile, Int>` cursor | Sparse likewise. Easy to forget; a lost cursor is a silently different world. |
+| `air`, `pipeAir` | `LongArray(tiles × Species.COUNT)` + `LongArray(tiles)` joules | Two arrays each, and the joules array is per-tile while the grams array is per-tile-per-species. Getting the stride wrong here is a bug that will read as a temperature anomaly, not as a remap failure. |
+| `momentum`, `pipeMomentum` | `MomentumField` over `EdgeGrid` | **The fiddly one.** Two index spaces: x-faces are `(w+1) × h`, y-faces are `w × (h+1)`. Neither is the tile space and neither is the other. See §4. |
+| `rocks` | positions in `Flight.PER_TILE` billionths, vessel frame | Not indices — offsets. Shift by `dx * PER_TILE`. Cheap, and the only place where forgetting shows up as things teleporting rather than as an exception. |
+| `signals` | keyed by `Channel` | Nothing to do. |
+| `structure`, `occupancy`, `flow`, `bodies`, `fabricKelvin` | derived / lazy | Free. They rebuild from the new grid. This is a large part of why the change is tractable. |
+| `motion` | presentation, per-tile | Can be **dropped** on resize rather than remapped. A resize is a frame where nothing animates; the save already drops it. |
+
+And outside the state, which is the part that gets forgotten:
+
+| What | Where | Why it matters |
+|---|---|---|
+| `selected` | `OutofspaceController` | The wiring panel would point at a different machine. |
+| `dragFrom` | `OutofspaceController` | A conduit drag in flight would join two unrelated tiles. |
+| `hovered`, `lastPainted` | each host's input loop | A stale hover paints the wrong tile on the next frame. |
+| `injectTile` | `OutofspaceController` | Gas appears somewhere else. |
+| `camX`, `camY` | `OutofspaceRenderer` | The view jumps. This is the one the player *sees*, and the one most likely to ship broken because no test looks at a camera. |
+| `cfg.grid` | `OutofspaceConfig` | Becomes a lie the moment the grid moves — see §7. |
+
+---
+
+## 4. The remap
+
+One function, in `world/`:
+
+```kotlin
+/**
+ * The same world on a different lattice, translated by (dx, dy) tiles.
+ * Cells that exist in both grids keep everything; cells only in the new one are vacuum.
+ */
+fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState
+```
+
+`dx`/`dy` are where the **old origin lands in the new grid**, so growing left by 4 is `dx = +4`.
+
+Shape of the implementation, in the order that keeps it honest:
+
+1. **Tile-indexed lists** — allocate the new size, walk the *old* grid, copy each non-null to
+   `newGrid.index(x + dx, y + dy)`. Walking the old grid rather than the new one means shrinking is
+   the same loop with a bounds check, and the bounds check is where the discard hook goes (§5).
+2. **Sparse maps** — same walk, rekey.
+3. **Dense field arrays** — same walk, times `Species.COUNT` for the grams stride.
+4. **Edge fields** — a walk of its own, per axis. An x-face at `(x, y)` in the old grid is the x-face
+   at `(x + dx, y + dy)` in the new one; `xEdgeCount` and the `xStride = width + 1` both change, so
+   this cannot share code with the tile walk. Write it twice rather than cleverly once.
+5. **Rocks** — `copy(positionX = positionX + dx * Flight.PER_TILE, …)`.
+6. **Everything derived** — do not remap. Let `copy` recompute it. But ⚠️ **the baselines are
+   constructor defaults**, so they will *not* recompute on a `copy` — they must be passed through
+   explicitly, unchanged, exactly as `workingVessel` in `RailFixtures` learned to do. A remap that
+   let `baselineJoules` recompute would silently rebase the world's energy and every subsequent
+   reading would be measured against the wrong zero.
+
+The function belongs in `world/` and not on the reducer, because it is a statement about a state and
+the fixtures and the save loader both want it.
+
+---
+
+## 5. The ledger, if it ever shrinks
+
+Growing touches nothing. Shrinking must account for every cell it discards, or:
+
+- `airBalance` breaks by the grams in the discarded cells,
+- `airJouleBalance` breaks by their joules,
+- the momentum identity breaks by their face momentum,
+- `baselineJoules` breaks if any body was standing there — though it cannot be, since the box is
+  drawn around the bodies.
+
+**Rule: a discarded cell is vented.** Its grams go to `airVentedGrams`, its joules to
+`airVentedJoules`, its face momentum to `exhaustMomentumX/Y`. That is physically the right story —
+the tile left the world, and the only way out of this world is overboard — and it keeps all three
+identities exactly as strict as they are now.
+
+Debris and rocks are **not** subject to this: the box encloses them by construction (§8), so a
+discard is a bug and should `require` rather than book. That asymmetry is deliberate. Gas is
+diffuse and legitimately present in a padding tile; a rock is a thing, and a resize that ate one is
+a resize that got its bounds wrong.
+
+⚠️ This whole section is the argument for option B. Under grow-only it is **dead code that never
+runs**, and per §5e's lesson a quantity only ever run at one value has not been run — so if we build
+it, `remapped` should be tested at a shrink directly, even though play never triggers one.
+
+---
+
+## 6. The coordinate problem, which is the real cost
+
+Grid coordinates are absolute and are written down in a lot of places:
+
+- **The test suite.** Dozens of `grid.index(x, y)` sites across `MotionTest`, `DebrisTest`,
+  `GaugeTest`, `RockContactTest`, `HeatTest`, `VesselSimTest` and the fluid tests.
+- **All 11 agent scripts**, which name tiles as `x y` pairs and resolve them against the live
+  `state.grid`.
+- **`StarterVessel`**, which is written in absolute coordinates throughout.
+
+None of these fail to compile when the origin moves. They keep working and quietly mean somewhere
+else. That is the worst failure mode available and it is why this item is measured in days rather
+than hours.
+
+**Three mitigations, all of which we should take:**
+
+1. **Fit once, at construction.** `starterVessel` builds at its own coordinates and *then* fits, so
+   the vessel is authored in a stable frame and the fit is the last thing that happens. Everything
+   downstream sees one grid for the rest of the session.
+2. **Never fit implicitly during play.** Growth is the only implicit change, and growth on the right
+   and bottom does not move the origin at all. Growth on the left or top does — which means either
+   accepting the shift, or growing only on the far sides and letting the pad be uneven until the next
+   explicit fit. **Prefer the latter**: an uneven pad is invisible, and a moving origin is not.
+3. **A harness assertion.** `expect gridWidth`/`gridHeight`, and an `origin` readout, so a script can
+   state the frame it believes it is in and fail loudly rather than measuring the wrong tile.
+
+---
+
+## 7. `OutofspaceConfig.grid`
+
+Rename to `initialGrid`, because that is what it becomes.
+
+Good news from the audit: **the reducer never reads it.** It reads `state.grid` throughout. The only
+readers are the controller's `dragTo` and the tests. `dragTo` reading `cfg.grid` is already a
+latent bug — it should read `state.grid` — and fixing it is a prerequisite rather than part of this
+work.
+
+---
+
+## 8. What the box encloses
+
+Not just built tiles. The bounding box is the union of:
+
+- every tile covered by a machine (**footprint**, not anchor — a smelter reaches two past its centre;
+  `RockField.boundsOf` already makes this mistake available to copy from),
+- every tile carrying a conduit segment or a bridge,
+- every tile holding debris,
+- **every rock**, plus its own pad.
+
+The last one is the non-obvious one and it is not optional. Rocks are the whole of H4 and they live
+*outside* the hull by definition. A box drawn around the vessel alone would put the field outside the
+world, where `sweepRock` cannot see structure and a rock would drift through the hull. A vessel that
+flies to a rock must have that rock inside its grid before it arrives.
+
+⚠️ This means the grid is at least as big as the rock field is spread out, which for the current
+12-rock scatter is most of the existing 96×60. **So the performance dividend in §1 does not arrive
+until rocks stream in and out of a region around the ship rather than being scattered once over a
+fixed map** — which is exactly the despawn/respawn work that is deliberately not built yet. The
+editor benefit arrives immediately; the performance benefit waits on that. Do not let the second one
+justify the first.
+
+---
+
+## 9. Phases
+
+Each phase ends with a green suite. Nothing here needs a flag day.
+
+**P0 — Prerequisites.** Fix `dragTo` to read `state.grid`. Rename `cfg.grid` → `initialGrid`. Add
+`gridWidth`/`gridHeight`/`origin` readouts to the harness. *No behaviour change.* Half a day.
+
+**P1 — `remapped`, tested in isolation.** The function, plus a test file that builds a world, remaps
+it by a known offset, and asserts: every machine/segment/bridge/pile/diverter landed where it should;
+the fields are identical modulo the shift; the edge fields are identical on both axes; rocks moved
+exactly `dx` tiles; every ledger identity holds; and a round trip through a `+4/-4` pair is the
+identity. Nothing calls it yet. **This is the phase that must not be rushed** — it is the only one
+where a bug is cheap to find. One day.
+
+**P2 — Fit at construction and load.** `fitGrid(state, pad = 4)` returning a remapped state; called
+by `starterVessel` and by `Save.read`. The starter vessel's grid stops being `Grid(96, 60)` and
+becomes whatever it needs. Expect fallout in the scripts here and budget for it. One day.
+
+**P3 — Grow on demand.** In the reducer's edit pass: if an edit would place anything within the pad
+of an edge, grow that edge to restore it. Far sides only, per §6. Half a day.
+
+**P4 — The explicit fit.** A key, a HUD button, a harness `fit` command. Camera and controller
+indices remapped alongside. Half a day.
+
+**P5 — Shrink, or not.** Only if wanted. This is where §5 gets built and where continuous fit becomes
+possible if we ever want it.
+
+---
+
+## 10. How we would know it worked
+
+- Every existing test green, with the starter vessel on a fitted grid.
+- A new `GridFitTest`: fit is idempotent; a vessel built one tile from an edge grows rather than
+  clipping; the pad is exactly 4 on all four sides after an explicit fit; a rock is inside the box.
+- `momentumBalance`, `massBalance`, `airBalance`, `airHeatBalance`, `heatBalance`, `rockBalance` all
+  zero across a resize — the whole point of having six of them.
+- A determinism check: a world built, grown three times and fitted digests identically to the same
+  world built directly at the final size. **This is the strongest single assertion available** and it
+  should be written first, because it catches every field anybody forgot to remap in one go.
+- Visually: build a wall off the left edge of the starter vessel and watch the grid grow without the
+  camera moving.
+
+---
+
+## 11. Estimate
+
+| Phase | | |
+|---|---|---|
+| P0 prerequisites | 0.5d | no behaviour change |
+| P1 `remapped` + tests | 1.0d | the load-bearing phase |
+| P2 fit at construction/load | 1.0d | most of the script fallout lands here |
+| P3 grow on demand | 0.5d | |
+| P4 explicit fit + camera | 0.5d | |
+| **Total (option B)** | **3.5d** | |
+| P5 shrink | +1.0d | optional; brings §5 with it |
+| Option A instead | +1.5d | continuous fit: §5 becomes mandatory, §6 gets much worse |
+
+---
+
+## 12. Risks, ranked
+
+1. **A field nobody remembered.** Mitigated by the digest determinism check in §10, which is why that
+   test is written first rather than last.
+2. **The edge fields.** Two index spaces that look like the tile space and are not. Mitigated by
+   testing momentum remap on both axes independently, with an asymmetric field so a transposed bug
+   cannot pass.
+3. **Silent coordinate drift in tests and scripts.** §6. Mitigated by fitting only at construction,
+   growing only on the far sides, and the harness frame assertion.
+4. **The baselines recomputing on `copy`.** §4 step 6. Cheap to get wrong, and it reads as a ledger
+   break a hundred ticks later rather than as a failed remap. The codebase has been bitten by exactly
+   this twice.
+5. **The performance win not arriving.** §8. Not a defect — a misunderstanding waiting to happen if
+   this plan's §1 is read without its §8.
