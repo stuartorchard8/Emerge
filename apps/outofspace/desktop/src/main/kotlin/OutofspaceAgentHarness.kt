@@ -9,8 +9,10 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.RockField
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -47,7 +49,9 @@ import kotlin.math.roundToInt
  * file of commands, or `-` for stdin). One command per line, `#` starts a comment:
  *
  * ```
- * new                        # fresh starter vessel
+ * new [rocks]                # fresh starter vessel. `rocks` is how many are scattered in the space
+ *                            # around it (default a field of them); `new 0` is an empty sky, which
+ *                            # is what a script that counts or weighs its own rocks wants
  * load <path> | save <path>  # the text save format (Save.kt) — how a world gets handed over
  * run <ticks>                # advance exactly N ticks. The ONLY clock; nothing here is real-time
  * brush <kind> [dir]         # RAIL/EXTRACTOR/SMELTER/VENT/... and Right|Down|Left|Up
@@ -116,7 +120,13 @@ object OutofspaceAgentHarness {
         fun exec(line: String) {
             val t = line.split(Regex("\\s+"))
             when (t[0]) {
-                "new" -> { controller.reset(); println("[agent] new world, tick ${controller.tick}") }
+                "new" -> {
+                    // A script that plants its own rocks and then counts them has to be able to ask
+                    // for an empty sky, or the field is in every one of its sums.
+                    val rocks = t.getOrNull(1)?.toIntOrNull() ?: RockField.DEFAULT_COUNT
+                    controller.reset(starterVessel(controller.cfg.grid, rocks))
+                    println("[agent] new world, tick ${controller.tick}, ${state.rocks.size} rocks adrift")
+                }
                 "load" -> {
                     val path = line.removePrefix("load").trim().trim('"')
                     controller.reset(Save.read(File(path).readText()))

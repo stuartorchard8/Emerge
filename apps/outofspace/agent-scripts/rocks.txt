@@ -8,7 +8,9 @@
 #
 # `rockBalance` must stay 0. A rock is new mass in a closed world and the only thing keeping that
 # honest is that `capturedGrams` admits every gram of it.
-new
+# `new 0`: an empty sky. A starting world scatters a field of rocks (H4), and this script
+# plants and counts its own, so it asks for none.
+new 0
 
 # Deck plating, explicitly. A vessel has none since H1b — the only gravity in this game is thrust —
 # and this half of the script is about the *other* half of the rule: the plating reaches a rock while
@@ -45,7 +47,7 @@ camera centre 18 14 22
 shot rocks-falling
 
 echo --- now with the plating off, and the engine lit
-new
+new 0
 gravity 0 0
 rock 18 16
 run 1

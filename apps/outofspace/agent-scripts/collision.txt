@@ -10,7 +10,9 @@
 # and the ship *recoils* — `rockImpulse` is the momentum that is now in the rock and `momentumBalance`
 # stays zero throughout, which is what makes this an exchange rather than an animation.
 
-new
+# `new 0`: an empty sky. A starting world scatters a field of rocks (H4), and this script
+# plants and counts its own, so it asks for none.
+new 0
 gravity 0 1
 
 echo --- a rock dropped over the deck lands on it
@@ -35,7 +37,7 @@ expect rockY < 21.51
 shot collision-settled
 
 echo --- now the plating is off and the ship flies into one
-new
+new 0
 gravity 0 0
 rock 18 30
 run 1

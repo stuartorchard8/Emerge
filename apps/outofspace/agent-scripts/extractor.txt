@@ -15,7 +15,9 @@
 # gram invented in the crossing shows up as one of them going non-zero. There is no third place for
 # it to hide.
 
-new
+# `new 0`: an empty sky. A starting world scatters a field of rocks (H4), and this script
+# plants and counts its own, so it asks for none.
+new 0
 camera centre 12 12 26
 
 echo --- a refinery with nothing to eat

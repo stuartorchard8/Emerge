@@ -9,7 +9,9 @@
 #             an updraught can only come from `P = nT` making warm gas light and buoyancy lifting it.
 #   both balances must stay 0. Coupling joined two previously independent ledgers, and the one
 #   failure mode that matters is heat being minted at the join rather than moved across it.
-new
+# `new 0`: an empty sky. A starting world scatters a field of rocks (H4), and this script
+# plants and counts its own, so it asks for none.
+new 0
 # Feedstock first. Since H3 the plant makes nothing until something is put on the extractor's plate,
 # so a script about a furnace at work has to say where the ore is coming from — see §5i.
 rock 5 12

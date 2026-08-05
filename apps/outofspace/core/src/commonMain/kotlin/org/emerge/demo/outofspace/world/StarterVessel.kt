@@ -2,8 +2,19 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.OutofspaceReducer
 
-/** Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents). */
-fun starterVessel(grid: Grid): VesselState {
+/**
+ * Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents), and a
+ * field of rocks in the space around it.
+ *
+ * [rocks] is a count rather than a flag so a fixture can ask for an empty sky and *say so* — most
+ * of the suite wants a world with nothing in it but the vessel, and a test that inherited a rock
+ * field it never mentioned would be measuring something it did not choose. See [RockField].
+ */
+fun starterVessel(
+    grid: Grid,
+    rocks: Int = RockField.DEFAULT_COUNT,
+    rockSeed: Int = RockField.DEFAULT_SEED,
+): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
     val rails = arrayOfNulls<Segment>(grid.size)
 
@@ -95,9 +106,18 @@ fun starterVessel(grid: Grid): VesselState {
     }
 
     // No rock on either plate, and that is the increment showing through rather than an omission:
-    // an extractor has to be **given** something to eat. The starting world is a refinery with its
-    // feedstock missing, and F6 is how you supply it. See `docs/out-of-space-plan.md` §5i.
-    return VesselState(grid = grid, machines = machines.toList(), conduits = Conduits.ofRails(rails.toList()))
+    // an extractor has to be **given** something to eat. What H4 changes is where you get one — the
+    // ore is out there in the field now, and the vessel flies to it. See §5i and [RockField].
+    val built = machines.toList()
+    return VesselState(
+        grid = grid,
+        machines = built,
+        conduits = Conduits.ofRails(rails.toList()),
+        // Handed to the constructor, so `baselineRockGrams` and `baselineJoules` count them and both
+        // ledgers start at zero. A rock added by `copy` afterwards keeps the baselines of a world
+        // that had none and reads as mass conjured out of nothing — see `workingVessel`.
+        rocks = RockField.scatter(grid, built, rocks, rockSeed, OutofspaceReducer.DEFAULT_ORE_BODY),
+    )
 }
 
 /**

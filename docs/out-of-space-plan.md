@@ -1253,7 +1253,26 @@ so that each one ends with something to look at, and each commit carries **all f
   `momentumBalance` stays zero because the ship gets what the rock loses.
 - **H3. The extractor** — ✅ **BUILT 2026-08-05.** 5×5 permeable plate, leeching mass off the rocks
   lying on it into the existing refining stages. **The miner is deleted.** See §5i.
-- **H4. Capture** — the field outside, flying at a rock, the rock entering the grid.
+- **H4. The rock field** — ✅ **BUILT 2026-08-05.** A starting world scatters rocks through the space
+  around the vessel, for the player to find and line a plate up under. See [RockField].
+
+  **This is the whole increment, and the narrowing is deliberate.** What the extractor needed was not
+  a capture mechanism but *something to capture*: `F6` was a debug key standing in for a world with
+  ore in it, and a key is a poor substitute for a place. Twelve rocks of three sizes, rejection-sampled
+  clear of the vessel and of each other, seeded so that two starter vessels are the same world — every
+  determinism check in the suite builds two and compares them.
+
+  They are **baseline mass, not captured mass**: a rock that was here when the world was made did not
+  arrive from outside it, so handing them to the constructor puts them in `baselineRockGrams` and
+  `baselineJoules` and both ledgers read zero on tick one. Dropping the same rocks in through the edit
+  would be a world that began by admitting twelve rocks it had had all along.
+
+  No drift, no despawn, no replenishment, and no hold. Rates and lifetimes are a better question to
+  ask of a world that already has rocks in it, and the stranded tail of §5i is gameplay.
+
+  ⚠️ `starterVessel` takes a **count**, so a fixture that plants and weighs its own rocks says
+  `rocks = 0` and gets an empty sky — as does `new 0` in the harness. A test that inherited a field it
+  never mentioned would be measuring something it did not choose.
 - **H5. Pressure on rocks** — the permeable coupling above. Last, so it can be cut.
 
 ---
