@@ -60,6 +60,22 @@ data class VesselState(
      */
     val motion: Motion = Motion.NONE,
     /**
+     * Cumulative tiles the grid origin has moved since this world was created, in the world's own
+     * frame — bumped whenever the grid grows on a near edge (see `growToFit`).
+     *
+     * **Bookkeeping for whoever wrote a tile down, not physics.** `index = y * width + x`, so every
+     * stored coordinate outside this state — the camera, the selection, a conduit drag in flight —
+     * addresses a different tile the moment the grid changes shape. A holder cannot detect that on
+     * its own: nothing about the new state says how far it moved. So the state says. A holder keeps
+     * the value it last saw and applies the difference; see [FrameShift], which is that pattern
+     * written once.
+     *
+     * Not saved and not part of any digest — it is a running total, so two worlds that reached the
+     * same shape by different routes hold different values while being the same world.
+     */
+    val frameShiftX: Int = 0,
+    val frameShiftY: Int = 0,
+    /**
      * Whatever gravity this vessel has with its engines off — [FREEFALL] for a ship, which is all
      * of them.
      *
