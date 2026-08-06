@@ -1,6 +1,9 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.STARTER_PLATE_X
+import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.size
@@ -169,6 +172,35 @@ class GridFitTest {
         assertEquals(once.grid.width, twice.grid.width)
         assertEquals(once.grid.height, twice.grid.height)
         assertEquals(digest(once), digest(twice), "a second fit changed the world")
+    }
+
+    // ── The frame ────────────────────────────────────────────────────────
+
+    @Test
+    fun `the starter vessel lands in a known frame`() {
+        // §6 is the real cost of this whole item: grid coordinates are absolute and written down in
+        // tests, in agent scripts and in StarterVessel itself, and *none of them fail to compile*
+        // when the origin moves. They keep working and quietly mean somewhere else, which is the
+        // worst failure mode available.
+        //
+        // So the frame is pinned here, once, loudly. The starter vessel is authored with its hull
+        // spanning x 1..33 and its top row at y 7; a pad of 4 wants the origin at (-3, 3), so
+        // everything shifts by (+3, -3) and the extractor anchored at (STARTER_PLATE_X,
+        // STARTER_PLATE_Y) = (5, 12) lands at (8, 9).
+        //
+        // If this test fails, the frame moved. Do not adjust the numbers to match — find out what
+        // moved the origin and whether every other absolute coordinate moved with it.
+        val fitted = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+
+        assertEquals(41, fitted.grid.width, "fitted width")
+        assertEquals(26, fitted.grid.height, "fitted height")
+
+        val anchor = fitted.machines.indices.firstOrNull {
+            fitted.machines[it]?.kind == MachineKind.Extractor
+        }
+        assertTrue(anchor != null, "the starter vessel has an extractor")
+        assertEquals(STARTER_PLATE_X + 3, fitted.grid.xOf(anchor!!), "extractor x in the fitted frame")
+        assertEquals(STARTER_PLATE_Y - 3, fitted.grid.yOf(anchor), "extractor y in the fitted frame")
     }
 
     // ── The ledgers ──────────────────────────────────────────────────────
