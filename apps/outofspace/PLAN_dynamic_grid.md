@@ -305,15 +305,43 @@ Two things came out of that repair and both outlive it:
 `! error on 'probe 48 30'` and **still exited 0** — a script could name a tile that did not exist
 and pass. An errored command now records a failure. ~One day.~
 
-**P3 — Grow on demand.** In the reducer's edit pass: if an edit would place anything within the pad
-of an edge, grow that edge to restore it. **Any of the four edges** — see `HANDOFF_P3.md`, which
-supersedes §6's far-sides-only preference and gives the reasoning. Growth reports the `(dx, dy)` it
-applied; camera and controller indices consume it, pulled forward from P4 because near-side growth
-cannot work without them. Far-then-near is a fine order to *build* in; it is not a contract.
-~Half a day.~ One day, with the pull-forward.
+**P3 — Grow on demand.** ~~In the reducer's edit pass: if an edit would place anything within the pad
+of an edge, grow that edge to restore it. **Any of the four edges**. Growth reports the `(dx, dy)` it
+applied; camera and controller indices consume it, pulled forward from P4.~~ **DONE 2026-08-06.**
+Side-agnostic as `HANDOFF_P3.md` argued, and the far/near distinction never became a branch: the
+shortfall on each of the four edges is computed the same way and only the near two are non-zero in
+the offset handed to `remapped`.
+
+**Growth runs at the end of `reduce`, not in the edit pass.** `Work` is built from the grid the tick
+started on and every pass addresses tiles through it, so a resize partway leaves half a world on each
+lattice. The edit lands on the grid the player clicked, and the world moves underneath afterwards.
+`GridGrowTest` pins that ordering by digesting a world that grew against the same world built at the
+final size, on all four edges.
+
+⚠️ **The pad is opt-in, and that is the one design decision P3 added.** `VesselState.gridPad` records
+the clearance a world keeps; `fitGrid` sets it, and a world that was never fitted keeps 0 and never
+grows. Without this, growth is universal and the first tick silently grows every hand-authored
+fixture — `AtmosphereTest`'s `Grid(9, 5)` with its hull on the border becomes 17×13 — moving every
+coordinate written against it. That is §6's worst-failure-mode drift, and it broke about thirty test
+files before the field existed. The principle is P2's, arrived at independently: a world records the
+frame it was written in, and running it honours that.
+
+The holders of a coordinate are handled by `FrameShift`, one per holder, which consumes the
+difference in `frameShiftX`/`frameShiftY` and reindexes through the old grid rather than doing
+arithmetic on a raw int — necessary because `index = y * width + x` goes wrong whenever the *width*
+changes, including on a far-side growth where the offset is zero and nothing appears to have
+happened. Consumers: the controller's `selected`/`injectTile`/`dragFrom`, the renderer's camera, and
+the desktop host's `lastPainted` (`hovered` recomputes from the pointer and heals itself; Android
+passes -1 and holds nothing).
+
+`agent-scripts/grow.txt` is the end-to-end proof: build into the far pad, then the near pad, watch
+the grid widen 41 → 43 → 46 with every ledger at zero and the landmarks shifting by exactly the
+reported +3. ~Half a day.~ One day, with the pull-forward.
 
 **P4 — The explicit fit.** A key, a HUD button, a harness `fit` command, on top of P3's growth
-plumbing. Half a day.
+plumbing — which is now all in place, so this is the trigger and nothing underneath it. Note that an
+explicit fit is the first thing that can *shrink*, and §5 has to arrive with it: P3 only grows.
+Half a day.
 
 **P5 — Shrink, or not.** Only if wanted. This is where §5 gets built and where continuous fit becomes
 possible if we ever want it.

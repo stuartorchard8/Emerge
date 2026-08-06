@@ -1,0 +1,54 @@
+# P3: the grid grows when you build into the pad, on any edge.
+#
+# The pad is four clear tiles between the ship and the grid edge. Build inside it and the grid grows
+# to give the four back — on the far sides silently, on the near sides by moving the origin, which
+# every coordinate the game holds has to follow.
+#
+# Addressed by landmark throughout (`origin`, `extractor`), never by absolute tile, because this is
+# the one script where the absolute tiles are guaranteed to change under it.
+#
+# Run:  ./gradlew :apps:outofspace:desktop:outofspaceAgent --args="apps/outofspace/agent-scripts/grow.txt .build/agent-out"
+new
+
+echo --- the starter vessel fits, so it keeps a pad of four
+landmarks
+expect gridWidth = 41
+expect gridHeight = 26
+expect airBalance = 0
+
+echo --- build into the FAR pad: the grid widens, the origin does not move
+# The ship's rightmost tile is x=36 on a 41-wide grid, so the right pad is x=37..40. Building at
+# x=38 leaves two clear, so the grid grows by the two it owes: 41 -> 43.
+brush hull
+place origin+34 origin+13
+run 2
+expect gridWidth = 43
+expect gridHeight = 26
+
+echo --- everything is where it was: the origin did not move, so nothing followed it
+landmarks
+expect airBalance = 0
+expect massBalance = 0
+expect heatBalance = 0
+
+echo --- now build into the NEAR pad: the grid widens again and the origin moves with it
+# The left pad is x=0..3; building at x=1 leaves one clear, so the grid owes three: 43 -> 46. This
+# is the half that moves the origin, so every landmark below shifts by exactly +3 in x.
+place origin-3 origin+13
+run 2
+expect gridWidth = 46
+expect gridHeight = 26
+
+echo --- the ledgers do not care which edge grew
+expect airBalance = 0
+expect massBalance = 0
+expect heatBalance = 0
+expect rockBalance = 0
+
+echo --- and the world still runs, on a grid twice resized under it
+run 200
+expect airBalance = 0
+expect massBalance = 0
+expect heatBalance = 0
+landmarks
+shot grown

@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
+import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Occupancy
 import org.emerge.demo.outofspace.world.Port
@@ -323,6 +324,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             rockImpulseY = state.rockImpulseY + handedY,
             capturedGrams = w.capturedGrams,
             motion = w.motion.freeze(),
+        ).grown()
+    }
+
+    /**
+     * The grid keeps the clearance the world says it keeps — [VesselState.gridPad] — between the
+     * vessel and every edge, growing here, at the very end of the tick, if the pad was used up.
+     *
+     * **After the tick, never during it.** `Work` is built from the grid the tick started on and
+     * every pass since has addressed tiles through it, so a resize partway would leave half a world
+     * on each lattice. The edit lands where the player clicked, on the grid they clicked it on, and
+     * the world moves underneath afterwards — which is also what `GridGrowTest` pins by digesting a
+     * world that grew against the same world built at the final size.
+     *
+     * Growth only ever adds vacuum tiles, at zero grams, zero joules and zero momentum, so no ledger
+     * and no baseline moves; the accounting question is the one §5 raises about *shrinking*, and
+     * nothing here shrinks.
+     */
+    private fun VesselState.grown(): VesselState {
+        // Only worlds that opted into a pad, which means worlds that were fitted — see
+        // [VesselState.gridPad]. A hand-authored fixture keeps the frame it was drawn in.
+        if (gridPad <= 0) return this
+        val result = growToFit(gridPad)
+        if (!result.grew) return this
+        // The offset travels to whoever wrote a coordinate down — see [VesselState.frameShiftX].
+        return result.state.copy(
+            frameShiftX = frameShiftX + result.dx,
+            frameShiftY = frameShiftY + result.dy,
         )
     }
 

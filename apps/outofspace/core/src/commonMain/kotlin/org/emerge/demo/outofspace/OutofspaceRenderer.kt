@@ -71,6 +71,22 @@ class OutofspaceRenderer {
         GPU.setViewport(0, 0, resW.toInt(), resH.toInt())
     }
 
+    /**
+     * The camera is in tile coordinates, so it moves with the origin when the grid grows on a near
+     * edge — otherwise building off the left of the ship jumps the view sideways by the amount it
+     * grew. A far-side growth reports zero and the camera correctly stays put.
+     *
+     * Lazily created because the first state is not known until the first frame.
+     */
+    private var frame: FrameShift? = null
+
+    private fun followFrame(state: VesselState) {
+        val f = frame ?: FrameShift(state).also { frame = it }
+        val move = f.advance(state)
+        camX += move.dx
+        camY += move.dy
+    }
+
     /** Centre on built area (fallback: grid centre). */
     fun centreOn(state: VesselState) {
         var minX = Int.MAX_VALUE
@@ -139,6 +155,7 @@ class OutofspaceRenderer {
         overlay: Overlay = Overlay.None,
         tickAlpha: Float = 1f,
     ) {
+        followFrame(state)
         alpha = tickAlpha.coerceIn(0f, 1f)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()

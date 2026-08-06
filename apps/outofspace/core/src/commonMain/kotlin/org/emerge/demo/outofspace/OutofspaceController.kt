@@ -32,6 +32,9 @@ class OutofspaceController(
     private var accumulator = 0f
     private val pending = ArrayList<Edit>()
 
+    /** Tracks the grid growing under the indices held below — see [followFrame]. */
+    private val frame = FrameShift(initial)
+
     var paused: Boolean = false
     var speed: Float = 1f
 
@@ -237,7 +240,24 @@ class OutofspaceController(
      */
     fun stepOnce(): VesselState {
         stepper.step(mapOf(localPlayer to takeInput()))
+        followFrame()
         return stepper.state
+    }
+
+    /**
+     * Keeps the indices this controller is holding pointing at the tiles they were pointing at, in
+     * case the tick grew the grid underneath them.
+     *
+     * Every one of these is `y * width + x`, so all three go wrong whenever the *width* changes —
+     * including on a far-side growth, where the origin has not moved and nothing looks like it
+     * happened. That is why this reindexes through [Move] rather than adding an offset.
+     */
+    private fun followFrame() {
+        val move = frame.advance(stepper.state)
+        if (!move.moved) return
+        selected = move.reindex(selected)
+        injectTile = move.reindex(injectTile)
+        dragFrom = move.reindex(dragFrom)
     }
 
     private fun takeInput(): OutofspaceInput {
@@ -265,5 +285,6 @@ class OutofspaceController(
         injectTile = -1
         accumulator = 0f
         stepper.reset(newState, Tick(0))
+        frame.reset(newState)
     }
 }

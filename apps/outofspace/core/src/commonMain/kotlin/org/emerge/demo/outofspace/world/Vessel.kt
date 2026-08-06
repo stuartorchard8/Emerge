@@ -76,6 +76,22 @@ data class VesselState(
     val frameShiftX: Int = 0,
     val frameShiftY: Int = 0,
     /**
+     * The clearance this world keeps between everything placed and every grid edge, or **0 for a
+     * world that keeps none**. Set by [fitGrid]; the reducer grows the grid to maintain it.
+     *
+     * A property of the world rather than a constant, because "every world keeps four tiles" is not
+     * true and asserting it would be expensive: a hand-authored `Grid(9, 5)` fixture with its hull
+     * on the border is not a badly-built vessel, it is a world drawn at the size it meant, and the
+     * first tick under a universal pad would silently grow it to 17×13 and move every coordinate
+     * written down against it. That is the drift §6 of the plan calls the worst failure mode
+     * available, and P2 already settled the principle for saves: a world records the frame it was
+     * written in, and running it honours that.
+     *
+     * So the pad is opt-in, and [fitGrid] is how a world opts in. The starter vessel fits at
+     * construction and therefore keeps 4; a fixture built by hand keeps 0 and never moves.
+     */
+    val gridPad: Int = 0,
+    /**
      * Whatever gravity this vessel has with its engines off — [FREEFALL] for a ship, which is all
      * of them.
      *
@@ -881,58 +897,25 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
  * The same world on a grid fitted to what it contains: the bounding box of every placed thing,
  * plus [pad] tiles on every side. Returns `this` unchanged if the grid is already that shape.
  *
- * **Not yet implemented.** The contract is `GridFitTest`, which is written and failing; see
- * `apps/outofspace/PLAN_dynamic_grid.md` §8 and §10 for the reasoning behind each assertion there.
- * The two constraints a first attempt lost, stated once more because they are the whole job:
+ * The contract is `GridFitTest`. The two constraints a first attempt lost, stated once more
+ * because they are the whole job:
  *
  * - The box encloses machine **footprints**, not anchors. `RockField.boundsOf` has this right.
  * - The box does **not** enclose rocks. They live outside the world by design.
  *
- * It must be free to grow the grid as well as shrink it — P3 needs growth — and it must reach
- * [remapped] for the actual move, so that the ledgers stay exact.
+ * Fitting is also how a world **opts into keeping a pad**: the result records [pad] as its
+ * [VesselState.gridPad], and the reducer then grows the grid to maintain it as the player builds.
+ * A world that was never fitted keeps no pad and its frame never moves — see [growToFit].
  */
-fun VesselState.fitGrid(pad: Int = 4): VesselState {
-    // ── 1. Compute the bounding box of everything that must be enclosed ──
-    var minX = Int.MAX_VALUE
-    var minY = Int.MAX_VALUE
-    var maxX = Int.MIN_VALUE
-    var maxY = Int.MIN_VALUE
-
-    fun cover(x: Int, y: Int, reach: Int) {
-        if (x - reach < minX) minX = x - reach
-        if (y - reach < minY) minY = y - reach
-        if (x + reach > maxX) maxX = x + reach
-        if (y + reach > maxY) maxY = y + reach
-    }
-
-    // Machines: footprint, not anchor — a smelter is stored at its centre
-    for (i in machines.indices) {
-        val m = machines[i] ?: continue
-        cover(grid.xOf(i), grid.yOf(i), m.kind.size / 2)
-    }
-
-    // Bridges and conduit segments: their anchor is the tile they occupy
-    for (i in bridges.indices) {
-        if (bridges[i] == null) continue
-        cover(grid.xOf(i), grid.yOf(i), 0)
-    }
-    for (c in Conduit.entries) {
-        val layer = conduits[c]
-        for (i in layer.indices) {
-            if (layer[i] == null) continue
-            cover(grid.xOf(i), grid.yOf(i), 0)
-        }
-    }
-
-    // Debris tiles
-    for (tile in debris.tiles()) cover(grid.xOf(tile), grid.yOf(tile), 0)
-
-    // Rocks are deliberately excluded (§8): they live outside the world by design,
-    // overlapsHull bounds-checks every tile it tests and floors negatives, so
-    // "anything off the grid is open space, not wall."
-
-    // If nothing is placed, the grid stays as-is
-    if (minX > maxX) return this
+fun VesselState.fitGrid(pad: Int = GRID_PAD): VesselState {
+    // ── 1. The bounding box of everything that must be enclosed ──────────
+    // Machines by footprint, rocks excluded — see [placedBounds], which [growToFit] shares so that
+    // the two cannot drift apart about what the box is for.
+    val box = placedBounds() ?: return this
+    val minX = box[0]
+    val minY = box[1]
+    val maxX = box[2]
+    val maxY = box[3]
 
     // ── 2. Expand by pad on every side ────────────────────────────────────
     val nx0 = minX - pad
@@ -943,7 +926,8 @@ fun VesselState.fitGrid(pad: Int = 4): VesselState {
     val newH = ny1 - ny0 + 1
 
     // ── 3. Early exit: already exactly the fitted shape ──────────────────
-    if (grid.width == newW && grid.height == newH && nx0 == 0 && ny0 == 0) return this
+    // Still records the pad: a world that is already the right shape is no less opted in.
+    if (grid.width == newW && grid.height == newH && nx0 == 0 && ny0 == 0) return copy(gridPad = pad)
 
     // ── 5. Build the new grid and delegate to remapped ───────────────────
     val newGrid = Grid(newW, newH)
@@ -951,7 +935,7 @@ fun VesselState.fitGrid(pad: Int = 4): VesselState {
     // The old grid is always origin-anchored, so its origin is (0, 0)
     val dx = 0 - nx0
     val dy = 0 - ny0
-    return remapped(newGrid, dx, dy)
+    return remapped(newGrid, dx, dy).copy(gridPad = pad)
 }
 
 

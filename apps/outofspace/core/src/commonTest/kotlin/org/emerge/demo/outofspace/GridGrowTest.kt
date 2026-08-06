@@ -224,8 +224,19 @@ class GridGrowTest {
 
     @Test
     fun `every ledger stays zero across a growth on any edge`() {
+        // Built **through the reducer**, unlike the geometry cases above: a hull dropped straight
+        // into the machine list is ship fabric that `baselineJoules` never counted, so the world is
+        // already 287 MJ adrift before anything grows. The fixture would have read as a growth that
+        // broke the heat ledger. This is also the path the player takes.
         for ((name, at, _) in edgeCases(fitted(rocks = 12))) {
-            val grown = withHullAt(fitted(rocks = 12), at.first, at.second).growToFit(pad).state
+            val before = fitted(rocks = 12)
+            assertBalanced(before, "before growing $name — the fixture itself")
+
+            val grown = edit(
+                before,
+                Edit.Place(before.grid.index(at.first, at.second), MachineKind.Hull, Direction.Right),
+            )
+            assertNotEquals(before.grid, grown.grid, "$name: the reducer did not grow the grid")
             assertBalanced(grown, "straight after growing $name")
             assertBalanced(run(grown, 300), "300 ticks after growing $name")
         }

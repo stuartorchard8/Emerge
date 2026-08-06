@@ -31,8 +31,67 @@ data class GrowResult(val state: VesselState, val dx: Int, val dy: Int, val from
  * the holders have to be corrected either way, near-side growth is that same correction plus a
  * reported offset — see `HANDOFF_P3.md`, and [VesselState.frameShiftX] for how the offset travels.
  *
- * **Not yet implemented.** The contract is `GridGrowTest`, which is written and failing.
+ * Called by the reducer at the end of every tick, with the world's own [VesselState.gridPad] — so a
+ * world that never opted into a pad never grows, and keeps the frame it was authored in. The
+ * contract is `GridGrowTest`.
  */
-fun VesselState.growToFit(pad: Int = 4): GrowResult {
-    TODO("P3: grow each edge that has less than `pad` clear tiles, via remapped()")
+fun VesselState.growToFit(pad: Int = GRID_PAD): GrowResult {
+    val box = placedBounds() ?: return GrowResult(this, 0, 0, grid)
+
+    // The shortfall on each edge, never negative: this grows, and only by what is missing.
+    val left = maxOf(0, pad - box[0])
+    val top = maxOf(0, pad - box[1])
+    val right = maxOf(0, pad - (grid.width - 1 - box[2]))
+    val bottom = maxOf(0, pad - (grid.height - 1 - box[3]))
+    if (left == 0 && top == 0 && right == 0 && bottom == 0) return GrowResult(this, 0, 0, grid)
+
+    // Only the near edges move the origin — which is the whole of the difference between the two
+    // sides, and the reason this is one path rather than two.
+    val newGrid = Grid(grid.width + left + right, grid.height + top + bottom)
+    return GrowResult(remapped(newGrid, left, top), left, top, grid)
+}
+
+/** The pad the world is kept at: four clear tiles between anything placed and any edge. */
+const val GRID_PAD: Int = 4
+
+/**
+ * The bounding box of everything the grid must enclose, as `(minX, minY, maxX, maxY)`, or null when
+ * nothing is placed.
+ *
+ * Machines by **footprint** — a smelter is stored at its centre and reaches two tiles past it, so a
+ * box drawn round the anchors clips the hull off its own ship. **Rocks are excluded** on purpose:
+ * §8 of the plan establishes that they live outside the world quite happily, and an earlier attempt
+ * that enclosed them fitted the starter vessel to 92×50 instead of 41×26, losing the entire
+ * performance case while passing its own tests.
+ *
+ * Shared by [fitGrid] and [growToFit] so that "what the box encloses" has exactly one definition.
+ */
+internal fun VesselState.placedBounds(): IntArray? {
+    var minX = Int.MAX_VALUE
+    var minY = Int.MAX_VALUE
+    var maxX = Int.MIN_VALUE
+    var maxY = Int.MIN_VALUE
+
+    fun cover(x: Int, y: Int, reach: Int) {
+        if (x - reach < minX) minX = x - reach
+        if (y - reach < minY) minY = y - reach
+        if (x + reach > maxX) maxX = x + reach
+        if (y + reach > maxY) maxY = y + reach
+    }
+
+    for (i in machines.indices) {
+        val m = machines[i] ?: continue
+        cover(grid.xOf(i), grid.yOf(i), m.kind.size / 2)
+    }
+    for (i in bridges.indices) {
+        if (bridges[i] == null) continue
+        cover(grid.xOf(i), grid.yOf(i), 0)
+    }
+    for (c in Conduit.entries) {
+        val layer = conduits[c]
+        for (i in layer.indices) if (layer[i] != null) cover(grid.xOf(i), grid.yOf(i), 0)
+    }
+    for (tile in debris.tiles()) cover(grid.xOf(tile), grid.yOf(tile), 0)
+
+    return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
 }

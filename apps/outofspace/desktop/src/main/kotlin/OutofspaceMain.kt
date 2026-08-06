@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.outofspace.FrameShift
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
@@ -65,6 +66,10 @@ fun main() {
     var hovered = -1
     // So a drag paints each tile once rather than re-issuing the same edit every frame.
     var lastPainted = -1
+    // `hovered` is recomputed from the pointer every time it moves, so it heals itself; `lastPainted`
+    // persists across frames and would dedupe against a tile that has moved. Dropped when the grid
+    // grows — one repainted tile is harmless, a missed one is not.
+    val frame = FrameShift(controller.state)
 
     glfwSetMouseButtonCallback(window) { _, button, action, _ ->
         val (px, py) = cursorPixel(window)
@@ -240,6 +245,7 @@ fun main() {
         }
 
         val state = controller.tick(delta)
+        if (frame.advance(state).moved) lastPainted = -1
 
         renderer.draw(state, hovered, controller.overlay, controller.tickAlpha)
         hud.build(ui, controller, fps, hovered)
