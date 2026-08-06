@@ -34,7 +34,7 @@ echo --- a rock on the plate
 # Dropped on the extractor's centre tile, so the rock covers exactly the five tiles the plate does.
 # It lands ON the machine rather than bouncing off it, which is what "permeable" buys: a solid deck
 # machine would be a wall the rock could never get on top of.
-rock 5 12
+rock extractor extractor
 expect rockCount = 1
 # 63kg of rock less the first 3kg cell: placing settles a tick, and the machine bites on the very
 # tick the rock arrives. There is no warm-up — a plate with something on it is working.
@@ -45,7 +45,7 @@ echo --- and the line comes alive
 run 120
 expect extractedGrams > 0
 # The rock is measurably smaller: what the extractor has is what the rock has lost.
-expect rockGrams < 63000
+expect rockGrams < 60000
 expect rockBalance = 0
 expect massBalance = 0
 expect momentumBalance = 0
