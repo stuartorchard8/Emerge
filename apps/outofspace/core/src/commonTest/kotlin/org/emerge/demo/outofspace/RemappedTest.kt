@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
@@ -556,6 +557,29 @@ class RemappedTest {
                 assertEquals(s0.machines[oldTile], s1.machines[newTile],
                     "machine at ($x,$y) -> ($nx,$ny)")
             }
+        }
+    }
+
+    @Test
+    fun `motion is dropped rather than carried onto the new grid`() {
+        // P1 left this as a known gap: the comment said motion was dropped, `copy()` carried it.
+        // Harmless while nothing resizes mid-play, and P3's growth is exactly that — the renderer
+        // would read an old-grid-sized array at new-grid tile indices, silently one row out.
+        val s0 = populatedWorld(20, 14)
+        val stale = Motion(
+            ByteArray(s0.grid.size) { Motion.FROM_PORT.toByte() },
+            LongArray(s0.grid.size) { 7L },
+            mapOf(s0.grid.index(5, 5) to 1),
+            emptyList(),
+        )
+        val s1 = s0.copy(motion = stale).remapped(Grid(26, 20), 3, 3)
+
+        assertEquals(Motion.NONE, s1.motion, "motion survived a resize")
+        // The property the renderer actually depends on: nothing in the new grid claims to have
+        // arrived from anywhere, at any index the new grid can produce.
+        for (tile in 0 until s1.grid.size) {
+            assertEquals(null, s1.motion.arrivedFrom(tile), "stale arrival at tile $tile")
+            assertEquals(0L, s1.motion.previousMassAt(tile), "stale mass at tile $tile")
         }
     }
 }

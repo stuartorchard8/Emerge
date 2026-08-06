@@ -839,6 +839,10 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
 
     return copy(
         grid = newGrid,
+        // Dropped rather than remapped: it is presentation, and a resize is a frame where nothing
+        // animates. It must be dropped *explicitly* — `copy()` would carry through arrays sized to
+        // the old grid, which the renderer then reads at new-grid tile indices.
+        motion = Motion.NONE,
         machines = newMachines,
         conduits = newConduits,
         bridges = newBridges,
