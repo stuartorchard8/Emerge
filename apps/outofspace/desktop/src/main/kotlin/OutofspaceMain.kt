@@ -196,8 +196,6 @@ fun main() {
             }
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             // A debug drop, alongside the debug engine, until capture is a thing you fly at in H4.
-            // It needs the pointer, so it does nothing when the pointer is off the grid rather than
-            // guessing at a tile.
             GLFW_KEY_F6 -> { val (ix,iy) = renderer.screenToTile(lastX, lastY); controller.dropRock(ix, iy) }
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
             GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
