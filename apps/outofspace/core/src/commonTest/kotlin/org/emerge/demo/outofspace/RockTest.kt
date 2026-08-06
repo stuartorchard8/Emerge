@@ -34,7 +34,7 @@ class RockTest {
     @Test
     fun `a rock over the deck falls toward it`() {
         val controller = OutofspaceController(CFG, bareHull())
-        controller.dropRock(CFG.initialGrid.index(18, 10))
+        controller.dropRock(18f, 10f)
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreY
@@ -105,7 +105,7 @@ class RockTest {
     @Test
     fun `a burn leaves a free rock astern`() {
         val controller = OutofspaceController(CFG, bareHull().copy(gravity = VesselState.FREEFALL))
-        controller.dropRock(CFG.initialGrid.index(18, 30))
+        controller.dropRock(18f, 30f)
         controller.stepOnce()
 
         val start = controller.state.rocks.single().centreX
@@ -146,7 +146,7 @@ class RockTest {
         val oreBefore = controller.state.extractedGrams
 
         repeat(3) { i ->
-            controller.dropRock(CFG.initialGrid.index(6 + i * 8, 10))
+            controller.dropRock(6f + i * 8f, 10f)
             controller.stepOnce()
             val s = controller.state
             assertEquals(
@@ -177,7 +177,7 @@ class RockTest {
         repeat(4) { controller.stepOnce() }
         val before = controller.state.storedJoules
 
-        controller.dropRock(CFG.initialGrid.index(18, 12))
+        controller.dropRock(18f, 12f)
         repeat(4) { controller.stepOnce() }
 
         val s = controller.state
@@ -193,8 +193,8 @@ class RockTest {
     @Test
     fun `a save remembers the rocks`() {
         val controller = OutofspaceController(CFG, bareHull())
-        controller.dropRock(CFG.initialGrid.index(12, 9))
-        controller.dropRock(CFG.initialGrid.index(24, 14))
+        controller.dropRock(12f, 9f)
+        controller.dropRock(24f, 14f)
         repeat(8) { controller.stepOnce() }
 
         val played = controller.state

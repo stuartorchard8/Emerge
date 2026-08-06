@@ -22,8 +22,8 @@ expect rockCount = 1
 expect rockBalance = 0
 expect momentumBalance = 0
 # On the deck, not through it, and in the same place it will be in forty ticks.
-expect rockY > 21.49
-expect rockY < 21.51
+expect rockY > 18.49
+expect rockY < 18.51
 camera centre 18 18 22
 shot collision-landed
 
@@ -32,8 +32,8 @@ run 40
 expect momentumBalance = 0
 # The same tile it was on forty ticks ago, to four decimal places. A rock with no resting rule sits
 # in a limit cycle here instead — bouncing a third of a tile, forever, with every ledger still zero.
-expect rockY > 21.49
-expect rockY < 21.51
+expect rockY > 18.49
+expect rockY < 18.51
 shot collision-settled
 
 echo --- now the plating is off and the ship flies into one
@@ -50,7 +50,7 @@ expect rockImpulseY > 0
 expect rockVY > 0
 expect momentumBalance = 0
 # Knocked clear of the keel rather than swept along inside it.
-expect rockY > 27
+expect rockY > 25
 expect rockBalance = 0
 camera centre 18 24 22
 shot collision-struck

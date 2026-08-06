@@ -683,7 +683,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
-                is Edit.DropRock -> dropRock(edit.index, edit.radius)
+                is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
                 is Edit.Inject -> inject(edit.index, edit.grams)
             }
         }
@@ -762,17 +762,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             injectedAirJoules += joules
         }
 
-        /** Drop a rock at [at] (capture placeholder). Mass → capturedGrams, energy → built. */
-        private fun dropRock(at: Int, radius: Int) {
-            if (at !in machines.indices) return
-            // The click names the centre tile, and the rock's position is its top-left corner, so
-            // the half-width comes off. Half a tile more puts the centre of the disc on the centre
-            // of the tile rather than on its corner.
+        /** Drop a rock at ([x], [y]) (capture placeholder). Mass → capturedGrams, energy → built. */
+        private fun dropRock(x: Float, y: Float, radius: Int) {
             val half = radius * Flight.PER_TILE
             val rock = Rock.blob(
                 radius = radius,
-                positionX = (grid.xOf(at) * Flight.PER_TILE) - half + Flight.PER_TILE / 2L,
-                positionY = (grid.yOf(at) * Flight.PER_TILE) - half + Flight.PER_TILE / 2L,
+                positionX = (x * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
+                positionY = (y * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
                 composition = DEFAULT_ORE_BODY,
             )
             rocks.add(rock)

@@ -249,8 +249,8 @@ object OutofspaceAgentHarness {
                 // `rock <x> <y> [radius]` — the stand-in for capture until H4, same edit the F6 key
                 // queues, so a script and a player put a rock in the world the same way.
                 "rock" -> {
-                    val at = index(t[1], t[2])
-                    controller.dropRock(at)
+                    val (ix, iy) = coordinates(t[1], t[2])
+                    controller.dropRock(ix.toFloat(), iy.toFloat())
                     settle()
                     println("[agent] rock at (${t[1]},${t[2]}) — ${state.rocks.size} adrift, ${state.rockGrams}g")
                 }
@@ -270,10 +270,16 @@ object OutofspaceAgentHarness {
         /** An edit is queued, not applied — it lands on the next tick, exactly as a click does. */
         private fun settle() = controller.stepOnce()
 
-        private fun index(x: String, y: String): Int {
+        private fun coordinates(x: String, y: String): Pair<Int, Int> {
             val grid = state.grid
             val ix = parseCoord(x, grid, isXAxis = true)
             val iy = parseCoord(y, grid, isXAxis = false)
+            return ix to iy
+        }
+
+        private fun index(x: String, y: String): Int {
+            val (ix, iy) = coordinates(x, y)
+            val grid = state.grid
             require(grid.inBounds(ix, iy)) { "($ix,$iy) is outside the ${grid.width}x${grid.height} grid" }
             return grid.index(ix, iy)
         }

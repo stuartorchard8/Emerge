@@ -108,7 +108,7 @@ class RockContactTest {
     @Test
     fun `a rock that lands on the deck settles and stays put`() {
         val controller = OutofspaceController(CFG, vacuumHull().copy(gravity = VesselState.PLATING_ONE_G))
-        controller.dropRock(CFG.initialGrid.index(18, 12))
+        controller.dropRock(18f, 12f)
 
         repeat(TICKS) { controller.stepOnce() }
         val landed = controller.state.rocks.single()
@@ -158,7 +158,7 @@ class RockContactTest {
     @Test
     fun `a rock resting on the deck does not push the ship`() {
         val controller = OutofspaceController(CFG, vacuumHull().copy(gravity = VesselState.PLATING_ONE_G))
-        controller.dropRock(CFG.initialGrid.index(18, 12))
+        controller.dropRock(18f, 12f)
 
         repeat(TICKS) { controller.stepOnce() }
         val settled = controller.state.vesselImpulseY

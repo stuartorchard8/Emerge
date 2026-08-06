@@ -172,8 +172,8 @@ class OutofspaceController(
         setChannel(index, next)
     }
 
-    /** Drops a rock centred on [index] — the stand-in for capture, see [Edit.DropRock]. */
-    fun dropRock(index: Int) = pending.add(Edit.DropRock(index))
+    /** Drops a rock centred on ([x], [y]) — the stand-in for capture, see [Edit.DropRock]. */
+    fun dropRock(x: Float, y: Float) = pending.add(Edit.DropRock(x, y))
 
     fun rotate(index: Int) = pending.add(Edit.Rotate(index))
 
