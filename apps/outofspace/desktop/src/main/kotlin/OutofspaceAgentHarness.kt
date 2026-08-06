@@ -89,16 +89,25 @@ object OutofspaceAgentHarness {
             for (raw in scriptText.lines()) {
                 val line = raw.substringBefore('#').trim()
                 if (line.isEmpty()) continue
-                runCatching { h.exec(line) }.onFailure { println("! error on '$line': ${it.message}") }
+                // A command that throws is a failure, not a note. It used to be printed and
+                // swallowed, which let `probe 48 30` address a tile that does not exist, say so,
+                // and still exit 0 — so a script could be repaired, still be wrong, and report
+                // success. The run continues after one, because seeing all of a script's damage in
+                // a single pass is worth more than stopping at the first, but the exit code below
+                // now counts them.
+                runCatching { h.exec(line) }.onFailure {
+                    println("! error on '$line': ${it.message}")
+                    h.failures.add("error on '$line': ${it.message}")
+                }
             }
         } finally {
             h.cleanup()
         }
         println("[agent] done -> ${outDir.absolutePath}")
         if (h.failures.isNotEmpty()) {
-            println("[agent] ${h.failures.size} EXPECT failure(s):")
+            println("[agent] ${h.failures.size} failure(s):")
             for (f in h.failures) println("[agent]   - $f")
-            throw IllegalStateException("${h.failures.size} expectation(s) failed")
+            throw IllegalStateException("${h.failures.size} failure(s)")
         }
     }
 
