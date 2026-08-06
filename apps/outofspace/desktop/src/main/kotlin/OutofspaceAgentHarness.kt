@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.Overlay
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.RockField
@@ -68,10 +69,19 @@ import kotlin.math.roundToInt
  * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|debris|
  *                            # species:<Name> — the only view that can show one gas settling
  * probe <x> <y>              # everything known about one tile, in full
+ * landmarks                  # print all landmark names and their current (x, y) coordinates
  * trend <samples> <ticks>    # run and tabulate the conserved totals — the drift/blow-up detector
  * state [name] | shot [name] # JSON totals / PNG capture, both written to outDir
  * expect <field> <op> <value># op is = < > ; non-zero exit if any fail
  * echo <text>
+ *
+ * Coordinates accept a landmark-relative syntax so scripts survive vessel refits:
+ *   <n>              — absolute tile index (plain integer, existing behaviour)
+ *   <landmark>       — anchor tile of a machine kind (e.g. `extractor`), or `origin`
+ *   <landmark>+<n>   — anchor offset in this axis by +n (e.g. `extractor+3`)
+ *   <landmark>-<n>   — anchor offset in this axis by −n
+ *   `origin` is the minimum corner of every placed machine; the others are the first tile of
+ *   that machine kind in row-major order. Note `hull` names the first HULL tile, not the corner.
  * ```
  */
 object OutofspaceAgentHarness {
@@ -247,6 +257,7 @@ object OutofspaceAgentHarness {
                 "camera" -> camera(t)
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })
                 "probe" -> probe(index(t[1], t[2]))
+                "landmarks" -> printLandmarks()
                 "trend" -> trend(t[1].toInt(), t[2].toInt())
                 "state" -> dumpState(t.getOrElse(1) { "state" })
                 "shot" -> shot(t.getOrElse(1) { "shot" })
@@ -261,9 +272,81 @@ object OutofspaceAgentHarness {
 
         private fun index(x: String, y: String): Int {
             val grid = state.grid
-            val ix = x.toInt(); val iy = y.toInt()
+            val ix = parseCoord(x, grid, isXAxis = true)
+            val iy = parseCoord(y, grid, isXAxis = false)
             require(grid.inBounds(ix, iy)) { "($ix,$iy) is outside the ${grid.width}x${grid.height} grid" }
             return grid.index(ix, iy)
+        }
+
+        private fun parseCoord(token: String, grid: Grid, isXAxis: Boolean): Int {
+            token.toIntOrNull()?.let { return it }
+
+            val landmarkMatch = Regex("^(.+?)([+-])(\\d+)$").find(token)
+            if (landmarkMatch != null) {
+                val name = landmarkMatch.groupValues[1].lowercase()
+                val sign = if (landmarkMatch.groupValues[2] == "+") 1 else -1
+                val offset = landmarkMatch.groupValues[3].toInt() * sign
+                return resolveLandmark(name, grid, isXAxis) + offset
+            }
+
+            val name = token.lowercase()
+            return resolveLandmark(name, grid, isXAxis)
+        }
+
+        /**
+         * A landmark is **any deck machine kind**, plus `origin` for the minimum corner of
+         * everything placed. Derived from [MachineKind] rather than listed, so a new machine becomes
+         * a landmark by existing — a hand-kept list and the kinds it names drift apart silently, and
+         * the drift shows up as a script addressing a landmark the harness has never heard of.
+         *
+         * ⚠️ The corner is `origin` and not `hull` because `Hull` is itself a machine kind: one name
+         * would have meant both "the first hull tile" and "the corner of the bounding box", which
+         * are different tiles the moment a ship is not a rectangle.
+         */
+        private fun landmarkKind(name: String): MachineKind? =
+            MachineKind.DECK.firstOrNull { it.name.equals(name, true) }
+
+        private fun landmarkNames(): List<String> =
+            (MachineKind.DECK.map { it.name.lowercase() } + "origin").sorted()
+
+        /** The minimum corner of every placed machine, or null if the world is empty. */
+        private fun hullCorner(grid: Grid): Pair<Int, Int>? {
+            var minX = Int.MAX_VALUE
+            var minY = Int.MAX_VALUE
+            for (i in state.machines.indices) {
+                if (state.machines[i] == null) continue
+                val x = grid.xOf(i)
+                val y = grid.yOf(i)
+                if (x < minX) minX = x
+                if (y < minY) minY = y
+            }
+            return if (minX == Int.MAX_VALUE) null else minX to minY
+        }
+
+        /** The first tile holding a machine of this kind, in row-major order, or null. */
+        private fun anchorOf(kind: MachineKind): Int? =
+            state.machines.indices.firstOrNull { state.machines[it]?.kind == kind }
+
+        private fun resolveLandmark(name: String, grid: Grid, isXAxis: Boolean): Int {
+            if (name == "origin") {
+                val corner = hullCorner(grid) ?: error("no machines in the world, so 'origin' has no corner")
+                return if (isXAxis) corner.first else corner.second
+            }
+            val kind = landmarkKind(name) ?: error("unknown landmark '$name' (have ${landmarkNames()})")
+            val at = anchorOf(kind) ?: error("no ${kind.label} in the world, so '$name' names nothing")
+            return if (isXAxis) grid.xOf(at) else grid.yOf(at)
+        }
+
+        private fun printLandmarks() {
+            val grid = state.grid
+            // Exactly the set a coordinate may name — printing anything else would advertise a
+            // landmark that fails when used.
+            val found = MachineKind.DECK.mapNotNull { kind ->
+                anchorOf(kind)?.let { "${kind.name.lowercase()} (${grid.xOf(it)},${grid.yOf(it)})" }
+            } + listOfNotNull(hullCorner(grid)?.let { "origin (${it.first},${it.second})" })
+
+            if (found.isEmpty()) println("[agent] landmarks: nothing placed")
+            else println("[agent] landmarks: ${found.joinToString(" | ")}")
         }
 
         private fun kind(name: String): MachineKind =
