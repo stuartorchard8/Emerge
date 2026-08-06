@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.cohesionJoules
+import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.world.Temperature
 
 /**
@@ -15,11 +17,11 @@ import org.emerge.demo.outofspace.world.Temperature
  * Millijoule scale matches Species.specificHeat (per kg). Avoids joule-scale quantization cliff (<1g→0, 2g→1).
  * joules/capacity exact at ambient (stepFluid: room-temp vessel = isothermal).
  */
-fun gasCapacity(tileCount: Int, grams: LongArray, species: List<Species> = Species.GASES): LongArray =
+fun gasCapacity(tileCount: Int, grams: LongArray, species: List<Species> = Species.FLUIDS): LongArray =
     LongArray(tileCount) { gasCapacityAt(grams, it, species) }
 
 /** Millijoules per kelvin held by the gas in one tile — see [gasCapacity] for the units. */
-fun gasCapacityAt(grams: LongArray, tile: Int, species: List<Species> = Species.GASES): Long {
+fun gasCapacityAt(grams: LongArray, tile: Int, species: List<Species> = Species.FLUIDS): Long {
     val base = tile * Species.COUNT
     var sum = 0L
     for (s in species) sum += grams[base + s.ordinal] * s.specificHeat
@@ -28,6 +30,55 @@ fun gasCapacityAt(grams: LongArray, tile: Int, species: List<Species> = Species.
 
 /** Capacity/energy scale: 1000 (matches Species.specificHeat per-kg → gram units). */
 const val CAPACITY_SCALE = 1000L
+
+/**
+ * The cohesion energy held in every tile — the energy the fluid owes to its own molecules
+ * attracting each other, which is negative because that is a bound state.
+ *
+ * See [cohesionJoules]. This is the latent heat as a field, and it is deliberately *not* stored
+ * anywhere: it is a function of the density and so is recomputed whenever it is needed, in the same
+ * spirit as [gasKelvin]. What is stored, in `gasJoules`, remains the thermal energy alone, which is
+ * what keeps [advectHeat] correct without modification — thermal energy is linear in mass and so
+ * rides a mass flux honestly, whereas cohesion goes as the square of density and would not.
+ */
+fun cohesionField(tileCount: Int, grams: LongArray, volumes: VolumeField?): LongArray =
+    LongArray(tileCount) { tile ->
+        val room = volumes?.at(tile) ?: VolumeField.FULL
+        var sum = 0L
+        for (s in Species.FLUIDS) {
+            val g = grams[tile * Species.COUNT + s.ordinal]
+            if (g <= 0L) continue
+            val dr = reducedDensity(g, s, room, VolumeField.FULL) ?: continue
+            sum += cohesionJoules(dr, s, room, VolumeField.FULL)
+        }
+        sum
+    }
+
+/**
+ * Settle the tick's change in cohesion energy against the thermal pot, tile by tile.
+ *
+ * **This is where boiling gets paid for.** Over a tick a cell's fluid has spread out or drawn
+ * together, and its cohesion energy has risen toward zero or fallen away from it. Total internal
+ * energy is thermal plus cohesion and cannot change on its own, so whatever cohesion gained, thermal
+ * loses. A cell whose water has just expanded therefore cools, which is what stops boiling running
+ * away; a cell where vapour has just gathered warms, which is the latent heat coming back out on
+ * condensation.
+ *
+ * No latent heat of vaporisation is written down anywhere in the codebase, and none is needed: the
+ * number falls out of the same attraction term that produced the phase transition.
+ *
+ * @return the energy that could not be taken because the thermal pot was already empty — see below.
+ */
+fun settleCohesion(gasJoules: LongArray, before: LongArray, after: LongArray): Long {
+    var unpaid = 0L
+    for (tile in gasJoules.indices) {
+        val owed = after[tile] - before[tile]
+        val paid = if (owed > gasJoules[tile]) gasJoules[tile] else owed
+        gasJoules[tile] -= paid
+        unpaid += owed - paid
+    }
+    return unpaid
+}
 
 /** Gas temperature per tile (kelvin). Empty tiles read AMBIENT_KELVIN (placeholder for absent gas; tilePressure multiplies this). */
 fun gasKelvin(gasJoules: LongArray, capacity: LongArray): IntArray =

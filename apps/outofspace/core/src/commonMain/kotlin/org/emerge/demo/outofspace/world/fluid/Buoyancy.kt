@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /** The reaction the vessel takes from holding its air up, by axis. */
@@ -11,7 +12,12 @@ class BuoyancyResult(val vesselX: Long, val vesselY: Long)
  * Replaces stratifyColumns; handles any gravity vector (not just axis-aligned).
  * Hot parcels → negative excess → rise (convection emerges naturally).
  * Returns vessel reaction (momentum ledger closed).
- * Volume-scaled reference (cell-level, not tile-level).
+ * Volume-scaled reference (cell-level, not tile-level), via [ambientMassAtPressure].
+ *
+ * ⚠️ "Ambient at the same pressure" is an *inverse* equation of state, and it stopped being a
+ * division when the solver stopped using the ideal gas law — see [ambientMassAtPressure]. Anything
+ * that changes how pressure relates to density has to change here too, or this silently leaves a
+ * standing force under every cell in the vessel.
  */
 fun applyBuoyancy(
     edges: EdgeGrid,
@@ -29,12 +35,15 @@ fun applyBuoyancy(
 
     // How much heavier each tile is than ordinary air at the same pressure would be. Negative means
     // lighter, which is what rises.
+    //
+    // The reference is ordinary air at *ambient* temperature, not at the tile's own, and that is
+    // what makes convection work: a hot tile carries more pressure for the same mass, so the mass of
+    // room-temperature air needed to match its pressure is larger than the mass it actually has, its
+    // excess comes out negative, and it rises. Reading the tile's own temperature here would cancel
+    // exactly that and leave hot gas sitting where it was.
     val excess = LongArray(tileGrams.size) { tile ->
-        val reference = pressure[tile] * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE
-        val fitted =
-            if (volumes == null) reference
-            else reference * volumes.at(tile) / VolumeField.FULL
-        tileGrams[tile] - fitted
+        val room = volumes?.at(tile) ?: VolumeField.FULL
+        tileGrams[tile] - ambientMassAtPressure(pressure[tile], Temperature.AMBIENT_KELVIN, room)
     }
 
     var addedX = 0L

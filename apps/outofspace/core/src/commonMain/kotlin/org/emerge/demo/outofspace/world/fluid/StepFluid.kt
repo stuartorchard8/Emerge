@@ -29,6 +29,17 @@ class FluidStep(
     /** Sub-steps the tick was cut into for CFL safety. One = gas < 1 tile/tick; climbing to MAX =
      * nozzle outrunning the explicit solver. */
     val subSteps: Int,
+    /**
+     * Latent heat the tick could not charge for, because the fluid that wanted to boil was already
+     * at absolute zero and had no thermal energy left to spend on breaking its own bonds.
+     *
+     * Physically this should always be zero: a liquid that runs out of heat stops boiling, and the
+     * pressure it fails to build is the mechanism that stops it. A non-zero value means the tick
+     * asked for more latent heat than the cell had, which is the discretisation admitting it stepped
+     * too far — so this is the size of an error, reported rather than hidden, in the same spirit as
+     * [undeliveredX]. Energy is *not* conserved to the extent this is non-zero.
+     */
+    val cohesionUnpaid: Long = 0L,
 )
 
 /**
@@ -40,6 +51,20 @@ class FluidStep(
  *
  * [gasJoules] nullable = isothermal mode. [volumes] nullable = all cells full tile.
  * [grams], [mx], [my], [gasJoules] edited in place.
+ *
+ * ### [latentHeat]
+ *
+ * Off by default, and off means the tick is bit-identical to every tick simulated before latent heat
+ * existed — the same courtesy [volumes] and [gasJoules] each extend, and for the same reason.
+ *
+ * Switching it on makes boiling and condensing cost and release energy (see [settleCohesion]), which
+ * is physically necessary but moves energy into a reservoir the vessel's ledger does not yet count.
+ * Every `airJouleBalance` assertion in the suite will report the missing joules, correctly, because
+ * from the ledger's point of view they have vanished. Teaching the ledger the third term —
+ * `thermal + cohesion + vented − fromSolid` — is the work that has to land before this can be the
+ * default, and it is deliberately not bundled in here: the feature it serves cannot be exercised
+ * end to end yet (see `BoilingTest`), and a conservation guarantee should not be reopened for
+ * something that cannot yet be checked.
  */
 fun stepFluid(
     grid: Grid,
@@ -70,8 +95,14 @@ fun stepFluid(
     gravity: Frac2,
     gasJoules: LongArray? = null,
     volumes: VolumeField? = null,
+    latentHeat: Boolean = false,
 ): FluidStep {
     val grid = edges.grid
+
+    // Snapshotted before anything moves, because the whole point of it is the difference across the
+    // tick: whatever cohesion energy the fluid gains by spreading out has to be taken back off its
+    // thermal energy at the end, and that is what makes a boiling liquid cool itself.
+    val cohesionBefore = if (gasJoules == null || !latentHeat) null else cohesionField(grid.size, grams, volumes)
 
     // Sorting first, because it moves mass between tiles: the density and pressure fields everything
     // below reads have to be the ones it leaves behind, not the ones it started from.
@@ -102,7 +133,7 @@ fun stepFluid(
         // Fresh density each sub-step: the gas the last piece left behind.
         val nowGrams = tileMass(grid.size, grams)
         val moved =
-            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, nowGrams, subSteps)
+            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.FLUIDS, nowGrams, subSteps)
         val carried = advectMomentum(edges, mx, my, moved.flux, nowGrams)
         // Heat rides the same fluxes as momentum.
         if (gasJoules != null) ventedJoules += advectHeat(edges, gasJoules, moved.flux, nowGrams)
@@ -110,6 +141,12 @@ fun stepFluid(
         escapedX += carried.x
         escapedY += carried.y
     }
+
+    // The tick's boiling and condensing, settled against the heat. Done once at the end rather than
+    // per sub-step because it is a function of where the mass finished, not of how it got there.
+    val cohesionUnpaid =
+        if (gasJoules == null || cohesionBefore == null) 0L
+        else settleCohesion(gasJoules, cohesionBefore, cohesionField(grid.size, grams, volumes))
 
     // Momentum left on empty faces goes to nothing; a vacuum must not store a shove.
     val after = tileMass(grid.size, grams)
@@ -139,6 +176,7 @@ fun stepFluid(
         subSteps = subSteps,
         undeliveredX = pressed.undeliveredX,
         undeliveredY = pressed.undeliveredY,
+        cohesionUnpaid = cohesionUnpaid,
     )
 }
 

@@ -16,7 +16,7 @@ fun applySpeciesDrift(
     apertures: ApertureField,
     grams: LongArray,
     gravity: Frac2,
-    species: List<Species> = Species.GASES,
+    species: List<Species> = Species.FLUIDS,
 ) {
     val snapshot = grams.copyOf()
     val total = tileMass(edges.grid.size, snapshot, species)

@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.partialPressure
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 
@@ -40,13 +41,88 @@ fun tilePressure(
     grams: LongArray,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
-    species: List<Species> = Species.GASES,
+    species: List<Species> = Species.FLUIDS,
 ): LongArray =
     LongArray(tileCount) { tile ->
-        val moles = millimolesOf(grams, tile, species)
-        val hot = if (kelvin == null) moles else moles * kelvin[tile] / AMBIENT_KELVIN
-        if (volumes == null) hot else hot * VolumeField.FULL / volumes.at(tile)
+        val hot = kelvin?.get(tile) ?: Temperature.AMBIENT_KELVIN
+        val room = volumes?.at(tile) ?: VolumeField.FULL
+        var sum = 0L
+        for (s in species) {
+            val g = grams[tile * Species.COUNT + s.ordinal]
+            sum += partialPressure(g, s, hot, room, VolumeField.FULL) ?: idealPressure(g, s, hot, room)
+        }
+        sum
     }
+
+/**
+ * The pressure a mass of ordinary air would exert on its own, at [kelvin] in a cell holding
+ * [volume] — the reference curve [ambientMassAtPressure] inverts.
+ *
+ * The mass is split across the species in [AirField.AMBIENT_AIR]'s proportions, because the question
+ * being asked of it is always "what would *air* do here", never "what would this particular gas do".
+ */
+internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
+    if (grams <= 0L) return 0L
+    var sum = 0L
+    for (s in Species.GASES) {
+        val share = grams * AirField.AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS
+        sum += partialPressure(share, s, kelvin, volume, VolumeField.FULL)
+            ?: idealPressure(share, s, kelvin, volume)
+    }
+    return sum
+}
+
+/**
+ * How much ordinary air it would take to reach [target] pressure at [kelvin] in a cell of [volume] —
+ * the equation of state run backwards.
+ *
+ * [applyBuoyancy] needs this to ask whether a tile is heavier than the air around it *at the same
+ * pressure*, and for as long as the solver used the ideal gas law it could be had for a single
+ * multiply, because `P = nRT/V` is a straight line through the origin and a straight line is its own
+ * inverse up to a constant. Van der Waals is a cubic, so the multiply became an approximation, and
+ * in a cell squeezed to an eighth of a tile it was wrong by enough to leave a standing impulse under
+ * every face — ordinary air in a pipe reading as permanently heavy and permanently trying to fall.
+ *
+ * Newton's method from the old linear answer, which is an excellent starting guess precisely because
+ * it is exact in the sparse limit where most of the vessel lives. Two steps carry the dense cases;
+ * the loop exits early once it lands, which for a room at ordinary density is immediately.
+ */
+internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long {
+    if (target <= 0L) return 0L
+    var grams = target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL
+    repeat(NEWTON_STEPS) {
+        val here = ambientPressureOf(grams, kelvin, volume)
+        if (here == target) return grams
+        // A thousandth of the current guess is small enough to be a local slope and large enough
+        // that the pressure difference across it does not vanish into integer rounding.
+        val nudge = (grams / 1000L).coerceAtLeast(1L)
+        val slope = ambientPressureOf(grams + nudge, kelvin, volume) - here
+        if (slope <= 0L) return grams
+        grams -= (here - target) * nudge / slope
+        if (grams <= 0L) return 0L
+    }
+    return grams
+}
+
+/**
+ * Two is enough because the starting guess is the exact answer wherever the gas is thin, and the
+ * correction it needs elsewhere is a percent or so — Newton doubles its correct digits each step, so
+ * a third would only be spending time to confirm the second.
+ */
+private const val NEWTON_STEPS = 2
+
+/**
+ * The old law, kept for species with no critical point on file.
+ *
+ * Anything the vessel never gets near condensing has no need of an equation of state that can
+ * describe condensing, and this is both cheaper and exactly what the solver used to do. It is also
+ * what [partialPressure] converges to as a cell empties out, which is why swapping one for the other
+ * moved no existing pressure by more than a tenth of a percent.
+ */
+private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: Int): Long {
+    val moles = grams * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MILLI
+    return moles * kelvin / AMBIENT_KELVIN * VolumeField.FULL / volume
+}
 
 /** The temperature [tilePressure] measures against — one atmosphere at room temperature. */
 private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
@@ -59,11 +135,20 @@ fun millimolesOf(grams: LongArray, tile: Int, species: List<Species> = Species.G
     return sum
 }
 
-/** A tile of ordinary air at one atmosphere, in the units [tilePressure] returns. */
+/**
+ * A tile of ordinary air at one atmosphere, in the units [tilePressure] returns.
+ *
+ * Computed through the same law as the field it is compared against, which matters more than it
+ * looks: [applyBuoyancy] divides one by the other, so a reference derived from a different equation
+ * of state than the pressures it scales would put a small standing bias under every cell in the
+ * vessel.
+ */
 val AMBIENT_PRESSURE: Long = run {
     var sum = 0L
     for (s in Species.GASES) {
-        sum += AirField.AMBIENT_AIR[s] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
+        val grams = AirField.AMBIENT_AIR[s]
+        sum += partialPressure(grams, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
+            ?: (grams * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
     }
     sum
 }

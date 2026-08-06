@@ -42,7 +42,7 @@ fun advectMass(
     apertures: ApertureField,
     momentum: MomentumField,
     grams: LongArray,
-    species: List<Species> = Species.GASES,
+    species: List<Species> = Species.FLUIDS,
     tileGrams: LongArray = tileMass(edges.grid.size, grams, species),
     subSteps: Int = 1,
 ): AdvectionResult {
