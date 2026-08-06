@@ -34,18 +34,61 @@ Leave a `TODO()` stub so the module still compiles with the tests red. Qwen need
 
 ## What P3 is
 
-From §9: *in the reducer's edit pass, if an edit would place anything within the pad of an edge, grow
-that edge to restore it. Far sides only, per §6.* Half a day.
+In the reducer's edit pass: if an edit would place anything within the pad of an edge, grow that
+edge to restore it. **Any of the four edges.**
 
-**Far sides only is the whole design, not a simplification.** Growing the `+x`/`+y` edge leaves the
-origin where it is, so every coordinate already in the world — every test, every script, every saved
-camera position — stays valid. Growing `−x`/`−y` shifts all of them, which is precisely the silent
-drift that cost us six red scripts in P2. Do not let this get "generalised" into symmetric growth.
+### Side-agnostic, decided 2026-08-06 — this overrides §9's "far sides only, per §6"
 
-**There is a genuine open question here, and it is Stu's to answer, not qwen's:** what happens when
-an edit lands within the pad of the *near* edge? Far-sides-only means the pad cannot be restored
-there. The options are to grow anyway and accept the remap, to refuse the edit, or to let the pad be
-violated on that side. Ask before speccing — a wrong answer here is architecture, not a bug.
+§6's mitigation 2 preferred far-side-only growth on the grounds that `+x`/`+y` leaves the origin
+where it is, so no written-down coordinate moves. That reasoning is sound as far as it goes and it is
+now superseded, for two reasons:
+
+1. **It does not buy what it claims.** `index = y * width + x`. A far-side `+x` growth changes
+   `width`, so every *stored tile index* outside `VesselState` — `controller.selected`,
+   `injectTile`, the conduit drag anchor, `hovered` in `OutofspaceMain` — silently addresses a
+   different tile afterwards. Stable `(x, y)` is not stable indices. The remap-the-holders machinery
+   has to exist for far-side growth anyway.
+2. **Given that machinery, near-side growth is it plus a camera shift.** `remapped` already takes an
+   arbitrary offset and is tested at negative ones (P1). Near-side growth is `remapped(dx, dy)` with
+   `dx`/`dy` non-zero and the same holders adjusted by the same delta. Building a far-only path
+   means building an asymmetry we would delete in P5.
+
+So build it side-agnostic. **Sequencing far-then-near inside P3 is fine** — get `+x`/`+y` green
+first because `dx = dy = 0` is the easy half — but the *shape* is side-agnostic from the first
+commit: growth returns the offset it applied and everything that holds a coordinate consumes it.
+Do not write a code path whose contract is "far only".
+
+### The one thing this pulls forward
+
+§9 parks "camera and controller indices remapped alongside" in **P4**. Side-agnostic growth needs it
+in **P3**, because a near-side growth without it jumps the view and misaddresses the selection. Take
+it here. P4 then reduces to the explicit-fit trigger — a key, a HUD button, a harness `fit` command —
+with nothing new underneath it.
+
+Concretely, growth should hand back a delta rather than mutating in place, e.g.
+`fun VesselState.growToFit(pad: Int): GrowResult` carrying `(state, dx, dy)`, with `dx == 0 && dy == 0`
+on a far-side or no-op growth. Consumers to update, all of them holding a frame the state no longer
+has:
+
+- `OutofspaceRenderer.camX`/`camY` — tile units, so `camX += dx`.
+- `OutofspaceController.selected`, `injectTile`, and the conduit drag anchor — indices, so re-derive
+  through the *old* grid's `xOf`/`yOf` and the *new* grid's `index`, not by arithmetic on the raw int.
+- `OutofspaceMain.hovered` / `lastPainted` — same, or invalidate to `-1`; a stale hover for one frame
+  is harmless, a stale `lastPainted` is a missed paint at worst.
+
+The harness already reads `state.grid` live everywhere it matters and gained `originX`/`originY` in
+P0, so a script can assert the frame it thinks it is in.
+
+### What this makes cheap, and what it makes expensive
+
+Cheap: the near-edge question the previous draft flagged as architecture-for-Stu is **dissolved**.
+An edit inside the near pad grows that side and remaps. No refusal path, no uneven pad, no rule
+about which direction the player may build in.
+
+Expensive: absolute coordinates in scripts and tests now rot on *any* growth, not just on an explicit
+fit. That is the P2 lesson arriving early rather than a new risk — **landmarks, not tiles**, in
+everything new. And `GridFitTest.the starter vessel lands in a known frame` pins `(+3, −3)` at
+construction only; nothing may pin a frame *after* a growth.
 
 ---
 
@@ -70,20 +113,33 @@ P3 only grows. If anything in P3 wants to shrink, stop: §5 has to arrive with i
 Put them in `GridFitTest.kt` alongside the P2 ones, or a sibling `GridGrowTest.kt`. Each should
 re-derive its expectation rather than assert a number you typed:
 
-1. **Placing within the pad of the far edge grows it.** Assert the pad is *restored* — recompute the
-   bounding box and check the margin — not that the grid reached some width.
-2. **Growth never moves anything.** Pick a machine, record `grid.xOf`/`yOf`, grow, assert unchanged.
-   This is the test that stops symmetric growth being introduced later.
-3. **All six ledgers stay zero across a growth:** `airBalance`, `airJouleBalance`, `massBalance`
+1. **Placing within the pad grows that edge — run it for all four.** Table-drive it; a case per
+   edge, not one far case. Assert the pad is *restored* — recompute the bounding box and check the
+   margin — not that the grid reached some width.
+2. **Growth preserves relative geometry.** Pick two machines, record their separation and each one's
+   offset from a third landmark, grow, assert unchanged. Then assert absolute position moved by
+   exactly the reported `(dx, dy)` — `0` on a far-side growth, positive on a near one. This replaces
+   "growth never moves anything", which was only true under the far-only rule.
+3. **The reported delta is the truth.** Whatever `growToFit` says it shifted by is what every
+   machine, segment, bridge, pile and diverter actually shifted by. This is the test that keeps
+   consumers correctable.
+4. **All six ledgers stay zero across a growth:** `airBalance`, `airJouleBalance`, `massBalance`
    (`inTransitGrams + ventedGrams - extractedGrams`, **not** `massGrams` — that includes the ship's
-   own fabric), `momentumBalance`, `rockBalance`, `heatBalance`.
-4. **`motion` is the new grid's size** after a growth. The bug above, pinned.
-5. **Idempotence.** An edit well inside the pad grows nothing.
-6. **Rocks are undisturbed.** They are in world coordinates and far-side growth does not move the
-   origin, so their positions must be bit-identical.
-7. **A growth mid-run does not perturb the sim.** Digest a world 300 ticks after a growth against the
+   own fabric), `momentumBalance`, `rockBalance`, `heatBalance`. All four edges.
+5. **`motion` is the new grid's size** after a growth. The bug above, pinned.
+6. **Idempotence.** An edit well inside the pad grows nothing and reports `(0, 0)`.
+7. **Rocks track the origin.** On a far-side growth their grid positions are bit-identical; on a near
+   one they move by exactly `(dx, dy)` like everything else, because they are in the vessel's frame
+   (§8 — they may sit outside the box, which is not the same as outside the frame). Getting this
+   backwards puts a rock through the hull, so test both directions.
+8. **The camera and the selection survive a near-side growth.** Record the world tile under the
+   camera centre and the tile `selected` refers to, grow by a near edge, assert both still refer to
+   the same tile. This is the P4-pulled-forward work, and it is the only test here that touches
+   anything outside `core`.
+9. **A growth mid-run does not perturb the sim.** Digest a world 300 ticks after a growth against the
    same world grown at construction; §10's determinism check, and the one most likely to catch a
-   subtly wrong edge-field remap.
+   subtly wrong edge-field remap. Do it for a near-side growth too — a far-side one leaves the fields
+   at the same offsets and so exercises much less.
 
 ---
 

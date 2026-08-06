@@ -182,10 +182,15 @@ than hours.
 1. **Fit once, at construction.** `starterVessel` builds at its own coordinates and *then* fits, so
    the vessel is authored in a stable frame and the fit is the last thing that happens. Everything
    downstream sees one grid for the rest of the session.
-2. **Never fit implicitly during play.** Growth is the only implicit change, and growth on the right
+2. ~~**Never fit implicitly during play.** Growth is the only implicit change, and growth on the right
    and bottom does not move the origin at all. Growth on the left or top does — which means either
    accepting the shift, or growing only on the far sides and letting the pad be uneven until the next
-   explicit fit. **Prefer the latter**: an uneven pad is invisible, and a moving origin is not.
+   explicit fit. **Prefer the latter**: an uneven pad is invisible, and a moving origin is not.~~
+   **Superseded 2026-08-06 — growth is side-agnostic; see `HANDOFF_P3.md`.** The far-only rule
+   protected `(x, y)` but not stored *indices*, which move whenever `width` does, so the
+   remap-the-holders work was unavoidable regardless. Accept the shift, report it, and have every
+   holder of a coordinate consume it. What remains of this mitigation is the discipline in 3 below
+   and the landmark addressing P2 built.
 3. **A harness assertion.** `expect gridWidth`/`gridHeight`, and an `origin` readout, so a script can
    state the frame it believes it is in and fail loudly rather than measuring the wrong tile.
 
@@ -301,10 +306,14 @@ Two things came out of that repair and both outlive it:
 and pass. An errored command now records a failure. ~One day.~
 
 **P3 — Grow on demand.** In the reducer's edit pass: if an edit would place anything within the pad
-of an edge, grow that edge to restore it. Far sides only, per §6. Half a day.
+of an edge, grow that edge to restore it. **Any of the four edges** — see `HANDOFF_P3.md`, which
+supersedes §6's far-sides-only preference and gives the reasoning. Growth reports the `(dx, dy)` it
+applied; camera and controller indices consume it, pulled forward from P4 because near-side growth
+cannot work without them. Far-then-near is a fine order to *build* in; it is not a contract.
+~Half a day.~ One day, with the pull-forward.
 
-**P4 — The explicit fit.** A key, a HUD button, a harness `fit` command. Camera and controller
-indices remapped alongside. Half a day.
+**P4 — The explicit fit.** A key, a HUD button, a harness `fit` command, on top of P3's growth
+plumbing. Half a day.
 
 **P5 — Shrink, or not.** Only if wanted. This is where §5 gets built and where continuous fit becomes
 possible if we ever want it.
