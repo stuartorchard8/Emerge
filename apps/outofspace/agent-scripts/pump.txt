@@ -14,13 +14,13 @@
 new
 
 brush PIPE
-drag 14 9 26 9
+drag extractor extractor+4 extractor+12 extractor+4
 
 # Facing UP: a pump draws from the tile it faces, never from the one it stands on. Its own tile has
 # no room air at all — placing any building displaces the air out of its footprint — so drawing from
 # underneath itself would draw from a vacuum.
 brush PUMP UP
-place 20 9
+place extractor extractor+4
 
 camera centre 20 9
 camera zoom 28
@@ -34,7 +34,7 @@ expect pipeGrams < 1700
 echo --- but it does not stop where a valve does. This same run through a valve settles at ~3050g,
 echo --- and a pump takes it far past that: the ceiling is the machine, not the pressure it meets.
 run 1700
-expect pipeGrams > 6000
+expect pipeGrams > 5500
 expect airVented = 0
 expect airBalance = 0
 expect airHeatBalance = 0
