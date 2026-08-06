@@ -259,9 +259,34 @@ it is dropped; it is `Motion.NONE` at construction so it is harmless today, but 
 array sized to the *old* grid and will hand the renderer the wrong length the first time a resize
 happens mid-play. Fix it in P3, before growth is live. ~One day.~
 
-**P2 — Fit at construction and load.** `fitGrid(state, pad = 4)` returning a remapped state; called
-by `starterVessel` and by `Save.read`. The starter vessel's grid stops being `Grid(96, 60)` and
-becomes whatever it needs. Expect fallout in the scripts here and budget for it. One day.
+**P2 — Fit at construction and load.** ~~`fitGrid(state, pad = 4)` returning a remapped state; called
+by `starterVessel`~~ and by `Save.read`. ~~The starter vessel's grid stops being `Grid(96, 60)` and
+becomes whatever it needs.~~ **MOSTLY DONE 2026-08-06.** The starter vessel fits to **41×26** — 1066
+tiles against 5760, a **5.4× cut**, ahead of the 4.5× §1 predicts. The width lands exactly where this
+plan guessed and the height comes in five under, so the estimate was pessimistic rather than the fit
+wrong. The frame moved by **(+3, −3)** and is pinned by `GridFitTest.the starter vessel lands in a
+known frame`; read that test before writing an absolute coordinate.
+
+⚠️ **`Save.read` does not fit, deliberately.** `SaveTest.a hand-written world is a legitimate save`
+parses a deliberate `grid 6 4`, and fitting on load would refit hand-authored worlds and mangle
+exactly that. The plan's reason for load-fitting was migrating worlds authored at 96×60, and there
+are none. **Decide this before P4**, because an explicit `fit` command makes the same choice again
+with the player watching.
+
+**Where the fallout actually was.** §6 expected dozens of broken coordinate sites across the test
+suite and this budgeted a day for it; it was **three tests and about twenty minutes**, because the
+suite mostly builds its own fixtures rather than naming starter-vessel tiles.
+
+⚠️ **The scripts are the opposite story, and they are the outstanding work.** All ten were green at
+`4cc59ca1` and five are red now — `breach`, `collision`, `extractor`, `pump`, `rocks` — so this is
+the fit's doing, not inherited. Two fail loudly on coordinates that no longer exist (`rock 18 30`,
+`probe 48 30` against 41×26); the other three still name in-bounds tiles that now *mean somewhere
+else*, which is exactly the silent drift §6 called the worst failure mode available.
+
+⚠️ **And a defect the scripts revealed rather than suffered:** `smoke.txt` prints
+`! error on 'probe 48 30'` and **still exits 0**. A script can name a tile that does not exist and
+pass. Whatever is decided about the coordinates, that wants fixing first, or a repaired script
+cannot be trusted to say it is repaired. ~One day.~
 
 **P3 — Grow on demand.** In the reducer's edit pass: if an edit would place anything within the pad
 of an edge, grow that edge to restore it. Far sides only, per §6. Half a day.
