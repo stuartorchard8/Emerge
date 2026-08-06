@@ -117,7 +117,7 @@ fun starterVessel(
         // ledgers start at zero. A rock added by `copy` afterwards keeps the baselines of a world
         // that had none and reads as mass conjured out of nothing — see `workingVessel`.
         rocks = RockField.scatter(grid, built, rocks, rockSeed, OutofspaceReducer.DEFAULT_ORE_BODY),
-    )
+    ).fitGrid()
 }
 
 /**

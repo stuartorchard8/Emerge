@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
@@ -198,7 +199,13 @@ class DebrisTest {
         s = run(s, 80)
 
         // Rip out every machine on one row of the working line, mid-flow.
-        val y = 12   // the row the starter vessel's main line runs along
+        // The row the main line runs along. It used to be written `12`, and 12 is now
+        // somewhere else — the vessel fits its own grid, so absolute coordinates moved.
+        // Derived rather than re-pinned, and asserted rather than assumed: `indexOfFirst`
+        // answers -1 when it finds nothing, and `yOf(-1)` is a row, not an error.
+        val extractor = s.machines.indexOfFirst { it is Extractor }
+        assertTrue(extractor >= 0, "no extractor, so no main line to rip out")
+        val y = s.grid.yOf(extractor)
         val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
         s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
 
@@ -219,7 +226,13 @@ class DebrisTest {
             var s = workingVessel(Grid(40, 28))
             val cfg = OutofspaceConfig(initialGrid = s.grid)
             s = run(s, 300)
-            val y = 12   // the row the starter vessel's main line runs along
+            // The row the main line runs along. It used to be written `12`, and 12 is now
+            // somewhere else — the vessel fits its own grid, so absolute coordinates moved.
+            // Derived rather than re-pinned, and asserted rather than assumed: `indexOfFirst`
+            // answers -1 when it finds nothing, and `yOf(-1)` is a row, not an error.
+            val extractor = s.machines.indexOfFirst { it is Extractor }
+            assertTrue(extractor >= 0, "no extractor, so no main line to rip out")
+            val y = s.grid.yOf(extractor)
             val edits = (3..30).map { Edit.Remove(s.grid.index(it, y)) }
             s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(edits)))
             s = run(s, 120)

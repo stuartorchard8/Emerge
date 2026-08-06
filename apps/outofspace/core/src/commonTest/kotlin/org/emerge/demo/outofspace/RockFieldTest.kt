@@ -53,7 +53,7 @@ class RockFieldTest {
     @Test
     fun `no rock overlaps the vessel`() {
         val s = starterVessel(grid)
-        val occupancy = Occupancy.derive(grid, s.machines)
+        val occupancy = Occupancy.derive(s.grid, s.machines)
 
         for (rock in s.rocks) {
             for (cy in 0 until rock.height) {
@@ -61,9 +61,16 @@ class RockFieldTest {
                     if (!rock.cells[cy * rock.width + cx]) continue
                     val x = (rock.positionX / org.emerge.demo.outofspace.world.Flight.PER_TILE).toInt() + cx
                     val y = (rock.positionY / org.emerge.demo.outofspace.world.Flight.PER_TILE).toInt() + cy
-                    assertTrue(grid.inBounds(x, y), "a rock started off the grid at ($x, $y)")
+                    // Off the grid is ordinary, not a failure — §8. The vessel fits its own box
+                    // now, so the field extends well past it and most rocks start outside.
+                    //
+                    // ⚠️ `/` truncates toward zero, so a rock at -0.5 tiles reads as tile 0 rather
+                    // than -1. Harmless here — column 0 is padding and always free — but it is a
+                    // floor that isn't, and `overlapsHull` deliberately does this properly. Do not
+                    // copy this arithmetic into anything that decides a collision.
+                    if (!s.grid.inBounds(x, y)) continue
                     assertTrue(
-                        occupancy.isFree(grid.index(x, y)),
+                        occupancy.isFree(s.grid.index(x, y)),
                         "a rock started inside the vessel at ($x, $y)",
                     )
                 }
