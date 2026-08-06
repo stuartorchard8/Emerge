@@ -51,6 +51,7 @@ fun main() {
 
     hud.onTogglePause = { controller.paused = !controller.paused }
     hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
+    hud.onFit = { controller.fit() }
     hud.canSave = true
     hud.onSave = { hud.saveStatus = saveWorld(controller) }
     hud.onLoad = { hud.saveStatus = loadWorld(controller, renderer) }
@@ -203,6 +204,7 @@ fun main() {
             // A debug drop, alongside the debug engine, until capture is a thing you fly at in H4.
             GLFW_KEY_F6 -> { val (ix,iy) = renderer.screenToTile(lastX, lastY); controller.dropRock(ix, iy) }
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
+            GLFW_KEY_F8 -> controller.fit()
             GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
             GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)

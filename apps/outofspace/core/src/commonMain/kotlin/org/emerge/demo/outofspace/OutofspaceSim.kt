@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
+import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Occupancy
@@ -324,12 +325,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             rockImpulseY = state.rockImpulseY + handedY,
             capturedGrams = w.capturedGrams,
             motion = w.motion.freeze(),
-        ).grown()
+        ).resized(w.fitRequested)
     }
 
     /**
      * The grid keeps the clearance the world says it keeps — [VesselState.gridPad] — between the
-     * vessel and every edge, growing here, at the very end of the tick, if the pad was used up.
+     * vessel and every edge, growing here, at the very end of the tick, if the pad was used up,
+     * or shrinking back if the player asked for an explicit fit.
      *
      * **After the tick, never during it.** `Work` is built from the grid the tick started on and
      * every pass since has addressed tiles through it, so a resize partway would leave half a world
@@ -339,13 +341,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      *
      * Growth only ever adds vacuum tiles, at zero grams, zero joules and zero momentum, so no ledger
      * and no baseline moves; the accounting question is the one §5 raises about *shrinking*, and
-     * nothing here shrinks.
+     * that is what `fitRequested` triggers: the grid shrinks to the fitted box and whatever cells
+     * are discarded are vented by `remapped`, which is why this must happen at the very end of the
+     * tick, not during it.
      */
-    private fun VesselState.grown(): VesselState {
+    private fun VesselState.resized(fitRequested: Boolean): VesselState {
         // Only worlds that opted into a pad, which means worlds that were fitted — see
         // [VesselState.gridPad]. A hand-authored fixture keeps the frame it was drawn in.
         if (gridPad <= 0) return this
-        val result = growToFit(gridPad)
+        val result = if (fitRequested) fitToFrame(gridPad) else growToFit(gridPad)
         if (!result.grew) return this
         // The offset travels to whoever wrote a coordinate down — see [VesselState.frameShiftX].
         return result.state.copy(
@@ -503,6 +507,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Debug engine direction, summed + clamped (see [Edit.Thrust]).
         var thrustDx: Int = 0
         var thrustDy: Int = 0
+
+        var fitRequested: Boolean = false
 
         /** Free-floating rock, and the running admission of how much of it came from outside. */
         val rocks: MutableList<Rock> = state.rocks.toMutableList()
@@ -713,6 +719,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
                 is Edit.Inject -> inject(edit.index, edit.grams)
+                // Recorded, never acted on here: a resize partway through a tick would leave half a
+                // world on each lattice, because `Work` addresses every tile through the grid the
+                // tick started on. Consumed at the very end of `reduce` — see [resized].
+                is Edit.Fit -> fitRequested = true
             }
         }
 

@@ -22,6 +22,7 @@ class OutofspaceHud {
 
     var onTogglePause: () -> Unit = {}
     var onReset: () -> Unit = {}
+    var onFit: () -> Unit = {}
 
     /** Save/load (host capability — requires file system access). */
     var canSave: Boolean = false
@@ -189,6 +190,7 @@ class OutofspaceHud {
                 row("space pause", 0x9A9A9AFFL)
                 // Debug engine row (yellow, named).
                 row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
+                row("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
@@ -205,6 +207,7 @@ class OutofspaceHud {
                         ),
                     )
                 }
+                button("FIT", 0x2E5A6BFFL) { onFit() }
                 button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
                 button("RESET", 0xCC3333FFL) { onReset() }
             }

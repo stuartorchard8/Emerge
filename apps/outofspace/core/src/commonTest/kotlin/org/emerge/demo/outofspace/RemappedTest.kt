@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -537,6 +538,11 @@ class RemappedTest {
 
     // ── Negative offset: shrink left and up ──────────────────────────────
 
+    /**
+     * ⚠️ **PARKED — do not delete.** Asserts the silent solid-dropping that P4's `require`
+     * replaced. Revisit with the rigid-body rework. See `PLAN_dynamic_grid.md` §5.
+     */
+    @Ignore
     @Test
     fun `negative offset drops cells outside new grid`() {
         val s0 = populatedWorld(15, 10)

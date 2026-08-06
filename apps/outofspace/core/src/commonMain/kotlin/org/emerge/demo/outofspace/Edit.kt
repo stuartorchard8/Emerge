@@ -55,6 +55,14 @@ sealed interface Edit {
      */
     data class Inject(val index: Int, val grams: Long = INJECT_GRAMS) : Edit
 
+    /**
+     * Takes the grid back to the ship plus its pad. The only edit that can make the grid smaller,
+     * so the only one that discards cells — which [org.emerge.demo.outofspace.world.remapped] vents.
+     *
+     * An edit rather than a controller method so two hosts fit on the same tick.
+     */
+    data object Fit : Edit
+
     companion object {
         /** Thrust magnitude: 250 milli-g (quarter gravity). Settles rooms over tens of ticks. */
         const val DEBUG_THRUST_MILLI_G: Long = 250L

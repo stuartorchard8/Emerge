@@ -721,9 +721,44 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
  *
  * Cells that exist in both grids keep everything; cells only in the new one are vacuum.
  * The old origin lands at (dx, dy) in the new grid, so growing left by 4 is dx = +4.
+ *
+ * On a shrink, the gas in a discarded cell is **vented** to `airVentedGrams`/`airVentedJoules` and
+ * its face momentum to `exhaustMomentumX/Y`, so every ledger holds. A discarded **solid** throws
+ * instead: the grid is fitted around the solids, so losing one means the bounds were wrong. Rocks
+ * are not grid-indexed and are translated, never discarded. See `PLAN_dynamic_grid.md` §5.
  */
 fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     require(newGrid.size > 0) { "new grid must be non-empty" }
+
+    for (i in machines.indices) {
+        if (machines[i] == null) continue
+        val ox = grid.xOf(i); val oy = grid.yOf(i)
+        require(newGrid.inBounds(ox + dx, oy + dy)) {
+            "remap would discard a machine at ($ox, $oy)"
+        }
+    }
+    for (i in bridges.indices) {
+        if (bridges[i] == null) continue
+        val ox = grid.xOf(i); val oy = grid.yOf(i)
+        require(newGrid.inBounds(ox + dx, oy + dy)) {
+            "remap would discard a bridge at ($ox, $oy)"
+        }
+    }
+    for (c in Conduit.entries) {
+        for (i in conduits[c].indices) {
+            if (conduits[c][i] == null) continue
+            val ox = grid.xOf(i); val oy = grid.yOf(i)
+            require(newGrid.inBounds(ox + dx, oy + dy)) {
+                "remap would discard a ${c.label} conduit at ($ox, $oy)"
+            }
+        }
+    }
+    for (oldTile in debris.tiles()) {
+        val ox = grid.xOf(oldTile); val oy = grid.yOf(oldTile)
+        require(newGrid.inBounds(ox + dx, oy + dy)) {
+            "remap would discard debris at ($ox, $oy)"
+        }
+    }
 
     val oldW = grid.width
     val oldH = grid.height
@@ -866,7 +901,15 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         )
     }
 
-    // ── 7. Motion: dropped on resize (renderer will re-animate from zero)
+    // ── 7. Vent whatever the new grid does not cover ─────────────────────
+    // As a difference of totals rather than a walk of the discarded cells: exact by construction,
+    // with no edge index to get wrong. Zero on a grow, so that needs no special case.
+    val ventedGas    = (air.totalGrams + pipeAir.totalGrams) - (newAir.totalGrams + newPipeAir.totalGrams)
+    val ventedJoules = (air.totalJoules + pipeAir.totalJoules) - (newAir.totalJoules + newPipeAir.totalJoules)
+    val ventedMomX   = (momentum.totalX + pipeMomentum.totalX) - (newMomentum.totalX + newPipeMomentum.totalX)
+    val ventedMomY   = (momentum.totalY + pipeMomentum.totalY) - (newMomentum.totalY + newPipeMomentum.totalY)
+
+    // ── 8. Motion: dropped on resize (renderer will re-animate from zero)
     //    Baselines: passed through unchanged — they are conservation constants
 
     return copy(
@@ -885,6 +928,11 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         momentum = newMomentum,
         pipeMomentum = newPipeMomentum,
         rocks = newRocks,
+        // vented quantities — grow: difference is zero, no special case needed
+        airVentedGrams = airVentedGrams + ventedGas,
+        airVentedJoules = airVentedJoules + ventedJoules,
+        exhaustMomentumX = exhaustMomentumX + ventedMomX,
+        exhaustMomentumY = exhaustMomentumY + ventedMomY,
         // baselines passed through explicitly to avoid recompute on copy
         baselineAirGrams = baselineAirGrams,
         baselineAirJoules = baselineAirJoules,
@@ -897,6 +945,11 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
  * The same world on a grid fitted to what it contains: the bounding box of every placed thing,
  * plus [pad] tiles on every side. Returns `this` unchanged if the grid is already that shape.
  *
+ * This is the shorthand for "fit and throw the offset away" — the shorthand for everything
+ * [fitToFrame] does. The detailed arithmetic lives in [fitToFrame]; [fitGrid] calls it and
+ * discards the offset, which is all this function ever wanted at construction time where
+ * nothing yet holds a coordinate to correct.
+ *
  * The contract is `GridFitTest`. The two constraints a first attempt lost, stated once more
  * because they are the whole job:
  *
@@ -907,35 +960,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
  * [VesselState.gridPad], and the reducer then grows the grid to maintain it as the player builds.
  * A world that was never fitted keeps no pad and its frame never moves — see [growToFit].
  */
-fun VesselState.fitGrid(pad: Int = GRID_PAD): VesselState {
-    // ── 1. The bounding box of everything that must be enclosed ──────────
-    // Machines by footprint, rocks excluded — see [placedBounds], which [growToFit] shares so that
-    // the two cannot drift apart about what the box is for.
-    val box = placedBounds() ?: return this
-    val minX = box[0]
-    val minY = box[1]
-    val maxX = box[2]
-    val maxY = box[3]
-
-    // ── 2. Expand by pad on every side ────────────────────────────────────
-    val nx0 = minX - pad
-    val ny0 = minY - pad
-    val nx1 = maxX + pad
-    val ny1 = maxY + pad
-    val newW = nx1 - nx0 + 1
-    val newH = ny1 - ny0 + 1
-
-    // ── 3. Early exit: already exactly the fitted shape ──────────────────
-    // Still records the pad: a world that is already the right shape is no less opted in.
-    if (grid.width == newW && grid.height == newH && nx0 == 0 && ny0 == 0) return copy(gridPad = pad)
-
-    // ── 5. Build the new grid and delegate to remapped ───────────────────
-    val newGrid = Grid(newW, newH)
-    // dx/dy are "where the old origin lands in the new grid"
-    // The old grid is always origin-anchored, so its origin is (0, 0)
-    val dx = 0 - nx0
-    val dy = 0 - ny0
-    return remapped(newGrid, dx, dy).copy(gridPad = pad)
-}
+fun VesselState.fitGrid(pad: Int = GRID_PAD): VesselState = fitToFrame(pad).state
 
 

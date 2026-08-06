@@ -180,6 +180,11 @@ class OutofspaceController(
 
     fun rotate(index: Int) = pending.add(Edit.Rotate(index))
 
+    /**
+     * Queues the grid back to the ship plus its pad. [followFrame] carries the selection across it.
+     */
+    fun fit() = pending.add(Edit.Fit)
+
     /** Takes [deleteLayer] off a tile. Named explicitly by callers that mean a specific layer. */
     fun remove(index: Int, layer: DeleteLayer = deleteLayer) {
         if (index == selected) selected = -1

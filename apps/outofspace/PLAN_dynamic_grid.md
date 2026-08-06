@@ -152,14 +152,24 @@ Growing touches nothing. Shrinking must account for every cell it discards, or:
 the tile left the world, and the only way out of this world is overboard — and it keeps all three
 identities exactly as strict as they are now.
 
-Debris and rocks are **not** subject to this: the box encloses them by construction (§8), so a
-discard is a bug and should `require` rather than book. That asymmetry is deliberate. Gas is
-diffuse and legitimately present in a padding tile; a rock is a thing, and a resize that ate one is
-a resize that got its bounds wrong.
+Solids are **not**: the box is fitted around them, so a discarded solid means the bounds were wrong.
+`require`, don't book. Gas is diffuse and legitimately fills a padding tile; a machine is a thing.
 
-⚠️ This whole section is the argument for option B. Under grow-only it is **dead code that never
-runs**, and per §5e's lesson a quantity only ever run at one value has not been run — so if we build
-it, `remapped` should be tested at a shrink directly, even though play never triggers one.
+⚠️ This paragraph said "debris and rocks", citing §8 for the claim that the box encloses them — §8
+says the opposite about rocks, the same contradiction §10 was caught in. **Rocks never arise**: not
+grid-indexed, translated rather than discarded. The guard covers what is tile-indexed — machines,
+bridges, conduit segments, debris.
+
+**BUILT 2026-08-06** with P4, whose fit is the first thing that can shrink. `remapped` books the vent
+as a **difference of totals** per ledger, not a walk of discarded cells — exact, and no edge index to
+get wrong (the y-faces are `w × (h+1)`, P1's trap). Rooms and pipes summed together, since
+`atmosphereGrams` is the pair. Growth needs no special case: every difference is zero.
+
+⚠️ The solid guard collided with `RemappedTest.negative offset drops cells outside new grid`, which
+pinned the silent dropping of the day. **`@Ignore`d, not deleted** — the finding underneath is that
+solid mass wants reworking as **rigid bodies**, which is what gives "a solid the grid no longer
+covers" a real answer. That test is the case that will exercise it. Until then, refusing beats
+quietly deleting part of the ship.
 
 ---
 
@@ -338,10 +348,25 @@ passes -1 and holds nothing).
 the grid widen 41 → 43 → 46 with every ledger at zero and the landmarks shifting by exactly the
 reported +3. ~Half a day.~ One day, with the pull-forward.
 
-**P4 — The explicit fit.** A key, a HUD button, a harness `fit` command, on top of P3's growth
-plumbing — which is now all in place, so this is the trigger and nothing underneath it. Note that an
-explicit fit is the first thing that can *shrink*, and §5 has to arrive with it: P3 only grows.
-Half a day.
+**P4 — The explicit fit.** ~~A key, a HUD button, a harness `fit` command, on top of P3's growth
+plumbing.~~ **DONE 2026-08-06**, and §5 arrived with it as predicted — see above; that was the bulk
+of the work, the trigger itself was small.
+
+`Edit.Fit` rather than a controller method, so it travels the lockstep input path and two hosts fit
+on the same tick. Consumed at the end of `reduce` beside growth, for growth's reason. `fitToFrame`
+is `fitGrid` reporting its offset; `fitGrid` is now that with the offset dropped, so the arithmetic
+exists once. F8, a FIT button, and a harness `fit`.
+
+`gridPad <= 0` gates the fit as it gates growth: a world that never opted in is not refitted behind
+its back.
+
+`agent-scripts/fit.txt` is the proof — grow 41 → 44, fit back to 41, every landmark returning to the
+tile it started on and all six ledgers at zero either side of the shrink.
+
+⚠️ **Landmarks move, including `origin`.** `origin` is the minimum corner of everything *placed*, so
+a tile built out into the pad **becomes** the origin. Writing `remove origin-3 …` to undo a
+`place origin-3 …` names a different tile than it did before the build, resolves in bounds, and
+silently does nothing. Cost an hour. Re-read the landmark line after anything that resizes.
 
 **P5 — Shrink, or not.** Only if wanted. This is where §5 gets built and where continuous fit becomes
 possible if we ever want it.
@@ -378,7 +403,7 @@ possible if we ever want it.
 | P1 `remapped` + tests | 1.0d | the load-bearing phase |
 | P2 fit at construction/load | 1.0d | most of the script fallout lands here |
 | P3 grow on demand | 0.5d | |
-| P4 explicit fit + camera | 0.5d | |
+| ~~P4 explicit fit + &sect;5 vent~~ | ~~0.5d~~ | **DONE** ✓ |
 | **Total (option B)** | **3.5d** | |
 | P5 shrink | +1.0d | optional; brings §5 with it |
 | Option A instead | +1.5d | continuous fit: §5 becomes mandatory, §6 gets much worse |

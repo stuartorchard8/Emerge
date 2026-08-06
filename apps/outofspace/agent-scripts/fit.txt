@@ -1,0 +1,64 @@
+# P4: the grid grows as you build, and an explicit fit gives the slack back.
+#
+# P3 only ever grows, so a world that was built out and then dismantled keeps the biggest grid it
+# ever needed. `fit` is the player saying "tidy up": back to the ship plus its four-tile pad,
+# whichever direction that moves each edge. It is the only thing in the game that makes the grid
+# smaller, which is why every ledger is checked on both sides of it — a discarded cell has to be
+# vented, not dropped.
+#
+# Addressed by landmark throughout, never by absolute tile: this script deliberately moves the
+# origin twice and puts it back.
+#
+# Run:  ./gradlew :apps:outofspace:desktop:outofspaceAgent --args="apps/outofspace/agent-scripts/fit.txt .build/agent-out"
+new
+
+echo --- the starter vessel is already fitted, so a fit changes nothing
+landmarks
+expect gridWidth = 41
+expect gridHeight = 26
+fit
+expect gridWidth = 41
+expect gridHeight = 26
+expect airBalance = 0
+
+echo --- build into the NEAR pad: the grid widens and the origin moves with it
+# The left pad is x=0..3. Building at x=1 leaves one clear tile, so the grid owes three: 41 -> 44,
+# and the origin moves +3 in x, which every landmark below follows.
+brush hull
+place origin-3 origin+13
+run 2
+expect gridWidth = 44
+expect gridHeight = 26
+landmarks
+
+echo --- take it back off again: P3 does not shrink, so the slack stays
+# `origin` is the minimum corner of everything PLACED, not a fixed point — and the hull just built
+# is now that corner, so it sits at `origin` exactly, not at `origin-3`. Addressing it the way it
+# was addressed above would name an empty tile three further out and silently remove nothing.
+remove origin origin+13
+run 2
+expect gridWidth = 44
+expect gridHeight = 26
+
+echo --- now tidy up: the fit reclaims the three tiles and moves the origin back
+fit
+expect gridWidth = 41
+expect gridHeight = 26
+landmarks
+
+echo --- the ledgers survive a shrink, which is the whole of section 5
+expect airBalance = 0
+expect airHeatBalance = 0
+expect massBalance = 0
+expect heatBalance = 0
+expect rockBalance = 0
+expect momentumBalance = 0
+
+echo --- and the world still runs, on a grid resized under it three times
+run 200
+expect airBalance = 0
+expect massBalance = 0
+expect heatBalance = 0
+expect momentumBalance = 0
+landmarks
+shot fitted

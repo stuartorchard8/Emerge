@@ -58,6 +58,7 @@ import kotlin.math.roundToInt
  * run <ticks>                # advance exactly N ticks. The ONLY clock; nothing here is real-time
  * brush <kind> [dir]         # RAIL/EXTRACTOR/SMELTER/VENT/... and Right|Down|Left|Up
  * place <x> <y>              # build with the current brush
+ * fit                        # shrink grid back to ship + pad
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
  *                            # the same as placing each tile
  * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
@@ -253,6 +254,13 @@ object OutofspaceAgentHarness {
                     controller.dropRock(ix.toFloat(), iy.toFloat())
                     settle()
                     println("[agent] rock at (${t[1]},${t[2]}) — ${state.rocks.size} adrift, ${state.rockGrams}g")
+                }
+                // `fit` — the grid back to the ship plus its pad, the same edit F8 queues. The only
+                // command here that can make the grid smaller.
+                "fit" -> {
+                    controller.fit()
+                    settle()
+                    println("[agent] fit -> ${state.grid.width}x${state.grid.height}")
                 }
                 "camera" -> camera(t)
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })

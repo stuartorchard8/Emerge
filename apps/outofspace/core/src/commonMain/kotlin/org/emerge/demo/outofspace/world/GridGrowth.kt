@@ -5,7 +5,8 @@ package org.emerge.demo.outofspace.world
  *
  * `dx`/`dy` are where the **old origin lands in the new grid**, matching [remapped]: growing on the
  * left by four is `dx = +4`, and growing on the right or the bottom is `dx = dy = 0` because the
- * origin does not move. They are never negative — [growToFit] only grows.
+ * origin does not move. They are negative when [fitToFrame] shrinks — that is the whole reason
+ * section 5 exists.
  */
 data class GrowResult(val state: VesselState, val dx: Int, val dy: Int, val from: Grid) {
     /**
@@ -21,7 +22,7 @@ data class GrowResult(val state: VesselState, val dx: Int, val dy: Int, val from
  * The same world on a grid with at least [pad] clear tiles between everything placed and every
  * edge, grown as far as it takes and **never shrunk**.
  *
- * The counterpart of [fitGrid]: that one states the grid exactly and is only safe at moments where
+ * The counterpart of [fitToFrame]: that one states the grid exactly and is only safe at moments where
  * nothing holds a coordinate; this one is safe during play, because it only ever adds vacuum tiles,
  * which carry no grams, no joules and no momentum, so no ledger and no baseline moves.
  *
@@ -51,7 +52,51 @@ fun VesselState.growToFit(pad: Int = GRID_PAD): GrowResult {
     return GrowResult(remapped(newGrid, left, top), left, top, grid)
 }
 
-/** The pad the world is kept at: four clear tiles between anything placed and any edge. */
+/**
+ * The world on a grid of exactly [pad] clear tiles on every side, reporting how far the frame moved.
+ *
+ * Shrinks as readily as it grows, so `dx`/`dy` can be negative — unlike [growToFit], which only ever
+ * adds. Records [pad] as the world's [VesselState.gridPad]. Returns the world unchanged, and `grew`
+ * false, when nothing is placed or the grid is already this shape.
+ *
+ * [fitGrid] is this without the offset. The contract is `GridFitTriggerTest`.
+ */
+fun VesselState.fitToFrame(pad: Int = GRID_PAD): GrowResult {
+    val box = placedBounds() ?: return GrowResult(this, 0, 0, grid)
+
+    // ── 1. The bounding box of everything that must be enclosed ──────────
+    val minX = box[0]
+    val minY = box[1]
+    val maxX = box[2]
+    val maxY = box[3]
+
+    // ── 2. Expand by pad on every side ────────────────────────────────────
+    val nx0 = minX - pad
+    val ny0 = minY - pad
+    val nx1 = maxX + pad
+    val ny1 = maxY + pad
+    val newW = nx1 - nx0 + 1
+    val newH = ny1 - ny0 + 1
+
+    // ── 3. Early exit: already exactly the fitted shape ──────────────────
+    // Still records the pad: a world that is already the right shape is no less opted in.
+    if (grid.width == newW && grid.height == newH && nx0 == 0 && ny0 == 0) {
+        return GrowResult(copy(gridPad = pad), 0, 0, grid)
+    }
+
+    // ── 4. Build the new grid and delegate to remapped ───────────────────
+    val newGrid = Grid(newW, newH)
+    // dx/dy are "where the old origin lands in the new grid"
+    val dx = 0 - nx0
+    val dy = 0 - ny0
+    return GrowResult(remapped(newGrid, dx, dy).copy(gridPad = pad), dx, dy, grid)
+}
+
+/**
+ * The pad the world is kept at: four clear tiles between anything placed and any edge.
+ *
+ * [growToFit] and [fitGrid] both default to it.
+ */
 const val GRID_PAD: Int = 4
 
 /**
