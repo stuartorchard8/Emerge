@@ -1,6 +1,10 @@
 package org.emerge.demo.outofspace.fluid
 
+import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.SCALE
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.reducedTemperature
+import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.fluid.ApertureField
@@ -213,4 +217,31 @@ class VolumeTest {
         assertTrue(mx.all { it == 0L }, "no sideways pull: ${mx.filter { it != 0L }}")
         assertTrue(my.all { it == 0L }, "no settling: ${my.filter { it != 0L }}")
     }
+    /**
+     * A cell that is nearly solid with liquid still reports a pressure for the gas sharing it, and
+     * an enormous one, rather than throwing.
+     *
+     * `tilePressure` floors the room left for gas at one part in 1024 and its comment says the point
+     * of the floor is to make the answer "merely a very large pressure, which is both finite". It
+     * was not finite: a handful of grams in a thousandth of a tile is past close packing, where the
+     * equation of state has no answer and `vanDerWaalsPressure` throws. Unreachable until transport
+     * could push gas into a cell full of liquid — and a pool in a vessel under acceleration can.
+     */
+    @Test
+    fun `gas crushed into a cell full of liquid reads a huge pressure, not a crash`() {
+        val grams = LongArray(Species.COUNT)
+        val water = saturatedLiquidDensity(reducedTemperature(230, Species.Water)!!)!! *
+            CRITICAL.getValue(Species.Water).gramsPerTile / SCALE
+        grams[Species.Water.ordinal] = water
+        grams[Species.Nitrogen.ordinal] = 2265L
+
+        val squeezed = tilePressure(1, grams, intArrayOf(230), null)[0]
+        val roomy = tilePressure(1, LongArray(Species.COUNT).also {
+            it[Species.Nitrogen.ordinal] = 2265L
+        }, intArrayOf(230), null)[0]
+
+        assertTrue(squeezed > roomy * 10, "crushing gas must raise its pressure hard; $roomy -> $squeezed")
+        assertTrue(squeezed < Long.MAX_VALUE / 1024, "and leave headroom for the solver to difference it")
+    }
+
 }

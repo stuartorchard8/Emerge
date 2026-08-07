@@ -74,11 +74,36 @@ fun tilePressure(
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
             // left over.
-            val mine = if (liquidVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
+            val wanted = if (liquidVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
+            // ...but never squeezed past close packing, which is where the equation of state stops
+            // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
+            // above says "a very large pressure"; without this it says "a crash", and a cell can now
+            // genuinely reach that state — gas advected into a tile that is nearly solid with liquid
+            // has almost no room to be in, and a handful of grams in a thousandth of a tile is past
+            // the limit. Clamped to the densest that species can physically be, the pressure comes
+            // out enormous and finite, which is what the comment above always intended and what the
+            // solver needs in order to push the gas back out.
+            val mine = maxOf(wanted, leastRoomFor(g, s))
             sum += partialPressure(g, s, hot, mine, VolumeField.FULL) ?: idealPressure(g, s, hot, mine)
         }
         sum
     }
+
+/**
+ * The smallest volume [grams] of [species] can be squeezed into and still have a pressure: the
+ * volume at which it reaches [CLOSE_PACKED].
+ *
+ * Inverts [org.emerge.demo.outofspace.chem.reducedDensity]. Zero for a species with no critical
+ * point on file, which has no packing limit to reach.
+ */
+private fun leastRoomFor(grams: Long, species: Species): Int {
+    if (grams <= 0L) return 0
+    val critical = CRITICAL[species] ?: return 0
+    // volume such that grams x SCALE / gramsPerTile x FULL / volume < CLOSE_PACKED, rounded up so
+    // the strict inequality holds rather than merely being approached.
+    val room = grams * SCALE / critical.gramsPerTile * VolumeField.FULL / (CLOSE_PACKED - 1) + 1
+    return room.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+}
 
 /**
  * The pressure a mass of ordinary air would exert on its own, at [kelvin] in a cell holding

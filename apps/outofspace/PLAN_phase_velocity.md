@@ -42,6 +42,58 @@ nothing here needs re-deriving.***
 > increment this document describes. The measurement in §2 to work from is that one, not the
 > 46,764 g/tick figure below.
 
+> ## ⛔ Update 2026-08-07b — two cheap formulations tried and BOTH REJECTED. Read this before coding.
+>
+> The attractive shortcut is to keep one mixture momentum field and derive per-phase velocities from
+> it, so the momentum path in §4 never has to be touched. **It does not work, and the reason is the
+> same both times.** Measured against the same cold pool, twenty ticks, freefall:
+>
+> | pool tile | |
+> |---|---|
+> | no phase split (today) | **622,166 g** |
+> | split the accumulated momentum by volume | 314,079 g |
+> | split this tick's pressure *impulse* by volume (drift-flux slip) | 548,653 g |
+>
+> Both are *worse than doing nothing*, and neither made the hot pool boil off.
+>
+> **Attempt 1 — split the momentum `p` by volume, `v_k = α_k·p/m_k`.** Momentum on a face is an
+> *accumulation*, and around a pool nearly all of it was earned by the liquid's inertia. Handing a
+> 259 g vapour pocket 12% of the momentum of 630 kg of water gives it hundreds of tiles per tick, so
+> it saturates CFL and is expelled *entirely, every tick*. The cell can then never accumulate the
+> nitrogen whose partial pressure was what balanced it, so the pool bleeds out. A CFL clamp does not
+> save it — saturating the clamp *is* the failure.
+>
+> **Attempt 2 — split the impulse `J` instead, `Δv_k = α_k·J/m_k`, add only the slip.** Correct
+> physics (`-∇p` is a force per unit volume, so this really is `F = ma` twice) and it fixed the
+> runaway magnitude, but it still leaked. Same root cause.
+>
+> ### ⚠️ The root cause, measured, and it defeats any single-momentum scheme
+>
+> **A phase's volume fraction has no meaning at a face.** At the pool/room interface:
+>
+> ```
+> pool tile   gas = 0 g       gasShare =            39   (of SCALE = 100,000,000)
+> room tile   gas = 1000 g    gasShare = 100,000,000
+> face mean   gas = 500 g     gasShare =    50,000,019   ← "half gas", 500 g of it
+> ```
+>
+> The face between a solid pool and a room claims to be a half-open gas channel holding 500 g, when
+> one side has **none**. Every per-phase face velocity divides by that fiction. Using *donor* values
+> instead removes the fiction but then a face has two different velocities depending on which phase
+> is asking, which is not a face velocity at all and breaks the staggered-grid discretisation.
+>
+> **Conclusion: the phases need genuinely separate momenta on the faces** — `mxGas/myGas` and
+> `mxLiquid/myLiquid` — so that each phase's velocity comes from its own accumulated momentum divided
+> by its own mass, and no volume fraction is ever evaluated at a face. That is the §4 blast radius,
+> and it is not avoidable. Budget for `applyPressureForce`, `applyBuoyancy`, `Projection`,
+> `advectMomentum` and `subStepsFor` all becoming per-phase, plus the save format if the fields
+> persist (they may not have to — see whether one tick of relaxation is enough).
+>
+> **Landed from this attempt** (`Pressure.kt`): `tilePressure` used to *throw* when gas was crammed
+> into a nearly-solid-liquid cell, despite its own comment promising "merely a very large pressure,
+> which is both finite". Now clamped at close packing. Pinned by `VolumeTest`. Unreachable before,
+> reachable as soon as anything pushes gas at a pool.
+
 ## 1. Where things stand in one paragraph
 
 Phase transitions emerge from van der Waals, and the instability that parked this — the falling
