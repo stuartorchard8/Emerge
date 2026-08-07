@@ -1,7 +1,9 @@
 # Phase transitions, and the liquid that will not step
 
-*2026-08-07. Commit `4aa5482b`. Equation of state **built and live**; liquids **blocked**, with the
-blocker measured. Read §1 and §5 first if you are picking this up cold.*
+*2026-08-07. Equation of state **built and live**. The stiffness blocker that parked this is
+**solved** — see §5, which supersedes the original. What remains is narrower and different: phase-
+aware transport (§5b) and a quantitative accuracy problem in van der Waals itself (§5c). Read §1,
+§5 and §5b first if you are picking this up cold.*
 
 ---
 
@@ -124,36 +126,103 @@ silently puts a permanent force under the whole ship.
 
 ---
 
-## 5. ⛔ The blocker — measured, do not re-derive
+## 5. ✅ The stiffness blocker — solved by the Maxwell construction
 
-At 293 K, against an ambient pressure of 34,495:
+*Superseded 2026-08-07. The original §5 said an explicit Eulerian scheme could not carry a liquid
+because the liquid branch is ~30,000x stiffer than the gas. That is no longer the obstacle, and the
+number was partly misleading. Kept below only as the reasoning that led here.*
+
+### What the 30,000x figure actually was
+
+It is the pressure swing for the same *fractional* density change. The CFL limit does not care about
+that; it goes as `c = sqrt(dP/drho)` against *absolute* density. Worked from the same table: the
+liquid is 805 -> 837 kg/m3 across a 1392 atm swing, so `dP/drho = 4.4e6 m2/s2` and `c ~ 2090 m/s`
+against air's 343. **A 6x timestep penalty, not a fatal one** — and `MAX_SUB_STEPS = 16` already has
+the headroom. (The two numbers reconcile: the liquid is ~670x denser, and 30000/670 ~ 45 ~ 6.1**2.)
+
+### What the real defect was
+
+`dP/drho` is **negative** from about `rho_r = 0.24` to `2.06` at room temperature — an imaginary
+speed of sound. Disturbances there do not oscillate, they grow exponentially, and they grow *faster*
+on a finer grid. No timestep stabilises that. And it is unavoidable at a free surface, because a
+cell holding half a pool holds a density halfway between the phases, which is in the band.
+
+### The fix
+
+`chem/Saturation.kt` — the **Maxwell construction**. A cell in the band does not sit at a uniform
+intermediate density; it separates, and the two phases coexist at one pressure across the whole
+band. So the falling stretch becomes flat: `dP/drho` is **zero rather than negative**, neutrally
+stable instead of explosively unstable. That is the equation's own prediction once a cell may hold
+two phases, not a patch over it — fixed by the equal-area rule, which has no freedom in it.
+
+Because the equation of state is in reduced units, the saturation curve is a function of reduced
+temperature *and nothing else*, so **one 65-entry table serves every fluid**. Corresponding states
+again.
+
+Measured, and asserted by `SaturationTest`: pressure never falls as density rises, at 80
+subcritical temperatures across the full density range; the table satisfies the equal-area condition
+it was built from, re-solved rather than recorded; and nothing outside the dome moved by a single
+unit, which is what let this land without shifting any existing pressure in the game.
+
+### Two more gaps found and closed on the way
+
+- **A liquid displaces the gas sharing its cell** (`liquidVolumeFraction`, used by `tilePressure`).
+  Without it a pool contributed its vapour pressure *on top of* an undisturbed atmosphere, reading
+  1.66 atm against neighbours at 1.00 and blowing itself apart in five ticks. That looked exactly
+  like the stiffness problem returning and was not.
+- **Buoyancy's inverse equation of state needed a close-packing clamp** (`closePackedAirGrams`). It
+  runs the EOS backwards, and "how much air reaches this pressure" has no answer above close-packed
+  air. Unreachable until a cell could be nearly all liquid; now it can, and Newton walked past the
+  limit and threw mid-tick.
+
+## 5b. ⛔ What is actually left: transport does not know about phase
+
+A saturated pool in freefall, 8x8 room, no gravity:
 
 ```
- ρr      grams        water pressure      × ambient
- 2.50    668,150         -7,814,958         -226
- 2.55    681,513        +12,566,910         +364
- 2.60    694,876        +40,188,169        +1165
+ tick    water in the pool tile     wet tiles
+    0            705,854                1
+    1            615,013                4
+   10            267,853               13
+   20            165,252               17
 ```
 
-**A 2% density change swings pressure by roughly 590 atmospheres.** Liquid water balances against a
-one-atmosphere room on a knife-edge near `ρr ≈ 2.5075`. Saturated vapour at the same temperature is
-near `ρr ≈ 0.00005`.
+Smooth, monotone, mass conserved to the gram, no instability — **the pool simply evaporates away.**
+And it is wrong by a factor of nearly thirty: saturating all 36 interior tiles at this temperature
+takes about **19 kg** of vapour, and the pool has given up **540**.
 
-So the two phases the model is meant to move *between* are ~50,000× apart in density, and the liquid
-one is ~30,000× stiffer than the gas. A pool started at `ρr = 2.50` is under 226 atmospheres of
-tension, and the solver tears it apart on the first tick: the water disperses into the unstable
-band, cohesion energy swings by more than the tile's entire thermal budget, and `cohesionUnpaid`
-comes back at 9.1e10.
+Evaporation is not limited by the saturation condition, because nothing in the transport path
+consults it. `advectMass` moves water along the shared velocity field and `applySpeciesDrift` mixes
+it down its concentration gradient; neither asks whether the room is already saturated.
 
-**None of this is the equation of state being wrong.** The vapour branch, probed over the same
-range, is smooth and steps fine. It is specifically that an explicit compressible Eulerian scheme
-cannot carry a liquid.
+**The structural problem is that every phase shares one velocity field.** A liquid and its own
+vapour are transported by the same flow at the same speed, so a pool is advected like a gas and
+diffuses like a gas. Fixing it on the grid means real multiphase transport: a separate velocity for
+the condensed phase, or an implicit incompressible treatment of it with the gas left explicit.
 
-`BoilingTest` is written, `@Ignore`d, and is the right target — the sequence it describes (pool →
-heat → spreads → cool → gathers, with nitrogen present, mass conserved) is still what success looks
-like.
+Gravity is a **second, separate** unsolved problem. 705 kg of liquid pressed against a hull needs an
+exact normal force to sit still, and the explicit projection turns the unbalanced momentum sideways
+instead — with gravity on the same pool spreads across 25 tiles in 20 ticks. Hence `BoilingTest`
+running in freefall: the phase behaviour is what it is for, and hydrostatics would mask it.
 
----
+## 5c. ⚠️ The accuracy problem, which is orthogonal to all of the above
+
+Van der Waals carries no acentric factor, so it assumes every fluid has the same reduced
+vapour-pressure curve. Water is the least obedient common fluid there is:
+
+| K | model Psat | real |
+|---|---|---|
+| 293 | **4.9 atm** | 0.023 atm |
+| 373 | 24.5 atm | 1.0 atm |
+
+**Model water boils at about -33 C at one atmosphere.** Nitrogen at 80 K comes out 5.2 atm against a
+real 1.4; CO2 at 250 K, 43 against 18 — the error tracks molecular complexity exactly as the theory
+says it should. `BoilingTest` therefore runs at 230 K, where *this* equation puts the transition.
+
+The fix is a three-constant cubic — **Peng-Robinson**, which adds the acentric factor and gets
+vapour pressures to a few percent. It is still cubic, still drops into the same slot, and omega is a
+measured constant rather than a knob, so "no hand-authored phase behaviour" survives. It would not
+disturb the Maxwell machinery: the equal-area solve is generic, only the table's numbers change.
 
 ## 6. Also parked
 
@@ -169,6 +238,10 @@ conservation guarantee should not be reopened for something that cannot yet be c
 ---
 
 ## 7. Three ways forward
+
+*Rewritten 2026-08-07: option 2 has moved a long way toward the middle, because the piece of it that
+looked hardest — making the dense phase steppable at all — turned out to be a table lookup, and what
+is left of it is transport rather than stability.*
 
 1. **Port Lague's 2D sim, carrying this EOS across.** Answers the original question (what does CPU
    Kotlin manage at out-of-space scale?) *and* gets boiling, because a particle carries its own

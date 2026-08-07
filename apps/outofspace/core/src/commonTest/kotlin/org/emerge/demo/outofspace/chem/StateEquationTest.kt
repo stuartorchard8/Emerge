@@ -39,7 +39,7 @@ class StateEquationTest {
         // transition, so it is the single most load-bearing number in the model.
         for (tr in listOf(cold, critical, hot)) {
             val expected = 6 * (tr - SCALE)
-            val actual = reducedStiffness(densityR = SCALE, temperatureR = tr)
+            val actual = rawStiffness(SCALE, tr)
             assertTrue(
                 (actual - expected) in -tolerance..tolerance,
                 "at Tr=$tr expected slope 6·(Tr−1)=$expected, measured $actual",
@@ -112,6 +112,22 @@ class StateEquationTest {
     private val sweepStep = SCALE / 100
 
     /**
+     * `dPr/drho` measured off [vanDerWaalsPressure] — the *uncorrected* curve.
+     *
+     * These tests are about the bare equation, and deliberately so. Its falling stretch is the
+     * defect that motivates the whole Maxwell construction, so the tests that pin the defect have to
+     * look at the curve that still has it; measured against [reducedPressure] they would all pass
+     * trivially and prove nothing, because removing exactly this is what that function is for.
+     * `SaturationTest` covers the other side — that the corrected curve never falls.
+     */
+    private fun rawStiffness(densityR: Long, temperatureR: Long, step: Long = SCALE / 1000L): Long {
+        val low = (densityR - step).coerceAtLeast(0L)
+        val high = (densityR + step).coerceAtMost(CLOSE_PACKED - 1)
+        return (vanDerWaalsPressure(high, temperatureR) - vanDerWaalsPressure(low, temperatureR)) *
+            SCALE / (high - low)
+    }
+
+    /**
      * The stretch of the isotherm where pressure *falls* as density rises, or null if there is no
      * such stretch. Walked off the real curve rather than solved for, so what it reports is what
      * the integer implementation actually does.
@@ -121,7 +137,7 @@ class StateEquationTest {
         var to = 0L
         var d = sweepFrom
         while (d <= sweepTo) {
-            if (reducedStiffness(d, temperatureR) < 0) {
+            if (rawStiffness(d, temperatureR) < 0) {
                 if (from == null) from = d
                 to = d
             }

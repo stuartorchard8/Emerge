@@ -160,7 +160,7 @@ private const val REFERENCE_KELVIN = 293
  * @throws IllegalArgumentException if [densityR] is at or past [CLOSE_PACKED], which has no
  *   pressure to report — see that constant.
  */
-fun reducedPressure(densityR: Long, temperatureR: Long): Long {
+fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
     require(densityR in 0 until CLOSE_PACKED) {
         "density must be inside the close-packing limit; got $densityR of $CLOSE_PACKED"
     }
@@ -173,14 +173,53 @@ fun reducedPressure(densityR: Long, temperatureR: Long): Long {
 }
 
 /**
+ * The pressure a cell actually reports: [vanDerWaalsPressure] outside the saturation dome, and the
+ * flat coexistence pressure inside it.
+ *
+ * **This is the one the solver must use, and the difference is not cosmetic.** The raw equation's
+ * falling stretch has `dP/dρ < 0`, which is an imaginary speed of sound and an instability no
+ * timestep can outrun — see [saturationPressure] for why, and why replacing it with a flat line is
+ * the equation's own prediction rather than a patch over it. Inside the dome the cell is holding
+ * two phases at once, every density across the band coexists at the same pressure, and the slope
+ * is zero.
+ *
+ * Outside the dome this is exactly [vanDerWaalsPressure], so nothing that was never near
+ * condensing sees any change at all — which is what let this land without moving a single existing
+ * pressure in the game. `SaturationTest` pins that.
+ */
+fun reducedPressure(densityR: Long, temperatureR: Long): Long {
+    val raw = vanDerWaalsPressure(densityR, temperatureR)
+    val vapour = saturatedVapourDensity(temperatureR) ?: return raw
+    val liquid = saturatedLiquidDensity(temperatureR) ?: return raw
+    val saturation = saturationPressure(temperatureR)!!
+    // The clamps are what keep the seam continuous. Physically they say nothing new — a vapour
+    // below its saturation density is below its saturation pressure, and a liquid above saturation
+    // density is above it, both by definition of the dome. They are here because the three tables
+    // are interpolated independently and so disagree slightly between knots, and that disagreement
+    // would otherwise show up as a small pressure *step* at the edge of the dome, which is exactly
+    // the kind of discontinuity an explicit solver turns into a standing oscillation.
+    return when {
+        densityR <= vapour -> minOf(raw, saturation)
+        densityR >= liquid -> maxOf(raw, saturation)
+        else -> saturation
+    }
+}
+
+/**
  * How the reduced pressure responds to being compressed a little further: `dPr/dρr`, in [SCALE].
  *
- * Its **sign is the whole phase story**. Positive is an ordinary fluid — push on it and it pushes
- * back harder. Negative is the unstable band described in [reducedPressure]: push on it and it
- * gives way, so any patch slightly denser than its neighbours keeps getting denser, and the fluid
- * tears itself into two phases. That runaway is what nucleation *is*, and it is also the thing
- * that will destabilise a solver that steps through it naively, which is why this is exposed
- * rather than left implicit.
+ * Its **sign is the whole phase story**, and since [reducedPressure] took on the Maxwell
+ * construction there are only two signs left. Positive is an ordinary fluid on one of the stable
+ * branches — push on it and it pushes back harder. **Zero** is the saturation dome: push on it and
+ * it neither resists nor gives way, it converts, some vapour becoming liquid at unchanged
+ * pressure.
+ *
+ * Negative is what this used to return across the whole dome, off the raw
+ * [vanDerWaalsPressure] curve, and it is why a pool could not be simulated at all: a negative
+ * slope is an imaginary speed of sound, so any patch slightly denser than its neighbours kept
+ * getting denser, without bound and faster on a finer grid. Measured against [reducedPressure] it
+ * can no longer happen below the critical temperature, which `SaturationTest` asserts directly
+ * because it is the property the solver's stability rests on.
  *
  * Analytically this is `24·Tr/(3 − ρr)² − 6·ρr`, which at critical density comes out as exactly
  * `6·(Tr − 1)` — zero at the critical point, negative below it, positive above. The transition
@@ -272,17 +311,27 @@ enum class FluidPhase {
 /**
  * Which branch a cell's fluid sits on, from reduced density and temperature alone.
  *
- * Above the critical temperature there is nothing to decide. Below it, the sign of
- * [reducedStiffness] separates the stable branches from the unstable band between them, and
- * critical density tells the two stable branches apart — the unstable band always straddles
- * `ρr = 1`, because the slope there is `6·(Tr − 1)`, which is negative for every subcritical
- * temperature.
+ * Above the critical temperature there is nothing to decide. Below it, the saturation dome does the
+ * deciding: sparser than [saturatedVapourDensity] is vapour, denser than [saturatedLiquidDensity]
+ * is liquid, and between them the cell is holding both at once.
+ *
+ * This reads the dome rather than the sign of [reducedStiffness], which is both cheaper — two
+ * table lookups against two pressure evaluations — and more correct. The stiffness test finds the
+ * *spinodal*, where a fluid tears itself apart with no provocation; the dome is the *binodal*,
+ * where it separates given anywhere to start. Between the two lies the metastable region, which
+ * the old test called stable and which really is not: it is superheated liquid and supercooled
+ * vapour, both of which do separate in a cell that has a wall or a neighbour to nucleate against,
+ * and every cell here has six.
  */
 fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
     temperatureR >= SCALE -> FluidPhase.Supercritical
-    reducedStiffness(densityR, temperatureR) < 0 -> FluidPhase.Separating
-    densityR > SCALE -> FluidPhase.Liquid
-    else -> FluidPhase.Vapour
+    // Inclusive at both edges, to agree with [liquidFraction], which reads a cell at exactly the
+    // saturated liquid density as wholly liquid and one at exactly saturated vapour as wholly
+    // vapour. A pool sitting in equilibrium lands precisely on that boundary, so the two functions
+    // disagreeing about it is not an edge case but the ordinary situation.
+    densityR <= saturatedVapourDensity(temperatureR)!! -> FluidPhase.Vapour
+    densityR >= saturatedLiquidDensity(temperatureR)!! -> FluidPhase.Liquid
+    else -> FluidPhase.Separating
 }
 
 /**
@@ -338,6 +387,15 @@ fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, ful
  * the thermal pot, which is why a boiling liquid cools itself and why condensation gives the heat
  * back. Nothing anywhere states a latent heat of vaporisation; it is a consequence of the same two
  * constants that produced the phase transition in the first place.
+ *
+ * ⚠️ **Inside the saturation dome this is not yet right, and knowingly so.** A cell there is not
+ * uniform — it is [liquidFraction] of its volume at [saturatedLiquidDensity] and the rest at
+ * [saturatedVapourDensity] — and because the term is quadratic, the attraction of that mixture is
+ * not the attraction of its mean density. The lever-rule version is what makes latent heat come out
+ * *linear in the fraction boiled*, i.e. a constant joules-per-gram, which is what a latent heat is.
+ * Applying it needs a temperature, which neither this nor [org.emerge.demo.outofspace.world.fluid.cohesionField]
+ * currently takes, so it is left for whoever turns latent heat on — it belongs with teaching the
+ * ledger its third term, not before, since nothing consumes the difference until then.
  */
 fun cohesionJoules(densityR: Long, species: Species, volume: Int, full: Int): Long {
     val c = CRITICAL[species] ?: return 0L

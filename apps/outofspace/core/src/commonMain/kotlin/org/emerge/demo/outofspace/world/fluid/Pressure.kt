@@ -1,6 +1,10 @@
 package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.CLOSE_PACKED
+import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.SCALE
+import org.emerge.demo.outofspace.chem.liquidVolumeFraction
 import org.emerge.demo.outofspace.chem.partialPressure
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
@@ -46,10 +50,32 @@ fun tilePressure(
     LongArray(tileCount) { tile ->
         val hot = kelvin?.get(tile) ?: Temperature.AMBIENT_KELVIN
         val room = volumes?.at(tile) ?: VolumeField.FULL
+
+        // First pass: how much of the cell is taken up by liquid, and so is not room for gas. Zero
+        // for everything the vessel carries today, which is what makes this free of consequence
+        // until something actually condenses — see [liquidVolumeFraction] for why it has to exist
+        // at all.
+        var liquidShare = 0L
+        for (s in species) {
+            val g = grams[tile * Species.COUNT + s.ordinal]
+            if (g <= 0L) continue
+            liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
+        }
+        // Floored rather than allowed to reach zero: a cell packed entirely with liquid has no room
+        // for gas at all, and the honest rendering of "a gas squeezed into no volume" is a division
+        // by zero. The floor makes it merely a very large pressure, which is both finite and the
+        // right direction — that gas is being crushed, and the solver should feel it and push back.
+        val gasRoom = (room - room * minOf(liquidShare, SCALE) / SCALE).coerceAtLeast(1L).toInt()
+
         var sum = 0L
         for (s in species) {
             val g = grams[tile * Species.COUNT + s.ordinal]
-            sum += partialPressure(g, s, hot, room, VolumeField.FULL) ?: idealPressure(g, s, hot, room)
+            // A condensing species is measured against the whole cell, because the lever rule has
+            // already divided that cell between its own liquid and its own vapour — the volume it
+            // is competing for is the volume it is itself defining. Everything else gets what is
+            // left over.
+            val mine = if (liquidVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
+            sum += partialPressure(g, s, hot, mine, VolumeField.FULL) ?: idealPressure(g, s, hot, mine)
         }
         sum
     }
@@ -89,19 +115,51 @@ internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
  */
 internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long {
     if (target <= 0L) return 0L
-    var grams = target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL
+    val ceiling = closePackedAirGrams(volume)
+    var grams = (target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL)
+        .coerceAtMost(ceiling)
     repeat(NEWTON_STEPS) {
         val here = ambientPressureOf(grams, kelvin, volume)
         if (here == target) return grams
         // A thousandth of the current guess is small enough to be a local slope and large enough
         // that the pressure difference across it does not vanish into integer rounding.
         val nudge = (grams / 1000L).coerceAtLeast(1L)
-        val slope = ambientPressureOf(grams + nudge, kelvin, volume) - here
+        val slope = ambientPressureOf((grams + nudge).coerceAtMost(ceiling), kelvin, volume) - here
         if (slope <= 0L) return grams
-        grams -= (here - target) * nudge / slope
+        grams = (grams - (here - target) * nudge / slope).coerceAtMost(ceiling)
         if (grams <= 0L) return 0L
     }
     return grams
+}
+
+/**
+ * The most ordinary air a cell of [volume] could possibly hold — the mass at which its densest
+ * component reaches [CLOSE_PACKED] and the equation of state stops having an answer.
+ *
+ * [ambientMassAtPressure] needs this because it runs the equation *backwards*, and a backwards
+ * question can be asked that forwards has no answer: "how much air would it take to reach this
+ * pressure" has no solution once the pressure exceeds what close-packed air exerts. That used to be
+ * unreachable, since nothing generated pressures that large. A cell that is nearly all liquid does
+ * — the gas sharing it is squeezed into almost no volume — and without this the Newton step walks
+ * straight past the limit and [vanDerWaalsPressure] throws mid-tick.
+ *
+ * Clamping rather than throwing is right because the answer is being used to ask whether a tile is
+ * heavier than the air around it. At the clamp the answer is "very much heavier", which is both
+ * true and the direction the solver needs.
+ */
+private fun closePackedAirGrams(volume: Int): Long {
+    var limit = Long.MAX_VALUE
+    for (s in Species.GASES) {
+        val share = AirField.AMBIENT_AIR[s]
+        if (share <= 0L) continue
+        val critical = CRITICAL[s] ?: continue
+        // Invert reducedDensity: the total air mass whose share of species s just reaches close
+        // packing in this volume.
+        val atLimit = (CLOSE_PACKED - 1) / SCALE * critical.gramsPerTile *
+            volume / VolumeField.FULL * AMBIENT_TILE_GRAMS / share
+        limit = minOf(limit, atLimit)
+    }
+    return if (limit == Long.MAX_VALUE) Long.MAX_VALUE else limit
 }
 
 /**

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.fluid.VolumeField
 import org.emerge.demo.outofspace.world.fluid.millimolesOf
@@ -85,8 +86,8 @@ class PhaseEmergenceTest {
         val cold = reducedTemperature(80, Species.Nitrogen)!!
         assertTrue(cold < SCALE, "80 K should be below nitrogen's critical temperature")
 
-        val dense = reducedDensity(critical(Species.Nitrogen) * 2, Species.Nitrogen, full, full)!!
-        assertEquals(FluidPhase.Liquid, phaseAt(dense, cold), "nitrogen at 80 K and twice critical density is liquid")
+        val dense = reducedDensity(saturatedLiquid(Species.Nitrogen, 80), Species.Nitrogen, full, full)!!
+        assertEquals(FluidPhase.Liquid, phaseAt(dense, cold), "nitrogen at 80 K and saturated-liquid density is liquid")
 
         // And the same nitrogen, same density, back in a warm room, is not.
         val warm = reducedTemperature(room, Species.Nitrogen)!!
@@ -145,7 +146,26 @@ class PhaseEmergenceTest {
      * about the equation rather than about water, and worth knowing before reaching for a round
      * number.
      */
-    private val liquidWater: Long = critical(Species.Water) * 5 / 2
+    /**
+     * Water dense enough to be unambiguously on the liquid branch at [room] — taken off the
+     * saturation curve rather than guessed at.
+     *
+     * This used to be a flat 2.5x critical density, which was a reasonable guess and is wrong by a
+     * hair: the saturated liquid branch at 293 K sits at 2.5212x, so 2.5x is *inside* the dome and
+     * the honest answer for it is [FluidPhase.Separating] — a cell holding mostly liquid and a
+     * little of its own vapour. Asking the curve where the branch actually is removes the guess, and
+     * it is the same reason the pool in `BoilingTest` is started from this function and not from a
+     * round number.
+     */
+    private fun saturatedLiquid(species: Species, kelvin: Int): Long {
+        val tr = reducedTemperature(kelvin, species)!!
+        val branch = saturatedLiquidDensity(tr) ?: error("$species is supercritical at $kelvin K")
+        // A tenth of a percent past the branch, so that integer rounding on the way back through
+        // reducedDensity cannot land it on the boundary and read as Separating again.
+        return branch * CRITICAL.getValue(species).gramsPerTile / SCALE * 1001 / 1000
+    }
+
+    private val liquidWater: Long = saturatedLiquid(Species.Water, room)
 
     private fun totalPressure(mix: Map<Species, Long>, kelvin: Int): Long =
         mix.entries.sumOf { (s, g) -> partialPressure(g, s, kelvin, full, full) ?: 0L }
