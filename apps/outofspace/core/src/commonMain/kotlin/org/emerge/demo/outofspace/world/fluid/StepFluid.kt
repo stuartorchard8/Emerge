@@ -106,7 +106,21 @@ fun stepFluid(
 
     // Sorting first, because it moves mass between tiles: the density and pressure fields everything
     // below reads have to be the ones it leaves behind, not the ones it started from.
-    applySpeciesDrift(edges, apertures, grams, gravity)
+    //
+    // Drift is given a temperature so that it can tell a cell's vapour from its liquid, and it needs
+    // the one from *before* it runs — the state it is planning against. Without it, Fick's law
+    // differences concentration straight across the surface of a pool, reads the steepest gradient
+    // there is, and dissolves the pool into the room: measured at 76% of a saturated pool gone in
+    // twenty ticks, against 12% once the liquid is excluded. The vapour still drifts, which is what
+    // saturates the room and then stops the evaporation on its own. See [vapourGrams].
+    //
+    // The extra sweep this costs is only paid where there is heat to read; an isothermal vessel has
+    // no temperature to tell phases apart with and drifts as it always did.
+    applySpeciesDrift(
+        edges, apertures, grams, gravity, Species.FLUIDS,
+        gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, grams)) },
+        volumes,
+    )
 
     val tileGrams = tileMass(grid.size, grams)
     // Temperature is read *after* drift, so a tile that has just gained gas is at the temperature its

@@ -213,6 +213,33 @@ fun liquidVolumeFraction(grams: Long, species: Species, volume: Int, full: Int, 
     return liquidFraction(densityR, temperatureR) ?: 0L
 }
 
+/**
+ * How many of a cell's [grams] of [species] are present as **vapour** — the rest being liquid.
+ *
+ * The lever rule again, read as a mass rather than as a volume: the cell holds `1 − f` of its room
+ * at [saturatedVapourDensity], and that volume times that density is this. Returns all of [grams]
+ * for a species that is not condensing, which is every species in the vessel today.
+ *
+ * This exists because **the two phases are not the same substance as far as transport is
+ * concerned.** Fick's law describes a mixture spreading through itself, and a pool sitting under an
+ * atmosphere is not a mixture — it is two phases with an interface. Differencing concentration
+ * across that interface makes the pool read as an infinitely steep gradient and drift dissolves it,
+ * which is measurably what was happening: a saturated pool shed 76% of itself in twenty ticks, and
+ * excluding its liquid from drift leaves it holding 87%.
+ */
+fun vapourGrams(grams: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
+    if (grams <= 0L) return grams
+    val temperatureR = reducedTemperature(kelvin, species) ?: return grams
+    val vapourR = saturatedVapourDensity(temperatureR) ?: return grams
+    val liquidShare = liquidVolumeFraction(grams, species, volume, full, kelvin)
+    if (liquidShare <= 0L) return grams
+    val critical = CRITICAL[species] ?: return grams
+    // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
+    // its way to nothing before the density has been divided down.
+    val mass = vapourR * critical.gramsPerTile / SCALE * (SCALE - liquidShare) / SCALE * volume / full
+    return minOf(mass, grams)
+}
+
 fun liquidFraction(densityR: Long, temperatureR: Long): Long? {
     val vapour = saturatedVapourDensity(temperatureR) ?: return null
     val liquid = saturatedLiquidDensity(temperatureR) ?: return null

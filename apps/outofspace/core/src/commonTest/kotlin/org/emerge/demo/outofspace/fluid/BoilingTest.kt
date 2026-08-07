@@ -36,7 +36,7 @@ import kotlin.test.assertTrue
  * when the heat is taken away — with the nitrogen present throughout, and with no code anywhere that
  * knows what boiling is.
  *
- * ## ⚠️ Parked — but for a different reason than before, and a much narrower one
+ * ## ⚠️ Two of the three tests here now run. The third is still parked, and narrowly
  *
  * The original diagnosis here was that the liquid branch is ~30,000x stiffer than the gas and an
  * explicit scheme cannot step it. **That part is solved.** The Maxwell construction replaced the
@@ -53,32 +53,46 @@ import kotlin.test.assertTrue
  * equation of state has to be clamped at close packing now that cells can be nearly solid with
  * liquid (`closePackedAirGrams`).
  *
- * ### What is actually left: transport does not know about phase
+ * ### The pool used to evaporate away; that half is fixed
  *
- * Measured in freefall, in this 8x8 room, starting from a saturated pool of 705,854 g:
+ * Measured in freefall, in this 8x8 room, starting from a saturated pool of 705,854 g — the same
+ * run, before and after drift was taught to tell a liquid from its own vapour:
  *
  * ```
- *  tick    water in the pool tile     wet tiles
- *     0            705,854                1
- *     1            615,013                4
- *    10            267,853               13
- *    20            165,252               17
+ *  tick    pool tile, drift on all mass    drift on the vapour only
+ *     1            615,013                       705,854
+ *    10            267,853                       621,928
+ *    20            165,252                       622,407
  * ```
  *
- * Smooth, monotone, no instability — the pool simply evaporates away. And it cannot be right,
- * because **saturating every one of the 36 interior tiles at this temperature takes about 19 kg of
- * vapour, and the pool has given up 540.** Evaporation is not being limited by the saturation
- * condition, for the plain reason that nothing in the transport path consults it: `advectMass`
- * moves water along the shared velocity field and `applySpeciesDrift` mixes it down its
- * concentration gradient, and neither asks whether the room is already holding all the water
- * vapour it can.
+ * The left column cannot be right, because **saturating every one of the 36 interior tiles at this
+ * temperature takes about 19 kg of vapour, and the pool had given up 540.** It was not evaporation
+ * at all: `applySpeciesDrift` was differencing concentration across the surface of the pool, and a
+ * pool is the steepest concentration gradient there is, so Fick's law dissolved it into the room at
+ * about 22 kg per face per tick. Compounding it, drift moves mass without the energy on it, which
+ * is a sub-kelvin settling term for gases and is not one for water: the first tick dropped a
+ * receiving tile from 230 K to 55 K, which condensed everything in it, took its pressure to zero,
+ * and manufactured a 607-atmosphere gradient out of nothing for the pressure force to act on.
  *
- * That is the real remaining problem and it is a structural one: **every phase shares a single
- * velocity field.** A liquid and its own vapour are transported by the same flow at the same speed,
- * so a pool is advected like a gas and diffuses like a gas. Fixing it on the grid means genuine
- * multiphase transport — a separate velocity for the condensed phase, or an implicit incompressible
- * treatment of it with the gas left explicit. It is also exactly what a Lagrangian scheme gets for
- * nothing, since a particle *is* its phase and carries its own velocity.
+ * `vapourGrams` fixes it by saying the thing the code had never said: **Fick's law describes a
+ * mixture, and a pool under an atmosphere is not a mixture** — it is two phases with an interface,
+ * and only the vapour is part of the mixture that diffuses. See `a cold pool stays put`.
+ *
+ * ### What is still left: transport does not know about phase
+ *
+ * The other half of the same sentence, and the reason the boil-and-gather sequence below is still
+ * parked. Heated to [HOT], the pool now sits at its own saturation pressure — 5.7 atm against a
+ * room near 1 — and **does not boil off**: over sixty ticks the peak cell goes 624,729 → 633,999 g,
+ * and its liquid fraction *rises*, because the saturated liquid density falls with temperature
+ * faster than the cell empties.
+ *
+ * It cannot empty, because **every phase shares a single velocity field.** `MomentumField` gives
+ * `velocity = momentum / total mass`, so the impulse that should launch the cell's ~259 g of vapour
+ * is instead divided by the 630 kg of liquid it is sharing a cell with, and the vapour crawls out
+ * a thousand times too slowly. Fixing it means giving the phases separate momenta — the two-fluid
+ * or drift-flux formulation, whose one closure is interphase drag. It is also exactly what a
+ * Lagrangian scheme gets for nothing, since a particle *is* its phase and carries its own velocity.
+ * `PLAN_phase_velocity.md` is the handoff for that work.
  *
  * Under gravity it is worse again, and separately so: 705 kg of liquid pressed against a hull needs
  * an exact normal force to sit still, and the explicit projection instead turns the unbalanced
@@ -86,8 +100,8 @@ import kotlin.test.assertTrue
  * hydrostatic equilibrium is a second unsolved problem that would mask it. With gravity on, the
  * same pool spreads across 25 tiles in 20 ticks; without, it holds its shape and thins slowly.
  *
- * The tests stay written and ignored, because the sequence they describe is still what success
- * looks like, and the target is now much closer than the original note implied.
+ * The last test stays written and ignored, because the sequence it describes is still what success
+ * looks like, and it now fails on its fourth assertion rather than its first.
  */
 class BoilingTest {
 
@@ -184,6 +198,36 @@ class BoilingTest {
         for (tile in 0 until grid.size) if (capacity[tile] > 0L) joules[tile] = capacity[tile] * kelvin
     }
 
+    /**
+     * A pool with no reason to go anywhere stays where it is.
+     *
+     * The weakest possible statement about a liquid, and until drift learned about phase it was
+     * false by a mile: the pool shed 76% of itself in twenty ticks. Not by boiling — the room can
+     * only hold about 19 kg of vapour at this temperature and the pool was giving up 540 — but
+     * because `applySpeciesDrift` was differencing concentration straight across the surface of it.
+     * A pool is the steepest concentration gradient there is, so Fick's law dissolved it into the
+     * room at about 22 kg per face per tick.
+     *
+     * The 12% it does give up is real and stops on its own: the pool tile starts with no nitrogen
+     * over it and at 0.65 atm against the room's 0.78, so it takes some gas in and gives some water
+     * up until the two sides balance, which they do by tick five and stay at. The pool then holds,
+     * and by tick twenty is very slightly *gaining* — the room has saturated and water is coming
+     * back out of it.
+     */
+    @Test
+    fun `a cold pool stays put`() {
+        val start = totalWater()
+        step(20)
+
+        val pool = waterAt(grid.index(w / 2, h - 2))
+        assertTrue(
+            pool > start * 85 / 100,
+            "a pool with nowhere to go should stay a pool; it kept ${pool * 100 / start}% of $start g",
+        )
+        assertTrue(wetTiles() <= 10, "and stay gathered; it was in ${wetTiles()} tiles")
+        assertEquals(start, totalWater(), "water is neither created nor destroyed")
+    }
+
     @Ignore
     @Test
     fun `water boils when heated and gathers again when cooled`() {
@@ -230,7 +274,6 @@ class BoilingTest {
         assertEquals(startNitrogen, totalNitrogen(), "nor is the nitrogen it is sitting under")
     }
 
-    @Ignore
     @Test
     fun `the latent heat is charged for and the energy ledger closes`() {
         // Boiling must cost energy taken from the fluid's own heat. If cohesionUnpaid is ever

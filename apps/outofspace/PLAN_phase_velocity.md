@@ -6,6 +6,42 @@ nothing here needs re-deriving.***
 
 ---
 
+> ## ⚠️ Update 2026-08-07 — §2's headline measurement was attributing the wrong cause
+>
+> The runaway evaporation this document was written to explain was **mostly `applySpeciesDrift`, not
+> the shared velocity field.** Measured by rerunning the same pool with the drift pass varied and
+> nothing else changed:
+>
+> | pool tile, tick 20 | |
+> |---|---|
+> | drift on all mass (as written) | 165,252 g |
+> | drift on the vapour only | **622,407 g** |
+> | drift off entirely | 615,844 g |
+>
+> §2's note that "excluding water from drift entirely barely changed the decay" does not reproduce;
+> excluding it is very nearly the whole effect. Two mechanisms, both measured:
+>
+> 1. `mixing()` differences *concentration* across the surface of the pool. A pool is the steepest
+>    concentration gradient there is, so Fick's law dissolved it at ~22 kg per face per tick. Fick's
+>    law describes a mixture, and a pool under an atmosphere is not a mixture — it is two phases with
+>    an interface.
+> 2. Drift moves mass without the energy on it. That is the sub-kelvin settling term the code comment
+>    claims *for gases*, and it is not one for water: the first tick took a receiving tile from 230 K
+>    to 55 K, which condensed everything in it, took its pressure to **zero**, and manufactured a
+>    607-atmosphere gradient from nothing for `applyPressureForce` to act on at full whack.
+>
+> **Fixed** by `vapourGrams` (`chem/Saturation.kt`): drift plans against each cell's vapour mass and
+> applies the moves to real grams — phase stays a reading, not a second place mass is stored. Whole
+> suite green; a no-op wherever nothing is condensing, which is everything the vessel carries today.
+> `BoilingTest.a cold pool stays put` pins it, and the latent-heat test now runs too.
+>
+> **§3 onward stands, and §1's thesis is still right — it is just the *second* half.** With drift
+> fixed, a pool heated to 300 K sits at its own saturation pressure (5.7 atm against a room near 1)
+> and **still will not boil off**: over 60 ticks the peak cell goes 624,729 → 633,999 g. That is the
+> shared velocity field, cleanly isolated now that nothing else is competing with it, and it is the
+> increment this document describes. The measurement in §2 to work from is that one, not the
+> 46,764 g/tick figure below.
+
 ## 1. Where things stand in one paragraph
 
 Phase transitions emerge from van der Waals, and the instability that parked this — the falling

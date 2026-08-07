@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.fluid
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
+import org.emerge.demo.outofspace.chem.vapourGrams
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
@@ -17,8 +18,12 @@ fun applySpeciesDrift(
     grams: LongArray,
     gravity: Frac2,
     species: List<Species> = Species.FLUIDS,
+    kelvin: IntArray? = null,
+    volumes: VolumeField? = null,
 ) {
-    val snapshot = grams.copyOf()
+    // What drift is allowed to see. Null temperature means "no opinion about phase", which reads
+    // every gram as mobile and reproduces every tick simulated before this parameter existed.
+    val snapshot = if (kelvin == null) grams.copyOf() else vapourOf(grams, species, kelvin, volumes)
     val total = tileMass(edges.grid.size, snapshot, species)
     val planned = LongArray((edges.xEdgeCount + edges.yEdgeCount) * Species.COUNT)
 
@@ -67,6 +72,33 @@ fun applySpeciesDrift(
             else if (amount < 0L) move(grams, after, before, s.ordinal, -amount)
         }
     }
+}
+
+/**
+ * The mobile part of each cell: its vapour, cell by cell and species by species.
+ *
+ * Planned against rather than applied to, which is the whole trick — the moves this array sizes are
+ * then made out of [applySpeciesDrift]'s real `grams`, because phase is a *reading* of a cell and
+ * not a second place mass is stored. A cell asked to give up a gram gives up a gram; what this
+ * decides is how many it is asked for.
+ */
+private fun vapourOf(
+    grams: LongArray,
+    species: List<Species>,
+    kelvin: IntArray,
+    volumes: VolumeField?,
+): LongArray {
+    val mobile = LongArray(grams.size)
+    for (tile in kelvin.indices) {
+        val base = tile * Species.COUNT
+        val room = volumes?.at(tile) ?: VolumeField.FULL
+        for (s in species) {
+            val g = grams[base + s.ordinal]
+            mobile[base + s.ordinal] =
+                if (g <= 0L) g else vapourGrams(g, s, room, VolumeField.FULL, kelvin[tile])
+        }
+    }
+    return mobile
 }
 
 /**
