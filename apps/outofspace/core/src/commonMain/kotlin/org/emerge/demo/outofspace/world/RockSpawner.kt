@@ -44,9 +44,6 @@ object RockSpawner {
     /** Maximum rocks kept active at once. */
     const val MAX_ACTIVE: Int = 20
 
-    /** How often to check spawn/despawn (in ticks). */
-    const val CHECK_INTERVAL: Int = 3
-
     /** Minimum rock count before spawning kicks in (below RockField.DEFAULT_COUNT). */
     const val MIN_ROCKS_FOR_SPAWN: Int = 4
 
@@ -121,17 +118,11 @@ object RockSpawner {
         gridWidth: Int,
         gridHeight: Int,
     ): List<Rock> {
-        java.lang.System.err.println("ROCK_SPAWN CALLED: tick=$tick rocks=${rocks.size} enabled=$enabled")
         if (!enabled) return rocks
 
         // Don't activate the spawner until enough ticks have passed.
         // This lets the initial rock field serve its purpose before dynamic spawning kicks in.
         if (tick < ACTIVATE_AFTER_TICK) {
-            return rocks
-        }
-
-        // Only check for spawns on schedule ticks (every CHECK_INTERVAL).
-        if (tick % CHECK_INTERVAL != 0L) {
             return rocks
         }
 
@@ -143,8 +134,6 @@ object RockSpawner {
         if (vesselChunkX == lastVesselChunkX && vesselChunkY == lastVesselChunkY) {
             return rocks
         }
-
-        java.lang.System.err.println("ROCK_SPAWN: tick=$tick vChunk=($vesselChunkX,$vesselChunkY) last=($lastVesselChunkX,$lastVesselChunkY) rocks=${rocks.size} grid=${gridWidth}x$gridHeight vesselTile=($vesselTileX,$vesselTileY)")
 
         lastVesselChunkX = vesselChunkX
         lastVesselChunkY = vesselChunkY
@@ -229,8 +218,6 @@ object RockSpawner {
                 }
             }
         }
-        java.lang.System.err.println("ROCK_SPAWN: result.size=${result.size} spawned=$spawned newlyActive=${newlyActive.size} activeChunks=${activeChunks.size}")
-
         // Update the active chunks set.
         activeChunks = newActive
 
@@ -320,6 +307,16 @@ object RockSpawner {
      *
      * Handles negative tile coordinates correctly: tile -1 is in chunk -1, not chunk 0.
      */
+    /**
+     * Reset internal state. Intended for test isolation — clears active-chunk tracking and
+     * forces the next [process] call to activate chunks from scratch.
+     */
+    fun reset() {
+        activeChunks = emptySet()
+        lastVesselChunkX = Int.MIN_VALUE
+        lastVesselChunkY = Int.MIN_VALUE
+    }
+
     private fun chunkIndexOf(tilePos: Long): Int {
         return tilePos.toInt() / CHUNK_SIZE
     }
