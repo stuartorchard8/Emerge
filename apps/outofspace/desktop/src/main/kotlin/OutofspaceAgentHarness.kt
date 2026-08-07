@@ -65,6 +65,8 @@ import kotlin.math.roundToInt
  * rotate <x> <y>
  * inject <x> <y> [ticks]     # debug bellows: 1kg of air a tick into a permeable tile. Mints matter
  *                            # and admits it — `airBalance` stays 0, `injectedAir` is the admission
+ * water <x> <y> [ticks]      # the same, but liquid water — ~11kg a tick, arriving at 230K because
+ *                            # this model boils water near -33C (PLAN_phase_transitions.md 5c)
  * overlay <name>             # PLAIN/HEAT/AIR/PRESSURE/DENSITY/FLOW — what `shot` draws through
  * camera fit|centre <x> <y>|zoom <tilePx>|pan <dx> <dy>
  * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|debris|
@@ -205,6 +207,22 @@ object OutofspaceAgentHarness {
                     }
                     controller.injectTile = -1
                     println("[agent] injected ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
+                        "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
+                }
+                // The water injector, same shape as `inject` but a liquid — the only way to get one
+                // into the world. Arrives cold on purpose; see Edit.WATER_INJECT_KELVIN.
+                "water" -> {
+                    val at = index(t[1], t[2])
+                    val ticks = t.getOrNull(3)?.toIntOrNull() ?: 1
+                    val was = controller.tool
+                    controller.tool = Tool.InjectWater
+                    repeat(ticks) {
+                        controller.injectTile = at
+                        controller.stepOnce()
+                    }
+                    controller.injectTile = -1
+                    controller.tool = was
+                    println("[agent] watered ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
                         "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
                 }
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }

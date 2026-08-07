@@ -104,7 +104,7 @@ class OutofspaceController(
             Tool.Delete -> remove(index)
             // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
             // pushed one edit here would inject twice on the tick the button went down.
-            Tool.Inject -> {}
+            Tool.Inject, Tool.InjectWater -> {}
         }
     }
 
@@ -275,7 +275,10 @@ class OutofspaceController(
         val edits = ArrayList<Edit>(pending)
         // Before the thrust for no reason beyond a fixed order, and after this tick's builds so a
         // tile that was walled off a moment ago is walled off for this breath too.
-        if (injecting) edits.add(Edit.Inject(injectTile))
+        if (injecting) edits.add(
+            if (tool == Tool.InjectWater) Edit.Inject(injectTile, Edit.WATER_INJECT_GRAMS, water = true)
+            else Edit.Inject(injectTile),
+        )
         if (firing) edits.add(Edit.Thrust(thrustX, thrustY))
         pending.clear()
         return OutofspaceInput(edits)

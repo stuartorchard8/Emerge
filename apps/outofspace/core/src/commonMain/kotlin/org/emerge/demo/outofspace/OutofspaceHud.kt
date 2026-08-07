@@ -182,6 +182,13 @@ class OutofspaceHud {
                     // Named as debug in the same yellow the engine row uses, because it is the same
                     // kind of lie: it makes matter, and says so in the atmosphere panel.
                     row("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                } else if (controller.tool == Tool.InjectWater) {
+                    title("WATER  ·  ${Edit.WATER_INJECT_GRAMS}G / TICK")
+                    row("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
+                    row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                    // Said on the tool itself rather than left in a plan file, because the number is
+                    // surprising enough that anyone pouring water will otherwise assume a bug.
+                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K — this model boils water at -33C", 0xC8A44AFFL)
                 } else {
                     row("click a machine to wire it", 0x9A9A9AFFL)
                     row("a sensor reads the tile it faces", 0x9A9A9AFFL)

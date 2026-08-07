@@ -718,7 +718,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
-                is Edit.Inject -> inject(edit.index, edit.grams)
+                is Edit.Inject -> inject(edit.index, edit.grams, edit.water)
                 // Recorded, never acted on here: a resize partway through a tick would leave half a
                 // world on each lattice, because `Work` addresses every tile through the grid the
                 // tick started on. Consumed at the very end of `reduce` — see [resized].
@@ -775,10 +775,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and books nothing, so a held button over a wall does exactly nothing rather than quietly
          * accumulating a debt.
          */
-        private fun inject(at: Int, grams: Long) {
+        private fun inject(at: Int, grams: Long, water: Boolean = false) {
             if (at !in 0 until grid.size || grams <= 0L) return
             if (originOf[at] >= 0 && machines[originOf[at]]?.kind?.isPermeable == false) return
             val base = at * Species.COUNT
+            if (water) { injectWater(at, grams); return }
             val shares = AirField.AMBIENT_AIR.scaledTo(grams)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather
             // than from the tile it is arriving in — that gas is already at its own temperature.
@@ -797,6 +798,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val joules = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
             airJoules[at] += joules
             injectedAirGrams += added
+            injectedAirJoules += joules
+        }
+
+        /**
+         * The water injector — one species, arriving cold, booked exactly as the air injector is.
+         *
+         * Split out rather than folded into [inject] because the two differ in every particular
+         * except the bookkeeping: one species instead of a mixture, and its own arrival temperature
+         * rather than the room's, since water at room temperature is a vapour in this model. What
+         * they must share is the admission — this mints matter, and `airBalance` stays honest only
+         * because the same two counters are told about it.
+         */
+        private fun injectWater(at: Int, grams: Long) {
+            val parcel = LongArray(Species.COUNT)
+            parcel[Species.Water.ordinal] = grams
+            airGrams[at * Species.COUNT + Species.Water.ordinal] += grams
+            val joules = gasCapacityAt(parcel, 0) * Edit.WATER_INJECT_KELVIN
+            airJoules[at] += joules
+            injectedAirGrams += grams
             injectedAirJoules += joules
         }
 

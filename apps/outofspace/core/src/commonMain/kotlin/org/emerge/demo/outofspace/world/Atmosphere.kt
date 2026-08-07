@@ -44,10 +44,23 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
     }
 
     /** The tile's air as a [Mixture], for the inspector. Allocates — not for the hot path. */
+    /**
+     * Everything this field holds at [tile] — **every** species, not a chosen subset.
+     *
+     * It used to walk [Species.GASES], which was invisibly wrong the moment water became a fluid the
+     * solver moves. A field should report what is in it and let the caller decide what that means:
+     * this same function serves the atmosphere and the debris layer, and those two do not agree on
+     * which species are interesting, so any filter here is wrong for one of them.
+     *
+     * The consequence was not cosmetic. [org.emerge.demo.outofspace.world.Save] serialises the
+     * atmosphere through this, so a world with water in it saved fine and **came back without any**,
+     * taking the mass ledger with it. The HUD and the agent probe were quietly blind to it too, so
+     * the injector would have looked like it was doing nothing.
+     */
     fun mixtureAt(tile: Int): Mixture {
         val out = LongArray(Species.COUNT)
         val base = tile * Species.COUNT
-        for (s in Species.GASES) out[s.ordinal] = grams[base + s.ordinal]
+        for (s in Species.ALL) out[s.ordinal] = grams[base + s.ordinal]
         return Mixture.ofGrams(out)
     }
 

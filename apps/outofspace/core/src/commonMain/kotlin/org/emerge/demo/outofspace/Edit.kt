@@ -1,5 +1,11 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.SCALE
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.reducedTemperature
+import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
+
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
@@ -53,7 +59,7 @@ sealed interface Edit {
      * One edit per tick for as long as the button is held — see [OutofspaceController.injectTile] —
      * so the rate is a rate rather than a function of the frame rate.
      */
-    data class Inject(val index: Int, val grams: Long = INJECT_GRAMS) : Edit
+    data class Inject(val index: Int, val grams: Long = INJECT_GRAMS, val water: Boolean = false) : Edit
 
     /**
      * Takes the grid back to the ship plus its pad. The only edit that can make the grid smaller,
@@ -73,6 +79,34 @@ sealed interface Edit {
          * tool and slow enough to watch the front move.
          */
         const val INJECT_GRAMS: Long = 1000L
+
+        /**
+         * What one tick of the *water* injector delivers — a sixty-fourth of what a tile holds when
+         * it is full of saturated liquid, so a held button fills a tile in about a second.
+         *
+         * Derived rather than picked, and it has to be: liquid water is some seven hundred times
+         * denser than air, so [INJECT_GRAMS] would take six hundred ticks to make a puddle and would
+         * read as a broken tool. The number is whatever `Saturation.kt` says a full tile weighs at
+         * [WATER_INJECT_KELVIN], divided by 64.
+         */
+        val WATER_INJECT_GRAMS: Long =
+            (saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!)!! *
+                CRITICAL.getValue(Species.Water).gramsPerTile / SCALE) / 64
+
+        /**
+         * The temperature water arrives at: **−43 °C**, and it is cold on purpose.
+         *
+         * Van der Waals carries no acentric factor, so this model puts water's saturation pressure
+         * at 4.9 atm at room temperature and its boiling point at one atmosphere near −33 °C — see
+         * `PLAN_phase_transitions.md` §5c. Water injected at 293 K would therefore flash straight to
+         * vapour and there would be no puddle to look at, which would look like a broken tool rather
+         * than an honest equation. At 230 K its vapour pressure is 0.65 atm, comfortably under the
+         * room, so it arrives as a liquid and stays one until something heats it.
+         *
+         * ⚠️ When the equation of state gains a third constant (Peng-Robinson), this should go back
+         * to ambient — it exists only to work around a known quantitative error, not a design choice.
+         */
+        const val WATER_INJECT_KELVIN: Int = 230
 
         /** Rock radius: 2 cells (5 tiles across, 21 cells). Fits through doorways. */
         const val DEFAULT_ROCK_RADIUS: Int = 2

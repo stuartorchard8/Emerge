@@ -1,0 +1,33 @@
+# The water injector, and the phase machinery it exists to let you poke at.
+#
+# There is no other way to get a liquid into this world, so without this tool the entire equation
+# of state can only be exercised from tests. What to read:
+#
+#   `airBalance` must stay 0 throughout. The injector MINTS matter, which is the one thing the
+#   ledgers exist to forbid, so it mints it and admits it — `injectedAir` is the admission and the
+#   balance is the check that the admission is complete.
+#
+#   `species:Water` shows where the water is. Held for 64 ticks it should build a tile up toward a
+#   full pool rather than immediately spreading everywhere.
+#
+# ⚠️ The water arrives at 230K, not room temperature, and that is a known error being worked
+# around rather than a design choice: van der Waals carries no acentric factor, so this model puts
+# water's boiling point at one atmosphere near -33C. See PLAN_phase_transitions.md §5c.
+new 0
+
+echo --- a dry room
+expect injectedAir = 0
+
+# Half a tile's worth, into the middle of the deck.
+water 8 12 32
+echo --- after 32 ticks of pouring
+probe 8 12
+field species:Water 4 9 12 15
+expect airBalance = 0
+
+run 60
+echo --- and sixty ticks later: how far has it spread, and is any of it still a pool?
+field species:Water 4 9 12 15
+expect airBalance = 0
+
+shot water

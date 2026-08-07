@@ -86,7 +86,7 @@ fun main() {
                         lastPainted = tile
                         // The bellows is a hold, so pressing merely opens the valve — the
                         // controller emits one edit a tick for as long as this stays set.
-                        if (controller.tool == Tool.Inject) controller.injectTile = tile
+                        if (controller.tool == Tool.Inject || controller.tool == Tool.InjectWater) controller.injectTile = tile
                     }
                 }
             } else {
@@ -122,7 +122,7 @@ fun main() {
             middleDown || rightDown -> renderer.panByPixels(dx, dy)
             leftDown && uiConsumed -> ui.dragTo(px, py)
             // A held bellows follows the pointer, so gas is laid along the drag.
-            leftDown && controller.tool == Tool.Inject -> controller.injectTile = hovered
+            leftDown && (controller.tool == Tool.Inject || controller.tool == Tool.InjectWater) -> controller.injectTile = hovered
             // Deleting drags like building does — a run of track comes up in one gesture.
             leftDown && controller.tool == Tool.Delete -> if (hovered >= 0 && hovered != lastPainted) {
                 controller.remove(hovered)

@@ -21,6 +21,19 @@ enum class Tool(val label: String) {
      * mint it *and admit to it* — see [Edit.Inject] and [org.emerge.demo.outofspace.world.VesselState.injectedAirGrams].
      */
     Inject("INJECT"),
+
+    /**
+     * The water injector: hold over a permeable tile and liquid water appears there.
+     *
+     * The same debug tool as [Inject] and booked the same way, but it exists for a different reason
+     * — there is no other way to get a liquid into the world, and the liquid is the whole question
+     * the equation of state was built to answer. Without it the phase machinery can only be exercised
+     * from tests.
+     *
+     * ⚠️ The water arrives at [Edit.WATER_INJECT_KELVIN], well below room temperature, because this
+     * model boils water near −33 °C. See that constant.
+     */
+    InjectWater("WATER"),
 }
 
 /**
