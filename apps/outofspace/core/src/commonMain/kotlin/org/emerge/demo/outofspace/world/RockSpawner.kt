@@ -4,30 +4,45 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import kotlin.random.Random
 
+/** A deterministic spawn point for a rock within a chunk. */
+private data class RockSpawnPoint(
+    val offsetX: Int,
+    val offsetY: Int,
+    val composition: Mixture,
+    val radius: Int,
+)
+
 /**
- * Dynamic asteroid spawning and despawning.
+ * Dynamic asteroid spawning and despawning using a chunk-based world model.
  *
- * Replaces [RockField]'s one-time scatter with a living ring of rocks that maintains a set of
- * active rocks around the vessel. Rocks spawn just inside [SPAWN_RADIUS] and despawn beyond
- * [DESPAWN_RADIUS]. The goal is a world that has rocks to fly at without needing the player to
- * hunt across a static field.
+ * Rocks spawn in chunks of [CHUNK_SIZE] tiles around the vessel. A chunk becomes **active** when
+ * the vessel's chunk position is within [CHUNK_ACTIVE_RADIUS] chunks (inclusive, in either X or
+ * Y). Rocks **despawn** when their chunk goes inactive and the rock lies beyond [CHUNK_DESPAWN_MULTIPLIER]
+ * × [CHUNK_SIZE] tiles from the vessel (despawn radius).
  *
  * Spawned rocks are **free mass** — not tracked by [VesselState.baselineRockGrams]. The rock
  * ledger will diverge by the mass of world-spawned rocks the extractor eats (intentional).
+ *
+ * This replaces the previous ring-based spawner. Instead of spawning rocks in a fixed ring
+ * around the vessel, rocks are scattered across the world in chunks that load as the vessel
+ * explores. The result is a persistent field of asteroids that the player encounters over time.
  */
 object RockSpawner {
 
     /** Whether dynamic spawning is disabled explicitly. Tests may set this to false. */
     var enabled: Boolean = true
 
-    /** Spawn ring: rocks appear just inside this radius (tiles from vessel centre). */
-    const val SPAWN_RADIUS: Int = 30
+    /** Size of each chunk in tiles. */
+    const val CHUNK_SIZE: Int = 32
 
-    /** Despawn ring: rocks beyond this radius leave the world. */
-    const val DESPAWN_RADIUS: Int = 35
+    /** Number of chunks the vessel must be from a chunk's center for it to become active. */
+    const val CHUNK_ACTIVE_RADIUS: Int = 4
+
+    /** Multiplier for despawn radius: DESPAWN = CHUNK_DESPAWN_MULTIPLIER × CHUNK_SIZE tiles. */
+    const val CHUNK_DESPAWN_MULTIPLIER: Int = 5
 
     /** Maximum rocks kept active at once. */
-    const val MAX_ACTIVE: Int = 15
+    const val MAX_ACTIVE: Int = 20
 
     /** How often to check spawn/despawn (in ticks). */
     const val CHECK_INTERVAL: Int = 3
@@ -38,8 +53,8 @@ object RockSpawner {
     /** How many ticks to wait before the spawner activates (preserves initial rock field). */
     const val ACTIVATE_AFTER_TICK: Int = 200
 
-    /** Rocks this far from the vessel (in tiles) are always despawned, regardless of origin. */
-    const val ABSOLUTE_DESPAWN_RADIUS: Int = 100
+    /** Rocks closer than this radius (in tiles) from the vessel never spawn. */
+    const val SPAWN_RADIUS: Int = 10
 
     /** Rocks spawned with zero world-frame impulse so they do not carry momentum into the ship. */
     const val SPAWN_IMPULSE: Long = 0L
@@ -73,6 +88,23 @@ object RockSpawner {
     )
 
     /**
+     * The set of currently active chunk coordinates.
+     *
+     * Updated each time [process] runs. Tracks which chunks have been activated so we can
+     * despawn rocks when chunks go inactive.
+     */
+    private var activeChunks: Set<Pair<Int, Int>> = emptySet()
+
+    /**
+     * The vessel's last known chunk coordinates.
+     *
+     * Used to detect when the vessel has moved between chunks and recompute the active set.
+     * Starts at a sentinel so the first call always activates chunks regardless of vessel position.
+     */
+    private var lastVesselChunkX: Int = Int.MIN_VALUE
+    private var lastVesselChunkY: Int = Int.MIN_VALUE
+
+    /**
      * Process spawning and despawning for one tick.
      *
      * [tick] is the current simulation tick, used to schedule periodic checks.
@@ -89,6 +121,7 @@ object RockSpawner {
         gridWidth: Int,
         gridHeight: Int,
     ): List<Rock> {
+        java.lang.System.err.println("ROCK_SPAWN CALLED: tick=$tick rocks=${rocks.size} enabled=$enabled")
         if (!enabled) return rocks
 
         // Don't activate the spawner until enough ticks have passed.
@@ -97,92 +130,198 @@ object RockSpawner {
             return rocks
         }
 
-        // Despawn rocks that have drifted very far from the vessel.
-        // Only despawn rocks beyond ABSOLUTE_DESPAWN_RADIUS to avoid removing
-        // test fixture rocks placed intentionally far away.
-        val absDespawnDist = (ABSOLUTE_DESPAWN_RADIUS * Flight.PER_TILE).toDouble()
-        val active = rocks.filter { rock ->
-            val dx = rock.centreX - vesselTileX * Flight.PER_TILE
-            val dy = rock.centreY - vesselTileY * Flight.PER_TILE
-            kotlin.math.sqrt(dx.toDouble() * dx + dy.toDouble() * dy) < absDespawnDist
-        }
-
         // Only check for spawns on schedule ticks (every CHECK_INTERVAL).
-        if (tick % CHECK_INTERVAL != 0L || active.size >= MAX_ACTIVE) {
-            return active
+        if (tick % CHECK_INTERVAL != 0L) {
+            return rocks
         }
 
-        // Don't spawn when there are already enough rocks — the spawner is a
-        // replenishment mechanism, not a replacement for the initial rock field.
-        if (active.size >= MIN_ROCKS_FOR_SPAWN) {
-            return active
+        // Compute the vessel's chunk coordinates.
+        val vesselChunkX = chunkIndexOf(vesselTileX)
+        val vesselChunkY = chunkIndexOf(vesselTileY)
+
+        // Skip if vessel hasn't moved between chunks since last check.
+        if (vesselChunkX == lastVesselChunkX && vesselChunkY == lastVesselChunkY) {
+            return rocks
         }
 
-        val spawns = ArrayList<Rock>(MAX_ACTIVE - active.size)
-        var attempts = 0
-        val maxAttempts = (MAX_ACTIVE - active.size) * 5
+        java.lang.System.err.println("ROCK_SPAWN: tick=$tick vChunk=($vesselChunkX,$vesselChunkY) last=($lastVesselChunkX,$lastVesselChunkY) rocks=${rocks.size} grid=${gridWidth}x$gridHeight vesselTile=($vesselTileX,$vesselTileY)")
 
-        while (active.size + spawns.size < MAX_ACTIVE && attempts < maxAttempts) {
-            val tileX = vesselTileX + Random.nextInt(-SPAWN_RADIUS, SPAWN_RADIUS + 1).toLong()
-            val tileY = vesselTileY + Random.nextInt(-SPAWN_RADIUS, SPAWN_RADIUS + 1).toLong()
+        lastVesselChunkX = vesselChunkX
+        lastVesselChunkY = vesselChunkY
 
-            // Check tile is within grid bounds.
-            if (tileX < 0 || tileY < 0 || tileX >= gridWidth || tileY >= gridHeight) {
-                attempts++
-                continue
-            }
+        // Compute the set of active chunks.
+        val newActive = computeActiveChunks(vesselChunkX, vesselChunkY)
 
-            // Convert to vessel frame position (billionths of a tile).
-            val posX = tileX * Flight.PER_TILE + Flight.PER_TILE / 2L
-            val posY = tileY * Flight.PER_TILE + Flight.PER_TILE / 2L
-
-            // Check distance from vessel is within spawn ring.
-            val dx = posX - vesselTileX * Flight.PER_TILE
-            val dy = posY - vesselTileY * Flight.PER_TILE
-            val dist = kotlin.math.sqrt(dx.toDouble() * dx + dy.toDouble() * dy)
-            if (dist < SPAWN_RADIUS * Flight.PER_TILE) {
-                attempts++
-                continue
-            }
-
-            // Check no overlap with existing rocks.
-            if (wouldOverlap(tileX, tileY, 1, active) || wouldOverlap(tileX, tileY, 1, spawns)) {
-                attempts++
-                continue
-            }
-
-            // Determine composition from position hash.
-            val composition = compositionFor(tileX, tileY)
-            val radius = Random.nextInt(3) // 0, 1, 2 (3, 5, 7 tiles across)
-
-            val rock = Rock.blob(
-                radius = radius,
-                positionX = tileX * Flight.PER_TILE,
-                positionY = tileY * Flight.PER_TILE,
-                composition = composition,
-            )
-
-            // Give it a small random world-frame impulse so it drifts naturally.
-            val impulseX = Random.nextLong(-500L, 500L)
-            val impulseY = Random.nextLong(-500L, 500L)
-            spawns.add(rock.copy(impulseX = impulseX, impulseY = impulseY))
-
-            attempts++
+        // Separate rocks by chunk so we can despawn inactive-chunk rocks.
+        val rocksByChunk = mutableMapOf<Pair<Int, Int>, MutableList<Rock>>()
+        for (rock in rocks) {
+            val rockTileX = rock.positionX / Flight.PER_TILE
+            val rockTileY = rock.positionY / Flight.PER_TILE
+            val rockChunkX = chunkIndexOf(rockTileX)
+            val rockChunkY = chunkIndexOf(rockTileY)
+            val key = rockChunkX to rockChunkY
+            rocksByChunk.getOrPut(key) { mutableListOf() }.add(rock)
         }
 
-        return active + spawns
+        // Find inactive chunks (were active last time, now not).
+        val inactiveChunks = activeChunks - newActive
+
+        // Find newly active chunks (spawn rocks into them).
+        val newlyActive = newActive - activeChunks
+
+        // Build the result.
+        val result = ArrayList<Rock>(rocks.size + newlyActive.size * 3)
+        val despawnDist = (CHUNK_DESPAWN_MULTIPLIER * CHUNK_SIZE * Flight.PER_TILE).toDouble()
+
+        // Keep rocks that are in active chunks.
+        for ((chunkKey, chunkRocks) in rocksByChunk) {
+            if (newActive.contains(chunkKey)) {
+                result.addAll(chunkRocks)
+            } else if (inactiveChunks.contains(chunkKey)) {
+                // Chunk is inactive — only keep rocks within the despawn distance.
+                for (rock in chunkRocks) {
+                    val dx = rock.centreX - vesselTileX * Flight.PER_TILE
+                    val dy = rock.centreY - vesselTileY * Flight.PER_TILE
+                    val dist = kotlin.math.sqrt(dx.toDouble() * dx + dy.toDouble() * dy)
+                    if (dist < despawnDist) {
+                        result.add(rock)
+                    }
+                }
+            }
+        }
+
+        // Spawn rocks into newly active chunks.
+        var spawned = 0
+        if (newlyActive.isNotEmpty()) {
+            for ((cx, cy) in newlyActive) {
+                val spawnPoints = spawnPointsForChunk(cx, cy)
+                for (point in spawnPoints) {
+                    // Check grid bounds.
+                    val spawnTileX = cx * CHUNK_SIZE + point.offsetX
+                    val spawnTileY = cy * CHUNK_SIZE + point.offsetY
+                    if (spawnTileX < 0 || spawnTileY < 0 ||
+                        spawnTileX.toLong() >= gridWidth || spawnTileY.toLong() >= gridHeight
+                    ) {
+                        continue
+                    }
+
+                    // Check distance from vessel — skip spawns too close to the ship.
+                    val rockCenterX = spawnTileX.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
+                    val rockCenterY = spawnTileY.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
+                    val dx = rockCenterX - vesselTileX * Flight.PER_TILE
+                    val dy = rockCenterY - vesselTileY * Flight.PER_TILE
+                    val dist = kotlin.math.sqrt(dx.toDouble() * dx + dy.toDouble() * dy)
+                    if (dist < SPAWN_RADIUS * Flight.PER_TILE) {
+                        continue
+                    }
+
+                    // Check no overlap with existing rocks.
+                    val rock = Rock.blob(
+                        radius = point.radius,
+                        positionX = spawnTileX.toLong() * Flight.PER_TILE,
+                        positionY = spawnTileY.toLong() * Flight.PER_TILE,
+                        composition = point.composition,
+                    )
+                    if (!wouldOverlap(spawnTileX.toLong(), spawnTileY.toLong(), point.radius, result)) {
+                        result.add(rock)
+                        spawned++
+                    }
+                }
+            }
+        }
+        java.lang.System.err.println("ROCK_SPAWN: result.size=${result.size} spawned=$spawned newlyActive=${newlyActive.size} activeChunks=${activeChunks.size}")
+
+        // Update the active chunks set.
+        activeChunks = newActive
+
+        return result
     }
 
     /**
-     * Determine which ore body a spawn position maps to.
+     * Compute which chunks should be active given the vessel's chunk coordinates.
      *
-     * Uses a deterministic hash of the tile coordinates so the same position always yields the
-     * same ore — enabling the player to learn patterns in rock distribution.
+     * A chunk is active if the vessel's chunk position is within [CHUNK_ACTIVE_RADIUS] chunks
+     * in either X or Y (Chebyshev distance). This gives a square active area around the vessel.
      */
-    private fun compositionFor(tileX: Long, tileY: Long): Mixture {
-        val hash = (tileX * 73856093L xor tileY * 19349663L).toInt()
-        val index = ((hash.ushr(16) xor hash) and 3).coerceIn(0, ORE_BODIES.size - 1)
-        return ORE_BODIES[index]
+    private fun computeActiveChunks(vesselChunkX: Int, vesselChunkY: Int): Set<Pair<Int, Int>> {
+        val range = CHUNK_ACTIVE_RADIUS
+        val result = HashSet<Pair<Int, Int>>((2 * range + 1) * (2 * range + 1))
+        for (dx in -range..range) {
+            for (dy in -range..range) {
+                result.add(vesselChunkX + dx to vesselChunkY + dy)
+            }
+        }
+        return result
+    }
+
+    /**
+     * Generate deterministic spawn points for a given chunk.
+     *
+     * Uses the chunk coordinates to seed a deterministic layout of 2-4 rocks within the chunk.
+     * Spawn points are placed away from the chunk edges to avoid overlapping with adjacent chunks.
+     */
+    private fun spawnPointsForChunk(chunkX: Int, chunkY: Int): List<RockSpawnPoint> {
+        val hash = (chunkX * 73856093L xor chunkY * 19349663L).toInt()
+        val rng = Random(hash.toLong() and 0xFFFFFFFFL)
+
+        // Pick 2-4 spawn points based on chunk hash.
+        val numSpawns = (hash and 3) + 2  // 2, 3, or 4
+
+        // Generate spawn offsets that are well-spaced within the chunk.
+        // Avoid the chunk edges by keeping spawns at least 4 tiles from each edge.
+        val margin = 4
+        val usableSize = CHUNK_SIZE - margin * 2  // 24 tiles usable
+
+        // Use deterministic grid positions for spawns.
+        val gridPositions = when (numSpawns) {
+            2 -> listOf(
+                Pair(margin + usableSize / 3, margin + usableSize / 2),
+                Pair(margin + usableSize * 2 / 3, margin + usableSize / 2),
+            )
+            3 -> listOf(
+                Pair(margin + usableSize / 2, margin + usableSize / 3),
+                Pair(margin + usableSize / 3, margin + usableSize * 2 / 3),
+                Pair(margin + usableSize * 2 / 3, margin + usableSize * 2 / 3),
+            )
+            else -> listOf(
+                Pair(margin + usableSize / 4, margin + usableSize / 4),
+                Pair(margin + usableSize * 3 / 4, margin + usableSize / 4),
+                Pair(margin + usableSize / 4, margin + usableSize * 3 / 4),
+                Pair(margin + usableSize * 3 / 4, margin + usableSize * 3 / 4),
+            )
+        }
+
+        // Shift positions slightly based on chunk hash for variety.
+        val offsetX = (rng.nextInt(4) - 2)
+        val offsetY = (rng.nextInt(4) - 2)
+
+        val compositionIndex = ((hash.ushr(16) xor hash) and 3).toInt()
+
+        val points = mutableListOf<RockSpawnPoint>()
+        for ((gx, gy) in gridPositions) {
+            val finalX = (gx + offsetX + CHUNK_SIZE) % usableSize + margin
+            val finalY = (gy + offsetY + CHUNK_SIZE) % usableSize + margin
+            val radius = rng.nextInt(3)  // 0, 1, 2
+            val composition = ORE_BODIES[compositionIndex.coerceIn(0, ORE_BODIES.size - 1)]
+
+            points.add(RockSpawnPoint(
+                offsetX = finalX,
+                offsetY = finalY,
+                composition = composition,
+                radius = radius,
+            ))
+        }
+
+        return points
+    }
+
+    /**
+     * Convert a tile coordinate to a chunk index.
+     *
+     * Handles negative tile coordinates correctly: tile -1 is in chunk -1, not chunk 0.
+     */
+    private fun chunkIndexOf(tilePos: Long): Int {
+        return tilePos.toInt() / CHUNK_SIZE
     }
 
     /**
@@ -215,26 +354,5 @@ object RockSpawner {
             }
         }
         return false
-    }
-
-    /** Integer square root: floor(sqrt(value)). Binary search, no floats. */
-    private fun longSqrt(value: Long): Long {
-        if (value < 0) throw IllegalArgumentException("cannot sqrt negative")
-        if (value == 0L) return 0L
-        var low = 1L
-        var high = value
-        var result = value
-        while (low <= high) {
-            val mid = (low + high) ushr 1
-            val sq = mid * mid
-            if (sq == value) return mid
-            if (sq < value) {
-                low = mid + 1
-                result = mid
-            } else {
-                high = mid - 1
-            }
-        }
-        return result
     }
 }
