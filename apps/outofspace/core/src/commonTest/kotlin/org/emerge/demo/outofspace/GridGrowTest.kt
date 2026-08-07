@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.size
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,6 +34,10 @@ import kotlin.test.assertTrue
  * other rather than against a literal.
  */
 class GridGrowTest {
+
+    companion object {
+        init { RockSpawner.enabled = false }
+    }
 
     private val cfg = OutofspaceConfig(initialGrid = Grid(96, 60))
     private val pad = 4

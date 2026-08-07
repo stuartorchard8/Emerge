@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
@@ -378,6 +379,8 @@ class FlightTest {
     private fun abs(v: Long): Long = if (v < 0L) -v else v
 
     private companion object {
+        init { RockSpawner.enabled = false }
+
         /** 120 ticks of a 35×33 fluid solve, which is about three quarters of a second. */
         const val TICKS = 120
 

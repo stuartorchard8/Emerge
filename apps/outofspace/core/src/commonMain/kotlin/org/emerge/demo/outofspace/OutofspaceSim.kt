@@ -61,6 +61,7 @@ import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.driftRocks
 import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.experiencedGravity
@@ -244,6 +245,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
         val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+
+        // Dynamic spawning/despawning, before drift (rocks must exist before they move).
+        // World-spawned rocks are free mass, not counted in baselineRockGrams.
+        val vesselTileX = state.positionX / Flight.PER_TILE
+        val vesselTileY = state.positionY / Flight.PER_TILE
+        val rocksToDrift = RockSpawner.process(
+            tick = state.tick,
+            rocks = w.rocks.toList(),
+            vesselTileX = vesselTileX,
+            vesselTileY = vesselTileY,
+            gridWidth = state.grid.width,
+            gridHeight = state.grid.height,
+        )
+        // Replace w.rocks contents (driftRocks mutates by reference via the list).
+        w.rocks.clear()
+        w.rocks.addAll(rocksToDrift)
 
         // Rocks fly here, and not up beside the debris, because this is where the ship's own motion
         // is known — and a rock's motion is now stated against the *world* while its position is

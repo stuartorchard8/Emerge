@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.size
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,6 +28,10 @@ import kotlin.test.assertTrue
  * vessel changes shape.
  */
 class GridFitTest {
+
+    companion object {
+        init { RockSpawner.enabled = false }
+    }
 
     private val cfg = OutofspaceConfig(initialGrid = Grid(96, 60))
 
