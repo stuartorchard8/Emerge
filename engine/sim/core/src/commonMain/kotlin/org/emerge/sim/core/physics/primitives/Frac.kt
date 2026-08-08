@@ -38,6 +38,7 @@ value class Frac(val raw: Long) {
 
     fun toFloat(): Float = raw.toFloat() / Int.MAX_VALUE.toFloat() // -1f..1f
     fun toLong(): Long = raw
+    fun scaleInt(o: Int): Int = (raw*o.toLong() / Int.MAX_VALUE).toInt()
     fun toCircumference(): Frac = Frac((this * PIon4).raw * 4)
     val sign: Int get() = raw.sign
 

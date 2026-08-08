@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Signals
@@ -239,6 +240,20 @@ class OutofspaceHud {
 
         val perPx = (size / 2f - 6f * density) / NAV_RANGE_TILES
 
+        // Rock density field (chunk grid, drawn first so everything else layers on top).
+        val chunkPx = RockSpawner.CHUNK_SIZE * perPx
+        for (row in 0 until RockSpawner.WINDOW_SIZE) {
+            for (col in 0 until RockSpawner.WINDOW_SIZE) {
+                val chunkX = RockSpawner.windowBaseChunkX + col
+                val chunkY = RockSpawner.windowBaseChunkY + row
+                val (originTileX, originTileY) = RockSpawner.chunkOriginTile(chunkX, chunkY)
+                val rx0 = cx + (originTileX - s.grid.width / 2f) * perPx
+                val ry0 = cy + (originTileY - s.grid.height / 2f) * perPx
+                if (rx0 + chunkPx <= x0 || rx0 >= x0 + size || ry0 + chunkPx <= y0 || ry0 >= y0 + size) continue
+                rect(rx0, ry0, chunkPx, chunkPx, densityColor(RockSpawner.densityAt(chunkX, chunkY)))
+            }
+        }
+
         // Origin marker (shows motion, not position).
         val ox = cx - s.positionX.toFloat() / Flight.PER_TILE * perPx
         val oy = cy - s.positionY.toFloat() / Flight.PER_TILE * perPx
@@ -259,15 +274,6 @@ class OutofspaceHud {
             line(cx, cy, cx + vx / speed * reach, cy + vy / speed * reach, 1.5f * density, 0x6ED09AFFL)
         }
 
-        // Rocks (vessel-frame, plotted against grid center).
-        for (rock in s.rocks) {
-            val rx = cx + (rock.centreX.toFloat() / Flight.PER_TILE - s.grid.width / 2f) * perPx
-            val ry = cy + (rock.centreY.toFloat() / Flight.PER_TILE - s.grid.height / 2f) * perPx
-            if (rx <= x0 || rx >= x0 + size || ry <= y0 || ry >= y0 + size) continue
-            val d = 2f * density
-            rect(rx - d, ry - d, d * 2f, d * 2f, 0x9A8A72FFL)
-        }
-
         // Ship (drawn last, legible over everything).
         val h = 2.5f * density
         rect(cx - h - density, cy - h - density, (h + density) * 2f, (h + density) * 2f, 0x080D14FFL)
@@ -278,6 +284,24 @@ class OutofspaceHud {
             "${tiles(s.positionX)}, ${tiles(s.positionY)}",
             cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
         )
+    }
+
+    /** Nav-view chunk tint: empty space to rock-tan, by density in [0,1]. */
+    private fun densityColor(density: Float): Long {
+        val t = density.coerceIn(0f, 1f)
+        return lerpColor(0x080D14FFL, 0x9A8A72FFL, t)
+    }
+
+    /** Per-channel linear interpolation between two 0xRRGGBBAA colors. */
+    private fun lerpColor(from: Long, to: Long, t: Float): Long {
+        var result = 0L
+        for (shift in 24 downTo 0 step 8) {
+            val a = (from ushr shift) and 0xFFL
+            val b = (to ushr shift) and 0xFFL
+            val c = (a + (b - a) * t).toLong().coerceIn(0L, 0xFFL)
+            result = (result shl 8) or c
+        }
+        return result
     }
 
     /** A hollow box, which the canvas has no primitive for: four rectangles is the whole of it. */
