@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import kotlin.test.Test
@@ -75,6 +76,8 @@ class RockTest {
             composition = OutofspaceReducer.DEFAULT_ORE_BODY,
         )
         val controller = OutofspaceController(CFG, vacuumHull().copy(rocks = listOf(far)))
+
+        RockSpawner.enabled = false
 
         repeat(TICKS) { controller.stepOnce() }
 
@@ -221,8 +224,6 @@ class RockTest {
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */
     private fun vacuumHull(): VesselState =
         bareHull().let { it.copy(air = AirField.of(LongArray(it.grid.size * Species.COUNT))) }
-
-    private fun abs(v: Long): Long = if (v < 0L) -v else v
 
     private companion object {
         val CFG = OutofspaceConfig()

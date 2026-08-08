@@ -19,9 +19,9 @@ object RockSpawner {
     // ── Chunk-state array ──
 
     /** State constants for the chunk-state array. */
-    internal const val UNPOPULATED = 0
-    internal const val NEAR = 1
-    internal const val POPULATED = 2
+    const val UNPOPULATED = 0
+    const val NEAR = 1
+    const val POPULATED = 2
 
     /** Window size of the chunk-state array (15×15). */
     private const val WINDOW_SIZE = 15
@@ -267,16 +267,14 @@ object RockSpawner {
     /**
      * Reset the chunk-state array so that [vesselChunkX][vesselChunkY] is at the center [7][7].
      *
-     * The 5×5 NEAR zone around the center is marked NEAR; all other entries are UNPOPULATED.
+     * All entries are UNPOPULATED.
      */
     private fun resetWindow(vesselChunkX: Int, vesselChunkY: Int) {
         _baseChunkX = vesselChunkX - 7
         _baseChunkY = vesselChunkY - 7
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
-                val dx = abs(col - 7)
-                val dy = abs(row - 7)
-                state[row * WINDOW_SIZE + col] = if (dx <= NEAR_RADIUS && dy <= NEAR_RADIUS) NEAR else UNPOPULATED
+                state[row * WINDOW_SIZE + col] = UNPOPULATED
             }
         }
     }
