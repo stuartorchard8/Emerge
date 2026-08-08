@@ -169,14 +169,28 @@ affected because:
 **No despawn booking is needed.** The divergence is a feature, not a bug. It tells us the spawner
 is working: new mass enters and leaves the vessel frame freely.
 
-### 5.2. Despawn edge case: rocks at the window boundary
+### 5.2. Despawn is per-rock position check, not chunk lifecycle
 
-A rock sitting at chunk `[baseX+7][baseY+7]` (the far corner of the window) is still in-bounds.
-When the vessel moves, the window shifts and that chunk falls outside — the rock despawns.
+Despawn runs **every tick on every rock**, regardless of whether the vessel moved or the window
+shifted. Each rock is checked: is its chunk within the 15×15 window? If not, remove it.
 
-This is correct. The rock was always at the edge of visibility; a further vessel move removes it.
-There's no "grace period" — rocks despawn immediately when their chunk leaves the window. This is
-deliberately simple and has no edge-case behavior.
+This means two independent paths to despawn:
+
+- **Stationary rocks (asteroids):** the rock never moves. It despawns when the vessel moves away
+  and the window shifts past the rock's chunk. The rock's position didn't change — the window did.
+- **Moving rocks (drifting rigid bodies):** the rock drifts via physics. When it drifts outside the
+  window bounds, it despawns **on that tick**, regardless of whether the vessel moved. The window
+  may be stable; the rock moved out of it.
+
+Both paths use the same position check — they just differ in why the rock is out of bounds.
+
+This is important because rocks are rigid bodies (see `PLAN_unified_bodies.md`). A drifting rock
+can exit the window on its own momentum. The despawn pass catches it immediately; it doesn't wait
+for the chunk system to notice.
+
+**Shared constants:** `WINDOW_SIZE = 15` defines the despawn window. The same boundary
+`[baseX - 7, baseX + 7]` is used for both spawn eligibility and despawn. There's no separate
+"despawn distance" constant — the window *is* the despawn distance.
 
 ## 6. State management
 
@@ -352,7 +366,11 @@ the window edge. 15 is a good fixed size — not too small (chunks fall off the 
 | B: Map by chunk | Fast despawn | Map overhead, needs to maintain keys |
 | C: Compute from position | No extra state, no map | Recalculates every tick |
 
-Since rocks don't move (zero impulse), recomputation is free. **Option C** is simplest.
+Rocks can move (they're rigid bodies with drift physics, see `PLAN_unified_bodies.md`). However,
+the despawn pass runs every tick regardless — it recomputes each rock's chunk from its current
+position and checks window bounds. This is O(rocks) per tick where rocks ≤ MAX_ACTIVE = 20, so
+recomputation is trivial even for drifting rocks. **Option C** is simplest and handles both
+stationary and moving rocks correctly.
 
 **Verdict:** Option C.
 
@@ -386,61 +404,6 @@ The new design doesn't need this guard. The one-chunk-per-tick rate naturally ca
 
 **Decision:** Remove `MIN_ROCKS_FOR_SPAWN`. The gradual spawning rate + MAX_ACTIVE despawn provides
 natural throttling. If needed, MAX_ACTIVE can be tuned.
-
-At 1 chunk/tick × 3 ticks/second (assuming 3 TPS game speed) = 3 chunks/second. With 2–4
-rocks/chunk, that's 6–12 rocks/second. But MAX_ACTIVE caps at 20, so rocks will despawn faster
-than they spawn once the cap is reached. The world won't fill up — it'll stabilize around 20 rocks.
-
-The current system also caps at 20 but spawns all new chunks at once. The new system is more
-gradual and local. The player sees rocks appear one chunk at a time as they explore, which feels
-more organic.
-
-**Verdict:** This rate is fine. The gradual spawning is a feature, not a bug.
-
-### 11.2 What about the initial rock field?
-
-The initial `RockField.scatter()` rocks are placed at world creation. They coexist with the
-spawner. The NEAR zone (5×5 chunks around the vessel) overlaps the initial rock field region.
-Rocks already there don't need re-spawning — the NEAR zone handles this naturally.
-
-If the initial field has rocks scattered beyond NEAR, those rocks won't be "tracked" by the array.
-When the vessel moves away and back, those chunks won't be marked POPULATED — they'd become
-UNPOPULATED again. This is **correct behavior** for the initial field: it's a one-time setup, and
-the spawner shouldn't re-populate areas that were initially seeded.
-
-The initial field is independent of the spawner. Rocks from `RockField` are tracked in
-`baselineRockGrams`. Rocks from the spawner are free mass.
-
-### 11.3 How to handle the transition from the current system?
-
-The current `RockSpawner` is already committed. This plan is a **replacement**.
-
-1. Keep the current implementation as-is until the new one is built and tested.
-2. The plan document lives alongside the code.
-3. When building, replace the entire `RockSpawner` body — the interface (`process()`, constants,
-   `reset()`) stays the same.
-
-### 11.4 Should the 15×15 window size be configurable?
-
-Probably not. 15×15 = 480 tiles × 15 = 48 tiles per chunk = 480 tiles radius. That's a 960-tile-wide
-window. With 32-tile chunks, that's 30 chunks across. The player can explore a lot before hitting
-the window edge. 15 is a good fixed size — not too small (chunks fall off the edge), not too large
-(memory/cache).
-
-**Verdict:** Fixed at 15.
-
-### 11.5 Rock storage — which option?
-
-| Option | Pros | Cons |
-|--------|------|------|
-| A: Rock stores chunk | Simple, single field | Extra field on `Rock`, needs updating if rock moves |
-| B: Map by chunk | Fast despawn | Map overhead, needs to maintain keys |
-| C: Compute from position | No extra state, no map | Recalculates every tick |
-
-Since rocks don't move (zero impulse), recomputation is free. **Option C** is simplest.
-
-**Verdict:** Option C.
-
 ## 12. Edge cases
 
 ### 12.1. Vessel jumps many chunks (e.g., teleport, lag spike)
@@ -468,12 +431,18 @@ The `wouldOverlap()` check prevents spawning a rock that would overlap an existi
 room). The chunk is marked POPULATED regardless, preventing re-try.
 
 ### 12.6. MAX_ACTIVE — when to enforce
-MAX_ACTIVE is enforced by despawn, not by blocking spawns. Rocks at the window edge despawn when
-their chunk leaves the window. If the vessel is stationary and MAX_ACTIVE is exceeded (impossible
-at 1/tick with despawn, but theoretically), rocks near the window edge will despawn first as the
-window shifts.
+MAX_ACTIVE is enforced by despawn, not by blocking spawns. Rocks near the window edge despawn when
+their chunk leaves the window (stationary rocks) or when they drift outside (moving rocks). If the
+vessel is stationary and MAX_ACTIVE is exceeded (impossible at 1/tick with despawn, but theoretically),
+drifting rocks will drift out of bounds first and stationary rocks at the window edge will despawn
+as the window shifts.
 
-### 12.7. Tie-breaking in nearest-UNPOPULATED selection
+### 12.7. Drifting rocks despawn independently of chunk state
+A drifting rigid body (see `PLAN_unified_bodies.md`) can accumulate impulse from physics. On the
+tick it drifts outside the 15×15 window, the despawn pass catches it immediately — it doesn't
+wait for the chunk system to notice. This is the same position check used for stationary rocks.
+
+### 12.8. Tie-breaking in nearest-UNPOPULATED selection
 When multiple UNPOPULATED chunks are at the same Chebyshev distance, the spawner selects the one
 with the smallest row index, then smallest column index. This is deterministic and produces consistent
 behavior. The choice doesn't affect gameplay — any nearest chunk is fine.
@@ -505,8 +474,9 @@ What we'd know it worked:
    that no rock's chunk falls within Chebyshev distance 2 of the vessel's chunk.
 4. **POPULATED on exit**: move the vessel away from an area, then back. No rocks spawn in chunks
    that were previously NEAR (they are now POPULATED).
-5. **Despawn at window edge**: move the vessel far from an area. Rocks in that area despawn when
-   their chunk leaves the 15×15 window. No distance calculation needed.
+5. **Despawn at window edge**: move the vessel far from an area. Stationary rocks in that area
+    despawn when their chunk leaves the 15×15 window. Drifting rocks despawn on the tick their
+    position falls outside the window, regardless of chunk state. No distance calculation needed.
 6. **Deterministic spawning**: same chunk hash produces same rock positions every run (golden-safety).
 7. **Rock ledger divergence unchanged**: world-spawned rocks are still free mass; the ledger
    divergence test passes with identical behavior.
@@ -516,7 +486,7 @@ What we'd know it worked:
 10. **Performance**: no noticeable frame cost. The 15×15 array scan is ~225 iterations — trivial.
     The despawn check is O(rocks) where rocks ≤ MAX_ACTIVE = 20.
 
-## 13. Invariants
+## 15. Invariants
 
 1. `[7][7]` of the array always refers to the vessel's current chunk.
 2. No chunk in the NEAR zone is ever spawned into.
@@ -524,4 +494,5 @@ What we'd know it worked:
 4. At most one chunk is spawned per tick.
 5. A rock is despawned if and only if its chunk is outside the 15×15 window.
 6. The rock count never exceeds MAX_ACTIVE (20).
-7. All spawned rocks carry zero impulse.
+7. All newly spawned rocks carry zero impulse (set by SPAWN_IMPULSE = 0L). Drift physics may later
+    impart impulse to rocks, but spawn-time impulse is always zero.
