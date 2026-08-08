@@ -81,7 +81,11 @@ After shifting, apply NEAR zone rules (section 3) and initialize new entries (se
 
 ### 2.2. Initial population
 
-The array starts **fully UNPOPULATED**. This means:
+The array starts with the 5×5 NEAR zone marked NEAR and everything else UNPOPULATED.
+`reset()` sets NEAR on the 5×5 block centered at `[7][7]` so the initial state is
+correct without needing a post-shift pass.
+
+This means:
 
 - On the first tick after activation, the nearest chunk to the vessel (at the edge of NEAR zone)
   will be the first spawn target.
@@ -117,9 +121,14 @@ When the vessel moves into a new chunk (detected via `vesselChunkX` / `vesselChu
 2. **Initialize new entries** (ones that shifted in from outside the window) as `UNPOPULATED`.
 
 3. **Apply NEAR zone rules** to all entries in the window:
-   - If a chunk is now within 5×5 of center → mark `NEAR` (regardless of previous state).
-   - If a chunk was previously `NEAR` but is now outside the 5×5 zone → mark `POPULATED`
-     (regardless of whether it was actually populated or not).
+    - If a chunk is now within 5×5 of center → mark `NEAR` (regardless of previous state).
+    - If a chunk was previously `NEAR` but is now outside the 5×5 zone → mark `POPULATED`
+      (regardless of whether it was actually populated or not).
+    - New entries shifted in from outside the window → `UNPOPULATED`.
+
+**Note:** `reset()` marks the 5×5 NEAR zone at `[7][7]` during initialization, so the first
+tick starts with a correct NEAR zone without needing the post-shift pass. The post-shift
+NEAR pass is only needed when the vessel moves and the window shifts.
 
 The NEAR-zone transition gives **local consistency**: if the vessel leaves a region and returns,
 those chunks are marked POPULATED, not UNPOPULATED. This prevents immediate re-spawning of rocks in
@@ -131,11 +140,18 @@ Each tick (after activation delay):
 
 1. Scan the 15×15 array for `UNPOPULATED` chunks (exclude NEAR zone).
 2. Select the **nearest** UNPOPULATED chunk to the vessel (nearest to `[7][7]` in Chebyshev
-   distance).
+   distance, tie-break: lower row, then lower col).
 3. If found:
-   - Mark it `POPULATED`.
-   - Spawn 2–4 rocks at deterministic positions within that chunk.
-   - Record the rocks in the world.
+    - Mark it `POPULATED`.
+    - Call `spawnPointsForChunk()` which returns `List<Rock>` — 2–4 rocks at deterministic
+      positions within that chunk, each with zero impulse.
+    - The caller (`process()`) applies grid bounds, distance-from-vessel, and overlap checks.
+    - Record the valid rocks in the world.
+
+`spawnPointsForChunk` returns `List<Rock>` directly (not `List<RockSpawnPoint>`). The caller
+is responsible for filtering: grid bounds, `SPAWN_RADIUS`, and `wouldOverlap()`. This keeps
+the spawning logic self-contained (hash → RNG → positions → Rock objects) while letting the
+caller filter based on world state.
 
 Only **one** UNPOPULATED chunk is spawned per tick, giving a gradual, spread-out population of the
 world.
@@ -168,6 +184,13 @@ affected because:
 
 **No despawn booking is needed.** The divergence is a feature, not a bug. It tells us the spawner
 is working: new mass enters and leaves the vessel frame freely.
+
+The existing test `world-spawned rocks diverge the rock ledger` checks that `divergence < 0`.
+Under the new system this still holds: while any spawner rock exists in the world list,
+`rockGrams > baselineRockGrams + capturedGrams - extractedGrams`, so divergence stays negative.
+Despawn causes rocks to leave the world (shrinking `rockGrams` toward the baseline), but the
+test fixture runs with the vessel stationary near spawn area, so rocks are always present.
+No ledger test changes needed.
 
 ### 5.2. Despawn is per-rock position check, not chunk lifecycle
 
@@ -267,17 +290,17 @@ changes, but the contract is the same.
 ### Phase 1: Chunk-state array + offset tracking
 - Define `NEAR = 0`, `UNPOPULATED = 1`, `POPULATED = 2` constants.
 - Implement `state` flat array + `baseChunkX/Y` + `stateAt()/setStateAt()`.
-- Implement `reset()` → all UNPOPULATED, base = vessel chunk − 7.
-- **Test:** array indexing round-trips, reset produces all UNPOPULATED.
+- Implement `reset()` → all UNPOPULATED **except** 5×5 NEAR zone at `[7][7]`.
+- **Test:** array indexing round-trips, reset produces NEAR at center + UNPOPULATED elsewhere.
 
 ### Phase 2: Array shifting on vessel chunk crossing
 - Implement `onVesselChunkMove()`: recenter base so vessel is at `[7][7]`.
 - Handle jump > 7 chunks: full reset.
 - **Test:** vessel moves 1 chunk → array shifts, center follows, values preserved for overlapping chunks.
-- **Test:** vessel jumps 10 chunks → full reset to UNPOPULATED.
+- **Test:** vessel jumps 10 chunks → full reset to UNPOPULATED (with NEAR at center).
 - **Test:** vessel oscillates → base tracking stays correct.
 
-### Phase 3: NEAR zone rules
+### Phase 3: NEAR zone rules (post-shift only)
 - After shift, iterate all 225 entries:
   - Chebyshev dist ≤ 2 from center → NEAR
   - Was NEAR, now outside → POPULATED
@@ -285,13 +308,16 @@ changes, but the contract is the same.
 - **Test:** NEAR zone always covers 5×5 at `[7][7]`.
 - **Test:** leaving NEAR marks POPULATED (prevents immediate re-spawn).
 - **Test:** returning to a previously-NEAR chunk → it's POPULATED (no re-spawn).
-- **Test:** initial state → everything UNPOPULATED except NEAR zone.
+- **Test:** initial state → NEAR at center, everything else UNPOPULATED.
 
 ### Phase 4: Spawn logic (one chunk per tick)
+- `spawnPointsForChunk` → `List<Rock>` (returns `Rock` objects directly, not `RockSpawnPoint`).
 - Scan array for UNPOPULATED outside NEAR.
 - Select nearest to center (min Chebyshev distance, tie-break: lower row, then lower col).
-- Mark POPULATED, spawn 2–4 rocks using existing `spawnPointsForChunk()` logic.
-- Reuse `spawnPointsForChunk()`, `ORE_BODIES`, `wouldOverlap()` — no changes to existing helpers.
+- Call `spawnPointsForChunk(chunkX, chunkY)` → `List<Rock>`.
+- Mark chunk POPULATED.
+- Apply grid bounds, distance-from-vessel, overlap checks per rock.
+- Reuse `ORE_BODIES` and `wouldOverlap()` — no changes to existing helpers.
 - **Test:** one chunk spawned per tick (not all at once).
 - **Test:** nearest UNPOPULATED selected (not farthest).
 - **Test:** NEAR zone never gets rocks.
@@ -304,7 +330,7 @@ changes, but the contract is the same.
 - Remove rocks outside window.
 - **Test:** rocks despawn when their chunk leaves the window.
 - **Test:** rocks near window edge survive one tick.
-- **Test:** despawn doesn't affect rock ledger (free mass).
+- **Test:** ledger divergence test still passes (free mass behavior unchanged).
 
 ### Phase 6: Integration + test migration
 - Wire into `OutofspaceSim.process()` (same interface: `process()` returns `List<Rock>`).

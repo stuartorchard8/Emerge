@@ -1,8 +1,10 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.starterVessel
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -25,6 +27,145 @@ class RockSpawnerTest {
     }
 
     private val cfg = OutofspaceConfig()
+
+    @AfterTest
+    fun cleanupSpawnerState() {
+        RockSpawner.enabled = true
+        RockSpawner.reset()
+    }
+
+    /**
+     * Baseline: verify current spawning behavior before the chunk-state array refactoring.
+     *
+     * Rocks should spawn after the activation delay when the vessel changes chunks. This test
+     * uses direct calls to [RockSpawner.process] so we control vessel movement precisely —
+     * the vessel starts in one chunk, then jumps to another at tick 201 to trigger the first
+     * spawn. The current implementation spawns all newly active chunks at once (not one per tick),
+     * which is the behavior this baseline verifies.
+     */
+    @Test
+    fun `baseline current implementation spawns on chunk change`() {
+        RockSpawner.reset()
+        // RockSpawner.process() expects tile coordinates (not PER_TILE units).
+        // Tile 50 → chunk 1, tile 80 → chunk 2, both within 96x60 grid.
+        val vesselTileX = 50L
+        val vesselTileY = 30L
+        var rocks = emptyList<Rock>()
+
+        // Run through activation with vessel stationary — nothing should spawn.
+        for (tick in 0L until RockSpawner.ACTIVATE_AFTER_TICK) {
+            rocks = RockSpawner.process(
+                tick = tick,
+                rocks = rocks,
+                vesselTileX = vesselTileX,
+                vesselTileY = vesselTileY,
+                gridWidth = cfg.initialGrid.width,
+                gridHeight = cfg.initialGrid.height,
+            )
+        }
+        assertEquals(0, rocks.size, "no rocks before activation at tick ${RockSpawner.ACTIVATE_AFTER_TICK}")
+
+        // Move vessel to a nearby different chunk (chunk 2, same Y) — triggers first spawn.
+        val newVesselTileX = 80L
+        rocks = RockSpawner.process(
+            tick = RockSpawner.ACTIVATE_AFTER_TICK.toLong(),
+            rocks = rocks,
+            vesselTileX = newVesselTileX,
+            vesselTileY = vesselTileY,
+            gridWidth = cfg.initialGrid.width,
+            gridHeight = cfg.initialGrid.height,
+        )
+        assertTrue(rocks.isNotEmpty(), "rocks should have spawned after chunk change")
+
+        // Now keep vessel stationary — the current implementation should not spawn more.
+        val rocksAfterStationary = rocks.size
+        for (tick in RockSpawner.ACTIVATE_AFTER_TICK + 1L..RockSpawner.ACTIVATE_AFTER_TICK + 10L) {
+            rocks = RockSpawner.process(
+                tick = tick,
+                rocks = rocks,
+                vesselTileX = newVesselTileX,
+                vesselTileY = vesselTileY,
+                gridWidth = cfg.initialGrid.width,
+                gridHeight = cfg.initialGrid.height,
+            )
+        }
+        assertEquals(
+            rocksAfterStationary,
+            rocks.size,
+            "current impl should not spawn more while vessel stationary: $rocksAfterStationary -> ${rocks.size}",
+        )
+        RockSpawner.reset()
+    }
+
+    /**
+     * One-chunk-per-tick invariant (will fail until Phase 4 is built).
+     *
+     * When the vessel is stationary after activation, the spawner should spawn
+     * exactly one chunk (2-4 rocks) per tick, not all newly active chunks at once.
+     * This tests the NEW behavior that replaces the current set-based approach.
+     */
+    @Test
+    fun `one chunk per tick invariant (new behavior, fails until Phase 4)`() {
+        RockSpawner.reset()
+        val vesselTileX = 50L
+        val vesselTileY = 30L
+        var rocks = emptyList<Rock>()
+
+        // Run through activation with vessel stationary.
+        for (tick in 0L until RockSpawner.ACTIVATE_AFTER_TICK) {
+            rocks = RockSpawner.process(
+                tick = tick,
+                rocks = rocks,
+                vesselTileX = vesselTileX,
+                vesselTileY = vesselTileY,
+                gridWidth = cfg.initialGrid.width,
+                gridHeight = cfg.initialGrid.height,
+            )
+        }
+        assertEquals(0, rocks.size, "no rocks at tick ${RockSpawner.ACTIVATE_AFTER_TICK}")
+
+        // Move vessel to a nearby chunk to trigger the first spawn.
+        val newVesselTileX = 80L
+        rocks = RockSpawner.process(
+            tick = RockSpawner.ACTIVATE_AFTER_TICK.toLong(),
+            rocks = rocks,
+            vesselTileX = newVesselTileX,
+            vesselTileY = vesselTileY,
+            gridWidth = cfg.initialGrid.width,
+            gridHeight = cfg.initialGrid.height,
+        )
+        val firstSpawnCount = rocks.size
+        assertTrue(firstSpawnCount >= 2, "first spawn should have 2+ rocks, got $firstSpawnCount")
+
+        // Now run with vessel stationary — with the NEW one-chunk-per-tick behavior,
+        // the rock count should grow by 2-4 per tick (one chunk's worth).
+        // The CURRENT implementation will NOT grow (returns early when vessel is stationary),
+        // so this test will fail until Phase 4 is built.
+        val counts = mutableListOf(firstSpawnCount)
+        for (tick in RockSpawner.ACTIVATE_AFTER_TICK + 1L..RockSpawner.ACTIVATE_AFTER_TICK + 9L) {
+            rocks = RockSpawner.process(
+                tick = tick,
+                rocks = rocks,
+                vesselTileX = newVesselTileX,
+                vesselTileY = vesselTileY,
+                gridWidth = cfg.initialGrid.width,
+                gridHeight = cfg.initialGrid.height,
+            )
+            counts.add(rocks.size)
+        }
+
+        // With the new behavior: each step should add 2-4 rocks.
+        // With the current behavior: all counts will be equal to firstSpawnCount (test fails).
+        for (i in 1 until counts.size) {
+            val growth = counts[i] - counts[i - 1]
+            assertTrue(
+                growth in 2..4,
+                "Expected 2-4 rocks per tick (one chunk), got growth of $growth. " +
+                    "Full sequence: $counts. This is expected to fail until Phase 4 is built.",
+            )
+        }
+        RockSpawner.reset()
+    }
 
     /**
      * The spawner creates rocks after the activation delay.
