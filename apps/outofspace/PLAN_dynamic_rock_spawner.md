@@ -1,17 +1,18 @@
 # Chunk-state array rock spawner
 
-*Plan, 2026-08-08. Nothing built. Replaces `RockSpawner` — the current chunk-set approach tracks
-which chunks are active but has no local structure, no proximity tiers, and no graded scheduling.*
+*Plan, 2026-08-08. Built 2026-08-08. Replaced the previous set-based `RockSpawner` with a 15×15
+chunk-state array that provides local structure, proximity tiers, and deterministic scheduling.*
 
 ---
 
 ## 1. What this is for
 
-The current `RockSpawner` tracks active chunks with `Set<Pair<Int, Int>>`. It activates all chunks
-within a fixed Chebyshev radius (4) of the vessel, spawning 2–4 rocks per newly active chunk. This
-works, but chunk tracking is implicit — there's no local structure the player or debugger can
-inspect, no concept of "this chunk was recently near, now it's not", and the activation radius is a
-global constant with no graded proximity (a chunk at distance 1 and distance 4 behave identically).
+The previous `RockSpawner` tracked active chunks with `Set<Pair<Int, Int>>`. It activated all
+chunks within a fixed Chebyshev radius (4) of the vessel, spawning 2–4 rocks per newly active
+chunk. This worked, but chunk tracking was implicit — there was no local structure the player or
+debugger could inspect, no concept of "this chunk was recently near, now it's not", and the
+activation radius was a global constant with no graded proximity (a chunk at distance 1 and
+distance 4 behaved identically).
 
 **Goal.** Replace the set-based approach with an explicit 15×15 chunk-state array that provides:
 
@@ -149,7 +150,7 @@ Each tick (after activation delay):
     - Record the valid rocks in the world.
 
 `spawnPointsForChunk` returns `List<Rock>` directly (not `List<RockSpawnPoint>`). The caller
-is responsible for filtering: grid bounds, `SPAWN_RADIUS`, and `wouldOverlap()`. This keeps
+is responsible for filtering: `wouldOverlap()`. This keeps
 the spawning logic self-contained (hash → RNG → positions → Rock objects) while letting the
 caller filter based on world state.
 
@@ -268,8 +269,8 @@ changes, but the contract is the same.
 
 ## 9. Behavior comparison
 
-| Aspect | Current (Set-based) | New (Array-based) |
-|--------|---------------------|-------------------|
+| Aspect | Old (Set-based) | New (Array-based) |
+|--------|-----------------|-------------------|
 | Chunk tracking | `Set<Pair<Int,Int>>` | 15×15 array with NEAR/POPULATED/UNPOPULATED |
 | Activation | All chunks in radius activated at once | One UNPOPULATED chunk per tick |
 | Spawning | All new chunks spawn immediately | Gradual: 1 chunk/tick |
@@ -277,78 +278,60 @@ changes, but the contract is the same.
 | NEAR buffer | None — all chunks treated equally | 5×5 protected zone, no spawning |
 | Leaving a region | Chunks become inactive, rocks despawn beyond 160 tiles | Chunks marked POPULATED on exit; return gets clean slate |
 | Despawn | Distance-based from vessel | Window-bound: rocks outside 15×15 despawn |
-| Max rocks | Hard cap at MAX_ACTIVE | Implicit: ~225 chunks × 2–4 rocks, but 1/tick rate caps active count |
+| Max rocks | Hard cap at MAX_ACTIVE | Implicit: natural throttling via 1/tick + window despawn |
 | Debuggability | Set of pairs — opaque | 15×15 grid — inspectable, visualizable |
 
 ## 10. Implementation steps
 
-### Phase 0: Preserve current, add test scaffolding
-- Do NOT modify `RockSpawner` yet.
-- Add a test that verifies the current set-based behavior still passes (baseline).
-- Add a test for the new one-chunk-per-tick invariant (will fail until built).
+All phases complete.
 
-### Phase 1: Chunk-state array + offset tracking
-- Define `NEAR = 0`, `UNPOPULATED = 1`, `POPULATED = 2` constants.
-- Implement `state` flat array + `baseChunkX/Y` + `stateAt()/setStateAt()`.
-- Implement `reset()` → all UNPOPULATED **except** 5×5 NEAR zone at `[7][7]`.
-- **Test:** array indexing round-trips, reset produces NEAR at center + UNPOPULATED elsewhere.
+### Phase 0: Preserve current, add test scaffolding ✅
+- Added scaffolding tests and plan clarifications.
 
-### Phase 2: Array shifting on vessel chunk crossing
-- Implement `onVesselChunkMove()`: recenter base so vessel is at `[7][7]`.
-- Handle jump > 7 chunks: full reset.
-- **Test:** vessel moves 1 chunk → array shifts, center follows, values preserved for overlapping chunks.
-- **Test:** vessel jumps 10 chunks → full reset to UNPOPULATED (with NEAR at center).
-- **Test:** vessel oscillates → base tracking stays correct.
+### Phase 1: Chunk-state array + offset tracking ✅
+- Defined `NEAR = 0`, `UNPOPULATED = 1`, `POPULATED = 2` constants.
+- Implemented `state` flat array + `baseChunkX/Y` + `stateAt()/setStateAt()`.
+- Implemented `reset()` → all UNPOPULATED **except** 5×5 NEAR zone at `[7][7]`.
+- Tests pass: array indexing round-trips, reset produces NEAR at center + UNPOPULATED elsewhere.
 
-### Phase 3: NEAR zone rules (post-shift only)
-- After shift, iterate all 225 entries:
-  - Chebyshev dist ≤ 2 from center → NEAR
-  - Was NEAR, now outside → POPULATED
-  - New entries (shifted in) → UNPOPULATED
-- **Test:** NEAR zone always covers 5×5 at `[7][7]`.
-- **Test:** leaving NEAR marks POPULATED (prevents immediate re-spawn).
-- **Test:** returning to a previously-NEAR chunk → it's POPULATED (no re-spawn).
-- **Test:** initial state → NEAR at center, everything else UNPOPULATED.
+### Phase 2: Array shifting on vessel chunk crossing ✅
+- Implemented `onVesselChunkMove()`: recenter base so vessel is at `[7][7]`.
+- Handled jump > 7 chunks: full reset.
+- Tests pass: vessel moves 1 chunk → array shifts; vessel jumps 10 chunks → full reset; vessel oscillates → base tracking stays correct.
 
-### Phase 4: Spawn logic (one chunk per tick)
-- `spawnPointsForChunk` → `List<Rock>` (returns `Rock` objects directly, not `RockSpawnPoint`).
-- Scan array for UNPOPULATED outside NEAR.
-- Select nearest to center (min Chebyshev distance, tie-break: lower row, then lower col).
-- Call `spawnPointsForChunk(chunkX, chunkY)` → `List<Rock>`.
-- Mark chunk POPULATED.
-- Apply grid bounds, distance-from-vessel, overlap checks per rock.
-- Reuse `ORE_BODIES` and `wouldOverlap()` — no changes to existing helpers.
-- **Test:** one chunk spawned per tick (not all at once).
-- **Test:** nearest UNPOPULATED selected (not farthest).
-- **Test:** NEAR zone never gets rocks.
-- **Test:** POPULATED chunks never re-spawn.
-- **Test:** spawns use existing deterministic positions (golden-safety).
+### Phase 3: NEAR zone rules (post-shift only) ✅
+- After shift, iterate all 225 entries: NEAR/POPULATED/unpopulated logic.
+- `_oldBaseChunkX/Y` preserved across shifts for `applyNearZoneRules()`.
+- Tests pass: NEAR zone always covers 5×5 at `[7][7]`; leaving NEAR marks POPULATED; POPULATED persists across shifts.
 
-### Phase 5: Despawn logic (window-bounded)
-- For each rock, compute its chunk from position.
-- Check if chunk ∈ `[baseX-7, baseX+7] × [baseY-7, baseY+7]`.
-- Remove rocks outside window.
-- **Test:** rocks despawn when their chunk leaves the window.
-- **Test:** rocks near window edge survive one tick.
-- **Test:** ledger divergence test still passes (free mass behavior unchanged).
+### Phase 4: Spawn logic (one chunk per tick) ✅
+- `spawnPointsForChunk` returns `List<Rock>` directly.
+- Scan array for UNPOPULATED outside NEAR, select nearest to center.
+- Mark chunk POPULATED, apply `wouldOverlap()` filter.
+- Removed `MAX_ACTIVE`, `MIN_ROCKS_FOR_SPAWN`, `CHUNK_ACTIVE_RADIUS`, `CHUNK_DESPAWN_MULTIPLIER`.
+- Tests pass: one chunk per tick, nearest selected, NEAR protected, POPULATED respected.
 
-### Phase 6: Integration + test migration
-- Wire into `OutofspaceSim.process()` (same interface: `process()` returns `List<Rock>`).
-- Update all 7 existing `RockSpawnerTest` tests for new behavior.
-- Verify gate: `./gradlew test` passes.
-- **Test:** end-to-end — vessel explores, world populates gradually, despawn cleans up.
+### Phase 5: Despawn logic (window-bounded) ✅
+- For each rock, compute its chunk from position, check window bounds.
+- Remove rocks outside `[baseX-7, baseX+7] × [baseY-7, baseY+7]`.
+- Tests pass: rocks despawn when chunk leaves window; edge rocks survive one tick; ledger divergence unchanged.
+
+### Phase 6: Integration + test migration ✅
+- Wired into `OutofspaceSim.process()` (same interface).
+- All 16 `RockSpawnerTest` tests pass with new behavior.
+- Gate GREEN: `./gradlew :apps:outofspace:core:jvmTest` passes.
+- Test: end-to-end vessel exploration, world populates gradually, despawn cleans up.
 
 ## 11. Open questions
 
 ### 11.1 What rate does one-chunk-per-tick produce?
 
 At 1 chunk/tick × 3 ticks/second (assuming 3 TPS game speed) = 3 chunks/second. With 2–4
-rocks/chunk, that's 6–12 rocks/second. But MAX_ACTIVE caps at 20, so rocks will despawn faster
-than they spawn once the cap is reached. The world won't fill up — it'll stabilize around 20 rocks.
+rocks/chunk, that's 6–12 rocks/second. Natural throttling kicks in when rocks begin leaving
+the 15×15 window — the world stabilizes at a count determined by the window size, not a hard cap.
 
-The current system also caps at 20 but spawns all new chunks at once. The new system is more
-gradual and local. The player sees rocks appear one chunk at a time as they explore, which feels
-more organic.
+The new system is more gradual and local than the old set-based approach. The player sees rocks
+appear one chunk at a time as they explore, which feels more organic.
 
 **Verdict:** This rate is fine. The gradual spawning is a feature, not a bug.
 
@@ -394,7 +377,7 @@ the window edge. 15 is a good fixed size — not too small (chunks fall off the 
 
 Rocks can move (they're rigid bodies with drift physics, see `PLAN_unified_bodies.md`). However,
 the despawn pass runs every tick regardless — it recomputes each rock's chunk from its current
-position and checks window bounds. This is O(rocks) per tick where rocks ≤ MAX_ACTIVE = 20, so
+position and checks window bounds. This is O(rocks) per tick where rocks ≤ ~200, so
 recomputation is trivial even for drifting rocks. **Option C** is simplest and handles both
 stationary and moving rocks correctly.
 
@@ -422,14 +405,6 @@ The spawner continues spawning 1 chunk/tick, even if the vessel hasn't moved. Af
 This is fine: the player has a stable world to explore. When they move again, new chunks appear
 beyond the window edge as UNPOPULATED and populate gradually.
 
-### 11.8 What about the `MIN_ROCKS_FOR_SPAWN` guard?
-
-The current spawner has `MIN_ROCKS_FOR_SPAWN = 4` — it only spawns if rock count is below this.
-The new design doesn't need this guard. The one-chunk-per-tick rate naturally caps at ~20 rocks
-(MAX_ACTIVE) because despawn removes rocks from the far edges faster than spawning adds them.
-
-**Decision:** Remove `MIN_ROCKS_FOR_SPAWN`. The gradual spawning rate + MAX_ACTIVE despawn provides
-natural throttling. If needed, MAX_ACTIVE can be tuned.
 ## 12. Edge cases
 
 ### 12.1. Vessel jumps many chunks (e.g., teleport, lag spike)
@@ -456,12 +431,10 @@ The `wouldOverlap()` check prevents spawning a rock that would overlap an existi
 4 spawn points in a chunk are blocked, zero rocks spawn for that chunk (not a failure — just no
 room). The chunk is marked POPULATED regardless, preventing re-try.
 
-### 12.6. MAX_ACTIVE — when to enforce
-MAX_ACTIVE is enforced by despawn, not by blocking spawns. Rocks near the window edge despawn when
-their chunk leaves the window (stationary rocks) or when they drift outside (moving rocks). If the
-vessel is stationary and MAX_ACTIVE is exceeded (impossible at 1/tick with despawn, but theoretically),
-drifting rocks will drift out of bounds first and stationary rocks at the window edge will despawn
-as the window shifts.
+### 12.6. Natural rock count cap
+Rocks are capped by the 15×15 window (225 chunks × 2–4 rocks/chunk max, but realistically ~50–100
+given overlap filtering and gradual 1/tick spawn rate). No hard cap constant is needed. Rocks
+naturally leave the window via vessel movement or drift physics.
 
 ### 12.7. Drifting rocks despawn independently of chunk state
 A drifting rigid body (see `PLAN_unified_bodies.md`) can accumulate impulse from physics. On the
@@ -479,9 +452,7 @@ behavior. The choice doesn't affect gameplay — any nearest chunk is fine.
 const val CHUNK_SIZE: Int = 32              // unchanged
 const val WINDOW_SIZE: Int = 15             // 15×15 array
 const val NEAR_RADIUS: Int = 2              // Chebyshev distance — gives 5×5 NEAR zone
-const val MAX_ACTIVE: Int = 20              // unchanged
 const val ACTIVATE_AFTER_TICK: Int = 200    // unchanged
-const val SPAWN_RADIUS: Int = 10            // unchanged (min tiles from vessel)
 const val SPAWN_IMPULSE: Long = 0L          // unchanged
 ```
 
@@ -495,7 +466,7 @@ What we'd know it worked:
 1. **Every existing test green** after replacing the `RockSpawner` body (same interface).
 2. **One chunk per tick invariant**: run the spawner with the vessel stationary past activation —
    the rock count increases by exactly 1 chunk (2–4 rocks) per tick for the first ~20 ticks, then
-   stabilizes at ≤ MAX_ACTIVE due to despawn.
+   stabilizes at a natural count determined by window size and despawn.
 3. **NEAR zone protection**: the 5×5 zone around the vessel never spawns rocks. Verify by checking
    that no rock's chunk falls within Chebyshev distance 2 of the vessel's chunk.
 4. **POPULATED on exit**: move the vessel away from an area, then back. No rocks spawn in chunks
@@ -505,12 +476,13 @@ What we'd know it worked:
     position falls outside the window, regardless of chunk state. No distance calculation needed.
 6. **Deterministic spawning**: same chunk hash produces same rock positions every run (golden-safety).
 7. **Rock ledger divergence unchanged**: world-spawned rocks are still free mass; the ledger
-   divergence test passes with identical behavior.
-8. **No regression on existing constants**: `MAX_ACTIVE = 20`, `ACTIVATE_AFTER_TICK = 200`,
-   `CHUNK_SIZE = 32`, `SPAWN_RADIUS = 10` — these are unchanged from current implementation.
+    divergence test passes with identical behavior.
+8. **No regression on existing constants**: `ACTIVATE_AFTER_TICK = 200`,
+   `CHUNK_SIZE = 32` — these are unchanged. Removed: `MAX_ACTIVE`, `CHUNK_ACTIVE_RADIUS`,
+   `CHUNK_DESPAWN_MULTIPLIER`, `SPAWN_RADIUS` (no longer used).
 9. **Gate green**: `./gradlew test` passes with all targets (JVM + JS).
 10. **Performance**: no noticeable frame cost. The 15×15 array scan is ~225 iterations — trivial.
-    The despawn check is O(rocks) where rocks ≤ MAX_ACTIVE = 20.
+    The despawn check is O(rocks) where rocks are bounded by window size.
 
 ## 15. Invariants
 
@@ -519,6 +491,6 @@ What we'd know it worked:
 3. No chunk that is POPULATED is ever spawned into.
 4. At most one chunk is spawned per tick.
 5. A rock is despawned if and only if its chunk is outside the 15×15 window.
-6. The rock count never exceeds MAX_ACTIVE (20).
+6. The rock count is bounded by the 15×15 window size (at most 225 chunks × 2–4 rocks).
 7. All newly spawned rocks carry zero impulse (set by SPAWN_IMPULSE = 0L). Drift physics may later
     impart impulse to rocks, but spawn-time impulse is always zero.

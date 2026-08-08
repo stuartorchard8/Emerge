@@ -35,16 +35,15 @@ class RockSpawnerTest {
     }
 
     /**
-     * Baseline: verify current spawning behavior before the chunk-state array refactoring.
+     * Verify spawning behavior: rocks spawn after activation on chunk change,
+     * then one chunk per tick while stationary.
      *
-     * Rocks should spawn after the activation delay when the vessel changes chunks. This test
-     * uses direct calls to [RockSpawner.process] so we control vessel movement precisely —
+     * Uses direct calls to [RockSpawner.process] so we control vessel movement precisely —
      * the vessel starts in one chunk, then jumps to another at tick 201 to trigger the first
-     * spawn. The current implementation spawns all newly active chunks at once (not one per tick),
-     * which is the behavior this baseline verifies.
+     * spawn. After activation, one UNPOPULATED chunk spawns per tick.
      */
     @Test
-    fun `baseline current implementation spawns on chunk change`() {
+    fun `rocks spawn on chunk change and one per tick while stationary`() {
         RockSpawner.reset()
         // RockSpawner.process() expects tile coordinates (not PER_TILE units).
         // Tile 50 → chunk 1, tile 80 → chunk 2, both within 96x60 grid.
@@ -92,14 +91,13 @@ class RockSpawnerTest {
     }
 
     /**
-     * One-chunk-per-tick invariant (will fail until Phase 4 is built).
+     * One-chunk-per-tick invariant.
      *
      * When the vessel is stationary after activation, the spawner should spawn
      * exactly one chunk (2-4 rocks) per tick, not all newly active chunks at once.
-     * This tests the NEW behavior that replaces the current set-based approach.
      */
     @Test
-    fun `one chunk per tick invariant (new behavior, fails until Phase 4)`() {
+    fun `one chunk per tick while stationary`() {
         RockSpawner.reset()
         val vesselTileX = 50L
         val vesselTileY = 30L
@@ -140,7 +138,7 @@ class RockSpawnerTest {
             counts.add(rocks.size)
         }
 
-        // New behavior: one chunk spawned per tick (2-4 rocks), minus overlap filtering.
+        // One chunk spawns per tick (2-4 rocks), minus overlap filtering.
         // Total growth over 9 ticks should be at least 9 (one rock per tick minimum).
         val totalGrowth = counts.last() - counts.first()
         assertTrue(
@@ -198,11 +196,10 @@ class RockSpawnerTest {
         val s = controller.state
         assertTrue(s.rocks.isNotEmpty(), "no rocks spawned")
 
-        // All rocks should be within the despawn radius from the vessel.
+        // All rocks should be within the 15×15 window (7 chunks × 32 tiles = 224 tiles).
         val vesselTileX = s.positionX / Flight.PER_TILE
         val vesselTileY = s.positionY / Flight.PER_TILE
-        val despawnDist = RockSpawner.CHUNK_DESPAWN_MULTIPLIER *
-            RockSpawner.CHUNK_SIZE * Flight.PER_TILE
+        val despawnDist = 7L * RockSpawner.CHUNK_SIZE * Flight.PER_TILE
 
         for (rock in s.rocks) {
             val dx = rock.centreX - vesselTileX * Flight.PER_TILE
@@ -218,11 +215,8 @@ class RockSpawnerTest {
     }
 
     /**
-     * World-spawned rocks appear outside the vessel and drift with the world.
-     *
-     * A spawned rock should be beyond the spawn radius from the vessel (SPAWN_RADIUS = 10 tiles)
-     * and carry zero world-frame impulse (SPAWN_IMPULSE = 0), so it sits still in the world frame
-     * while the vessel moves past it.
+     * World-spawned rocks carry zero world-frame impulse so they sit still in the world frame
+     * while the vessel moves past them.
      */
     @Test
     fun `spawned rocks appear beyond the spawn radius with zero world impulse`() {
@@ -284,7 +278,7 @@ class RockSpawnerTest {
     }
 
     /**
-     * The spawner respects grid bounds — rocks do not spawn outside the grid.
+     * Rocks do not spawn outside the vessel grid bounds.
      */
     @Test
     fun `rocks only spawn within grid bounds`() {
@@ -573,20 +567,6 @@ class RockSpawnerTest {
         assertEquals(2, RockSpawner.stateAt(chunkX, chunkY),
             "POPULATED chunk outside NEAR keeps state after shift")
     }
-
-    /**
-     * Phase 3: the wasNear→POPULATED transition in applyNearZoneRules is dead code.
-     *
-     * After onVesselChunkMove re-centers the window, oldBase and newBase are related by
-     * a constant offset, so the Chebyshev distance from any array position to the vessel
-     * is identical in old and new coordinates. A chunk can never be "was NEAR but now
-     * outside" via a shift — the NEAR zone always covers the same 5×5 block at [7][7].
-     *
-     * The only state that persists across shifts is the existing value for entries that
-     * remain outside NEAR. This is already covered by the previous test.
-     *
-     * @see <a href="https://github.com/anomalyco/emerge/issues/XXX">issue</a>
-     */
 
     /**
      * Phase 5: rocks despawn when their chunk leaves the window.

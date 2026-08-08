@@ -5,23 +5,17 @@ import org.emerge.demo.outofspace.chem.Species
 import kotlin.random.Random
 
 /**
- * Dynamic asteroid spawning and despawning using a chunk-based world model.
+ * Dynamic asteroid spawning and despawning using a 15×15 chunk-state array.
  *
- * Rocks spawn in chunks of [CHUNK_SIZE] tiles around the vessel. A chunk becomes **active** when
- * the vessel's chunk position is within [CHUNK_ACTIVE_RADIUS] chunks (inclusive, in either X or
- * Y). Rocks **despawn** when their chunk goes inactive and the rock lies beyond [CHUNK_DESPAWN_MULTIPLIER]
- * × [CHUNK_SIZE] tiles from the vessel (despawn radius).
+ * Rocks spawn one chunk per tick — the nearest UNPOPULATED chunk outside a 5×5 NEAR zone
+ * centered on the vessel. Rocks despawn when their chunk leaves the 15×15 window.
  *
  * Spawned rocks are **free mass** — not tracked by [VesselState.baselineRockGrams]. The rock
  * ledger will diverge by the mass of world-spawned rocks the extractor eats (intentional).
- *
- * This replaces the previous ring-based spawner. Instead of spawning rocks in a fixed ring
- * around the vessel, rocks are scattered across the world in chunks that load as the vessel
- * explores. The result is a persistent field of asteroids that the player encounters over time.
  */
 object RockSpawner {
 
-    // ── Chunk-state array (Phase 1: backing structure, wired in Phase 4) ──
+    // ── Chunk-state array ──
 
     /** State constants for the chunk-state array. */
     internal const val NEAR = 0
@@ -74,17 +68,8 @@ object RockSpawner {
     /** Size of each chunk in tiles. */
     const val CHUNK_SIZE: Int = 32
 
-    /** Number of chunks the vessel must be from a chunk's center for it to become active. */
-    const val CHUNK_ACTIVE_RADIUS: Int = 4
-
-    /** Multiplier for despawn radius: DESPAWN = CHUNK_DESPAWN_MULTIPLIER × CHUNK_SIZE tiles. */
-    const val CHUNK_DESPAWN_MULTIPLIER: Int = 5
-
     /** How many ticks to wait before the spawner activates (preserves initial rock field). */
     const val ACTIVATE_AFTER_TICK: Int = 200
-
-    /** Rocks closer than this radius (in tiles) from the vessel never spawn. */
-    const val SPAWN_RADIUS: Int = 10
 
     /** Rocks spawned with zero world-frame impulse so they do not carry momentum into the ship. */
     const val SPAWN_IMPULSE: Long = 0L
@@ -120,8 +105,8 @@ object RockSpawner {
     /**
      * The vessel's last known chunk coordinates.
      *
-     * Used to detect when the vessel has moved between chunks and recompute the active set.
-     * Starts at a sentinel so the first call always activates chunks regardless of vessel position.
+     * Used to detect when the vessel has moved between chunks so the window can shift.
+     * Starts at a sentinel so the first call always shifts the window regardless of vessel position.
      */
     private var lastVesselChunkX: Int = Int.MIN_VALUE
     private var lastVesselChunkY: Int = Int.MIN_VALUE
@@ -131,12 +116,12 @@ object RockSpawner {
      *
      * [tick] is the current simulation tick, used to schedule periodic checks.
      * [rocks] is the current list of active rocks.
-      * [vesselTileX] and [vesselTileY] place the spawn centre in tile coordinates.
-      * Returns a new rocks list with spawns/despawns applied.
-      *
-      * One UNPOPULATED chunk per tick (nearest to vessel, outside NEAR zone) is spawned into.
-      * Rocks whose chunk leaves the 15×15 window are despawned.
-      */
+     * [vesselTileX] and [vesselTileY] place the spawn centre in tile coordinates.
+     * Returns a new rocks list with spawns/despawns applied.
+     *
+     * One UNPOPULATED chunk per tick (nearest to vessel, outside NEAR zone) is spawned into.
+     * Rocks whose chunk leaves the 15×15 window are despawned.
+     */
     fun process(
         tick: Long,
         rocks: List<Rock>,
