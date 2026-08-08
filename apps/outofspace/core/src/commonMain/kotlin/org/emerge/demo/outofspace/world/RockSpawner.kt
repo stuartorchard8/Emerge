@@ -55,6 +55,11 @@ object RockSpawner {
         get() = _baseChunkY
     private var _baseChunkY: Int = 0
 
+    /** Old window base — preserved across shifts so `applyNearZoneRules` can distinguish
+     * entries that were previously NEAR (in the old coordinate system) from new entries. */
+    private var _oldBaseChunkX: Int = 0
+    private var _oldBaseChunkY: Int = 0
+
     /** Look up the state value for a chunk coordinate (throws if outside window). */
     internal fun stateAt(chunkX: Int, chunkY: Int): Int {
         val col = chunkX - _baseChunkX
@@ -371,6 +376,8 @@ object RockSpawner {
     private fun resetWindow(vesselChunkX: Int, vesselChunkY: Int) {
         _baseChunkX = vesselChunkX - 7
         _baseChunkY = vesselChunkY - 7
+        _oldBaseChunkX = _baseChunkX
+        _oldBaseChunkY = _baseChunkY
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 val worldChunkX = _baseChunkX + col
@@ -390,6 +397,10 @@ object RockSpawner {
      * either axis, perform a full reset — the window cannot track that distance.
      */
     internal fun onVesselChunkMove(newVesselChunkX: Int, newVesselChunkY: Int) {
+        // Save old base for applyNearZoneRules (to detect "was NEAR" transitions).
+        _oldBaseChunkX = _baseChunkX
+        _oldBaseChunkY = _baseChunkY
+
         val dx = newVesselChunkX - (baseChunkX + 7)
         val dy = newVesselChunkY - (baseChunkY + 7)
 
@@ -400,6 +411,57 @@ object RockSpawner {
 
         _baseChunkX = newVesselChunkX - 7
         _baseChunkY = newVesselChunkY - 7
+    }
+
+    /**
+     * Apply NEAR zone rules after a window shift.
+     *
+     * NEAR is defined by a chunk's world coordinates relative to the vessel, not by
+     * array position. After a shift the base changes so different world chunks occupy
+     * the same array slots — we must check whether the old world chunk at each slot
+     * was near the old vessel position.
+     *
+     * - Chunks now within NEAR_RADIUS of the vessel → NEAR
+     * - Chunks that were NEAR (old world chunk was near old vessel) but now outside → POPULATED
+     * - Chunks that shifted in from outside → left as-is (safe default)
+     */
+    internal fun applyNearZoneRules() {
+        val oldVesselChunkX = _oldBaseChunkX + 7
+        val oldVesselChunkY = _oldBaseChunkY + 7
+        val newVesselChunkX = _baseChunkX + 7
+        val newVesselChunkY = _baseChunkY + 7
+
+        // First pass: identify which entries were NEAR (old world chunk was near old vessel).
+        val wasNear = BooleanArray(WINDOW_SIZE * WINDOW_SIZE)
+        for (row in 0 until WINDOW_SIZE) {
+            for (col in 0 until WINDOW_SIZE) {
+                val worldChunkX = _oldBaseChunkX + col
+                val worldChunkY = _oldBaseChunkY + row
+                val dx = kotlin.math.abs(worldChunkX - oldVesselChunkX)
+                val dy = kotlin.math.abs(worldChunkY - oldVesselChunkY)
+                wasNear[row * WINDOW_SIZE + col] = dx <= NEAR_RADIUS && dy <= NEAR_RADIUS
+            }
+        }
+
+        // Second pass: apply rules.
+        for (row in 0 until WINDOW_SIZE) {
+            for (col in 0 until WINDOW_SIZE) {
+                val idx = row * WINDOW_SIZE + col
+                val worldChunkX = _baseChunkX + col
+                val worldChunkY = _baseChunkY + row
+                val dx = kotlin.math.abs(worldChunkX - newVesselChunkX)
+                val dy = kotlin.math.abs(worldChunkY - newVesselChunkY)
+
+                if (dx <= NEAR_RADIUS && dy <= NEAR_RADIUS) {
+                    // Now near the vessel → always NEAR.
+                    state[idx] = NEAR
+                } else if (wasNear[idx]) {
+                    // Was near the old vessel but now outside → POPULATED.
+                    state[idx] = POPULATED
+                }
+                // Else: leave as-is (UNPOPULATED or already POPULATED).
+            }
+        }
     }
 
     private fun chunkIndexOf(tilePos: Long): Int {

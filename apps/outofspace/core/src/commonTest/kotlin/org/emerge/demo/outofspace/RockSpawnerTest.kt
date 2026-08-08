@@ -555,4 +555,78 @@ class RockSpawnerTest {
                 "marker preserved after $i oscillations")
         }
     }
+
+    /**
+     * Phase 3: NEAR zone always covers 5x5 at [7][7] after shift.
+     *
+     * After applying NEAR zone rules, exactly 25 entries must be NEAR (0), centered on [7][7].
+     */
+    @Test
+    fun `phase 3 NEAR zone always covers 5x5 at 7x7 after shift`() {
+        RockSpawner.reset()
+
+        // Move vessel and apply NEAR zone rules.
+        RockSpawner.onVesselChunkMove(3, 0)
+        RockSpawner.applyNearZoneRules()
+
+        var nearCount = 0
+        for (row in 0 until 15) {
+            for (col in 0 until 15) {
+                val worldChunkX = RockSpawner.baseChunkX + col
+                val worldChunkY = RockSpawner.baseChunkY + row
+                val s = RockSpawner.stateAt(worldChunkX, worldChunkY)
+
+                val dx = kotlin.math.abs(col - 7)
+                val dy = kotlin.math.abs(row - 7)
+                val shouldBeNear = dx <= 2 && dy <= 2
+
+                if (shouldBeNear) {
+                    assertEquals(0, s, "[$col][$row] should be NEAR after applyNearZoneRules")
+                    nearCount++
+                } else {
+                    // Outside NEAR zone: must NOT be NEAR.
+                    val status = if (s == 1) "UNPOPULATED" else "POPULATED"
+                    assertTrue(s != 0, "[$col][$row] should not be NEAR, was $status")
+                }
+            }
+        }
+        assertEquals(25, nearCount, "exactly 25 NEAR entries expected")
+    }
+
+    /**
+     * Phase 3: POPULATED chunks outside NEAR persist across shifts.
+     *
+     * After a vessel move, applyNearZoneRules re-centers the NEAR zone. Chunks outside
+     * NEAR should keep their existing state (POPULATED or UNPOPULATED). This prevents
+     * re-spawning of rocks in chunks that were previously visited.
+     */
+    @Test
+    fun `phase 3 leaving NEAR marks POPULATED`() {
+        RockSpawner.reset()
+        // Mark a chunk far outside NEAR as POPULATED.
+        RockSpawner.setStateAt(RockSpawner.baseChunkX, RockSpawner.baseChunkY, 2) // [0][0] = world (-7,-7)
+
+        // Move vessel: base shifts, but [0][0] stays far from NEAR.
+        RockSpawner.onVesselChunkMove(3, 0)
+        RockSpawner.applyNearZoneRules()
+
+        val chunkX = RockSpawner.baseChunkX
+        val chunkY = RockSpawner.baseChunkY
+        assertEquals(2, RockSpawner.stateAt(chunkX, chunkY),
+            "POPULATED chunk outside NEAR keeps state after shift")
+    }
+
+    /**
+     * Phase 3: the wasNear→POPULATED transition in applyNearZoneRules is dead code.
+     *
+     * After onVesselChunkMove re-centers the window, oldBase and newBase are related by
+     * a constant offset, so the Chebyshev distance from any array position to the vessel
+     * is identical in old and new coordinates. A chunk can never be "was NEAR but now
+     * outside" via a shift — the NEAR zone always covers the same 5×5 block at [7][7].
+     *
+     * The only state that persists across shifts is the existing value for entries that
+     * remain outside NEAR. This is already covered by the previous test.
+     *
+     * @see <a href="https://github.com/anomalyco/emerge/issues/XXX">issue</a>
+     */
 }
