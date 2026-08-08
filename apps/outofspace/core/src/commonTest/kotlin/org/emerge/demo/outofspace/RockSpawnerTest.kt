@@ -382,4 +382,72 @@ class RockSpawnerTest {
         )
         RockSpawner.reset()
     }
+
+    /**
+     * Phase 1: flat array indexing round-trips — stateAt/setStateAt work correctly.
+     *
+     * Verifies that the flat `state` array, indexed as `row * WINDOW_SIZE + col`, correctly
+     * maps chunk coordinates through `stateAt`/`setStateAt`.
+     */
+    @Test
+    fun `phase 1 array indexing round-trips`() {
+        RockSpawner.reset()
+
+        // After reset, the center chunk (7,7) in array coords is at world coords
+        // (baseChunkX + 7, baseChunkY + 7) = (0, 0) since base = -7.
+        val centerChunkX = RockSpawner.baseChunkX + 7
+        val centerChunkY = RockSpawner.baseChunkY + 7
+
+        assertEquals(0, RockSpawner.stateAt(centerChunkX, centerChunkY), "center should be NEAR after reset")
+
+        // Write a value via setStateAt and read it back.
+        RockSpawner.setStateAt(centerChunkX, centerChunkY, 2)
+        assertEquals(2, RockSpawner.stateAt(centerChunkX, centerChunkY), "round-trip setStateAt → stateAt")
+
+        // Write to an off-center entry.
+        val neighborChunkX = RockSpawner.baseChunkX + 8  // col 8
+        val neighborChunkY = RockSpawner.baseChunkY + 7  // row 7
+        RockSpawner.setStateAt(neighborChunkX, neighborChunkY, 1)
+        assertEquals(1, RockSpawner.stateAt(neighborChunkX, neighborChunkY), "off-center round-trip")
+    }
+
+    /**
+     * Phase 1: reset produces NEAR at center + UNPOPULATED elsewhere.
+     *
+     * The 5×5 NEAR zone at [7][7] should be NEAR (0); everything else should be UNPOPULATED (1).
+     */
+    @Test
+    fun `phase 1 reset produces NEAR at center + UNPOPULATED elsewhere`() {
+        RockSpawner.reset()
+
+        val baseX = RockSpawner.baseChunkX
+        val baseY = RockSpawner.baseChunkY
+
+        var nearCount = 0
+        var unpopCount = 0
+
+        for (row in 0 until 15) {
+            for (col in 0 until 15) {
+                val worldChunkX = baseX + col
+                val worldChunkY = baseY + row
+                val s = RockSpawner.stateAt(worldChunkX, worldChunkY)
+
+                val dx = kotlin.math.abs(col - 7)
+                val dy = kotlin.math.abs(row - 7)
+                val shouldBeNear = dx <= 2 && dy <= 2
+
+                if (shouldBeNear) {
+                    assertEquals(0, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be NEAR")
+                    nearCount++
+                } else {
+                    assertEquals(1, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be UNPOPULATED")
+                    unpopCount++
+                }
+            }
+        }
+
+        // 5×5 NEAR zone = 25 entries.
+        assertEquals(25, nearCount, "should have exactly 25 NEAR entries (5x5)")
+        assertEquals(15 * 15 - 25, unpopCount, "should have 200 UNPOPULATED entries")
+    }
 }

@@ -29,6 +29,48 @@ private data class RockSpawnPoint(
  */
 object RockSpawner {
 
+    // ── Chunk-state array (Phase 1: backing structure, wired in Phase 4) ──
+
+    /** State constants for the chunk-state array. */
+    internal const val NEAR = 0
+    internal const val UNPOPULATED = 1
+    internal const val POPULATED = 2
+
+    /** Window size of the chunk-state array (15×15). */
+    private const val WINDOW_SIZE = 15
+
+    /** Half-window for computing NEAR zone radius (5×5 NEAR zone → radius 2 from center). */
+    private const val NEAR_RADIUS = 2
+
+    /** Flat backing store: row-major, indexed as state[row * WINDOW_SIZE + col]. */
+    internal val state = IntArray(WINDOW_SIZE * WINDOW_SIZE)
+
+    /** Real-world chunk coordinate at state[0][0]. */
+    internal val baseChunkX: Int
+        get() = _baseChunkX
+    private var _baseChunkX: Int = 0
+
+    /** Real-world chunk coordinate at state[0][0]. */
+    internal val baseChunkY: Int
+        get() = _baseChunkY
+    private var _baseChunkY: Int = 0
+
+    /** Look up the state value for a chunk coordinate (throws if outside window). */
+    internal fun stateAt(chunkX: Int, chunkY: Int): Int {
+        val col = chunkX - _baseChunkX
+        val row = chunkY - _baseChunkY
+        require(col in 0..14 && row in 0..14) { "chunk ($chunkX,$chunkY) outside window" }
+        return state[row * WINDOW_SIZE + col]
+    }
+
+    /** Set the state value for a chunk coordinate (throws if outside window). */
+    internal fun setStateAt(chunkX: Int, chunkY: Int, value: Int) {
+        val col = chunkX - _baseChunkX
+        val row = chunkY - _baseChunkY
+        require(col in 0..14 && row in 0..14) { "chunk ($chunkX,$chunkY) outside window" }
+        state[row * WINDOW_SIZE + col] = value
+    }
+
     /** Whether dynamic spawning is disabled explicitly. Tests may set this to false. */
     var enabled: Boolean = true
 
@@ -310,11 +352,34 @@ object RockSpawner {
     /**
      * Reset internal state. Intended for test isolation — clears active-chunk tracking and
      * forces the next [process] call to activate chunks from scratch.
+     *
+     * Also resets the chunk-state array: the 5×5 NEAR zone at [7][7] is marked NEAR,
+     * everything else is UNPOPULATED.
      */
     fun reset() {
         activeChunks = emptySet()
         lastVesselChunkX = Int.MIN_VALUE
         lastVesselChunkY = Int.MIN_VALUE
+        resetWindow(0, 0)
+    }
+
+    /**
+     * Reset the chunk-state array so that [vesselChunkX][vesselChunkY] is at the center [7][7].
+     *
+     * The 5×5 NEAR zone around the center is marked NEAR; all other entries are UNPOPULATED.
+     */
+    private fun resetWindow(vesselChunkX: Int, vesselChunkY: Int) {
+        _baseChunkX = vesselChunkX - 7
+        _baseChunkY = vesselChunkY - 7
+        for (row in 0 until WINDOW_SIZE) {
+            for (col in 0 until WINDOW_SIZE) {
+                val worldChunkX = _baseChunkX + col
+                val worldChunkY = _baseChunkY + row
+                val dx = kotlin.math.abs(col - 7)
+                val dy = kotlin.math.abs(row - 7)
+                state[row * WINDOW_SIZE + col] = if (dx <= NEAR_RADIUS && dy <= NEAR_RADIUS) NEAR else UNPOPULATED
+            }
+        }
     }
 
     private fun chunkIndexOf(tilePos: Long): Int {
