@@ -398,7 +398,7 @@ class RockSpawnerTest {
         val centerChunkX = RockSpawner.baseChunkX + 7
         val centerChunkY = RockSpawner.baseChunkY + 7
 
-        assertEquals(0, RockSpawner.stateAt(centerChunkX, centerChunkY), "center should be NEAR after reset")
+        assertEquals(0, RockSpawner.stateAt(centerChunkX, centerChunkY), "center should be 0 after reset")
 
         // Write a value via setStateAt and read it back.
         RockSpawner.setStateAt(centerChunkX, centerChunkY, 2)
@@ -412,12 +412,12 @@ class RockSpawnerTest {
     }
 
     /**
-     * Phase 1: reset produces NEAR at center + UNPOPULATED elsewhere.
+     * Phase 1: reset produces 0 at center + 1 elsewhere.
      *
-     * The 5×5 NEAR zone at [7][7] should be NEAR (0); everything else should be UNPOPULATED (1).
+     * The 5×5 0 zone at [7][7] should be 0 (0); everything else should be 1 (1).
      */
     @Test
-    fun `phase 1 reset produces NEAR at center + UNPOPULATED elsewhere`() {
+    fun `phase 1 reset produces 0 at center + 1 elsewhere`() {
         RockSpawner.reset()
 
         val baseX = RockSpawner.baseChunkX
@@ -437,17 +437,122 @@ class RockSpawnerTest {
                 val shouldBeNear = dx <= 2 && dy <= 2
 
                 if (shouldBeNear) {
-                    assertEquals(0, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be NEAR")
+                    assertEquals(0, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be 0")
                     nearCount++
                 } else {
-                    assertEquals(1, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be UNPOPULATED")
+                    assertEquals(1, s, "chunk ($worldChunkX,$worldChunkY) at [$col,$row] should be 1")
                     unpopCount++
                 }
             }
         }
 
-        // 5×5 NEAR zone = 25 entries.
-        assertEquals(25, nearCount, "should have exactly 25 NEAR entries (5x5)")
-        assertEquals(15 * 15 - 25, unpopCount, "should have 200 UNPOPULATED entries")
+        // 5×5 0 zone = 25 entries.
+        assertEquals(25, nearCount, "should have exactly 25 0 entries (5x5)")
+        assertEquals(15 * 15 - 25, unpopCount, "should have 200 1 entries")
+    }
+
+    /**
+     * Phase 2: vessel moves 1 chunk → array shifts, center follows, values preserved.
+     *
+     * After writing known values to specific array cells, moving the vessel 1 chunk should
+     * recenter the window while preserving overlapping values.
+     */
+    @Test
+    fun `phase 2 vessel moves 1 chunk → array shifts, center follows, values preserved`() {
+        RockSpawner.reset()
+
+        // Write known values to a few cells.
+        val c0 = RockSpawner.baseChunkX + 7  // col 7 (center row)
+        val c1 = RockSpawner.baseChunkY + 7  // row 7 (center col)
+        RockSpawner.setStateAt(c0, c1, 2)  // [7][7]
+        RockSpawner.setStateAt(c0 + 1, c1, 1)  // [7][8]
+        RockSpawner.setStateAt(c0 - 1, c1, 0)  // [7][6]
+
+        // Move vessel 1 chunk right.
+        RockSpawner.onVesselChunkMove(1, 0)
+
+        // Center is now at (1, 0), which maps to array [7][7].
+        val newBaseX = RockSpawner.baseChunkX
+        val newBaseY = RockSpawner.baseChunkY
+        assertEquals(-6, newBaseX, "baseX should be -6 after moving to chunk 1")
+        assertEquals(-7, newBaseY, "baseY should be -7 after moving to chunk 0")
+
+        // The value at [7][7] (center) should still be 2 — it was [7][7] before.
+        assertEquals(2, RockSpawner.stateAt(1, 0), "center [7][7] preserved after shift")
+
+        // The value at [7][6] was at world chunk (0,0), which is now array [6][7] (row shifted).
+        // After shifting right, world chunk (0,0) maps to array col 6.
+        assertEquals(0, RockSpawner.stateAt(0, 0), "chunk (0,0) value preserved at [6][7]")
+    }
+
+    /**
+     * Phase 2: vessel jumps 10 chunks → full reset to 1 (with 0 at center).
+     */
+    @Test
+    fun `phase 2 vessel jumps 10 chunks → full reset`() {
+        RockSpawner.reset()
+
+        // Mark some entries as 2 to verify they are cleared.
+        RockSpawner.setStateAt(RockSpawner.baseChunkX + 7, RockSpawner.baseChunkY + 7, 2)
+
+        // Jump 10 chunks in X.
+        RockSpawner.onVesselChunkMove(10, 0)
+
+        // After a jump > 7, resetWindow(10, 0) sets base = (3, -7).
+        assertEquals(3, RockSpawner.baseChunkX, "baseX should be 3 after reset to chunk 10")
+        assertEquals(-7, RockSpawner.baseChunkY, "baseY should be -7")
+
+        // All entries except the 5×5 0 zone should be 1.
+        var nearCount = 0
+        var unpopCount = 0
+        for (row in 0 until 15) {
+            for (col in 0 until 15) {
+                val s = RockSpawner.stateAt(RockSpawner.baseChunkX + col, RockSpawner.baseChunkY + row)
+                val dx = kotlin.math.abs(col - 7)
+                val dy = kotlin.math.abs(row - 7)
+                if (dx <= 2 && dy <= 2) {
+                    assertEquals(0, s, "[$col][$row] should be 0")
+                    nearCount++
+                } else {
+                    assertEquals(1, s, "[$col][$row] should be 1")
+                    unpopCount++
+                }
+            }
+        }
+        assertEquals(25, nearCount)
+        assertEquals(200, unpopCount)
+    }
+
+    /**
+     * Phase 2: vessel oscillates → base tracking stays correct.
+     *
+     * Move back and forth between two adjacent chunks many times and verify that
+     * the base coordinates and array values are consistent throughout.
+     */
+    @Test
+    fun `phase 2 vessel oscillates → base tracking stays correct`() {
+        RockSpawner.reset()
+
+        // Write a marker value at a known offset.
+        val markerChunkX = RockSpawner.baseChunkX + 9
+        val markerChunkY = RockSpawner.baseChunkY + 7
+        RockSpawner.setStateAt(markerChunkX, markerChunkY, 2)
+
+        // Oscillate 20 times between chunk 0 and chunk 1.
+        for (i in 0 until 20) {
+            val targetChunkX = if (i % 2 == 0) 0 else 1
+            RockSpawner.onVesselChunkMove(targetChunkX, 0)
+
+            // base should always be (target - 7, -7).
+            assertEquals(targetChunkX - 7, RockSpawner.baseChunkX, "baseX after $i oscillations")
+            assertEquals(-7, RockSpawner.baseChunkY, "baseY after $i oscillations")
+
+            // The marker at [2][7] (col 9 - base) should still be 2.
+            val arrayCol = 9  // markerChunkX - baseChunkX = (base+9) - (base) = 9
+            val markerWorldX = RockSpawner.baseChunkX + arrayCol
+            val markerWorldY = RockSpawner.baseChunkY + 7
+            assertEquals(2, RockSpawner.stateAt(markerWorldX, markerWorldY),
+                "marker preserved after $i oscillations")
+        }
     }
 }

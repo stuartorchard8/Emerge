@@ -382,6 +382,26 @@ object RockSpawner {
         }
     }
 
+    /**
+     * Recenter the chunk-state array when the vessel moves to a new chunk.
+     *
+     * If the new vessel chunk is within ±7 of the current base (i.e. still in-window),
+     * recompute base so the vessel lands at [7][7]. If the jump exceeds 7 chunks in
+     * either axis, perform a full reset — the window cannot track that distance.
+     */
+    internal fun onVesselChunkMove(newVesselChunkX: Int, newVesselChunkY: Int) {
+        val dx = newVesselChunkX - (baseChunkX + 7)
+        val dy = newVesselChunkY - (baseChunkY + 7)
+
+        if (kotlin.math.abs(dx) > 7 || kotlin.math.abs(dy) > 7) {
+            resetWindow(newVesselChunkX, newVesselChunkY)
+            return
+        }
+
+        _baseChunkX = newVesselChunkX - 7
+        _baseChunkY = newVesselChunkY - 7
+    }
+
     private fun chunkIndexOf(tilePos: Long): Int {
         return tilePos.toInt() / CHUNK_SIZE
     }
