@@ -255,8 +255,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             rocks = w.rocks.toList(),
             vesselTileX = vesselTileX,
             vesselTileY = vesselTileY,
-            gridWidth = state.grid.width,
-            gridHeight = state.grid.height,
         )
         // Replace w.rocks contents (driftRocks mutates by reference via the list).
         w.rocks.clear()
