@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.RockField
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
@@ -147,10 +146,7 @@ object OutofspaceAgentHarness {
             val t = line.split(Regex("\\s+"))
             when (t[0]) {
                 "new" -> {
-                    // A script that plants its own rocks and then counts them has to be able to ask
-                    // for an empty sky, or the field is in every one of its sums.
-                    val rocks = t.getOrNull(1)?.toIntOrNull() ?: RockField.DEFAULT_COUNT
-                    controller.reset(starterVessel(controller.cfg.initialGrid, rocks))
+                    controller.reset(starterVessel(controller.cfg.initialGrid))
                     println("[agent] new world, tick ${controller.tick}, ${state.rocks.size} rocks adrift")
                 }
                 "load" -> {

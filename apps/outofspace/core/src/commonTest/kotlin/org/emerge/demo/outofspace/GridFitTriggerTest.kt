@@ -56,8 +56,8 @@ class GridFitTriggerTest {
         return s
     }
 
-    private fun fitted(rocks: Int = 0): VesselState =
-        starterVessel(Grid(96, 60), rocks = rocks).fitGrid(pad)
+    private fun fitted(): VesselState =
+        starterVessel(Grid(96, 60)).fitGrid(pad)
 
     // ── The oracle ────────────────────────────────────────────────────────
 
@@ -224,7 +224,7 @@ class GridFitTriggerTest {
         // The sharp case in the whole of P4: this is a *shrink*, so the cells it discards have to be
         // vented rather than dropped — see `GridVentTest`. A world with rocks and 200 ticks of gas
         // behind it, so the discarded padding is genuinely carrying something.
-        var s = fitted(rocks = 12)
+        var s = fitted()
         s = run(s, 50)
         val leftTile = s.grid.index(1, s.grid.height / 2)
         s = run(edit(s, Edit.Place(leftTile, MachineKind.Hull, Direction.Right)), 1)

@@ -158,7 +158,7 @@ class RockSpawnerTest {
     @Test
     fun `rocks spawn after the activation delay`() {
         // Start with no rocks — the initial field is empty.
-        val s = starterVessel(cfg.initialGrid, rocks = 0)
+        val s = starterVessel(cfg.initialGrid)
         assertEquals(0, s.rocks.size, "fixture needs zero starting rocks")
 
         val controller = OutofspaceController(cfg, s)
@@ -187,7 +187,7 @@ class RockSpawnerTest {
      */
     @Test
     fun `rocks appear in chunks around the vessel`() {
-        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid, rocks = 0))
+        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid))
 
         repeat(RockSpawner.ACTIVATE_AFTER_TICK + 15) {
             controller.stepOnce()
@@ -220,7 +220,7 @@ class RockSpawnerTest {
      */
     @Test
     fun `spawned rocks appear beyond the spawn radius with zero world impulse`() {
-        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid, rocks = 0))
+        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid))
 
         repeat(RockSpawner.ACTIVATE_AFTER_TICK + 15) {
             controller.stepOnce()
@@ -253,7 +253,7 @@ class RockSpawnerTest {
      */
     @Test
     fun `world-spawned rocks diverge the rock ledger by their mass`() {
-        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid, rocks = 0))
+        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid))
 
         repeat(RockSpawner.ACTIVATE_AFTER_TICK + 30) {
             controller.stepOnce()
@@ -282,7 +282,7 @@ class RockSpawnerTest {
      */
     @Test
     fun `rocks only spawn within grid bounds`() {
-        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid, rocks = 0))
+        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid))
 
         repeat(RockSpawner.ACTIVATE_AFTER_TICK + 30) {
             controller.stepOnce()
@@ -306,7 +306,7 @@ class RockSpawnerTest {
      */
     @Test
     fun `disabling the spawner stops spawning`() {
-        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid, rocks = 0))
+        val controller = OutofspaceController(cfg, starterVessel(cfg.initialGrid))
 
         // Let the spawner create rocks.
         repeat(RockSpawner.ACTIVATE_AFTER_TICK + 15) {

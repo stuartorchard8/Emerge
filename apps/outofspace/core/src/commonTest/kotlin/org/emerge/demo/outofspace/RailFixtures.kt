@@ -180,7 +180,7 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
     // No field: these tests count rocks, weigh them and watch them disappear, and a dozen more
     // floating about outside would be in every one of those sums. What is on the plates is the
     // whole ore budget of a world built here.
-    val base = starterVessel(grid, rocks = 0)
+    val base = starterVessel(grid)
     val rocks = rockOnPlate(STARTER_PLATE_X, STARTER_PLATE_Y, rocksPerPlate) +
         rockOnPlate(STARTER_PLATE_X, STARTER_DEMO_PLATE_Y, rocksPerPlate)
     // ⚠️ Both baselines have to move with them, and `copy` will not do it: they are constructor

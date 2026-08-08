@@ -88,7 +88,7 @@ class GridFitTest {
 
     @Test
     fun `the box is the footprint plus exactly four on every side`() {
-        val fitted = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+        val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         val b = footprintBounds(fitted)!!
 
         assertEquals(4, b[0], "pad on the left")
@@ -101,7 +101,7 @@ class GridFitTest {
     fun `the hull can never touch the grid edge`() {
         // §1.3: StructureMap floods inward from the boundary, so a hull flush against it reads as
         // interior and the whole ship is inside-out. The pad is what makes that unrepresentable.
-        val fitted = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+        val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         for (i in fitted.machines.indices) {
             if (fitted.machines[i] == null) continue
             val x = fitted.grid.xOf(i)
@@ -118,38 +118,9 @@ class GridFitTest {
         // §1.2 is the whole performance case, and it is a claim about a ratio, so assert the ratio.
         // The fixed grid was 96×60 = 5760 tiles; the plan predicts ~41×31 = 1271, a 4.5× cut.
         // Three× is the loosest reading of that promise that still fails the 92×50 near-miss.
-        val fitted = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+        val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         val tiles = fitted.grid.width * fitted.grid.height
         assertTrue(tiles * 3 < 96 * 60, "fitted to $tiles tiles, against 5760 — no real cut")
-    }
-
-    @Test
-    fun `rocks do not enlarge the box`() {
-        // §8, at length: rocks live outside the world quite happily. `overlapsHull` bounds-checks
-        // every tile and treats off-grid as open space, and the hull is in-bounds by construction,
-        // so there is no path from "off-grid" to "through the wall". A box drawn around the rock
-        // field is a box the size of the sky, which is the thing this whole item exists to avoid.
-        val bare = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
-        val withRocks = starterVessel(Grid(96, 60), rocks = 12).fitGrid(pad = 4)
-
-        assertTrue(withRocks.rocks.isNotEmpty(), "the fixture needs rocks for this to mean anything")
-        assertEquals(bare.grid.width, withRocks.grid.width, "a rock widened the box")
-        assertEquals(bare.grid.height, withRocks.grid.height, "a rock heightened the box")
-    }
-
-    @Test
-    fun `a rock outside the box survives the fit with its position intact`() {
-        // Rocks are offsets, not indices. They may end up at negative grid coordinates and that is
-        // ordinary — but they must move by exactly the shift, and none may be dropped.
-        val before = starterVessel(Grid(96, 60), rocks = 12)
-        val after = before.fitGrid(pad = 4)
-
-        assertEquals(before.rocks.size, after.rocks.size, "a rock went missing in the fit")
-        assertEquals(
-            before.rocks.sumOf { it.massGrams },
-            after.rocks.sumOf { it.massGrams },
-            "rock mass changed across the fit",
-        )
     }
 
     // ── Growing ──────────────────────────────────────────────────────────
@@ -158,7 +129,7 @@ class GridFitTest {
     fun `a vessel built against the edge grows rather than clips`() {
         // The fit must be free to make the grid *bigger*. An implementation that clamps to the
         // current bounds passes every shrink test and is useless to P3.
-        val tight = starterVessel(Grid(36, 26), rocks = 0)
+        val tight = starterVessel(Grid(36, 26))
         val fitted = tight.fitGrid(pad = 4)
         val b = footprintBounds(fitted)!!
 
@@ -171,7 +142,7 @@ class GridFitTest {
 
     @Test
     fun `fitting is idempotent`() {
-        val once = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+        val once = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         val twice = once.fitGrid(pad = 4)
 
         assertEquals(once.grid.width, twice.grid.width)
@@ -195,7 +166,7 @@ class GridFitTest {
         //
         // If this test fails, the frame moved. Do not adjust the numbers to match — find out what
         // moved the origin and whether every other absolute coordinate moved with it.
-        val fitted = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
+        val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
 
         assertEquals(41, fitted.grid.width, "fitted width")
         assertEquals(26, fitted.grid.height, "fitted height")
@@ -213,7 +184,7 @@ class GridFitTest {
     @Test
     fun `every ledger is zero after a fit, and stays zero`() {
         // Not "preserved" — *zero*. Two equal non-zero numbers are a broken world twice.
-        val fitted = starterVessel(Grid(96, 60), rocks = 12).fitGrid(pad = 4)
+        val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         assertBalanced(fitted, "straight after the fit")
         assertBalanced(run(fitted, 300), "after 300 ticks on the fitted grid")
     }
@@ -255,8 +226,8 @@ class GridFitTest {
         //
         // Any field that `remapped` forgets to carry survives on one path and not the other, and
         // shows up here as a digest that diverges. One test, every field.
-        val fromWide = starterVessel(Grid(96, 60), rocks = 0).fitGrid(pad = 4)
-        val fromWider = starterVessel(Grid(120, 80), rocks = 0).fitGrid(pad = 4)
+        val fromWide = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
+        val fromWider = starterVessel(Grid(120, 80)).fitGrid(pad = 4)
 
         assertEquals(fromWide.grid.width, fromWider.grid.width, "same vessel, different fitted width")
         assertEquals(fromWide.grid.height, fromWider.grid.height, "same vessel, different fitted height")

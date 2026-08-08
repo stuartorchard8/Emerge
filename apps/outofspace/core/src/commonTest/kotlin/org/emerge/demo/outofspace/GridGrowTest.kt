@@ -52,8 +52,8 @@ class GridGrowTest {
         OutofspaceReducer.reduce(cfg, state, mapOf(org.emerge.sim.core.PlayerId(0) to OutofspaceInput(edits.toList())))
 
     /** The starter vessel on a grid that already has exactly [pad] clear on every side. */
-    private fun fitted(rocks: Int = 0): VesselState =
-        starterVessel(Grid(96, 60), rocks = rocks).fitGrid(pad)
+    private fun fitted(): VesselState =
+        starterVessel(Grid(96, 60)).fitGrid(pad)
 
     // ── The oracle ────────────────────────────────────────────────────────
 
@@ -182,8 +182,8 @@ class GridGrowTest {
 
     @Test
     fun `the reported delta is what everything actually moved by`() {
-        for ((name, at, near) in edgeCases(fitted(rocks = 6))) {
-            val before = withHullAt(fitted(rocks = 6), at.first, at.second)
+        for ((name, at, near) in edgeCases(fitted())) {
+            val before = withHullAt(fitted(), at.first, at.second)
             val result = before.growToFit(pad)
             val after = result.state
             val dx = result.dx
@@ -233,8 +233,8 @@ class GridGrowTest {
         // into the machine list is ship fabric that `baselineJoules` never counted, so the world is
         // already 287 MJ adrift before anything grows. The fixture would have read as a growth that
         // broke the heat ledger. This is also the path the player takes.
-        for ((name, at, _) in edgeCases(fitted(rocks = 12))) {
-            val before = fitted(rocks = 12)
+        for ((name, at, _) in edgeCases(fitted())) {
+            val before = fitted()
             assertBalanced(before, "before growing $name — the fixture itself")
 
             val grown = edit(
@@ -315,41 +315,7 @@ class GridGrowTest {
         assertEquals(0, twice.dy, "second growth moved the origin in y")
     }
 
-    // ── 7. Rocks are in the vessel's frame ────────────────────────────────
-
-    @Test
-    fun `rocks track the origin, and only the origin`() {
-        // §8: a rock may sit outside the box, which is not the same as outside the frame. Getting
-        // this backwards puts a rock through the hull, so both directions are tested.
-        for ((name, at, near) in edgeCases(fitted(rocks = 8))) {
-            val before = withHullAt(fitted(rocks = 8), at.first, at.second)
-            val result = before.growToFit(pad)
-            val dx = result.dx
-            val dy = result.dy
-
-            assertEquals(before.rocks.size, result.state.rocks.size, "$name: a rock went missing")
-            for ((b, a) in before.rocks.zip(result.state.rocks)) {
-                assertEquals(
-                    b.positionX + dx * Flight.PER_TILE.toLong(), a.positionX,
-                    "$name: rock x",
-                )
-                assertEquals(
-                    b.positionY + dy * Flight.PER_TILE.toLong(), a.positionY,
-                    "$name: rock y",
-                )
-                assertEquals(b.massGrams, a.massGrams, "$name: rock mass")
-            }
-            if (!near) {
-                assertEquals(
-                    before.rocks.map { it.positionX to it.positionY },
-                    result.state.rocks.map { it.positionX to it.positionY },
-                    "$name: a far-side growth moved the rocks",
-                )
-            }
-        }
-    }
-
-    // ── 8. The holders of a coordinate, which is the P4 work pulled forward
+    // ── 7. The holders of a coordinate, which is the P4 work pulled forward
 
     @Test
     fun `the state reports how far the frame moved, cumulatively`() {
@@ -415,7 +381,7 @@ class GridGrowTest {
         )
     }
 
-    // ── 9. Determinism: the strongest single assertion available ─────────
+    // ── 8. Determinism: the strongest single assertion available ─────────
 
     @Test
     fun `a growth mid-run leaves the same world as having been that size all along`() {

@@ -3,17 +3,10 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.OutofspaceReducer
 
 /**
- * Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents), and a
- * field of rocks in the space around it.
- *
- * [rocks] is a count rather than a flag so a fixture can ask for an empty sky and *say so* — most
- * of the suite wants a world with nothing in it but the vessel, and a test that inherited a rock
- * field it never mentioned would be measuring something it did not choose. See [RockField].
+ * Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents).
  */
 fun starterVessel(
     grid: Grid,
-    rocks: Int = RockField.DEFAULT_COUNT,
-    rockSeed: Int = RockField.DEFAULT_SEED,
 ): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
     val rails = arrayOfNulls<Segment>(grid.size)
@@ -113,10 +106,6 @@ fun starterVessel(
         grid = grid,
         machines = built,
         conduits = Conduits.ofRails(rails.toList()),
-        // Handed to the constructor, so `baselineRockGrams` and `baselineJoules` count them and both
-        // ledgers start at zero. A rock added by `copy` afterwards keeps the baselines of a world
-        // that had none and reads as mass conjured out of nothing — see `workingVessel`.
-        rocks = RockField.scatter(grid, built, rocks, rockSeed, OutofspaceReducer.DEFAULT_ORE_BODY),
     ).fitGrid()
 }
 

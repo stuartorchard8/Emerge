@@ -246,7 +246,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
         val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
 
-        // Dynamic spawning/despawning, before drift (rocks must exist before they move).
+        // Dynamic rock spawning/despawning
         // World-spawned rocks are free mass, not counted in baselineRockGrams.
         val vesselTileX = state.positionX / Flight.PER_TILE
         val vesselTileY = state.positionY / Flight.PER_TILE

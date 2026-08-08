@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
@@ -18,8 +19,8 @@ object RockSpawner {
     // ── Chunk-state array ──
 
     /** State constants for the chunk-state array. */
-    internal const val NEAR = 0
-    internal const val UNPOPULATED = 1
+    internal const val UNPOPULATED = 0
+    internal const val NEAR = 1
     internal const val POPULATED = 2
 
     /** Window size of the chunk-state array (15×15). */
@@ -40,11 +41,6 @@ object RockSpawner {
     internal val baseChunkY: Int
         get() = _baseChunkY
     private var _baseChunkY: Int = 0
-
-    /** Old window base — preserved across shifts so `applyNearZoneRules` can distinguish
-     * entries that were previously NEAR (in the old coordinate system) from new entries. */
-    private var _oldBaseChunkX: Int = 0
-    private var _oldBaseChunkY: Int = 0
 
     /** Look up the state value for a chunk coordinate (throws if outside window). */
     internal fun stateAt(chunkX: Int, chunkY: Int): Int {
@@ -69,7 +65,7 @@ object RockSpawner {
     const val CHUNK_SIZE: Int = 32
 
     /** How many ticks to wait before the spawner activates (preserves initial rock field). */
-    const val ACTIVATE_AFTER_TICK: Int = 200
+    const val ACTIVATE_AFTER_TICK: Int = 4
 
     /** Rocks spawned with zero world-frame impulse so they do not carry momentum into the ship. */
     const val SPAWN_IMPULSE: Long = 0L
@@ -149,8 +145,8 @@ object RockSpawner {
             val rockTileY = rock.positionY / Flight.PER_TILE
             val rockChunkX = chunkIndexOf(rockTileX)
             val rockChunkY = chunkIndexOf(rockTileY)
-            val dx = kotlin.math.abs(rockChunkX - _baseChunkX)
-            val dy = kotlin.math.abs(rockChunkY - _baseChunkY)
+            val dx = abs(rockChunkX - vesselChunkX)
+            val dy = abs(rockChunkY - vesselChunkY)
             if (dx <= 7 && dy <= 7) {
                 result.add(rock)
             }
@@ -165,9 +161,9 @@ object RockSpawner {
             for (col in 0 until WINDOW_SIZE) {
                 val idx = row * WINDOW_SIZE + col
                 if (state[idx] != UNPOPULATED) continue
-                val dist = kotlin.math.max(kotlin.math.abs(row - 7), kotlin.math.abs(col - 7))
-                if (dist < nearestDist || (dist == nearestDist && (row < nearestRow || (row == nearestRow && col < nearestCol)))) {
-                    nearestDist = dist
+                val distSq = (row - 7)*(row - 7) + (col - 7)*(col - 7)
+                if (distSq < nearestDist || (distSq == nearestDist && (row < nearestRow || (row == nearestRow && col < nearestCol)))) {
+                    nearestDist = distSq
                     nearestRow = row
                     nearestCol = col
                 }
@@ -239,7 +235,7 @@ object RockSpawner {
         for ((gx, gy) in gridPositions) {
             val finalX = (gx + offsetX + CHUNK_SIZE) % usableSize + margin
             val finalY = (gy + offsetY + CHUNK_SIZE) % usableSize + margin
-            val radius = rng.nextInt(3)  // 0, 1, 2
+            val radius = rng.nextInt(3)+1  // 1, 2, 3
 
             val tileX = chunkX * CHUNK_SIZE + finalX
             val tileY = chunkY * CHUNK_SIZE + finalY
@@ -276,14 +272,10 @@ object RockSpawner {
     private fun resetWindow(vesselChunkX: Int, vesselChunkY: Int) {
         _baseChunkX = vesselChunkX - 7
         _baseChunkY = vesselChunkY - 7
-        _oldBaseChunkX = _baseChunkX
-        _oldBaseChunkY = _baseChunkY
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
-                val worldChunkX = _baseChunkX + col
-                val worldChunkY = _baseChunkY + row
-                val dx = kotlin.math.abs(col - 7)
-                val dy = kotlin.math.abs(row - 7)
+                val dx = abs(col - 7)
+                val dy = abs(row - 7)
                 state[row * WINDOW_SIZE + col] = if (dx <= NEAR_RADIUS && dy <= NEAR_RADIUS) NEAR else UNPOPULATED
             }
         }
@@ -297,27 +289,37 @@ object RockSpawner {
      * either axis, perform a full reset — the window cannot track that distance.
      */
     internal fun onVesselChunkMove(newVesselChunkX: Int, newVesselChunkY: Int) {
-        // Save old base for applyNearZoneRules (to detect "was NEAR" transitions).
-        _oldBaseChunkX = _baseChunkX
-        _oldBaseChunkY = _baseChunkY
+        val dx = newVesselChunkX - lastVesselChunkX
+        val dy = newVesselChunkY - lastVesselChunkY
 
-        val dx = newVesselChunkX - (baseChunkX + 7)
-        val dy = newVesselChunkY - (baseChunkY + 7)
-
-        if (kotlin.math.abs(dx) > 7 || kotlin.math.abs(dy) > 7) {
+        if (abs(dx) > 7 || abs(dy) > 7) {
             resetWindow(newVesselChunkX, newVesselChunkY)
-            return
+        } else {
+            for (row in 0 until WINDOW_SIZE) {
+                val dstY = if (dy > 0) row else WINDOW_SIZE-row-1
+                val srcY = dstY+dy
+                for (col in 0 until WINDOW_SIZE) {
+                    val dstX = if (dx > 0) col else WINDOW_SIZE-col-1
+                    val srcX = dstX+dx
+                    if (srcX !in 0..<WINDOW_SIZE ||
+                        srcY !in 0..<WINDOW_SIZE) {
+                        // Source is outside of bounds of previous representation
+                        state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
+                    } else {
+                        state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
+                    }
+                }
+            }
+            _baseChunkX = newVesselChunkX-7
+            _baseChunkY = newVesselChunkY-7
         }
-
-        _baseChunkX = newVesselChunkX - 7
-        _baseChunkY = newVesselChunkY - 7
     }
 
     /**
      * Apply NEAR zone rules after a window shift.
      *
-     * NEAR is defined by a chunk's world coordinates relative to the vessel, not by
-     * array position. After a shift the base changes so different world chunks occupy
+     * NEAR is the central squares of the array.
+     * After a shift the base changes so different world chunks occupy
      * the same array slots — we must check whether the old world chunk at each slot
      * was near the old vessel position.
      *
@@ -326,40 +328,17 @@ object RockSpawner {
      * - Chunks that shifted in from outside → left as-is (safe default)
      */
     internal fun applyNearZoneRules() {
-        val oldVesselChunkX = _oldBaseChunkX + 7
-        val oldVesselChunkY = _oldBaseChunkY + 7
-        val newVesselChunkX = _baseChunkX + 7
-        val newVesselChunkY = _baseChunkY + 7
-
-        // First pass: identify which entries were NEAR (old world chunk was near old vessel).
-        val wasNear = BooleanArray(WINDOW_SIZE * WINDOW_SIZE)
-        for (row in 0 until WINDOW_SIZE) {
-            for (col in 0 until WINDOW_SIZE) {
-                val worldChunkX = _oldBaseChunkX + col
-                val worldChunkY = _oldBaseChunkY + row
-                val dx = kotlin.math.abs(worldChunkX - oldVesselChunkX)
-                val dy = kotlin.math.abs(worldChunkY - oldVesselChunkY)
-                wasNear[row * WINDOW_SIZE + col] = dx <= NEAR_RADIUS && dy <= NEAR_RADIUS
-            }
-        }
-
-        // Second pass: apply rules.
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 val idx = row * WINDOW_SIZE + col
-                val worldChunkX = _baseChunkX + col
-                val worldChunkY = _baseChunkY + row
-                val dx = kotlin.math.abs(worldChunkX - newVesselChunkX)
-                val dy = kotlin.math.abs(worldChunkY - newVesselChunkY)
+                val dx = abs(col - 7)
+                val dy = abs(row - 7)
 
                 if (dx <= NEAR_RADIUS && dy <= NEAR_RADIUS) {
-                    // Now near the vessel → always NEAR.
                     state[idx] = NEAR
-                } else if (wasNear[idx]) {
-                    // Was near the old vessel but now outside → POPULATED.
+                } else if (state[idx] == NEAR) {
                     state[idx] = POPULATED
                 }
-                // Else: leave as-is (UNPOPULATED or already POPULATED).
             }
         }
     }
