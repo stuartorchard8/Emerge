@@ -203,8 +203,8 @@ class GridFitTest {
         )
         assertEquals(
             0L,
-            s.baselineRockGrams + s.capturedGrams - s.extractedGrams - s.rocks.sumOf { it.massGrams },
-            "rockBalance $whenever",
+            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams },
+            "bodyBalance $whenever",
         )
         assertEquals(
             0L,
@@ -264,10 +264,10 @@ class GridFitTest {
         append('|').append(s.storedJoules).append('|').append(s.radiatedJoules)
         append('|').append(s.vesselImpulseX).append('|').append(s.vesselImpulseY)
         append('|').append(s.extractedGrams).append('|').append(s.ventedGrams)
-        append('|').append(s.capturedGrams).append('|').append(s.stockpile.toString())
-        for (r in s.rocks.sortedWith(compareBy({ it.positionX }, { it.positionY }))) {
-            append('|').append(r.positionX).append(',').append(r.positionY)
-            append(',').append(r.massGrams)
+        append('|').append(s.bodyCapturedGrams).append('|').append(s.stockpile.toString())
+        for (b in s.bodies.sortedWith(compareBy({ b -> b.positionX }, { b -> b.positionY }))) {
+            append('|').append(b.positionX).append(',').append(b.positionY)
+            append(',').append(b.massGrams)
         }
     }
 }

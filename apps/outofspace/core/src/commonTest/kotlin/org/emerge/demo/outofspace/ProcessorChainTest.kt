@@ -96,7 +96,7 @@ class ProcessorChainTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Enough rock to keep three stages fed for the whole run: one would be gone in a minute.
-        val feed = feedExtractor(grid, m, 2, 3, rocks = 8)
+        val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) {
             m[grid.index(x, 3)] = Processor(Direction.Right)
@@ -109,7 +109,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
         s = run(s, 1200)
 
         // The **shape**, not the figures. This has read 75/100/100, then 66/88/100, and now wobbles
@@ -138,7 +138,7 @@ class ProcessorChainTest {
         val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val feed = feedExtractor(grid, m, 2, 3, rocks = 8)
+        val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no waste runs anywhere
         m[grid.index(21, 3)] = Storage(Direction.Right)
@@ -146,7 +146,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
         s = run(s, 1200)
 
         for (x in stages) {

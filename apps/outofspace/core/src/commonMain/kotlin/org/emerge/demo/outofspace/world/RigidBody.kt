@@ -1,37 +1,51 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
+
+/** What kind of rigid body this is. */
+enum class BodyKind {
+    /** An ore rock from the field. */
+    ROCK,
+    /** A machine casing torn loose by dismantling. */
+    FRAGMENT,
+}
 
 /**
- * Free-floating solid (rock). Own grid, momentum, temperature.
+ * Free-floating solid (rock or fragment). Own grid, momentum, temperature.
+ *
  * ⚠️ Two frames: [impulseX/Y] in world frame, [positionX/Y] in vessel's grid frame.
- * Astern drift: grid moves by ship velocity each tick, so rocks drift relative to ship.
+ * Astern drift: grid moves by ship velocity each tick, so bodies drift relative to ship.
  * Not stored in bodiesOf (derives from machines/conduits/bridges), not Debris (settling would vent it).
  */
-class Rock(
+class RigidBody(
+    /** What kind of body this is — determines composition vs machineKind metadata. */
+    val kind: BodyKind,
     /** The shape's bounding box, in cells. */
     val width: Int,
     val height: Int,
-    /** Which cells of that box are solid, row-major. A rock is rarely a rectangle. */
+    /** Which cells of that box are solid, row-major. A body is rarely a rectangle. */
     val cells: BooleanArray,
-    /** The top-left corner of [cells], in the vessel's frame, in the billionths [Flight.PER_TILE] counts. */
+    /** Top-left corner of [cells], in the vessel's grid frame, in billionths [Flight.PER_TILE] counts. */
     val positionX: Long,
     val positionY: Long,
     /** Momentum in world frame (not vessel frame — ship's frame accelerates). */
     val impulseX: Long,
     val impulseY: Long,
-    /** What it is made of, as proportions. The stand-in ore body until there is a reason for more. */
-    val composition: Mixture,
-    /** Thermal energy, in the millijoules [Material] documents. */
+    /** What a rock is made of, as proportions. Null for fragments (they carry [machineKind] instead). */
+    val oreComposition: Mixture? = null,
+    /** Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction. */
+    val machineKind: MachineKind? = null,
+    /** Thermal energy, in the millijoules [MATERIAL] documents. */
     val joules: Long,
 ) {
     init {
-        require(cells.size == width * height) { "a ${width}x$height rock cannot have ${cells.size} cells" }
+        require(cells.size == width * height) { "a ${width}x$height body cannot have ${cells.size} cells" }
+        require(kind == BodyKind.ROCK && oreComposition != null || kind == BodyKind.FRAGMENT && machineKind != null || kind == BodyKind.ROCK && machineKind == null || kind == BodyKind.FRAGMENT && oreComposition == null) {
+            "kind $kind must have oreComposition for ROCK, machineKind for FRAGMENT"
+        }
     }
 
-    /** How many cells of it there are — what everything about the rock scales with. */
+    /** How many cells of it there are — what everything about the body scales with. */
     val filled: Int get() = cells.count { it }
 
     val massGrams: Long get() = filled * MATERIAL.gramsPerTile
@@ -50,52 +64,63 @@ class Rock(
     val centreY: Long get() = positionY + height * Flight.PER_TILE / 2L
 
     fun copy(
+        kind: BodyKind = this.kind,
+        width: Int = this.width,
+        height: Int = this.height,
+        cells: BooleanArray = this.cells,
         positionX: Long = this.positionX,
         positionY: Long = this.positionY,
         impulseX: Long = this.impulseX,
         impulseY: Long = this.impulseY,
+        oreComposition: Mixture? = this.oreComposition,
+        machineKind: MachineKind? = this.machineKind,
         joules: Long = this.joules,
-    ): Rock = Rock(width, height, cells, positionX, positionY, impulseX, impulseY, composition, joules)
+    ): RigidBody = RigidBody(
+        kind = kind, width = width, height = height, cells = cells,
+        positionX = positionX, positionY = positionY,
+        impulseX = impulseX, impulseY = impulseY,
+        oreComposition = oreComposition, machineKind = machineKind,
+        joules = joules,
+    )
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Rock &&
+        this === other || (other is RigidBody &&
+            kind == other.kind &&
             width == other.width && height == other.height && cells.contentEquals(other.cells) &&
             positionX == other.positionX && positionY == other.positionY &&
             impulseX == other.impulseX && impulseY == other.impulseY &&
-            composition == other.composition && joules == other.joules)
+            oreComposition == other.oreComposition && machineKind == other.machineKind && joules == other.joules)
 
-    override fun hashCode(): Int = (positionX * 31 + positionY).toInt() * 31 + cells.contentHashCode()
+    override fun hashCode(): Int = (kind.ordinal * 31 + (positionX * 31 + positionY).toInt()) * 31 + cells.contentHashCode()
 
     override fun toString(): String =
-        "Rock(${width}x$height, ${filled} cells, ${massGrams}g at " +
+        "${kind.name}(${width}x$height, ${filled} cells, ${massGrams}g at " +
             "${positionX / Flight.PER_TILE},${positionY / Flight.PER_TILE})"
 
     companion object {
         /**
-         * What rocks are made of, thermally.
+         * What bodies are made of, thermally.
          *
          * [Material.Firebrick] is not a joke and not a placeholder: an asteroid is a poor conductor
          * with a lot of thermal mass, which is the same pair of properties a furnace lining is chosen
          * for, and inventing a second enum entry with the same two numbers would be inventing a
-         * distinction the model cannot express. It gets its own entry the day rocks need to conduct
-         * differently from brick — which is the day the extractor's rate becomes a function of
-         * temperature, and that is phase change's increment, not this one.
-         *
-         * ⚠️ Note what this does **not** decide. [composition] is what the rock is made of chemically
-         * and is what the extractor will yield; this is what it costs to warm. The two are separate
-         * questions and the body model has always kept them so — see [Material]'s note on the masses
-         * being tuned while the ratios are real.
+         * distinction the model cannot express.
          */
         val MATERIAL: Material = Material.Firebrick
 
         /**
-         * A blob roughly [radius] cells across, which is what "a rock" means until something needs
-         * more.
+         * Tolerance for fragment shape derivation: 0.1 tile, shaved on exposed edges.
+         * Not applied to rocks — rockBlob already rasterises a disc shape.
+         */
+        val TOLERANCE: Long = Flight.PER_TILE / 10L
+
+        /**
+         * A blob roughly [radius] cells across.
          *
          * A disc rather than a square, because the first thing anyone will do is look at it, and a
-         * square rock reads as a crate. Rasterised on the cell centres so it is symmetric.
+         * square body reads as a crate. Rasterised on the cell centres so it is symmetric.
          */
-        fun blob(
+        fun rockBlob(
             radius: Int,
             positionX: Long,
             positionY: Long,
@@ -103,7 +128,7 @@ class Rock(
             impulseX: Long = 0L,
             impulseY: Long = 0L,
             kelvin: Int = Temperature.AMBIENT_KELVIN,
-        ): Rock {
+        ): RigidBody {
             val d = radius * 2 + 1
             val cells = BooleanArray(d * d)
             for (y in 0 until d) {
@@ -114,11 +139,12 @@ class Rock(
                 }
             }
             val filled = cells.count { it }
-            return Rock(
+            return RigidBody(
+                kind = BodyKind.ROCK,
                 width = d, height = d, cells = cells,
                 positionX = positionX, positionY = positionY,
                 impulseX = impulseX, impulseY = impulseY,
-                composition = composition,
+                oreComposition = composition,
                 joules = filled * MATERIAL.capacityPerTile * kelvin,
             )
         }
@@ -126,70 +152,73 @@ class Rock(
 }
 
 /**
- * The only force a vessel exerts on a rock at a distance: the deck plating, and only over the deck.
+ * The only force a vessel exerts on a body at a distance: the deck plating, and only over the deck.
  *
  * [platingGravity] is [VesselState.gravity], the *setting* — a field the ship makes, which is why it
- * stops where the ship does. There is no second term. A rock's momentum is written in the world
+ * stops where the ship does. There is no second term. A body's momentum is written in the world
  * frame, and the world frame is inertial, so the vessel's own acceleration is not a force on
- * anything: it shows up in [driftRocks] as the grid sliding under the rock instead. See [Rock].
+ * anything: it shows up in [driftBodies] as the grid sliding under the body instead. See [RigidBody].
  */
-fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: Frac2): Frac2 {
+fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: org.emerge.sim.core.physics.primitives.Frac2): org.emerge.sim.core.physics.primitives.Frac2 {
     val tx = centreX / Flight.PER_TILE
     val ty = centreY / Flight.PER_TILE
     val aboard = centreX >= 0L && centreY >= 0L && tx < grid.width && ty < grid.height
-    return if (aboard) platingGravity else Frac2(Frac(0L), Frac(0L))
+    return if (aboard) platingGravity else org.emerge.sim.core.physics.primitives.Frac2(
+        org.emerge.sim.core.physics.primitives.Frac(0L),
+        org.emerge.sim.core.physics.primitives.Frac(0L)
+    )
 }
 
 /**
- * What one tick did to every rock, and what it therefore did to the ship.
+ * What one tick did to every body, and what it therefore did to the ship.
  *
- * [handedX] is every gram·tile of momentum the **vessel** gave the rocks this tick, by any means; the
+ * [handedX] is every gram·tile of momentum the **vessel** gave the bodies this tick, by any means; the
  * ship owes itself the negative of it, and booking both in the same breath is what makes the whole
- * business conserve by construction. See [VesselState.rockImpulseX].
+ * business conserve by construction. See [VesselState.bodyImpulseX].
  */
-class RockStep(val rocks: List<Rock>, val handedX: Long, val handedY: Long)
+class BodyStep(val bodies: List<RigidBody>, val handedX: Long, val handedY: Long)
 
 /**
- * Rock drift: grid moves by ship velocity, rock advances by (rock - ship) velocity.
+ * Body drift: grid moves by ship velocity, body advances by (body - ship) velocity.
  * Sweep (not jump) prevents bulkhead stepping. Plating applied after sweep (tick ordering).
  * ⚠️ shipAcceleration only for restingSpeed threshold (not a force on world-frame momentum).
  * ⚠️ Plating costs the ship (prevents momentum pump from gravity).
  */
-fun driftRocks(
+fun driftBodies(
     grid: Grid,
     structure: StructureMap,
-    rocks: List<Rock>,
-    platingGravity: Frac2,
+    bodies: List<RigidBody>,
+    platingGravity: org.emerge.sim.core.physics.primitives.Frac2,
     shipVelocityX: Long,
     shipVelocityY: Long,
     shipMassGrams: Long,
-    shipAcceleration: Frac2,
-): RockStep {
-    if (rocks.isEmpty()) return RockStep(rocks, 0L, 0L)
-    // What presses a rock against a surface in the grid's frame: the plating, less the ship's own
+    shipAcceleration: org.emerge.sim.core.physics.primitives.Frac2,
+): BodyStep {
+    if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
+    // What presses a body against a surface in the grid's frame: the plating, less the ship's own
     // acceleration. Exactly [experiencedGravity]'s quantity, and for exactly its reason.
     val restX = RockContact.restingSpeed(platingGravity.x.raw - shipAcceleration.x.raw)
     val restY = RockContact.restingSpeed(platingGravity.y.raw - shipAcceleration.y.raw)
 
     var handedX = 0L
     var handedY = 0L
-    val moved = rocks.map { rock ->
-        val mass = rock.massGrams
-        if (mass <= 0L) return@map rock
-        val felt = platingFeltBy(grid, rock.centreX, rock.centreY, platingGravity)
+    val moved = bodies.map { body ->
+        val mass = body.massGrams
+        if (mass <= 0L) return@map body
+        val felt = platingFeltBy(grid, body.centreX, body.centreY, platingGravity)
         val platingX = mass * felt.x.raw / Flight.FRAC_ONE
         val platingY = mass * felt.y.raw / Flight.FRAC_ONE
-        val swept = sweepRock(
-            grid, structure, rock,
+        val swept = sweepBody(
+            grid, structure, body,
             shipVelocityX, shipVelocityY, shipMassGrams,
             restX, restY,
         )
         handedX += swept.impulseX + platingX
         handedY += swept.impulseY + platingY
-        swept.rock.copy(
-            impulseX = swept.rock.impulseX + platingX,
-            impulseY = swept.rock.impulseY + platingY,
+        swept.body.copy(
+            impulseX = swept.body.impulseX + platingX,
+            impulseY = swept.body.impulseY + platingY,
         )
     }
-    return RockStep(moved, handedX, handedY)
+    return BodyStep(moved, handedX, handedY)
 }

@@ -87,7 +87,7 @@ class VesselSimTest {
         return VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
     }
 
@@ -136,7 +136,7 @@ class VesselSimTest {
             VesselState(
                 grid, machines.toList(),
                 conduits = Conduits.ofRails(rails.toList()),
-                rocks = feed,
+                bodies = feed,
             ),
             480,
         )
@@ -167,7 +167,7 @@ class VesselSimTest {
             VesselState(
                 grid, machines.toList(),
                 conduits = Conduits.ofRails(rails.toList()),
-                rocks = feed,
+                bodies = feed,
             ),
             120,
         )
@@ -220,7 +220,7 @@ class VesselSimTest {
             VesselState(
                 grid, machines.toList(),
                 conduits = Conduits.ofRails(rails.toList()),
-                rocks = feed,
+                bodies = feed,
             ),
             120,
         )
@@ -269,7 +269,7 @@ class VesselSimTest {
         var s = VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
         s = run(s, 80)
 
@@ -291,7 +291,7 @@ class VesselSimTest {
         var s = VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
         s = run(s, 120)
 
@@ -324,13 +324,13 @@ class VesselSimTest {
         var s = VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
         s = run(s, 400)
 
-        assertEquals(emptyList(), s.rocks, "the rock should be gone entirely")
+        assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")
         assertEquals(FEEDSTOCK_GRAMS, s.extractedGrams, "and every gram of it should have become ore")
-        assertEquals(0L, s.rockGrams)
+        assertEquals(0L, s.bodyGrams)
         assertBalanced(s, "extractor into a vent")
 
         // Nothing more arrives, however long it is left running.
@@ -354,7 +354,7 @@ class VesselSimTest {
         var s = VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
 
         s = run(s, 240)

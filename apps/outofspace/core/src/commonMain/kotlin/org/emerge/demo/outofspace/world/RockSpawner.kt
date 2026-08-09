@@ -9,11 +9,11 @@ import kotlin.random.Random
 /**
  * Dynamic asteroid spawning and despawning using a WINDOW_SIZE×WINDOW_SIZE chunk-state array.
  *
- * Rocks spawn one chunk per tick — the nearest UNPOPULATED chunk outside a 5×5 NEAR zone
- * centered on the vessel. Rocks despawn when their chunk leaves the WINDOW_SIZE×WINDOW_SIZE window.
+ * Bodies spawn one chunk per tick — the nearest UNPOPULATED chunk outside a 5×5 NEAR zone
+ * centered on the vessel. Bodies despawn when their chunk leaves the WINDOW_SIZE×WINDOW_SIZE window.
  *
- * Spawned rocks are **free mass** — not tracked by [VesselState.baselineRockGrams]. The rock
- * ledger will diverge by the mass of world-spawned rocks the extractor eats (intentional).
+ * Spawned bodies are **free mass** — not tracked by [VesselState.baselineBodyGrams]. The body
+ * ledger will diverge by the mass of world-spawned bodies the extractor eats (intentional).
  */
 object RockSpawner {
 
@@ -115,21 +115,21 @@ object RockSpawner {
      * Process spawning and despawning for one tick.
      *
      * [tick] is the current simulation tick, used to schedule periodic checks.
-     * [rocks] is the current list of active rocks.
+     * [bodies] is the current list of active bodies.
      * [vesselTileX] and [vesselTileY] place the spawn centre in tile coordinates.
-     * Returns a new rocks list with spawns/despawns applied.
+     * Returns a new bodies list with spawns/despawns applied.
      *
      * One UNPOPULATED chunk per tick (nearest to vessel, outside NEAR zone) is spawned into.
-     * Rocks whose chunk leaves the WINDOW_SIZE×WINDOW_SIZE window are despawned.
+     * Bodies whose chunk leaves the WINDOW_SIZE×WINDOW_SIZE window are despawned.
      */
     fun process(
         tick: Long,
-        rocks: List<Rock>,
+        bodies: List<RigidBody>,
         vesselTileX: Long,
         vesselTileY: Long,
-    ): List<Rock> {
-        if (!enabled) return rocks
-        if (tick < ACTIVATE_AFTER_TICK) return rocks
+    ): List<RigidBody> {
+        if (!enabled) return bodies
+        if (tick < ACTIVATE_AFTER_TICK) return bodies
 
         val vesselChunkX = chunkIndexOf(vesselTileX)
         val vesselChunkY = chunkIndexOf(vesselTileY)
@@ -142,17 +142,17 @@ object RockSpawner {
             lastVesselChunkY = vesselChunkY
         }
 
-        // ── Despawn rocks outside the WINDOW_SIZE×WINDOW_SIZE window ──
-        val result = ArrayList<Rock>(rocks.size)
-        for (rock in rocks) {
-            val rockTileX = rock.positionX / Flight.PER_TILE
-            val rockTileY = rock.positionY / Flight.PER_TILE
-            val rockChunkX = chunkIndexOf(rockTileX)
-            val rockChunkY = chunkIndexOf(rockTileY)
-            val dx = abs(rockChunkX)
-            val dy = abs(rockChunkY)
+        // ── Despawn bodies outside the WINDOW_SIZE×WINDOW_SIZE window ──
+        val result = ArrayList<RigidBody>(bodies.size)
+        for (body in bodies) {
+            val bodyTileX = body.positionX / Flight.PER_TILE
+            val bodyTileY = body.positionY / Flight.PER_TILE
+            val bodyChunkX = chunkIndexOf(bodyTileX)
+            val bodyChunkY = chunkIndexOf(bodyTileY)
+            val dx = abs(bodyChunkX)
+            val dy = abs(bodyChunkY)
             if (dx <= WINDOW_RADIUS && dy <= WINDOW_RADIUS) {
-                result.add(rock)
+                result.add(body)
             }
         }
 
@@ -180,11 +180,11 @@ object RockSpawner {
             val density = densityForChunk(worldChunkX, worldChunkY)
             val composition = compositionForChunk(worldChunkX, worldChunkY)
 
-            val newRocks = spawnRocksForChunk(worldChunkX, worldChunkY, density, composition)
+            val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, composition)
 
-            for (rock in newRocks) {
-                if (!wouldOverlap(rock.positionX / Flight.PER_TILE, rock.positionY / Flight.PER_TILE, (rock.width / 2), result)) {
-                    result.add(rock)
+            for (body in newBodies) {
+                if (!wouldOverlap(body.positionX / Flight.PER_TILE, body.positionY / Flight.PER_TILE, (body.width / 2), result)) {
+                    result.add(body)
                 }
             }
 
@@ -199,11 +199,11 @@ object RockSpawner {
     }
 
     /**
-     * Generate deterministic rocks for a given chunk.
+     * Generate deterministic bodies for a given chunk.
      *
-     * Uses the chunk coordinates to seed a deterministic layout of up to [MAX_SPAWNS_PER_CHUNK] rocks within the chunk.
+     * Uses the chunk coordinates to seed a deterministic layout of up to [MAX_SPAWNS_PER_CHUNK] bodies within the chunk.
      */
-    private fun spawnRocksForChunk(chunkX: Int, chunkY: Int, density: Frac, composition: Mixture): List<Rock> {
+    private fun spawnBodiesForChunk(chunkX: Int, chunkY: Int, density: Frac, composition: Mixture): List<RigidBody> {
         val hash = (chunkX * 73856093L xor chunkY * 19349663L).toInt()
         val rng = Random(hash.toLong() and 0xFFFFFFFFL)
 
@@ -214,7 +214,7 @@ object RockSpawner {
         val numSpawnAttempts = numFractionalSpawnAttempts/fractionalGranularity
         val fractionalSpawnAttempt = numFractionalSpawnAttempts%fractionalGranularity
 
-        val rocks = mutableListOf<Rock>()
+        val bodies = mutableListOf<RigidBody>()
         for (i in 0 .. numSpawnAttempts) {
             if (i == numSpawnAttempts) {
                 // Fractional attempt - skip if rng rolls higher than the fraction
@@ -230,7 +230,7 @@ object RockSpawner {
 
             val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
 
-            rocks.add(Rock.blob(
+            bodies.add(RigidBody.rockBlob(
                 radius = radius,
                 positionX = tileX.toLong() * Flight.PER_TILE,
                 positionY = tileY.toLong() * Flight.PER_TILE,
@@ -238,7 +238,7 @@ object RockSpawner {
             ))
         }
 
-        return rocks
+        return bodies
     }
 
     /**
@@ -507,7 +507,7 @@ object RockSpawner {
     }
 
     /**
-     * Check if a rock at ([tileX], [tileY]) with [radius] cells would overlap any rock in [rocks].
+     * Check if a body at ([tileX], [tileY]) with [radius] cells would overlap any body in [bodies].
      *
      * [radius] is the blob radius in cells; the bounding box is `(radius * 2 + 1)` tiles.
      * Position is in tile coordinates, not billionths.
@@ -516,7 +516,7 @@ object RockSpawner {
         tileX: Long,
         tileY: Long,
         radius: Int,
-        rocks: List<Rock>,
+        bodies: List<RigidBody>,
     ): Boolean {
         val span = radius * 2 + 1
         val halfSpan = span / 2L
@@ -525,13 +525,13 @@ object RockSpawner {
         val minY = (tileY - halfSpan) * Flight.PER_TILE
         val maxY = (tileY + halfSpan) * Flight.PER_TILE
 
-        for (rock in rocks) {
-            val rockMinX = rock.positionX
-            val rockMinY = rock.positionY
-            val rockMaxX = rockMinX + rock.width * Flight.PER_TILE
-            val rockMaxY = rockMinY + rock.height * Flight.PER_TILE
+        for (body in bodies) {
+            val bodyMinX = body.positionX
+            val bodyMinY = body.positionY
+            val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE
+            val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE
 
-            if (minX < rockMaxX && maxX > rockMinX && minY < rockMaxY && maxY > rockMinY) {
+            if (minX < bodyMaxX && maxX > bodyMinX && minY < bodyMaxY && maxY > bodyMinY) {
                 return true
             }
         }

@@ -45,29 +45,38 @@ object RockContact {
 }
 
 /**
- * One rock's tick of travel across the grid, stopped and bounced wherever the hull is in the way.
- *
- * [impulseX] is what the ship handed the rock — the rock already has it, and the ship owes itself
- * the negative of it.
+ * One body's tick of travel across the grid, stopped and bounced wherever the hull is in the way.
  */
-class Swept(val rock: Rock, val impulseX: Long, val impulseY: Long)
+class SweptBody(val body: RigidBody, val impulseX: Long, val impulseY: Long)
+
+/** Integer floor division, which is not what `/` does for negatives — and a body goes negative. */
+private fun floorTile(v: Long): Long =
+    if (v >= 0L) v / Flight.PER_TILE else -((-v + Flight.PER_TILE - 1L) / Flight.PER_TILE)
 
 /**
- * Does [rock], placed with its top-left corner at [atX], [atY], overlap anything solid?
- *
- * A rock's cells are the same size as the grid's and axis-aligned with them but offset by a fraction
- * of a tile, so one rock cell covers up to four tiles and the test is an integer box per cell. The
- * `- 1` on the far edge is what makes an exactly-aligned rock *touching* a wall not count as being
- * inside it, which is the difference between a rock at rest against a bulkhead and a rock that
- * bounces off it once a tick forever.
- *
- * Anything off the grid is open space, not wall. A rock leaves the world by flying off the edge and
- * that is correct: the plating stops where the vessel does and so does everything else about it.
+ * Normal impulse: J = −(1+e)·rv·μ (below restingSpeed: drop restitution = stop dead).
+ * One rounded chain (not two) — truncate once toward zero (settles, never over-delivers).
  */
-fun overlapsHull(grid: Grid, structure: StructureMap, rock: Rock, atX: Long, atY: Long): Boolean {
-    for (cy in 0 until rock.height) {
-        for (cx in 0 until rock.width) {
-            if (!rock.cells[cy * rock.width + cx]) continue
+private fun normalImpulse(rv: Long, mu: Long, rest: Long): Long {
+    if (rv == 0L) return 0L
+    val speed = abs(rv)
+    val num = if (speed < rest) RockContact.RESTITUTION_DEN
+    else RockContact.RESTITUTION_DEN + RockContact.RESTITUTION_NUM
+    val magnitude = speed * mu * num / (RockContact.RESTITUTION_DEN * Flight.PER_TILE)
+    return if (rv > 0L) -magnitude else magnitude
+}
+
+private fun abs(v: Long): Long = if (v < 0L) -v else v
+
+/**
+ * Does [body], placed with its top-left corner at [atX], [atY], overlap anything solid?
+ *
+ * Same as the [Rock] overload — [body] carries [width], [height], [cells] the same way.
+ */
+fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, atX: Long, atY: Long): Boolean {
+    for (cy in 0 until body.height) {
+        for (cx in 0 until body.width) {
+            if (!body.cells[cy * body.width + cx]) continue
             val x0 = atX + cx * Flight.PER_TILE
             val y0 = atY + cy * Flight.PER_TILE
             val tx0 = floorTile(x0)
@@ -86,40 +95,30 @@ fun overlapsHull(grid: Grid, structure: StructureMap, rock: Rock, atX: Long, atY
     return false
 }
 
-/** Integer floor division, which is not what `/` does for negatives — and a rock goes negative. */
-private fun floorTile(v: Long): Long =
-    if (v >= 0L) v / Flight.PER_TILE else -((-v + Flight.PER_TILE - 1L) / Flight.PER_TILE)
-
 /**
- * Sweep one rock: relative velocity (rock world-frame, ship grid-frame), bounce off hull.
+ * Sweep one body: relative velocity (body world-frame, ship grid-frame), bounce off hull.
  * Normal: ask x-only and y-only overlap separately (exact corner case, no preference).
- * shipVelocityX fixed per tick (explicitness: forces buy next tick's travel).
- * ⚠️ Rock already inside wall = left alone (escape route = overlap → wedging).
  */
-fun sweepRock(
+fun sweepBody(
     grid: Grid,
     structure: StructureMap,
-    rock: Rock,
+    body: RigidBody,
     shipVelocityX: Long,
     shipVelocityY: Long,
     shipMassGrams: Long,
     restingSpeedX: Long,
     restingSpeedY: Long,
-): Swept {
-    val mass = rock.massGrams
-    if (mass <= 0L) return Swept(rock, 0L, 0L)
+): SweptBody {
+    val mass = body.massGrams
+    if (mass <= 0L) return SweptBody(body, 0L, 0L)
 
-    var px = rock.positionX
-    var py = rock.positionY
-    var ix = rock.impulseX
-    var iy = rock.impulseY
+    var px = body.positionX
+    var py = body.positionY
+    var ix = body.impulseX
+    var iy = body.impulseY
     var gotX = 0L
     var gotY = 0L
 
-    // Reduced mass, which is what makes the ship's finite weight show up in the bounce: against an
-    // infinitely heavy wall this is just the rock's mass, and against a ship six times its own the
-    // rock keeps a sixth of the exchange for itself. A ship is not a wall, and at 380kg against 63
-    // it is not a very good approximation of one either.
     val mu = if (shipMassGrams <= 0L) mass else mass * shipMassGrams / (mass + shipMassGrams)
 
     fun relative(impulse: Long, shipVelocity: Long): Long = impulse * Flight.PER_TILE / mass - shipVelocity
@@ -129,27 +128,25 @@ fun sweepRock(
     val reach = maxOf(abs(startRvx), abs(startRvy))
     val steps = (reach / RockContact.MAX_SUBSTEP + 1L).toInt()
 
-    val wedged = overlapsHull(grid, structure, rock, px, py)
+    val wedged = overlapsHull(grid, structure, body, px, py)
 
     for (k in 0 until steps) {
         val rvx = relative(ix, shipVelocityX)
         val rvy = relative(iy, shipVelocityY)
-        // Partition (not repeated division) so sub-steps sum exactly to full move (no rounding loss).
         val dx = rvx * (k + 1) / steps - rvx * k / steps
         val dy = rvy * (k + 1) / steps - rvy * k / steps
         val nx = px + dx
         val ny = py + dy
 
-        if (wedged || !overlapsHull(grid, structure, rock, nx, ny)) {
+        if (wedged || !overlapsHull(grid, structure, body, nx, ny)) {
             px = nx
             py = ny
             continue
         }
 
-        var hitX = dx != 0L && overlapsHull(grid, structure, rock, nx, py)
-        var hitY = dy != 0L && overlapsHull(grid, structure, rock, px, ny)
+        var hitX = dx != 0L && overlapsHull(grid, structure, body, nx, py)
+        var hitY = dy != 0L && overlapsHull(grid, structure, body, px, ny)
         if (!hitX && !hitY) {
-            // Neither axis alone reaches it: a corner, and the rock stops on both.
             hitX = dx != 0L
             hitY = dy != 0L
         }
@@ -168,20 +165,5 @@ fun sweepRock(
         }
     }
 
-    return Swept(rock.copy(positionX = px, positionY = py, impulseX = ix, impulseY = iy), gotX, gotY)
+    return SweptBody(body.copy(positionX = px, positionY = py, impulseX = ix, impulseY = iy), gotX, gotY)
 }
-
-/**
- * Normal impulse: J = −(1+e)·rv·μ (below restingSpeed: drop restitution = stop dead).
- * One rounded chain (not two) — truncate once toward zero (settles, never over-delivers).
- */
-private fun normalImpulse(rv: Long, mu: Long, rest: Long): Long {
-    if (rv == 0L) return 0L
-    val speed = abs(rv)
-    val num = if (speed < rest) RockContact.RESTITUTION_DEN
-    else RockContact.RESTITUTION_DEN + RockContact.RESTITUTION_NUM
-    val magnitude = speed * mu * num / (RockContact.RESTITUTION_DEN * Flight.PER_TILE)
-    return if (rv > 0L) -magnitude else magnitude
-}
-
-private fun abs(v: Long): Long = if (v < 0L) -v else v

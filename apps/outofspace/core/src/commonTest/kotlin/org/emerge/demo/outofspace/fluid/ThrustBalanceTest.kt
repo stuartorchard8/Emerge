@@ -114,18 +114,18 @@ class ThrustBalanceTest {
         // The rock term belongs in the identity from H2 onward, and the starter vessel has rocks on
         // its extractor plates from H3 onward — gripped, chewed and handing momentum back — so a
         // sum without it now reads a legitimate exchange as the ship gaining momentum from nowhere.
-        // See [VesselState.rockImpulseX].
+        // See [VesselState.bodyImpulseX].
         assertEquals(
             0L,
-            s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX + s.rockImpulseX,
+            s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX + s.bodyImpulseX,
             "$what: x — ship ${s.vesselImpulseX}, aboard $aboardX, exhaust ${s.exhaustMomentumX}, " +
-                "undelivered ${s.undeliveredImpulseX}, rock ${s.rockImpulseX}",
+                "undelivered ${s.undeliveredImpulseX}, rock ${s.bodyImpulseX}",
         )
         assertEquals(
             0L,
-            s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY + s.rockImpulseY,
+            s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY + s.bodyImpulseY,
             "$what: y — ship ${s.vesselImpulseY}, aboard $aboardY, exhaust ${s.exhaustMomentumY}, " +
-                "undelivered ${s.undeliveredImpulseY}, rock ${s.rockImpulseY}",
+                "undelivered ${s.undeliveredImpulseY}, rock ${s.bodyImpulseY}",
         )
     }
 

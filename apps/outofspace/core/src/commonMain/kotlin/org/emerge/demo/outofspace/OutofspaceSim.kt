@@ -60,9 +60,9 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
-import org.emerge.demo.outofspace.world.Rock
 import org.emerge.demo.outofspace.world.RockSpawner
-import org.emerge.demo.outofspace.world.driftRocks
+import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
@@ -254,31 +254,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val newPositionY = state.positionY + state.velocityY
         val vesselTileX = newPositionX / Flight.PER_TILE
         val vesselTileY = newPositionY / Flight.PER_TILE
-        val rocksToDrift = RockSpawner.process(
+        val bodiesToDrift = RockSpawner.process(
             tick = state.tick,
-            rocks = w.rocks.toList(),
+            bodies = w.bodies.toList(),
             vesselTileX = vesselTileX,
             vesselTileY = vesselTileY,
         )
-        // Replace w.rocks contents (driftRocks mutates by reference via the list).
-        w.rocks.clear()
-        w.rocks.addAll(rocksToDrift)
+        // Replace w.bodies contents (driftBodies mutates by reference via the list).
+        w.bodies.clear()
+        w.bodies.addAll(bodiesToDrift)
 
-        // Rocks fly here, and not up beside the debris, because this is where the ship's own motion
-        // is known — and a rock's motion is now stated against the *world* while its position is
-        // stated on the *grid*, so drifting one needs the velocity of the grid itself. See [Rock].
+        // Bodies fly here, and not up beside the debris, because this is where the ship's own motion
+        // is known — and a body's motion is now stated against the *world* while its position is
+        // stated on the *grid*, so drifting one needs the velocity of the grid itself. See [RigidBody].
         //
         // `state.velocityX` is the start-of-tick velocity, which is exactly what the ship's own
-        // position is advanced by below: the grid slides by the same amount for the rock as it does
+        // position is advanced by below: the grid slides by the same amount for the body as it does
         // for the hull, because it is the same grid.
         //
-        // It is also where a rock can hit something, because a contact is an exchange and the ship's
-        // half of it has to join `netImpulse` below in the same tick the rock's half is booked. The
-        // acceleration is passed for the resting threshold and is not a force — see [driftRocks].
-        val rocksDrifted = driftRocks(
+        // It is also where a body can hit something, because a contact is an exchange and the ship's
+        // half of it has to join `netImpulse` below in the same tick the body's half is booked. The
+        // acceleration is passed for the resting threshold and is not a force — see [driftBodies].
+        val bodiesDrifted = driftBodies(
             state.grid,
             structure,
-            w.rocks,
+            w.bodies,
             state.gravity,
             state.velocityX,
             state.velocityY,
@@ -286,11 +286,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
         )
 
-        // Vessel pays for rock momentum here: `−J` for the `+J` the rock got (conserved by construction).
-        // Everything the vessel handed a rock this tick: the extractor took momentum off one
+        // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
+        // Everything the vessel handed a body this tick: the extractor took momentum off one
         // (negative), contact and plating gave some to others.
-        val handedX = w.rockHandedX + rocksDrifted.handedX
-        val handedY = w.rockHandedY + rocksDrifted.handedY
+        val handedX = w.bodyHandedX + bodiesDrifted.handedX
+        val handedY = w.bodyHandedY + bodiesDrifted.handedY
         val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX -
             handedX
         val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY -
@@ -339,10 +339,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Debug engine (non-physics, booked alongside thrust).
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
-            rocks = rocksDrifted.rocks,
-            rockImpulseX = state.rockImpulseX + handedX,
-            rockImpulseY = state.rockImpulseY + handedY,
-            capturedGrams = w.capturedGrams,
+            bodies = bodiesDrifted.bodies,
+            bodyImpulseX = state.bodyImpulseX + handedX,
+            bodyImpulseY = state.bodyImpulseY + handedY,
+            bodyCapturedGrams = w.bodyCapturedGrams,
             motion = w.motion.freeze(),
         ).resized(w.fitRequested)
     }
@@ -529,19 +529,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         var fitRequested: Boolean = false
 
-        /** Free-floating rock, and the running admission of how much of it came from outside. */
-        val rocks: MutableList<Rock> = state.rocks.toMutableList()
-        var capturedGrams: Long = state.capturedGrams
+        /** Free-floating body, and the running admission of how much of it came from outside. */
+        val bodies: MutableList<RigidBody> = state.bodies.toMutableList()
+        var bodyCapturedGrams: Long = state.bodyCapturedGrams
 
         /**
-         * Momentum the vessel handed the rocks during the **machine** pass, which is negative: an
-         * extractor takes momentum off a rock rather than giving it any.
+         * Momentum the vessel handed the bodies during the **machine** pass, which is negative: an
+         * extractor takes momentum off a body rather than giving it any.
          *
-         * Separate from what [driftRocks] hands out only because it happens earlier in the tick;
-         * the two are summed into one term below and mean the same thing. See [VesselState.rockImpulseX].
+         * Separate from what [driftBodies] hands out only because it happens earlier in the tick;
+         * the two are summed into one term below and mean the same thing. See [VesselState.bodyImpulseX].
          */
-        var rockHandedX: Long = 0L
-        var rockHandedY: Long = 0L
+        var bodyHandedX: Long = 0L
+        var bodyHandedY: Long = 0L
 
         // Mutable: edit pass moves air before fluid pass runs.
         val airGrams: LongArray = state.air.copyGrams()
@@ -839,18 +839,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             injectedAirJoules += joules
         }
 
-        /** Drop a rock at ([x], [y]) (capture placeholder). Mass → capturedGrams, energy → built. */
+        /** Drop a body at ([x], [y]) (capture placeholder). Mass → bodyCapturedGrams, energy → built. */
         private fun dropRock(x: Float, y: Float, radius: Int) {
             val half = radius * Flight.PER_TILE
-            val rock = Rock.blob(
+            val body = RigidBody.rockBlob(
                 radius = radius,
                 positionX = (x * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
                 positionY = (y * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
                 composition = DEFAULT_ORE_BODY,
             )
-            rocks.add(rock)
-            capturedGrams += rock.massGrams
-            built(rock.joules)
+            bodies.add(body)
+            bodyCapturedGrams += body.massGrams
+            built(body.joules)
         }
 
         /** Place building (click names centre, footprint grows around it). */
@@ -946,7 +946,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             var input = m.input
             if (input == null || input.mass <= 0L) {
-                val found = if (activation > 0) reachedRock(m, at) else -1
+                val found = if (activation > 0) reachedBody(m, at) else -1
                 input = if (found < 0) null else bite(found, at)
             }
             if (input == null) return m.copy(input = null, carry = carry)
@@ -963,38 +963,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             )
         }
 
-        /** The first rock with a cell over the plate at [at], or `-1`. */
-        private fun reachedRock(m: Extractor, at: Int): Int {
+        /** The first body with a cell over the plate at [at], or `-1`. */
+        private fun reachedBody(m: Extractor, at: Int): Int {
             val reach = m.kind.reach
             val x0 = grid.xOf(at) - reach
             val y0 = grid.yOf(at) - reach
-            for (r in rocks.indices) {
-                if (reachableCell(rocks[r], x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
+            for (r in bodies.indices) {
+                if (reachableCell(bodies[r], x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
             }
             return -1
         }
 
         /**
-         * Takes one cell off rock [index], which is where mass enters the ore ledger — at the rock,
+         * Takes one cell off body [index], which is where mass enters the ore ledger — at the body,
          * not at the belt, so that the two balances are hinged on the same number. See
-         * [VesselState.capturedGrams].
+         * [VesselState.bodyCapturedGrams].
          */
         private fun bite(index: Int, at: Int): Resource? {
-            val rock = rocks[index]
+            val body = bodies[index]
             val reach = machines[at]!!.kind.reach
             val cell = reachableCell(
-                rock, grid.xOf(at) - reach, grid.yOf(at) - reach,
+                body, grid.xOf(at) - reach, grid.yOf(at) - reach,
                 grid.xOf(at) + reach, grid.yOf(at) + reach,
             )
             if (cell < 0) return null
-            val taken = biteCell(rock, cell)
+            val taken = biteCell(body, cell)
             extractedGrams += taken.grams
             absorb(at, taken.joules)
-            // The rock lost this; the ship gained it, so the ship gave the rock the negative.
-            rockHandedX -= taken.impulseX
-            rockHandedY -= taken.impulseY
-            if (taken.rock == null) rocks.removeAt(index) else rocks[index] = taken.rock
-            return Resource(Form.Ore, rock.composition.scaledTo(taken.grams))
+            // The body lost this; the ship gained it, so the ship gave the body the negative.
+            bodyHandedX -= taken.impulseX
+            bodyHandedY -= taken.impulseY
+            if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
+            return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.grams))
         }
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */

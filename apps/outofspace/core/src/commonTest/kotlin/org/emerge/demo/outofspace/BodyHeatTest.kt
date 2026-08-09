@@ -94,9 +94,11 @@ class BodyHeatTest {
         )
         // And it is *its own* temperature, not the furnace's: iron holds far less than firebrick, so
         // it warms fast, but the two are separate bodies and never become one number.
+        val furnace = settled.machines[under] as? Machine ?: error("no machine at $under")
+        val furnaceKelvin = (furnace.joules / (furnace.kind.material.capacityPerTile * furnace.kind.thermalTiles)).toInt()
         assertTrue(
-            settled.railKelvin(under) != settled.bodies.first { it.at == under && !it.permeable }.kelvin,
-            "but the two are still separate bodies with separate temperatures",
+            settled.railKelvin(under) != furnaceKelvin,
+            "but the two are still separate bodies with separate temperatures: rail=${settled.railKelvin(under)}K furnace=${furnaceKelvin}K",
         )
     }
 

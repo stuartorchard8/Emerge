@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.STARTER_DEMO_PLATE_Y
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X
 import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
@@ -115,18 +115,18 @@ private fun linkPair(grid: Grid, rails: Array<Segment?>, a: Int, dir: Direction)
 // ── Ore, since there is no longer anywhere it comes from for free ─────────────
 
 /**
- * An extractor at [x],[y] with rock lying on its plate — what "a source of ore" means since H3.
+ * An extractor at [x],[y] with a body lying on its plate — what "a source of ore" means since H3.
  *
- * The rock is exactly the plate's size, so every one of its cells is reachable and the whole thing
+ * The body is exactly the plate's size, so every one of its cells is reachable and the whole thing
  * can be eaten. It is also **finite**, at [FEEDSTOCK_GRAMS] each, which is the difference a test has
- * to live with now: a line left running long enough stops, because the rock ran out.
+ * to live with now: a line left running long enough stops, because the body ran out.
  *
- * [rocks] above one stacks that many in the same place, which is not something the game can hand a
+ * [bodies] above one stacks that many in the same place, which is not something the game can hand a
  * player and is the cheapest way for a test to say "more ore than this needs". Nothing objects —
- * rocks do not collide with each other, only with the ship — and the extractor works through them
+ * bodies do not collide with each other, only with the ship — and the extractor works through them
  * one at a time.
  *
- * Writes the machine into [machines] and returns the rock, since rocks are not on the deck and
+ * Writes the machine into [machines] and returns the bodies, since bodies are not on the deck and
  * cannot be written to the same array.
  */
 fun feedExtractor(
@@ -136,17 +136,17 @@ fun feedExtractor(
     y: Int,
     facing: Direction = Direction.Right,
     wiring: Wiring = Wiring.RUNNING,
-    rocks: Int = 1,
-): List<Rock> {
+    bodies: Int = 1,
+): List<RigidBody> {
     machines[grid.index(x, y)] = Extractor(facing).withWiring(wiring)
-    return rockOnPlate(x, y, rocks)
+    return rockOnPlate(x, y, bodies)
 }
 
-/** Rock lying centred on the plate at [x],[y], for a plate that is already built. */
-fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<Rock> {
+/** Body lying centred on the plate at [x],[y], for a plate that is already built. */
+fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<RigidBody> {
     val half = FEEDSTOCK_RADIUS * Flight.PER_TILE
     return List(count) {
-        Rock.blob(
+        RigidBody.rockBlob(
             radius = FEEDSTOCK_RADIUS,
             positionX = x * Flight.PER_TILE - half,
             positionY = y * Flight.PER_TILE - half,
@@ -155,41 +155,41 @@ fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<Rock> {
     }
 }
 
-/** Rock radius the plate is sized for: five tiles across, 21 cells. */
+/** Body radius the plate is sized for: five tiles across, 21 cells. */
 const val FEEDSTOCK_RADIUS = 2
 
-/** What one of those weighs — the ore budget of a test that plants a single rock. */
-val FEEDSTOCK_GRAMS: Long get() = 21L * Rock.MATERIAL.gramsPerTile
+/** What one of those weighs — the ore budget of a test that plants a single body. */
+val FEEDSTOCK_GRAMS: Long get() = 21L * RigidBody.MATERIAL.gramsPerTile
 
 /**
  * The starter vessel **with feedstock on both plates** — what most of these tests mean when they
  * reach for "a working refinery".
  *
- * `starterVessel` itself ships with bare plates, because an extractor has to be given a rock and a
+ * `starterVessel` itself ships with bare plates, because an extractor has to be given a body and a
  * starting world that quietly supplied one would be hiding the whole of H3. So a test that wants a
  * line actually running has to say so, which is the right way round: the ore is a precondition now,
  * not a fact of life.
  *
- * Six rocks a plate is about 1500 ticks of digging, comfortably past the longest run here.
+ * Six bodies a plate is about 1500 ticks of digging, comfortably past the longest run here.
  */
 fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
     // The plates are already there and already wired — the demonstration one has `ALWAYS − RED` on
     // it and rebuilding it would quietly delete the very thing WiringTest is looking at. Only the
-    // rocks are new.
+    // bodies are new.
     //
-    // No field: these tests count rocks, weigh them and watch them disappear, and a dozen more
+    // No field: these tests count bodies, weigh them and watch them disappear, and a dozen more
     // floating about outside would be in every one of those sums. What is on the plates is the
     // whole ore budget of a world built here.
     val base = starterVessel(grid)
-    val rocks = rockOnPlate(STARTER_PLATE_X, STARTER_PLATE_Y, rocksPerPlate) +
+    val bodies = rockOnPlate(STARTER_PLATE_X, STARTER_PLATE_Y, rocksPerPlate) +
         rockOnPlate(STARTER_PLATE_X, STARTER_DEMO_PLATE_Y, rocksPerPlate)
     // ⚠️ Both baselines have to move with them, and `copy` will not do it: they are constructor
-    // *defaults*, so a copy keeps the figure computed for the world that had no rocks in it and
-    // every ledger then reads the rocks as mass and energy conjured out of nothing. The rocks were
+    // *defaults*, so a copy keeps the figure computed for the world that had no bodies in it and
+    // every ledger then reads the bodies as mass and energy conjured out of nothing. The bodies were
     // always here as far as this world is concerned, which is what a baseline says.
     return base.copy(
-        rocks = rocks,
-        baselineRockGrams = base.baselineRockGrams + rocks.sumOf { it.massGrams },
-        baselineJoules = base.baselineJoules + rocks.sumOf { it.joules },
+        bodies = bodies,
+        baselineBodyGrams = base.baselineBodyGrams + bodies.sumOf { it.massGrams },
+        baselineJoules = base.baselineJoules + bodies.sumOf { it.joules },
     )
 }

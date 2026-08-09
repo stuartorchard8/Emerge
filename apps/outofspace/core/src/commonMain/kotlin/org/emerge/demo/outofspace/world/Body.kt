@@ -128,16 +128,16 @@ fun solidJoules(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-    // Rocks are solids and their energy is in the solid ledger from the tick they appear, long
-    // before anything conducts with them -- see [Rock]. Counting it only once contact exists would
+    // Bodies are solids and their energy is in the solid ledger from the tick they appear, long
+    // before anything conducts with them -- see [RigidBody]. Counting it only once contact exists would
     // make the arrival of contact look like energy arriving from nowhere.
-    rocks: List<Rock> = emptyList(),
+    bodies: List<RigidBody> = emptyList(),
 ): Long {
     var sum = 0L
     for (m in machines) sum += m?.joules ?: 0L
     conduits.all { _, _, s -> sum += s.joules }
     for (b in bridges) sum += b?.joules ?: 0L
-    for (r in rocks) sum += r.joules
+    for (r in bodies) sum += r.joules
     return sum
 }
 

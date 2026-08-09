@@ -306,8 +306,8 @@ class GridFitTriggerTest {
         assertEquals(0L, s.inTransitGrams + s.ventedGrams - s.extractedGrams, "massBalance $whenever")
         assertEquals(
             0L,
-            s.baselineRockGrams + s.capturedGrams - s.extractedGrams - s.rocks.sumOf { it.massGrams },
-            "rockBalance $whenever",
+            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams },
+            "bodyBalance $whenever",
         )
         assertEquals(
             0L,
@@ -318,13 +318,13 @@ class GridFitTriggerTest {
         assertEquals(
             0L,
             s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX + s.exhaustMomentumX +
-                s.undeliveredImpulseX - s.debugImpulseX + s.rockImpulseX,
+                s.undeliveredImpulseX - s.debugImpulseX + s.bodyImpulseX,
             "momentumBalance x $whenever",
         )
         assertEquals(
             0L,
             s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY + s.exhaustMomentumY +
-                s.undeliveredImpulseY - s.debugImpulseY + s.rockImpulseY,
+                s.undeliveredImpulseY - s.debugImpulseY + s.bodyImpulseY,
             "momentumBalance y $whenever",
         )
     }

@@ -24,7 +24,7 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Flight
-import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
@@ -227,8 +227,8 @@ class OutofspaceRenderer {
         // Departures.
         drawDepartures(state)
 
-        // Rocks over built (not part of vessel).
-        for (rock in state.rocks) drawRock(rock)
+        // Bodies over built (not part of vessel).
+        for (body in state.bodies) drawBody(body)
 
         // Overlay over machines.
         if (overlay != Overlay.None) {
@@ -317,16 +317,16 @@ class OutofspaceRenderer {
      * Each cell is inset slightly and gets a lighter face, so a rock reads as rubble rather than as
      * a solid slab of one colour at the zoom anyone plays at.
      */
-    private fun drawRock(rock: Rock) {
-        val ox = rock.positionX.toFloat() / Flight.PER_TILE
-        val oy = rock.positionY.toFloat() / Flight.PER_TILE
-        for (cy in 0 until rock.height) {
-            for (cx in 0 until rock.width) {
-                if (!rock.cells[cy * rock.width + cx]) continue
+    private fun drawBody(body: RigidBody) {
+        val ox = body.positionX.toFloat() / Flight.PER_TILE
+        val oy = body.positionY.toFloat() / Flight.PER_TILE
+        for (cy in 0 until body.height) {
+            for (cx in 0 until body.width) {
+                if (!body.cells[cy * body.width + cx]) continue
                 val wx = (ox + cx + 0.5f) * tilePx
                 val wy = (oy + cy + 0.5f) * tilePx
                 rect(wx, wy, tilePx, tilePx, Colors.ROCK)
-                // Cell-local checker (grain doesn't crawl as rock drifts).
+                // Cell-local checker (grain doesn't crawl as body drifts).
                 if ((cx + cy) and 1 == 0) {
                     rect(wx, wy, tilePx * Visual.ROCK_GRAIN, tilePx * Visual.ROCK_GRAIN, Colors.ROCK_GRAIN)
                 }

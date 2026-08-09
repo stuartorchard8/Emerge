@@ -147,7 +147,7 @@ object OutofspaceAgentHarness {
             when (t[0]) {
                 "new" -> {
                     controller.reset(starterVessel(controller.cfg.initialGrid))
-                    println("[agent] new world, tick ${controller.tick}, ${state.rocks.size} rocks adrift")
+                    println("[agent] new world, tick ${controller.tick}, ${state.bodies.size} bodies adrift")
                 }
                 "load" -> {
                     val path = line.removePrefix("load").trim().trim('"')
@@ -267,7 +267,7 @@ object OutofspaceAgentHarness {
                     val (ix, iy) = coordinates(t[1], t[2])
                     controller.dropRock(ix.toFloat(), iy.toFloat())
                     settle()
-                    println("[agent] rock at (${t[1]},${t[2]}) — ${state.rocks.size} adrift, ${state.rockGrams}g")
+                    println("[agent] body at (${t[1]},${t[2]}) — ${state.bodies.size} adrift, ${state.bodyGrams}g")
                 }
                 // `fit` — the grid back to the ship plus its pad, the same edit F8 queues. The only
                 // command here that can make the grid smaller.
@@ -643,24 +643,24 @@ object OutofspaceAgentHarness {
             // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
             // about how long the starter vessel's extractor has been running.
             "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.extractedGrams).toDouble()
-            // Rock, and its ledger as one number: `rockBalance` is zero or mass has been created
-            // or destroyed out there — see [VesselState.capturedGrams].
-            "rockCount" -> state.rocks.size.toDouble()
-            "rockGrams" -> state.rockGrams.toDouble()
-            "capturedGrams" -> state.capturedGrams.toDouble()
+            // Body, and its ledger as one number: `bodyBalance` is zero or mass has been created
+            // or destroyed out there — see [VesselState.bodyCapturedGrams].
+            "rockCount" -> state.bodies.size.toDouble()
+            "rockGrams" -> state.bodyGrams.toDouble()
+            "capturedGrams" -> state.bodyCapturedGrams.toDouble()
             "rockBalance" ->
-                (state.rockGrams - state.baselineRockGrams - state.capturedGrams + state.extractedGrams).toDouble()
-            // The first rock, in tiles, so a script can say where it went and how fast. Zero when
+                (state.bodyGrams - state.baselineBodyGrams - state.bodyCapturedGrams + state.extractedGrams).toDouble()
+            // The first body, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
             //
             // ⚠️ Two frames, and the readouts inherit them: `rockX/rockY` are on the **grid** — which
-            // tile it is over — and `rockVX/rockVY` are through the **world**. A rock at rest reads
+            // tile it is over — and `rockVX/rockVY` are through the **world**. A body at rest reads
             // as zero velocity while its position walks astern of a burning ship, and that is the
-            // model being honest rather than the instrument disagreeing with itself. See [Rock].
-            "rockX" -> (state.rocks.firstOrNull()?.centreX ?: 0L).toDouble() / Flight.PER_TILE
-            "rockY" -> (state.rocks.firstOrNull()?.centreY ?: 0L).toDouble() / Flight.PER_TILE
-            "rockVX" -> (state.rocks.firstOrNull()?.velocityX ?: 0L).toDouble() / Flight.PER_TILE
-            "rockVY" -> (state.rocks.firstOrNull()?.velocityY ?: 0L).toDouble() / Flight.PER_TILE
+            // model being honest rather than the instrument disagreeing with itself. See [RigidBody].
+            "rockX" -> (state.bodies.firstOrNull()?.centreX ?: 0L).toDouble() / Flight.PER_TILE
+            "rockY" -> (state.bodies.firstOrNull()?.centreY ?: 0L).toDouble() / Flight.PER_TILE
+            "rockVX" -> (state.bodies.firstOrNull()?.velocityX ?: 0L).toDouble() / Flight.PER_TILE
+            "rockVY" -> (state.bodies.firstOrNull()?.velocityY ?: 0L).toDouble() / Flight.PER_TILE
             "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()
             "hottestAirK" -> (0 until state.grid.size).maxOf { state.airKelvinAt(it) }.toDouble()
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
@@ -677,18 +677,18 @@ object OutofspaceAgentHarness {
             // cost the instrument rather than the physics.
             "debugImpulseX" -> state.debugImpulseX.toDouble()
             "debugImpulseY" -> state.debugImpulseY.toDouble()
-            // Momentum that is now in the rocks, because the hull hit them. A store rather than an
-            // apology: `+J` to the rock and `−J` to the ship conserve by construction, and this term
-            // is here because only the ship's half is inside the ledger. See [VesselState.rockImpulseX].
-            "rockImpulseX" -> state.rockImpulseX.toDouble()
-            "rockImpulseY" -> state.rockImpulseY.toDouble()
+            // Momentum that is now in the bodies, because the hull hit them. A store rather than an
+            // apology: `+J` to the body and `−J` to the ship conserve by construction, and this term
+            // is here because only the ship's half is inside the ledger. See [VesselState.bodyImpulseX].
+            "rockImpulseX" -> state.bodyImpulseX.toDouble()
+            "rockImpulseY" -> state.bodyImpulseY.toDouble()
             "momentumBalance" -> (
                 state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
                     state.exhaustMomentumX + state.undeliveredImpulseX - state.debugImpulseX +
-                    state.rockImpulseX +
+                    state.bodyImpulseX +
                     state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
                     state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY +
-                    state.rockImpulseY
+                    state.bodyImpulseY
                 ).toDouble()
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "massGrams" -> state.massGrams.toDouble()

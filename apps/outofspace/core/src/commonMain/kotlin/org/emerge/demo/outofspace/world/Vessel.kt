@@ -148,7 +148,7 @@ data class VesselState(
      * when it is *held* rather than merely present, which is the extractor's increment. Its mass has
      * its own ledger meanwhile — see [rockGrams].
      */
-    val rocks: List<Rock> = emptyList(),
+    val bodies: List<RigidBody> = emptyList(),
     val tick: Long = 0L,
     val extractedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
@@ -156,27 +156,27 @@ data class VesselState(
      * Cumulative grams of rock that have arrived from outside the world, and the rock mass the world
      * started with. With [extractedGrams] they are rock's answer to `extracted == aboard + vented`:
      *
-     *     rockGrams == baselineRockGrams + capturedGrams − extractedGrams
+     *     bodyGrams == baselineBodyGrams + bodyCapturedGrams − extractedGrams
      *
      * The third term is H3's, and it is the *same* number the ore balance is measured against — that
      * is what makes the pair a proof rather than two hopeful sums. Mass arrives from outside, sits in
-     * a rock, and leaves the rock only by becoming ore; add the two identities and everything but the
+     * a body, and leaves the body only by becoming ore; add the two identities and everything but the
      * baseline and the capture cancels, so a gram cannot be invented in the crossing without one of
      * them going non-zero.
      *
-     * The rock ledger was kept separate from the ore one deliberately while the miner still existed
-     * — a rock is **new mass in a closed world**, and building the hold on the stand-in it was meant
+     * The body ledger was kept separate from the ore one deliberately while the miner still existed
+     * — a body is **new mass in a closed world**, and building the hold on the stand-in it was meant
      * to replace would have tied the replacement to the thing being replaced. The miner is gone now
      * and the hinge is safe to fit. See `docs/out-of-space-plan.md` §5f and open question 5.
      */
-    val capturedGrams: Long = 0L,
+    val bodyCapturedGrams: Long = 0L,
     /**
-     * The rock mass the world started with, fixed at construction so [capturedGrams] has something
+     * The body mass the world started with, fixed at construction so [bodyCapturedGrams] has something
      * to be measured against. The twin of [baselineJoules] and [baselineAirGrams], for the reason
      * they both give: a quantity that can arrive from outside needs a fixed point, or "how much is
      * here" is not a statement about anything.
      */
-    val baselineRockGrams: Long = rocks.sumOf { it.massGrams },
+    val baselineBodyGrams: Long = bodies.sumOf { it.massGrams },
     /**
      * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
      * away to space. The thermal counterpart of [extractedGrams] and [ventedGrams], and they buy the
@@ -261,7 +261,7 @@ data class VesselState(
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
      */
-    val baselineJoules: Long = solidJoules(machines, conduits, bridges, rocks),
+    val baselineJoules: Long = solidJoules(machines, conduits, bridges, bodies),
     /**
      * Net energy that has arrived in the world inside newly built bodies, less what left inside
      * scrapped ones. Signed, and one term rather than two, because only the difference is ever read.
@@ -321,30 +321,30 @@ data class VesselState(
     val debugImpulseX: Long = 0L,
     val debugImpulseY: Long = 0L,
     /**
-     * Cumulative momentum the vessel has handed the rocks — by hitting them, and by pulling on them
-     * with the deck plating. See [RockContact] and [driftRocks].
+     * Cumulative momentum the vessel has handed the bodies — by hitting them, and by pulling on them
+     * with the deck plating. See [RockContact] and [driftBodies].
      *
      * The sixth store, and unlike [debugImpulseX] it is **not** an apology for a shortcut. Nothing is
-     * minted here: `+J` goes to the rock, `−J` to the ship, and the pair conserves by construction.
+     * minted here: `+J` goes to the body, `−J` to the ship, and the pair conserves by construction.
      * The term exists because only one of those two halves is inside the ledger. [vesselImpulseX] is
-     * a ledger quantity and a rock's momentum is not, so an exchange with no name would read as the
+     * a ledger quantity and a body's momentum is not, so an exchange with no name would read as the
      * ship gaining momentum from nowhere — which is exactly the reading the ledger is for. So the
      * identity becomes
      *
-     *     vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + rock − debug == 0
+     *     vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body − debug == 0
      *
-     * and `rock` is the same kind of thing [exhaustMomentumX] is: momentum that is genuinely
-     * somewhere else now. It stops being a separate store the day a rock is *held* rather than
+     * and `body` is the same kind of thing [exhaustMomentumX] is: momentum that is genuinely
+     * somewhere else now. It stops being a separate store the day a body is *held* rather than
      * merely present, because then it is part of the ship and the exchange is internal.
      *
      * ⚠️ **The plating pays into it too**, and that is not tidiness. A field the vessel makes is a
-     * force the vessel exerts: charge it for the contact and not for the pull and a rock resting on
+     * force the vessel exerts: charge it for the contact and not for the pull and a body resting on
      * the deck becomes a thruster — pushed down for free, pushed back up with a reaction — and the
      * ledger balances the whole time, because the free half never enters it. Zero under freefall,
      * which is every ship; it is the 1 g fixtures and H4's capture that would have found out.
      */
-    val rockImpulseX: Long = 0L,
-    val rockImpulseY: Long = 0L,
+    val bodyImpulseX: Long = 0L,
+    val bodyImpulseY: Long = 0L,
     /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
@@ -397,7 +397,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val bodies: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges) }
+    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -420,7 +420,7 @@ data class VesselState(
     private val fabricKelvin: IntArray by lazy {
         val out = IntArray(grid.size) { Temperature.AMBIENT_KELVIN }
         val seen = BooleanArray(grid.size)
-        for (body in bodies) {
+        for (body in solids) {
             val k = body.kelvin
             for (t in body.tiles) {
                 if (!seen[t] || k > out[t]) out[t] = k
@@ -476,7 +476,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, conduits, bridges, rocks)
+    val storedJoules: Long get() = solidJoules(machines, conduits, bridges, bodies)
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
@@ -562,8 +562,8 @@ data class VesselState(
     /** Just the loose material, for the readout that distinguishes "stored" from "spilled". */
     val debrisGrams: Long get() = debris.totalGrams
 
-    /** Every gram of free-floating rock in the world — the left-hand side of the rock ledger. */
-    val rockGrams: Long get() = rocks.sumOf { it.massGrams }
+    /** Every gram of free-floating body in the world — the left-hand side of the body ledger. */
+    val bodyGrams: Long get() = bodies.sumOf { it.massGrams }
 
     /**
      * The ship's acceleration in its own frame, which is what makes the vessel frame a non-inertial
@@ -893,8 +893,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     val newPipeMomentum = MomentumField.of(newPipeEdges, newPipeMomentumX, newPipeMomentumY)
 
-    // ── 6. Rocks: shift positions ────────────────────────────────────────
-    val newRocks = rocks.map {
+    // ── 6. Bodies: shift positions ───────────────────────────────────────
+    val newBodies = bodies.map {
         it.copy(
             positionX = it.positionX + dx * Flight.PER_TILE.toLong(),
             positionY = it.positionY + dy * Flight.PER_TILE.toLong(),
@@ -927,7 +927,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         pipeAir = newPipeAir,
         momentum = newMomentum,
         pipeMomentum = newPipeMomentum,
-        rocks = newRocks,
+        bodies = newBodies,
         // vented quantities — grow: difference is zero, no special case needed
         airVentedGrams = airVentedGrams + ventedGas,
         airVentedJoules = airVentedJoules + ventedJoules,
@@ -937,7 +937,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         baselineAirGrams = baselineAirGrams,
         baselineAirJoules = baselineAirJoules,
         baselineJoules = baselineJoules,
-        baselineRockGrams = baselineRockGrams,
+        baselineBodyGrams = baselineBodyGrams,
     )
 }
 

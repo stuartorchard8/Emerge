@@ -46,7 +46,7 @@ class MotionTest {
         val feed = feedExtractor(grid, m, 2, 3)
         m[grid.index(tankX, 3)] = Storage(Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
-        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), rocks = feed)
+        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -131,7 +131,7 @@ class MotionTest {
             grid, m.toList(),
             conduits = Conduits.ofRails(rails.toList()),
             bridges = bridges.toList(),
-            rocks = feed,
+            bodies = feed,
         )
     }
 

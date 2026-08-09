@@ -18,7 +18,7 @@ class SaveError(message: String) : Exception(message)
 /**
  * Save/load: the whole world as text. Format is line-oriented, greppable, diffable, and hand-editable.
  *
- * Only writes non-derivable state (ledgers, baselines, rock momentum). Structure/occupancy/signals
+ * Only writes non-derivable state (ledgers, baselines, body momentum). Structure/occupancy/signals
  * are recomputed from machines each tick. Round-trip test: save/load/run must match never-saved.
  */
 object Save {
@@ -56,20 +56,20 @@ object Save {
         out.append("construction ").append(state.constructionJoules).append('\n')
         out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
-        // Rock ledger: fixed point + running admission (absent = zero before rocks existed).
-        out.append("captured ").append(state.capturedGrams).append('\n')
-        out.append("baselinerock ").append(state.baselineRockGrams).append('\n')
+        // Body ledger: fixed point + running admission (absent = zero before bodies existed).
+        out.append("captured ").append(state.bodyCapturedGrams).append('\n')
+        out.append("baselinebody ").append(state.baselineBodyGrams).append('\n')
 
-        // Rock momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
-        for (r in state.rocks) {
-            out.append("rock ").append(r.width).append(' ').append(r.height)
-                .append(' ').append(r.positionX).append(' ').append(r.positionY)
-                .append(' ').append(r.impulseX).append(' ').append(r.impulseY)
-                .append(' ').append(r.joules)
-                .append(' ').append(writeMixture(r.composition))
+        // Body momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
+        for (b in state.bodies) {
+            out.append("body ").append(b.width).append(' ').append(b.height)
+                .append(' ').append(b.positionX).append(' ').append(b.positionY)
+                .append(' ').append(b.impulseX).append(' ').append(b.impulseY)
+                .append(' ').append(b.joules)
+                .append(' ').append(writeMixture(b.oreComposition!!))
                 .append(' ')
-            for (c in r.cells) out.append(if (c) '1' else '0')
-            out.append("   # ").append(r.filled).append(" cells, ").append(r.massGrams).append("g\n")
+            for (c in b.cells) out.append(if (c) '1' else '0')
+            out.append("   # ").append(b.filled).append(" cells, ").append(b.massGrams).append("g\n")
         }
 
         // Tiles are written as indices because that is what the world is indexed by, but an index is
@@ -139,7 +139,7 @@ object Save {
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
             .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
-            .append(' ').append(state.rockImpulseX).append(' ').append(state.rockImpulseY)
+            .append(' ').append(state.bodyImpulseX).append(' ').append(state.bodyImpulseY)
             .append('\n')
         return out.toString()
     }
@@ -305,12 +305,12 @@ object Save {
         var undeliveredY = 0L
         var debugX = 0L
         var debugY = 0L
-        var rockImpulseX = 0L
-        var rockImpulseY = 0L
-        val rocks = ArrayList<Rock>()
+        var bodyImpulseX = 0L
+        var bodyImpulseY = 0L
+        val bodies = ArrayList<RigidBody>()
         var capturedGrams = 0L
-        // Null = no line (rocks didn't exist yet). Zero = rocks all arrived after world started.
-        var baselineRockGrams: Long? = null
+        // Null = no line (bodies didn't exist yet). Zero = bodies all arrived after world started.
+        var baselineBodyGrams: Long? = null
 
         // Absent = freefall. Older saves store one-g explicitly.
         var gravity = VesselState.FREEFALL
@@ -407,20 +407,21 @@ object Save {
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
                 "captured" -> capturedGrams = long(1)
-                "baselinerock" -> baselineRockGrams = long(1)
-                "rock" -> {
-                    val w = tokens[1].toIntOrNull() ?: fail("unreadable rock width")
-                    val h = tokens[2].toIntOrNull() ?: fail("unreadable rock height")
-                    val bits = tokens.getOrNull(9) ?: fail("a rock needs a shape")
-                    if (bits.length != w * h) fail("a ${w}x$h rock has ${bits.length} cells")
-                    rocks.add(
-                        Rock(
+                "baselinebody" -> baselineBodyGrams = long(1)
+                "body" -> {
+                    val w = tokens[1].toIntOrNull() ?: fail("unreadable body width")
+                    val h = tokens[2].toIntOrNull() ?: fail("unreadable body height")
+                    val bits = tokens.getOrNull(9) ?: fail("a body needs a shape")
+                    if (bits.length != w * h) fail("a ${w}x$h body has ${bits.length} cells")
+                    bodies.add(
+                        RigidBody(
+                            kind = BodyKind.ROCK,
                             width = w, height = h,
                             cells = BooleanArray(bits.length) { bits[it] == '1' },
                             positionX = long(3), positionY = long(4),
                             impulseX = long(5), impulseY = long(6),
                             joules = long(7),
-                            composition = readMixture(tokens[8], ::fail),
+                            oreComposition = readMixture(tokens[8], ::fail),
                         ),
                     )
                 }
@@ -430,7 +431,7 @@ object Save {
                     // Absent = zero (ledger had fewer stores).
                     if (tokens.size > 6) { undeliveredX = long(5); undeliveredY = long(6) }
                     if (tokens.size > 8) { debugX = long(7); debugY = long(8) }
-                    if (tokens.size > 10) { rockImpulseX = long(9); rockImpulseY = long(10) }
+                    if (tokens.size > 10) { bodyImpulseX = long(9); bodyImpulseY = long(10) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -454,10 +455,10 @@ object Save {
         val pipeAir =
             if (pipeJoules.any { it != 0L }) AirField.of(pipeGrams, pipeJoules) else AirField.of(pipeGrams)
 
-        // V9: rock momentum moved from vessel frame to world frame. `p_world = p_vessel + m_rock · v_ship`.
-        val loaded = if (version >= 9 || rocks.isEmpty()) rocks.toList() else {
+        // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
+        val loaded = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
             val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList(), Debris.of(piles))
-            if (shipMass <= 0L) rocks.toList() else rocks.map {
+            if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.massGrams * impulseX / shipMass,
                     impulseY = it.impulseY + it.massGrams * impulseY / shipMass,
@@ -511,11 +512,11 @@ object Save {
             undeliveredImpulseY = undeliveredY,
             debugImpulseX = debugX,
             debugImpulseY = debugY,
-            rockImpulseX = rockImpulseX,
-            rockImpulseY = rockImpulseY,
-            rocks = loaded,
-            capturedGrams = capturedGrams,
-            baselineRockGrams = baselineRockGrams ?: rocks.sumOf { it.massGrams },
+            bodyImpulseX = bodyImpulseX,
+            bodyImpulseY = bodyImpulseY,
+            bodies = loaded,
+            bodyCapturedGrams = capturedGrams,
+            baselineBodyGrams = baselineBodyGrams ?: bodies.sumOf { it.massGrams },
         )
     }
 

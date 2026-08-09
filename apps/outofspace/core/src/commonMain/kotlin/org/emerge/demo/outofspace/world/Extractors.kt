@@ -58,17 +58,17 @@ data class Extractor(
  * for itself: the ore lands in a buffer, the heat lands in the casing and the momentum lands on the
  * ship, and each of the three has to be booked by the caller in the same breath.
  */
-class Bite(val rock: Rock?, val grams: Long, val joules: Long, val impulseX: Long, val impulseY: Long)
+class Bite(val body: RigidBody?, val grams: Long, val joules: Long, val impulseX: Long, val impulseY: Long)
 
 /**
- * Which of [rock]'s cells a machine covering tiles `[x0,x1] × [y0,y1]` can reach, or `-1`.
+ * Which of [body]'s cells a machine covering tiles `[x0,x1] × [y0,y1]` can reach, or `-1`.
  *
- * The nearest one to the plate's centre, so a rock hanging half off is eaten from the side that is
+ * The nearest one to the plate's centre, so a body hanging half off is eaten from the side that is
  * actually over the machine, and so the answer never depends on iteration luck. The far edge is
  * half-open exactly as [overlapsHull]'s is: a cell that only touches the plate's edge is beside it,
  * not on it.
  */
-fun reachableCell(rock: Rock, x0: Int, y0: Int, x1: Int, y1: Int): Int {
+fun reachableCell(body: RigidBody, x0: Int, y0: Int, x1: Int, y1: Int): Int {
     val loX = x0.toLong() * Flight.PER_TILE
     val loY = y0.toLong() * Flight.PER_TILE
     val hiX = (x1 + 1).toLong() * Flight.PER_TILE
@@ -78,13 +78,13 @@ fun reachableCell(rock: Rock, x0: Int, y0: Int, x1: Int, y1: Int): Int {
 
     var best = -1
     var bestDistance = Long.MAX_VALUE
-    for (i in rock.cells.indices) {
-        if (!rock.cells[i]) continue
-        val cellX = rock.positionX + (i % rock.width) * Flight.PER_TILE
-        val cellY = rock.positionY + (i / rock.width) * Flight.PER_TILE
+    for (i in body.cells.indices) {
+        if (!body.cells[i]) continue
+        val cellX = body.positionX + (i % body.width) * Flight.PER_TILE
+        val cellY = body.positionY + (i / body.width) * Flight.PER_TILE
         if (cellX + Flight.PER_TILE <= loX || cellX >= hiX) continue
         if (cellY + Flight.PER_TILE <= loY || cellY >= hiY) continue
-        // In tiles, so the square cannot overflow however far out the rock is.
+        // In tiles, so the square cannot overflow however far out the body is.
         val dx = (cellX + Flight.PER_TILE / 2L - focusX) / Flight.PER_TILE
         val dy = (cellY + Flight.PER_TILE / 2L - focusY) / Flight.PER_TILE
         val distance = dx * dx + dy * dy
@@ -97,37 +97,36 @@ fun reachableCell(rock: Rock, x0: Int, y0: Int, x1: Int, y1: Int): Int {
 }
 
 /**
- * Takes cell [index] off [rock], and says what went with it.
+ * Takes cell [index] off [body], and says what went with it.
  *
- * Heat and momentum leave in the cell's **share** of the whole, so neither the rock's temperature
+ * Heat and momentum leave in the cell's **share** of the whole, so neither the body's temperature
  * nor its velocity changes when it gets smaller — which is the physics, since what is removed was at
  * the temperature and moving at the speed of the thing it was part of. Each share is the remainder
  * of a single truncating divide (`whole − whole × (n−1) / n`) rather than a multiply of its own, so
  * the two halves add back to the original **exactly** and no ledger can be broken by a rounding
  * crumb. §5g's lesson, applied before it had a chance to bite.
  */
-fun biteCell(rock: Rock, index: Int): Bite {
-    require(rock.cells[index]) { "cell $index of $rock is not there to be taken" }
-    val filled = rock.filled
-    if (filled <= 1) return Bite(null, rock.massGrams, rock.joules, rock.impulseX, rock.impulseY)
+fun biteCell(body: RigidBody, index: Int): Bite {
+    require(body.cells[index]) { "cell $index of $body is not there to be taken" }
+    val filled = body.filled
+    if (filled <= 1) return Bite(null, body.massGrams, body.joules, body.impulseX, body.impulseY)
 
-    val cells = rock.cells.copyOf()
+    val cells = body.cells.copyOf()
     cells[index] = false
-    val keptJoules = rock.joules * (filled - 1) / filled
-    val keptX = rock.impulseX * (filled - 1) / filled
-    val keptY = rock.impulseY * (filled - 1) / filled
-    val left = Rock(
-        width = rock.width, height = rock.height, cells = cells,
-        positionX = rock.positionX, positionY = rock.positionY,
+    val keptJoules = body.joules * (filled - 1) / filled
+    val keptX = body.impulseX * (filled - 1) / filled
+    val keptY = body.impulseY * (filled - 1) / filled
+    val left = body.copy(
+        width = body.width, height = body.height, cells = cells,
+        positionX = body.positionX, positionY = body.positionY,
         impulseX = keptX, impulseY = keptY,
-        composition = rock.composition,
         joules = keptJoules,
     )
     return Bite(
-        rock = left,
-        grams = Rock.MATERIAL.gramsPerTile,
-        joules = rock.joules - keptJoules,
-        impulseX = rock.impulseX - keptX,
-        impulseY = rock.impulseY - keptY,
+        body = left,
+        grams = RigidBody.MATERIAL.gramsPerTile,
+        joules = body.joules - keptJoules,
+        impulseX = body.impulseX - keptX,
+        impulseY = body.impulseY - keptY,
     )
 }

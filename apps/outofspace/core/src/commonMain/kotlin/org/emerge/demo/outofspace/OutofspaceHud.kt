@@ -60,20 +60,20 @@ class OutofspaceHud {
                 if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
                     keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
                 }
-                // Rocks (hidden when empty).
-                if (s.rocks.isNotEmpty()) {
+                // Bodies (hidden when empty).
+                if (s.bodies.isNotEmpty()) {
                     gap()
-                    title("ROCKS")
-                    keyValue("Adrift", "${s.rocks.size}")
-                    keyValue("Mass", grams(s.rockGrams))
-                    keyValue("Captured", grams(s.capturedGrams))
+                    title("BODIES")
+                    keyValue("Adrift", "${s.bodies.size}")
+                    keyValue("Mass", grams(s.bodyGrams))
+                    keyValue("Captured", grams(s.bodyCapturedGrams))
                     keyValue("Extracted", grams(s.extractedGrams))
                     // What is left is what arrived less what the extractors have eaten.
-                    val rockBalanced =
-                        s.rockGrams == s.baselineRockGrams + s.capturedGrams - s.extractedGrams
+                    val bodyBalanced =
+                        s.bodyGrams == s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams
                     row(
-                        if (rockBalanced) "balanced" else "LEAK",
-                        if (rockBalanced) 0x6ED09AFFL else 0xE05A4AFFL,
+                        if (bodyBalanced) "balanced" else "LEAK",
+                        if (bodyBalanced) 0x6ED09AFFL else 0xE05A4AFFL,
                     )
                 }
                 gap()
@@ -392,7 +392,7 @@ class OutofspaceHud {
             if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
         )
         // Each solid body's temp (not averaged — cold line under furnace is interesting).
-        for (body in s.bodies) {
+        for (body in s.solids) {
             if (index !in body.tiles) continue
             val k = body.kelvin
             keyValue(

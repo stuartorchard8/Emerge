@@ -121,11 +121,11 @@ class GridVentTest {
     /** The whole momentum identity on one axis — zero on a world nothing has broken. */
     private fun momentumX(s: VesselState): Long =
         s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX + s.exhaustMomentumX +
-            s.undeliveredImpulseX - s.debugImpulseX + s.rockImpulseX
+            s.undeliveredImpulseX - s.debugImpulseX + s.bodyImpulseX
 
     private fun momentumY(s: VesselState): Long =
         s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY + s.exhaustMomentumY +
-            s.undeliveredImpulseY - s.debugImpulseY + s.rockImpulseY
+            s.undeliveredImpulseY - s.debugImpulseY + s.bodyImpulseY
 
     // ── 1. Gas is vented, not dropped ─────────────────────────────────────
 

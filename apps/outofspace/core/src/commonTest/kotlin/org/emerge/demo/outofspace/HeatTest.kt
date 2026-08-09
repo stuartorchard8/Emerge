@@ -14,6 +14,8 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.thermalTiles
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Vent
@@ -221,7 +223,7 @@ class HeatTest {
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = s.bodies.maxOf { it.kelvin }
+            val peak = s.machines.filterNotNull().maxOfOrNull { (it.joules / (it.kind.material.capacityPerTile * it.kind.thermalTiles.toLong())).toInt() } ?: Temperature.AMBIENT_KELVIN
             assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }

@@ -128,7 +128,7 @@ class WiringTest {
             val grid = Grid(5, 5)
             val machines = arrayOfNulls<Machine>(grid.size)
             val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
-            val s = run(VesselState(grid, machines.toList(), rocks = feed), 4)
+            val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
             return (s[grid.index(2, 2)] as Extractor).buffer.mass
         }
         assertEquals(1_000L, groundInASecond(wiring(Channel.Always to 1000)))
@@ -176,7 +176,7 @@ class WiringTest {
         val feed = feedExtractor(
             grid, machines, 2, 3,
             wiring = wiring(Channel.Always to 1000, Channel.Red to -1000),
-            rocks = 4,
+            bodies = 4,
         )
         machines[grid.index(6, 3)] = Storage(Direction.Right)   // input port at (5, 3)
         machines[grid.index(6, 5)] = Sensor(Direction.Up, Channel.Red)
@@ -185,7 +185,7 @@ class WiringTest {
         var s = VesselState(
             grid, machines.toList(),
             conduits = Conduits.ofRails(rails.toList()),
-            rocks = feed,
+            bodies = feed,
         )
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace

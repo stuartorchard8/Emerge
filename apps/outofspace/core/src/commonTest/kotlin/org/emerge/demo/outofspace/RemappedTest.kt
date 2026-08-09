@@ -14,7 +14,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
-import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
@@ -82,9 +82,9 @@ class RemappedTest {
         // Pipe air: empty
         val pipeAir = AirField.of(LongArray(grid.size * Species.COUNT) { 0L })
         val pipeMomentum = MomentumField.of(EdgeGrid(grid), LongArray(xEdges), LongArray(yEdges))
-        // One rock
-        val rocks = listOf(
-            Rock.blob(
+        // One body
+        val bodies = listOf(
+            RigidBody.rockBlob(
                 radius = 2,
                 positionX = 3L * Flight.PER_TILE,
                 positionY = 3L * Flight.PER_TILE,
@@ -100,7 +100,7 @@ class RemappedTest {
             momentum = momentum,
             pipeAir = pipeAir,
             pipeMomentum = pipeMomentum,
-            rocks = rocks,
+            bodies = bodies,
         )
     }
 
@@ -125,11 +125,11 @@ class RemappedTest {
         assertTrue(s0.momentum.copyY().contentEquals(s1.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s1.pipeMomentum.copyX()), "pipeMomentum X")
         assertTrue(s0.pipeMomentum.copyY().contentEquals(s1.pipeMomentum.copyY()), "pipeMomentum Y")
-        assertEquals(s0.rocks, s1.rocks)
+        assertEquals(s0.bodies, s1.bodies)
         assertEquals(s0.baselineAirGrams, s1.baselineAirGrams)
         assertEquals(s0.baselineAirJoules, s1.baselineAirJoules)
         assertEquals(s0.baselineJoules, s1.baselineJoules)
-        assertEquals(s0.baselineRockGrams, s1.baselineRockGrams)
+        assertEquals(s0.baselineBodyGrams, s1.baselineBodyGrams)
     }
 
     // ── Positive offset: grow left and up ────────────────────────────────
@@ -360,10 +360,10 @@ class RemappedTest {
         }
     }
 
-    // ── Rocks ────────────────────────────────────────────────────────────
+    // ── Bodies ────────────────────────────────────────────────────────────
 
     @Test
-    fun `rocks shift by dx_PER_TILE and dy_PER_TILE`() {
+    fun `bodies shift by dx_PER_TILE and dy_PER_TILE`() {
         val s0 = populatedWorld()
         val oldGrid = s0.grid
         val newGrid = Grid(oldGrid.width + 4, oldGrid.height + 3)
@@ -372,11 +372,11 @@ class RemappedTest {
 
         val s1 = s0.remapped(newGrid, dx, dy)
 
-        for (i in s0.rocks.indices) {
-            val expectedX = s0.rocks[i].positionX + dx * Flight.PER_TILE
-            val expectedY = s0.rocks[i].positionY + dy * Flight.PER_TILE
-            assertEquals(expectedX, s1.rocks[i].positionX, "rock $i positionX")
-            assertEquals(expectedY, s1.rocks[i].positionY, "rock $i positionY")
+        for (i in s0.bodies.indices) {
+            val expectedX = s0.bodies[i].positionX + dx * Flight.PER_TILE
+            val expectedY = s0.bodies[i].positionY + dy * Flight.PER_TILE
+            assertEquals(expectedX, s1.bodies[i].positionX, "body $i positionX")
+            assertEquals(expectedY, s1.bodies[i].positionY, "body $i positionY")
         }
     }
 
@@ -419,14 +419,14 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // The full momentum identity:
-        // vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + rock - debug == 0
+        // vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body - debug == 0
         fun momentumX(s: VesselState) =
             s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX +
-                s.exhaustMomentumX + s.undeliveredImpulseX + s.rockImpulseX - s.debugImpulseX
+                s.exhaustMomentumX + s.undeliveredImpulseX + s.bodyImpulseX - s.debugImpulseX
 
         fun momentumY(s: VesselState) =
             s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY +
-                s.exhaustMomentumY + s.undeliveredImpulseY + s.rockImpulseY - s.debugImpulseY
+                s.exhaustMomentumY + s.undeliveredImpulseY + s.bodyImpulseY - s.debugImpulseY
 
         assertEquals(momentumX(s0), momentumX(s1), "momentumBalanceX must be preserved")
         assertEquals(momentumY(s0), momentumY(s1), "momentumBalanceY must be preserved")
@@ -448,7 +448,7 @@ class RemappedTest {
     }
 
     @Test
-    fun `rockBalance is preserved across remap`() {
+    fun `bodyBalance is preserved across remap`() {
         val s0 = populatedWorld()
         val oldGrid = s0.grid
         val newGrid = Grid(oldGrid.width + 4, oldGrid.height + 3)
@@ -457,10 +457,10 @@ class RemappedTest {
 
         val s1 = s0.remapped(newGrid, dx, dy)
 
-        // rock: baselineRockGrams + capturedGrams - extractedGrams == rocks.sumOf { massGrams }
-        fun rockBalance(s: VesselState) =
-            s.baselineRockGrams + s.capturedGrams - s.extractedGrams - s.rocks.sumOf { it.massGrams }
-        assertEquals(rockBalance(s0), rockBalance(s1), "rockBalance must be preserved")
+        // body: baselineBodyGrams + bodyCapturedGrams - extractedGrams == bodies.sumOf { massGrams }
+        fun bodyBalance(s: VesselState) =
+            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams }
+        assertEquals(bodyBalance(s0), bodyBalance(s1), "bodyBalance must be preserved")
     }
 
     @Test
@@ -506,11 +506,11 @@ class RemappedTest {
         assertTrue(s0.momentum.copyY().contentEquals(s2.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s2.pipeMomentum.copyX()), "pipeMomentum X")
         assertTrue(s0.pipeMomentum.copyY().contentEquals(s2.pipeMomentum.copyY()), "pipeMomentum Y")
-        assertEquals(s0.rocks, s2.rocks, "rocks should be identical")
+        assertEquals(s0.bodies, s2.bodies, "bodies should be identical")
         assertEquals(s0.baselineAirGrams, s2.baselineAirGrams)
         assertEquals(s0.baselineAirJoules, s2.baselineAirJoules)
         assertEquals(s0.baselineJoules, s2.baselineJoules)
-        assertEquals(s0.baselineRockGrams, s2.baselineRockGrams)
+        assertEquals(s0.baselineBodyGrams, s2.baselineBodyGrams)
     }
 
     // ── Cells outside old grid ───────────────────────────────────────────
