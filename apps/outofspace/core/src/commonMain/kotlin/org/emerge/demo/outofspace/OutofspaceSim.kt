@@ -248,8 +248,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // Dynamic rock spawning/despawning
         // World-spawned rocks are free mass, not counted in baselineRockGrams.
-        val vesselTileX = state.positionX / Flight.PER_TILE
-        val vesselTileY = state.positionY / Flight.PER_TILE
+        // Uses the post-advance position (matching what `positionX/Y` will be below) so the
+        // window-recenter decision agrees with the position the HUD reads this same tick
+        val newPositionX = state.positionX + state.velocityX
+        val newPositionY = state.positionY + state.velocityY
+        val vesselTileX = newPositionX / Flight.PER_TILE
+        val vesselTileY = newPositionY / Flight.PER_TILE
         val rocksToDrift = RockSpawner.process(
             tick = state.tick,
             rocks = w.rocks.toList(),
@@ -325,8 +329,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
             // Explicit integration: move by velocity at tick start.
-            positionX = state.positionX + state.velocityX,
-            positionY = state.positionY + state.velocityY,
+            positionX = newPositionX,
+            positionY = newPositionY,
             exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
             exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
             // Undelivered impulse from both fluid layers.

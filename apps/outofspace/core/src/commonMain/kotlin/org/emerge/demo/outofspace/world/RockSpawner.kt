@@ -213,7 +213,8 @@ object RockSpawner {
                 }
             }
 
-            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = density.scaleInt(255).toByte()
+//            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = density.scaleInt(255).toByte()
+            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = (nearestCol*20).toByte()    // debug density
             state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
@@ -436,10 +437,12 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
-                        densityBytes[dstY * WINDOW_SIZE + dstX] = 0
+//                        densityBytes[dstY * WINDOW_SIZE + dstX] = 0
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = (dstX*20).toByte()    // debug density
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
-                        densityBytes[dstY * WINDOW_SIZE + dstX] = densityBytes[srcY * WINDOW_SIZE + srcX]
+//                        densityBytes[dstY * WINDOW_SIZE + dstX] = densityBytes[srcY * WINDOW_SIZE + srcX]
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = (dstX*20).toByte()    // debug density
                     }
                 }
             }
