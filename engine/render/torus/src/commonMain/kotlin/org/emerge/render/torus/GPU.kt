@@ -48,6 +48,7 @@ expect object GPU {
     fun uploadTextureR8(width: Int, height: Int, data: ByteArray)
     fun uploadTextureRGBA8(width: Int, height: Int, data: ByteArray)
     fun configureTexture2DClampNearest()
+    fun configureTexture2DClampLinear()
 
     fun bindBuffer(target: Int, buffer: Int)
     fun bufferData(target: Int, count: Int, data: GpuFloatBuffer, usage: Int)

@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
@@ -240,19 +241,21 @@ class OutofspaceHud {
 
         val perPx = (size / 2f - 6f * density) / NAV_RANGE_TILES
 
-        // Rock density field (chunk grid, drawn first so everything else layers on top).
-        val chunkPx = RockSpawner.CHUNK_SIZE * perPx
-        for (row in 0 until RockSpawner.WINDOW_SIZE) {
-            for (col in 0 until RockSpawner.WINDOW_SIZE) {
-                val chunkX = RockSpawner.windowBaseChunkX + col
-                val chunkY = RockSpawner.windowBaseChunkY + row
-                val (originTileX, originTileY) = RockSpawner.chunkOriginTile(chunkX, chunkY)
-                val rx0 = cx + (originTileX - s.grid.width / 2f) * perPx
-                val ry0 = cy + (originTileY - s.grid.height / 2f) * perPx
-                if (rx0 + chunkPx <= x0 || rx0 >= x0 + size || ry0 + chunkPx <= y0 || ry0 >= y0 + size) continue
-                rect(rx0, ry0, chunkPx, chunkPx, densityColor(RockSpawner.densityAt(chunkX, chunkY)))
-            }
-        }
+        // Rock density field: one textured quad, sampled with hardware bilinear filtering from a
+        // texture RockSpawner/RockDensityField keeps in lockstep with the chunk window — so it slides
+        // continuously with the vessel's own tile position, not in per-chunk jumps.
+        val vesselTileX = s.positionX.toFloat() / Flight.PER_TILE
+        val vesselTileY = s.positionY.toFloat() / Flight.PER_TILE
+        val chunksPerAxis = RockSpawner.WINDOW_SIZE.toFloat()
+        fun worldTileToU(worldTileX: Float) = (vesselTileX + worldTileX) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkX / chunksPerAxis
+        fun worldTileToV(worldTileY: Float) = (vesselTileY + worldTileY) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkY / chunksPerAxis
+        image(
+            x0, y0, size, size,
+            RockDensityField.textureId(),
+            uvMinX = worldTileToU((x0 - cx) / perPx), uvMinY = worldTileToV((y0 - cy) / perPx),
+            uvMaxX = worldTileToU((x0 + size - cx) / perPx), uvMaxY = worldTileToV((y0 + size - cy) / perPx),
+            tintLow = 0x080D14FFL, tintHigh = 0x9A8A72FFL,
+        )
 
         // Origin marker (shows motion, not position).
         val ox = cx - s.positionX.toFloat() / Flight.PER_TILE * perPx
@@ -284,24 +287,6 @@ class OutofspaceHud {
             "${tiles(s.positionX)}, ${tiles(s.positionY)}",
             cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
         )
-    }
-
-    /** Nav-view chunk tint: empty space to rock-tan, by density in [0,1]. */
-    private fun densityColor(density: Float): Long {
-        val t = density.coerceIn(0f, 1f)
-        return lerpColor(0x080D14FFL, 0x9A8A72FFL, t)
-    }
-
-    /** Per-channel linear interpolation between two 0xRRGGBBAA colors. */
-    private fun lerpColor(from: Long, to: Long, t: Float): Long {
-        var result = 0L
-        for (shift in 24 downTo 0 step 8) {
-            val a = (from ushr shift) and 0xFFL
-            val b = (to ushr shift) and 0xFFL
-            val c = (a + (b - a) * t).toLong().coerceIn(0L, 0xFFL)
-            result = (result shl 8) or c
-        }
-        return result
     }
 
     /** A hollow box, which the canvas has no primitive for: four rectangles is the whole of it. */

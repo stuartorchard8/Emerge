@@ -35,8 +35,10 @@ class Ui {
     // could never be tested without one. Every use below is on a draw path, already inside the frame.
     private val rectRendererLazy = lazy { UiRectRenderer() }
     private val textRendererLazy = lazy { UiTextRenderer() }
+    private val imageRendererLazy = lazy { UiImageRenderer() }
     private val rectRenderer by rectRendererLazy
     private val textRenderer by textRendererLazy
+    private val imageRenderer by imageRendererLazy
     private var resW = 1f
     private var resH = 1f
     private var densityScale = 1f
@@ -46,6 +48,13 @@ class Ui {
     private sealed interface DrawCmd { val clip: Int }
     private class RectCmd(val x: Float, val y: Float, val w: Float, val h: Float, val color: Long, override val clip: Int = -1) : DrawCmd
     private class TextCmd(val text: String, val x: Float, val y: Float, val h: Float, val color: Long, val centered: Boolean, val centerX: Float, override val clip: Int = -1) : DrawCmd
+    private class ImageCmd(
+        val x: Float, val y: Float, val w: Float, val h: Float,
+        val textureId: Int,
+        val uvMinX: Float, val uvMinY: Float, val uvMaxX: Float, val uvMaxY: Float,
+        val tintLow: Long, val tintHigh: Long,
+        override val clip: Int = -1,
+    ) : DrawCmd
     private class ClickRegion(
         val x: Float, val y: Float, val w: Float, val h: Float, val onClick: () -> Unit,
         /** ±1 for a hold-to-repeat stepper button (0 = plain click). */
@@ -320,12 +329,26 @@ class Ui {
                 }
                 rectRenderer.drawInstanced(n, centers, halfSizes, colors)
                 i = j
+            } else if (c is TextCmd) {
+                if (c.clip != curClip) { applyClip(c.clip); curClip = c.clip }
+                val (cr, cg, cb) = rgb(c.color)
+                if (c.centered) textRenderer.drawCentered(c.text, c.centerX, c.y + c.h * 0.5f, c.h, cr, cg, cb, resW, resH)
+                else textRenderer.drawLeft(c.text, c.x, c.y, c.h, cr, cg, cb, resW, resH)
+                i++
             } else {
-                val t = c as TextCmd
-                if (t.clip != curClip) { applyClip(t.clip); curClip = t.clip }
-                val (cr, cg, cb) = rgb(t.color)
-                if (t.centered) textRenderer.drawCentered(t.text, t.centerX, t.y + t.h * 0.5f, t.h, cr, cg, cb, resW, resH)
-                else textRenderer.drawLeft(t.text, t.x, t.y, t.h, cr, cg, cb, resW, resH)
+                val img = c as ImageCmd
+                if (img.clip != curClip) { applyClip(img.clip); curClip = img.clip }
+                val centerX = (img.x + img.w * 0.5f) / resW * 2f - 1f
+                val centerY = 1f - (img.y + img.h * 0.5f) / resH * 2f
+                val halfW = img.w / resW
+                val halfH = img.h / resH
+                val tintLow = FloatArray(4); packColor(img.tintLow, tintLow, 0)
+                val tintHigh = FloatArray(4); packColor(img.tintHigh, tintHigh, 0)
+                imageRenderer.draw(
+                    centerX, centerY, halfW, halfH,
+                    img.uvMinX, img.uvMinY, img.uvMaxX, img.uvMaxY,
+                    img.textureId, tintLow, tintHigh,
+                )
                 i++
             }
         }
@@ -625,10 +648,19 @@ class Ui {
     fun cleanup() {
         if (rectRendererLazy.isInitialized()) rectRenderer.deleteProgram()
         if (textRendererLazy.isInitialized()) textRenderer.cleanup()
+        if (imageRendererLazy.isInitialized()) imageRenderer.deleteProgram()
     }
 
     // ── internal emit API (called by the builders) ─ all return Unit (so Item.emit overrides stay Unit) ─
     internal fun emitRect(x: Float, y: Float, w: Float, h: Float, color: Long) { cmds.add(RectCmd(x, y, w, h, color, currentClip)) }
+    internal fun emitImage(
+        x: Float, y: Float, w: Float, h: Float,
+        textureId: Int,
+        uvMinX: Float, uvMinY: Float, uvMaxX: Float, uvMaxY: Float,
+        tintLow: Long, tintHigh: Long,
+    ) {
+        cmds.add(ImageCmd(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, tintLow, tintHigh, currentClip))
+    }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
         cmds.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
     }
@@ -950,6 +982,17 @@ class CanvasBuilder internal constructor(private val ui: Ui) {
     val density: Float get() = ui.scale
 
     fun rect(x: Float, y: Float, w: Float, h: Float, color: Long) = ui.emitRect(x, y, w, h, color)
+
+    /** A textured quad, tinted between [tintLow] (texel 0.0) and [tintHigh] (texel 1.0) — one draw call
+     *  regardless of the source texture's resolution, with GPU bilinear filtering doing the smoothing (set
+     *  on the texture itself, e.g. [org.emerge.render.torus.GPU.configureTexture2DClampLinear]). The uv
+     *  rect need not be [0,1] — panning/zooming is just moving [uvMinX]..[uvMaxY]. */
+    fun image(
+        x: Float, y: Float, w: Float, h: Float,
+        textureId: Int,
+        uvMinX: Float = 0f, uvMinY: Float = 0f, uvMaxX: Float = 1f, uvMaxY: Float = 1f,
+        tintLow: Long = 0x000000FFL, tintHigh: Long = 0xFFFFFFFFL,
+    ) = ui.emitImage(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, tintLow, tintHigh)
 
     /** Text centred horizontally on [centerX], its top at [topY], [height] px tall. */
     fun label(text: String, centerX: Float, topY: Float, height: Float, color: Long) =

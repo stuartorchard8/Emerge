@@ -249,6 +249,14 @@ actual object GPU {
         gl.texParameteri(t2d, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
     }
 
+    actual fun configureTexture2DClampLinear() {
+        val t2d = gl.TEXTURE_2D
+        gl.texParameteri(t2d, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(t2d, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+        gl.texParameteri(t2d, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
+        gl.texParameteri(t2d, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
+    }
+
     // -- Buffer data --
 
     actual fun bindBuffer(target: Int, buffer: Int) {

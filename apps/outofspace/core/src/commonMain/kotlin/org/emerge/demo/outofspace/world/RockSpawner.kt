@@ -63,6 +63,7 @@ object RockSpawner {
 
     /** Flat backing store: row-major, indexed as state[row * WINDOW_SIZE + col]. */
     internal val state = IntArray(WINDOW_SIZE * WINDOW_SIZE)
+    internal val densityBytes = ByteArray(WINDOW_SIZE * WINDOW_SIZE)
 
     private var baseChunkX: Int = 0
 
@@ -203,15 +204,17 @@ object RockSpawner {
         if (nearestRow >= 0) {
             val worldChunkX = baseChunkX + nearestCol
             val worldChunkY = baseChunkY + nearestRow
-            state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
-
-            val newRocks = spawnRocksForChunk(worldChunkX, worldChunkY)
+            val density = densityForChunk(worldChunkX, worldChunkY)
+            val newRocks = spawnRocksForChunk(worldChunkX, worldChunkY, density)
 
             for (rock in newRocks) {
                 if (!wouldOverlap(rock.positionX / Flight.PER_TILE, rock.positionY / Flight.PER_TILE, (rock.width / 2), result)) {
                     result.add(rock)
                 }
             }
+
+            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = density.scaleInt(255).toByte()
+            state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
         return result
@@ -222,14 +225,14 @@ object RockSpawner {
      *
      * Uses the chunk coordinates to seed a deterministic layout of up to [MAX_SPAWNS_PER_CHUNK] rocks within the chunk.
      */
-    private fun spawnRocksForChunk(chunkX: Int, chunkY: Int): List<Rock> {
+    private fun spawnRocksForChunk(chunkX: Int, chunkY: Int, density: Frac): List<Rock> {
         val hash = (chunkX * 73856093L xor chunkY * 19349663L).toInt()
         val rng = Random(hash.toLong() and 0xFFFFFFFFL)
 
         val fractionalGranularity = 100
         val fractionalSpawns = MAX_SPAWNS_PER_CHUNK*fractionalGranularity
 
-        val numFractionalSpawnAttempts = densityForChunk(chunkX, chunkY).scaleInt(fractionalSpawns)
+        val numFractionalSpawnAttempts = density.scaleInt(fractionalSpawns)
         val numSpawnAttempts = numFractionalSpawnAttempts/fractionalGranularity
         val fractionalSpawnAttempt = numFractionalSpawnAttempts%fractionalGranularity
 
@@ -268,12 +271,6 @@ object RockSpawner {
      */
     internal fun chunkOriginTile(chunkX: Int, chunkY: Int): Pair<Int, Int> =
         (chunkX - lastVesselChunkX) * CHUNK_SIZE to (chunkY - lastVesselChunkY) * CHUNK_SIZE
-
-    /**
-     * Rock density for a chunk as a [0,1] float, for callers outside the fixed-point [Frac] world
-     * (e.g. the nav-view renderer). See [densityForChunk] for how the value is derived.
-     */
-    fun densityAt(chunkX: Int, chunkY: Int): Float = densityForChunk(chunkX, chunkY).toFloat()
 
     /**
      * Deterministic 4-octave 2D simplex noise sampling for rock density per chunk.
@@ -408,6 +405,7 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 state[row * WINDOW_SIZE + col] = UNPOPULATED
+                densityBytes[row * WINDOW_SIZE + col] = 0
             }
         }
     }
@@ -436,8 +434,10 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = 0
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = densityBytes[srcY * WINDOW_SIZE + srcX]
                     }
                 }
             }
