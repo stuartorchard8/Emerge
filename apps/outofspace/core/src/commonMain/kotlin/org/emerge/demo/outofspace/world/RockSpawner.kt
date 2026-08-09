@@ -424,6 +424,8 @@ object RockSpawner {
         if (abs(dx) > WINDOW_RADIUS || abs(dy) > WINDOW_RADIUS) {
             resetWindow(newVesselChunkX, newVesselChunkY)
         } else {
+            baseChunkX = newVesselChunkX-WINDOW_RADIUS
+            baseChunkY = newVesselChunkY-WINDOW_RADIUS
             for (row in 0 until WINDOW_SIZE) {
                 val dstY = if (dy > 0) row else WINDOW_SIZE-row-1
                 val srcY = dstY+dy
@@ -441,8 +443,6 @@ object RockSpawner {
                     }
                 }
             }
-            baseChunkX = newVesselChunkX-WINDOW_RADIUS
-            baseChunkY = newVesselChunkY-WINDOW_RADIUS
         }
     }
 
@@ -475,7 +475,7 @@ object RockSpawner {
     }
 
     private fun chunkIndexOf(tilePos: Long): Int {
-        return tilePos.toInt() / CHUNK_SIZE
+        return tilePos.toInt().floorDiv(CHUNK_SIZE)
     }
 
     /**
