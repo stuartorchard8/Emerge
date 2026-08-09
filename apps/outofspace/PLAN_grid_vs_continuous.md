@@ -361,6 +361,41 @@ This is a major architectural shift that should only be done when the use cases 
 
 ---
 
+## 7.5 Plan execution order
+
+The following table shows the recommended execution order for all active implementation plans.
+Plans are ordered by dependency — you cannot start a plan until its prerequisites are complete.
+Effort estimates are in developer-days.
+
+| # | Plan | Status | Effort | Dependency | Why this order |
+|---|------|--------|--------|------------|----------------|
+| 1 | **PLAN_unified_bodies** | Not built | ~5 | Grid (address space) | Structural prerequisite. Blocks rigid_debris + vessel_rotation. Replaces the `Rock`/`BodyFragment` duplication layer. |
+| 2a | **PLAN_rigid_debris** | Not built | ~7 | unified_bodies | Closes the resource loop: machines deconstruct into recoverable casings. Needs unified bodies for aboard/extractor transitions. |
+| 2b | **PLAN_trig_free_rotation** | Not built | ~5 | unified_bodies | Ship orientation + angular momentum + rotated gravity. Direction-vector approach replaces `PLAN_vessel_rotation.md`. Zero trig in hot paths. |
+| 3 | **PLAN_phase_velocity** | Not built | ? | phase_transitions (partial) | Separate liquid/vapour momenta. Blocks correct multiphase transport (runaway evaporation). Independent of 1-2. |
+| 4 | **PLAN_phase_transitions** (completion) | Partially built | ? | — | Multiphase transport + Peng-Robinson EOS + latent-heat ledger. §5b and §5c remain. |
+
+**Built plans (reference):**
+- `PLAN_dynamic_grid.md` — P0–P5 BUILT (grid resize + shrink venting)
+- `PLAN_dynamic_rock_spawner.md` — BUILT (16 tests pass)
+- `PLAN_grid_vs_continuous.md` — this document (scoping, not built)
+
+**Superseded plans:**
+- `PLAN_vessel_rotation.md` — replaced by `PLAN_trig_free_rotation.md` (same feature, cheaper, no trig)
+- `PLAN_grid_vs_continuous.md` §5c (Path C trajectory) — supersedes the old angle-centric rotation approach
+
+**Critical path:** unified_bodies → rigid_debris (~12 days). This is the minimum path to shipable gameplay.
+
+**Alternative path:** unified_bodies → trig_free_rotation (~10 days). Ships ship orientation and physics depth before material recovery.
+
+**Parallelism:** 2a and 2b are independent after #1. Can be done sequentially on one developer or split between two.
+
+**Why unified_bodies first:** The debris plan opens questions about aboard transitions and heat conduction that unified bodies answers trivially by noting bodies are never aboard. The vessel rotation plan explicitly depends on unified bodies for rock collision torque. It is plumbing that makes the other plans simpler.
+
+**Why trig_free_rotation over angle-centric:** The direction-vector approach is ~40% cheaper (~5d vs ~8d), eliminates per-tick trig that is expensive on JS/mobile, and uses the existing `Norm` type that already represents `(cos, sin)` pairs. `Frac2.rotateBy(forward: Norm)` is a 2×2 matrix multiply — no `sin`/`cos`/`atan2` in hot paths.
+
+---
+
 ## 8. What we would know it worked
 
 - Every existing test green (no regression).
