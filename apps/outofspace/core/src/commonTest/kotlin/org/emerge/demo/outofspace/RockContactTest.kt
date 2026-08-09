@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Rock
+import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.VesselState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,6 +26,7 @@ import kotlin.test.assertTrue
  * actual regime says `FREEFALL` and throws the rock instead.
  */
 class RockContactTest {
+    init { RockSpawner.enabled = false }
 
     /**
      * The whole increment in one assertion: a rock thrown at a wall comes back.

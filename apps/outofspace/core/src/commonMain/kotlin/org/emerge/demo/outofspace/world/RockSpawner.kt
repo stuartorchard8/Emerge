@@ -25,7 +25,7 @@ object RockSpawner {
     const val POPULATED = 2
 
     /** Window size of the chunk-state array (WINDOW_SIZE×WINDOW_SIZE). */
-    const val WINDOW_SIZE = 11
+    const val WINDOW_SIZE = 12
     private const val WINDOW_RADIUS = (WINDOW_SIZE-1)/2
 
     /** Half-window for computing NEAR zone radius (5×5 NEAR zone → radius 2 from center). */
