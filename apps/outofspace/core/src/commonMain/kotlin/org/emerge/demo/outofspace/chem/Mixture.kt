@@ -1,5 +1,9 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.speciesColor
+import org.emerge.render.torus.RgbColor
+
 /**
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
  * Immutable. Splits use apportion() (largest-remainder). Operations: +, -, take, scaledTo.
@@ -33,6 +37,29 @@ class Mixture private constructor(private val grams: LongArray) {
                 if (grams[i] > bestMass) { bestMass = grams[i]; best = i }
             }
             return if (best < 0) null else Species.ALL[best]
+        }
+
+    val color: Int
+        get() {
+            var r = 0x00
+            var g = 0x00
+            var b = 0x00
+            val a = 0xFF
+            val total = total
+            for (i in grams.indices) {
+                val v = grams[i]*0xFF/total
+                if (v > 0) {
+                    val sc = speciesColor(Species.ALL[i])
+                    val scR = sc.shr(24) and 0xFF
+                    val scG = sc.shr(16) and 0xFF
+                    val scB = sc.shr(8) and 0xFF
+
+                    r += ((scR*v)/0xFF).toInt()
+                    g += ((scG*v)/0xFF).toInt()
+                    b += ((scB*v)/0xFF).toInt()
+                }
+            }
+            return r.shl(24) or g.shl(16) or b.shl(8) or a
         }
 
     /** Mass of everything that is not [dominant] — the impurities, for refining purposes. */

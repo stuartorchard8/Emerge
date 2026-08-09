@@ -407,12 +407,12 @@ object Save {
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
                 "captured" -> capturedGrams = long(1)
-                "baselinebody" -> baselineBodyGrams = long(1)
-                "body" -> {
+                "baselinebody", "baselinerock" -> baselineBodyGrams = long(1)
+                "body", "rock" -> {
                     val w = tokens[1].toIntOrNull() ?: fail("unreadable body width")
                     val h = tokens[2].toIntOrNull() ?: fail("unreadable body height")
-                    val bits = tokens.getOrNull(9) ?: fail("a body needs a shape")
-                    if (bits.length != w * h) fail("a ${w}x$h body has ${bits.length} cells")
+                    val bits = tokens.getOrNull(9) ?: fail("a ${tokens[0]} needs a shape")
+                    if (bits.length != w * h) fail("a ${w}x$h ${tokens[0]} has ${bits.length} cells")
                     bodies.add(
                         RigidBody(
                             kind = BodyKind.ROCK,

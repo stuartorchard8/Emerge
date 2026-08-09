@@ -40,7 +40,7 @@ object RockSpawner {
      * density "belt" spans. Kept as numerator/denominator so the base-octave coordinate
      * `chunkX * NOISE_SCALE_NUM * frequency / NOISE_SCALE_DEN` is an exact fixed-point value.
      */
-    private const val NOISE_SCALE_NUM = 3L
+    private const val NOISE_SCALE_NUM = 1L
     private const val NOISE_SCALE_DEN = 20
 
     /** One in [Frac]'s fixed-point scale — `Frac.raw / FRAC_ONE` is the represented value. */
@@ -178,9 +178,9 @@ object RockSpawner {
             val worldChunkX = baseChunkX + nearestCol
             val worldChunkY = baseChunkY + nearestRow
             val density = densityForChunk(worldChunkX, worldChunkY)
-            val composition = compositionForChunk(worldChunkX, worldChunkY)
+            val mixture = mixtureForChunk(worldChunkX, worldChunkY)
 
-            val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, composition)
+            val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
 
             for (body in newBodies) {
                 if (!wouldOverlap(body.positionX / Flight.PER_TILE, body.positionY / Flight.PER_TILE, (body.width / 2), result)) {
@@ -188,14 +188,20 @@ object RockSpawner {
                 }
             }
 
-            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+0] = composition[Species.Iron].coerceIn(0L, 255L).toByte()
-            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+1] = composition[Species.Copper].coerceIn(0L, 255L).toByte()
-            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+2] = composition[Species.Titanium].coerceIn(0L, 255L).toByte()
-            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+3] = density.scaleInt(0xFF).toByte()
+            setAbundanceAt(nearestCol, nearestRow, mixture, density)
             state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
         return result
+    }
+
+    private fun setAbundanceAt(x: Int, y: Int, mixture: Mixture, density: Frac) {
+        val color = mixture.color
+
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+0] = (color.shr(24) and 0xFF).toByte()
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+1] = (color.shr(16) and 0xFF).toByte()
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+2] = (color.shr(8) and 0xFF).toByte()
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+3] = (density.scaleInt(0xFF)).toByte()
     }
 
     /**
@@ -278,7 +284,7 @@ object RockSpawner {
      * Samples [simplex2D] at increasing frequencies/decreasing amplitudes (standard fBm), then
      * remaps the [-1,1] result to a [0,1] density.
      */
-    private fun compositionForChunk(chunkX: Int, chunkY: Int, density: Int = 1000, species: List<Species> = Species.NATURAL): Mixture {
+    private fun mixtureForChunk(chunkX: Int, chunkY: Int, density: Int = 1000, species: List<Species> = Species.NATURAL): Mixture {
         val relativeComposition = IntArray(species.size)
         var totalComposition = 0L
 
@@ -292,8 +298,8 @@ object RockSpawner {
             var sum = FRAC_ZERO
             var maxAmplitude = FRAC_ZERO
             repeat(2) {
-                val x = Frac(x * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN)
-                val y = Frac(y * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN)
+                val x = Frac(x * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN*10)
+                val y = Frac(y * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN*10)
                 sum += simplex2D(x, y) * amplitude
                 maxAmplitude += amplitude
                 amplitude /= 2
@@ -302,8 +308,8 @@ object RockSpawner {
 
             val normalized = ((sum / maxAmplitude + Frac(1L, 1)) / 2).coerceIn(FRAC_ZERO, Frac(1L, 1))
 
-            // 1/4 predetermined, 3/4 local density
-            relativeComposition[i] = species[i].relativeAbundance + 3*normalized.scaleInt(species[i].relativeAbundance) // TODO come back and clean this up when it's working
+            // 1/16 predetermined, 15/16 local density
+            relativeComposition[i] = species[i].relativeAbundance + 15*normalized.scaleInt(species[i].relativeAbundance) // TODO come back and clean this up when it's working
             totalComposition += relativeComposition[i]
         }
 
