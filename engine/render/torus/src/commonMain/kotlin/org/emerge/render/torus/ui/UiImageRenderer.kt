@@ -43,7 +43,6 @@ class UiImageRenderer {
         centerX: Float, centerY: Float, halfW: Float, halfH: Float,
         uvMinX: Float, uvMinY: Float, uvMaxX: Float, uvMaxY: Float,
         textureId: Int,
-        tintLow: FloatArray, tintHigh: FloatArray,
         textureUnit: Int = 2,
     ) {
         GPU.bindVertexArray(vao)
@@ -55,8 +54,6 @@ class UiImageRenderer {
         GPU.putUniform2f(uHalfSize, halfW, halfH)
         GPU.putUniform2f(uUvMin, uvMinX, uvMinY)
         GPU.putUniform2f(uUvMax, uvMaxX, uvMaxY)
-        GPU.putUniform4fv(uTintLow, tintLow, 1)
-        GPU.putUniform4fv(uTintHigh, tintHigh, 1)
         GPU.drawTriangles(0, 4)
     }
 

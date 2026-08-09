@@ -254,7 +254,6 @@ class OutofspaceHud {
             RockDensityField.textureId(),
             uvMinX = worldTileToU((x0 - cx) / perPx), uvMinY = worldTileToV((y0 - cy) / perPx),
             uvMaxX = worldTileToU((x0 + size - cx) / perPx), uvMaxY = worldTileToV((y0 + size - cy) / perPx),
-            tintLow = 0x080D14FFL, tintHigh = 0x9A8A72FFL,
         )
 
         // Origin marker (shows motion, not position).

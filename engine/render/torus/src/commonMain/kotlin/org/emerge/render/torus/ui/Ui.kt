@@ -52,7 +52,6 @@ class Ui {
         val x: Float, val y: Float, val w: Float, val h: Float,
         val textureId: Int,
         val uvMinX: Float, val uvMinY: Float, val uvMaxX: Float, val uvMaxY: Float,
-        val tintLow: Long, val tintHigh: Long,
         override val clip: Int = -1,
     ) : DrawCmd
     private class ClickRegion(
@@ -342,12 +341,10 @@ class Ui {
                 val centerY = 1f - (img.y + img.h * 0.5f) / resH * 2f
                 val halfW = img.w / resW
                 val halfH = img.h / resH
-                val tintLow = FloatArray(4); packColor(img.tintLow, tintLow, 0)
-                val tintHigh = FloatArray(4); packColor(img.tintHigh, tintHigh, 0)
                 imageRenderer.draw(
                     centerX, centerY, halfW, halfH,
                     img.uvMinX, img.uvMinY, img.uvMaxX, img.uvMaxY,
-                    img.textureId, tintLow, tintHigh,
+                    img.textureId,
                 )
                 i++
             }
@@ -657,9 +654,8 @@ class Ui {
         x: Float, y: Float, w: Float, h: Float,
         textureId: Int,
         uvMinX: Float, uvMinY: Float, uvMaxX: Float, uvMaxY: Float,
-        tintLow: Long, tintHigh: Long,
     ) {
-        cmds.add(ImageCmd(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, tintLow, tintHigh, currentClip))
+        cmds.add(ImageCmd(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, currentClip))
     }
     internal fun emitTextLeft(text: String, x: Float, topY: Float, h: Float, color: Long) {
         cmds.add(TextCmd(text, x, topY, h, color, centered = false, centerX = 0f, clip = currentClip))
@@ -991,8 +987,7 @@ class CanvasBuilder internal constructor(private val ui: Ui) {
         x: Float, y: Float, w: Float, h: Float,
         textureId: Int,
         uvMinX: Float = 0f, uvMinY: Float = 0f, uvMaxX: Float = 1f, uvMaxY: Float = 1f,
-        tintLow: Long = 0x000000FFL, tintHigh: Long = 0xFFFFFFFFL,
-    ) = ui.emitImage(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY, tintLow, tintHigh)
+    ) = ui.emitImage(x, y, w, h, textureId, uvMinX, uvMinY, uvMaxX, uvMaxY)
 
     /** Text centred horizontally on [centerX], its top at [topY], [height] px tall. */
     fun label(text: String, centerX: Float, topY: Float, height: Float, color: Long) =

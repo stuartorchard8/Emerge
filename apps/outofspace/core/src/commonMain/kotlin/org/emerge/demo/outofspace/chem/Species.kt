@@ -20,13 +20,13 @@ enum class Phase {
  * Declaration order = Mixture iteration order + dominant tie-break. **Append only.**
  * molarMass = g/mol (settling). specificHeat = J/kg/K (heating cost).
  */
-enum class Species(val phase: Phase, val molarMass: Int, val specificHeat: Int) {
+enum class Species(val phase: Phase, val molarMass: Int, val specificHeat: Int, val relativeAbundance: Int = 0) {
     // ── Minerals: everything that comes out of the ground ──
-    Iron(Phase.Solid, 56, 450),
+    Iron(Phase.Solid, 56, 450, relativeAbundance = 410),
     Aluminum(Phase.Solid, 27, 900),
-    Copper(Phase.Solid, 64, 385),
-    Titanium(Phase.Solid, 48, 520),
-    Silica(Phase.Solid, 60, 700),
+    Copper(Phase.Solid, 64, 385, relativeAbundance = 180),
+    Titanium(Phase.Solid, 48, 520, relativeAbundance = 110),
+    Silica(Phase.Solid, 60, 700, relativeAbundance = 300),
     Carbon(Phase.Solid, 12, 710),
     RareEarth(Phase.Solid, 140, 200),
     Uranium(Phase.Solid, 238, 116),
@@ -47,6 +47,7 @@ enum class Species(val phase: Phase, val molarMass: Int, val specificHeat: Int) 
         val ALL: List<Species> = entries.toList()
         val COUNT: Int = ALL.size
 
+        val NATURAL: List<Species> = ALL.filter { it.relativeAbundance > 0 }
         val SOLIDS: List<Species> = ALL.filter { it.isSolid }
         val FLUIDS: List<Species> = ALL.filter { it.isFluid }
 

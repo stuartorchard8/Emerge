@@ -102,34 +102,6 @@ object RockSpawner {
     /** Rocks spawned with zero world-frame impulse so they do not carry momentum into the ship. */
     const val SPAWN_IMPULSE: Long = 0L
 
-    /** Four ore bodies the spawner rotates through, selected by spawn position hash. */
-    private val ORE_BODIES: List<Mixture> = listOf(
-        Mixture.of(
-            Species.Iron to 410L,
-            Species.Silica to 300L,
-            Species.Copper to 180L,
-            Species.Titanium to 110L,
-        ),
-        Mixture.of(
-            Species.Copper to 400L,
-            Species.Iron to 250L,
-            Species.Silica to 200L,
-            Species.Carbon to 150L,
-        ),
-        Mixture.of(
-            Species.Titanium to 350L,
-            Species.Iron to 300L,
-            Species.Aluminum to 200L,
-            Species.Silica to 150L,
-        ),
-        Mixture.of(
-            Species.Silica to 450L,
-            Species.Carbon to 300L,
-            Species.Iron to 150L,
-            Species.RareEarth to 100L,
-        ),
-    )
-
     /**
      * The vessel's last known chunk coordinates.
      *
@@ -214,7 +186,7 @@ object RockSpawner {
                 }
             }
 
-            densityBytes[nearestRow * WINDOW_BUFFER_SIZE + nearestCol] = density.scaleInt(255).toByte()
+            densityBytes[nearestRow * WINDOW_BUFFER_SIZE + nearestCol] = density.scaleInt(0xFF).toByte()
             state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
@@ -237,9 +209,6 @@ object RockSpawner {
         val numSpawnAttempts = numFractionalSpawnAttempts/fractionalGranularity
         val fractionalSpawnAttempt = numFractionalSpawnAttempts%fractionalGranularity
 
-        val compositionIndex = ((hash.ushr(16) xor hash) and 3)
-        val composition = ORE_BODIES[compositionIndex.coerceIn(0, ORE_BODIES.size - 1)]
-
         val rocks = mutableListOf<Rock>()
         for (i in 0 .. numSpawnAttempts) {
             if (i == numSpawnAttempts) {
@@ -253,6 +222,10 @@ object RockSpawner {
             val (originTileX, originTileY) = chunkOriginTile(chunkX, chunkY)
             val tileX = originTileX + rx
             val tileY = originTileY + ry
+
+            val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
+
+            val composition = compositionForChunk(chunkX, chunkY)
 
             rocks.add(Rock.blob(
                 radius = radius,
@@ -294,6 +267,48 @@ object RockSpawner {
         }
         val normalized = ((sum / maxAmplitude + Frac(1L, 1)) / 2).coerceIn(FRAC_ZERO, Frac(1L, 1))
         return normalized*normalized*normalized*normalized
+    }
+
+    /**
+     * Deterministic 2-octave 2D simplex noise sampling for rock composition per tile.
+     *
+     * Samples [simplex2D] at increasing frequencies/decreasing amplitudes (standard fBm), then
+     * remaps the [-1,1] result to a [0,1] density.
+     */
+    private fun compositionForChunk(chunkX: Int, chunkY: Int, density: Int = 1000, species: List<Species> = Species.NATURAL): Mixture {
+        val relativeComposition = IntArray(species.size)
+        var totalComposition = 0L
+
+        for (i in species.indices) {
+            // Large offsets to minimize predictability
+            val x = chunkX+Int.MAX_VALUE.toLong()*(i-species.size/2)+Int.MAX_VALUE/2
+            val y = chunkY+Int.MAX_VALUE.toLong()*(i-species.size/2)+Int.MAX_VALUE/2
+
+            var amplitude = Frac(1L, 1)
+            var frequency = 1
+            var sum = FRAC_ZERO
+            var maxAmplitude = FRAC_ZERO
+            repeat(2) {
+                val x = Frac(x * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN)
+                val y = Frac(y * NOISE_SCALE_NUM * frequency, NOISE_SCALE_DEN)
+                sum += simplex2D(x, y) * amplitude
+                maxAmplitude += amplitude
+                amplitude /= 2
+                frequency *= 2
+            }
+
+            val normalized = ((sum / maxAmplitude + Frac(1L, 1)) / 2).coerceIn(FRAC_ZERO, Frac(1L, 1))
+
+            // 1/4 predetermined, 3/4 local density
+            relativeComposition[i] = species[i].relativeAbundance + 3*normalized.scaleInt(species[i].relativeAbundance) // TODO come back and clean this up when it's working
+            totalComposition += relativeComposition[i]
+        }
+
+        return Mixture.of(
+            *species.mapIndexed {
+                index, species -> species to relativeComposition[index].toLong()*density/totalComposition
+            }.toTypedArray()
+        )
     }
 
     /**
@@ -406,7 +421,7 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 state[row * WINDOW_SIZE + col] = UNPOPULATED
-                densityBytes[row * WINDOW_BUFFER_SIZE + col] = 0
+                densityBytes[row * WINDOW_BUFFER_SIZE + col] = 0x0
             }
         }
     }
@@ -437,7 +452,7 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
-                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = 0
+                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = 0x0
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
                         densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = densityBytes[srcY * WINDOW_BUFFER_SIZE + srcX]
