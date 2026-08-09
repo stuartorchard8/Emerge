@@ -64,7 +64,7 @@ object RockSpawner {
 
     /** Flat backing store: row-major, indexed as state[row * WINDOW_SIZE + col]. */
     internal val state = IntArray(WINDOW_SIZE * WINDOW_SIZE)
-    internal val densityBytes = ByteArray(WINDOW_BUFFER_SIZE * WINDOW_BUFFER_SIZE)
+    internal val abundanceBytes = ByteArray(WINDOW_BUFFER_SIZE * WINDOW_BUFFER_SIZE * 4)
 
     private var baseChunkX: Int = 0
 
@@ -178,7 +178,9 @@ object RockSpawner {
             val worldChunkX = baseChunkX + nearestCol
             val worldChunkY = baseChunkY + nearestRow
             val density = densityForChunk(worldChunkX, worldChunkY)
-            val newRocks = spawnRocksForChunk(worldChunkX, worldChunkY, density)
+            val composition = compositionForChunk(worldChunkX, worldChunkY)
+
+            val newRocks = spawnRocksForChunk(worldChunkX, worldChunkY, density, composition)
 
             for (rock in newRocks) {
                 if (!wouldOverlap(rock.positionX / Flight.PER_TILE, rock.positionY / Flight.PER_TILE, (rock.width / 2), result)) {
@@ -186,7 +188,10 @@ object RockSpawner {
                 }
             }
 
-            densityBytes[nearestRow * WINDOW_BUFFER_SIZE + nearestCol] = density.scaleInt(0xFF).toByte()
+            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+0] = composition[Species.Iron].coerceIn(0L, 255L).toByte()
+            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+1] = composition[Species.Copper].coerceIn(0L, 255L).toByte()
+            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+2] = composition[Species.Titanium].coerceIn(0L, 255L).toByte()
+            abundanceBytes[(nearestRow * WINDOW_BUFFER_SIZE + nearestCol)*4+3] = density.scaleInt(0xFF).toByte()
             state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
@@ -198,7 +203,7 @@ object RockSpawner {
      *
      * Uses the chunk coordinates to seed a deterministic layout of up to [MAX_SPAWNS_PER_CHUNK] rocks within the chunk.
      */
-    private fun spawnRocksForChunk(chunkX: Int, chunkY: Int, density: Frac): List<Rock> {
+    private fun spawnRocksForChunk(chunkX: Int, chunkY: Int, density: Frac, composition: Mixture): List<Rock> {
         val hash = (chunkX * 73856093L xor chunkY * 19349663L).toInt()
         val rng = Random(hash.toLong() and 0xFFFFFFFFL)
 
@@ -224,8 +229,6 @@ object RockSpawner {
             val tileY = originTileY + ry
 
             val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
-
-            val composition = compositionForChunk(chunkX, chunkY)
 
             rocks.add(Rock.blob(
                 radius = radius,
@@ -421,7 +424,10 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 state[row * WINDOW_SIZE + col] = UNPOPULATED
-                densityBytes[row * WINDOW_BUFFER_SIZE + col] = 0x0
+                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+0] = 0
+                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+1] = 0
+                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+2] = 0
+                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+3] = 0
             }
         }
     }
@@ -452,10 +458,16 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
-                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = 0x0
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+0] = 0
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+1] = 0
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+2] = 0
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+3] = 0
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
-                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = densityBytes[srcY * WINDOW_BUFFER_SIZE + srcX]
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+0] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+0]
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+1] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+1]
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+2] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+2]
+                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+3] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+3]
                     }
                 }
             }
