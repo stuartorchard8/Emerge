@@ -77,7 +77,7 @@ object RockSpawner {
     internal fun stateAt(chunkX: Int, chunkY: Int): Int {
         val col = chunkX - baseChunkX
         val row = chunkY - baseChunkY
-        require(col in 0..14 && row in 0..14) { "chunk ($chunkX,$chunkY) outside window" }
+        require(col in 0 until WINDOW_SIZE && row in 0 until WINDOW_SIZE) { "chunk ($chunkX,$chunkY) outside window" }
         return state[row * WINDOW_SIZE + col]
     }
 
@@ -85,7 +85,7 @@ object RockSpawner {
     internal fun setStateAt(chunkX: Int, chunkY: Int, value: Int) {
         val col = chunkX - baseChunkX
         val row = chunkY - baseChunkY
-        require(col in 0..14 && row in 0..14) { "chunk ($chunkX,$chunkY) outside window" }
+        require(col in 0 until WINDOW_SIZE && row in 0 until WINDOW_SIZE) { "chunk ($chunkX,$chunkY) outside window" }
         state[row * WINDOW_SIZE + col] = value
     }
 
