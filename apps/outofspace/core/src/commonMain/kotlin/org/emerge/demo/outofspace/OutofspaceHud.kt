@@ -246,7 +246,7 @@ class OutofspaceHud {
         // continuously with the vessel's own tile position, not in per-chunk jumps.
         val vesselTileX = s.positionX.toFloat() / Flight.PER_TILE
         val vesselTileY = s.positionY.toFloat() / Flight.PER_TILE
-        val chunksPerAxis = RockSpawner.WINDOW_SIZE.toFloat()
+        val chunksPerAxis = RockSpawner.WINDOW_BUFFER_SIZE.toFloat()
         fun worldTileToU(worldTileX: Float) = (vesselTileX + worldTileX) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkX / chunksPerAxis
         fun worldTileToV(worldTileY: Float) = (vesselTileY + worldTileY) / RockSpawner.CHUNK_SIZE / chunksPerAxis - RockSpawner.windowBaseChunkY / chunksPerAxis
         image(

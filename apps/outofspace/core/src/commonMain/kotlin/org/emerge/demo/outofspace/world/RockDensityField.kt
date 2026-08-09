@@ -28,7 +28,7 @@ object RockDensityField {
         }
 
         GPU.bindTexture2D(tex)
-        GPU.uploadTextureR8(RockSpawner.WINDOW_SIZE, RockSpawner.WINDOW_SIZE, RockSpawner.densityBytes)
+        GPU.uploadTextureR8(RockSpawner.WINDOW_BUFFER_SIZE, RockSpawner.WINDOW_BUFFER_SIZE, RockSpawner.densityBytes)
         return tex
     }
 }

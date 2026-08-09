@@ -25,7 +25,8 @@ object RockSpawner {
     const val POPULATED = 2
 
     /** Window size of the chunk-state array (WINDOW_SIZE×WINDOW_SIZE). */
-    const val WINDOW_SIZE = 12
+    const val WINDOW_SIZE = 11
+    const val WINDOW_BUFFER_SIZE = WINDOW_SIZE+WINDOW_SIZE%2 // Note that this must be even for GPUs to render the density map properly
     private const val WINDOW_RADIUS = (WINDOW_SIZE-1)/2
 
     /** Half-window for computing NEAR zone radius (5×5 NEAR zone → radius 2 from center). */
@@ -63,7 +64,7 @@ object RockSpawner {
 
     /** Flat backing store: row-major, indexed as state[row * WINDOW_SIZE + col]. */
     internal val state = IntArray(WINDOW_SIZE * WINDOW_SIZE)
-    internal val densityBytes = ByteArray(WINDOW_SIZE * WINDOW_SIZE)
+    internal val densityBytes = ByteArray(WINDOW_BUFFER_SIZE * WINDOW_BUFFER_SIZE)
 
     private var baseChunkX: Int = 0
 
@@ -213,8 +214,7 @@ object RockSpawner {
                 }
             }
 
-//            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = density.scaleInt(255).toByte()
-            densityBytes[nearestRow * WINDOW_SIZE + nearestCol] = (nearestCol*20).toByte()    // debug density
+            densityBytes[nearestRow * WINDOW_BUFFER_SIZE + nearestCol] = density.scaleInt(255).toByte()
             state[nearestRow * WINDOW_SIZE + nearestCol] = POPULATED
         }
 
@@ -406,7 +406,7 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 state[row * WINDOW_SIZE + col] = UNPOPULATED
-                densityBytes[row * WINDOW_SIZE + col] = 0
+                densityBytes[row * WINDOW_BUFFER_SIZE + col] = 0
             }
         }
     }
@@ -437,12 +437,10 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
-//                        densityBytes[dstY * WINDOW_SIZE + dstX] = 0
-                        densityBytes[dstY * WINDOW_SIZE + dstX] = (dstX*20).toByte()    // debug density
+                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = 0
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
-//                        densityBytes[dstY * WINDOW_SIZE + dstX] = densityBytes[srcY * WINDOW_SIZE + srcX]
-                        densityBytes[dstY * WINDOW_SIZE + dstX] = (dstX*20).toByte()    // debug density
+                        densityBytes[dstY * WINDOW_BUFFER_SIZE + dstX] = densityBytes[srcY * WINDOW_BUFFER_SIZE + srcX]
                     }
                 }
             }
@@ -455,7 +453,7 @@ object RockSpawner {
      * NEAR is the central squares of the array.
      * After a shift the base changes so different world chunks occupy
      * the same array slots — we must check whether the old world chunk at each slot
-     * was near the old vessel position.
+     * was near the old vessel position.ebuging navigation chunk rendering
      *
      * - Chunks now within NEAR_RADIUS of the vessel → NEAR
      * - Chunks that were NEAR (old world chunk was near old vessel) but now outside → POPULATED
