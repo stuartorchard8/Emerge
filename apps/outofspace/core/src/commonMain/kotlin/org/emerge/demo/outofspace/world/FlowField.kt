@@ -76,7 +76,6 @@ class FlowGraph internal constructor(
             if (tileSet.isEmpty()) return empty()
 
             val tileSources = BooleanArray(grid.size*4) { false }
-            val tileDestinations = BooleanArray(grid.size*4) { false }
             val hungry = BooleanArray(grid.size) { true }
             for (source in sources) {
                 hungry[source] = false
@@ -90,24 +89,13 @@ class FlowGraph internal constructor(
                     while (queue.isNotEmpty()) {
                         val at = queue.removeFirst()
 
-                        // Have no cells leading into this one passed a source?
-                        var isHungry = true
-                        for (i in Direction.ALL.indices) {
-                            val dir = Direction.ALL[i]
-                            if (tileDestinations[at * 4 + i]) {
-                                val prev = grid.neighbour(at, dir)
-                                if (!hungry[prev]) {
-                                    isHungry = false
-                                }
-                            }
-                        }
-
                         // Have we been here already while hungry?
+                        // If the tile is hungry then there's no work to do here that wasn't already done.
                         if (hungry[at]) {
-                            if (tileSources[at * 4 + 0] ||
-                                tileSources[at * 4 + 1] ||
-                                tileSources[at * 4 + 2] ||
-                                tileSources[at * 4 + 3]
+                            if (tileSources[at * 4 + Direction.Left.ordinal] ||
+                                tileSources[at * 4 + Direction.Right.ordinal] ||
+                                tileSources[at * 4 + Direction.Up.ordinal] ||
+                                tileSources[at * 4 + Direction.Down.ordinal]
                             ) continue
                         }
 
@@ -118,9 +106,30 @@ class FlowGraph internal constructor(
                             if (next < 0 || next !in tileSet) continue
 
                             tileSources[at * 4 + i] = true
-                            tileDestinations[next * 4 + i] = true
-
-                            queue.addLast(next)
+                            // Potentially propagate hunger to the next step.
+                            // Non-hungry searching uncovers more sources upstream.
+                            // Hungry searching propagates backwards down non-hungry paths back to their source.
+                            if (hungry[at] && !hungry[next]) {
+                                val nextThinksHungryIsSource = tileSources[next*4 + dir.opposite.ordinal]
+                                if (nextThinksHungryIsSource) {
+                                    // Next tried to find a source in this direction.
+                                    // This means we can safely override next and continue up its path to find a source,
+                                    // since next isn't hungry and therefore must have found a source downstream.
+                                    hungry[next] = true
+                                    queue.addLast(next)
+                                } else {
+                                    // Next is looking elsewhere for food. Leave it be.
+                                    continue
+                                }
+                            } else {
+                                if (!hungry[at]) {
+                                    val nextThinksSatiatedIsSource = tileSources[next*4 + dir.opposite.ordinal]
+                                    if (!nextThinksSatiatedIsSource) {
+                                        hungry[next] = false
+                                    }
+                                }
+                                queue.addLast(next)
+                            }
                         }
                     }
                 }
