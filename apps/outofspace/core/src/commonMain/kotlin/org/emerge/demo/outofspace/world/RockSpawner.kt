@@ -12,8 +12,8 @@ import kotlin.random.Random
  * Bodies spawn one chunk per tick — the nearest UNPOPULATED chunk outside a 5×5 NEAR zone
  * centered on the vessel. Bodies despawn when their chunk leaves the WINDOW_SIZE×WINDOW_SIZE window.
  *
- * Spawned bodies are **free mass** — not tracked by [VesselState.baselineBodyGrams]. The body
- * ledger will diverge by the mass of world-spawned bodies the extractor eats (intentional).
+ * Spawned bodies are **free mass** — no conservation ledger tracks them, not even drops from the
+ * sim editor. Bodies are just `VesselState.bodies`.
  */
 object RockSpawner {
 

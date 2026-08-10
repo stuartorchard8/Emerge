@@ -66,15 +66,7 @@ class OutofspaceHud {
                     title("BODIES")
                     keyValue("Adrift", "${s.bodies.size}")
                     keyValue("Mass", grams(s.bodyGrams))
-                    keyValue("Captured", grams(s.bodyCapturedGrams))
                     keyValue("Extracted", grams(s.extractedGrams))
-                    // What is left is what arrived less what the extractors have eaten.
-                    val bodyBalanced =
-                        s.bodyGrams == s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams
-                    row(
-                        if (bodyBalanced) "balanced" else "LEAK",
-                        if (bodyBalanced) 0x6ED09AFFL else 0xE05A4AFFL,
-                    )
                 }
                 gap()
                 title("MASS BALANCE")
@@ -102,7 +94,7 @@ class OutofspaceHud {
                 keyValue("Stored", joules(s.storedJoules))
                 keyValue("To air", joules(s.solidToAirJoules / 1000L))
                 val heatBalanced = s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                    s.generatedJoules - s.constructionJoules == s.baselineJoules
+                    s.generatedJoules - s.insertedJoules - s.acquiredJoules == s.baselineJoules
                 row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 // Atmosphere energy ledger (separate from mass ledger).
                 val airHeatBalanced =

@@ -40,7 +40,7 @@ sealed interface Edit {
     /** Directional thrust (dx, dy each −1/0/1). Acceleration-based (reducer multiplies by vessel mass). Placeholder engine (ledger: debugImpulseX). */
     data class Thrust(val dx: Int, val dy: Int) : Edit
 
-    /** Drop rock at ([x], [y]) (relative to grid). Mints mass → books to capturedGrams. Not via extractedGrams (extractor replacement). */
+    /** Drop rock at ([x], [y]) (relative to grid). Free mass — no ledger entry, same as spawner. */
     data class DropRock(val x: Float, val y: Float, val radius: Int = DEFAULT_ROCK_RADIUS) : Edit
 
     /**

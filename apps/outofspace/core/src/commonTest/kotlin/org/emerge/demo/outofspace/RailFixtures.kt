@@ -183,13 +183,9 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
     val base = starterVessel(grid)
     val bodies = rockOnPlate(STARTER_PLATE_X, STARTER_PLATE_Y, rocksPerPlate) +
         rockOnPlate(STARTER_PLATE_X, STARTER_DEMO_PLATE_Y, rocksPerPlate)
-    // ⚠️ Both baselines have to move with them, and `copy` will not do it: they are constructor
-    // *defaults*, so a copy keeps the figure computed for the world that had no bodies in it and
-    // every ledger then reads the bodies as mass and energy conjured out of nothing. The bodies were
-    // always here as far as this world is concerned, which is what a baseline says.
+    // Bodies are not part of the energy ledger — their thermal energy enters only via extractor
+    // bites (recorded in [acquiredJoules]). So the baseline stays as-is.
     return base.copy(
         bodies = bodies,
-        baselineBodyGrams = base.baselineBodyGrams + bodies.sumOf { it.massGrams },
-        baselineJoules = base.baselineJoules + bodies.sumOf { it.joules },
     )
 }

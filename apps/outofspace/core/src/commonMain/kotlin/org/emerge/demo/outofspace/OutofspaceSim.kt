@@ -310,7 +310,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             occupancy = occupancy,
             generatedJoules = w.generatedJoules,
             radiatedJoules = state.radiatedJoules + conducted.radiated,
-            constructionJoules = w.constructionJoules,
+            insertedJoules = w.insertedJoules,
+            acquiredJoules = w.acquiredJoules,
             // Solid→air energy (see [SolidHeatStep]).
             solidToAirJoules = state.solidToAirJoules + conducted.toAir,
             air = fluid.air,
@@ -342,7 +343,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodies = bodiesDrifted.bodies,
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
-            bodyCapturedGrams = w.bodyCapturedGrams,
             motion = w.motion.freeze(),
         ).resized(w.fitRequested)
     }
@@ -529,9 +529,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         var fitRequested: Boolean = false
 
-        /** Free-floating body, and the running admission of how much of it came from outside. */
+        /** Free-floating bodies. No conservation ledger — bodies spawn/despawn freely. */
         val bodies: MutableList<RigidBody> = state.bodies.toMutableList()
-        var bodyCapturedGrams: Long = state.bodyCapturedGrams
 
         /**
          * Momentum the vessel handed the bodies during the **machine** pass, which is negative: an
@@ -586,12 +585,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         val heatAdded: LongArray = LongArray(state.grid.size)
         var generatedJoules: Long = state.generatedJoules
-
-        /**
-         * Energy that arrived in the world inside newly built bodies, less what left inside scrapped
-         * ones — see [VesselState.constructionJoules].
-         */
-        var constructionJoules: Long = state.constructionJoules
+        var insertedJoules: Long = state.insertedJoules
+        var acquiredJoules: Long = state.acquiredJoules
 
         /** Charges [joules] of waste heat to the machine stored at [index]. */
         fun heat(index: Int, joules: Long) {
@@ -605,17 +600,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          *
          * The difference from [heat] is the whole point: this is energy that was already in the
          * world and has changed hands — a rock's heat arriving in the extractor that ate it. Booking
-         * it as generated would break the thermal balance by exactly the amount that moved.
+         * it as generated would break the thermal balance by exactly the amount that moved. Also
+         * increments [acquiredJoules] to record that the grid acquired this energy from outside.
          */
         fun absorb(index: Int, joules: Long) {
             if (joules == 0L || index !in heatAdded.indices) return
             heatAdded[index] += joules
+            acquiredJoules += joules
         }
 
-        /** Books a body's energy in or out of the world as it is built or scrapped. */
-        fun built(joules: Long) { constructionJoules += joules }
+        /** Books energy inserted by the player via debug features. */
+        fun built(joules: Long) { insertedJoules += joules }
 
-        fun scrapped(joules: Long) { constructionJoules -= joules }
+        /** Books energy removed by scrapping debug-placed things. */
+        fun scrapped(joules: Long) { insertedJoules -= joules }
 
         /** Apply conduction results back to machines/segments/bridges. */
         fun applyBodyHeat(bodies: List<Body>, joules: LongArray) {
@@ -839,7 +837,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             injectedAirJoules += joules
         }
 
-        /** Drop a body at ([x], [y]) (capture placeholder). Mass → bodyCapturedGrams, energy → built. */
+        /** Drop a body at ([x], [y]) (capture placeholder). Body heat → stored, booking → inserted. */
         private fun dropRock(x: Float, y: Float, radius: Int) {
             val half = radius * Flight.PER_TILE
             val body = RigidBody.rockBlob(
@@ -849,7 +847,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 composition = DEFAULT_ORE_BODY,
             )
             bodies.add(body)
-            bodyCapturedGrams += body.massGrams
             built(body.joules)
         }
 
@@ -976,8 +973,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /**
          * Takes one cell off body [index], which is where mass enters the ore ledger — at the body,
-         * not at the belt, so that the two balances are hinged on the same number. See
-         * [VesselState.bodyCapturedGrams].
+         * not at the belt, so that the two balances are hinged on the same number.
          */
         private fun bite(index: Int, at: Int): Resource? {
             val body = bodies[index]

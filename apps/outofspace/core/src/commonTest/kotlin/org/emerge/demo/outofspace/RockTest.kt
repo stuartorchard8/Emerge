@@ -135,35 +135,26 @@ class RockTest {
     }
 
     /**
-     * The body ledger, which exists because a body is **new mass in a closed world**.
-     *
-     * `bodyGrams == baselineBodyGrams + bodyCapturedGrams − extractedGrams`, checked while bodies are
-     * being created — and nothing has been extracted here, so the third term is zero and this is H1's
-     * identity unchanged. What must stay true beside it is that **arriving** is not **extracting**: a
-     * body appearing in the world moves the body ledger and leaves the ore ledger alone, because only
-     * an extractor may turn one into the other. See §5i.
+     * Dropping a body adds it to the body list and its thermal energy to the solid ledger,
+     * but neither mass nor capture count is tracked — bodies are free mass.
      */
     @Test
-    fun `body mass is booked and the ore ledger never notices`() {
+    fun `a body's heat enters the solid ledger`() {
         val controller = OutofspaceController(CFG, bareHull())
         val oreBefore = controller.state.extractedGrams
+        val storedBefore = controller.state.storedJoules
 
         repeat(3) { i ->
             controller.dropRock(6f + i * 8f, 10f)
             controller.stepOnce()
-            val s = controller.state
-            assertEquals(
-                s.baselineBodyGrams + s.bodyCapturedGrams, s.bodyGrams,
-                "tick ${s.tick}: ${s.bodies.size} bodies weighing ${s.bodyGrams}g against " +
-                    "${s.bodyCapturedGrams}g admitted",
-            )
         }
 
         val s = controller.state
         assertEquals(3, s.bodies.size)
-        assertTrue(s.bodyCapturedGrams > 0L, "nothing was ever captured, so this proved nothing")
         assertEquals(oreBefore, s.extractedGrams, "a body arriving counted as ore extracted")
         assertEquals(s.inTransitGrams + s.ventedGrams, s.extractedGrams, "and the ore balance broke")
+        // Body heat enters the solid ledger through the same term a wall does.
+        assertTrue(s.storedJoules > storedBefore, "body arrived with zero thermal energy")
     }
 
     /**
@@ -187,7 +178,7 @@ class RockTest {
         assertTrue(s.storedJoules > before, "the body arrived at absolute zero")
         assertEquals(
             s.baselineJoules,
-            s.storedJoules + s.radiatedJoules + s.solidToAirJoules - s.generatedJoules - s.constructionJoules,
+            s.storedJoules + s.radiatedJoules + s.solidToAirJoules - s.generatedJoules - s.insertedJoules - s.acquiredJoules,
             "the solid heat ledger broke the tick a body appeared",
         )
     }
@@ -204,8 +195,6 @@ class RockTest {
         val loaded = Save.read(Save.write(played))
         assertEquals(2, played.bodies.size, "nothing was dropped, so this proved nothing")
         assertEquals(played.bodies, loaded.bodies)
-        assertEquals(played.bodyCapturedGrams, loaded.bodyCapturedGrams)
-        assertEquals(played.baselineBodyGrams, loaded.baselineBodyGrams)
         assertEquals(played.storedJoules, loaded.storedJoules)
         // The text, not just the state — the sharper check, because it fails on anything the format
         // forgot rather than on anything the comparison happened to look at.

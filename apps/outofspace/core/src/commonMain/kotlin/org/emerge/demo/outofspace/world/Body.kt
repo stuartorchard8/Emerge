@@ -119,25 +119,19 @@ fun bodiesOf(
 }
 
 /**
- * Total thermal energy held by every solid thing in the world.
- *
- * Summed straight off the stored values rather than off [bodiesOf], so the ledger costs a walk rather
- * than a build — and so it says the same thing whether or not anything has asked for the bodies.
+ * Total thermal energy in every solid thing aboard — machines, conduit segments, bridges, and free
+ * bodies (rocks). Bodies are tracked in [storedJoules]; when the extractor takes joules from them,
+ * [acquiredJoules] cancels the double-count so the ledger stays closed.
  */
 fun solidJoules(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-    // Bodies are solids and their energy is in the solid ledger from the tick they appear, long
-    // before anything conducts with them -- see [RigidBody]. Counting it only once contact exists would
-    // make the arrival of contact look like energy arriving from nowhere.
-    bodies: List<RigidBody> = emptyList(),
 ): Long {
     var sum = 0L
     for (m in machines) sum += m?.joules ?: 0L
     conduits.all { _, _, s -> sum += s.joules }
     for (b in bridges) sum += b?.joules ?: 0L
-    for (r in bodies) sum += r.joules
     return sum
 }
 

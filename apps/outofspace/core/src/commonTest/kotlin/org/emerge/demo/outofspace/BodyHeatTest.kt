@@ -203,7 +203,7 @@ class BodyHeatTest {
         )
         assertEquals(
             ambientJoules(MachineKind.Hull),
-            s.constructionJoules,
+            s.insertedJoules,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
 
@@ -215,8 +215,8 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.constructionJoules < ambientJoules(MachineKind.Hull) / 1_000L,
-            "and scrapping it takes that heat back out: ${s.constructionJoules}",
+            s.insertedJoules < ambientJoules(MachineKind.Hull) / 1_000L,
+            "and scrapping it takes that heat back out: ${s.insertedJoules}",
         )
     }
 }

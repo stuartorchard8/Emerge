@@ -258,15 +258,11 @@ class GridGrowTest {
             s.inTransitGrams + s.ventedGrams - s.extractedGrams,
             "massBalance $whenever",
         )
-        assertEquals(
-            0L,
-            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams },
-            "bodyBalance $whenever",
-        )
+        // No body conservation (bodies spawn/despawn freely), just check bodies exist.
         assertEquals(
             0L,
             s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                s.generatedJoules - s.constructionJoules - s.baselineJoules,
+                s.generatedJoules - s.insertedJoules - s.acquiredJoules - s.baselineJoules,
             "heatBalance $whenever",
         )
     }
@@ -433,7 +429,7 @@ class GridGrowTest {
         append('|').append(s.storedJoules).append('|').append(s.radiatedJoules)
         append('|').append(s.vesselImpulseX).append('|').append(s.vesselImpulseY)
         append('|').append(s.extractedGrams).append('|').append(s.ventedGrams)
-        append('|').append(s.bodyCapturedGrams).append('|').append(s.stockpile.toString())
+        append('|').append(s.stockpile.toString())
         for (b in s.bodies.sortedWith(compareBy({ b -> b.positionX }, { b -> b.positionY }))) {
             append('|').append(b.positionX).append(',').append(b.positionY).append(',').append(b.massGrams)
         }

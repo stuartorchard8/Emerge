@@ -643,13 +643,9 @@ object OutofspaceAgentHarness {
             // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
             // about how long the starter vessel's extractor has been running.
             "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.extractedGrams).toDouble()
-            // Body, and its ledger as one number: `bodyBalance` is zero or mass has been created
-            // or destroyed out there — see [VesselState.bodyCapturedGrams].
+            // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
             "rockGrams" -> state.bodyGrams.toDouble()
-            "capturedGrams" -> state.bodyCapturedGrams.toDouble()
-            "rockBalance" ->
-                (state.bodyGrams - state.baselineBodyGrams - state.bodyCapturedGrams + state.extractedGrams).toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
             //
@@ -709,7 +705,7 @@ object OutofspaceAgentHarness {
             "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "extractedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
-            "massBalance", "rockCount", "rockGrams", "capturedGrams", "rockBalance",
+            "massBalance", "rockCount", "rockGrams",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",

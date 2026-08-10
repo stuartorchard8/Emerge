@@ -53,12 +53,11 @@ object Save {
         out.append("radiated ").append(state.radiatedJoules).append('\n')
         out.append("airvented ").append(state.airVentedGrams).append('\n')
         out.append("baselinejoules ").append(state.baselineJoules).append('\n')
-        out.append("construction ").append(state.constructionJoules).append('\n')
+        out.append("inserted ").append(state.insertedJoules).append('\n')
+        out.append("acquired ").append(state.acquiredJoules).append('\n')
         out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
-        // Body ledger: fixed point + running admission (absent = zero before bodies existed).
-        out.append("captured ").append(state.bodyCapturedGrams).append('\n')
-        out.append("baselinebody ").append(state.baselineBodyGrams).append('\n')
+        // Bodies: free mass, no tracking beyond the list itself.
 
         // Body momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
         for (b in state.bodies) {
@@ -308,9 +307,6 @@ object Save {
         var bodyImpulseX = 0L
         var bodyImpulseY = 0L
         val bodies = ArrayList<RigidBody>()
-        var capturedGrams = 0L
-        // Null = no line (bodies didn't exist yet). Zero = bodies all arrived after world started.
-        var baselineBodyGrams: Long? = null
 
         // Absent = freefall. Older saves store one-g explicitly.
         var gravity = VesselState.FREEFALL
@@ -329,7 +325,8 @@ object Save {
         var injectedAirJoules = 0L
         var baselineAirJoules: Long? = null
         var baselineJoules: Long? = null
-        var construction = 0L
+        var inserted = 0L
+        var acquired = 0L
         var solidToAir = 0L
         var baselineAir: Long? = null
 
@@ -358,7 +355,10 @@ object Save {
                 "airinjected" -> { injectedAirGrams = long(1); injectedAirJoules = long(2) }
                 "baselineairheat" -> baselineAirJoules = long(1)
                 "baselinejoules" -> baselineJoules = long(1)
-                "construction" -> construction = long(1)
+                "inserted" -> inserted = long(1)
+                "acquired" -> acquired = long(1)
+                // Old spelling: the energy the player inserted, now [insertedJoules].
+                "construction" -> inserted = long(1)
                 "solidtoair" -> solidToAir = long(1)
                 "baselineair" -> baselineAir = long(1)
 
@@ -406,8 +406,8 @@ object Save {
                 "pipemomy" -> readSparse(tokens, pipeMomentumY, ::fail)
                 "momx" -> readSparse(tokens, momentumX, ::fail)
                 "momy" -> readSparse(tokens, momentumY, ::fail)
-                "captured" -> capturedGrams = long(1)
-                "baselinebody", "baselinerock" -> baselineBodyGrams = long(1)
+                "captured" -> {} // consumed, ignored — legacy field
+                "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
                 "body", "rock" -> {
                     val w = tokens[1].toIntOrNull() ?: fail("unreadable body width")
                     val h = tokens[2].toIntOrNull() ?: fail("unreadable body height")
@@ -485,7 +485,8 @@ object Save {
             airVentedGrams = airVented,
             structure = structure,
             occupancy = occupancy,
-            constructionJoules = construction,
+            insertedJoules = inserted,
+            acquiredJoules = acquired,
             solidToAirJoules = solidToAir,
             // A missing baseline means the world's own totals, which is right for a handwritten
             // world and harmless for a saved one, where the line is always present. A version 4
@@ -515,8 +516,6 @@ object Save {
             bodyImpulseX = bodyImpulseX,
             bodyImpulseY = bodyImpulseY,
             bodies = loaded,
-            bodyCapturedGrams = capturedGrams,
-            baselineBodyGrams = baselineBodyGrams ?: bodies.sumOf { it.massGrams },
         )
     }
 

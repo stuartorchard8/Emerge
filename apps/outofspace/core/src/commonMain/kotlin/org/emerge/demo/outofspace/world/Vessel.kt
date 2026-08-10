@@ -26,7 +26,7 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * That invariant catches an entire category of logistics bug at once.
  *
  * Since H3 nothing mints ore: [extractedGrams] is mass that came **off a rock**, so it is a term in
- * the rock ledger too and the two balances are hinged together — see [capturedGrams].
+ * the rock ledger too — hinging the ore and mass balances on the same number.
  *
  * There is no separate "banked" term any more: the [Stockpile] is derived from the storages, so what
  * it holds is already counted in [inTransitGrams] and adding it again would double-count.
@@ -152,31 +152,7 @@ data class VesselState(
     val tick: Long = 0L,
     val extractedGrams: Long = 0L,
     val ventedGrams: Long = 0L,
-    /**
-     * Cumulative grams of rock that have arrived from outside the world, and the rock mass the world
-     * started with. With [extractedGrams] they are rock's answer to `extracted == aboard + vented`:
-     *
-     *     bodyGrams == baselineBodyGrams + bodyCapturedGrams − extractedGrams
-     *
-     * The third term is H3's, and it is the *same* number the ore balance is measured against — that
-     * is what makes the pair a proof rather than two hopeful sums. Mass arrives from outside, sits in
-     * a body, and leaves the body only by becoming ore; add the two identities and everything but the
-     * baseline and the capture cancels, so a gram cannot be invented in the crossing without one of
-     * them going non-zero.
-     *
-     * The body ledger was kept separate from the ore one deliberately while the miner still existed
-     * — a body is **new mass in a closed world**, and building the hold on the stand-in it was meant
-     * to replace would have tied the replacement to the thing being replaced. The miner is gone now
-     * and the hinge is safe to fit. See `docs/out-of-space-plan.md` §5f and open question 5.
-     */
-    val bodyCapturedGrams: Long = 0L,
-    /**
-     * The body mass the world started with, fixed at construction so [bodyCapturedGrams] has something
-     * to be measured against. The twin of [baselineJoules] and [baselineAirGrams], for the reason
-     * they both give: a quantity that can arrive from outside needs a fixed point, or "how much is
-     * here" is not a statement about anything.
-     */
-    val baselineBodyGrams: Long = bodies.sumOf { it.massGrams },
+
     /**
      * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
      * away to space. The thermal counterpart of [extractedGrams] and [ventedGrams], and they buy the
@@ -247,26 +223,34 @@ data class VesselState(
     val airVentedJoules: Long = 0L,
     /**
      * The energy the world's **solids** started with. Fixed at construction so the thermal balance
-     * has something to be compared against — the twin of [baselineAirGrams].
+     * has something to be compared against — the twin of [baselineAirGrams]. Bodies are not solids
+     * in the ledger — their energy enters the grid only when the extractor bites, at which point
+     * [acquiredJoules] records the transfer.
      *
      * The balance it anchors is
-     * `stored + radiated + solidToAir − generated − construction == baseline`,
-     * and the two terms beyond the obvious ones are what the body model costs:
+     * `stored + radiated + solidToAir − generated − inserted − acquired == baseline`,
+     * and the two terms beyond the obvious ones are:
      *
-     *  - [constructionJoules], because a body carries its energy with it. Building a wall brings a
-     *    wall's worth of room-temperature heat into the world and scrapping one takes it away, and
-     *    neither is a leak. The old per-tile field hid this by charging every tile a capacity
-     *    whether or not anything was standing on it.
+     *  - [insertedJoules], energy the player inserts via debug features (placing machines, etc.).
      *  - [solidToAirJoules], because the fabric and the atmosphere now exchange heat, so what one
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
+     *  - [acquiredJoules], energy the grid acquires from bodies when the extractor bites — bodies
+     *    are in [storedJoules] but their energy enters the grid from outside, so subtracting
+     *    [acquiredJoules] cancels the double-count: `stored` holds the joules and `acquired`
+     *    records the transfer so the ledger stays closed.
      */
-    val baselineJoules: Long = solidJoules(machines, conduits, bridges, bodies),
+    val baselineJoules: Long = solidJoules(machines, conduits, bridges),
     /**
-     * Net energy that has arrived in the world inside newly built bodies, less what left inside
-     * scrapped ones. Signed, and one term rather than two, because only the difference is ever read.
+     * Energy the player has inserted into the grid via debug features (placing machines, etc.).
+     * Decreases when such things are scrapped.
      */
-    val constructionJoules: Long = 0L,
+    val insertedJoules: Long = 0L,
+    /**
+     * Energy acquired by the grid from bodies via extractor bites. Bodies are not part of the grid
+     * — their thermal energy only enters the ledger when the extractor takes it.
+     */
+    val acquiredJoules: Long = 0L,
     /** Cumulative net energy conducted from the solids into the atmosphere. Negative the other way. */
     val solidToAirJoules: Long = 0L,
     /**
@@ -476,7 +460,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, conduits, bridges, bodies)
+    val storedJoules: Long get() = solidJoules(machines, conduits, bridges) + bodies.sumOf { it.joules }
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
@@ -937,7 +921,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         baselineAirGrams = baselineAirGrams,
         baselineAirJoules = baselineAirJoules,
         baselineJoules = baselineJoules,
-        baselineBodyGrams = baselineBodyGrams,
     )
 }
 

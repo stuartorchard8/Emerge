@@ -129,7 +129,7 @@ class RemappedTest {
         assertEquals(s0.baselineAirGrams, s1.baselineAirGrams)
         assertEquals(s0.baselineAirJoules, s1.baselineAirJoules)
         assertEquals(s0.baselineJoules, s1.baselineJoules)
-        assertEquals(s0.baselineBodyGrams, s1.baselineBodyGrams)
+
     }
 
     // ── Positive offset: grow left and up ────────────────────────────────
@@ -457,10 +457,8 @@ class RemappedTest {
 
         val s1 = s0.remapped(newGrid, dx, dy)
 
-        // body: baselineBodyGrams + bodyCapturedGrams - extractedGrams == bodies.sumOf { massGrams }
-        fun bodyBalance(s: VesselState) =
-            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams }
-        assertEquals(bodyBalance(s0), bodyBalance(s1), "bodyBalance must be preserved")
+        // No body conservation ledger (bodies spawn/despawn freely), bodies just transfer across.
+        assertEquals(s0.bodies.size, s1.bodies.size, "body count must be preserved")
     }
 
     @Test
@@ -473,10 +471,10 @@ class RemappedTest {
 
         val s1 = s0.remapped(newGrid, dx, dy)
 
-        // heat: stored + radiated + solidToAir - generated - construction - baseline == 0
+        // heat: stored + radiated + solidToAir - generated - inserted - acquired - baseline == 0
         fun heatBalance(s: VesselState) =
             s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                s.generatedJoules - s.constructionJoules - s.baselineJoules
+                s.generatedJoules - s.insertedJoules - s.acquiredJoules - s.baselineJoules
         assertEquals(heatBalance(s0), heatBalance(s1), "heatBalance must be preserved")
     }
 
@@ -510,7 +508,7 @@ class RemappedTest {
         assertEquals(s0.baselineAirGrams, s2.baselineAirGrams)
         assertEquals(s0.baselineAirJoules, s2.baselineAirJoules)
         assertEquals(s0.baselineJoules, s2.baselineJoules)
-        assertEquals(s0.baselineBodyGrams, s2.baselineBodyGrams)
+
     }
 
     // ── Cells outside old grid ───────────────────────────────────────────

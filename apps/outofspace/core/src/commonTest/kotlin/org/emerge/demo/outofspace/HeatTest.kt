@@ -32,7 +32,7 @@ import kotlin.test.assertTrue
  *
  * The headline assertion is the thermal twin of the mass balance:
  *
- *     stored + radiated + solidToAir − generated − construction == baseline
+     *     stored + radiated + solidToAir − generated − inserted − acquired == baseline
  *
  * on every tick. Energy is the stored quantity and temperature is derived from it, precisely so that
  * this can be checked exactly; a field of temperatures with no capacities behind it would create and
@@ -59,10 +59,10 @@ class HeatTest {
         assertEquals(
             s.baselineJoules,
             s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                s.generatedJoules - s.constructionJoules,
+                s.generatedJoules - s.insertedJoules - s.acquiredJoules,
             "$what: stored ${s.storedJoules} + radiated ${s.radiatedJoules} " +
                 "+ toAir ${s.solidToAirJoules} - generated ${s.generatedJoules} " +
-                "- construction ${s.constructionJoules}",
+                "- acquired ${s.acquiredJoules} - inserted ${s.insertedJoules}",
         )
         // The other half of the coupling. Whatever the fabric says it gave the air, the air has to
         // be holding — otherwise the transfer is a leak in one ledger and a mint in the other, and

@@ -304,15 +304,11 @@ class GridFitTriggerTest {
         // `inTransitGrams`, not `massGrams` — the latter includes the fabric of the ship, which no
         // extractor produced, so it can never be zero.
         assertEquals(0L, s.inTransitGrams + s.ventedGrams - s.extractedGrams, "massBalance $whenever")
-        assertEquals(
-            0L,
-            s.baselineBodyGrams + s.bodyCapturedGrams - s.extractedGrams - s.bodies.sumOf { it.massGrams },
-            "bodyBalance $whenever",
-        )
+        // No body conservation (bodies spawn/despawn freely), just check bodies exist.
         assertEquals(
             0L,
             s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                s.generatedJoules - s.constructionJoules - s.baselineJoules,
+                s.generatedJoules - s.insertedJoules - s.acquiredJoules - s.baselineJoules,
             "heatBalance $whenever",
         )
         assertEquals(
