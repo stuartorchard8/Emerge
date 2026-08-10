@@ -20,7 +20,6 @@ import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
-import org.emerge.demo.outofspace.world.DebrisWork
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Directed
 import org.emerge.demo.outofspace.world.fitToFrame
@@ -66,7 +65,6 @@ import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
-import org.emerge.demo.outofspace.world.settleDebris
 import org.emerge.demo.outofspace.world.vesselMassGrams
 import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
@@ -88,7 +86,7 @@ import org.emerge.demo.outofspace.world.fluid.gasCapacity
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 
-/** One tick: edits → sense → produce → process → eject → settle debris → advance conduits → fluid → heat → motion.
+/** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
  * Machines throttled by RUN activation (rate × activation). Row-major walk order for determinism.
  * Belt delivery: one step per advance (not instant), so jams crawl backwards visually. */
 object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
@@ -149,9 +147,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // Felt gravity: plating + engine impulse from previous tick (fluid solved under this gravity). See [experiencedGravity].
         val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.massGrams)
-
-        // After edits: dropped material falls this tick.
-        w.ventedGrams += settleDebris(state.grid, structure, w.debris, felt)
 
         // ── Heat ──────────────────────────────────────────────────────────────
         //
@@ -239,8 +234,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Flight ────────────────────────────────────────────────────────────
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val debris = w.debris.snapshot()
-        val mass = vesselMassGrams(machines, conduits, bridges, debris)
+        val mass = vesselMassGrams(machines, conduits, bridges)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -264,8 +258,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         w.bodies.clear()
         w.bodies.addAll(bodiesToDrift)
 
-        // Bodies fly here, and not up beside the debris, because this is where the ship's own motion
-        // is known — and a body's motion is now stated against the *world* while its position is
+        // Bodies fly here because this is where the ship's own motion is known.
+        // A body's motion is now stated against the *world* while its position is
         // stated on the *grid*, so drifting one needs the velocity of the grid itself. See [RigidBody].
         //
         // `state.velocityX` is the start-of-tick velocity, which is exactly what the ship's own
@@ -283,7 +277,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             state.velocityX,
             state.velocityY,
             mass,
-            frameAcceleration(state.netImpulseX, state.netImpulseY, state.massGrams),
+            state.frameAcceleration,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
@@ -303,7 +297,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             diverters = w.diverters.snapshot(),
             tick = state.tick + 1,
             extractedGrams = w.extractedGrams,
-            debris = debris,
             ventedGrams = w.ventedGrams,
             signals = signals,
             structure = structure,
@@ -500,7 +493,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         var extractedGrams: Long = state.extractedGrams
-        val debris: DebrisWork = DebrisWork(state.debris)
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
@@ -749,9 +741,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun removeBridge(at: Int): Boolean {
             val bridge = bridges.getOrNull(at) ?: return false
-            // Every slot: a bridge taken apart mid-span drops all three lumps, or the conservation
-            // invariant would read the dismantle as a leak.
-            if (bridge.carried.isNotEmpty()) debris.spill(at, bridge.carried.map { asResource(it) })
             bridges[at] = null
             scrapped(bridge.joules)
             return true
@@ -761,7 +750,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun removeConduit(at: Int, c: Conduit): Boolean {
             val line = layer(c)
             val segment = line.getOrNull(at) ?: return false
-            segment.held?.let { debris.spill(at, listOf(asResource(it))) }
             if (c == Conduit.Pipe) cutOpen(at)
             line[at] = null
             scrapped(segment.joules)
@@ -777,7 +765,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun removeMachine(at: Int): Boolean {
             val origin = originAt(at) ?: return false
             val machine = machines[origin] ?: return false
-            debris.spill(origin, spoilsOf(machine))
             for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = -1
             scrapped(machine.joules)
             machines[origin] = null

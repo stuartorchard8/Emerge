@@ -240,15 +240,6 @@ own "is this legible?" question. One at a time.
   — so the conservation check had to name both. Deriving it removes the seam: there is no act of
   banking, only of storing, and the invariant shortens to `mined == aboard + vented`. A warehouse
   becomes a thing you can lose, which a central bank could never be.
-- **Debris** (`world/Debris.kt`). Dismantling a machine spills its contents onto the deck rather than
-  deleting them — the mass balance was right to call the old behaviour a leak, and the fix is
-  somewhere for the material to go, not an exemption for player edits. A sparse map from tile to
-  pile, unlike the dense air and heat fields, because it is touched in a handful of tiles and only on
-  dismantle. Piles fall toward gravity, pass *through* machinery, and stop at hull or at a per-tile
-  cap. They keep their `Form`s apart: rubble loses its arrangement, not its refinement. Spilling
-  outside the hull vents and breaching a room takes its heaps — both free from the structure model.
-  `downDirection(gravity)` is shared with `stratifyColumns`, since the two must not be able to
-  disagree about which way is down.
 - **Footprints and ports** (`world/Footprint.kt`). Conveyors are one tile; miners, processors,
   processors and tanks three; smelters five. Belts carry one packet. This had to precede pipes,
   because **a port is a property of a tile**: on a one-tile machine every port overlaps every other
@@ -965,9 +956,9 @@ answering, and it is not worth answering *now*, because of what a look at the tr
 
 **Thrust is measured every tick and connects to nothing.** `advectMomentum` books the momentum that
 leaves through the rim and the comment says outright that "equal and opposite, it is thrust". And
-`Vessel.gravity` is a `Frac2` — a vector, already threaded through `applyBuoyancy`,
-`applySpeciesDrift` and `Debris.downDirection` — that has only ever held a constant. Two wires, both
-live, never joined. The vessel has no position and no velocity, so nothing in the game can move.
+`Vessel.gravity` is a `Frac2` — a vector, already threaded through `applyBuoyancy`, and
+`applySpeciesDrift` — that has only ever held a constant. Two wires, both live, never joined. 
+The vessel has no position and no velocity, so nothing in the game can move.
 
 That is the loose end, and it exists today. Everything else on the list adds to it.
 
@@ -1032,8 +1023,8 @@ rock becomes the mechanism without anything above it moving.
 ### Thrust is experienced gravity
 
 `a = F/m` from the thrust already being measured, written into `Vessel.gravity`, which every
-consumer already reads. Convection under acceleration, debris settling toward the stern, a heavy gas
-pooling against the direction of travel — all of it falls out of passes that are already written.
+consumer already reads. Convection under acceleration, a heavy gas pooling against the direction 
+of travel — all of it falls out of passes that are already written.
 
 ⚠️ **The first engine is axis-aligned, on purpose.** `applyBuoyancy` documents itself as the one
 function permitted to assume gravity is axis-aligned, and a vector gravity has never been exercised
@@ -1074,7 +1065,7 @@ ledger and give a velocity belonging to neither. The price is stated where it is
 propellant does not lighten the vessel, so there is no rocket equation until fuel is cargo in a tank,
 which is increment I.
 
-Felt gravity is `plating − acceleration`, handed to the fluid, the drift and the debris in place of
+Felt gravity is `plating − acceleration`, handed to the fluid and the drift in place of
 the constant they used to read. `VesselState.gravity` stays a *setting*; `feltGravity` is the
 reading. Keeping those apart is what lets a fixture say `copy(gravity = sideways)` and still mean it.
 
@@ -1134,9 +1125,6 @@ a free-floating solid to be.**
   space; the grid travels with it and nothing on it moves because the ship does. "Flying to a rock" is
   the ship's position changing while the grid stands still, and the rock is *placed into* the grid as
   the ship reaches it. That is open question 1 arriving with something at stake.
-- **Debris cannot be the mechanism.** `settleDebris` walks anything in `Structure.Vacuum` straight off
-  the rim into `ventedGrams` — there is no deck out there to land on, and a test says so. A rock
-  represented as debris is thrown overboard on the tick it appears.
 - **A rock is new mass in a closed world.** The balance is `mined == inTransitGrams + vented`. Matter
   arriving from outside needs a named term, and it must not be `minedGrams`, because the miner is a
   stand-in the hold is meant to *replace* (open question 5). Don't build the hold on it.

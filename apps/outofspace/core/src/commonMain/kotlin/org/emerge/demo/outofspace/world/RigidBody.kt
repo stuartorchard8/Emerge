@@ -15,7 +15,7 @@ enum class BodyKind {
  *
  * ⚠️ Two frames: [impulseX/Y] in world frame, [positionX/Y] in vessel's grid frame.
  * Astern drift: grid moves by ship velocity each tick, so bodies drift relative to ship.
- * Not stored in bodiesOf (derives from machines/conduits/bridges), not Debris (settling would vent it).
+ * Not stored in bodiesOf (derives from machines/conduits/bridges).
  */
 class RigidBody(
     /** What kind of body this is — determines composition vs machineKind metadata. */

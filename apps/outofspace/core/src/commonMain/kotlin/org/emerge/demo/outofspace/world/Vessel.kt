@@ -133,20 +133,12 @@ data class VesselState(
      */
     val netImpulseX: Long = 0L,
     val netImpulseY: Long = 0L,
-    /** Loose material lying on the deck — see [Debris]. Part of "aboard" for conservation purposes. */
-    val debris: Debris = Debris.EMPTY,
     /**
-     * Free-floating solids: rocks — see [Rock].
-     *
-     * A list of its own, and neither a machine nor debris, because it can be neither: [bodiesOf]
-     * derives bodies from the three built lists and would not see it, and [settleDebris] walks
-     * anything standing in vacuum off the rim and books it as vented, which is the correct rule for
-     * a spilled heap and exactly wrong for a rock.
+     * Free-floating solids: rocks — see [RigidBody].
      *
      * ⚠️ **Not part of "aboard".** A rock is not in [inTransitGrams] and not in [massGrams], so it
-     * neither breaks the mass balance nor slows the ship down while it is loose. Both of those change
-     * when it is *held* rather than merely present, which is the extractor's increment. Its mass has
-     * its own ledger meanwhile — see [rockGrams].
+     * neither breaks the mass balance nor slows the ship down while it is loose. Its mass has
+     * its own ledger.
      */
     val bodies: List<RigidBody> = emptyList(),
     val tick: Long = 0L,
@@ -460,7 +452,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, conduits, bridges) + bodies.sumOf { it.joules }
+    val storedJoules: Long get() = solidJoules(machines, conduits, bridges)
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
@@ -512,18 +504,15 @@ data class VesselState(
     operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null
 
     /**
-     * Every gram still aboard: in belts, in machine buffers, and lying loose on the deck.
-     *
-     * Debris counts. Taking a machine apart moves its contents from one term of this sum to another
-     * rather than removing them, which is exactly why dismantling stopped reading as a leak.
+     * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitGrams: Long get() = cargoGrams(machines, conduits, bridges, debris)
+    val inTransitGrams: Long get() = cargoGrams(machines, conduits, bridges)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val massGrams: Long get() = vesselMassGrams(machines, conduits, bridges, debris)
+    val massGrams: Long get() = vesselMassGrams(machines, conduits, bridges)
 
     /**
      * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
@@ -538,16 +527,10 @@ data class VesselState(
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
      *
-     * This is what the fluid and the debris are run under — [gravity] alone never is any more. See
+     * This is what the fluid is run under — [gravity] alone never is any more. See
      * [experiencedGravity] for the sign, and for why only one axis of the thrust survives.
      */
     val feltGravity: Frac2 get() = experiencedGravity(gravity, netImpulseX, netImpulseY, massGrams)
-
-    /** Just the loose material, for the readout that distinguishes "stored" from "spilled". */
-    val debrisGrams: Long get() = debris.totalGrams
-
-    /** Every gram of free-floating body in the world — the left-hand side of the body ledger. */
-    val bodyGrams: Long get() = bodies.sumOf { it.massGrams }
 
     /**
      * The ship's acceleration in its own frame, which is what makes the vessel frame a non-inertial
@@ -581,12 +564,6 @@ data class VesselState(
          *    is not burning has no natural circulation at all and heat moves only by conduction and
          *    by forced flow. It comes back under thrust. See §5c's "convection, for free, again",
          *    which is now "convection, for free, while the engine is lit".
-         *  - **Debris neither settles nor goes overboard**, because [settleDebris] bails when
-         *    [downDirection] has no answer, and "falls off the edge of the grid" was the whole
-         *    mechanism by which a breached room lost its heaps. In freefall loose material would be
-         *    *dragged* out by the airflow instead, which is a mechanism this game does not have yet.
-         *    That is a gap this opens rather than one it creates, and it belongs with the fluid
-         *    coupling in §5f H5.
          *  - Rocks stop plummeting: a fiftieth of a tile per tick per tick under a burn rather than
          *    a whole one, which is most of why H2 is not primarily about tunnelling.
          */
@@ -737,12 +714,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
             }
         }
     }
-    for (oldTile in debris.tiles()) {
-        val ox = grid.xOf(oldTile); val oy = grid.yOf(oldTile)
-        require(newGrid.inBounds(ox + dx, oy + dy)) {
-            "remap would discard debris at ($ox, $oy)"
-        }
-    }
 
     val oldW = grid.width
     val oldH = grid.height
@@ -782,16 +753,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         newConduits = newConduits.with(c, newLayer)
     }
 
-    // ── 3. Sparse maps: debris, diverters ────────────────────────────────
-    val newDebrisMap = HashMap<Int, List<Resource>>()
-    for (oldTile in debris.tiles()) {
-        val ox = grid.xOf(oldTile)
-        val oy = grid.yOf(oldTile)
-        val ni = remapTile(ox, oy)
-        if (ni != null) newDebrisMap[ni] = debris[oldTile]
-    }
-    val newDebris = Debris.of(newDebrisMap)
-
+    // ── 3. Sparse map for diverters ──────────────────────────────────────
     val newDiverterMap = HashMap<Int, Int>()
     for ((oldTile, cursor) in diverters.cursor) {
         val ox = grid.xOf(oldTile)
@@ -905,7 +867,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         machines = newMachines,
         conduits = newConduits,
         bridges = newBridges,
-        debris = newDebris,
         diverters = newDiverters,
         air = newAir,
         pipeAir = newPipeAir,

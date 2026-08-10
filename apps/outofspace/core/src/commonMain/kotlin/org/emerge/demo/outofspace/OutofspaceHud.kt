@@ -60,20 +60,11 @@ class OutofspaceHud {
                 if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
                     keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
                 }
-                // Bodies (hidden when empty).
-                if (s.bodies.isNotEmpty()) {
-                    gap()
-                    title("BODIES")
-                    keyValue("Adrift", "${s.bodies.size}")
-                    keyValue("Mass", grams(s.bodyGrams))
-                    keyValue("Extracted", grams(s.extractedGrams))
-                }
                 gap()
                 title("MASS BALANCE")
                 keyValue("Extracted", grams(s.extractedGrams))
                 keyValue("Aboard", grams(s.inTransitGrams))
                 keyValue("- in storage", grams(s.stockpile.totalGrams))
-                keyValue("- spilled", grams(s.debrisGrams))
                 keyValue("Vented", grams(s.ventedGrams))
                 // Storage is a view over storages (part of "aboard").
                 val balanced = s.extractedGrams == s.inTransitGrams + s.ventedGrams
@@ -303,14 +294,11 @@ class OutofspaceHud {
         }
     }
 
-    /** Contents of machine/tile under pointer (mixture breakdown per buffer). */
+    /** Contents of tile under pointer (mixture breakdown per buffer). */
     private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
         if (index < 0) return
         val s = controller.state
         val machine = s.machineCovering(index)
-        val spill = s.debris[index]
-        // Bare tile with debris (still inspectable).
-        if (machine == null && spill.isEmpty() && s.railAt(index) == null) return
         val grid = s.grid
 
         panel(Anchor.TopRight) {
@@ -318,14 +306,6 @@ class OutofspaceHud {
             title("INSPECT  ·  $what (${grid.xOf(index)}, ${grid.yOf(index)})")
             tileConditions(controller, index)
 
-            if (spill.isNotEmpty()) {
-                title("SPILLED")
-                for (resource in spill) {
-                    keyValue(resource.form.name, grams(resource.mass))
-                    row("   " + composition(resource.mixture), 0x9AA4B4FFL)
-                }
-                gap()
-            }
             // Rail on this tile (listed before machine — on top).
             val segment = s.railAt(index)
             if (segment != null) {

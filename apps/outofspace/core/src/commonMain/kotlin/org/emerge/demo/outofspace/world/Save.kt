@@ -96,11 +96,6 @@ object Save {
             val cursor = state.diverters[tile]
             if (cursor != 0) out.append("diverter ").append(tile).append(' ').append(cursor).append('\n')
         }
-        for (tile in state.debris.tiles()) {
-            out.append("debris ").append(tile)
-            for (r in state.debris[tile]) out.append(' ').append(writeResource(r))
-            out.append("   # ").append(where(state.grid, tile)).append('\n')
-        }
 
         // Solid heat lives on machines/segments (their `k=` field), not a separate per-tile block.
         // Air per tile: mixture is wordy but readable/editable.
@@ -383,10 +378,6 @@ object Save {
                     bridges[t] = readMachine(tokens.drop(2), version, ::fail) as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
-                "debris" -> {
-                    val pile = piles.getOrPut(tile(1)) { mutableListOf() }
-                    for (i in 2 until tokens.size) pile.add(readResource(tokens[i], ::fail))
-                }
                 // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
@@ -457,7 +448,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val loaded = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList(), Debris.of(piles))
+            val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList())
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.massGrams * impulseX / shipMass,
@@ -476,7 +467,6 @@ object Save {
             positionY = positionY,
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
-            debris = Debris.of(piles),
             tick = tick,
             extractedGrams = extracted,
             ventedGrams = vented,

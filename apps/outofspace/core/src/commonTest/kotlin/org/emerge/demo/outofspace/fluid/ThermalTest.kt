@@ -199,7 +199,7 @@ class ThermalTest {
      *
      * The other tests here drive [stepFluid] directly, which is the right grain for asking what one
      * pass does and the wrong one for asking whether the sim keeps its books. This goes through
-     * [OutofspaceReducer] so that everything between an edit and the fluid — displacement, debris,
+     * [OutofspaceReducer] so that everything between an edit and the fluid — displacement and
      * the tick's array copying — is inside the assertion rather than beside it.
      */
     @Test

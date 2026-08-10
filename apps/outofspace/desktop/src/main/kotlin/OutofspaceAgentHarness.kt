@@ -68,7 +68,7 @@ import kotlin.math.roundToInt
  *                            # this model boils water near -33C (PLAN_phase_transitions.md 5c)
  * overlay <name>             # PLAIN/HEAT/AIR/PRESSURE/DENSITY/FLOW — what `shot` draws through
  * camera fit|centre <x> <y>|zoom <tilePx>|pan <dx> <dy>
- * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|debris|
+ * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|
  *                            # species:<Name> — the only view that can show one gas settling
  * probe <x> <y>              # everything known about one tile, in full
  * landmarks                  # print all landmark names and their current (x, y) coordinates
@@ -267,7 +267,7 @@ object OutofspaceAgentHarness {
                     val (ix, iy) = coordinates(t[1], t[2])
                     controller.dropRock(ix.toFloat(), iy.toFloat())
                     settle()
-                    println("[agent] body at (${t[1]},${t[2]}) — ${state.bodies.size} adrift, ${state.bodyGrams}g")
+                    println("[agent] body at (${t[1]},${t[2]}) — ${state.bodies.size} adrift")
                 }
                 // `fit` — the grid back to the ship plus its pad, the same edit F8 queues. The only
                 // command here that can make the grid smaller.
@@ -435,7 +435,7 @@ object OutofspaceAgentHarness {
                     else flowGlyph(flow.xAt(tile), flow.yAt(tile), flow.speedAt(tile), peak)
                 }
                 if (what.equals("flow", true)) println("[agent]   peak ${"%.4f".format(peak)} tiles/tick; '.' is under 5% of it")
-                else println("[agent]   . deck  # machine  = rail  B bridge  o debris  H hull")
+                else println("[agent]   . deck  # machine  = rail  B bridge  H hull")
                 return
             }
 
@@ -455,7 +455,6 @@ object OutofspaceAgentHarness {
                 "pipe" -> { tile -> state.pipeAir.mixtureAt(tile).total.toDouble() }
                 "pipetemp" -> { tile -> state.pipeAir.kelvinAt(tile).toDouble() }
                 "pipepressure" -> { tile -> state.pipeAir.pressureAt(tile).toDouble() }
-                "debris" -> { tile -> state.debris.massAt(tile).toDouble() }
                 // One gas on its own. Bulk flow provably cannot mix or unmix, so the question
                 // "has the carbon dioxide settled?" is not answerable from `density` or `air`,
                 // which show the mixture — only from the species' own map.
@@ -466,7 +465,7 @@ object OutofspaceAgentHarness {
                     ({ tile: Int -> state.air.gramsOf(tile, sp).toDouble() })
                 } else error(
                     "field pressure|density|speed|heat|airtemp|air|pipe|pipetemp|pipepressure|" +
-                        "debris|species:<Name>|flow|build"
+                        "species:<Name>|flow|build"
                 )
             }
 
@@ -504,7 +503,6 @@ object OutofspaceAgentHarness {
             state.rails[tile]?.let { return '=' }
             val m = state.machineCovering(tile)
             if (m != null) return if (m::class.simpleName == "Hull") 'H' else '#'
-            if (state.debris.massAt(tile) > 0L) return 'o'
             return '.'
         }
 
@@ -569,7 +567,6 @@ object OutofspaceAgentHarness {
             println("[agent]   machine   ${state.machineCovering(tile)?.let { it::class.simpleName } ?: "-"}" +
                 "  rail ${state.rails[tile]?.let { "yes held=${it.held != null}" } ?: "-"}" +
                 "  bridge ${if (state.bridges[tile] != null) "yes" else "-"}")
-            println("[agent]   debris    ${state.debris.massAt(tile)}g")
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
@@ -595,13 +592,13 @@ object OutofspaceAgentHarness {
          */
         private fun trend(samples: Int, ticksEach: Int) {
             println("[agent] trend: %8s %12s %10s %12s %10s %10s".format(
-                "tick", "airGrams", "dAir", "storedJ", "peakSpd", "debris"))
+                "tick", "airGrams", "dAir", "storedJ", "peakSpd"))
             var lastAir = state.atmosphereGrams
             repeat(samples) {
                 repeat(ticksEach) { controller.stepOnce() }
                 val air = state.atmosphereGrams
                 println("[agent]        %8d %12d %10d %12d %10.5f %10d".format(
-                    controller.tick, air, air - lastAir, state.storedJoules, state.flow.peakSpeed(), state.debrisGrams))
+                    controller.tick, air, air - lastAir, state.storedJoules, state.flow.peakSpeed()))
                 lastAir = air
             }
             println("[agent]   baseline air ${state.baselineAirGrams}g, vented ${state.airVentedGrams}g " +
@@ -623,7 +620,6 @@ object OutofspaceAgentHarness {
             "airVented" -> state.airVentedGrams.toDouble()
             "injectedAir" -> state.injectedAirGrams.toDouble()
             "airBalance" -> state.airBalance.toDouble()
-            "debrisGrams" -> state.debrisGrams.toDouble()
             "extractedGrams" -> state.extractedGrams.toDouble()
             "ventedGrams" -> state.ventedGrams.toDouble()
             "inTransitGrams" -> state.inTransitGrams.toDouble()
@@ -636,7 +632,7 @@ object OutofspaceAgentHarness {
             // rather than reassembling five terms. Zero, always — see [VesselState.baselineJoules].
             "heatBalance" -> (
                 state.storedJoules + state.radiatedJoules + state.solidToAirJoules -
-                    state.generatedJoules - state.constructionJoules - state.baselineJoules
+                    state.generatedJoules - state.acquiredJoules - state.insertedJoules - state.baselineJoules
                 ).toDouble()
             "airHeatBalance" -> state.airJouleBalance.toDouble()
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
@@ -645,7 +641,6 @@ object OutofspaceAgentHarness {
             "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.extractedGrams).toDouble()
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
-            "rockGrams" -> state.bodyGrams.toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
             //
@@ -702,7 +697,7 @@ object OutofspaceAgentHarness {
 
         private val FIELDS = listOf(
             "tick", "machines", "gridWidth", "gridHeight", "originX", "originY",
-            "airGrams", "pipeGrams", "airVented", "airBalance", "debrisGrams", "extractedGrams",
+            "airGrams", "pipeGrams", "airVented", "airBalance", "extractedGrams",
             "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
             "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
             "massBalance", "rockCount", "rockGrams",

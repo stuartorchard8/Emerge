@@ -119,9 +119,7 @@ fun bodiesOf(
 }
 
 /**
- * Total thermal energy in every solid thing aboard — machines, conduit segments, bridges, and free
- * bodies (rocks). Bodies are tracked in [storedJoules]; when the extractor takes joules from them,
- * [acquiredJoules] cancels the double-count so the ledger stays closed.
+ * Total thermal energy in every solid thing aboard — machines, conduit segments, and bridges.
  */
 fun solidJoules(
     machines: List<Machine?>,

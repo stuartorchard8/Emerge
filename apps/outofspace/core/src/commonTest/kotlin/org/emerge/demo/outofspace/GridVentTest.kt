@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
@@ -272,21 +271,6 @@ class GridVentTest {
         val before = gassyWorld()
         assertFailsWith<IllegalArgumentException>("a discarded machine was tolerated") {
             before.remapped(Grid(4, 14), 0, 0)
-        }
-    }
-
-    @Test
-    fun `a shrink that would discard debris fails loudly`() {
-        val grid = Grid(20, 14)
-        val before = VesselState(
-            grid = grid,
-            machines = arrayOfNulls<Machine>(grid.size).toList(),
-            debris = Debris.of(
-                mapOf(grid.index(17, 3) to listOf(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))),
-            ),
-        )
-        assertFailsWith<IllegalArgumentException>("discarded debris was tolerated") {
-            before.remapped(Grid(12, 14), 0, 0)
         }
     }
 

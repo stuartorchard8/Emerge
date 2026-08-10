@@ -10,7 +10,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
@@ -232,22 +231,6 @@ class SaveTest {
         val tank = back[grid.index(7, 4)] as Storage
         assertEquals(Form.IronIngot, tank.contents?.form)
         assertEquals(900L, tank.contents?.mass)
-    }
-
-    @Test
-    fun `spilled material on the deck survives`() {
-        val grid = Grid(6, 6)
-        val piles = mapOf(
-            grid.index(2, 2) to listOf(
-                Resource(Form.Ore, Mixture.of(Species.Iron to 500L)),
-                Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L)),
-            ),
-        )
-        val state = VesselState(grid, List(grid.size) { null }, debris = Debris.of(piles))
-        val back = Save.read(Save.write(state))
-        assertEquals(750L, back.debrisGrams)
-        assertEquals(2, back.debris[grid.index(2, 2)].size)
-        assertEquals(Form.IronIngot, back.debris[grid.index(2, 2)][1].form)
     }
 
     @Test

@@ -63,8 +63,9 @@ class GridFitTriggerTest {
 
     /**
      * What the grid must enclose, re-derived rather than asked for: machine **footprints**, every
-     * conduit segment, every bridge, every debris pile — and **not** rocks, which live outside the
-     * world by design (§8).
+     * conduit segment and every bridge.
+     *
+     * **not** rigid bodies (like rocks), which live outside the world by design (§8).
      *
      * Deliberately a second copy of the same derivation `GridGrowTest` carries. A test that calls
      * `placedBounds` to check `placedBounds` cannot fail.
@@ -91,7 +92,6 @@ class GridFitTriggerTest {
             val layer = s.conduits[c]
             for (i in layer.indices) if (layer[i] != null) cover(s.grid.xOf(i), s.grid.yOf(i), 0)
         }
-        for (tile in s.debris.tiles()) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
 
         return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
     }

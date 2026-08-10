@@ -49,7 +49,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
      *
      * It used to walk [Species.GASES], which was invisibly wrong the moment water became a fluid the
      * solver moves. A field should report what is in it and let the caller decide what that means:
-     * this same function serves the atmosphere and the debris layer, and those two do not agree on
+     * this same function serves the atmosphere, and those two do not agree on
      * which species are interesting, so any filter here is wrong for one of them.
      *
      * The consequence was not cosmetic. [org.emerge.demo.outofspace.world.Save] serialises the

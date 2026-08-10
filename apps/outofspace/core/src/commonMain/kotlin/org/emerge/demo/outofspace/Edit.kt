@@ -71,7 +71,7 @@ sealed interface Edit {
 
     companion object {
         /** Thrust magnitude: 250 milli-g (quarter gravity). Settles rooms over tens of ticks. */
-        const val DEBUG_THRUST_MILLI_G: Long = 250L
+        const val DEBUG_THRUST_MILLI_G: Long = 25L
 
         /**
          * What one tick of the injector delivers: a kilogram, which is about what a tile holds at one

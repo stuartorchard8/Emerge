@@ -330,7 +330,6 @@ class VesselSimTest {
 
         assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")
         assertEquals(FEEDSTOCK_GRAMS, s.extractedGrams, "and every gram of it should have become ore")
-        assertEquals(0L, s.bodyGrams)
         assertBalanced(s, "extractor into a vent")
 
         // Nothing more arrives, however long it is left running.

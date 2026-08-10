@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -185,16 +184,6 @@ class OutofspaceRenderer {
             }
         }
 
-        // Debris under machines (on deck).
-        if (!state.debris.isEmpty) {
-            for (tile in state.debris.tiles()) {
-                val x = grid.xOf(tile)
-                val y = grid.yOf(tile)
-                if (x !in minX..maxX || y !in minY..maxY) continue
-                drawDebris(state, tile, x, y)
-            }
-        }
-
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val index = grid.index(x, y)
@@ -276,27 +265,6 @@ class OutofspaceRenderer {
     }
 
     fun cleanup() = rects.deleteProgram()
-
-    /**
-     * A heap on the floor, its height set by how much is in it and its colour by what dominates.
-     *
-     * Drawn rising from the bottom of the tile rather than centred, because the whole point of the
-     * thing is that it fell: a pile floating in the middle of a tile would say nothing about gravity.
-     * A pile is deliberately never full-height — the deck stays readable underneath it.
-     */
-    private fun drawDebris(state: VesselState, tile: Int, x: Int, y: Int) {
-        val mass = state.debris.massAt(tile)
-        if (mass <= 0L) return
-        val fill = (mass.toFloat() / Debris.TILE_CAP).coerceIn(Visual.DEBRIS_MIN_HEIGHT, 1f)
-        val h = Visual.DEBRIS_BASE_HEIGHT + fill * Visual.DEBRIS_MAX_HEIGHT
-        rect(
-            (x + 0.5f) * tilePx, (y + 1f - h * 0.5f) * tilePx,
-            Visual.DEBRIS_TOP_WIDTH * tilePx, h * tilePx,
-            packetColor(state.debris.mixtureAt(tile).dominant),
-        )
-        // Dark top line (heap readability).
-        rect((x + 0.5f) * tilePx, (y + 1f - h) * tilePx, Visual.DEBRIS_TOP_WIDTH * tilePx, Visual.DEBRIS_TOP_HEIGHT * tilePx, Colors.DEBRIS_TOP)
-    }
 
     /**
      * One tile of pipe.
@@ -852,7 +820,6 @@ class OutofspaceRenderer {
         const val VENT_CORE     = 0x0A0A0CFFL
         /** Bright, because a valve's core is the way through rather than a hole into space. */
         const val VALVE_CORE    = 0xD8A860FFL
-        const val DEBRIS_TOP    = 0x00000060L
 
         // ── Port colours ────────────────────────────────────────────────
         const val PORT_IN  = 0xE8ECF2FFL
@@ -930,10 +897,6 @@ class OutofspaceRenderer {
         const val BRIDGE_INSET = 1f - RAIL_DIAMETER
         const val BRIDGE_PACKET_SIZE = 0.375f
 
-        // ── Debris dimensions ───────────────────────────────────────────
-        const val DEBRIS_TOP_WIDTH = 0.94f
-        const val DEBRIS_TOP_HEIGHT = 0.06f
-
         // ── Frame (channel collar) dimensions ───────────────────────────
         const val FRAME_THICKNESS = 0.13f
         const val FRAME_SPAN = 0.94f
@@ -959,9 +922,6 @@ class OutofspaceRenderer {
         const val EDGE_MARK_WIDE = 0.3f
 
         // ── Thresholds ──────────────────────────────────────────────────
-        const val DEBRIS_MIN_HEIGHT = 0.05f
-        const val DEBRIS_MAX_HEIGHT = 0.6f
-        const val DEBRIS_BASE_HEIGHT = 0.15f
         const val PRESSURE_MIN_F = 0.08f
         const val PRESSURE_MAX_F = 1.6f
         const val PRESSURE_MIN_SCALE = 0.12f

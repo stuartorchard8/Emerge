@@ -79,7 +79,6 @@ class GridFitTest {
                 cover(s.grid.xOf(i), s.grid.yOf(i), 0)
             }
         }
-        for (tile in s.debris.tiles()) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
 
         return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
     }
@@ -249,9 +248,6 @@ class GridFitTest {
         for (b in s.bridges) append('|').append(b?.toString() ?: "-")
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
-        }
-        for (tile in s.debris.tiles().sorted()) {
-            append('|').append(tile).append('=').append(s.debris[tile].toString())
         }
         for ((tile, cursor) in s.diverters.cursor.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)

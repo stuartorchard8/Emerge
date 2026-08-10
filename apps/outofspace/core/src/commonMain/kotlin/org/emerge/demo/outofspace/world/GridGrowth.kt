@@ -27,7 +27,7 @@ data class GrowResult(val state: VesselState, val dx: Int, val dy: Int, val from
  * which carry no grams, no joules and no momentum, so no ledger and no baseline moves.
  *
  * **Any of the four edges.** An earlier draft grew only on `+x`/`+y`, on the grounds that leaving
- * the origin alone left written-down coordinates valid. It does not: `index = y * width + x`, so a
+ * the origin alone left written down coordinates valid. It does not: `index = y * width + x`, so a
  * far-side growth changes `width` and every *stored index* means a different tile afterwards. Since
  * the holders have to be corrected either way, near-side growth is that same correction plus a
  * reported offset — see `HANDOFF_P3.md`, and [VesselState.frameShiftX] for how the offset travels.
@@ -136,7 +136,6 @@ internal fun VesselState.placedBounds(): IntArray? {
         val layer = conduits[c]
         for (i in layer.indices) if (layer[i] != null) cover(grid.xOf(i), grid.yOf(i), 0)
     }
-    for (tile in debris.tiles()) cover(grid.xOf(tile), grid.yOf(tile), 0)
 
     return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
 }

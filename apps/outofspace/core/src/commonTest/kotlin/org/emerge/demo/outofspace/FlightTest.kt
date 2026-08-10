@@ -194,10 +194,9 @@ class FlightTest {
      * Thrust is felt as gravity, and it leans the way a lift's floor does.
      *
      * The ship accelerates in +x, so everything loose aboard is thrown toward −x — the stern, from
-     * the ship's point of view. That sign is what makes convection under acceleration, debris
-     * settling astern and a heavy gas pooling against the direction of travel all come out right from
-     * passes written before an engine existed, so it is worth asserting on its own rather than
-     * trusting it to fall out of the plume.
+     * the ship's point of view. That sign is what makes convection under acceleration, and a heavy gas
+     * pooling against the direction of travel all come out right from passes written before an engine
+     * existed, so it is worth asserting on its own rather than trusting it to fall out of the plume.
      *
      * Averaged over the run, because a blowout pulses: there are individual ticks where the plume is
      * recoiling and the felt gravity leans the other way, and picking one of them would be picking a

@@ -59,7 +59,7 @@ class GridGrowTest {
 
     /**
      * An independent re-derivation of what the box must enclose — machine **footprints**, not
-     * anchors, plus every conduit segment, bridge and debris pile. Deliberately not a call into
+     * anchors, plus every conduit segment and bridge. Deliberately not a call into
      * production code: a test that asks the implementation for the answer cannot then check it.
      *
      * Returns `(minX, minY, maxX, maxY)`, or null if nothing is placed.
@@ -89,7 +89,6 @@ class GridGrowTest {
             val layer = s.conduits[c]
             for (i in layer.indices) if (layer[i] != null) cover(s.grid.xOf(i), s.grid.yOf(i), 0)
         }
-        for (tile in s.debris.tiles()) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
 
         return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
     }
@@ -212,7 +211,6 @@ class GridGrowTest {
                     add("conduit $c" to { s: VesselState -> s.conduits[c].indices.filter { s.conduits[c][it] != null } })
                 }
                 add("bridges" to { s: VesselState -> s.bridges.indices.filter { s.bridges[it] != null } })
-                add("debris" to { s: VesselState -> s.debris.tiles().toList() })
                 add("diverters" to { s: VesselState -> s.diverters.cursor.keys.toList() })
             }
             for ((what, sel) in layers) {
@@ -419,9 +417,6 @@ class GridGrowTest {
         for (m in s.machines) append('|').append(m?.toString() ?: "-")
         for (b in s.bridges) append('|').append(b?.toString() ?: "-")
         for (c in Conduit.entries) for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
-        for (tile in s.debris.tiles().sorted()) {
-            append('|').append(tile).append('=').append(s.debris[tile].toString())
-        }
         for ((tile, cursor) in s.diverters.cursor.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }

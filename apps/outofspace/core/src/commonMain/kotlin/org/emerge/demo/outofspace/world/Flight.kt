@@ -66,9 +66,8 @@ fun cargoGrams(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-    debris: Debris,
 ): Long {
-    var sum = debris.totalGrams
+    var sum = 0L
     for (m in machines) sum += massIn(m)
     for (r in conduits[Conduit.Rail]) sum += r?.held?.mass ?: 0L
     for (b in bridges) sum += massIn(b)
@@ -80,8 +79,7 @@ fun vesselMassGrams(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-    debris: Debris,
-): Long = structureMassGrams(machines, conduits, bridges) + cargoGrams(machines, conduits, bridges, debris)
+): Long = structureMassGrams(machines, conduits, bridges) + cargoGrams(machines, conduits, bridges)
 
 /**
  * What the inside of an accelerating vessel feels: the plating's own gravity, less the acceleration.
@@ -91,9 +89,8 @@ fun vesselMassGrams(
  * that is indistinguishable from a gravity pointing the other way. So the sign is a minus, and the
  * result is what [org.emerge.demo.outofspace.world.fluid.applyBuoyancy],
  * [org.emerge.demo.outofspace.world.fluid.applySpeciesDrift] and [downDirection] are handed instead
- * of the plating's constant. Convection under acceleration, debris settling toward the stern and a
- * heavy gas pooling against the direction of travel all fall out of passes that were written before
- * there was anything to fall out of.
+ * of the plating's constant. Convection under acceleration and a heavy gas pooling against the
+ * direction of travel all fall out of passes that were written before there was anything to fall out of.
  *
  * [netImpulseX] is one tick's change in the ship's momentum — not the running total — because what is
  * felt is a force and not a history. Divided by the ship's mass it is an acceleration in tiles per

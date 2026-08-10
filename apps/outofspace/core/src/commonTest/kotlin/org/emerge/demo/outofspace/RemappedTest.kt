@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.remapped
-import org.emerge.demo.outofspace.world.Debris
 import org.emerge.demo.outofspace.world.Diverters
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
@@ -60,10 +59,6 @@ class RemappedTest {
         }
         machines[grid.index(5, 5)] = Hull()
         machines[grid.index(10, 5)] = Hull()
-        // Debris
-        val debris = Debris.of(mapOf(
-            grid.index(3, 3) to listOf(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1000L)))
-        ))
         // Diverter
         val diverters = Diverters.of(mapOf(grid.index(7, 7) to 1))
         // Air with uniform grams and joules
@@ -94,7 +89,6 @@ class RemappedTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            debris = debris,
             diverters = diverters,
             air = air,
             momentum = momentum,
@@ -115,7 +109,6 @@ class RemappedTest {
         assertEquals(s0.machines, s1.machines)
         assertEquals(s0.bridges, s1.bridges)
         assertEquals(s0.conduits, s1.conduits)
-        assertEquals(s0.debris, s1.debris)
         assertEquals(s0.diverters.cursor, s1.diverters.cursor)
         assertEquals(s0.air.copyGrams().contentToString(), s1.air.copyGrams().contentToString())
         assertEquals(s0.air.copyJoules().contentToString(), s1.air.copyJoules().contentToString())
@@ -192,22 +185,6 @@ class RemappedTest {
         val s1 = s0withBridge.remapped(newGrid, dx, dy)
         val newTile = newGrid.index(5 + dx, 5 + dy)
         assertEquals(s0withBridge.machines[bridgeTile], s1.machines[newTile])
-    }
-
-    @Test
-    fun `debris remaps correctly`() {
-        val s0 = populatedWorld()
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 5, oldGrid.height + 4)
-        val dx = 5
-        val dy = 4
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        // Debris at (3, 3) should move to (8, 7)
-        val oldTile = oldGrid.index(3, 3)
-        val newTile = newGrid.index(8, 7)
-        assertEquals(s0.debris[oldTile], s1.debris[newTile])
     }
 
     @Test
@@ -494,7 +471,6 @@ class RemappedTest {
         assertEquals(s0.machines, s2.machines, "machines should be identical")
         assertEquals(s0.bridges, s2.bridges, "bridges should be identical")
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
-        assertEquals(s0.debris, s2.debris, "debris should be identical")
         assertEquals(s0.diverters.cursor, s2.diverters.cursor, "diverters should be identical")
         assertEquals(s0.air.copyGrams().contentToString(), s2.air.copyGrams().contentToString(), "air grams")
         assertEquals(s0.air.copyJoules().contentToString(), s2.air.copyJoules().contentToString(), "air joules")
