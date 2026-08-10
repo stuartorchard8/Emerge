@@ -249,7 +249,7 @@ class GridFitTest {
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
         }
-        for ((tile, cursor) in s.diverters.cursor.entries.sortedBy { it.key }) {
+        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }
         append('|').append(s.atmosphereGrams).append('|').append(s.atmosphereJoules)

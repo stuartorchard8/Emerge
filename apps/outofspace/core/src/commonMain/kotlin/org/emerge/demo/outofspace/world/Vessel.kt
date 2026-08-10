@@ -48,8 +48,8 @@ data class VesselState(
     val conduits: Conduits = Conduits.empty(machines.size),
     /** Bridges, stored at their middle tile. They occupy nothing, so they are not in [occupancy]. */
     val bridges: List<Bridge?> = List(machines.size) { null },
-    /** Which way each fork last sent material — see [Diverters]. */
-    val diverters: Diverters = Diverters.EMPTY,
+    /** Which way each fork last sent material — see [FlowCursors]. */
+    val diverters: FlowCursors = FlowCursors(),
     /**
      * What moved where during the tick that produced this state, for the renderer — see [Motion].
      *
@@ -755,14 +755,13 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
 
     // ── 3. Sparse map for diverters ──────────────────────────────────────
     val newDiverterMap = HashMap<Int, Int>()
-    for ((oldTile, cursor) in diverters.cursor) {
+    for ((oldTile, cursor) in diverters.snapshot()) {
         val ox = grid.xOf(oldTile)
         val oy = grid.yOf(oldTile)
         val ni = remapTile(ox, oy)
         if (ni != null) newDiverterMap[ni] = cursor
     }
-    // diverters cursor is internal, accessible from same module
-    val newDiverters = Diverters.of(newDiverterMap)
+    val newDiverters = FlowCursors(newDiverterMap)
 
     // ── 4. Dense field arrays: air / pipeAir (grams + joules) ────────────
     fun remapAirField(src: AirField): AirField {

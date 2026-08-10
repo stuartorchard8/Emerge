@@ -15,8 +15,8 @@ import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
-import org.emerge.demo.outofspace.world.DiverterWork
-import org.emerge.demo.outofspace.world.FlowField
+import org.emerge.demo.outofspace.world.FlowCursors
+import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
@@ -294,7 +294,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             machines = machines,
             conduits = conduits,
             bridges = bridges,
-            diverters = w.diverters.snapshot(),
+            diverters = FlowCursors(w.diverters.snapshot()),
             tick = state.tick + 1,
             extractedGrams = w.extractedGrams,
             ventedGrams = w.ventedGrams,
@@ -508,7 +508,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return out
         }
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
-        val diverters: DiverterWork = DiverterWork(state.diverters)
+        val diverters: FlowCursors = FlowCursors(state.diverters.snapshot())
         var ventedGrams: Long = state.ventedGrams
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
@@ -1089,24 +1089,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(i, Motion.SLOT_MIDDLE)
             }
 
-            // Split: accepting vs full consumers (traffic runs past full to working).
-            val inputs = ports.entries
+            // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
+            val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
-            val (accepting, full) = inputs.partition { tile ->
-                ports[tile].orEmpty().any { it.kind == PortKind.Input && hasRoom(it) }
-            }
+                .toSet()
             // Sources (bridge far end gives crossing run its own direction).
             val sources = ports.entries
                 .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
                 .map { it.key }
-            val flow = FlowField.derive(
-                grid,
-                { rails[it] != null },
-                { tile, dir -> rails[tile]?.linkedTo(dir) == true },
-                accepting,
-                full,
+                .toSet()
+            val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) i else null }
+            val flow = FlowGraph.build(
+                railTiles,
                 sources,
+                sinks,
+                { tile, dir -> rails[tile]?.linkedTo(dir) == true },
+                grid,
             )
 
             val carried = arrayOfNulls<Packet>(rails.size)
@@ -1145,9 +1144,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun hasRoom(port: Port): Boolean {
             if (port.fromBridge) return bridges[port.owner]?.entry == null
             return when (val m = machines[port.owner]) {
-                is Processor -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
-                is Smelter -> (m.input?.mass ?: 0L) < MACHINE_BUFFER_CAP
-                is Storage -> (m.contents?.mass ?: 0L) < Storage.CAP
+                is Processor -> m.input == null
+                is Smelter -> m.input == null
+                is Storage -> m.contents == null || (m.contents?.mass ?: 0L) < Storage.CAP
                 is Vent -> true
                 else -> false
             }
@@ -1209,6 +1208,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** The new input buffer if [packet] is acceptable, else null. */
         private fun acceptInto(existing: Resource?, packet: Packet): Resource? {
             if (packet !is SolidPacket) return null
+            if (packet.resource.form != Form.Ore) return null
             if (existing != null && existing.form != packet.form) return null
             if ((existing?.mass ?: 0L) >= MACHINE_BUFFER_CAP) return null
             return if (existing == null) packet.resource

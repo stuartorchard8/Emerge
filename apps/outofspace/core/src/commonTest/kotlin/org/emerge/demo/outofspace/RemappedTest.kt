@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.remapped
-import org.emerge.demo.outofspace.world.Diverters
+import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
@@ -60,7 +60,7 @@ class RemappedTest {
         machines[grid.index(5, 5)] = Hull()
         machines[grid.index(10, 5)] = Hull()
         // Diverter
-        val diverters = Diverters.of(mapOf(grid.index(7, 7) to 1))
+        val diverters = FlowCursors(mapOf(grid.index(7, 7) to 1))
         // Air with uniform grams and joules
         val airGrams = LongArray(grid.size * Species.COUNT) {
             val tile = it / Species.COUNT
@@ -109,7 +109,7 @@ class RemappedTest {
         assertEquals(s0.machines, s1.machines)
         assertEquals(s0.bridges, s1.bridges)
         assertEquals(s0.conduits, s1.conduits)
-        assertEquals(s0.diverters.cursor, s1.diverters.cursor)
+        assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
         assertEquals(s0.air.copyGrams().contentToString(), s1.air.copyGrams().contentToString())
         assertEquals(s0.air.copyJoules().contentToString(), s1.air.copyJoules().contentToString())
         assertEquals(s0.pipeAir.copyGrams().contentToString(), s1.pipeAir.copyGrams().contentToString())
@@ -200,7 +200,7 @@ class RemappedTest {
         // Diverter at (7, 7) should move to (10, 9)
         val oldTile = oldGrid.index(7, 7)
         val newTile = newGrid.index(10, 9)
-        assertEquals(1, s1.diverters[newTile])
+        assertEquals(1, s1.diverters.forkCursors[newTile])
     }
 
     @Test
@@ -471,7 +471,7 @@ class RemappedTest {
         assertEquals(s0.machines, s2.machines, "machines should be identical")
         assertEquals(s0.bridges, s2.bridges, "bridges should be identical")
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
-        assertEquals(s0.diverters.cursor, s2.diverters.cursor, "diverters should be identical")
+        assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
         assertEquals(s0.air.copyGrams().contentToString(), s2.air.copyGrams().contentToString(), "air grams")
         assertEquals(s0.air.copyJoules().contentToString(), s2.air.copyJoules().contentToString(), "air joules")
         assertEquals(s0.pipeAir.copyGrams().contentToString(), s2.pipeAir.copyGrams().contentToString(), "pipeAir grams")

@@ -8,37 +8,14 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.logistics.mergeInto
 
 /**
- * Diverter: per-fork tile remembers last branch, alternates (genuinely even 3-way split).
- */
-class Diverters private constructor(internal val cursor: Map<Int, Int>) {
-
-    /** Which branch this fork will try first. Zero for a tile that has never forked anything. */
-    operator fun get(tile: Int): Int = cursor[tile] ?: 0
-
-    val isEmpty: Boolean get() = cursor.isEmpty()
-
-    override fun equals(other: Any?): Boolean =
-        this === other || (other is Diverters && cursor == other.cursor)
-
-    override fun hashCode(): Int = cursor.hashCode()
-
-    override fun toString(): String = "Diverters($cursor)"
-
-    companion object {
-        val EMPTY: Diverters = Diverters(emptyMap())
-        fun of(cursor: Map<Int, Int>): Diverters = if (cursor.isEmpty()) EMPTY else Diverters(cursor.toMap())
-    }
-}
-
-/**
  * Advance segments one step: port-first refusal, then nearest-to-sink-first (single-pass shuffle).
  * `arrived` prevents double-move when rankings interleave (machine output mid-line).
  * Powder packets squash/merge; ingots stay separate (player must keep streams apart).
  */
 fun advanceSegments(
-    flow: FlowField,
+    flow: FlowGraph,
     held: Array<Packet?>,
-    diverters: DiverterWork,
+    cursors: FlowCursors,
     log: MotionLog? = null,
     absorb: (tile: Int, packet: Packet) -> Packet?,
 ): Int {
@@ -47,7 +24,7 @@ fun advanceSegments(
      * Tiles that took delivery during this pass.
      *
      * A packet moves one tile per advance, and that has to be true of the *packet* rather than of
-     * the walk. Where [FlowField.order] cannot put a tile ahead of the one feeding it — a run that
+     * the walk. Where [FlowGraph.order] cannot put a tile ahead of the one feeding it — a run that
      * moves by both rules at once, which any output port partway along a line creates — this is what
      * keeps the step to one. It also means such a tile does not offer the new arrival to its own
      * port until next pass, which is what every other tile on the run does anyway.
@@ -65,7 +42,7 @@ fun advanceSegments(
         }
 
         val options = flow.successorsOf(tile)
-        val target = diverters.choose(tile, options) { held[it] == null }
+        val target = cursors.choose(tile, options) { held[it] == null }
         if (target >= 0) {
             held[target] = leftover
             held[tile] = null
@@ -78,11 +55,63 @@ fun advanceSegments(
         // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
         // in the successors' own order so a fork behaves the same way it would when moving.
         for (option in options) {
-            val ahead = held[option] ?: continue
+            val ahead = held[option.to] ?: continue
             val squashed = squashOnto(ahead, leftover) ?: continue
-            held[option] = squashed.merged
+            held[option.to] = squashed.merged
             held[tile] = squashed.rejected
-            arrived[option] = true
+            arrived[option.to] = true
+            moved++
+            break
+        }
+    }
+    return moved
+}
+
+/**
+ * Advance segments for a [FlowField] (multiple components).
+ *
+ * Iterates tiles in topological order across all components. Each tile's successors come from the
+ * component graph that contains it.
+ */
+fun advanceSegments(
+    flow: FlowField,
+    held: Array<Packet?>,
+    cursors: FlowCursors,
+    log: MotionLog? = null,
+    absorb: (tile: Int, packet: Packet) -> Packet?,
+): Int {
+    var moved = 0
+    val arrived = BooleanArray(held.size)
+    for (tile in flow.order) {
+        if (arrived[tile]) continue
+        val packet = held[tile] ?: continue
+
+        val leftover = absorb(tile, packet)
+        held[tile] = leftover
+        if (leftover == null) {
+            log?.takenFromRail(tile, packet)
+            continue
+        }
+
+        val options = flow.successorsOf(tile)
+        if (options.isEmpty()) continue
+
+        val target = cursors.choose(tile, options) { held[it] == null }
+        if (target >= 0) {
+            held[target] = leftover
+            held[tile] = null
+            arrived[target] = true
+            log?.moved(tile, target, flow.directionBetween(tile, target))
+            moved++
+            continue
+        }
+
+        for (option in options) {
+            val ahead = held[option.to] ?: continue
+            val squashed = squashOnto(ahead, leftover) ?: continue
+            held[option.to] = squashed.merged
+            held[tile] = squashed.rejected
+            arrived[option.to] = true
             moved++
             break
         }

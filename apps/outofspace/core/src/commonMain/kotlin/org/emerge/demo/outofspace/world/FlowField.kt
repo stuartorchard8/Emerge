@@ -1,161 +1,400 @@
 package org.emerge.demo.outofspace.world
 
 /**
- * Conduit layer flow direction: BFS from outputs (depth/forward) + BFS from inputs (distance).
- * Depth prevents cycles; distance prunes dead-ends.
- * Fallback: downhill toward nearest consumer (when forward leads nowhere).
- * Walk order: topological (DAG), not grid order (avoids arbitrary junction priority).
+ * A distinct source→sink path discovered during graph construction.
+ *
+ * Each flow represents one connected component of rail with a clear direction: material enters at
+ * [source] and is consumed at [sink]. The hop count ([distance]) is the number of tiles from
+ * source to sink along this flow.
  */
-class FlowField private constructor(
-    private val grid: Grid,
-    private val distance: IntArray,
-    private val successors: Array<IntArray>,
-    /** Segment tiles, most downstream first (single-pass shuffle). Downstream = whichever rule each tile actually moves by. */
-    val order: IntArray,
+data class Flow(
+    val id: Int,
+    val source: Int,
+    val sink: Int,
+    val distance: Int,
+)
+
+/**
+ * A directed edge along a specific flow.
+ *
+ * When a tile has multiple FlowEdges as successors, the round-robin cursor on [flow.id] decides
+ * which edge to use next tick.
+ */
+data class FlowEdge(
+    val to: Int,
+    val flow: Flow,
+)
+
+/**
+ * The rail flow graph for a single connected component.
+ *
+ * Built once when conduits change, reused every tick. Contains the topological structure (sources,
+ * sinks, flows, successors) and is immutable between conduit mutations.
+ *
+ * Build via [FlowGraph.build] — there is no public constructor to enforce this.
+ */
+class FlowGraph internal constructor(
+    private val _tiles: Set<Int>,
+    private val _sinks: Set<Int>,
+    private val _order: List<Int>,
+    private val _successors: Map<Int, List<FlowEdge>>,
+    private val _distanceMap: Map<Int, Int>,
+    private val _depthMap: Map<Int, Int>,
+    private val _grid: Grid,
 ) {
-    /** Steps to the nearest sink, or -1 for a tile that can reach none. */
-    fun distanceAt(tile: Int): Int = if (tile in distance.indices) distance[tile] else -1
+    val tiles: Set<Int> get() = _tiles
+    val sinks: Set<Int> get() = _sinks
+    val order: List<Int> get() = _order
 
-    /** Part of live flow (has successors or distance=0). Not "has distance to any consumer" — dead-end spurs can always turn back. */
-    fun isFed(tile: Int): Boolean = successorsOf(tile).isNotEmpty() || distanceAt(tile) == 0
+    fun isFed(tile: Int): Boolean =
+        tile in tiles && (successorsOf(tile).isNotEmpty() || tile in sinks)
 
-    /** The tiles material moves to from here. More than one is a fork. */
-    fun successorsOf(tile: Int): IntArray =
-        if (tile in successors.indices) successors[tile] else EMPTY
+    fun successorsOf(tile: Int): List<FlowEdge> = _successors[tile] ?: emptyList()
 
-    /**
-     * Which way you face going from [from] to the adjacent [to]. Only ever asked of a step the
-     * field itself produced, so the two really are neighbours and the answer always exists.
-     */
+    fun distanceAt(tile: Int): Int = _distanceMap[tile] ?: -1
+
+    fun depthAt(tile: Int): Int = _depthMap[tile] ?: -1
+
     fun directionBetween(from: Int, to: Int): Direction =
-        Direction.ALL.first { grid.neighbour(from, it) == to }
+        Direction.ALL.first { _grid.neighbour(from, it) == to }
 
     companion object {
-        private val EMPTY = IntArray(0)
-
-        /** Full consumer penalty (larger than any grid path — accepting anywhere beats full next door). */
+        /** Full consumer penalty (larger than any grid path). */
         const val FULL_PENALTY = 1_000_000
 
         /**
-         * Derive flow field.
-         * @param sources output ports (give direction, enable forks)
-         * @param accepting input ports with room
-         * @param full input ports without room (pull only as last resort)
+         * Build the rail flow graph for a single connected component.
+         *
+         * Direction is pull-based: material flows toward sinks. Distance is measured from the
+         * nearest sink. Sources only determine which tiles are "fed" — they don't affect the
+         * direction of flow.
+         *
+         * The graph is built in these phases:
+         * 1. BFS from sinks → distance + nearest sink
+         * 2. Assign each tile to a flow (source, nearestSink) — sources define flow identity
+         * 3. Build successor edges (toward any sink: distance-1)
+         * 4. Prune dead-end edges (edges that don't reach any sink)
+         * 5. Compute topological order (upstream first = higher distance first)
          */
-        fun derive(
+        fun build(
+            tileSet: Set<Int>,
+            sources: Set<Int>,
+            sinks: Set<Int>,
+            linked: (Int, Direction) -> Boolean,
             grid: Grid,
-            isSegment: (Int) -> Boolean,
-            linked: (tile: Int, dir: Direction) -> Boolean,
-            accepting: Collection<Int>,
-            full: Collection<Int> = emptyList(),
-            sources: Collection<Int> = emptyList(),
-        ): FlowField {
-            val distance = IntArray(grid.size) { -1 }
-            /** Which sink each tile's shortest path leads to. Only read for tiles *at* a sink. */
-            val nearest = IntArray(grid.size) { -1 }
-            /** Steps from where material enters the layer. This is what "forward" means. */
-            val depth = IntArray(grid.size) { -1 }
+        ): FlowGraph {
+            if (tileSet.isEmpty()) return empty()
 
-            val queue = ArrayDeque<Int>()
+            // Phase 1: BFS from sinks → distance + nearest sink
+            val sinkDistance = IntArray(grid.size) { -1 }
+            val nearestSink = IntArray(grid.size) { -1 }
+            val sinkQueue = ArrayDeque<Int>()
 
-            // Sorted for determinism (JS/Android compatibility).
-            fun sweep(field: IntArray, tiles: Collection<Int>, from: Int, trackNearest: Boolean) {
-                for (tile in tiles.distinct().sorted()) {
-                    if (tile in field.indices && isSegment(tile) && field[tile] < 0) {
-                        field[tile] = from
-                        if (trackNearest) nearest[tile] = tile
-                        queue.addLast(tile)
-                    }
+            for (sink in sinks) {
+                if (sink in tileSet && sinkDistance[sink] < 0) {
+                    sinkDistance[sink] = 0
+                    nearestSink[sink] = sink
+                    sinkQueue.addLast(sink)
                 }
-                while (queue.isNotEmpty()) {
-                    val at = queue.removeFirst()
+            }
+            while (sinkQueue.isNotEmpty()) {
+                val at = sinkQueue.removeFirst()
+                for (dir in Direction.ALL) {
+                    if (!linked(at, dir)) continue
+                    val next = grid.neighbour(at, dir)
+                    if (next < 0 || next !in tileSet || sinkDistance[next] >= 0) continue
+                    sinkDistance[next] = sinkDistance[at] + 1
+                    nearestSink[next] = nearestSink[at]
+                    sinkQueue.addLast(next)
+                }
+            }
+
+            // Phase 2: Assign flows — one per unique (source, nearestSink) pair
+            val sourceNearestSink = mutableMapOf<Int, Int>()
+            for (src in sources) {
+                if (src in tileSet && sinkDistance[src] >= 0) {
+                    sourceNearestSink[src] = nearestSink[src]
+                }
+            }
+
+            val flows = mutableListOf<Flow>()
+            var flowIdCounter = 0
+            val seenFlowPairs = mutableSetOf<Pair<Int, Int>>()
+            for ((src, snk) in sourceNearestSink.entries.sortedBy { it.key }) {
+                if (src !in tileSet || snk !in tileSet || src == snk) continue
+                val key = src to snk
+                if (key in seenFlowPairs) continue
+                seenFlowPairs.add(key)
+                flows.add(Flow(flowIdCounter++, src, snk, sinkDistance[src]))
+            }
+
+            // Phase 3: Assign each tile to a flow by BFS from sources
+            val tileToFlow = mutableMapOf<Int, Flow>()
+            for (flow in flows) {
+                val visited = mutableSetOf<Int>()
+                val q = ArrayDeque<Int>()
+                q.add(flow.source)
+                visited.add(flow.source)
+                while (q.isNotEmpty()) {
+                    val at = q.removeFirst()
+                    tileToFlow[at] = flow
                     for (dir in Direction.ALL) {
                         if (!linked(at, dir)) continue
                         val next = grid.neighbour(at, dir)
-                        if (next < 0 || !isSegment(next) || field[next] >= 0) continue
-                        field[next] = field[at] + 1
-                        if (trackNearest) nearest[next] = nearest[at]
-                        queue.addLast(next)
+                        if (next < 0 || next !in tileSet || next in visited) continue
+                        visited.add(next)
+                        q.addLast(next)
                     }
                 }
             }
 
-            // Two tiers: accepting first, then full (penalised distance).
-            sweep(distance, accepting, 0, trackNearest = true)
-            sweep(distance, full, FULL_PENALTY, trackNearest = true)
-            sweep(depth, sources, 0, trackNearest = false)
+            // Phase 4: Build successor edges (toward any sink: distance-1)
+            // Each sink gets its own flow ID
+            val sinkFlowId = sinks.withIndex().associate { it.value to it.index + flows.size }
+            val implicitFlow = if (flows.isEmpty() && sinkFlowId.isNotEmpty()) {
+                val snk = sinks.first()
+                Flow(sinkFlowId[snk]!!, -1, snk, 0)
+            } else null
 
-            // ── Forward graph (DAG: prevents circling, preserves forks) ──
-            val forward = Array(grid.size) { EMPTY }
-            for (tile in 0 until grid.size) {
-                if (depth[tile] < 0) continue
-                val onward = Direction.ALL.mapNotNull { dir ->
-                    if (!linked(tile, dir)) return@mapNotNull null
-                    val next = grid.neighbour(tile, dir)
-                    if (next < 0 || depth[next] != depth[tile] + 1) null else next
-                }
-                if (onward.isNotEmpty()) forward[tile] = onward.sorted().toIntArray()
-            }
+            val successors = mutableMapOf<Int, MutableList<FlowEdge>>()
+            for (tile in tileSet) {
+                if (sinkDistance[tile] < 0) continue
 
-            // Branch worthiness asked along forward graph (not undirected — avoids dead-end filling).
-            val acceptingSet = accepting.toHashSet()
-            val fullSet = full.toHashSet()
-            val reachesAccepting = BooleanArray(grid.size)
-            val reachesAnything = BooleanArray(grid.size)
-            // Deepest first.
-            for (tile in (0 until grid.size).filter { depth[it] >= 0 }.sortedByDescending { depth[it] }) {
-                reachesAccepting[tile] = tile in acceptingSet || forward[tile].any { reachesAccepting[it] }
-                reachesAnything[tile] =
-                    tile in acceptingSet || tile in fullSet || forward[tile].any { reachesAnything[it] }
-            }
-
-            /** Older rule: step to neighbour closer to consumer. */
-            fun downhill(tile: Int): IntArray {
-                if (distance[tile] < 0) return EMPTY
-                if (distance[tile] == 0) {
-                    // Sink tile: refused material carries to next. Exclude nearest = this.
-                    return Direction.ALL.mapNotNull { dir ->
-                        if (!linked(tile, dir)) return@mapNotNull null
-                        val next = grid.neighbour(tile, dir)
-                        if (next < 0 || distance[next] < 0 || nearest[next] == tile) null else next
-                    }.sortedWith(compareBy<Int> { distance[it] }.thenBy { it }).toIntArray()
-                }
-                var found = 0
-                val buffer = IntArray(4)
                 for (dir in Direction.ALL) {
                     if (!linked(tile, dir)) continue
                     val next = grid.neighbour(tile, dir)
-                    if (next >= 0 && distance[next] == distance[tile] - 1) buffer[found++] = next
-                }
-                return buffer.copyOf(found)
-            }
+                    if (next < 0 || next !in tileSet) continue
+                    if (sinkDistance[next] != sinkDistance[tile] - 1) continue
 
-            val successors = Array(grid.size) { EMPTY }
-            /** Which of the two rules each tile ended up moving by. Read only to build [order]. */
-            val movesForward = BooleanArray(grid.size)
-            for (tile in 0 until grid.size) {
-                if (depth[tile] >= 0) {
-                    // Working consumer branch > blockage branch > queue forms.
-                    val useful = forward[tile].filter { reachesAccepting[it] }
-                    val chosen = useful.ifEmpty { forward[tile].filter { reachesAnything[it] } }
-                    if (chosen.isNotEmpty()) {
-                        successors[tile] = chosen.toIntArray()
-                        movesForward[tile] = true
-                        continue
+                    // Use the flow of the successor tile if it has one, else fall back to implicit
+                    val flow = tileToFlow[next] ?: implicitFlow
+                    if (flow != null) {
+                        successors.getOrPut(tile) { mutableListOf() }.add(FlowEdge(next, flow))
                     }
                 }
-                val onward = downhill(tile)
-                if (onward.isNotEmpty()) successors[tile] = onward
+            }
+            // Sort successors by tile index for deterministic alternation
+            for ((tile, edges) in successors) {
+                edges.sortBy { it.to }
             }
 
-            // Most-downstream first (single-pass advance). Rank: forward tiles last (downhill = tail of run).
-            val fed = (0 until grid.size).filter { distance[it] >= 0 || depth[it] >= 0 }
-            val order = fed.sortedWith(
-                compareBy<Int> { if (movesForward[it]) 1 else 0 }
-                    .thenBy { if (movesForward[it]) -depth[it] else distance[it] }
-                    .thenBy { it },
+            // Phase 5: Prune dead ends — walk from sinks outward so successors' reachesSink is ready
+            val reachesSink = mutableMapOf<Int, Boolean>()
+            val sortedTiles = tileSet.sortedBy { sinkDistance[it] }
+            for (tile in sortedTiles) {
+                reachesSink[tile] = tile in sinks || successors[tile]?.any { edge -> reachesSink[edge.to] == true } == true
+            }
+            for (tile in tileSet) {
+                if (tile !in sinks && reachesSink[tile] == false) {
+                    successors.remove(tile)
+                }
+            }
+
+            // Phase 6: Topological order (upstream first = higher distance first)
+            val fedTiles = tileSet.filter { tile ->
+                successors[tile]?.isNotEmpty() == true || tile in sinks
+            }
+            val ordered = fedTiles.sortedWith(compareBy<Int> { sinkDistance[it] }.thenBy { it })
+
+            val distMap = tileSet.associateWith { if (it in sinks) 0 else sinkDistance[it] }
+            val depMap = tileSet.associateWith { sinkDistance[it] }
+
+            return FlowGraph(
+                tileSet, sinks, ordered, successors, distMap, depMap, grid
             )
-            return FlowField(grid, distance, successors, order.toIntArray())
+        }
+
+        private fun empty(): FlowGraph {
+            val emptyGrid = Grid(0, 0)
+            return FlowGraph(
+                emptySet(), emptySet(), emptyList(),
+                emptyMap(), emptyMap(), emptyMap(), emptyGrid
+            )
         }
     }
 }
+
+/**
+ * Round-robin cursors for the flow graph.
+ *
+ * [forkCursors] maps a tile (where the fork decision is made) to the index into that tile's
+ * successors list. This is the only mutable state in the rail advancement system. The FlowGraph
+ * itself is immutable between conduit changes.
+ *
+ * Only advances the cursor when a branch is actually used (not when blocked) — a jam on one side
+ * must not quietly halve the throughput of the other.
+ */
+class FlowCursors(
+    initial: Map<Int, Int> = emptyMap(),
+) {
+    internal val cursors = HashMap<Int, Int>(initial)
+
+    /** Read-only view of fork cursor state. */
+    val forkCursors: Map<Int, Int> get() = cursors
+
+    /**
+     * Pick a successor for a packet leaving [tile], preferring one that is free, and alternating
+     * between them so a fork splits its throughput rather than favouring a branch.
+     */
+    fun choose(tile: Int, successors: List<FlowEdge>, isFree: (Int) -> Boolean): Int {
+        if (successors.isEmpty()) return -1
+        if (successors.size == 1) {
+            val target = successors[0].to
+            return if (isFree(target)) target else -1
+        }
+        val start = cursors[tile] ?: 0
+        for (step in successors.indices) {
+            val pick = successors[(start + step) % successors.size]
+            if (isFree(pick.to)) {
+                // Advance past the branch actually *used*, not past the one we hoped to use.
+                cursors[tile] = (start + step + 1) % successors.size
+                return pick.to
+            }
+        }
+        return -1
+    }
+
+    /** Snapshot the current cursor state for persistence across ticks. */
+    fun snapshot(): Map<Int, Int> = cursors.toMap()
+
+    /** Restore from a previously snapshot state. */
+    fun restore(map: Map<Int, Int>) {
+        cursors.clear()
+        cursors.putAll(map)
+    }
+}
+
+/** Backward-compatible choose for IntArray-based successor lists. */
+fun FlowCursors.chooseInt(tile: Int, options: IntArray, isFree: (Int) -> Boolean): Int {
+    if (options.isEmpty()) return -1
+    if (options.size == 1) return if (isFree(options[0])) options[0] else -1
+    val start = cursors[tile] ?: 0
+    for (step in options.indices) {
+        val pick = options[(start + step) % options.size]
+        if (isFree(pick)) {
+            cursors[tile] = (start + step + 1) % options.size
+            return pick
+        }
+    }
+    return -1
+}
+
+/**
+ * The rail flow field — a facade over one or more [FlowGraph] components.
+ *
+ * Each connected component of rail with at least one source and one sink becomes its own graph.
+ * Tiles in components with no valid path are simply absent from all graphs.
+ *
+ * This is the entry point for the transport layer: [derive] builds the field from a set of rail
+ * tiles, their connectivity, and the locations of sources (producers) and sinks (consumers).
+ */
+class FlowField private constructor(
+    private val graphs: List<FlowGraph>,
+    private val _grid: Grid,
+) {
+    /** All tiles that appear in any flow graph. */
+    val allTiles: Set<Int> = graphs.flatMap { it.tiles }.toSet()
+
+    /** Order of every fed tile across all components (upstream first). */
+    val order: List<Int> = graphs.flatMap { it.order }
+
+    fun isFed(tile: Int): Boolean = graphs.any { it.isFed(tile) }
+
+    fun distanceAt(tile: Int): Int = graphs.find { tile in it.tiles }?.distanceAt(tile) ?: -1
+
+    /**
+     * Successors of [tile] as edges (with flow metadata).
+     */
+    fun successorsOf(tile: Int): List<FlowEdge> {
+        for (g in graphs) {
+            if (tile in g.tiles) {
+                return g.successorsOf(tile)
+            }
+        }
+        return emptyList()
+    }
+
+    /**
+     * Successor tile IDs only (for tests that assert on tile indices).
+     */
+    fun successorTiles(tile: Int): List<Int> = successorsOf(tile).map { it.to }
+
+    /**
+     * Direction from [from] to [to] tile.
+     */
+    fun directionBetween(from: Int, to: Int): Direction =
+        Direction.ALL.first { _grid.neighbour(from, it) == to }
+
+    companion object {
+        fun derive(
+            grid: Grid,
+            isSegment: (Int) -> Boolean,
+            linked: (Int, Direction) -> Boolean,
+            accepting: List<Int>,
+            full: List<Int> = emptyList(),
+            from: List<Int> = emptyList(),
+        ): FlowField {
+            val tileSet = mutableSetOf<Int>()
+            for (i in 0 until grid.size) {
+                if (isSegment(i)) tileSet.add(i)
+            }
+            if (tileSet.isEmpty()) return empty()
+
+            var parent = IntArray(grid.size) { it }
+            fun find(x: Int): Int {
+                var root = x
+                while (parent[root] != root) root = parent[root]
+                var curr = x
+                while (parent[curr] != root) { val p = parent[curr]; parent[curr] = root; curr = p }
+                return root
+            }
+            fun union(a: Int, b: Int) {
+                val ra = find(a)
+                val rb = find(b)
+                if (ra != rb) parent[ra] = rb
+            }
+
+            for (tile in tileSet) {
+                for (dir in Direction.ALL) {
+                    if (!linked(tile, dir)) continue
+                    val next = grid.neighbour(tile, dir)
+                    if (next >= 0 && isSegment(next)) {
+                        union(tile, next)
+                    }
+                }
+            }
+
+            val components = mutableMapOf<Int, MutableSet<Int>>()
+            for (tile in tileSet) {
+                val root = find(tile)
+                components.getOrPut(root) { mutableSetOf() }.add(tile)
+            }
+
+            val sinks = (accepting + full).filter { it in tileSet }.toSet()
+            val sources = from.filter { it in tileSet }.toSet()
+
+            val graphs = mutableListOf<FlowGraph>()
+            for ((root, compTiles) in components) {
+                val compSources = compTiles.intersect(sources)
+                val compSinks = compTiles.intersect(sinks)
+                // Skip components that can't reach any sink (no route to a consumer)
+                if (compSinks.isEmpty()) continue
+
+                graphs.add(
+                    FlowGraph.build(
+                        tileSet = compTiles,
+                        sources = compSources,
+                        sinks = compSinks,
+                        linked = linked,
+                        grid = grid,
+                    )
+                )
+            }
+
+            return FlowField(graphs, grid)
+        }
+
+        private fun empty(): FlowField = FlowField(emptyList(), Grid(0, 0))
+    }
+}
+

@@ -431,6 +431,42 @@ class VesselSimTest {
         assertNotNull(s.railAt(grid.index(3, 2))?.held, "the ingot should still be waiting on the track")
     }
 
+    @Test
+    fun `processors and smelters only accept Ore from the rail and non-Ore passes through`() {
+        val grid = Grid(12, 5)
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val m = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        // Empty processor at (4,2), empty storage at (9,2)
+        m[grid.index(4, 2)] = Processor(Direction.Right)
+        m[grid.index(9, 2)] = Storage(Direction.Right)
+        // Rail feeds the processor at (3,2) and continues past it to the storage at (8,2)
+        joinRow(grid, rails, 3, 8, 2)
+        rails[grid.index(3, 2)] = rails[grid.index(3, 2)]!!.copy(held = ingot)
+        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        s = run(s, Bridge.STEP_TICKS * 4)
+        // Processor refused the ingot — it should advance past the processor
+        assertNotNull(s.railAt(grid.index(5, 2))?.held, "the ingot should pass the processor")
+        // Storage received the ingot from downstream
+        assertNotNull((s[grid.index(9, 2)] as Storage).contents, "the storage should have caught the ingot")
+    }
+
+    @Test
+    fun `an empty smelter only accepts Ore from the rail`() {
+        val grid = Grid(12, 5)
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val m = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        m[grid.index(4, 2)] = Smelter(Direction.Right)
+        m[grid.index(9, 2)] = Storage(Direction.Right)
+        joinRow(grid, rails, 3, 8, 2)
+        rails[grid.index(3, 2)] = rails[grid.index(3, 2)]!!.copy(held = ingot)
+        val s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        val s2 = run(s, Bridge.STEP_TICKS * 4)
+        // Smelter refused the ingot — it should pass past it
+        assertNotNull(s2.railAt(grid.index(5, 2))?.held, "the ingot should pass the empty smelter")
+    }
+
     // ── Edits ─────────────────────────────────────────────────────────────────
 
     @Test

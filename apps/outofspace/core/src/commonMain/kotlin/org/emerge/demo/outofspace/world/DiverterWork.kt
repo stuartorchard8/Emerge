@@ -1,29 +1,40 @@
 package org.emerge.demo.outofspace.world
 
-/** Mutable diverter cursors for one tick. */
-class DiverterWork(diverters: Diverters) {
-    private val cursor: MutableMap<Int, Int> = HashMap(diverters.cursor)
+/**
+ * Persistent cursor state — maps fork tile to last-used branch index.
+ *
+ * This is the type stored in [VesselState]. For the mutable per-tick version, see [FlowCursors].
+ */
+data class Diverters private constructor(private val map: Map<Int, Int> = emptyMap()) {
+    val cursor: Map<Int, Int> get() = map
 
-    /**
-     * Picks a successor for a packet leaving [tile], preferring one that is free, and alternating
-     * between them so a fork splits its throughput rather than favouring a branch.
-     */
+    val isEmpty: Boolean get() = map.isEmpty()
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Diverters && this.map == other.map)
+
+    override fun hashCode(): Int = map.hashCode()
+
+    override fun toString(): String = "Diverters($map)"
+
+    companion object {
+        val EMPTY: Diverters = Diverters()
+        fun of(cursor: Map<Int, Int>): Diverters = if (cursor.isEmpty()) EMPTY else Diverters(cursor.toMap())
+    }
+}
+
+/** Mutable diverter cursors for one tick — delegates to [FlowCursors]. */
+@Deprecated("Use FlowCursors directly", level = DeprecationLevel.WARNING)
+class DiverterWork(diverters: Diverters) {
+    private val cursors = FlowCursors(diverters.cursor)
+
     fun choose(tile: Int, options: IntArray, isFree: (Int) -> Boolean): Int {
-        if (options.isEmpty()) return -1
-        if (options.size == 1) return if (isFree(options[0])) options[0] else -1
-        val start = cursor[tile] ?: 0
-        for (step in options.indices) {
-            val pick = options[(start + step) % options.size]
-            if (isFree(pick)) {
-                // Advance past the branch actually *used*, not past the one we hoped to use. A
-                // blocked branch must not consume its turn, or a jam on one side would quietly
-                // halve the throughput of the other.
-                cursor[tile] = (start + step + 1) % options.size
-                return pick
-            }
-        }
-        return -1
+        return cursors.chooseInt(tile, options, isFree)
     }
 
-    fun snapshot(): Diverters = Diverters.of(cursor)
+    fun snapshot(): Diverters = Diverters.of(cursors.forkCursors)
+
+    companion object {
+        val EMPTY: DiverterWork = DiverterWork(Diverters.EMPTY)
+    }
 }

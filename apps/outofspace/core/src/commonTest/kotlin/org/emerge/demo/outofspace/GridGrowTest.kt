@@ -211,7 +211,7 @@ class GridGrowTest {
                     add("conduit $c" to { s: VesselState -> s.conduits[c].indices.filter { s.conduits[c][it] != null } })
                 }
                 add("bridges" to { s: VesselState -> s.bridges.indices.filter { s.bridges[it] != null } })
-                add("diverters" to { s: VesselState -> s.diverters.cursor.keys.toList() })
+                add("diverters" to { s: VesselState -> s.diverters.forkCursors.keys.toList() })
             }
             for ((what, sel) in layers) {
                 assertEquals(
@@ -417,7 +417,7 @@ class GridGrowTest {
         for (m in s.machines) append('|').append(m?.toString() ?: "-")
         for (b in s.bridges) append('|').append(b?.toString() ?: "-")
         for (c in Conduit.entries) for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
-        for ((tile, cursor) in s.diverters.cursor.entries.sortedBy { it.key }) {
+        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }
         append('|').append(s.atmosphereGrams).append('|').append(s.atmosphereJoules)

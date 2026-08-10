@@ -93,7 +93,7 @@ object Save {
             out.append("   # ").append(where(state.grid, i)).append('\n')
         }
         for (tile in 0 until state.grid.size) {
-            val cursor = state.diverters[tile]
+            val cursor = state.diverters.forkCursors[tile] ?: 0
             if (cursor != 0) out.append("diverter ").append(tile).append(' ').append(cursor).append('\n')
         }
 
@@ -462,7 +462,7 @@ object Save {
             machines = machines.toList(),
             conduits = conduits,
             bridges = bridges.toList(),
-            diverters = Diverters.of(diverters),
+            diverters = FlowCursors(diverters),
             gravity = gravity,
             positionX = positionX,
             positionY = positionY,

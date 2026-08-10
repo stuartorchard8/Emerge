@@ -7,8 +7,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Diverters
-import org.emerge.demo.outofspace.world.DiverterWork
+import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Grid
@@ -112,10 +111,10 @@ class TransportTest {
     private fun step(
         flow: FlowField,
         held: Array<Packet?>,
-        diverters: DiverterWork = DiverterWork(Diverters.EMPTY),
+        cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
         absorb: (Int, Packet) -> Packet? = { _, p -> p },
-    ): Int = advanceSegments(flow, held, diverters, log, absorb)
+    ): Int = advanceSegments(flow, held, cursors, log, absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
 
@@ -154,7 +153,7 @@ class TransportTest {
 
         assertTrue(f.isFed(grid.index(5, 3)))
         assertFalse(f.isFed(grid.index(8, 3)), "no route to a consumer, so no upstream")
-        assertEquals(0, f.successorsOf(grid.index(8, 3)).size)
+        assertEquals(0, f.successorTiles(grid.index(8, 3)).size)
     }
 
     /**
@@ -179,7 +178,7 @@ class TransportTest {
         assertEquals(3, f.distanceAt(deadEnd), "reachable, and further from the consumer than the junction")
         assertEquals(
             listOf(grid.index(5, 4)),
-            f.successorsOf(grid.index(5, 3)).toList(),
+            f.successorTiles(grid.index(5, 3)).toList(),
             "the junction is not a junction: only one way leads anywhere",
         )
 
@@ -197,7 +196,7 @@ class TransportTest {
         assertEquals(4, f.distanceAt(grid.index(6, 3)), "the midpoint is four from either")
         // The midpoint has two equally good routes, so the diverter decides — and it alternates,
         // which makes a line between two consumers split its throughput evenly.
-        assertEquals(2, f.successorsOf(grid.index(6, 3)).size)
+        assertEquals(2, f.successorTiles(grid.index(6, 3)).size)
     }
 
     // ── Explicit connection ───────────────────────────────────────────────────
@@ -302,16 +301,16 @@ class TransportTest {
 
         assertEquals(
             listOf(grid.index(5, 2), grid.index(5, 4)),
-            f.successorsOf(fork).toList().sorted(),
+            f.successorTiles(fork).sorted(),
             "both branches are live, however unequal",
         )
 
-        val diverters = DiverterWork(Diverters.EMPTY)
+        val cursors = FlowCursors()
         var up = 0
         var down = 0
         repeat(8) {
             val h = held(n, fork to lump())
-            step(f, h, diverters)
+            step(f, h, cursors)
             if (h[grid.index(5, 2)] != null) up++
             if (h[grid.index(5, 4)] != null) down++
         }
@@ -329,7 +328,7 @@ class TransportTest {
             .col(5, 3, 4).row(5, 9, 4)   // to nothing at all
         val f = n.toward(accepting = listOf(grid.index(5, 1)), from = listOf(grid.index(2, 3)))
 
-        assertEquals(listOf(grid.index(5, 2)), f.successorsOf(fork).toList())
+        assertEquals(listOf(grid.index(5, 2)), f.successorTiles(fork))
 
         // The dead branch does now have a way *out* — anything stranded on it drains back toward
         // the consumer rather than sitting there for ever, which is the same courtesy a run whose
@@ -337,8 +336,8 @@ class TransportTest {
         // end, and it is the safe half: what must never happen is material being sent down it.
         val stranded = grid.index(8, 4)
         val held = held(n, stranded to lump())
-        val diverters = DiverterWork(Diverters.EMPTY)
-        repeat(20) { advanceSegments(f, held, diverters) { tile, packet -> if (tile == grid.index(5, 1)) null else packet } }
+        val cursors = FlowCursors()
+        repeat(20) { advanceSegments(f, held, cursors) { tile, packet -> if (tile == grid.index(5, 1)) null else packet } }
         assertTrue(held.all { it == null }, "material stranded on a dead branch never got off it")
         assertNull(held[grid.index(9, 4)], "and nothing was pushed further into the dead end")
     }
@@ -374,7 +373,7 @@ class TransportTest {
             val tile = grid.index(x, 1)
             assertEquals(
                 listOf(grid.index(x - 1, 1)),
-                f.successorsOf(tile).toList(),
+                f.successorTiles(tile).toList(),
                 "(${x}, 1) has lost its way to the consumer",
             )
         }
@@ -388,11 +387,11 @@ class TransportTest {
         val f = n.toward(accepting = listOf(sink), from = listOf(far, grid.index(3, 1)))
 
         val held = held(n, far to lump())
-        val diverters = DiverterWork(Diverters.EMPTY)
+        val cursors = FlowCursors()
         var arrived = false
         // Nine steps to walk; give it room to spare and stop when the consumer takes it.
         repeat(20) {
-            advanceSegments(f, held, diverters) { tile, packet ->
+            advanceSegments(f, held, cursors) { tile, packet ->
                 if (tile == sink) { arrived = true; null } else packet
             }
         }
@@ -418,7 +417,7 @@ class TransportTest {
 
         // The full one is an ordinary transit tile: it has a downhill successor, pointing onward.
         assertEquals(3, f.distanceAt(fullOne), "measured from the consumer that can actually take it")
-        assertEquals(listOf(grid.index(6, 3)), f.successorsOf(fullOne).toList())
+        assertEquals(listOf(grid.index(6, 3)), f.successorTiles(fullOne).toList())
 
         val h = held(n, grid.index(2, 3) to lump())
         val taken = mutableListOf<Int>()
@@ -446,7 +445,7 @@ class TransportTest {
         val f = n.toward(accepting = emptyList(), full = listOf(end))
 
         assertTrue(f.isFed(grid.index(2, 3)), "the run still has a direction")
-        assertEquals(listOf(grid.index(7, 3)), f.successorsOf(grid.index(6, 3)).toList())
+        assertEquals(listOf(grid.index(7, 3)), f.successorTiles(grid.index(6, 3)).toList())
 
         val h = held(n, grid.index(2, 3) to lump(), grid.index(3, 3) to lump())
         repeat(12) { step(f, h) }
@@ -460,7 +459,7 @@ class TransportTest {
         // because it was closer — which is the jam this fix exists to clear.
         val n = net().row(2, 8, 3)
         val f = n.toward(accepting = listOf(grid.index(8, 3)), full = listOf(grid.index(3, 3)))
-        assertEquals(listOf(grid.index(5, 3)), f.successorsOf(grid.index(4, 3)).toList(), "onward, not back")
+        assertEquals(listOf(grid.index(5, 3)), f.successorTiles(grid.index(4, 3)).toList(), "onward, not back")
     }
 
     /**
@@ -656,14 +655,14 @@ class TransportTest {
     @Test
     fun `a fork alternates instead of favouring a branch`() {
         val (n, f) = why()
-        val diverters = DiverterWork(Diverters.EMPTY)
+        val cursors = FlowCursors()
         val up = grid.index(5, 2)
         val down = grid.index(5, 4)
 
         val sent = mutableListOf<Int>()
         repeat(6) {
             val h = held(n, grid.index(5, 3) to lump())
-            step(f, h, diverters)
+            step(f, h, cursors)
             if (h[up] != null) sent.add(2)
             if (h[down] != null) sent.add(4)
         }
@@ -679,7 +678,7 @@ class TransportTest {
         // The point: a jam on one side must not quietly halve the other side's throughput. If the
         // cursor advanced past a branch it could not use, every other packet would be lost to it.
         val (n, f) = why()
-        val diverters = DiverterWork(Diverters.EMPTY)
+        val cursors = FlowCursors()
         val up = grid.index(5, 2)
         val down = grid.index(5, 4)
 
@@ -687,26 +686,27 @@ class TransportTest {
         repeat(6) {
             // The upward branch is permanently occupied, so it can never accept.
             val h = held(n, grid.index(5, 3) to lump(), up to lump())
-            step(f, h, diverters)
+            step(f, h, cursors)
             if (h[down] != null) reachedDown++
         }
         assertEquals(6, reachedDown, "every packet should have taken the branch that was open")
     }
 
     @Test
-    fun `diverter state survives a round trip`() {
+    fun `cursor state survives a round trip`() {
         val (n, f) = why()
-        val first = DiverterWork(Diverters.EMPTY)
-        step(f, held(n, grid.index(5, 3) to lump()), first)
-        val saved = first.snapshot()
-        assertFalse(saved.isEmpty, "a fork that has sent something remembers which way")
+        val cursors1 = FlowCursors()
+        step(f, held(n, grid.index(5, 3) to lump()), cursors1)
+        val saved: Map<Int, Int> = cursors1.snapshot()
+        assertTrue(saved.isNotEmpty(), "a fork that has sent something remembers which way")
 
         // Resuming from the snapshot continues the alternation rather than starting over.
-        val resumed = DiverterWork(saved)
+        val cursors2 = FlowCursors()
+        cursors2.restore(saved)
         val h = held(n, grid.index(5, 3) to lump())
-        step(f, h, resumed)
+        step(f, h, cursors2)
         assertEquals(1, listOf(grid.index(5, 2), grid.index(5, 4)).count { h[it] != null })
-        assertEquals(saved, Diverters.of(mapOf(grid.index(5, 3) to 1)), "and it is the state it looks like")
+        assertEquals(saved, mapOf(grid.index(5, 3) to 1), "and it is the state it looks like")
     }
 
     // ── Determinism ───────────────────────────────────────────────────────────
@@ -715,11 +715,11 @@ class TransportTest {
     fun `the same network resolves the same way twice`() {
         fun digest(): String {
             val (n, f) = why()
-            val diverters = DiverterWork(Diverters.EMPTY)
+            val cursors = FlowCursors()
             val h = held(n, grid.index(2, 3) to lump())
-            repeat(20) { step(f, h, diverters) }
+            repeat(20) { step(f, h, cursors) }
             return (0 until grid.size).joinToString(",") { h[it]?.mass?.toString() ?: "-" } +
-                "|" + diverters.snapshot()
+                "|" + cursors.snapshot()
         }
         assertEquals(digest(), digest())
     }
