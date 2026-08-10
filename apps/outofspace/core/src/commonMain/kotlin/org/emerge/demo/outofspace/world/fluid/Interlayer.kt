@@ -126,7 +126,7 @@ internal fun handOver(
     val base = donorTile * Species.COUNT
     val target = acceptorTile * Species.COUNT
     var grams = 0L
-    for (s in Species.FLUIDS) {
+    for (s in Species.ALL) {
         val i = base + s.ordinal
         val take = share.of(donorGrams[i])
         if (take == 0L) continue

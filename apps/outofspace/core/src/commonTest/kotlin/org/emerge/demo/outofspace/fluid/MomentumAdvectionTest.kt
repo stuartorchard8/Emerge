@@ -40,7 +40,7 @@ class MomentumAdvectionTest {
 
         fun step() {
             val tileGrams = tileMass(grid.size, grams)
-            val result = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.GASES, tileGrams)
+            val result = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, tileGrams)
             ventedGrams += result.ventedGrams
             val escape = advectMomentum(edges, mx, my, result.flux, tileGrams)
             escapedX += escape.x

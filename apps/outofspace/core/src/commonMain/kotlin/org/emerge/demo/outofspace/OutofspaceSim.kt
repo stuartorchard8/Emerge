@@ -627,7 +627,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Cut pipe: release gas+heat into room (not deleted — shared ledger).
         fun cutOpen(tile: Int) {
             val base = tile * Species.COUNT
-            for (sp in Species.GASES) {
+            for (sp in Species.ALL) {
                 airGrams[base + sp.ordinal] += pipeGrams[base + sp.ordinal]
                 pipeGrams[base + sp.ordinal] = 0L
             }
@@ -789,7 +789,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // than from the tile it is arriving in — that gas is already at its own temperature.
             val parcel = LongArray(Species.COUNT)
             var added = 0L
-            for (s in Species.GASES) {
+            for (s in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
                 val g = shares[s]
                 parcel[s.ordinal] = g
                 airGrams[base + s.ordinal] += g

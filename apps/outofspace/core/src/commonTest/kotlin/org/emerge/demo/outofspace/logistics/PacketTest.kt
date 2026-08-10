@@ -38,31 +38,6 @@ class PacketTest {
         }
     }
 
-    // ── Phase discipline ───────────────────────────────────────────────────────
-
-    @Test
-    fun `a solid packet refuses fluids and a fluid packet refuses solids`() {
-        assertFailsWith<IllegalArgumentException> {
-            SolidPacket(Resource(Form.Ore, Mixture.of(Species.Water to 10L)))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            FluidPacket(Mixture.of(Species.Iron to 10L))
-        }
-    }
-
-    @Test
-    fun `an empty mixture is acceptable to either network`() {
-        assertTrue(Mixture.EMPTY.isAllSolid && Mixture.EMPTY.isAllFluid)
-    }
-
-    @Test
-    fun `liquids and gases are both fluids and share the pipe network`() {
-        assertTrue(Species.Water.isFluid && Species.Oxygen.isFluid)
-        // A pipe carries either, and a packet may hold both at once.
-        val mixed = FluidPacket(Mixture.of(Species.Water to 500L, Species.Oxygen to 500L))
-        assertEquals(1_000L, mixed.mass)
-    }
-
     // ── Packing ────────────────────────────────────────────────────────────────
 
     @Test

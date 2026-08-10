@@ -65,13 +65,13 @@ class ValveTest {
 
     private fun pipeMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.GASES) sum += s.pipeAir.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.pipeAir.gramsOf(tile, sp)
         return sum
     }
 
     private fun roomMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.GASES) sum += s.air.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.air.gramsOf(tile, sp)
         return sum
     }
 
@@ -215,7 +215,7 @@ class ValveTest {
 
         val roomTile = grid.index(6, 5)
         val pipeTile = grid.index(6, 6)
-        for (sp in Species.GASES) {
+        for (sp in Species.ALL) {
             val room = after.air.gramsOf(roomTile, sp)
             val pipe = after.pipeAir.gramsOf(pipeTile, sp)
             if (room == 0L) {

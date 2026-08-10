@@ -50,7 +50,7 @@ class ProjectionTest {
         }
 
         fun fill(tile: Int, scale: Long) {
-            for (s in Species.GASES) {
+            for (s in Species.ALL) {
                 grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale / AMBIENT
             }
         }

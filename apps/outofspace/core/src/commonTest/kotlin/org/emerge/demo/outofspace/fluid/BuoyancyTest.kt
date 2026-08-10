@@ -45,13 +45,13 @@ class BuoyancyTest {
         }
 
         fun air(tile: Int) {
-            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s]
+            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s]
         }
 
         /** Replace a tile's air with a single gas, at the same pressure as everything else. */
         fun pureGas(tile: Int, species: Species) {
             val target = tilePressure(grid.size, grams)[grid.index(3, 3)]
-            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = 0L
+            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = 0L
             grams[tile * Species.COUNT + species.ordinal] = target * species.molarMass / 1000L
         }
 

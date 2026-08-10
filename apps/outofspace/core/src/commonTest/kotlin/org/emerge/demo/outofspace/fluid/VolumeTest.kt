@@ -43,14 +43,14 @@ class VolumeTest {
         init {
             for (tile in 0 until count) {
                 val base = tile * Species.COUNT
-                for (s in Species.GASES) {
+                for (s in Species.ALL) {
                     grams[base + s.ordinal] = AirField.AMBIENT_AIR[s] * (tile + 1) / 2
                 }
             }
             // One cell of pure carbon dioxide: heavy for its pressure, which is the case volume must
             // not quietly rescale.
             val heavy = 3 * Species.COUNT
-            for (s in Species.GASES) grams[heavy + s.ordinal] = 0L
+            for (s in Species.ALL) grams[heavy + s.ordinal] = 0L
             grams[heavy + Species.CarbonDioxide.ordinal] = 1400L
         }
 
@@ -149,7 +149,7 @@ class VolumeTest {
         init {
             for (tile in 0 until grid.size) {
                 val base = tile * Species.COUNT
-                for (s in Species.GASES) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
+                for (s in Species.ALL) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
             }
         }
 

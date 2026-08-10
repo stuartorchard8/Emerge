@@ -36,7 +36,7 @@ class DriftTest {
 
     private fun massAt(g: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.GASES) sum += g[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += g[tile * Species.COUNT + s.ordinal]
         return sum
     }
 
@@ -129,10 +129,10 @@ class DriftTest {
         for (y in 2..7) put(g, grid.index(1, y), Species.Nitrogen, 300L)
         put(g, grid.index(1, 5), Species.Oxygen, 900L)
 
-        val before = Species.GASES.associateWith { s -> (0 until grid.size).sumOf { of(g, it, s) } }
+        val before = Species.ALL.associateWith { s -> (0 until grid.size).sumOf { of(g, it, s) } }
         repeat(80) { applySpeciesDrift(edges, open, g, down) }
 
-        for (s in Species.GASES) {
+        for (s in Species.ALL) {
             assertEquals(before[s], (0 until grid.size).sumOf { of(g, it, s) }, "$s was not conserved")
         }
     }

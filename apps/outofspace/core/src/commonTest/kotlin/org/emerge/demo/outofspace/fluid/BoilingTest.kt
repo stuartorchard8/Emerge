@@ -148,7 +148,7 @@ class BoilingTest {
             // initial condition being impossible.
             if (tile == poolTile) continue
             val base = tile * Species.COUNT
-            for (s in Species.GASES) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
+            for (s in Species.ALL) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
         }
         // The pool: one tile of liquid water on the deck, under all that nitrogen.
         grams[poolTile * Species.COUNT + Species.Water.ordinal] = poolGrams

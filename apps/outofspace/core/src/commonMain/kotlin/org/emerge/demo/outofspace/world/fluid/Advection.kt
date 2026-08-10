@@ -42,8 +42,7 @@ fun advectMass(
     apertures: ApertureField,
     momentum: MomentumField,
     grams: LongArray,
-    species: List<Species> = Species.FLUIDS,
-    tileGrams: LongArray = tileMass(edges.grid.size, grams, species),
+    tileGrams: LongArray = tileMass(edges.grid.size, grams),
     subSteps: Int = 1,
 ): AdvectionResult {
     val grid = edges.grid
@@ -81,14 +80,14 @@ fun advectMass(
         if (amount == 0L) continue
         val donor = if (amount > 0L) edges.xEdgeBefore(e) else edges.xEdgeAfter(e)
         val acceptor = if (amount > 0L) edges.xEdgeAfter(e) else edges.xEdgeBefore(e)
-        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount, species)
+        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount)
     }
     for (e in 0 until edges.yEdgeCount) {
         val amount = fy[e]
         if (amount == 0L) continue
         val donor = if (amount > 0L) edges.yEdgeBefore(e) else edges.yEdgeAfter(e)
         val acceptor = if (amount > 0L) edges.yEdgeAfter(e) else edges.yEdgeBefore(e)
-        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount, species)
+        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount)
     }
 
     return AdvectionResult(MassFlux(fx, fy), vented)
@@ -166,15 +165,14 @@ private fun moveGas(
     donor: Int,
     acceptor: Int,
     amount: Long,
-    species: List<Species>,
 ): Long {
     val donorBase = donor * Species.COUNT
     val weights = LongArray(Species.COUNT)
-    for (s in species) weights[s.ordinal] = grams[donorBase + s.ordinal]
+    for (s in Species.ALL) weights[s.ordinal] = grams[donorBase + s.ordinal]
 
     val share = apportion(weights, amount)
     var vented = 0L
-    for (s in species) {
+    for (s in Species.ALL) {
         val moved = minOf(share[s.ordinal], grams[donorBase + s.ordinal])
         if (moved <= 0L) continue
         grams[donorBase + s.ordinal] -= moved

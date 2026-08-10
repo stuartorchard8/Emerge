@@ -50,11 +50,11 @@ class PressureForceTest {
         }
 
         fun air(tile: Int, share: Long = 1L) {
-            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
+            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
         }
 
         fun empty(tile: Int) {
-            for (s in Species.GASES) grams[tile * Species.COUNT + s.ordinal] = 0L
+            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = 0L
         }
 
         fun run() = applyPressureForce(
@@ -159,7 +159,7 @@ class PressureForceTest {
         // velocity it implies on a nearly empty face is unbounded. This is the fixture that used to
         // measure eleven tiles per tick before anything bounded it at all.
         for (y in 2 until 8) for (x in 5 until 8) {
-            for (s in Species.GASES) {
+            for (s in Species.ALL) {
                 room.grams[room.grid.index(x, y) * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] / 500L
             }
         }

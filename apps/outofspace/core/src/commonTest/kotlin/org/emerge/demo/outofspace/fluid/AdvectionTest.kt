@@ -34,7 +34,7 @@ class AdvectionTest {
 
     private fun massAt(grams: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.GASES) sum += grams[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += grams[tile * Species.COUNT + s.ordinal]
         return sum
     }
 

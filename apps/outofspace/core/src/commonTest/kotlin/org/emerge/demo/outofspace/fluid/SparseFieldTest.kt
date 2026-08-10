@@ -41,14 +41,14 @@ class SparseFieldTest {
     }
 
     private fun fill(grams: LongArray, tile: Int, scale: Long = 1L) {
-        for (s in Species.GASES) {
+        for (s in Species.ALL) {
             grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale
         }
     }
 
     private fun massAt(grams: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.GASES) sum += grams[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += grams[tile * Species.COUNT + s.ordinal]
         return sum
     }
 

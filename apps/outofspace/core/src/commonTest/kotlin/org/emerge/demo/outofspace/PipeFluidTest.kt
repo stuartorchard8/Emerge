@@ -77,7 +77,7 @@ class PipeFluidTest {
 
     private fun pipeMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.GASES) sum += s.pipeAir.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.pipeAir.gramsOf(tile, sp)
         return sum
     }
 

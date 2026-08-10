@@ -65,21 +65,6 @@ class Mixture private constructor(private val grams: LongArray) {
     /** Mass of everything that is not [dominant] — the impurities, for refining purposes. */
     val impurities: Long get() = dominant?.let { total - this[it] } ?: 0L
 
-    /**
-     * True when nothing present is a fluid — i.e. this can ride a belt. Empty counts as both this
-     * and [isAllFluid]: nothing is the wrong phase for anything.
-     */
-    val isAllSolid: Boolean get() {
-        for (s in Species.FLUIDS) if (grams[s.ordinal] > 0L) return false
-        return true
-    }
-
-    /** True when nothing present is a solid — i.e. this can go down a pipe. */
-    val isAllFluid: Boolean get() {
-        for (s in Species.SOLIDS) if (grams[s.ordinal] > 0L) return false
-        return true
-    }
-
     operator fun plus(other: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
         for (i in out.indices) out[i] = grams[i] + other.grams[i]

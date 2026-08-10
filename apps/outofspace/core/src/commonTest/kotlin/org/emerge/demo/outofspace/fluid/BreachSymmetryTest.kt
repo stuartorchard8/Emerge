@@ -260,7 +260,7 @@ class BreachSymmetryTest {
             val at = "±$d from x=$breachX"
             add(out, "column $at", column(air, grid, breachX - d), column(air, grid, breachX + d))
             if (!speciesToo) continue
-            for (s in Species.GASES) {
+            for (s in Species.ALL) {
                 add(out, "${s.name} $at", column(air, grid, breachX - d, s), column(air, grid, breachX + d, s))
             }
         }

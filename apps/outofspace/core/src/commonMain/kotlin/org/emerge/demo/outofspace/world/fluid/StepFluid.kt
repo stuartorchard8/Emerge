@@ -117,7 +117,7 @@ fun stepFluid(
     // The extra sweep this costs is only paid where there is heat to read; an isothermal vessel has
     // no temperature to tell phases apart with and drifts as it always did.
     applySpeciesDrift(
-        edges, apertures, grams, gravity, Species.FLUIDS,
+        edges, apertures, grams, gravity,
         gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, grams)) },
         volumes,
     )
@@ -147,7 +147,7 @@ fun stepFluid(
         // Fresh density each sub-step: the gas the last piece left behind.
         val nowGrams = tileMass(grid.size, grams)
         val moved =
-            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, Species.FLUIDS, nowGrams, subSteps)
+            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, nowGrams, subSteps)
         val carried = advectMomentum(edges, mx, my, moved.flux, nowGrams)
         // Heat rides the same fluxes as momentum.
         if (gasJoules != null) ventedJoules += advectHeat(edges, gasJoules, moved.flux, nowGrams)

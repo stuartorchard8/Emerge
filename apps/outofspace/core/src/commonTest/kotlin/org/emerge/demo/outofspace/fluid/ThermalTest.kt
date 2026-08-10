@@ -53,7 +53,7 @@ class ThermalTest {
             structure = StructureMap.derive(grid, machines.toList())
             for (x in 1 until w - 1) for (y in 1 until h - 1) {
                 val base = grid.index(x, y) * Species.COUNT
-                for (s in Species.GASES) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
+                for (s in Species.ALL) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
             }
             // The air at room temperature, which is exactly the energy that costs.
             joules = ambientGasJoules(grid.size, grams)

@@ -17,14 +17,13 @@ fun applySpeciesDrift(
     apertures: ApertureField,
     grams: LongArray,
     gravity: Frac2,
-    species: List<Species> = Species.FLUIDS,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
 ) {
     // What drift is allowed to see. Null temperature means "no opinion about phase", which reads
     // every gram as mobile and reproduces every tick simulated before this parameter existed.
-    val snapshot = if (kelvin == null) grams.copyOf() else vapourOf(grams, species, kelvin, volumes)
-    val total = tileMass(edges.grid.size, snapshot, species)
+    val snapshot = if (kelvin == null) grams.copyOf() else vapourOf(grams, kelvin, volumes)
+    val total = tileMass(edges.grid.size, snapshot)
     val planned = LongArray((edges.xEdgeCount + edges.yEdgeCount) * Species.COUNT)
 
     // ── Plan every face against the same snapshot ──
@@ -32,7 +31,7 @@ fun applySpeciesDrift(
         exchange(
             snapshot, total, before, after,
             if (alongX) gravity.x.raw else gravity.y.raw,
-            aperture, species, planned, slot * Species.COUNT,
+            aperture, planned, slot * Species.COUNT,
         )
     }
 
@@ -40,7 +39,7 @@ fun applySpeciesDrift(
     val demand = LongArray(snapshot.size)
     eachOpenFace(edges, apertures) { slot, before, after, _, _ ->
         val base = slot * Species.COUNT
-        for (s in species) {
+        for (s in Species.ALL) {
             val amount = planned[base + s.ordinal]
             if (amount > 0L) demand[before * Species.COUNT + s.ordinal] += amount
             else if (amount < 0L) demand[after * Species.COUNT + s.ordinal] -= amount
@@ -55,7 +54,7 @@ fun applySpeciesDrift(
         // two directions against each other and scaling them unevenly would break that. Drift would
         // start shifting net weight about, which is the one thing it must never do.
         var factor = FACTOR_SCALE
-        for (s in species) {
+        for (s in Species.ALL) {
             val amount = planned[base + s.ordinal]
             if (amount == 0L) continue
             val at = (if (amount > 0L) before else after) * Species.COUNT + s.ordinal
@@ -66,7 +65,7 @@ fun applySpeciesDrift(
         }
         if (factor <= 0L) return@eachOpenFace
 
-        for (s in species) {
+        for (s in Species.ALL) {
             val amount = planned[base + s.ordinal] * factor / FACTOR_SCALE
             if (amount > 0L) move(grams, before, after, s.ordinal, amount)
             else if (amount < 0L) move(grams, after, before, s.ordinal, -amount)
@@ -84,7 +83,6 @@ fun applySpeciesDrift(
  */
 private fun vapourOf(
     grams: LongArray,
-    species: List<Species>,
     kelvin: IntArray,
     volumes: VolumeField?,
 ): LongArray {
@@ -92,7 +90,7 @@ private fun vapourOf(
     for (tile in kelvin.indices) {
         val base = tile * Species.COUNT
         val room = volumes?.at(tile) ?: VolumeField.FULL
-        for (s in species) {
+        for (s in Species.ALL) {
             val g = grams[base + s.ordinal]
             mobile[base + s.ordinal] =
                 if (g <= 0L) g else vapourGrams(g, s, room, VolumeField.FULL, kelvin[tile])
@@ -141,14 +139,13 @@ private fun exchange(
     after: Int,
     gravityRaw: Long,
     aperture: Int,
-    species: List<Species>,
     planned: LongArray,
     at: Int,
 ) {
     val mass = total[before] + total[after]
     if (mass <= 0L) return
 
-    val moles = millimolesOf(grams, before, species) + millimolesOf(grams, after, species)
+    val moles = millimolesOf(grams, before) + millimolesOf(grams, after)
     if (moles <= 0L) return
     val average = mass * MILLI / moles          // grams per mole, averaged over the face
     val faceGrams = mass / 2L
@@ -158,7 +155,7 @@ private fun exchange(
     var downTotal = 0L
     var upTotal = 0L
 
-    for (s in species) {
+    for (s in Species.ALL) {
         var net = settling(grams, s, before, after, average, gravityRaw) +
             mixing(grams, total, s, before, after, faceGrams)
         if (net == 0L) continue
@@ -182,7 +179,7 @@ private fun exchange(
     val goingDown = apportion(down, traded)
     val goingUp = apportion(up, traded)
 
-    for (s in species) {
+    for (s in Species.ALL) {
         planned[at + s.ordinal] = goingDown[s.ordinal] - goingUp[s.ordinal]
     }
 }

@@ -35,7 +35,7 @@ class PhaseEmergenceTest {
         // it rather than copied out of a run.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
             val grams = AirField.AMBIENT_AIR[species]
-            val ideal = millimolesOf(gramsFieldOf(species to grams), tile = 0, species = listOf(species))
+            val ideal = millimolesOf(gramsFieldOf(species to grams), tile = 0)
             val real = partialPressure(grams, species, room, full, full)!!
 
             val driftPerMille = (real - ideal) * 1000 / ideal

@@ -171,7 +171,7 @@ class ChemistryTest {
 
     @Test
     fun `every mineral has somewhere to go when smelted`() {
-        for (m in Species.SOLIDS) {
+        for (m in Species.ALL) {
             val pure = Resource(Form.Ore, Mixture.of(m to 1000L))
             val r = smelt(pure)
             assertEquals(SMELT_PRODUCTS.getValue(m), r.refined.form)

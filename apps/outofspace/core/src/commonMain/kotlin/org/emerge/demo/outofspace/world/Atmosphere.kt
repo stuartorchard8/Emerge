@@ -39,7 +39,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
     fun densityAt(tile: Int): Long {
         var sum = 0L
         val base = tile * Species.COUNT
-        for (s in Species.GASES) sum += grams[base + s.ordinal]
+        for (s in Species.ALL) sum += grams[base + s.ordinal]
         return sum
     }
 
@@ -121,7 +121,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
             for (tile in 0 until grid.size) {
                 if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
                 val base = tile * Species.COUNT
-                for (s in Species.GASES) grams[base + s.ordinal] = AMBIENT_AIR[s]
+                for (s in Species.ALL) grams[base + s.ordinal] = AMBIENT_AIR[s]
             }
             return of(grams)
         }
@@ -182,7 +182,7 @@ fun tryDisplaceAir(
     for (slot in order.indices) {
         val base = order[slot] * Species.COUNT
         var total = 0L
-        for (s in Species.GASES) total += grams[base + s.ordinal]
+        for (s in Species.ALL) total += grams[base + s.ordinal]
         if (total <= 0L) continue
 
         var reachable = false
@@ -195,7 +195,7 @@ fun tryDisplaceAir(
         // Air with nowhere to go. Refuse, rather than delete it or bury it.
         if (!reachable) return false
 
-        for (s in Species.GASES) {
+        for (s in Species.ALL) {
             val share = apportion(weights, grams[base + s.ordinal])
             for (e in exits.indices) moved[e * Species.COUNT + s.ordinal] += share[e]
         }
@@ -203,11 +203,11 @@ fun tryDisplaceAir(
 
     for (slot in order.indices) {
         val base = order[slot] * Species.COUNT
-        for (s in Species.GASES) grams[base + s.ordinal] = 0L
+        for (s in Species.ALL) grams[base + s.ordinal] = 0L
     }
     for (e in exits.indices) {
         val base = exits[e] * Species.COUNT
-        for (s in Species.GASES) grams[base + s.ordinal] += moved[e * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) grams[base + s.ordinal] += moved[e * Species.COUNT + s.ordinal]
     }
     return true
 }

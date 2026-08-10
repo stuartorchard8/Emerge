@@ -23,19 +23,11 @@ data class SolidPacket(val resource: Resource) : Packet {
     override val contents: Mixture get() = resource.mixture
     val form: Form get() = resource.form
 
-    init {
-        require(resource.mixture.isAllSolid) { "a solid packet cannot carry fluids: $resource" }
-    }
-
     override fun toString(): String = "SolidPacket(${resource})"
 }
 
 /** A slug of liquid or gas in a pipe — an amalgam of whatever the source had. */
 data class FluidPacket(override val contents: Mixture) : Packet {
-    init {
-        require(contents.isAllFluid) { "a fluid packet cannot carry solids: $contents" }
-    }
-
     override fun toString(): String = "FluidPacket(${mass}g $contents)"
 }
 
@@ -93,7 +85,6 @@ object Rate {
  * an accidental free refinery.
  */
 fun packSolid(source: Resource, capacity: Long = Capacity.PACKET_GRAMS): Pair<SolidPacket?, Resource> {
-    require(source.mixture.isAllSolid) { "not a solid: $source" }
     if (source.isEmpty || capacity <= 0L) return null to source
     val taken = source.mixture.take(capacity)
     return SolidPacket(Resource(source.form, taken)) to Resource(source.form, source.mixture - taken)
@@ -101,7 +92,6 @@ fun packSolid(source: Resource, capacity: Long = Capacity.PACKET_GRAMS): Pair<So
 
 /** As [packSolid], for a fluid reservoir. */
 fun packFluid(source: Mixture, capacity: Long = Capacity.PACKET_GRAMS): Pair<FluidPacket?, Mixture> {
-    require(source.isAllFluid) { "not a fluid: $source" }
     if (source.isEmpty || capacity <= 0L) return null to source
     val taken = source.take(capacity)
     return FluidPacket(taken) to (source - taken)

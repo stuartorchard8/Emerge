@@ -17,14 +17,14 @@ import org.emerge.demo.outofspace.world.Temperature
  * Millijoule scale matches Species.specificHeat (per kg). Avoids joule-scale quantization cliff (<1g→0, 2g→1).
  * joules/capacity exact at ambient (stepFluid: room-temp vessel = isothermal).
  */
-fun gasCapacity(tileCount: Int, grams: LongArray, species: List<Species> = Species.FLUIDS): LongArray =
-    LongArray(tileCount) { gasCapacityAt(grams, it, species) }
+fun gasCapacity(tileCount: Int, grams: LongArray): LongArray =
+    LongArray(tileCount) { gasCapacityAt(grams, it) }
 
 /** Millijoules per kelvin held by the gas in one tile — see [gasCapacity] for the units. */
-fun gasCapacityAt(grams: LongArray, tile: Int, species: List<Species> = Species.FLUIDS): Long {
+fun gasCapacityAt(grams: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
-    for (s in species) sum += grams[base + s.ordinal] * s.specificHeat
+    for (s in Species.ALL) sum += grams[base + s.ordinal] * s.specificHeat
     return sum
 }
 
@@ -45,7 +45,7 @@ fun cohesionField(tileCount: Int, grams: LongArray, volumes: VolumeField?): Long
     LongArray(tileCount) { tile ->
         val room = volumes?.at(tile) ?: VolumeField.FULL
         var sum = 0L
-        for (s in Species.FLUIDS) {
+        for (s in Species.ALL) {
             val g = grams[tile * Species.COUNT + s.ordinal]
             if (g <= 0L) continue
             val dr = reducedDensity(g, s, room, VolumeField.FULL) ?: continue
