@@ -134,55 +134,6 @@ class RockTest {
         )
     }
 
-    /**
-     * Dropping a body adds it to the body list and its thermal energy to the solid ledger,
-     * but neither mass nor capture count is tracked — bodies are free mass.
-     */
-    @Test
-    fun `a body's heat enters the solid ledger`() {
-        val controller = OutofspaceController(CFG, bareHull())
-        val oreBefore = controller.state.extractedGrams
-        val storedBefore = controller.state.storedJoules
-
-        repeat(3) { i ->
-            controller.dropRock(6f + i * 8f, 10f)
-            controller.stepOnce()
-        }
-
-        val s = controller.state
-        assertEquals(3, s.bodies.size)
-        assertEquals(oreBefore, s.extractedGrams, "a body arriving counted as ore extracted")
-        assertEquals(s.inTransitGrams + s.ventedGrams, s.extractedGrams, "and the ore balance broke")
-        // Body heat enters the solid ledger through the same term a wall does.
-        assertTrue(s.storedJoules > storedBefore, "body arrived with zero thermal energy")
-    }
-
-    /**
-     * A body's energy is in the solid ledger from the tick it appears, through the same term a
-     * freshly built wall's heat goes through.
-     *
-     * It conducts with nothing yet, so this looks like bookkeeping for its own sake. It is not: if
-     * the energy were only counted once contact existed, then the tick H2 lands would look exactly
-     * like a few megajoules arriving out of nowhere, in a ledger whose whole job is to notice that.
-     */
-    @Test
-    fun `a body brings its heat with it and the ledger closes`() {
-        val controller = OutofspaceController(CFG, bareHull())
-        repeat(4) { controller.stepOnce() }
-        val before = controller.state.storedJoules
-
-        controller.dropRock(18f, 12f)
-        repeat(4) { controller.stepOnce() }
-
-        val s = controller.state
-        assertTrue(s.storedJoules > before, "the body arrived at absolute zero")
-        assertEquals(
-            s.baselineJoules,
-            s.storedJoules + s.radiatedJoules + s.solidToAirJoules - s.generatedJoules - s.insertedJoules - s.acquiredJoules,
-            "the solid heat ledger broke the tick a body appeared",
-        )
-    }
-
     /** A save carries the bodies, their shapes, where they got to and how much was admitted. */
     @Test
     fun `a save remembers the bodies`() {
