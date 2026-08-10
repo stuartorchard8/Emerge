@@ -59,22 +59,12 @@ class FlowGraph internal constructor(
         Direction.ALL.first { _grid.neighbour(from, it) == to }
 
     companion object {
-        /** Full consumer penalty (larger than any grid path). */
-        const val FULL_PENALTY = 1_000_000
-
         /**
          * Build the rail flow graph for a single connected component.
          *
          * Direction is pull-based: material flows toward sinks. Distance is measured from the
          * nearest sink. Sources only determine which tiles are "fed" — they don't affect the
          * direction of flow.
-         *
-         * The graph is built in these phases:
-         * 1. BFS from sinks → distance + nearest sink
-         * 2. Assign each tile to a flow (source, nearestSink) — sources define flow identity
-         * 3. Build successor edges (toward any sink: distance-1)
-         * 4. Prune dead-end edges (edges that don't reach any sink)
-         * 5. Compute topological order (upstream first = higher distance first)
          */
         fun build(
             tileSet: Set<Int>,
@@ -85,119 +75,58 @@ class FlowGraph internal constructor(
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
 
-            // Phase 1: BFS from sinks → distance + nearest sink
-            val sinkDistance = IntArray(grid.size) { -1 }
-            val nearestSink = IntArray(grid.size) { -1 }
-            val sinkQueue = ArrayDeque<Int>()
+            val tileSources = BooleanArray(grid.size*4) { false }
+            val tileDestinations = BooleanArray(grid.size*4) { false }
+            val hungry = BooleanArray(grid.size) { true }
+            for (source in sources) {
+                hungry[source] = false
+            }
 
+            // BFS from sinks
             for (sink in sinks) {
-                if (sink in tileSet && sinkDistance[sink] < 0) {
-                    sinkDistance[sink] = 0
-                    nearestSink[sink] = sink
-                    sinkQueue.addLast(sink)
-                }
-            }
-            while (sinkQueue.isNotEmpty()) {
-                val at = sinkQueue.removeFirst()
-                for (dir in Direction.ALL) {
-                    if (!linked(at, dir)) continue
-                    val next = grid.neighbour(at, dir)
-                    if (next < 0 || next !in tileSet || sinkDistance[next] >= 0) continue
-                    sinkDistance[next] = sinkDistance[at] + 1
-                    nearestSink[next] = nearestSink[at]
-                    sinkQueue.addLast(next)
-                }
-            }
+                if (sink in tileSet) {
+                    val queue = ArrayDeque<Int>()
+                    queue.addLast(sink)
+                    while (queue.isNotEmpty()) {
+                        val at = queue.removeFirst()
 
-            // Phase 2: Assign flows — one per unique (source, nearestSink) pair
-            val sourceNearestSink = mutableMapOf<Int, Int>()
-            for (src in sources) {
-                if (src in tileSet && sinkDistance[src] >= 0) {
-                    sourceNearestSink[src] = nearestSink[src]
-                }
-            }
+                        // Have no cells leading into this one passed a source?
+                        var isHungry = true
+                        for (i in Direction.ALL.indices) {
+                            val dir = Direction.ALL[i]
+                            if (tileDestinations[at * 4 + i]) {
+                                val prev = grid.neighbour(at, dir)
+                                if (!hungry[prev]) {
+                                    isHungry = false
+                                }
+                            }
+                        }
 
-            val flows = mutableListOf<Flow>()
-            var flowIdCounter = 0
-            val seenFlowPairs = mutableSetOf<Pair<Int, Int>>()
-            for ((src, snk) in sourceNearestSink.entries.sortedBy { it.key }) {
-                if (src !in tileSet || snk !in tileSet || src == snk) continue
-                val key = src to snk
-                if (key in seenFlowPairs) continue
-                seenFlowPairs.add(key)
-                flows.add(Flow(flowIdCounter++, src, snk, sinkDistance[src]))
-            }
+                        // Have we been here already while hungry?
+                        if (hungry[at]) {
+                            if (tileSources[at * 4 + 0] ||
+                                tileSources[at * 4 + 1] ||
+                                tileSources[at * 4 + 2] ||
+                                tileSources[at * 4 + 3]
+                            ) continue
+                        }
 
-            // Phase 3: Assign each tile to a flow by BFS from sources
-            val tileToFlow = mutableMapOf<Int, Flow>()
-            for (flow in flows) {
-                val visited = mutableSetOf<Int>()
-                val q = ArrayDeque<Int>()
-                q.add(flow.source)
-                visited.add(flow.source)
-                while (q.isNotEmpty()) {
-                    val at = q.removeFirst()
-                    tileToFlow[at] = flow
-                    for (dir in Direction.ALL) {
-                        if (!linked(at, dir)) continue
-                        val next = grid.neighbour(at, dir)
-                        if (next < 0 || next !in tileSet || next in visited) continue
-                        visited.add(next)
-                        q.addLast(next)
+                        for (i in Direction.ALL.indices) {
+                            val dir = Direction.ALL[i]
+                            if (!linked(at, dir)) continue
+                            val next = grid.neighbour(at, dir)
+                            if (next < 0 || next !in tileSet) continue
+
+                            tileSources[at * 4 + i] = true
+                            tileDestinations[next * 4 + i] = true
+
+                            queue.addLast(next)
+                        }
                     }
                 }
             }
 
-            // Phase 4: Build successor edges (toward any sink: distance-1)
-            // Each sink gets its own flow ID
-            val sinkFlowId = sinks.withIndex().associate { it.value to it.index + flows.size }
-            val implicitFlow = if (flows.isEmpty() && sinkFlowId.isNotEmpty()) {
-                val snk = sinks.first()
-                Flow(sinkFlowId[snk]!!, -1, snk, 0)
-            } else null
-
-            val successors = mutableMapOf<Int, MutableList<FlowEdge>>()
-            for (tile in tileSet) {
-                if (sinkDistance[tile] < 0) continue
-
-                for (dir in Direction.ALL) {
-                    if (!linked(tile, dir)) continue
-                    val next = grid.neighbour(tile, dir)
-                    if (next < 0 || next !in tileSet) continue
-                    if (sinkDistance[next] != sinkDistance[tile] - 1) continue
-
-                    // Use the flow of the successor tile if it has one, else fall back to implicit
-                    val flow = tileToFlow[next] ?: implicitFlow
-                    if (flow != null) {
-                        successors.getOrPut(tile) { mutableListOf() }.add(FlowEdge(next, flow))
-                    }
-                }
-            }
-            // Sort successors by tile index for deterministic alternation
-            for ((tile, edges) in successors) {
-                edges.sortBy { it.to }
-            }
-
-            // Phase 5: Prune dead ends — walk from sinks outward so successors' reachesSink is ready
-            val reachesSink = mutableMapOf<Int, Boolean>()
-            val sortedTiles = tileSet.sortedBy { sinkDistance[it] }
-            for (tile in sortedTiles) {
-                reachesSink[tile] = tile in sinks || successors[tile]?.any { edge -> reachesSink[edge.to] == true } == true
-            }
-            for (tile in tileSet) {
-                if (tile !in sinks && reachesSink[tile] == false) {
-                    successors.remove(tile)
-                }
-            }
-
-            // Phase 6: Topological order (upstream first = higher distance first)
-            val fedTiles = tileSet.filter { tile ->
-                successors[tile]?.isNotEmpty() == true || tile in sinks
-            }
-            val ordered = fedTiles.sortedWith(compareBy<Int> { sinkDistance[it] }.thenBy { it })
-
-            val distMap = tileSet.associateWith { if (it in sinks) 0 else sinkDistance[it] }
-            val depMap = tileSet.associateWith { sinkDistance[it] }
+            // TODO: Translate the arrays into a flowgraph
 
             return FlowGraph(
                 tileSet, sinks, ordered, successors, distMap, depMap, grid
