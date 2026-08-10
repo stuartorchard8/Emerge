@@ -458,6 +458,7 @@ object Save {
         }
         return VesselState(
             grid = grid,
+            gridPad = GRID_PAD,
             machines = machines.toList(),
             conduits = conduits,
             bridges = bridges.toList(),
