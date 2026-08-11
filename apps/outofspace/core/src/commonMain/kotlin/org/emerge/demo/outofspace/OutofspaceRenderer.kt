@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
+import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Processor
@@ -251,8 +252,15 @@ class OutofspaceRenderer {
                     val tint = when (overlay) {
                         Overlay.Heat -> temperatureColor(state.kelvinAt(index))
                         Overlay.Air -> mixtureColor(state, index)
-                        Overlay.Pressure -> divergingColor(state.air.pressureAt(index).toFloat() / AMBIENT_PRESSURE)
-                        Overlay.Density -> divergingColor(state.air.densityAt(index).toFloat() / AirField.AMBIENT_AIR.total)
+                        // A trace reads as vacuum rather than as "very thin air": see [Negligible].
+                        Overlay.Pressure -> state.air.pressureAt(index).let {
+                            if (Negligible.pressure(it)) Colors.OVERLAY_VACUUM
+                            else divergingColor(it.toFloat() / AMBIENT_PRESSURE)
+                        }
+                        Overlay.Density -> state.air.densityAt(index).let {
+                            if (Negligible.gas(it)) Colors.OVERLAY_VACUUM
+                            else divergingColor(it.toFloat() / AirField.AMBIENT_AIR.total)
+                        }
                         Overlay.Flow -> Colors.FLOW_BACKDROP
                         Overlay.None -> 0L
                     }
@@ -264,10 +272,14 @@ class OutofspaceRenderer {
         // Flow vectors over backdrop.
         if (overlay == Overlay.Flow) {
             // Scaled to fastest tile on screen (not fixed — ordinary circulation needs variable scale).
+            // Negligible tiles are excluded from the peak as well as from the drawing: the speed is a
+            // ratio, so a one-gram tile can top the scale and shrink every real flow to a dot.
             var peak = 0f
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
-                    val s = state.flow.speedAt(grid.index(x, y))
+                    val index = grid.index(x, y)
+                    if (negligibleFlow(state, index)) continue
+                    val s = state.flow.speedAt(index)
                     if (s > peak) peak = s
                 }
             }
@@ -685,7 +697,7 @@ class OutofspaceRenderer {
      */
     private fun mixtureColor(state: VesselState, index: Int): Long {
         val pressure = state.air.pressureAt(index)
-        if (pressure <= 0L) return Colors.OVERLAY_EMPTY
+        if (Negligible.pressure(pressure)) return Colors.OVERLAY_EMPTY
         val f = (pressure.toFloat() / AirField.AMBIENT_AIR.total).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
         val base = state.air.mixtureAt(index).color
         val scale = (f / Visual.PRESSURE_MAX_F).coerceIn(Visual.PRESSURE_MIN_SCALE, Visual.PRESSURE_MAX_SCALE)
@@ -696,6 +708,10 @@ class OutofspaceRenderer {
             Colors.HEAT_ALPHA,
         )
     }
+
+    /** Whether this tile's flow is beneath notice — asked by both the scaling pass and the drawing. */
+    private fun negligibleFlow(state: VesselState, tile: Int): Boolean =
+        Negligible.flow(state.flow.xAt(tile), state.flow.yAt(tile), state.air.densityAt(tile))
 
     /**
      * A scalar as a *deviation from ambient*: blue where there is less than there should be, orange
@@ -759,8 +775,9 @@ class OutofspaceRenderer {
      */
     private fun drawFlow(state: VesselState, tile: Int, x: Int, y: Int, peak: Float) {
         val speed = state.flow.speedAt(tile)
-        // Still air guard (0/0). Visibility threshold is FLOW_MIN_FRACTION.
-        if (speed <= 0f) return
+        // Still air guard (0/0), and trace air, which can report any speed at all. Visibility
+        // threshold among the flows that survive is FLOW_MIN_FRACTION.
+        if (speed <= 0f || negligibleFlow(state, tile)) return
         val fraction = speed / peak
         if (fraction < Visual.FLOW_MIN_FRACTION) return
 

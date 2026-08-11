@@ -14,6 +14,7 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Trigger
@@ -399,9 +400,12 @@ class OutofspaceHud {
                 if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        // Gas (interior + vented plumes).
+        // Gas (interior + vented plumes). A trace is not a plume — see [Negligible] — but an interior
+        // tile is still worth a pressure reading when it has been emptied, since "0% atm" inside the
+        // vessel is the single most useful thing this panel says.
         val density = s.air.densityAt(index)
-        if (structure == Structure.Interior || density > 0L) {
+        val trace = Negligible.gas(density)
+        if (structure == Structure.Interior || !trace) {
             val percent = s.pressurePercentAt(index)
             keyValue(
                 "PRESSURE",
@@ -413,20 +417,25 @@ class OutofspaceHud {
                     else -> 0x9ED0B0FFL
                 },
             )
+            // Below the floor there is nothing to describe: no density worth a percentage, no
+            // temperature of a gas that isn't there, no flow (its speed is a ratio, so a trace tile
+            // can report any speed), and no composition of five grams.
+            if (trace) {
+                row("   (no gas to speak of)", 0x7A8A9AFFL)
+                return
+            }
             // Density beside pressure (gap = weight sorting).
             keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
             // Air temperature (fluid acts on this — sets pressure).
-            if (density > 0L) {
-                val airK = s.airKelvinAt(index)
-                keyValue(
-                    "AIR TEMP",
-                    "${airK}K  (${airK - 273}C)",
-                    0x9A9A9AFFL,
-                    if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
-                )
-            }
+            val airK = s.airKelvinAt(index)
+            keyValue(
+                "AIR TEMP",
+                "${airK}K  (${airK - 273}C)",
+                0x9A9A9AFFL,
+                if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+            )
             val speed = s.flow.speedAt(index)
-            if (speed > 0f) {
+            if (speed > 0f && !Negligible.flow(s.flow.xAt(index), s.flow.yAt(index), density)) {
                 keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, index)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
             }
             val mix = s.air.mixtureAt(index)
@@ -450,10 +459,16 @@ class OutofspaceHud {
     private fun composition(mixture: Mixture): String {
         if (mixture.isEmpty) return "empty"
         val total = mixture.total
-        return Species.ALL
-            .filter { mixture[it] > 0L }
-            .sortedByDescending { mixture[it] }
-            .joinToString("  ") { "${it.name.take(4).uppercase()} ${mixture[it] * 100 / total}%" }
+        val present = Species.ALL.filter { mixture[it] > 0L }.sortedByDescending { mixture[it] }
+        // A species under one percent prints as "0%", which is a word and a number that between them
+        // say nothing — and diffusion leaves such a share in nearly every tile. They are counted
+        // rather than dropped silently, because "there is something else in here" is worth knowing;
+        // it is the per-species arithmetic that isn't.
+        val named = present.filterNot { Negligible.share(mixture[it], total) }
+        val traces = present.size - named.size
+        if (named.isEmpty()) return "traces only ($traces)"
+        val listed = named.joinToString("  ") { "${it.name.take(4).uppercase()} ${mixture[it] * 100 / total}%" }
+        return if (traces == 0) listed else "$listed  +$traces trace"
     }
 
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
