@@ -9,9 +9,7 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.fluid.ApertureField
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.MomentumField
-import org.emerge.demo.outofspace.world.fluid.MAX_SUB_STEPS
 import org.emerge.demo.outofspace.world.fluid.applyPressureForce
-import org.emerge.demo.outofspace.world.fluid.stepFluid
 import org.emerge.demo.outofspace.world.fluid.tileMass
 import org.emerge.demo.outofspace.world.fluid.tilePressure
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -133,66 +131,5 @@ class PressureForceTest {
         // And the ship goes the other way. This is the entire rocket, in its smallest form: the wall
         // term that used to cancel the one on the far side has been replaced by an opening.
         assertTrue(result.vesselX > 0L, "vessel was not pushed away from the breach: ${result.vesselX}")
-    }
-
-    /**
-     * The transport never steps over a tile — which is a claim about the *step*, not about this pass.
-     *
-     * This used to assert [MomentumField.isCflSafe] on the momentum field directly, because
-     * [applyPressureForce] held every face to half a tile per tick with a hard clamp. Both the clamp
-     * and that assertion have gone, and the reason is worth keeping: the clamp was not achieving this.
-     * Measured on a breached hull with the clamp in place, the field reached three tiles per tick and
-     * broke CFL on ninety ticks out of a hundred and twenty, because this pass is not the last one to
-     * touch a face — [project] and [advectMomentum] both add momentum after it. Bounding one term of a
-     * sum is not bounding the sum, and the assertion passed only because it was made on a fixture
-     * where this pass really was the only one running.
-     *
-     * So the gas is now allowed to go as fast as the pressure says it does, and [stepFluid] cuts the
-     * tick into as many pieces as the fastest face needs. What has to hold is that the distance
-     * covered in one piece is under a tile, which is the actual CFL condition and is what this now
-     * measures — through the real step, so that every pass that touches momentum is included.
-     */
-    @Test
-    fun `the transport never steps over a tile, however fast the gas goes`() {
-        val room = Room(8, 8)
-        // A near-vacuum next to full air is the worst case: the impulse is density-independent, so the
-        // velocity it implies on a nearly empty face is unbounded. This is the fixture that used to
-        // measure eleven tiles per tick before anything bounded it at all.
-        for (y in 2 until 8) for (x in 5 until 8) {
-            for (s in Species.ALL) {
-                room.grams[room.grid.index(x, y) * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] / 500L
-            }
-        }
-
-        // Repeatedly, because the failure this guards against is accumulation: a bounded push every
-        // tick still runs away over dozens of ticks with only drag's thirty-second to bleed it off.
-        var worst = 0
-        repeat(50) {
-            val step = stepFluid(
-                room.edges, room.apertures, room.grams, room.mx, room.my, Frac2.zero,
-            )
-            if (step.subSteps > worst) worst = step.subSteps
-
-            val tileGrams = tileMass(room.grid.size, room.grams)
-            val field = MomentumField.of(room.edges, room.mx, room.my)
-            for (e in 0 until room.edges.xEdgeCount) {
-                val perStep = abs(field.velocityX(e, tileGrams).raw) / step.subSteps
-                assertTrue(
-                    perStep < MomentumField.SPEED_LIMIT_RAW,
-                    "a face moved $perStep of a tile in one of ${step.subSteps} pieces",
-                )
-            }
-            for (e in 0 until room.edges.yEdgeCount) {
-                val perStep = abs(field.velocityY(e, tileGrams).raw) / step.subSteps
-                assertTrue(
-                    perStep < MomentumField.SPEED_LIMIT_RAW,
-                    "a face moved $perStep of a tile in one of ${step.subSteps} pieces",
-                )
-            }
-        }
-
-        // And the bound was not what saved it. If this ever trips, the sub-stepping stopped keeping up
-        // and the assertions above are passing on a clamp rather than on a solution.
-        assertTrue(worst < MAX_SUB_STEPS, "the tick had to be cut into $worst pieces, which is the cap")
     }
 }

@@ -4,45 +4,35 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Temperature
 
 /**
- * What crossed between room and pipe, and vessel impulse from momentum absorption.
+ * What crossed between room and pipe.
  *
  * [grams] and [joules] are signed room-to-pipe (positive = room lost mass/energy).
  */
 class InterlayerStep(
     val grams: Long,
     val joules: Long,
-    val vesselX: Long,
-    val vesselY: Long,
 )
 
 /**
  * Lets gas cross between a room and a pipe on the same tile wherever an opening exists.
  *
- * Relaxation, not advection: cells at the same place equalise by pressure capacity
- * (volume/temperature). Momentum rides the same fluxes; shut acceptor faces send momentum to vessel.
- * Called before [stepFluid] so pressure can propagate in the arriving tick.
+ * Relaxation, not diffusion: cells at the same place equalise by pressure capacity
+ * (volume/temperature), rather than trading a fixed share the way neighbours on a layer do — two
+ * cells at one place are not a gradient, they are one place with two occupants. Called before
+ * [diffuseFluid] so pressure can propagate in the arriving tick.
  *
  * [openings] is per tile (CLOSED = no opening). All arrays edited in place.
  */
 fun exchangeLayers(
-    edges: EdgeGrid,
     openings: IntArray,
-    roomApertures: ApertureField,
     roomGrams: LongArray,
     roomJoules: LongArray?,
-    roomMx: LongArray,
-    roomMy: LongArray,
-    pipeApertures: ApertureField,
     pipeGrams: LongArray,
     pipeJoules: LongArray?,
-    pipeMx: LongArray,
-    pipeMy: LongArray,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
     var movedGrams = 0L
     var movedJoules = 0L
-    var vesselX = 0L
-    var vesselY = 0L
 
     for (tile in openings.indices) {
         val opening = openings[tile]
@@ -82,20 +72,9 @@ fun exchangeLayers(
         val sign = if (fromRoom) 1L else -1L
         movedGrams += sign * moved.grams
         movedJoules += sign * moved.joules
-
-        val push = handOverMomentum(
-            edges, tile, share,
-            donorX = if (fromRoom) roomMx else pipeMx,
-            donorY = if (fromRoom) roomMy else pipeMy,
-            acceptorX = if (fromRoom) pipeMx else roomMx,
-            acceptorY = if (fromRoom) pipeMy else roomMy,
-            acceptorApertures = if (fromRoom) pipeApertures else roomApertures,
-        )
-        vesselX += push.x
-        vesselY += push.y
     }
 
-    return InterlayerStep(movedGrams, movedJoules, vesselX, vesselY)
+    return InterlayerStep(movedGrams, movedJoules)
 }
 
 /**
@@ -107,8 +86,6 @@ internal class Share(val part: Long, val whole: Long) {
 }
 
 internal class Moved(val grams: Long, val joules: Long)
-
-private class Push(val x: Long, val y: Long)
 
 /**
  * Moves [share] of one cell's gas species-by-species, with energy. Tiles separate for pump usage
@@ -143,43 +120,6 @@ internal fun handOver(
         acceptorJoules[acceptorTile] += joules
     }
     return Moved(grams, joules)
-}
-
-/**
- * Hands donor's share of each face to acceptor, or to vessel if acceptor face is shut.
- */
-private fun handOverMomentum(
-    edges: EdgeGrid,
-    tile: Int,
-    share: Share,
-    donorX: LongArray,
-    donorY: LongArray,
-    acceptorX: LongArray,
-    acceptorY: LongArray,
-    acceptorApertures: ApertureField,
-): Push {
-    var vesselX = 0L
-    var vesselY = 0L
-
-    fun cross(edge: Int, donor: LongArray, acceptor: LongArray, open: Boolean): Long {
-        // Half, because the face is shared with the neighbour and only this cell's half is leaving.
-        val carried = share.of(donor[edge]) / 2
-        if (carried == 0L) return 0L
-        donor[edge] -= carried
-        if (open) {
-            acceptor[edge] += carried
-            return 0L
-        }
-        return carried
-    }
-
-    for (edge in intArrayOf(edges.leftEdgeOf(tile), edges.rightEdgeOf(tile))) {
-        vesselX += cross(edge, donorX, acceptorX, acceptorApertures.isXOpen(edge))
-    }
-    for (edge in intArrayOf(edges.upEdgeOf(tile), edges.downEdgeOf(tile))) {
-        vesselY += cross(edge, donorY, acceptorY, acceptorApertures.isYOpen(edge))
-    }
-    return Push(vesselX, vesselY)
 }
 
 /**

@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.StructureMap
-import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
  * Rapid diffusion: the replacement for the momentum solver.
@@ -210,43 +209,5 @@ fun diffuseFluid(
         air = if (joules == null) AirField.of(grams) else AirField.of(grams, joules),
         ventedGrams = ventedGrams,
         ventedJoules = ventedJoules,
-    )
-}
-
-/**
- * The same tick, shaped so it can be dropped into [stepFluid]'s call sites unchanged.
- *
- * [mx], [my], [gravity] and [volumes] are accepted and ignored. The momentum fields are left exactly
- * as they were found — nothing here writes them, and nothing here reads them — so the overlay, the
- * save format and the ledgers all keep working while thrust is rewired onto blocked flux separately.
- * Gravity has no term in a diffusion model: without a hydrostatic gradient a sealed room at uniform
- * pressure is uniform, which is why the impulse this reports is exactly zero rather than nearly so.
- */
-@Suppress("UNUSED_PARAMETER")
-fun diffuseAsFluidStep(
-    edges: EdgeGrid,
-    apertures: ApertureField,
-    grams: LongArray,
-    mx: LongArray,
-    my: LongArray,
-    gravity: Frac2,
-    gasJoules: LongArray? = null,
-    volumes: VolumeField? = null,
-    tick: Long = 0L,
-): FluidStep {
-    val step = diffuseFluid(edges, apertures, grams, gasJoules, tick)
-    return FluidStep(
-        air = step.air,
-        momentumX = mx.copyOf(),
-        momentumY = my.copyOf(),
-        ventedGrams = step.ventedGrams,
-        ventedJoules = step.ventedJoules,
-        vesselX = 0L,
-        vesselY = 0L,
-        escapedX = 0L,
-        escapedY = 0L,
-        undeliveredX = 0L,
-        undeliveredY = 0L,
-        subSteps = 1,
     )
 }

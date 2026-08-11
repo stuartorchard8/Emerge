@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -142,6 +143,7 @@ class SignalInputTest {
      * closes at this test**: a person presses a key and the vessel moves, with a visible wire in
      * between.
      */
+    @Ignore("no thrust between the cut-over and blocked-flux thrust — extraction plan step 6")
     @Test
     fun `holding a key vents the ship and drives it the other way`() {
         val w = 8

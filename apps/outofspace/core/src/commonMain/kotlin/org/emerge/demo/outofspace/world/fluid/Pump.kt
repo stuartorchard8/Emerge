@@ -15,27 +15,20 @@ class PumpDemand(val from: Int, val into: Int, val millimoles: Long)
 
 /**
  * Apply pumps: gas from room→pipe, against pressure gradient (stalls at STALL_RATIO× intake pressure).
- * Intake: destroys room-face momentum → hands all to vessel (ledger closed). Pipe receives zero momentum (emergent flow via pressure/projection).
- * Valve = hole (carries momentum through); pump = blades (interrupts flow).
- * Runs with exchangeLayers, before either layer solved.
+ * Runs with exchangeLayers, before either layer is diffused.
  */
 fun applyPumps(
-    edges: EdgeGrid,
     demands: List<PumpDemand>,
     roomGrams: LongArray,
     roomJoules: LongArray?,
-    roomMx: LongArray,
-    roomMy: LongArray,
     pipeGrams: LongArray,
     pipeJoules: LongArray?,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
-    if (demands.isEmpty()) return InterlayerStep(0L, 0L, 0L, 0L)
+    if (demands.isEmpty()) return InterlayerStep(0L, 0L)
 
     var movedGrams = 0L
     var movedJoules = 0L
-    var vesselX = 0L
-    var vesselY = 0L
 
     for (demand in demands) {
         if (demand.millimoles <= 0L) continue
@@ -60,27 +53,8 @@ fun applyPumps(
         val moved = handOver(share, demand.from, demand.into, roomGrams, roomJoules, pipeGrams, pipeJoules)
         movedGrams += moved.grams
         movedJoules += moved.joules
-
-        vesselX += absorb(share, roomMx, edges.leftEdgeOf(demand.from), edges.rightEdgeOf(demand.from))
-        vesselY += absorb(share, roomMy, edges.upEdgeOf(demand.from), edges.downEdgeOf(demand.from))
     }
 
-    return InterlayerStep(movedGrams, movedJoules, vesselX, vesselY)
+    return InterlayerStep(movedGrams, movedJoules)
 }
 
-/**
- * Takes the drawn gas's momentum off both faces of one axis and returns it, for the vessel.
- *
- * Halved per face for the reason it is halved in a valve: a face is shared with the neighbouring
- * cell, and only this cell's half is being drawn out of the room.
- */
-private fun absorb(share: Share, momentum: LongArray, first: Int, second: Int): Long {
-    var absorbed = 0L
-    for (edge in intArrayOf(first, second)) {
-        val carried = share.of(momentum[edge]) / 2
-        if (carried == 0L) continue
-        momentum[edge] -= carried
-        absorbed += carried
-    }
-    return absorbed
-}

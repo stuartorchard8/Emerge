@@ -84,7 +84,7 @@ import org.emerge.demo.outofspace.world.fluid.applyPumps
 import org.emerge.demo.outofspace.world.fluid.exchangeLayers
 import org.emerge.demo.outofspace.world.fluid.pipeApertures
 import org.emerge.demo.outofspace.world.fluid.pipeVolumes
-import org.emerge.demo.outofspace.world.fluid.stepFluid
+import org.emerge.demo.outofspace.world.fluid.diffuseFluid
 import org.emerge.demo.outofspace.world.fluid.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.fluid.gasCapacity
@@ -205,50 +205,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // Valves first: pressure propagates immediately, both layers see exchange (see [exchangeLayers]).
         val crossed = exchangeLayers(
-            edges = edges,
             openings = valveOpenings(state.grid, conduits),
-            roomApertures = roomApertures,
             roomGrams = w.airGrams,
             roomJoules = w.airJoules,
-            roomMx = w.momentumX,
-            roomMy = w.momentumY,
-            pipeApertures = plumbing,
             pipeGrams = w.pipeGrams,
             pipeJoules = w.pipeJoules,
-            pipeMx = w.pipeMomentumX,
-            pipeMy = w.pipeMomentumY,
             pipeVolumes = volumes,
         )
 
-        // Pumps alongside valves, before either layer solved (see [applyPumps]).
+        // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
         val pumped = applyPumps(
-            edges = edges,
             demands = pumpDemands(state.grid, w.machines, conduits, signals),
             roomGrams = w.airGrams,
             roomJoules = w.airJoules,
-            roomMx = w.momentumX,
-            roomMy = w.momentumY,
             pipeGrams = w.pipeGrams,
             pipeJoules = w.pipeJoules,
             pipeVolumes = volumes,
         )
 
-        // On airGrams (edited by [displaceAir]).
-        val fluid = stepFluid(
-            edges, roomApertures, w.airGrams, w.momentumX, w.momentumY, felt, w.airJoules,
-        )
+        // On airGrams (edited by [displaceAir]). The tick is passed because the remainder rotation
+        // turns with it — see [diffuseFluid]; a constant here would strand trace gas in a corner.
+        val fluid = diffuseFluid(edges, roomApertures, w.airGrams, w.airJoules, state.tick)
 
-        // Pipes: same solver, connectivity from player-drawn layout.
-        val pipes = stepFluid(
-            edges,
-            plumbing,
-            w.pipeGrams,
-            w.pipeMomentumX,
-            w.pipeMomentumY,
-            felt,
-            w.pipeJoules,
-            volumes,
-        )
+        // Pipes: same model, connectivity from player-drawn layout. Volume does not enter here —
+        // diffusion moves a *share* of what a cell holds, and a share is the same fraction of a thin
+        // cell as of a fat one. Volume still governs pressure, which is what the valves and pumps
+        // above read, so a pipe is still a small place that fills quickly.
+        val pipes = diffuseFluid(edges, plumbing, w.pipeGrams, w.pipeJoules, state.tick)
         // Pipes cannot vent to rim (ledger check).
         require(pipes.ventedGrams == 0L && pipes.ventedJoules == 0L) {
             "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
@@ -308,10 +291,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // (negative), contact and plating gave some to others.
         val handedX = w.bodyHandedX + bodiesDrifted.handedX
         val handedY = w.bodyHandedY + bodiesDrifted.handedY
-        val netImpulseX = fluid.vesselX + pipes.vesselX + crossed.vesselX + pumped.vesselX + thrustX -
-            handedX
-        val netImpulseY = fluid.vesselY + pipes.vesselY + crossed.vesselY + pumped.vesselY + thrustY -
-            handedY
+        // No fluid term yet: diffusion has no momentum to hand the hull, and the blocked-flux thrust
+        // that replaces it ([applyPressureForce]) is not wired up until the next increment. A vessel
+        // therefore flies on its debug engine and on what it hands bodies, and a breach does not push
+        // it — deliberately, and briefly.
+        val netImpulseX = thrustX - handedX
+        val netImpulseY = thrustY - handedY
 
         return state.copy(
             machines = machines,
@@ -333,14 +318,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             solidToAirJoules = state.solidToAirJoules + conducted.toAir,
             air = fluid.air,
             pipeAir = pipes.air,
-            pipeMomentum = MomentumField.of(edges, pipes.momentumX, pipes.momentumY),
+            pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
             airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
             // Separate from radiatedJoules: cleaner ledger.
             airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirGrams = w.injectedAirGrams,
             injectedAirJoules = w.injectedAirJoules,
-            momentum = MomentumField.of(edges, fluid.momentumX, fluid.momentumY),
+            // Left exactly as it was found: nothing writes momentum now, so the flow overlay goes
+            // quiet rather than wrong, and the save format is unchanged. See the extraction plan §3.
+            momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
             // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
             vesselImpulseY = state.vesselImpulseY + netImpulseY,
@@ -349,11 +336,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Explicit integration: move by velocity at tick start.
             positionX = newPositionX,
             positionY = newPositionY,
-            exhaustMomentumX = state.exhaustMomentumX + fluid.escapedX,
-            exhaustMomentumY = state.exhaustMomentumY + fluid.escapedY,
-            // Undelivered impulse from both fluid layers.
-            undeliveredImpulseX = state.undeliveredImpulseX + fluid.undeliveredX + pipes.undeliveredX,
-            undeliveredImpulseY = state.undeliveredImpulseY + fluid.undeliveredY + pipes.undeliveredY,
             // Debug engine (non-physics, booked alongside thrust).
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,

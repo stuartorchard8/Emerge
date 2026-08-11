@@ -23,6 +23,14 @@ private val MILLIMOLES_PER_KILOGRAM: LongArray = LongArray(Species.COUNT) { i ->
 private const val MILLI = 1000L
 
 /**
+ * What a tile of ordinary air weighs at one atmosphere — the mass [applyPressureForce] scales the
+ * speed of sound against, and the reference an overlay reads a tile's density against.
+ *
+ * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.
+ */
+internal val AMBIENT_TILE_GRAMS: Long = AirField.AMBIENT_AIR.total
+
+/**
  * The pressure field: millimoles of gas in each tile, scaled by how hot that gas is.
  *
  * [kelvin] is optional and defaults to ambient everywhere, which reproduces the pure-moles field
