@@ -67,7 +67,7 @@ data class Segment(
      * exclusively by the pipe layer.
      */
     val valve: Boolean = false,
-    val joules: Long = conduit.material.ambientPerTile,
+    val joules: Long = conduit.ambientPerTile,
 ) {
     /** True for a length of pipe that is open to the room around it — see [valve]. */
     val isValve: Boolean get() = valve && conduit == Conduit.Pipe

@@ -44,13 +44,13 @@ fun stepSolidHeat(
 
     for (b in bodies.indices) {
         val body = bodies[b]
-        val k = body.material.conductance
+        val k = body.conductance
 
         for (tile in body.tiles) {
             for (i in tiles.startOf(tile) until tiles.endOf(tile)) {
                 val other = tiles.id(i)
                 if (other <= b) continue // each unordered pair once
-                contacts.join(b, other, seriesConductance(k, bodies[other].material.conductance))
+                contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
             }
 
             if (body.permeable) {
@@ -68,7 +68,7 @@ fun stepSolidHeat(
                     for (i in tiles.startOf(next) until tiles.endOf(next)) {
                         val other = tiles.id(i)
                         if (other <= b || bodies[other].permeable) continue
-                        contacts.join(b, other, seriesConductance(k, bodies[other].material.conductance))
+                        contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
                     }
                 } else if (structure.isContained(next)) {
                     contacts.join(b, bodyCount + next, seriesConductance(k, Material.AIR_FILM))
@@ -85,7 +85,7 @@ fun stepSolidHeat(
                 if (next < 0) continue
                 val other = tiles.fittingAt(body.conduit, next)
                 if (other < 0 || other <= b) continue
-                contacts.join(b, other, seriesConductance(k, bodies[other].material.conductance))
+                contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
             }
         }
     }

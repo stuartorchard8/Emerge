@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -45,7 +46,7 @@ class BridgeTest {
         return s
     }
 
-    private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 20_000L))
+    private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 20 * Capacity.PACKET_GRAMS))
 
     /**
      * Two lines that want the same tile.
@@ -190,14 +191,14 @@ class BridgeTest {
         var s = withLumpAtTheEntrance()
 
         s = run(s, Bridge.STEP_TICKS)
-        assertEquals(20_000L, s.bridges[at]?.entry?.mass, "lifted off the track at the input end")
+        assertEquals(20 * Capacity.PACKET_GRAMS, s.bridges[at]?.entry?.mass, "lifted off the track at the input end")
 
         s = run(s, Bridge.STEP_TICKS)
-        assertEquals(20_000L, s.bridges[at]?.middle?.mass, "over the tile it hops")
+        assertEquals(20 * Capacity.PACKET_GRAMS, s.bridges[at]?.middle?.mass, "over the tile it hops")
         assertNull(s.bridges[at]?.entry, "and the entrance is free for the next one")
 
         s = run(s, Bridge.STEP_TICKS)
-        assertEquals(20_000L, s.bridges[at]?.exit?.mass, "resting on the far end, for a whole step")
+        assertEquals(20 * Capacity.PACKET_GRAMS, s.bridges[at]?.exit?.mass, "resting on the far end, for a whole step")
         assertNull(s.bridges[at]?.middle, "and the middle is free for the next one")
         assertNull(s.railAt(grid.index(10, 5))?.held, "not yet put down — that is next step's job")
 
@@ -206,7 +207,7 @@ class BridgeTest {
         // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
         // setting down there and running on one tile is a single tile of travel, not two. The
         // deposit happens first precisely so the track can carry it in the same step.
-        assertEquals(20_000L, s.railAt(grid.index(11, 5))?.held?.mass, "and away down the far run")
+        assertEquals(20 * Capacity.PACKET_GRAMS, s.railAt(grid.index(11, 5))?.held?.mass, "and away down the far run")
     }
 
     @Test
@@ -227,7 +228,7 @@ class BridgeTest {
         // the shift wants it and the span stays a pipeline. Drain it after the shift instead and
         // every slot idles a step waiting for the one ahead, halving the throughput while looking
         // perfectly correct tile by tile. Occupancy cannot see that; only throughput can.
-        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200_000L))
+        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200 * Capacity.PACKET_GRAMS))
         var s = crossing(bridged = true, horizontalSupply = supply)
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.
@@ -236,7 +237,7 @@ class BridgeTest {
         val steps = 15
         s = run(s, Bridge.STEP_TICKS * steps)
         val delivered = ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) - before
-        assertEquals(steps * 1_000L, delivered, "a packet a step, all the way across")
+        assertEquals(steps * Capacity.PACKET_GRAMS, delivered, "a packet a step, all the way across")
     }
 
     // ── The placement rule ────────────────────────────────────────────────────

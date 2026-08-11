@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.world.capacityPerTile
 
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -65,13 +66,13 @@ class BodyHeatTest {
     private fun VesselState.heatMachine(at: Int, kelvin: Int): VesselState {
         val list = machines.toMutableList()
         val m = list[at]!!
-        list[at] = m.withJoules(m.kind.material.capacityPerTile * m.kind.thermalTiles * kelvin)
+        list[at] = m.withJoules(m.kind.capacityPerTile * m.kind.thermalTiles * kelvin)
         return copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
     }
 
     private fun VesselState.railKelvin(tile: Int): Int {
         val s = rails[tile] ?: error("no track at $tile")
-        return (s.joules / s.conduit.material.capacityPerTile).toInt()
+        return (s.joules / s.conduit.capacityPerTile).toInt()
     }
 
     @Test
@@ -95,7 +96,7 @@ class BodyHeatTest {
         // And it is *its own* temperature, not the furnace's: iron holds far less than firebrick, so
         // it warms fast, but the two are separate bodies and never become one number.
         val furnace = settled.machines[under] as? Machine ?: error("no machine at $under")
-        val furnaceKelvin = (furnace.joules / (furnace.kind.material.capacityPerTile * furnace.kind.thermalTiles)).toInt()
+        val furnaceKelvin = (furnace.joules / (furnace.kind.capacityPerTile * furnace.kind.thermalTiles)).toInt()
         assertTrue(
             settled.railKelvin(under) != furnaceKelvin,
             "but the two are still separate bodies with separate temperatures: rail=${settled.railKelvin(under)}K furnace=${furnaceKelvin}K",
@@ -130,7 +131,7 @@ class BodyHeatTest {
         // Drive one tile of the upper run hot.
         val source = g.index(2, topRow)
         val rails = world.rails.toMutableList()
-        rails[source] = rails[source]!!.copy(joules = Material.Iron.capacityPerTile * 2_000L)
+        rails[source] = rails[source]!!.copy(joules = Conduit.Rail.capacityPerTile * 2_000L)
         var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
         s = s.copy(baselineJoules = s.storedJoules)
 

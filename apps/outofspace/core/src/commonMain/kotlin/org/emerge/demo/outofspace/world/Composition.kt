@@ -5,30 +5,28 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 
 /**
- * The one scale factor between a real density and a tile of solid in this world.
+ * Fixed-point unit for the volume sum below. Volumes are ratios, so they need somewhere to keep
+ * their fraction.
  *
- * [Material] already keeps its `gramsPerTile` roughly two orders under real, because those numbers
- * are thermal time constants as much as they are masses, and the flight model is tuned against
- * them. So this is chosen the same way and anchored to what already exists: it is the number that
- * makes a rock of the ore field's **natural abundance** weigh exactly what every rock weighed when
- * they were all [Material.Firebrick] — 3 kg a tile. Nothing about the average rock moves; what
- * moves is that a uranium rock is now heavy and an ice rock is now light, in the real ratios.
- *
- * ⚠️ Changing this changes the mass of every rock in the world, and therefore every thrust,
- * contact and ore-budget number measured against one.
+ * ⚠️ It has to be far larger than it looks like it needs to be, because the divisor is a *tile* of
+ * solid — millions of grams — while the dividend is a composition stated in parts per thousand. At
+ * a million, `500 g / 6_532_100 g` truncated to 76 parts in a million and put the density of a
+ * half-and-half mixture out by a third of a per cent. The division below keeps the remainder
+ * explicitly rather than leaning on this being big enough.
  */
-const val SOLID_DENSITY_SCALE: Long = 1319L
-
-/** What a tile of pure [Species] weighs. See [SOLID_DENSITY_SCALE] for where the scale comes from. */
-val Species.solidGramsPerTile: Long
-    get() = solidKgPerCubicMetre.toLong() * TILE_LITRES / SOLID_DENSITY_SCALE
+private const val VOLUME_UNIT: Long = 1_000_000_000L
 
 /**
- * Fixed-point unit for the volume sum below. Volumes are ratios, so they need somewhere to keep
- * their fraction; a million is far more resolution than a species fraction ever carries and leaves
- * ~10^12 grams of headroom in a `Long`.
+ * What a tile of pure [Species] weighs, at its real density.
+ *
+ * No scale factor. A tile is [TILE_LITRES] of room — a cube a little under a metre on a side — and a
+ * tile of iron is what that much iron weighs, six and a half tonnes. Everything solid in the vessel
+ * is now stated at this scale, which is the scale the *gas* was always at: [AirField.AMBIENT_AIR]
+ * puts a real kilogram of air in a tile. Before this the solids were three orders under, and the
+ * visible consequence was a steel ship that weighed about as much as the air inside it.
  */
-private const val VOLUME_UNIT: Long = 1_000_000L
+val Species.solidGramsPerTile: Long
+    get() = solidKgPerCubicMetre.toLong() * TILE_LITRES
 
 /**
  * What a tile of [mixture] weighs, from what it is made of.
@@ -44,11 +42,18 @@ private const val VOLUME_UNIT: Long = 1_000_000L
 fun gramsPerTileOf(mixture: Mixture): Long {
     val total = mixture.total
     if (total <= 0L) return 0L
+    // A pure pile is its species' density exactly. Not an optimisation: the fixed-point round trip
+    // below is accurate to a few parts per million, and "a tile of iron weighs what a tile of iron
+    // weighs" should not be approximate.
+    mixture.dominant?.let { if (mixture[it] == total) return it.solidGramsPerTile }
     var volume = 0L
     for (species in Species.ALL) {
         val grams = mixture[species]
         if (grams <= 0L) continue
-        volume += grams * VOLUME_UNIT / species.solidGramsPerTile
+        // Whole part and remainder separately: `grams * VOLUME_UNIT` would overflow for a serious
+        // pile of ore, and truncating the division would lose most of the value for a small one.
+        val density = species.solidGramsPerTile
+        volume += grams / density * VOLUME_UNIT + grams % density * VOLUME_UNIT / density
     }
     return if (volume <= 0L) 0L else total * VOLUME_UNIT / volume
 }
@@ -63,10 +68,23 @@ fun gramsPerTileOf(mixture: Mixture): Long {
 fun capacityPerTileOf(mixture: Mixture): Long {
     val total = mixture.total
     if (total <= 0L) return 0L
+    // Divided last. Rounding the specific heat down to a whole millijoule per gram first is worth
+    // 0.04% on a wet rock, which is small until it is the difference between two ledgers.
+    return gramsPerTileOf(mixture) * weightedSpecificHeat(mixture) / total
+}
+
+/** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */
+fun specificHeatOf(mixture: Mixture): Long {
+    val total = mixture.total
+    return if (total <= 0L) 0L else weightedSpecificHeat(mixture) / total
+}
+
+/** The sum before the divide, so [capacityPerTileOf] can put the divide last. */
+private fun weightedSpecificHeat(mixture: Mixture): Long {
     var weighted = 0L
     for (species in Species.ALL) {
         val grams = mixture[species]
         if (grams > 0L) weighted += grams * species.specificHeat
     }
-    return gramsPerTileOf(mixture) * weighted / total
+    return weighted
 }

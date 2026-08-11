@@ -24,6 +24,6 @@ data class Storage(
     override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
-        const val CAP = 20_000L
+        const val CAP = 20_000_000L
     }
 }

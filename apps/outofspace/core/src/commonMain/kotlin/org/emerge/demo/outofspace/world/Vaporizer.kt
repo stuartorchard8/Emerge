@@ -9,7 +9,7 @@ data class Vaporizer(
     override val facing: Direction,
     val input: Resource? = null,
     val carry: Long = 0L,
-    val gramsPerTick: Long = 125L,
+    val gramsPerTick: Long = 125_000L,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Processor),
 ) : Directed {

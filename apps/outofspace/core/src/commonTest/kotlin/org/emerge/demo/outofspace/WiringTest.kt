@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -194,9 +195,9 @@ class WiringTest {
             val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
             return (s[grid.index(2, 2)] as Extractor).buffer.mass
         }
-        assertEquals(1_000L, groundInASecond(wiring(SignalSource.Always to 1000)))
-        assertEquals(500L, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
-        assertEquals(250L, groundInASecond(wiring(SignalSource.Always to 250)))
+        assertEquals(Capacity.PACKET_GRAMS, groundInASecond(wiring(SignalSource.Always to 1000)))
+        assertEquals(Capacity.PACKET_GRAMS / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
+        assertEquals(Capacity.PACKET_GRAMS / 4, groundInASecond(wiring(SignalSource.Always to 250)))
         assertEquals(0L, groundInASecond(wiring(SignalSource.Always to -1000)), "negative activation stops it")
     }
 
@@ -205,7 +206,7 @@ class WiringTest {
         // Track is inert -- it has no wiring and cannot be switched off, because it is plumbing. The
         // thing you switch off is the machine at the end of it, and a shut tank is a shut valve.
         val grid = Grid(12, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4_000L))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_GRAMS))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
         m[grid.index(8, 3)] = Storage(Direction.Right)
@@ -214,7 +215,7 @@ class WiringTest {
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, Bridge.STEP_TICKS * 8)
-        assertEquals(4_000L, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
+        assertEquals(4 * Capacity.PACKET_GRAMS, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.railAt(grid.index(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
@@ -357,17 +358,17 @@ class WiringTest {
 
     @Test
     fun `a storage releases only while it is told to`() {
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5_000L))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_GRAMS))
         val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
         var s = run(twoUp(shut), 20)
-        assertEquals(5_000L, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
+        assertEquals(5 * Capacity.PACKET_GRAMS, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
         assertNull((s[g.index(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(Direction.Right, stored)), 20)
-        assertEquals(5_000L, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertEquals(5 * Capacity.PACKET_GRAMS, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
         assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
     }
 

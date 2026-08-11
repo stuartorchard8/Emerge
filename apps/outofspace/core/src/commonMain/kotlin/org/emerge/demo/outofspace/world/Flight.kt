@@ -35,20 +35,21 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, massGrams: Long): Fr
  * it holds, and deriving both from one place is what stops a vessel that is heavy for heat and light
  * for thrust.
  *
- * ⚠️ These masses are tuned two orders of magnitude below real ones — see [Material]'s note. What is
- * right is the *ratio* between materials; the absolute scale is a dial, and here it is the dial that
- * sets how briskly a given thrust moves a given ship.
+ * ⚠️ These are real masses now: a real density from [Material.composition], at the fraction of a
+ * tile the machine actually is ([MachineKind.fillPermille]). The dial that sets how briskly a given
+ * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
+ * measurements.
  */
 fun structureMassGrams(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
     var sum = 0L
     for (m in machines) {
         if (m == null) continue
-        sum += m.kind.material.gramsPerTile * m.kind.thermalTiles
+        sum += m.kind.gramsPerTile * m.kind.thermalTiles
     }
-    conduits.all { conduit, _, _ -> sum += conduit.material.gramsPerTile }
+    conduits.all { conduit, _, _ -> sum += conduit.gramsPerTile }
     for (b in bridges) {
         if (b == null) continue
-        sum += b.kind.material.gramsPerTile * MachineKind.Bridge.thermalTiles
+        sum += b.kind.gramsPerTile * MachineKind.Bridge.thermalTiles
     }
     return sum
 }

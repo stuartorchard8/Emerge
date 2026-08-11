@@ -33,6 +33,17 @@ class Body(
     val joules: Long,
     /** Millijoules/kelvin. Uses MachineKind.thermalTiles (not tiles[]) to avoid grid-edge clipping. */
     val capacity: Long,
+    /**
+     * What crosses a contact of it, per kelvin per tick.
+     *
+     * Carried rather than read off [material] because a joint conducts through the metal that is
+     * actually there: a hull plate is a few per cent of its tile, and so is its cross-section. It
+     * therefore takes the same [MachineKind.fillPermille] its [capacity] does, and the pair of them
+     * moving together is what holds every thermal time constant in the game still while the masses
+     * underneath them become real. Divide one by the other and you get the number
+     * [Material.conductanceCentiTicks] states.
+     */
+    val conductance: Long,
     /** Fitting's conduit layer; null for non-fittings. Third key component (slot+at+conduit). */
     val conduit: Conduit? = null,
     /**
@@ -78,7 +89,8 @@ fun bodiesOf(
                 material = m.kind.material,
                 permeable = false,
                 joules = m.joules,
-                capacity = m.kind.material.capacityPerTile * m.kind.thermalTiles,
+                capacity = m.kind.capacityPerTile * m.kind.thermalTiles,
+                conductance = m.kind.conductance,
             )
         )
     }
@@ -91,7 +103,8 @@ fun bodiesOf(
                 material = conduit.material,
                 permeable = true,
                 joules = s.joules,
-                capacity = conduit.material.capacityPerTile,
+                capacity = conduit.capacityPerTile,
+                conductance = conduit.conductance,
                 conduit = conduit,
                 links = s.links,
             )
@@ -111,7 +124,8 @@ fun bodiesOf(
                 material = b.conduit.material,
                 permeable = true,
                 joules = b.joules,
-                capacity = b.conduit.material.capacityPerTile * MachineKind.Bridge.thermalTiles,
+                capacity = b.conduit.capacityPerTile * MachineKind.Bridge.thermalTiles,
+                conductance = b.conduit.conductance,
             )
         )
     }

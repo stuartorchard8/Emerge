@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.capacityPerTile
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -174,7 +176,7 @@ class HeatTest {
     fun `a smelter warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200_000L))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_GRAMS))
         // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
         // slag port at (5,7), so the vents go one tile beyond each.
         val g0 = Grid(12, 12)
@@ -223,7 +225,7 @@ class HeatTest {
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = s.machines.filterNotNull().maxOfOrNull { (it.joules / (it.kind.material.capacityPerTile * it.kind.thermalTiles.toLong())).toInt() } ?: Temperature.AMBIENT_KELVIN
+            val peak = s.machines.filterNotNull().maxOfOrNull { (it.joules / (it.kind.capacityPerTile * it.kind.thermalTiles.toLong())).toInt() } ?: Temperature.AMBIENT_KELVIN
             assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }
@@ -253,7 +255,7 @@ class HeatTest {
         // Roomy enough that the five-tile furnace does not fill it: with nothing but space around
         // it, every face of the thing is exposed.
         val grid = Grid(11, 11)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20_000L))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_GRAMS))
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(5, 5)] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())

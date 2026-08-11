@@ -12,7 +12,7 @@ data class Processor(
     val product: Resource? = null,
     val tailings: Resource? = null,
     val carry: Long = 0L,
-    val gramsPerTick: Long = 125L,
+    val gramsPerTick: Long = 125_000L,
     val efficiencyPermille: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Processor),

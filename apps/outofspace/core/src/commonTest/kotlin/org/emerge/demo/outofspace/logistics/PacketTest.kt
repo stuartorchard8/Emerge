@@ -18,17 +18,17 @@ class PacketTest {
     private val orePile = Resource(
         Form.Ore,
         Mixture.of(
-            Species.Iron to 4_100L,
-            Species.Silica to 3_000L,
-            Species.Copper to 1_800L,
-            Species.Titanium to 1_100L,
+            Species.Iron to 4_100_000L,
+            Species.Silica to 3_000_000L,
+            Species.Copper to 1_800_000L,
+            Species.Titanium to 1_100_000L,
         ),
     )
 
     private val atmosphere = Mixture.of(
-        Species.Nitrogen to 7_800L,
-        Species.Oxygen to 2_100L,
-        Species.CarbonDioxide to 100L,
+        Species.Nitrogen to 7_800_000L,
+        Species.Oxygen to 2_100_000L,
+        Species.CarbonDioxide to 100_000L,
     )
 
     private fun assertConserved(inputs: List<Mixture>, outputs: List<Mixture>, what: String) {
@@ -43,8 +43,8 @@ class PacketTest {
     @Test
     fun `packing takes at most one packet's worth and leaves the rest`() {
         val (packet, left) = packSolid(orePile)
-        assertEquals(1_000L, assertNotNull(packet).mass)
-        assertEquals(orePile.mass - 1_000L, left.mass)
+        assertEquals(1_000_000L, assertNotNull(packet).mass)
+        assertEquals(orePile.mass - 1_000_000L, left.mass)
         assertConserved(listOf(orePile.mixture), listOf(packet.contents, left.mixture), "packSolid")
     }
 
@@ -53,10 +53,10 @@ class PacketTest {
         val (packet, _) = packSolid(orePile)
         val p = assertNotNull(packet).contents
         // The pile is 41% iron; so is the packet, to the nearest gram.
-        assertEquals(410L, p[Species.Iron])
-        assertEquals(300L, p[Species.Silica])
-        assertEquals(180L, p[Species.Copper])
-        assertEquals(110L, p[Species.Titanium])
+        assertEquals(410_000L, p[Species.Iron])
+        assertEquals(300_000L, p[Species.Silica])
+        assertEquals(180_000L, p[Species.Copper])
+        assertEquals(110_000L, p[Species.Titanium])
     }
 
     @Test
@@ -68,74 +68,74 @@ class PacketTest {
 
     @Test
     fun `packing a source smaller than a packet takes all of it`() {
-        val crumbs = Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L))
+        val crumbs = Resource(Form.IronIngot, Mixture.of(Species.Iron to 250_000L))
         val (packet, left) = packSolid(crumbs)
-        assertEquals(250L, assertNotNull(packet).mass)
+        assertEquals(250_000L, assertNotNull(packet).mass)
         assertTrue(left.isEmpty)
     }
 
     @Test
     fun `fluid packing works the same way and conserves`() {
         val (packet, left) = packFluid(atmosphere)
-        assertEquals(1_000L, assertNotNull(packet).mass)
+        assertEquals(1_000_000L, assertNotNull(packet).mass)
         assertConserved(listOf(atmosphere), listOf(packet.contents, left), "packFluid")
         // Composition of the slug matches the source: 78% nitrogen.
-        assertEquals(780L, packet.contents[Species.Nitrogen])
+        assertEquals(780_000L, packet.contents[Species.Nitrogen])
     }
 
     // ── Merging ────────────────────────────────────────────────────────────────
 
     @Test
     fun `merging same-form solids fills to capacity and rejects the overflow`() {
-        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 800L)))
-        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 500L)))
+        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 800_000L)))
+        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 500_000L)))
         val r = assertNotNull(mergeInto(a, b))
-        assertEquals(1_000L, r.merged.mass)
-        assertEquals(300L, assertNotNull(r.rejected).mass)
+        assertEquals(1_000_000L, r.merged.mass)
+        assertEquals(300_000L, assertNotNull(r.rejected).mass)
         assertConserved(listOf(a.contents, b.contents), listOf(r.merged.contents, r.rejected.contents), "merge")
     }
 
     @Test
     fun `merging leaves no rejection when everything fits`() {
-        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 300L)))
-        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 400L)))
+        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 300_000L)))
+        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 400_000L)))
         val r = assertNotNull(mergeInto(a, b))
-        assertEquals(700L, r.merged.mass)
+        assertEquals(700_000L, r.merged.mass)
         assertNull(r.rejected)
     }
 
     @Test
     fun `different solid forms do not merge`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L)))
-        val frame = SolidPacket(Resource(Form.SiliconCrystal, Mixture.of(Species.Iron to 100L)))
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100_000L)))
+        val frame = SolidPacket(Resource(Form.SiliconCrystal, Mixture.of(Species.Iron to 100_000L)))
         assertNull(mergeInto(ingot, frame), "an ingot cannot be poured into a structural frame")
     }
 
     @Test
     fun `fluids always merge into an amalgam`() {
-        val air = FluidPacket(Mixture.of(Species.Oxygen to 400L))
-        val steam = FluidPacket(Mixture.of(Species.Water to 300L))
+        val air = FluidPacket(Mixture.of(Species.Oxygen to 400_000L))
+        val steam = FluidPacket(Mixture.of(Species.Water to 300_000L))
         val r = assertNotNull(mergeInto(air, steam))
-        assertEquals(700L, r.merged.mass)
-        assertEquals(400L, r.merged.contents[Species.Oxygen])
-        assertEquals(300L, r.merged.contents[Species.Water])
+        assertEquals(700_000L, r.merged.mass)
+        assertEquals(400_000L, r.merged.contents[Species.Oxygen])
+        assertEquals(300_000L, r.merged.contents[Species.Water])
     }
 
     @Test
     fun `a solid and a fluid never merge`() {
-        val solid = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L)))
-        val fluid = FluidPacket(Mixture.of(Species.Oxygen to 100L))
+        val solid = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100_000L)))
+        val fluid = FluidPacket(Mixture.of(Species.Oxygen to 100_000L))
         assertNull(mergeInto(solid, fluid))
         assertNull(mergeInto(fluid, solid))
     }
 
     @Test
     fun `merging into a full packet rejects everything`() {
-        val full = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        val more = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L)))
+        val full = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000_000L)))
+        val more = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 250_000L)))
         val r = assertNotNull(mergeInto(full, more))
-        assertEquals(1_000L, r.merged.mass)
-        assertEquals(250L, assertNotNull(r.rejected).mass)
+        assertEquals(1_000_000L, r.merged.mass)
+        assertEquals(250_000L, assertNotNull(r.rejected).mass)
     }
 
     // ── Rates: the place a float would otherwise sneak in ──────────────────────
@@ -149,11 +149,11 @@ class PacketTest {
         var delivered = 0L
         // 125 g/tick at 45% is 56.25 g — a quarter gram a tick that must not be dropped.
         repeat(4) {
-            val (grams, next) = Rate.tick(numerator = 125L * 450, denominator = 1_000, carry = carry)
+            val (grams, next) = Rate.tick(numerator = 125_000L * 450, denominator = 1_000, carry = carry)
             delivered += grams
             carry = next
         }
-        assertEquals(225L, delivered, "56.25 g/tick must come to exactly 225 g over four ticks")
+        assertEquals(225_000L, delivered, "56.25 g/tick must come to exactly 225 g over four ticks")
     }
 
     @Test
@@ -162,11 +162,11 @@ class PacketTest {
         var delivered = 0L
         val ticks = 3_600
         repeat(ticks) {
-            val (grams, next) = Rate.tick(125L * 450, 1_000, carry)
+            val (grams, next) = Rate.tick(125_000L * 450, 1_000, carry)
             delivered += grams
             carry = next
         }
-        assertEquals(125L * 450 * ticks / 1_000, delivered, "a long run is exact, not about right")
+        assertEquals(125_000L * 450 * ticks / 1_000, delivered, "a long run is exact, not about right")
     }
 
     @Test
@@ -187,8 +187,8 @@ class PacketTest {
 
     @Test
     fun `full activation needs no carry at all`() {
-        val (grams, carry) = Rate.tick(125L * 1_000, 1_000, carry = 0L)
-        assertEquals(125L, grams)
+        val (grams, carry) = Rate.tick(125_000L * 1_000, 1_000, carry = 0L)
+        assertEquals(125_000L, grams)
         assertEquals(0L, carry, "an unthrottled machine has no fraction to remember")
     }
 
@@ -201,17 +201,17 @@ class PacketTest {
 
     @Test
     fun `rate rejects nonsense`() {
-        assertFailsWith<IllegalArgumentException> { Rate.tick(-1L, 60, 0L) }
-        assertFailsWith<IllegalArgumentException> { Rate.tick(100L, 0, 0L) }
+        assertFailsWith<IllegalArgumentException> { Rate.tick(-1_000L, 60, 0L) }
+        assertFailsWith<IllegalArgumentException> { Rate.tick(100_000L, 0, 0L) }
     }
 
     // ── Capacity indirection ───────────────────────────────────────────────────
 
     @Test
     fun `capacity is measured through quantityOf so the volume switch has one home`() {
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 250L)))
-        assertEquals(250L, Capacity.quantityOf(packet))
-        assertEquals(750L, Capacity.headroom(packet))
-        assertEquals(0L, Capacity.headroom(SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_200L)))))
+        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 250_000L)))
+        assertEquals(250_000L, Capacity.quantityOf(packet))
+        assertEquals(750_000L, Capacity.headroom(packet))
+        assertEquals(0L, Capacity.headroom(SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_200_000L)))))
     }
 }

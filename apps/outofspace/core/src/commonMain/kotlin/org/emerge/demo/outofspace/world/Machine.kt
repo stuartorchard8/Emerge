@@ -54,7 +54,8 @@ val MachineKind.thermalTiles: Int
     get() = if (this == MachineKind.Bridge) 3 else size * size
 
 /** What a freshly built machine of this kind holds: all of it, at room temperature. */
-fun ambientJoules(kind: MachineKind): Long = kind.material.ambientPerTile * kind.thermalTiles
+fun ambientJoules(kind: MachineKind): Long =
+    kind.capacityPerTile * kind.thermalTiles * Temperature.AMBIENT_KELVIN
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {
@@ -63,14 +64,14 @@ sealed interface Directed : Machine {
 }
 
 /** Machine input buffers hold this much before they stop accepting. */
-const val MACHINE_BUFFER_CAP = 4_000L
+const val MACHINE_BUFFER_CAP = 4_000_000L
 
 /**
  * And output buffers hold this much before the machine stops *running*.
  *
  * Without this a processor whose waste side is blocked keeps working and hoards its tailings
- * indefinitely — tens of kilograms inside one tile, invisibly. Capping it makes a blocked output
+ * indefinitely — tens of tonnes inside one tile, invisibly. Capping it makes a blocked output
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
  */
-const val MACHINE_OUTPUT_CAP = 4_000L
+const val MACHINE_OUTPUT_CAP = 4_000_000L

@@ -10,8 +10,8 @@ import org.emerge.demo.outofspace.chem.Resource
  * It replaces the miner, which minted ore out of nothing at a rate somebody typed. Everything
  * downstream of it is unchanged — same output port, same [Form.Ore] buffer, same backing-up
  * behaviour — because the interesting difference is upstream: this thing has to be **given** a rock,
- * and what it gets out of one is what that rock is made of.
- * and when the rock is gone it stops. That is the loop closing.
+ * and when the rock is gone it stops. That is the loop closing — and what it gets out of one is what
+ * that rock is made of.
  *
  * Two things about it are unlike every other deck machine, and both are the same choice:
  *
@@ -38,7 +38,7 @@ data class Extractor(
     val input: Resource? = null,
     val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
-    val gramsPerTick: Long = 250L,
+    val gramsPerTick: Long = 250_000L,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Extractor),
 ) : Directed {
@@ -48,7 +48,7 @@ data class Extractor(
     override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
-        const val BUFFER_CAP = 5_000L
+        const val BUFFER_CAP = 5_000_000L
     }
 }
 

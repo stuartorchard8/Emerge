@@ -55,13 +55,13 @@ class RigidBody(
      */
     val gramsPerTile: Long = when (kind) {
         BodyKind.ROCK -> gramsPerTileOf(oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> machineKind!!.material.gramsPerTile
+        BodyKind.FRAGMENT -> machineKind!!.gramsPerTile
     }
 
     /** Millijoules per kelvin for one of its tiles, from that same composition. */
     val capacityPerTile: Long = when (kind) {
         BodyKind.ROCK -> capacityPerTileOf(oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> machineKind!!.material.capacityPerTile
+        BodyKind.FRAGMENT -> machineKind!!.capacityPerTile
     }
 
     val massGrams: Long get() = filled * gramsPerTile

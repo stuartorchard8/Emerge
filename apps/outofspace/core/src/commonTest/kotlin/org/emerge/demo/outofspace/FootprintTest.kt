@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -161,7 +162,7 @@ class FootprintTest {
      */
     private fun feed(endX: Int, endY: Int): VesselState {
         val grid = Grid(14, 14)
-        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4_000L))
+        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_GRAMS))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)

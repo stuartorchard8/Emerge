@@ -1,6 +1,9 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.capacityPerTile
+import org.emerge.demo.outofspace.world.gramsPerTile
+import org.emerge.demo.outofspace.world.thermalTiles
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.MachineKind
@@ -11,6 +14,8 @@ import org.emerge.demo.outofspace.world.capacityPerTileOf
 import org.emerge.demo.outofspace.world.gramsPerTileOf
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidGramsPerTile
+import org.emerge.demo.outofspace.world.billOfMaterials
+import org.emerge.demo.outofspace.chem.TILE_LITRES
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -66,7 +71,12 @@ class CompositionMassTest {
         val harmonic = 2L * ironDensity * silicaDensity / (ironDensity + silicaDensity)
         val arithmetic = (ironDensity + silicaDensity) / 2L
 
-        assertEquals(harmonic, gramsPerTileOf(half), "half iron half silica by mass")
+        // Within a few parts per million: both sides are integer arithmetic over tonne-scale
+        // densities, rounding in different orders. The claim is the formula, not the last digit.
+        assertTrue(
+            close(harmonic, gramsPerTileOf(half)),
+            "half iron half silica by mass: expected about $harmonic, got ${gramsPerTileOf(half)}",
+        )
         assertTrue(harmonic < arithmetic, "the two formulas have to differ or this test proves nothing")
     }
 
@@ -77,7 +87,11 @@ class CompositionMassTest {
         val perGram = 700L * Species.Iron.specificHeat + 300L * Species.Water.specificHeat
         // Divided last, as the implementation does — dividing the specific heat down to a per-gram
         // integer first throws away a fraction that a whole tile's worth of grams makes visible.
-        assertEquals(gramsPerTileOf(mix) * perGram / 1000L, capacityPerTileOf(mix), "capacity of a wet iron rock")
+        val expected = gramsPerTileOf(mix) * perGram / 1000L
+        assertTrue(
+            close(expected, capacityPerTileOf(mix)),
+            "capacity of a wet iron rock: expected about $expected, got ${capacityPerTileOf(mix)}",
+        )
     }
 
     @Test
@@ -124,23 +138,57 @@ class CompositionMassTest {
             machineKind = MachineKind.Smelter,
             joules = 0L,
         )
-        assertEquals(MachineKind.Smelter.material.gramsPerTile, fragment.massGrams)
-        assertEquals(MachineKind.Smelter.material.capacityPerTile, fragment.capacity)
+        assertEquals(MachineKind.Smelter.gramsPerTile, fragment.massGrams)
+        assertEquals(MachineKind.Smelter.capacityPerTile, fragment.capacity)
     }
 
     /**
-     * The anchor. The scale in `Composition.kt` was chosen so the ore field's natural abundance
-     * still weighs the 3 kg a tile every rock used to weigh, so that this change moves the *spread*
-     * of rock masses and not the tuning of thrust, contact and ore budgets. Integer densities land
-     * it a couple of grams under; a rock that drifts a percent off means the scale moved.
+     * No scale factor anywhere: a tile of ore weighs what that much ore weighs.
+     *
+     * Stated against the arithmetic a person would do by hand — the ore field's abundance is about
+     * 4.8 tonnes a cubic metre, and a tile is [TILE_LITRES] of room — because the point of the
+     * number is that you *can* check it by hand. This is the assertion that fails if anyone
+     * reintroduces a fudge factor between real densities and the world.
      */
     @Test
-    fun `an average rock still weighs what every rock used to`() {
-        val average = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        val was = RigidBody.MATERIAL.gramsPerTile
+    fun `a tile of ore weighs what that much ore weighs`() {
+        val perTile = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+        val kgPerCubicMetre = perTile / TILE_LITRES
         assertTrue(
-            average > was * 99 / 100 && average < was * 101 / 100,
-            "the natural-abundance rock weighs $average g a tile, against the $was g it used to",
+            kgPerCubicMetre in 4_600L..4_900L,
+            "the ore field assays at $kgPerCubicMetre kg/m3, which is not a rock",
         )
+    }
+
+    /** A rock is solid; a machine is a shell with air in it. The one must outweigh the other. */
+    @Test
+    fun `a boulder outweighs the ship's own fabric, tile for tile`() {
+        val oreTile = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+        for (kind in listOf(MachineKind.Hull, MachineKind.Smelter, MachineKind.Rail)) {
+            assertTrue(
+                oreTile > kind.gramsPerTile * 4,
+                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.gramsPerTile} g)",
+            )
+        }
+    }
+
+    /** The bill of materials is the machine's own mass, split the way its material is. */
+    @Test
+    fun `a machine's bill of materials weighs the machine`() {
+        for (kind in MachineKind.ALL) {
+            val bom = billOfMaterials(kind)
+            assertEquals(kind.gramsPerTile * kind.thermalTiles, bom.total, "${kind.label} bill of materials")
+            for (species in Species.ALL) {
+                if (kind.material.composition[species] == 0L) {
+                    assertEquals(0L, bom[species], "${kind.label} should contain no $species")
+                }
+            }
+        }
+    }
+
+    /** Parts per million: integer arithmetic over tonne-scale numbers, rounding in two orders. */
+    private fun close(a: Long, b: Long): Boolean {
+        val slack = (if (a > b) a - b else b - a) * 1_000_000L
+        return a != 0L && slack / a < 10L
     }
 }

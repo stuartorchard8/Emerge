@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
@@ -43,7 +44,14 @@ class TransportTest {
     private val grid = Grid(12, 6)
 
     /** A lump of ore — a powder, so lumps of it bunch up against a blockage. */
-    private fun lump(grams: Long = 1_000L): Packet =
+    /**
+     * A fraction of a packet, in thousandths. These tests are about *squashing and queueing*, not
+     * about what a lump weighs, so they say "six tenths of a packet" and stay right through any
+     * future change of scale — which is what they failed to do when a packet was a literal 1000 g.
+     */
+    private fun share(perMille: Int): Long = Capacity.PACKET_GRAMS * perMille / 1_000L
+
+    private fun lump(grams: Long = Capacity.PACKET_GRAMS): Packet =
         SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to grams)))
 
     /**
@@ -146,7 +154,7 @@ class TransportTest {
         val h = held(n, grid.index(2, 3) to lump())
 
         repeat(10) { step(f, h) }
-        assertEquals(1_000L, h[grid.index(2, 3)]?.mass, "it stayed exactly where it was put")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(2, 3)]?.mass, "it stayed exactly where it was put")
         assertFalse(f.isFed(grid.index(5, 3)))
     }
 
@@ -192,7 +200,7 @@ class TransportTest {
         var delivered = 0L
         val h = held(n, grid.index(2, 3) to lump())
         repeat(10) { step(f, h) { tile, p -> if (tile == sink) { delivered += p.mass; null } else p } }
-        assertEquals(1_000L, delivered, "all of it reached the building")
+        assertEquals(Capacity.PACKET_GRAMS, delivered, "all of it reached the building")
         assertNull(h[deadEnd], "and none of it went up the stub")
     }
 
@@ -253,7 +261,7 @@ class TransportTest {
         assertFalse(f.isFed(grid.index(5, 3)), "but nothing reaches it")
         val h = held(n, grid.index(5, 3) to lump())
         step(f, h)
-        assertEquals(1_000L, h[grid.index(5, 3)]?.mass, "the gap in the graph is a real gap")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(5, 3)]?.mass, "the gap in the graph is a real gap")
     }
 
     // ── Order of absorption ───────────────────────────────────────────────────
@@ -488,8 +496,8 @@ class TransportTest {
         val h = held(n, grid.index(2, 3) to lump(), grid.index(3, 3) to lump())
         // Nobody takes anything: the absorb callback hands every packet straight back.
         repeat(12) { step(f, h) }
-        assertEquals(1_000L, h[end]?.mass, "the leader is against the blockage")
-        assertEquals(1_000L, h[grid.index(7, 3)]?.mass, "and the next one is right behind it")
+        assertEquals(Capacity.PACKET_GRAMS, h[end]?.mass, "the leader is against the blockage")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(7, 3)]?.mass, "and the next one is right behind it")
     }
 
     // There is deliberately no test that the graph is unchanged when a machine fills up. Under the
@@ -558,7 +566,7 @@ class TransportTest {
         val h = held(n, grid.index(5, 3) to lump())
         step(f, h)
         assertNull(h[grid.index(5, 3)], "it left the tile behind the port")
-        assertEquals(1_000L, h[midOutput]?.mass, "and stopped on the port's own tile")
+        assertEquals(Capacity.PACKET_GRAMS, h[midOutput]?.mass, "and stopped on the port's own tile")
         assertNull(h[grid.index(7, 3)], "rather than carrying straight over it")
     }
 
@@ -568,7 +576,7 @@ class TransportTest {
         val f = n.toward(grid.index(4, 3))
         val h = held(n, grid.index(4, 3) to lump())
         step(f, h)
-        assertEquals(1_000L, h[grid.index(4, 3)]?.mass, "still there, waiting to be taken")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(4, 3)]?.mass, "still there, waiting to be taken")
     }
 
     // ── Bunching up against a blockage ────────────────────────────────────────
@@ -579,11 +587,11 @@ class TransportTest {
         val f = n.toward(grid.index(5, 3))
         val h = held(
             n,
-            grid.index(4, 3) to lump(400L),
-            grid.index(5, 3) to lump(400L),   // on the consumer, which is refusing
+            grid.index(4, 3) to lump(share(400)),
+            grid.index(5, 3) to lump(share(400)),   // on the consumer, which is refusing
         )
         step(f, h)
-        assertEquals(800L, h[grid.index(5, 3)]?.mass, "the one behind squashed into the one ahead")
+        assertEquals(share(800), h[grid.index(5, 3)]?.mass, "the one behind squashed into the one ahead")
         assertNull(h[grid.index(4, 3)], "leaving its tile free")
     }
 
@@ -591,10 +599,10 @@ class TransportTest {
     fun `squashing stops at a full packet and the rest queues behind it`() {
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
-        val h = held(n, grid.index(4, 3) to lump(600L), grid.index(5, 3) to lump(700L))
+        val h = held(n, grid.index(4, 3) to lump(share(600)), grid.index(5, 3) to lump(share(700)))
         step(f, h)
-        assertEquals(1_000L, h[grid.index(5, 3)]?.mass, "filled to capacity")
-        assertEquals(300L, h[grid.index(4, 3)]?.mass, "and the overflow stayed put")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(5, 3)]?.mass, "filled to capacity")
+        assertEquals(share(300), h[grid.index(4, 3)]?.mass, "and the overflow stayed put")
     }
 
     /**
@@ -607,8 +615,8 @@ class TransportTest {
      */
     @Test
     fun `ore of different purities blends, because that is what powder does`() {
-        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 200L, Species.Silica to 300L)))
-        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 375L, Species.Silica to 125L)))
+        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Silica to share(300))))
+        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Silica to share(125))))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
         val h = held(n, grid.index(4, 3) to dirty, grid.index(5, 3) to clean)
@@ -616,28 +624,28 @@ class TransportTest {
         step(f, h)
         val merged = h[grid.index(5, 3)]!!
         assertNull(h[grid.index(4, 3)], "the two piles became one")
-        assertEquals(1_000L, merged.mass, "and nothing was lost doing it")
+        assertEquals(Capacity.PACKET_GRAMS, merged.mass, "and nothing was lost doing it")
         // 375g + 200g of iron in a kilogram: the concentrate has been spoiled, and deservedly.
-        assertEquals(575L, merged.contents[Species.Iron], "purity is now somewhere in between")
+        assertEquals(share(575), merged.contents[Species.Iron], "purity is now somewhere in between")
     }
 
     @Test
     fun `ingots stay separate lumps however hard they are pressed together`() {
         // A made thing is a made thing. Two bars on a jammed belt are still two bars, so the run
         // queues rather than bunching, and they can be told apart at the far end.
-        val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 400L)))
+        val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to share(400))))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
         val h = held(n, grid.index(4, 3) to bar, grid.index(5, 3) to bar)
 
         step(f, h)
-        assertEquals(400L, h[grid.index(5, 3)]?.mass, "still one bar")
-        assertEquals(400L, h[grid.index(4, 3)]?.mass, "and the other queued behind it")
+        assertEquals(share(400), h[grid.index(5, 3)]?.mass, "still one bar")
+        assertEquals(share(400), h[grid.index(4, 3)]?.mass, "and the other queued behind it")
     }
 
     @Test
     fun `different forms never bunch, however alike their contents`() {
-        val pure = Mixture.of(Species.Iron to 500L)
+        val pure = Mixture.of(Species.Iron to Capacity.PACKET_GRAMS / 2)
         val ingot = SolidPacket(Resource(Form.IronIngot, pure))
         val ore = SolidPacket(Resource(Form.Ore, pure))
         val n = net().row(2, 5, 3)
@@ -645,8 +653,8 @@ class TransportTest {
         val h = held(n, grid.index(4, 3) to ore, grid.index(5, 3) to ingot)
 
         step(f, h)
-        assertEquals(500L, h[grid.index(5, 3)]?.mass, "an ingot is not a lump of ore")
-        assertEquals(500L, h[grid.index(4, 3)]?.mass)
+        assertEquals(Capacity.PACKET_GRAMS / 2, h[grid.index(5, 3)]?.mass, "an ingot is not a lump of ore")
+        assertEquals(Capacity.PACKET_GRAMS / 2, h[grid.index(4, 3)]?.mass)
     }
 
     @Test
@@ -655,13 +663,13 @@ class TransportTest {
         val f = n.toward(grid.index(8, 3))
         val h = held(
             n,
-            grid.index(5, 3) to lump(250L),
-            grid.index(6, 3) to lump(250L),
-            grid.index(7, 3) to lump(250L),
-            grid.index(8, 3) to lump(250L),
+            grid.index(5, 3) to lump(share(250)),
+            grid.index(6, 3) to lump(share(250)),
+            grid.index(7, 3) to lump(share(250)),
+            grid.index(8, 3) to lump(share(250)),
         )
         repeat(8) { step(f, h) }
-        assertEquals(1_000L, h[grid.index(8, 3)]?.mass, "all of it ended up in one lump at the end")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(8, 3)]?.mass, "all of it ended up in one lump at the end")
         assertEquals(1, (2..8).count { h[grid.index(it, 3)] != null }, "and the rest of the run is clear")
     }
 
@@ -880,8 +888,8 @@ class TransportTest {
             }
             if (h[grid.index(2, 3)] == null) h[grid.index(2, 3)] = lump()
         }
-        assertEquals(1_000L, h[partway]?.mass, "the run is packed right through the near consumer")
-        assertEquals(1_000L, h[grid.index(6, 3)]?.mass, "including the tile just past it")
+        assertEquals(Capacity.PACKET_GRAMS, h[partway]?.mass, "the run is packed right through the near consumer")
+        assertEquals(Capacity.PACKET_GRAMS, h[grid.index(6, 3)]?.mass, "including the tile just past it")
     }
 
     @Test

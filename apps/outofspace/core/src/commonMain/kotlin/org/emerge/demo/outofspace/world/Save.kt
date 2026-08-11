@@ -238,7 +238,7 @@ object Save {
         s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
         if (s.lastPurity != 0) f.append(" lastpurity=").append(s.lastPurity)
         if (s.lastMass != 0L) f.append(" lastmass=").append(s.lastMass)
-        if (s.joules != s.conduit.material.ambientPerTile) f.append(" k=").append(s.joules)
+        if (s.joules != s.conduit.ambientPerTile) f.append(" k=").append(s.joules)
         return f.toString()
     }
 
@@ -577,26 +577,26 @@ object Save {
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
                 input = res("in"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(250L),
+                gramsPerTick = rate(250_000L),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
                 input = res("in"), product = res("out"), tailings = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125L),
+                gramsPerTick = rate(125_000L),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
                 input = res("in"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125L),
+                gramsPerTick = rate(125_000L),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 input = res("in"), refined = res("out"), slag = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125L),
+                gramsPerTick = rate(125_000L),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
@@ -647,7 +647,7 @@ object Save {
             lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
             lastMass = f["lastmass"]?.toLongOrNull() ?: 0L,
             valve = f["valve"] == "1",
-            joules = f["k"]?.toLongOrNull() ?: conduit.material.ambientPerTile,
+            joules = f["k"]?.toLongOrNull() ?: conduit.ambientPerTile,
         )
     }
 

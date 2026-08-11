@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Resource
@@ -51,7 +52,7 @@ class ProcessorChainTest {
     @Test
     fun `the concentrate leaves forward and the tailings leave downward`() {
         val grid = Grid(12, 10)
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40_000L))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_GRAMS))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)   // covers x 2..4
@@ -77,7 +78,7 @@ class ProcessorChainTest {
         // with the tick rate (65% at 1Hz, 79% at 120Hz) because `process` floors its impurity split
         // once per chunk and the chunk was a chunk-per-second-divided-by-the-rate. Rates are per
         // tick now, so the chunk is a constant and so is the result.
-        val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY))
+        val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS)))
         assertTrue(
             purity(forward) > fed + 20,
             "forward should be well above the ${fed}% it was fed, was ${purity(forward)}%",
@@ -110,7 +111,9 @@ class ProcessorChainTest {
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
-        s = run(s, 1200)
+        // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
+        // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
+        s = run(s, 1800)
 
         // The **shape**, not the figures. This has read 75/100/100, then 66/88/100, and now wobbles
         // between 66 and 64 on the first stage depending where in a bite it is sampled: the extractor
@@ -147,12 +150,14 @@ class ProcessorChainTest {
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
-        s = run(s, 1200)
+        // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
+        // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
+        s = run(s, 1800)
 
         for (x in stages) {
             val held = (s[grid.index(x, 3)] as Processor).tailings?.mass ?: 0L
             assertTrue(
-                held <= MACHINE_OUTPUT_CAP + 1_000L,
+                held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_GRAMS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",
             )
         }

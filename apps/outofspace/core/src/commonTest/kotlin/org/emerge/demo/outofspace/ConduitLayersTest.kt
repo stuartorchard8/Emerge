@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -145,7 +146,7 @@ class ConduitLayersTest {
             repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
             val probe = s.conduits.at(Conduit.Pipe, grid.index(5, pipeFromY))!!
-            return (probe.joules / Conduit.Pipe.material.capacityPerTile).toInt()
+            return (probe.joules / Conduit.Pipe.capacityPerTile).toInt()
         }
 
         // Crossing the rail at (5,3): the two share that tile, so heat gets across.
@@ -177,7 +178,7 @@ class ConduitLayersTest {
         repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         val far = s.conduits.at(Conduit.Rail, grid.index(7, 3))!!
-        val kelvin = (far.joules / Conduit.Rail.material.capacityPerTile).toInt()
+        val kelvin = (far.joules / Conduit.Rail.capacityPerTile).toInt()
         assertTrue(kelvin > Temperature.AMBIENT_KELVIN, "heat did not travel along the run (${kelvin}K)")
     }
 }

@@ -35,8 +35,17 @@ data class FluidPacket(override val contents: Mixture) : Packet {
  * Capacity: max grams per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
  */
 object Capacity {
-    /** Max grams per packet: 1000 (matches Godot conveyor 1kg lumps). Separate from Rate (throughput). */
-    const val PACKET_GRAMS: Long = 1_000L
+    /**
+     * Max grams per packet: a tonne. Separate from Rate (throughput).
+     *
+     * A lump on a belt used to be a kilogram, back when a tile of rock was three. Solids are at
+     * their real densities now — a tile of ore is about four tonnes — so a belt that moved kilograms
+     * would take an hour to shift one boulder. Everything measured in grams moved up by a thousand
+     * with it; the masses themselves moved by rather more (see [org.emerge.demo.outofspace.world.Material]),
+     * so the refinery runs about a third slower per rock than it used to, in exchange for numbers
+     * that stay round.
+     */
+    const val PACKET_GRAMS: Long = 1_000_000L
 
     /** The measure capacity is expressed in. Mass today; see the class note for why it is a function. */
     fun quantityOf(packet: Packet): Long = packet.mass
