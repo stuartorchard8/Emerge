@@ -40,6 +40,11 @@ include(":apps:outofspace:desktop")
 include(":apps:outofspace:android")
 include(":apps:outofspace:web")
 
+include(":apps:fluidlab:core")
+include(":apps:fluidlab:desktop")
+include(":apps:fluidlab:android")
+include(":apps:fluidlab:web")
+
 // The starting point for a new app — copy it with `tools/new-app.sh <name>`. It is a real, built
 // app rather than inert files so that an engine API change breaks it here, not the first time it
 // gets copied. See apps/template/README.md.
