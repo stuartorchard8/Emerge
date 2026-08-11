@@ -191,6 +191,11 @@ object Save {
                 put("rate", m.gramsPerTick.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
+            is Vaporizer -> {
+                put("in", m.input?.let { writeResource(it) })
+                put("carry", m.carry.toString())
+                put("rate", m.gramsPerTick.toString())
+            }
             is Smelter -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("out", m.refined?.let { writeResource(it) })
@@ -576,6 +581,12 @@ object Save {
                 carry = num("carry", 0L),
                 gramsPerTick = rate(125L),
                 efficiencyPermille = num("eff", 900L).toInt(),
+            )
+            MachineKind.Vaporizer -> Vaporizer(
+                facing = facing(),
+                input = res("in"),
+                carry = num("carry", 0L),
+                gramsPerTick = rate(125L),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),

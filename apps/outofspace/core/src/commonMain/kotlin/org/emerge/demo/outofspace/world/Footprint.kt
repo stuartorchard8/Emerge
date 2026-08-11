@@ -19,7 +19,7 @@ val MachineKind.size: Int
         // them, so its size says nothing about space -- only its two ports place it.
         MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> 1
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.Hull -> 1
-        MachineKind.Processor, MachineKind.Storage -> 3
+        MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage -> 3
         // A floor to land a rock on, and a rock is five tiles across.
         MachineKind.Extractor, MachineKind.Smelter -> 5
     }

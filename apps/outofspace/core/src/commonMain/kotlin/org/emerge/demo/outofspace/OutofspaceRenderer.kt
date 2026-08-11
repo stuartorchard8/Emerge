@@ -24,6 +24,7 @@ import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
@@ -443,6 +444,10 @@ class OutofspaceRenderer {
             }
             is Processor -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
+                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Vaporizer -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Vaporizer))
                 fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Smelter -> {
@@ -953,6 +958,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Bridge -> 0x1A2030FFL
     MachineKind.Extractor -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
+    MachineKind.Vaporizer -> 0x905A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL

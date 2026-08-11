@@ -70,6 +70,7 @@ import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.fluid.EdgeGrid
 import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
 import org.emerge.demo.outofspace.world.fluid.MomentumField
@@ -1181,6 +1182,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     destination.copy(input = it); true } ?: false
                 is Smelter -> acceptInto(destination.input, packet)?.let { machines[target] =
                     destination.copy(input = it); true } ?: false
+                is Vaporizer -> acceptInto(destination.input, packet)?.let { machines[target] =
+                    destination.copy(input = it); true } ?: false
                 is Storage -> {
                     if (packet !is SolidPacket) false
                     else {
@@ -1200,8 +1203,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     machines[target] = destination.copy(ventedGrams = destination.ventedGrams + packet.mass)
                     true
                 }
-                // Extractors take no input: what they eat is lying on them.
-                else -> false
+
+                // These machines have no inputs
+                is Bridge -> false
+                is Extractor -> false
+                is Pump -> false
+                is Sensor -> false
+                is Hull -> false
             }
         }
 
@@ -1222,6 +1230,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
             MachineKind.Extractor -> Extractor(facing)
             MachineKind.Processor -> Processor(facing)
+            MachineKind.Vaporizer -> Vaporizer(facing)
             MachineKind.Smelter -> Smelter(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)

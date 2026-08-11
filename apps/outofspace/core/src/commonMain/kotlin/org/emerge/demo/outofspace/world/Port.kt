@@ -47,6 +47,7 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
+        is Vaporizer -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Input))
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Processor -> listOf(
