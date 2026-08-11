@@ -40,7 +40,25 @@ class DiffusionStep(
     val air: AirField,
     val ventedGrams: Long,
     val ventedJoules: Long,
-)
+    /**
+     * What actually crossed each face this pass, and the mass it came out of — the raw material for
+     * [flow], kept separate so a caller that never asks the question never pays for the answer.
+     */
+    private val edges: EdgeGrid,
+    private val fluxX: LongArray,
+    private val fluxY: LongArray,
+    private val startingMass: LongArray,
+    private val endingMass: LongArray,
+) {
+
+    /**
+     * Where the fluid went, as a picture — see [FlowField].
+     *
+     * Lazy because the pipes run the same step and never ask, and because the room only asks when
+     * the flow overlay is up.
+     */
+    val flow: FlowField by lazy { FlowField.derive(edges, fluxX, fluxY, startingMass, endingMass) }
+}
 
 /**
  * The ways a cell's contents are divided each tick: its four faces, plus itself.
@@ -127,10 +145,17 @@ fun diffuseFluid(
     var ventedGrams = 0L
     var ventedJoules = 0L
 
+    // Net grams across each face, signed toward +x / +y. Both ends of a face add into the same slot,
+    // so gas crossing in both directions cancels and what is left is the net movement — which is the
+    // only thing a flow picture should claim.
+    val fluxX = LongArray(edges.xEdgeCount)
+    val fluxY = LongArray(edges.yEdgeCount)
+
     // Reused across tiles: what actually crossed each of the four faces, and who was on the far side.
     val faceAperture = IntArray(FACE_SLOTS.size)
     val faceNeighbour = IntArray(FACE_SLOTS.size)
     val faceOut = LongArray(FACE_SLOTS.size)
+    val faceEdge = IntArray(FACE_SLOTS.size)
 
     for (tile in 0 until tiles) {
         val ownMass = mass[tile]
@@ -145,6 +170,7 @@ fun diffuseFluid(
         faceAperture[1] = apertures.yAt(down); faceNeighbour[1] = edges.yEdgeAfter(down)
         faceAperture[2] = apertures.xAt(left); faceNeighbour[2] = edges.xEdgeBefore(left)
         faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
+        faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
         faceOut.fill(0L)
 
         var outMass = 0L
@@ -177,6 +203,16 @@ fun diffuseFluid(
             }
         }
 
+        // ── Which way that gas went ──
+        //
+        // Signed toward +x and +y, so the neighbour on the other side of the face will subtract what
+        // it sends back through the same slot. Gas shed into space over the rim counts too: a breach
+        // is the clearest flow in the vessel and the arrows should say so.
+        fluxY[faceEdge[0]] -= faceOut[0]
+        fluxY[faceEdge[1]] += faceOut[1]
+        fluxX[faceEdge[2]] -= faceOut[2]
+        fluxX[faceEdge[3]] += faceOut[3]
+
         // ── The energy on the gas that just left ──
         //
         // Telescoped: each face is handed the difference between two running totals of
@@ -205,9 +241,18 @@ fun diffuseFluid(
     for (i in grams.indices) grams[i] += deltaGrams[i]
     if (joules != null && deltaJoules != null) for (t in 0 until tiles) joules[t] += deltaJoules[t]
 
+    // Snapshotted rather than folded on demand: [grams] belongs to the caller, which goes on editing
+    // it after the pass, and a mass read later would not be the mass this flux came out of.
+    val endingMass = tileMass(tiles, grams)
+
     return DiffusionStep(
         air = if (joules == null) AirField.of(grams) else AirField.of(grams, joules),
         ventedGrams = ventedGrams,
         ventedJoules = ventedJoules,
+        edges = edges,
+        fluxX = fluxX,
+        fluxY = fluxY,
+        startingMass = mass,
+        endingMass = endingMass,
     )
 }

@@ -366,12 +366,27 @@ data class VesselState(
     /**
      * Where the air is going, tile by tile — see [FlowField].
      *
-     * Presentation and inspection only; the sim reads [momentum] directly. Cached because the flow
-     * overlay wants the whole field every frame while the state behind it only changes once a tick,
-     * and rebuilding it sixty times for one tick's worth of answer would be sixty times the work for
-     * the same picture.
+     * Presentation and inspection only. Measured by running one diffusion pass over a *copy* of the
+     * air and reading which way the gas went, rather than being kept as state: the flow is a function
+     * of the state, and a stored copy is one more thing that can disagree with the world. That it
+     * shows the step about to be taken rather than the one just taken is not a distinction a viewer
+     * can make, and it is why the picture cannot go stale — there is nothing to go stale.
+     *
+     * [tick] is passed for real, since the remainder rotation turns with it and a fixed value would
+     * lean every arrow the same way (see [diffuseFluid]).
+     *
+     * Cached because the overlay wants the whole field every frame while the state behind it only
+     * changes once a tick, and rebuilding it sixty times for one tick's worth of answer would be
+     * sixty times the work for the same picture.
      */
-    val flow: FlowField by lazy { FlowField.derive(EdgeGrid(grid), momentum, tileMass(grid.size, air.copyGrams())) }
+    val flow: FlowField by lazy {
+        // Airlocks resolved the way the sim resolves them, or a door standing open this tick would
+        // be drawn as a wall the air flows through.
+        val openness = airlockOpenness(machines, signals)
+        val edges = EdgeGrid(grid)
+        val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, openness), openness)
+        diffuseFluid(edges, apertures, air.copyGrams(), joules = null, tick = tick).flow
+    }
 
     /**
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer

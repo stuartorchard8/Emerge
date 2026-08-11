@@ -32,11 +32,11 @@ import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
-import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.UiRectRenderer
 import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /**
  * Draws the vessel: tiles, machines, and every packet in transit.
@@ -764,10 +764,14 @@ class OutofspaceRenderer {
         val fraction = speed / peak
         if (fraction < Visual.FLOW_MIN_FRACTION) return
 
-        // Unit direction (speed = magnitude of this pair).
-        val scale = MomentumField.SPEED_LIMIT_RAW.toFloat() * speed
-        val dx = state.flow.xAt(tile).toFloat() / scale
-        val dy = state.flow.yAt(tile).toFloat() / scale
+        // Unit direction. Normalised against the pair's own magnitude rather than against `speed`,
+        // which is that magnitude over the tile's mass and so carries a scale of its own.
+        val fx = state.flow.xAt(tile).toFloat()
+        val fy = state.flow.yAt(tile).toFloat()
+        val scale = sqrt(fx * fx + fy * fy)
+        if (scale <= 0f) return
+        val dx = fx / scale
+        val dy = fy / scale
 
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx

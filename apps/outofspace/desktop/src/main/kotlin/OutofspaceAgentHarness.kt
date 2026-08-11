@@ -620,7 +620,7 @@ object OutofspaceAgentHarness {
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
             println("[agent]   air       ${air.total}g  ${composition(air)}")
-            println("[agent]   flow      x=${state.flow.xAt(tile)} y=${state.flow.yAt(tile)} " +
+            println("[agent]   flow      x=${state.flow.xAt(tile)}g/t y=${state.flow.yAt(tile)}g/t " +
                 "speed=${"%.5f".format(state.flow.speedAt(tile))} tiles/tick")
         }
 

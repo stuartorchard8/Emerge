@@ -354,8 +354,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirGrams = w.injectedAirGrams,
             injectedAirJoules = w.injectedAirJoules,
-            // Left exactly as it was found: nothing writes momentum now, so the flow overlay goes
-            // quiet rather than wrong, and the save format is unchanged. See the extraction plan §3.
+            // Written by [applyPressureForce] and read by nobody: diffusion has no momentum to carry,
+            // so what lands here is an impulse total that is never spent. Kept because the save format
+            // is unchanged and a model that closes the ledger again will want somewhere to put it.
+            // ⚠️ Not a velocity field — the flow overlay measures [diffuseFluid] instead (see
+            // [VesselState.flow]). See the extraction plan §3.
             momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
             // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
