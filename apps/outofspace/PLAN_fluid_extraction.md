@@ -239,26 +239,31 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
 6. **Wire thrust to blocked flux** (§3). Momentum fields, save format and ledger fields are all left
    alone; the work is keeping `applyPressureForce` fed from the diffusion model's pressure field, and
    settling §3.6 (unbounded momentum). No measurement gate (§3.7).
-   ⛔ **ATTEMPTED 2026-08-12 AND REVERTED — §3's premise does not survive the cut-over.** Patch kept
-   at `scratchpad/step6-blocked-flux.patch`; it wires `applyPressureForce` to the pre-diffusion
-   pressure field of both layers and returns thrust to every breach test. What it also does is make
-   `FlightTest.a sealed vessel rings and does not depart` fail with a *growing* excursion.
-   The cause is not a bug in the wiring. `applyPressureForce` splits each face's drop: a closed face
-   pushes the hull, an open one hands `toGas` to the momentum field. Under the solver that share came
-   back — the gas hit the far wall and pushed it — and the test says so in as many words: *"the ship's
-   momentum is minus the gas's"*. Diffusion carries no momentum, so the share never returns and the
-   hull keeps the deficit. **The telescoping in §3 was never a property of `applyPressureForce`
-   alone; it held across the whole solver.** Two ways out, and they are different models:
-   - **(a) Blocked flux, and accept the leak.** Keep the patch; a sealed vessel with any internal
-     pressure gradient drifts. The invariant test has to go or be weakened to an envelope that grows.
-   - **(b) Thrust from vented mass.** Diffusion already knows exactly what leaves each rim face.
-     Impulse per rim face = mass out × a speed derived from the venting cell's pressure, directed
-     along the face normal. **Zero when sealed by construction** — nothing vents, so nothing sums —
-     rather than by a telescoping argument that has to be re-earned. Non-zero only at a real hole,
-     which is what §3 wanted; and it is a magnitude, so it tunes to feel per §3.7.
-   Recommended: **(b)**. It is the same size of change, it keeps the invariant that catches "a sealed
-   ship accelerates from nothing", and it does not need the momentum field at all — which retires
-   §3.6 rather than answering it. **Stu's call.**
+   ✅ **DONE 2026-08-12 as option (a) — Stu's call, knowing the leak.** `applyPressureForce` is fed
+   the pre-diffusion pressure field of both layers; thrust returns to every breach test.
+   ⚠️ **Blocked flux leaks momentum, and this is the known cost of (a).** The function splits each
+   face's drop: a closed face pushes the hull, an open one hands `toGas` to the momentum field. Under
+   the solver that share came back — the gas hit the far wall — and `FlightTest` says so in as many
+   words: *"the ship's momentum is minus the gas's"*. Diffusion carries no momentum, so it never
+   returns and the hull keeps the deficit: **a sealed vessel with any internal pressure gradient
+   slowly departs** (measured 0.001 → 0.002 tiles over `LONG_TICKS`, growing). The telescoping §3
+   relied on was a property of the whole solver, never of `applyPressureForce` alone.
+   **Three tests are PARKED behind `@Ignore`, not deleted** — Stu intends to try resurrecting them:
+   `a sealed vessel rings and does not depart`, `the momentum ledger still balances while the ship is
+   under way`, `the momentum a pump takes out of the room is booked to the vessel` (that last one
+   also needs pump momentum putting back).
+   The alternatives, recorded because the choice may be revisited:
+   - **(b) Thrust from vented mass.** ⚠️ **Weaker than it first looks.** "Out of the grid" is not
+     "out of the ship" — a breach vents into vacuum tiles that are still grid tiles, so thrust would
+     arrive late and at the grid edge. The obvious shortcut of reckoning at the containment boundary
+     **does not exist**: `StructureMap.derive` floods in from the border, so a breached room is
+     relabelled `Vacuum` and the boundary evaporates exactly when the hole appears. And diffusion has
+     no direction, so a plume leaves across many rim faces that largely cancel — thrust as a rounding
+     error on a spreading cloud.
+   - **(c) No fluid thrust at all**, which is what the extraction's own rationale points at (venting
+     imparts negligible momentum on a real vessel). Rejected for now: Stu wants the tests kept live.
+   §3.6 (unbounded momentum) stands unanswered by choice: Stu will not spend on it until a runaway
+   shows up in play.
 7. **Sweep the tests** (§7). Delete the solver tests; keep thin feature coverage.
 
 ## 6. Open questions — answer before step 4

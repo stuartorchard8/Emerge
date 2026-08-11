@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -232,4 +233,25 @@ class PumpTest {
         assertEquals(Direction.Down, pump.facing, "it came back facing somewhere else")
         assertEquals(after.pipeAir, back.pipeAir, "what it had pumped came back as something else")
     }
+
+    // PARKED, not abandoned: blocked-flux thrust leaks momentum, because the share of each
+    // face's pressure drop that applyPressureForce hands the gas is never handed back — see
+    // the extraction plan, step 6. Kept so that a model which closes the ledger again has
+    // something to be judged against.
+    @Ignore
+    @Test
+    fun `the momentum a pump takes out of the room is booked to the vessel`() {
+        val idle = run(VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G), 300)
+        // Drawing sideways, so the intake removes momentum along x, where a still room has least of
+        // its own and the pump's contribution is not buried under the settling of the air column.
+        val working = run(pumped(facing = Direction.Left), 300)
+
+        assertTrue(
+            working.vesselImpulseX != idle.vesselImpulseX,
+            "a running pump left the vessel's x impulse exactly as an empty hull did — the momentum " +
+                "of the gas it drew in went nowhere, which is a leak out of the ledger",
+        )
+        assertBalanced(working, "a pump pushing on the ship")
+    }
+
 }

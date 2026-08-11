@@ -84,7 +84,11 @@ import org.emerge.demo.outofspace.world.applyPumps
 import org.emerge.demo.outofspace.world.exchangeLayers
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
+import org.emerge.demo.outofspace.world.applyPressureForce
 import org.emerge.demo.outofspace.world.diffuseFluid
+import org.emerge.demo.outofspace.world.gasKelvin
+import org.emerge.demo.outofspace.world.tileMass
+import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.gasCapacity
@@ -223,6 +227,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeVolumes = volumes,
         )
 
+        // ── Thrust, before anything moves ──────────────────────────────────────
+        //
+        // The hull's share of the pressure it contains, taken from the field as the tick found it.
+        // Where gas pushes on a face it can cross, the push goes to the gas; where it pushes on a
+        // closed one, the bulkhead takes it — and inside a sealed vessel those terms telescope to
+        // exactly zero however the pressure is arranged. Open a hole and one term loses its partner,
+        // which is the whole of rocket thrust here. See [applyPressureForce].
+        //
+        // It reads the pre-diffusion field for the same reason the old solver applied forces before
+        // transport: the gradient that pushes the hull this tick is the one that exists before the
+        // gas has been allowed to answer it.
+        val roomPressure = tilePressure(
+            state.grid.size, w.airGrams, gasKelvin(w.airJoules, gasCapacity(state.grid.size, w.airGrams)),
+        )
+        val pushed = applyPressureForce(
+            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.airGrams), roomPressure,
+        )
+        val pipePressure = tilePressure(
+            state.grid.size, w.pipeGrams,
+            gasKelvin(w.pipeJoules, gasCapacity(state.grid.size, w.pipeGrams)), volumes,
+        )
+        val pipePushed = applyPressureForce(
+            edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
+            tileMass(state.grid.size, w.pipeGrams), pipePressure,
+        )
+
         // On airGrams (edited by [displaceAir]). The tick is passed because the remainder rotation
         // turns with it — see [diffuseFluid]; a constant here would strand trace gas in a corner.
         val fluid = diffuseFluid(edges, roomApertures, w.airGrams, w.airJoules, state.tick)
@@ -291,12 +321,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // (negative), contact and plating gave some to others.
         val handedX = w.bodyHandedX + bodiesDrifted.handedX
         val handedY = w.bodyHandedY + bodiesDrifted.handedY
-        // No fluid term yet: diffusion has no momentum to hand the hull, and the blocked-flux thrust
-        // that replaces it ([applyPressureForce]) is not wired up until the next increment. A vessel
-        // therefore flies on its debug engine and on what it hands bodies, and a breach does not push
-        // it — deliberately, and briefly.
-        val netImpulseX = thrustX - handedX
-        val netImpulseY = thrustY - handedY
+        // Valves and pumps no longer push: they move mass between two cells at the same place, and a
+        // transfer that goes nowhere has no direction to push in. What is left is what presses on the
+        // hull, what the debug engine adds, and what the vessel handed the bodies around it.
+        val netImpulseX = pushed.vesselX + pipePushed.vesselX + thrustX - handedX
+        val netImpulseY = pushed.vesselY + pipePushed.vesselY + thrustY - handedY
 
         return state.copy(
             machines = machines,
