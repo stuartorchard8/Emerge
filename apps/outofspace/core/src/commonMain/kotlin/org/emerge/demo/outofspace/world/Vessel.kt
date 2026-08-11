@@ -372,9 +372,6 @@ data class VesselState(
      * shows the step about to be taken rather than the one just taken is not a distinction a viewer
      * can make, and it is why the picture cannot go stale — there is nothing to go stale.
      *
-     * [tick] is passed for real, since the remainder rotation turns with it and a fixed value would
-     * lean every arrow the same way (see [diffuseFluid]).
-     *
      * Cached because the overlay wants the whole field every frame while the state behind it only
      * changes once a tick, and rebuilding it sixty times for one tick's worth of answer would be
      * sixty times the work for the same picture.
@@ -385,7 +382,7 @@ data class VesselState(
         val openness = airlockOpenness(machines, signals)
         val edges = EdgeGrid(grid)
         val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, openness), openness)
-        diffuseFluid(edges, apertures, air.copyGrams(), joules = null, tick = tick).flow
+        diffuseFluid(edges, apertures, air.copyGrams(), joules = null).flow
     }
 
     /**

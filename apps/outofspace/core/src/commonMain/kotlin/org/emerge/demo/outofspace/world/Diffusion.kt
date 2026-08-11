@@ -14,11 +14,21 @@ import org.emerge.demo.outofspace.world.StructureMap
  * equilibrium, which is the only thing the vessel ever wanted from the atmosphere. Three properties
  * are load-bearing:
  *
- * **The split is exact, remainders included.** Five shares that sum to precisely what the cell held,
- * with the leftover units handed out in a rotation that turns with the tick (see [shareOf]). The
- * plain `count / 5` this replaced was conservative but *immobilising*: a tile holding three grams
- * computed a zero share across every face and sheds nothing, for ever — next to vacuum, a room that
- * never finishes emptying. Rounding down does not lose mass here; it strands it.
+ * **The remainder stays home.** Each face takes `count / SLOTS`, and whatever will not divide is
+ * simply left where it is.
+ *
+ * It was briefly handed round the faces instead, in a rotation that turned with the tick, so that a
+ * cell holding fewer than [SLOTS] grams of a species could still shed them — otherwise a breached
+ * room drains to a few grams a tile and stops. **Reverted 2026-08-12 (Stu), because it flew the
+ * ship.** The rotation moved a gram or two per tile per tick, and since every tile shared one offset
+ * it moved them *in step*: a grid-wide ripple in the pressure field, on a five-tick cycle, with no
+ * reason to average to nothing on a hull that is not symmetric. [applyPressureForce] reads that
+ * field, so the ripple became a small standing shove and a sealed vessel slowly departed.
+ *
+ * What is given up is stated plainly, because it is a real effect: a trace below the divisor **stays
+ * put**, so a vented room keeps a few grams a tile. Nothing is lost — rounding down strands mass
+ * here, it never destroys it — and the cheap fix, if the residue ever matters, is a rule for rim
+ * faces alone, which empties the room without perturbing a single interior pressure.
  *
  * **Conservation is by construction, not by correction.** Every gram subtracted from one tile is
  * added to a named neighbour or booked as vented in the same statement, so there is no ledger to
@@ -72,28 +82,10 @@ class DiffusionStep(
 const val SLOTS = 5
 
 /**
- * The four face slots, in the order the remainder rotation visits them: up, down, left, right.
- * Slot `0` is the share that stays home, which is why it is absent here and why a leftover unit
- * landing on it is a unit that does not move this tick.
+ * A tile's four faces, in the order they are walked: up, down, left, right. The fifth share of
+ * [SLOTS] is the one that stays home, which is why there is no slot for it here.
  */
-private val FACE_SLOTS = intArrayOf(1, 2, 3, 4)
-
-/**
- * How much of [count] this slot takes when the cell is divided [SLOTS] ways.
- *
- * The quotient goes to everyone; the `count % SLOTS` leftover units go one each to consecutive slots,
- * starting from [offset]. Summed over every slot this is exactly [count], which is the whole point —
- * nothing is left over to strand.
- *
- * [offset] turns with the tick so that the direction the leftovers lean is not a permanent property
- * of the geometry. It also turns with the species, or every gas in a mixed tile would lean the same
- * way on the same tick and the mixture would drift as a lump rather than spreading.
- */
-private fun shareOf(count: Long, slot: Int, offset: Int, remainder: Int): Long {
-    val quotient = count / SLOTS
-    val place = (slot - offset + SLOTS) % SLOTS
-    return if (place < remainder) quotient + 1 else quotient
-}
+private const val FACES = 4
 
 /** Convenience overload deriving the face connectivity from [structure]. */
 fun diffuseFluid(
@@ -101,10 +93,9 @@ fun diffuseFluid(
     structure: StructureMap,
     grams: LongArray,
     joules: LongArray? = null,
-    tick: Long = 0L,
 ): DiffusionStep {
     val edges = EdgeGrid(grid)
-    return diffuseFluid(edges, ApertureField.derive(edges, structure), grams, joules, tick)
+    return diffuseFluid(edges, ApertureField.derive(edges, structure), grams, joules)
 }
 
 /**
@@ -119,10 +110,6 @@ fun diffuseFluid(
  * fraction — so a tile whose mass leaves entirely has no energy left behind either. Ghost heat in an
  * evacuated cell would be exactly the stranding problem again, in the other ledger.
  *
- * [tick] drives the remainder rotation and so is part of the model, not a debugging aid: the same
- * field diffuses differently on consecutive ticks, deterministically. Callers must pass the real tick
- * or replay will diverge.
- *
  * **Venting to the rim stays.** A face with no tile on the far side sheds its share into space and
  * books it, which is what keeps breaches and the vent ledger working. It no longer produces thrust —
  * that is [applyPressureForce]'s job, wired up separately.
@@ -132,7 +119,6 @@ fun diffuseFluid(
     apertures: ApertureField,
     grams: LongArray,
     joules: LongArray? = null,
-    tick: Long = 0L,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
@@ -152,10 +138,10 @@ fun diffuseFluid(
     val fluxY = LongArray(edges.yEdgeCount)
 
     // Reused across tiles: what actually crossed each of the four faces, and who was on the far side.
-    val faceAperture = IntArray(FACE_SLOTS.size)
-    val faceNeighbour = IntArray(FACE_SLOTS.size)
-    val faceOut = LongArray(FACE_SLOTS.size)
-    val faceEdge = IntArray(FACE_SLOTS.size)
+    val faceAperture = IntArray(FACES)
+    val faceNeighbour = IntArray(FACES)
+    val faceOut = LongArray(FACES)
+    val faceEdge = IntArray(FACES)
 
     for (tile in 0 until tiles) {
         val ownMass = mass[tile]
@@ -177,14 +163,12 @@ fun diffuseFluid(
         for (s in 0 until species) {
             val count = grams[base + s]
             if (count <= 0L) continue
-            val remainder = (count % SLOTS).toInt()
-            val offset = ((tick + s) % SLOTS).toInt()
+            val share = count / SLOTS
+            if (share <= 0L) continue
 
-            for (f in FACE_SLOTS.indices) {
+            for (f in 0 until FACES) {
                 val aperture = faceAperture[f]
                 if (aperture <= 0) continue
-                val share = shareOf(count, FACE_SLOTS[f], offset, remainder)
-                if (share <= 0L) continue
 
                 // A partly-open face passes its share in proportion to how open it is; what will not
                 // fit stays home, which is the same thing a shut face does. Full openness is the
@@ -224,7 +208,7 @@ fun diffuseFluid(
             val energy = joules[tile]
             var carried = 0L
             var assigned = 0L
-            for (f in FACE_SLOTS.indices) {
+            for (f in 0 until FACES) {
                 if (faceOut[f] <= 0L) continue
                 carried += faceOut[f]
                 val upTo = energy * carried / ownMass

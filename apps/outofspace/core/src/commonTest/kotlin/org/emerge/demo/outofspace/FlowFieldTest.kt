@@ -34,7 +34,7 @@ class FlowFieldTest {
     private fun flowFrom(vararg loaded: Pair<Int, Long>): FlowField {
         val grams = LongArray(grid.size * Species.COUNT)
         for ((tile, count) in loaded) grams[tile * Species.COUNT + Species.Nitrogen.ordinal] = count
-        return diffuseFluid(edges, apertures, grams, joules = null, tick = 0L).flow
+        return diffuseFluid(edges, apertures, grams, joules = null).flow
     }
 
     /**

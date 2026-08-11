@@ -202,7 +202,21 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
    discriminate the failure it guards (a per-degree divisor gives the middle ~2× the edges), not as a
    tolerance anyone should tune.
 
-   **Remainders rotate (Stu, 2026-08-12).** `count / SLOTS` was conservative but *immobilising*: three
+   ⛔ **THE ROTATION IS GONE AGAIN — Stu, 2026-08-12. It was flying the ship.** The paragraph below
+   describes what was built and then reverted; the model now leaves the remainder in the central
+   tile. Round-robin moved a gram or two per tile per tick, and because every tile shared one offset
+   it moved them *in step* — a grid-wide ripple in the pressure field on a five-tick cycle, which
+   `applyPressureForce` turned into a standing shove. Measured: dropping it **cut the sealed
+   vessel's drift about 200×** (excursion 1,120,999 → 2.2M before, 5,350 → 17,350 after, against a
+   tile of 1e9) and **brought the momentum ledger back into balance** — `the momentum ledger still
+   balances while the ship is under way` and `the momentum a pump takes out of the room is booked to
+   the vessel` both pass again and are un-parked. Cost accepted knowingly: a trace below the divisor
+   stays put, so a breached room drains to a few grams a tile and stops. If that ever matters, the
+   cheap fix is a rule for **rim faces alone** — it empties the room without perturbing any interior
+   pressure. ⚠️ What is left still grows, so `a sealed vessel rings and does not depart` stays parked:
+   the residue is the share of each drop handed to gas that has no way to hand it back.
+
+   **Remainders rotate (Stu, 2026-08-12) — SUPERSEDED, see above.** `count / SLOTS` was conservative but *immobilising*: three
    grams floor to a zero share across every face and never move, so a breached room never finishes
    emptying. Now each species is split five ways exactly — four faces and one staying home — with the
    `count % SLOTS` leftovers handed one each to consecutive slots from an offset of `(tick + species)`.

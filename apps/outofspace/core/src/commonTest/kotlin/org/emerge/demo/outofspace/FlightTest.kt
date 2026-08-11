@@ -45,10 +45,11 @@ class FlightTest {
      * that the envelope does not grow — measured over two halves of a long run, because a slow
      * divergence is exactly what a short one would miss.
      */
-    // PARKED, not abandoned: blocked-flux thrust leaks momentum, because the share of each
-    // face's pressure drop that applyPressureForce hands the gas is never handed back — see
-    // the extraction plan, step 6. Kept so that a model which closes the ledger again has
-    // something to be judged against.
+    // PARKED, and much closer than it was. Dropping the remainder rotation (2026-08-12) cut the
+    // drift about two hundredfold — 1,120,999 → 2.2M before, 5,350 → 17,350 after, against a tile of
+    // 1e9 — and brought the momentum ledger back into balance. What is left still *grows*, which is
+    // what this asserts, so it stays red: the residue is the share of each face's pressure drop that
+    // applyPressureForce hands the gas and diffusion never hands back. Kept live as the target.
     @Ignore
     @Test
     fun `a sealed vessel rings and does not depart`() {
@@ -338,11 +339,6 @@ class FlightTest {
         const val BREACH_Y = 16
     }
 
-    // PARKED, not abandoned: blocked-flux thrust leaks momentum, because the share of each
-    // face's pressure drop that applyPressureForce hands the gas is never handed back — see
-    // the extraction plan, step 6. Kept so that a model which closes the ledger again has
-    // something to be judged against.
-    @Ignore
     /**
      * The ledger, while the ship is accelerating — which is the case it has never been checked in.
      *

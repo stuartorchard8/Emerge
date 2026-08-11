@@ -253,15 +253,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             tileMass(state.grid.size, w.pipeGrams), pipePressure,
         )
 
-        // On airGrams (edited by [displaceAir]). The tick is passed because the remainder rotation
-        // turns with it — see [diffuseFluid]; a constant here would strand trace gas in a corner.
-        val fluid = diffuseFluid(edges, roomApertures, w.airGrams, w.airJoules, state.tick)
+        // On airGrams (edited by [displaceAir]).
+        val fluid = diffuseFluid(edges, roomApertures, w.airGrams, w.airJoules)
 
         // Pipes: same model, connectivity from player-drawn layout. Volume does not enter here —
         // diffusion moves a *share* of what a cell holds, and a share is the same fraction of a thin
         // cell as of a fat one. Volume still governs pressure, which is what the valves and pumps
         // above read, so a pipe is still a small place that fills quickly.
-        val pipes = diffuseFluid(edges, plumbing, w.pipeGrams, w.pipeJoules, state.tick)
+        val pipes = diffuseFluid(edges, plumbing, w.pipeGrams, w.pipeJoules)
         // Pipes cannot vent to rim (ledger check).
         require(pipes.ventedGrams == 0L && pipes.ventedJoules == 0L) {
             "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
