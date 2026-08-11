@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.fluid
+package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
@@ -6,12 +6,12 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.StructureMap
-import org.emerge.demo.outofspace.world.fluid.ApertureField
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.MomentumField
-import org.emerge.demo.outofspace.world.fluid.applyPressureForce
-import org.emerge.demo.outofspace.world.fluid.tileMass
-import org.emerge.demo.outofspace.world.fluid.tilePressure
+import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.MomentumField
+import org.emerge.demo.outofspace.world.applyPressureForce
+import org.emerge.demo.outofspace.world.tileMass
+import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.math.abs
 import kotlin.test.Test

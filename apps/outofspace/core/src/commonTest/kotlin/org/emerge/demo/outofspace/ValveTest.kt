@@ -10,9 +10,9 @@ import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.fluid.PIPE_VOLUME
-import org.emerge.demo.outofspace.world.fluid.VolumeField
-import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
+import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.gasCapacityAt
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals

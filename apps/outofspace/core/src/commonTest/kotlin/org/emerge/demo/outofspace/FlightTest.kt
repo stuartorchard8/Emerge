@@ -123,7 +123,8 @@ class FlightTest {
      * nothing at all here, and would put the whole plume's flight time between an engine lighting and
      * a ship moving.
      */
-    @Ignore("no thrust between the cut-over and blocked-flux thrust — extraction plan step 6")
+    // no thrust between the cut-over and blocked-flux thrust — extraction plan step 6
+    @Ignore
     @Test
     fun `thrust arrives before the exhaust does`() {
         val cfg = OutofspaceConfig()
@@ -138,7 +139,8 @@ class FlightTest {
         assertTrue(s.velocityX > 0L, "and so it was already moving")
     }
 
-    @Ignore("no thrust between the cut-over and blocked-flux thrust — extraction plan step 6")
+    // no thrust between the cut-over and blocked-flux thrust — extraction plan step 6
+    @Ignore
     @Test
     fun `an engine is felt inside the ship as a gravity pointing astern`() {
         val cfg = OutofspaceConfig()
@@ -183,7 +185,8 @@ class FlightTest {
      * and momentum is already in the file — so it is the one part a save can lose, and losing it
      * would put a ship that had been under way for an hour back at the origin.
      */
-    @Ignore("no thrust between the cut-over and blocked-flux thrust — extraction plan step 6")
+    // no thrust between the cut-over and blocked-flux thrust — extraction plan step 6
+    @Ignore
     @Test
     fun `a save remembers the voyage`() {
         val cfg = OutofspaceConfig()

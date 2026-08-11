@@ -50,7 +50,7 @@ class StructureMap(private val kinds: ByteArray) {
          * [Airlock]s that are being signalled. They are skipped exactly as a permeable plate is, so
          * the fill pours through an open door and the room beyond it correctly becomes outside. Omit
          * it and every door is shut, which is the right answer for a world being loaded or built.
-         * See [org.emerge.demo.outofspace.world.fluid.airlockOpenness].
+         * See [org.emerge.demo.outofspace.world.airlockOpenness].
          */
         fun derive(grid: Grid, machines: List<Machine?>, openness: IntArray? = null): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }

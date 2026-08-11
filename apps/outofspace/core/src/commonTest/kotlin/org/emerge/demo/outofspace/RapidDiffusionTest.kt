@@ -1,11 +1,11 @@
-package org.emerge.demo.outofspace.fluid
+package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.fluid.ApertureField
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.SLOTS
-import org.emerge.demo.outofspace.world.fluid.diffuseFluid
+import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.SLOTS
+import org.emerge.demo.outofspace.world.diffuseFluid
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  * conserved to the unit, no tile ever goes negative, a sealed box settles uniform rather than
  * biased, a hole in the rim books exactly what left, and — the property the remainder rotation
  * exists for — nothing gets stranded by rounding. There is deliberately no assertion here about how
- * fast anything happens; speed is the one thing [org.emerge.demo.outofspace.world.fluid.SLOTS] is
+ * fast anything happens; speed is the one thing [org.emerge.demo.outofspace.world.SLOTS] is
  * allowed to change, and pinning it would turn a tuning dial into a test to fight.
  */
 class RapidDiffusionTest {

@@ -5,7 +5,7 @@ package org.emerge.demo.outofspace.chem
  * into a cell and how hot it is.
  *
  * The atmosphere solver has always used the ideal gas law — `P = nRT/V`, which is
- * [org.emerge.demo.outofspace.world.fluid.tilePressure]. An ideal gas has no liquid phase and
+ * [org.emerge.demo.outofspace.world.tilePressure]. An ideal gas has no liquid phase and
  * cannot have one: its molecules have no size and do not attract each other, so there is nothing
  * to condense and nothing to condense *into*. Squeeze it forever and it just gets denser.
  *
@@ -109,13 +109,13 @@ const val CLOSE_PACKED: Long = 3 * SCALE
  * @param kelvin critical temperature, K.
  * @param gramsPerTile critical density, expressed as the grams of this species that a full tile
  *   holds when it is exactly at critical density. Tile-relative for the same reason
- *   [org.emerge.demo.outofspace.world.fluid.VolumeField] is: the solver never asks how big a metre
+ *   [org.emerge.demo.outofspace.world.VolumeField] is: the solver never asks how big a metre
  *   is, and this keeps it from having to start.
  */
 class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Species) {
 
     /**
-     * Critical pressure, in the units [org.emerge.demo.outofspace.world.fluid.tilePressure]
+     * Critical pressure, in the units [org.emerge.demo.outofspace.world.tilePressure]
      * reports — the conversion that carries a reduced pressure back into the solver's scale.
      *
      * `Pc = (3/8)·n_c·Tc / T_ambient`, which is the `3/8` ratio above rearranged, with the
@@ -129,7 +129,7 @@ class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Spe
 
 /**
  * Millimoles of [species] in [grams] of it — the same conversion
- * [org.emerge.demo.outofspace.world.fluid.millimolesOf] performs, kept here so the critical point
+ * [org.emerge.demo.outofspace.world.millimolesOf] performs, kept here so the critical point
  * can be expressed in the same currency as everything downstream of it.
  */
 private fun millimolesIn(grams: Long, species: Species): Long = grams * (MILLI * MILLI / species.molarMass) / MILLI
@@ -336,7 +336,7 @@ fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
 
 /**
  * Reduced density of [grams] of [species] in a cell holding [volume] out of
- * [org.emerge.demo.outofspace.world.fluid.VolumeField.FULL] — how packed it is, as a multiple of
+ * [org.emerge.demo.outofspace.world.VolumeField.FULL] — how packed it is, as a multiple of
  * its own critical density.
  *
  * Returns null for a species with no entry in [CRITICAL], which is the caller's signal to treat it
@@ -359,11 +359,11 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
 
 /**
  * The pressure [grams] of [species] contributes on its own, in the units
- * [org.emerge.demo.outofspace.world.fluid.tilePressure] reports.
+ * [org.emerge.demo.outofspace.world.tilePressure] reports.
  *
  * Partial pressures, which is what makes the nitrogen-holds-the-water-down case work without
  * anybody arranging it: the solver sums these across species exactly as
- * [org.emerge.demo.outofspace.world.fluid.millimolesOf] already sums moles, and a water cell
+ * [org.emerge.demo.outofspace.world.millimolesOf] already sums moles, and a water cell
  * therefore has to push against everything else in the room to expand, not just against itself.
  *
  * Returns null for a species with no critical point on file — an ideal gas, whose pressure the
@@ -393,7 +393,7 @@ fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, ful
  * [saturatedVapourDensity] — and because the term is quadratic, the attraction of that mixture is
  * not the attraction of its mean density. The lever-rule version is what makes latent heat come out
  * *linear in the fraction boiled*, i.e. a constant joules-per-gram, which is what a latent heat is.
- * Applying it needs a temperature, which neither this nor [org.emerge.demo.outofspace.world.fluid.cohesionField]
+ * Applying it needs a temperature, which neither this nor [org.emerge.demo.outofspace.world.cohesionField]
  * currently takes, so it is left for whoever turns latent heat on — it belongs with teaching the
  * ledger its third term, not before, since nothing consumes the difference until then.
  */

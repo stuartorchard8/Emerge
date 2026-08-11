@@ -5,11 +5,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.FlowField
-import org.emerge.demo.outofspace.world.fluid.MomentumField
-import org.emerge.demo.outofspace.world.fluid.tileMass
+
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
@@ -277,7 +273,7 @@ data class VesselState(
     val exhaustMomentumY: Long = 0L,
     /**
      * Momentum the fluid solve worked out and could not hand to anything — see
-     * [org.emerge.demo.outofspace.world.fluid.ProjectionResult.undeliveredX].
+     * [org.emerge.demo.outofspace.world.ProjectionResult.undeliveredX].
      *
      * The fourth store, and the one that is an admission rather than a place. A pressure difference
      * across a face with no gas on it has no fluid to accelerate and no wall to push, so it is
@@ -921,5 +917,4 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
  * A world that was never fitted keeps no pad and its frame never moves — see [growToFit].
  */
 fun VesselState.fitGrid(pad: Int = GRID_PAD): VesselState = fitToFrame(pad).state
-
 

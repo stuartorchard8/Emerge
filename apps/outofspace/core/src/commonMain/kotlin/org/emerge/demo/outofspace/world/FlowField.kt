@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world.fluid
+package org.emerge.demo.outofspace.world
 
 import kotlin.math.sqrt
 

@@ -143,7 +143,8 @@ class SignalInputTest {
      * closes at this test**: a person presses a key and the vessel moves, with a visible wire in
      * between.
      */
-    @Ignore("no thrust between the cut-over and blocked-flux thrust — extraction plan step 6")
+    // no thrust between the cut-over and blocked-flux thrust — extraction plan step 6
+    @Ignore
     @Test
     fun `holding a key vents the ship and drives it the other way`() {
         val w = 8

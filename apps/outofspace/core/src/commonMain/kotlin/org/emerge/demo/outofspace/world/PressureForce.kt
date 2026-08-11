@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world.fluid
+package org.emerge.demo.outofspace.world
 
 /** The reaction the vessel takes from its own air pressing on its bulkheads, by axis. */
 class PressureForceResult(val vesselX: Long, val vesselY: Long)
@@ -52,8 +52,6 @@ fun applyPressureForce(
 
     return PressureForceResult(vesselX, vesselY)
 }
-
-
 
 /** A tile's potential, or zero off the grid — space pushes back with nothing. */
 private fun beyond(potential: LongArray, tile: Int): Long =

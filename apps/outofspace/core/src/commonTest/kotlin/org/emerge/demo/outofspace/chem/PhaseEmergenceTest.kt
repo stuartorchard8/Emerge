@@ -2,8 +2,8 @@ package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.fluid.VolumeField
-import org.emerge.demo.outofspace.world.fluid.millimolesOf
+import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

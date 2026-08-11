@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world.fluid
+package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Airlock

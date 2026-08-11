@@ -8,11 +8,11 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.PIPE_VOLUME
-import org.emerge.demo.outofspace.world.fluid.VolumeField
-import org.emerge.demo.outofspace.world.fluid.pipeApertures
-import org.emerge.demo.outofspace.world.fluid.pipeVolumes
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.pipeApertures
+import org.emerge.demo.outofspace.world.pipeVolumes
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals

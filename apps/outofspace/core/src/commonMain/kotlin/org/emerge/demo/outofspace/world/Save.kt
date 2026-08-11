@@ -4,8 +4,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.MomentumField
+
 import org.emerge.demo.outofspace.logistics.FluidPacket
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket

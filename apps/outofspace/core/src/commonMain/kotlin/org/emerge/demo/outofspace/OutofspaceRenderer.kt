@@ -31,8 +31,8 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
-import org.emerge.demo.outofspace.world.fluid.AMBIENT_PRESSURE
-import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.UiRectRenderer
 import kotlin.math.floor

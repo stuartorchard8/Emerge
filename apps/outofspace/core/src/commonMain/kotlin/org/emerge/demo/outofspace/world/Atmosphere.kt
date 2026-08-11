@@ -3,9 +3,6 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
-import org.emerge.demo.outofspace.world.fluid.ambientGasJoules
-import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
-import org.emerge.demo.outofspace.world.fluid.millimolesOf
 
 /**
  * Air: flat LongArray (tiles × species), integers (exact conservation).

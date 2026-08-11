@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world.fluid
+package org.emerge.demo.outofspace.world
 
 /**
  * Tile gas capacity (not tile count). Rooms = FULL, pipes = FULL/8, tanks > FULL.

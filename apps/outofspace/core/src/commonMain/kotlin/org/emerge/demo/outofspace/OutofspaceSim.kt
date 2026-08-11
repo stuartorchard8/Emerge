@@ -74,20 +74,20 @@ import org.emerge.demo.outofspace.world.heatPerGram
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Vaporizer
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
-import org.emerge.demo.outofspace.world.fluid.MomentumField
-import org.emerge.demo.outofspace.world.fluid.ApertureField
-import org.emerge.demo.outofspace.world.fluid.PumpDemand
-import org.emerge.demo.outofspace.world.fluid.airlockOpenness
-import org.emerge.demo.outofspace.world.fluid.applyPumps
-import org.emerge.demo.outofspace.world.fluid.exchangeLayers
-import org.emerge.demo.outofspace.world.fluid.pipeApertures
-import org.emerge.demo.outofspace.world.fluid.pipeVolumes
-import org.emerge.demo.outofspace.world.fluid.diffuseFluid
-import org.emerge.demo.outofspace.world.fluid.valveOpenings
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.gasCapacityAt
+import org.emerge.demo.outofspace.world.MomentumField
+import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.PumpDemand
+import org.emerge.demo.outofspace.world.airlockOpenness
+import org.emerge.demo.outofspace.world.applyPumps
+import org.emerge.demo.outofspace.world.exchangeLayers
+import org.emerge.demo.outofspace.world.pipeApertures
+import org.emerge.demo.outofspace.world.pipeVolumes
+import org.emerge.demo.outofspace.world.diffuseFluid
+import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
-import org.emerge.demo.outofspace.world.fluid.gasCapacity
+import org.emerge.demo.outofspace.world.gasCapacity
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimReducer
 
@@ -594,7 +594,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // Motion log for renderer, built from pre-tick rail state.
         val motion: MotionLog = MotionLog(state.rails)
-
 
         // tile → machine index (maintained incrementally for O(n)).
         val originOf: IntArray = IntArray(state.grid.size).also { o ->

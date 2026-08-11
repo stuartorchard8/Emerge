@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.fluid.VolumeField
+import org.emerge.demo.outofspace.world.VolumeField
 import kotlin.math.abs
 import kotlin.math.ln
 import kotlin.test.Test

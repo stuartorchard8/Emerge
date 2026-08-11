@@ -15,8 +15,8 @@ import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.MomentumField
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -10,8 +10,8 @@ import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.fluid.PIPE_VOLUME
-import org.emerge.demo.outofspace.world.fluid.VolumeField
+import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals

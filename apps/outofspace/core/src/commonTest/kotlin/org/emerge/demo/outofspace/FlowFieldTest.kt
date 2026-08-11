@@ -1,9 +1,9 @@
-package org.emerge.demo.outofspace.fluid
+package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.fluid.EdgeGrid
-import org.emerge.demo.outofspace.world.fluid.FlowField
-import org.emerge.demo.outofspace.world.fluid.MomentumField
+import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.FlowField
+import org.emerge.demo.outofspace.world.MomentumField
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

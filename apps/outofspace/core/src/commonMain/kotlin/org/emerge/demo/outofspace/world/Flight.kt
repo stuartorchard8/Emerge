@@ -88,8 +88,8 @@ fun vesselMassGrams(
  * A ship under thrust is a lift going up. Nothing aboard is *pulled* sternward; the deck is pushed
  * forward into it, and in the vessel's own frame — which is the frame the whole grid is written in —
  * that is indistinguishable from a gravity pointing the other way. So the sign is a minus, and the
- * result is what [org.emerge.demo.outofspace.world.fluid.applyBuoyancy],
- * [org.emerge.demo.outofspace.world.fluid.applySpeciesDrift] and [downDirection] are handed instead
+ * result is what [org.emerge.demo.outofspace.world.applyBuoyancy],
+ * [org.emerge.demo.outofspace.world.applySpeciesDrift] and [downDirection] are handed instead
  * of the plating's constant. Convection under acceleration and a heavy gas pooling against the
  * direction of travel all fall out of passes that were written before there was anything to fall out of.
  *

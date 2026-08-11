@@ -41,7 +41,7 @@ data class Hull(
  * in means **shut**, so this one is placed wired to nothing and stays sealed until you say otherwise.
  *
  * An open airlock is not a wall with a hole in it; it is genuinely not there. See
- * [org.emerge.demo.outofspace.world.fluid.airlockOpenness] for what that costs and why it is right.
+ * [org.emerge.demo.outofspace.world.airlockOpenness] for what that costs and why it is right.
  */
 data class Airlock(
     override val wiring: Wiring = SEALED,
