@@ -196,11 +196,29 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
    their own account, which would strand energy in cells with no capacity to hold it (they read as
    ambient, so it vanishes from every gauge).
    ⚠️ **Integer diffusion has many fixed points, not one.** A sealed box with a total divisible by
-   the tile count does *not* settle exactly flat — 400 ticks lands tiles a gram or two either side,
+   the tile count does *not* settle exactly flat — measured `7996–8002` against a mean of 8000,
    because flooring makes every near-uniform state a fixed point too. Flat is reachable, it is just
    not the only attractor. So the no-degree-bias test asserts *within 1% of the mean* — chosen to
    discriminate the failure it guards (a per-degree divisor gives the middle ~2× the edges), not as a
    tolerance anyone should tune.
+
+   **Remainders rotate (Stu, 2026-08-12).** `count / SLOTS` was conservative but *immobilising*: three
+   grams floor to a zero share across every face and never move, so a breached room never finishes
+   emptying. Now each species is split five ways exactly — four faces and one staying home — with the
+   `count % SLOTS` leftovers handed one each to consecutive slots from an offset of `(tick + species)`.
+   Joules are **telescoped** across the faces (differences of running totals, not per-face floors) so
+   a tile whose mass all leaves keeps no ghost heat, which is the same stranding in the other ledger.
+   ⚠️ The inner loop became **scatter, not gather** — replaying a neighbour's rotation and apertures
+   to learn one number costs more than pushing into its delta. Still order-independent (integer adds
+   commute) and still conservative by construction; what is deferred is being parallel by index.
+   ⚠️ **The rotation orbits, as Stu predicted.** A lone gram in a sealed box runs a closed period-5
+   cycle (`1,2 2,2 2,2 2,1 2,2 …`) for ever: the offset advances one per tick, so the unit is offered
+   home/up/down/left/right in order, and up-then-down cancels exactly. **Only bites at `count < SLOTS`**
+   — above that `q` carries the motion and this is ±1 gram of jitter; a lumpy field's centre of mass
+   held at 2501/1000 tiles over 30 ticks with no slosh. Venting is unaffected because space does not
+   hand the unit back. ⛔ **Do not "fix" it by folding `x + y` into the offset** — a move decrements
+   the position term while the tick increments it, they cancel, and the orbit becomes a steady wind.
+   Breaking it needs a non-linear tile term (`x*7 + y*13`); deliberately not built, pending need.
 5. **Cut over.** Replace `stepFluid`/`exchangeLayers`/`applyPumps` in the tick, promote the surviving
    helpers out of `world/fluid/`, delete the package.
 6. **Wire thrust to blocked flux** (§3). Momentum fields, save format and ledger fields are all left
