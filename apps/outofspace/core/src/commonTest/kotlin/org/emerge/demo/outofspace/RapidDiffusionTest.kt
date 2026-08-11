@@ -227,7 +227,9 @@ class RapidDiffusionTest {
             x[edges.rightEdgeOf(grid.index(1, 2))] = aperture
             val grams = emptyAir()
             put(grams, grid.index(1, 2), Species.Oxygen, 100_000L)
-            diffuseFluid(edges, ApertureField(edges, x, y), grams, null)
+            // One pass: the claim is that a half-open face passes half a *share*, which is arithmetic
+            // on one transfer. Over several passes the source drains and the ratio drifts off a half.
+            diffuseFluid(edges, ApertureField(edges, x, y), grams, null, subSteps = 1)
             return massAt(grams, grid.index(2, 2))
         }
 

@@ -30,11 +30,18 @@ class FlowFieldTest {
     private val structure = StructureMap.derive(grid, List(grid.size) { null })
     private val apertures = ApertureField.derive(edges, structure)
 
-    /** Grams laid out by tile, all of one species, then diffused one tick. */
+    /**
+     * Grams laid out by tile, all of one species, then diffused.
+     *
+     * Pinned to a single pass, because these assertions are arithmetic on one share — `held / SLOTS`
+     * across a face. Left on the default they would quietly become assertions about
+     * [org.emerge.demo.outofspace.world.SUB_STEPS] and go red the moment anyone tuned it, which is
+     * the opposite of what they are for.
+     */
     private fun flowFrom(vararg loaded: Pair<Int, Long>): FlowField {
         val grams = LongArray(grid.size * Species.COUNT)
         for ((tile, count) in loaded) grams[tile * Species.COUNT + Species.Nitrogen.ordinal] = count
-        return diffuseFluid(edges, apertures, grams, joules = null).flow
+        return diffuseFluid(edges, apertures, grams, joules = null, subSteps = 1).flow
     }
 
     /**

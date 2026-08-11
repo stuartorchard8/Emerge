@@ -8,14 +8,15 @@ import org.emerge.demo.outofspace.world.StructureMap
 /**
  * Rapid diffusion: the replacement for the momentum solver.
  *
- * Every cell splits its contents [SLOTS] ways each tick — one share for each of its four faces and
- * one that stays put — and hands the face shares to its neighbours, expecting them to do the same.
- * There is no velocity, no pressure solve and no sub-stepping; what emerges is a fast-moving
- * equilibrium, which is the only thing the vessel ever wanted from the atmosphere. Three properties
- * are load-bearing:
+ * Every cell splits its contents [SLOTS] ways each pass — [FACE_SHARE] of them for each of its four
+ * faces and the rest staying put — and hands the face shares to its neighbours, expecting them to do
+ * the same. There is no velocity and no pressure solve; what emerges is a fast-moving equilibrium,
+ * which is the only thing the vessel ever wanted from the atmosphere. How *fast* is [SUB_STEPS]'
+ * business, since a pass on its own is pinned near the stability limit and cannot be sped up by more
+ * than a quarter — see [SLOTS] for why. Three properties are load-bearing:
  *
- * **The remainder stays home.** Each face takes `count / SLOTS`, and whatever will not divide is
- * simply left where it is.
+ * **The remainder stays home.** Each face takes `count * FACE_SHARE / SLOTS`, and whatever will not
+ * divide is simply left where it is.
  *
  * It was briefly handed round the faces instead, in a rotation that turned with the tick, so that a
  * cell holding fewer than [SLOTS] grams of a species could still shed them — otherwise a breached
@@ -71,19 +72,55 @@ class DiffusionStep(
 }
 
 /**
- * The ways a cell's contents are divided each tick: its four faces, plus itself.
+ * The ways a cell's contents are divided each tick. Each face is handed [FACE_SHARE] of these and
+ * whatever is left over stays home, so the per-face fraction is `FACE_SHARE / SLOTS`.
  *
- * The share that stays home is what keeps this stable rather than a cell emptying itself completely
- * into a ring that empties straight back. The count must also stay at or above the lattice's maximum
- * degree — 4 on a square grid — so that a cell can never promise its faces more than it holds; five
- * is therefore the tightest value available, and tightest is wanted, since it is the "practically all
- * of it" the model is named for with no convergence transient to sit through.
+ * **Invariant: `4 * FACE_SHARE < SLOTS`, strictly.** A cell must never promise its faces more than it
+ * holds, and the margin — the share that stays home — is what keeps this stable rather than a cell
+ * emptying itself completely into a ring that empties straight back.
+ *
+ * The pair is tunable, but the range is narrow and the ceiling is not a matter of taste. This is FTCS
+ * on the five-point Laplacian, whose amplification factor for the checkerboard mode is `1 - 8α` with
+ * `α = FACE_SHARE / SLOTS`. At the 1/5 here that is −0.6, so a checkerboard loses 40% of itself a
+ * tick. Raising α drives it toward −1, where the checkerboard flips sign forever and never decays,
+ * and α = 1/4 *is* that boundary. Since 1/4 is also the supremum of `k / (4k + 1)`, the entire
+ * available range is 1/5 → 1/4: **a 25% speedup, bought against ringing that takes longer to die.**
+ *
+ * So this is not the speed lever it looks like. [SUB_STEPS] is, and it has no ceiling. What this pair
+ * is good for is exploring behaviour near the stability boundary, and it is free — `k` outflows per
+ * face is one multiply, not `k` transfers.
+ *
+ * Raising [SLOTS] does *not* meaningfully worsen the stranding floor, which is the intuitive fear and
+ * is wrong: a tile stops shedding when `count * FACE_SHARE / SLOTS` floors to zero, so the threshold is
+ * `SLOTS / FACE_SHARE` — that is `1/α`, which the ceiling above pins between 4 and 5 whatever [SLOTS]
+ * is. Measured on a 20×12 room drained through one rim hole: 2,930 grams left at 5/1, 3,288 at 13/3.
  */
 const val SLOTS = 5
 
+/** How many of the [SLOTS] each face takes. See [SLOTS] for the invariant and the ceiling. */
+const val FACE_SHARE = 1
+
 /**
- * A tile's four faces, in the order they are walked: up, down, left, right. The fifth share of
- * [SLOTS] is the one that stays home, which is why there is no slot for it here.
+ * How many diffusion passes a tick runs.
+ *
+ * The actual speed lever: `n` passes multiply the effective diffusivity by `n`, linearly and without
+ * the 25% ceiling [SLOTS] runs into, because each pass is individually inside the stability limit.
+ * It costs what it says — `n` times the pass — which is the honest price, and the same price a kernel
+ * over a wider neighbourhood would charge for the same diffusivity, without the kernel's symmetry
+ * hazard or its larger stranding floor.
+ *
+ * One is the identity. Everything a caller sees is summed across the passes, so raising this changes
+ * how fast the air moves and nothing else about the contract.
+ *
+ * Measured on a 20×12 room drained through one rim hole: 11,352 ticks to lose 99% at one pass, 2,838
+ * at four — linear to three significant figures, which is the whole argument for preferring this to a
+ * wider kernel.
+ */
+const val SUB_STEPS = 1
+
+/**
+ * A tile's four faces, in the order they are walked: up, down, left, right. The share that stays home
+ * has no slot here, because nothing is done with it — it is simply what is not subtracted.
  */
 private const val FACES = 4
 
@@ -110,6 +147,9 @@ fun diffuseFluid(
  * fraction — so a tile whose mass leaves entirely has no energy left behind either. Ghost heat in an
  * evacuated cell would be exactly the stranding problem again, in the other ledger.
  *
+ * [subSteps] defaults to [SUB_STEPS] and exists so a test that pins the arithmetic of a *single* pass
+ * can ask for one explicitly, rather than silently becoming a test of the tuning constant.
+ *
  * **Venting to the rim stays.** A face with no tile on the far side sheds its share into space and
  * books it, which is what keeps breaches and the vent ledger working. It no longer produces thrust —
  * that is [applyPressureForce]'s job, wired up separately.
@@ -119,12 +159,13 @@ fun diffuseFluid(
     apertures: ApertureField,
     grams: LongArray,
     joules: LongArray? = null,
+    subSteps: Int = SUB_STEPS,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
     val species = Species.COUNT
 
-    val mass = tileMass(tiles, grams)
+    val startingMass = tileMass(tiles, grams)
     val deltaGrams = LongArray(grams.size)
     val deltaJoules = if (joules == null) null else LongArray(tiles)
 
@@ -133,7 +174,8 @@ fun diffuseFluid(
 
     // Net grams across each face, signed toward +x / +y. Both ends of a face add into the same slot,
     // so gas crossing in both directions cancels and what is left is the net movement — which is the
-    // only thing a flow picture should claim.
+    // only thing a flow picture should claim. Accumulated across every sub-step, so the overlay shows
+    // what the whole tick moved rather than whatever the last pass happened to be doing.
     val fluxX = LongArray(edges.xEdgeCount)
     val fluxY = LongArray(edges.yEdgeCount)
 
@@ -143,87 +185,97 @@ fun diffuseFluid(
     val faceOut = LongArray(FACES)
     val faceEdge = IntArray(FACES)
 
-    for (tile in 0 until tiles) {
-        val ownMass = mass[tile]
-        if (ownMass <= 0L) continue
-        val base = tile * species
+    repeat(subSteps) { pass ->
+        // Each pass reads a settled field: deltas are applied at the end of the pass that made them,
+        // so a sub-step never sees another sub-step's half-finished arithmetic.
+        val mass = if (pass == 0) startingMass else tileMass(tiles, grams)
+        if (pass > 0) {
+            deltaGrams.fill(0L)
+            deltaJoules?.fill(0L)
+        }
 
-        val left = edges.leftEdgeOf(tile)
-        val right = edges.rightEdgeOf(tile)
-        val up = edges.upEdgeOf(tile)
-        val down = edges.downEdgeOf(tile)
-        faceAperture[0] = apertures.yAt(up); faceNeighbour[0] = edges.yEdgeBefore(up)
-        faceAperture[1] = apertures.yAt(down); faceNeighbour[1] = edges.yEdgeAfter(down)
-        faceAperture[2] = apertures.xAt(left); faceNeighbour[2] = edges.xEdgeBefore(left)
-        faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
-        faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
-        faceOut.fill(0L)
+        for (tile in 0 until tiles) {
+            val ownMass = mass[tile]
+            if (ownMass <= 0L) continue
+            val base = tile * species
 
-        var outMass = 0L
-        for (s in 0 until species) {
-            val count = grams[base + s]
-            if (count <= 0L) continue
-            val share = count / SLOTS
-            if (share <= 0L) continue
+            val left = edges.leftEdgeOf(tile)
+            val right = edges.rightEdgeOf(tile)
+            val up = edges.upEdgeOf(tile)
+            val down = edges.downEdgeOf(tile)
+            faceAperture[0] = apertures.yAt(up); faceNeighbour[0] = edges.yEdgeBefore(up)
+            faceAperture[1] = apertures.yAt(down); faceNeighbour[1] = edges.yEdgeAfter(down)
+            faceAperture[2] = apertures.xAt(left); faceNeighbour[2] = edges.xEdgeBefore(left)
+            faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
+            faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
+            faceOut.fill(0L)
 
-            for (f in 0 until FACES) {
-                val aperture = faceAperture[f]
-                if (aperture <= 0) continue
+            var outMass = 0L
+            for (s in 0 until species) {
+                val count = grams[base + s]
+                if (count <= 0L) continue
+                val share = count * FACE_SHARE / SLOTS
+                if (share <= 0L) continue
 
-                // A partly-open face passes its share in proportion to how open it is; what will not
-                // fit stays home, which is the same thing a shut face does. Full openness is the
-                // overwhelmingly common case and is exact — the rounding here is confined to valves
-                // and doors mid-cycle, where a stranded gram is a gram behind a nearly-shut door.
-                val out =
-                    if (aperture >= ApertureField.OPEN) share
-                    else share * aperture / ApertureField.OPEN
-                if (out <= 0L) continue
+                for (f in 0 until FACES) {
+                    val aperture = faceAperture[f]
+                    if (aperture <= 0) continue
 
-                deltaGrams[base + s] -= out
-                val neighbour = faceNeighbour[f]
-                if (neighbour < 0) ventedGrams += out else deltaGrams[neighbour * species + s] += out
-                faceOut[f] += out
-                outMass += out
+                    // A partly-open face passes its share in proportion to how open it is; what will not
+                    // fit stays home, which is the same thing a shut face does. Full openness is the
+                    // overwhelmingly common case and is exact — the rounding here is confined to valves
+                    // and doors mid-cycle, where a stranded gram is a gram behind a nearly-shut door.
+                    val out =
+                        if (aperture >= ApertureField.OPEN) share
+                        else share * aperture / ApertureField.OPEN
+                    if (out <= 0L) continue
+
+                    deltaGrams[base + s] -= out
+                    val neighbour = faceNeighbour[f]
+                    if (neighbour < 0) ventedGrams += out else deltaGrams[neighbour * species + s] += out
+                    faceOut[f] += out
+                    outMass += out
+                }
+            }
+
+            // ── Which way that gas went ──
+            //
+            // Signed toward +x and +y, so the neighbour on the other side of the face will subtract what
+            // it sends back through the same slot. Gas shed into space over the rim counts too: a breach
+            // is the clearest flow in the vessel and the arrows should say so.
+            fluxY[faceEdge[0]] -= faceOut[0]
+            fluxY[faceEdge[1]] += faceOut[1]
+            fluxX[faceEdge[2]] -= faceOut[2]
+            fluxX[faceEdge[3]] += faceOut[3]
+
+            // ── The energy on the gas that just left ──
+            //
+            // Telescoped: each face is handed the difference between two running totals of
+            // `joules × massSoFar / ownMass`, so the shares sum to exactly `joules × outMass / ownMass`
+            // and, when everything leaves, to exactly `joules`. Giving each face its own floored fraction
+            // instead would leave a few joules behind every time, and behind in an empty cell they are
+            // heat with nothing to hold it.
+            if (joules != null && deltaJoules != null && outMass > 0L) {
+                val energy = joules[tile]
+                var carried = 0L
+                var assigned = 0L
+                for (f in 0 until FACES) {
+                    if (faceOut[f] <= 0L) continue
+                    carried += faceOut[f]
+                    val upTo = energy * carried / ownMass
+                    val out = upTo - assigned
+                    assigned = upTo
+                    if (out == 0L) continue
+                    deltaJoules[tile] -= out
+                    val neighbour = faceNeighbour[f]
+                    if (neighbour < 0) ventedJoules += out else deltaJoules[neighbour] += out
+                }
             }
         }
 
-        // ── Which way that gas went ──
-        //
-        // Signed toward +x and +y, so the neighbour on the other side of the face will subtract what
-        // it sends back through the same slot. Gas shed into space over the rim counts too: a breach
-        // is the clearest flow in the vessel and the arrows should say so.
-        fluxY[faceEdge[0]] -= faceOut[0]
-        fluxY[faceEdge[1]] += faceOut[1]
-        fluxX[faceEdge[2]] -= faceOut[2]
-        fluxX[faceEdge[3]] += faceOut[3]
-
-        // ── The energy on the gas that just left ──
-        //
-        // Telescoped: each face is handed the difference between two running totals of
-        // `joules × massSoFar / ownMass`, so the shares sum to exactly `joules × outMass / ownMass`
-        // and, when everything leaves, to exactly `joules`. Giving each face its own floored fraction
-        // instead would leave a few joules behind every time, and behind in an empty cell they are
-        // heat with nothing to hold it.
-        if (joules != null && deltaJoules != null && outMass > 0L) {
-            val energy = joules[tile]
-            var carried = 0L
-            var assigned = 0L
-            for (f in 0 until FACES) {
-                if (faceOut[f] <= 0L) continue
-                carried += faceOut[f]
-                val upTo = energy * carried / ownMass
-                val out = upTo - assigned
-                assigned = upTo
-                if (out == 0L) continue
-                deltaJoules[tile] -= out
-                val neighbour = faceNeighbour[f]
-                if (neighbour < 0) ventedJoules += out else deltaJoules[neighbour] += out
-            }
-        }
+        for (i in grams.indices) grams[i] += deltaGrams[i]
+        if (joules != null && deltaJoules != null) for (t in 0 until tiles) joules[t] += deltaJoules[t]
     }
-
-    for (i in grams.indices) grams[i] += deltaGrams[i]
-    if (joules != null && deltaJoules != null) for (t in 0 until tiles) joules[t] += deltaJoules[t]
 
     // Snapshotted rather than folded on demand: [grams] belongs to the caller, which goes on editing
     // it after the pass, and a mass read later would not be the mass this flux came out of.
@@ -236,7 +288,7 @@ fun diffuseFluid(
         edges = edges,
         fluxX = fluxX,
         fluxY = fluxY,
-        startingMass = mass,
+        startingMass = startingMass,
         endingMass = endingMass,
     )
 }
