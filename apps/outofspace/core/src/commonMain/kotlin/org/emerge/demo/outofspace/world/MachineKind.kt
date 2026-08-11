@@ -19,10 +19,13 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Smelter("SMELTER"),
     Storage("STORAGE"),
     Sensor("SENSOR"),
+    KeyInput("BUTTON"),
     Vent("VENT"),
     Valve("VALVE", Conduit.Pipe),
+    Wire("WIRE", Conduit.Signal),
     Pump("PUMP", isPermeable=true),
     Hull("HULL"),
+    Airlock("AIRLOCK"),
     ;
 
     /** True for the things that take up floor space. */

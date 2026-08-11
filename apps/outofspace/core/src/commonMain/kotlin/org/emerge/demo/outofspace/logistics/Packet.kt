@@ -66,7 +66,7 @@ object Rate {
      * `(gramsThisTick, newCarry)`.
      *
      * @param numerator grams-per-tick already multiplied by the throttle, e.g. `125 * activation`
-     * @param denominator what that multiplier is out of, e.g. [org.emerge.demo.outofspace.world.Signals.FULL]
+     * @param denominator what that multiplier is out of, e.g. [org.emerge.demo.outofspace.world.SignalField.FULL]
      * @param carry leftover from the previous tick; start at 0
      */
     fun tick(numerator: Long, denominator: Int, carry: Long): Pair<Long, Long> {

@@ -1,0 +1,73 @@
+# The signal layer: a button, a wire, and a door that answers to it.
+#
+# This is the flight loop in miniature, and every step of it is visible on screen — which is the
+# entire argument for the feature. The old wiring model would have produced the same behaviour with
+# nothing to look at: a sensor on the bow silently driving a machine at the stern through a colour
+# named nowhere in the world.
+#
+# What to read in the shots:
+#   a thin green run threaded along row 12, DARK while nothing drives it and LIT along its whole
+#   length once the key goes down — one value, everywhere on the circuit, in the tick it is set;
+#   the button's face lighting with it;
+#   the airlock's iris opening in the starboard wall, and the room emptying through it.
+new
+run 1
+
+# The run, laid along row 12 — open deck clear of every footprint on the main line, which matters:
+# `place` is a no-op on an occupied tile, so a button dropped inside the extractor's 5x5 is silently
+# never built and everything downstream of it reads as a broken feature.
+brush WIRE
+# ...all the way to x=36, *under* the door. A machine reads the network on its own tile, so a run
+# that stops one tile short reaches nothing — which looks exactly like a broken airlock.
+drag 12 12 36 12
+
+# The button at one end of it, bound to RIGHT.
+brush BUTTON
+place 12 12
+bind 12 12 RIGHT
+
+# And the door at the other end, in the starboard hull. The wall tile comes out first: `place` is a
+# no-op on an occupied tile, so without this the airlock is never built and the shot is of a hull.
+remove 36 12
+brush AIRLOCK
+place 36 12
+wire 36 12 WIRE 1000
+
+camera centre 24 12 26
+run 2
+
+echo --- nothing held: a dark wire, a shut door
+probe 12 12
+probe 36 12
+expect airVented = 0
+# (No assertion on impulse here: swapping the wall tile for a door lets one tick's puff out, so the
+# idle ship carries a few units of drift. What matters is the sign and size once the key goes down.)
+shot signal-idle
+
+echo --- key down: the whole circuit lights and the iris opens
+hold RIGHT
+run 40
+probe 12 12
+probe 36 12
+shot signal-held
+
+echo --- and the ship is under way, because gas left through the starboard wall
+# (`trend` is left out on purpose — it throws on a format specifier, on any world, unrelated to this.)
+
+# What the shot shows, in numbers. The thresholds are loose on purpose — this is an illustration
+# and the real assertions are relative ones in SignalInputTest.
+#
+# Two readings that look like misses and are not. `airVented` stays 0: it counts gas leaving the
+# *grid*, and 40 ticks of plume is still crossing the void outside the hull — breach.txt learned the
+# same thing. `airGrams` barely moves for the same reason: the gas has left the room but not the
+# world, and this counts both.
+# `impulseX` is the reaction, so venting to starboard drives the ship to port and this goes negative.
+# That single number is the flight loop: a finger on a key ends up as momentum in the hull.
+expect impulseX < 0
+expect airBalance = 0
+
+echo --- key up: the door shuts in the tick the finger comes off
+release
+run 2
+probe 36 12
+shot signal-released

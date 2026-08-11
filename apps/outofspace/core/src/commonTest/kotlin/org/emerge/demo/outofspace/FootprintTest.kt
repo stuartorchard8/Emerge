@@ -203,12 +203,22 @@ class FootprintTest {
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(6, 6)] = Storage(Direction.Right, stored)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
-        m[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Sensor(
-            Direction.Up,
-            org.emerge.demo.outofspace.world.Channel.Red,
+        m[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Sensor(Direction.Up)
+        // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
+        val wires = arrayOfNulls<org.emerge.demo.outofspace.world.Segment>(grid.size)
+        wires[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Segment(org.emerge.demo.outofspace.world.Conduit.Signal)
+        val s = run(
+            VesselState(
+                grid,
+                m.toList(),
+                conduits = org.emerge.demo.outofspace.world.Conduits.of(
+                    grid.size,
+                    org.emerge.demo.outofspace.world.Conduit.Signal to wires.toList(),
+                ),
+            ),
+            2,
         )
-        val s = run(VesselState(grid, m.toList()), 2)
-        assertEquals(1000, s.signals[org.emerge.demo.outofspace.world.Channel.Red], "a full tank reads full")
+        assertEquals(1000, s.signals.at(grid.index(7, 8)), "a full tank reads full")
     }
 
     // ── The world still holds together ────────────────────────────────────────

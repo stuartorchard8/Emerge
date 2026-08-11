@@ -69,14 +69,15 @@ fun seriesConductance(a: Long, b: Long): Long {
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
 val MachineKind.material: Material
     get() = when (this) {
-        MachineKind.Hull -> Material.Steel
+        MachineKind.Hull, MachineKind.Airlock -> Material.Steel
         MachineKind.Smelter -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
-        MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump,
+        MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
         MachineKind.Bridge -> Conduit.Rail.material
+        MachineKind.Wire -> Conduit.Signal.material
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */

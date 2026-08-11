@@ -8,7 +8,9 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.SignalSource
+import org.emerge.demo.outofspace.world.Trigger
+import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -185,17 +187,17 @@ class SaveTest {
     }
 
     @Test
-    fun `a gauge keeps its channel and its last reading`() {
+    fun `a gauge keeps that it is one, and its last reading`() {
         val grid = Grid(6, 4)
         val rails = arrayOfNulls<Segment>(grid.size)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Silica to 590L))
-        rails[grid.index(2, 2)] = Segment(org.emerge.demo.outofspace.world.Conduit.Rail, channel = Channel.Cyan)
+        rails[grid.index(2, 2)] = Segment(org.emerge.demo.outofspace.world.Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
         val state = VesselState(grid, List(grid.size) { null }, conduits = Conduits.ofRails(rails.toList()))
         val back = Save.read(Save.write(state)).rails[grid.index(2, 2)]
         assertNotNull(back)
-        assertEquals(Channel.Cyan, back.channel)
+        assertTrue(back.isGauge)
         assertEquals(Form.Ore, back.lastForm)
         assertEquals(Species.Silica, back.lastDominant)
         assertEquals(590, back.lastPurity)
@@ -257,13 +259,13 @@ class SaveTest {
             """
             outofspace 1
             grid 6 4          # a small one
-            machine 8 Sensor facing=Up channel=Green
+            machine 8 Sensor facing=Up
             rail 9 Rail links=1
             rail 10 Rail links=4 held=S:Ore/Iron=250,Carbon=250
             """.trimIndent(),
         )
         assertEquals(Grid(6, 4), state.grid)
-        assertEquals(Channel.Green, (state[8] as Sensor).channel)
+        assertEquals(Direction.Up, (state[8] as Sensor).facing)
         assertEquals(500L, state.rails[10]?.held?.mass)
         assertTrue(state.rails[9]!!.linkedTo(Direction.Right))
     }

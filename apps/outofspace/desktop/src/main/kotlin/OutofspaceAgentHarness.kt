@@ -1,5 +1,11 @@
 package org.emerge.desktop
 
+import org.emerge.demo.outofspace.world.Trigger
+import org.emerge.demo.outofspace.Mode
+import org.emerge.demo.outofspace.world.InputKey
+import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.SignalSource
+import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
@@ -62,6 +68,8 @@ import kotlin.math.roundToInt
  *                            # the same as placing each tile
  * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
  * rotate <x> <y>
+ * wire <x> <y> <channel> <permille>  # append one RUN term. ALWAYS@1000 is "hold the button down",
+ *                            # which is how a script opens an airlock — they ship wired to nothing
  * inject <x> <y> [ticks]     # debug bellows: 1kg of air a tick into a permeable tile. Mints matter
  *                            # and admits it — `airBalance` stays 0, `injectedAir` is the admission
  * water <x> <y> [ticks]      # the same, but liquid water — ~11kg a tick, arriving at 230K because
@@ -222,6 +230,47 @@ object OutofspaceAgentHarness {
                         "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
                 }
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
+                // `wire <x> <y> <ALWAYS|WIRE> <permille>` — appends one RUN term, which is the whole
+                // of the wiring grammar a script has ever needed. Without it an airlock cannot be
+                // opened headlessly at all: it ships wired to nothing on purpose, so every screenshot
+                // of one would be of a shut door.
+                "wire" -> {
+                    val at = index(t[1], t[2])
+                    val source = SignalSource.ALL.firstOrNull { it.name.equals(t[3], true) }
+                        ?: error("unknown source '${t[3]}' (have ${SignalSource.ALL.map { it.label }})")
+                    val slot = controller.state.machineCovering(at)?.wiring?.triggers(Action.Run)?.size ?: 0
+                    controller.wire(at, Action.Run, slot, Trigger(source, t[4].toInt()))
+                    settle()
+                    println("[agent] wire ${t[1]},${t[2]} RUN += ${source.label}@${t[4]}")
+                }
+                // `bind <x> <y> <key>` and `hold <key>...` / `release` — the pilot's hands. Without
+                // these no script can press anything, and the flight loop is unreachable headlessly.
+                "bind" -> {
+                    val at = index(t[1], t[2])
+                    val want = InputKey.ALL.firstOrNull { it.name.equals(t[3], true) }
+                        ?: error("unknown key '${t[3]}' (have ${InputKey.ALL.map { it.label }})")
+                    val current = controller.state.machineCovering(at)
+                    require(current is KeyInput) { "no button at ${t[1]},${t[2]}" }
+                    controller.bindKey(at, want)
+                    settle()
+                    println("[agent] bind ${t[1]},${t[2]} -> ${want.label}")
+                }
+                "hold" -> {
+                    controller.mode = Mode.Flight
+                    var mask = 0
+                    for (name in t.drop(1)) {
+                        mask = mask or (InputKey.ALL.firstOrNull { it.name.equals(name, true) }
+                            ?: error("unknown key '$name'")).bit
+                    }
+                    controller.heldKeys = mask
+                    settle()
+                    println("[agent] holding ${t.drop(1).joinToString(" ")}")
+                }
+                "release" -> {
+                    controller.heldKeys = 0
+                    settle()
+                    println("[agent] released")
+                }
                 // What a left-click means, and what the bottom-left panel is therefore showing.
                 // Presentation only — every command here drives the controller directly — but a
                 // screenshot of the delete panel is not reachable any other way.
@@ -618,6 +667,10 @@ object OutofspaceAgentHarness {
             "airGrams" -> state.atmosphereGrams.toDouble()
             "pipeGrams" -> state.pipeAir.totalGrams.toDouble()
             "airVented" -> state.airVentedGrams.toDouble()
+            // The flight loop's own number: what the gas leaving has pushed the ship by. Note it
+            // counts the *reaction*, so venting to starboard makes this negative.
+            "impulseX" -> state.vesselImpulseX.toDouble()
+            "impulseY" -> state.vesselImpulseY.toDouble()
             "injectedAir" -> state.injectedAirGrams.toDouble()
             "airBalance" -> state.airBalance.toDouble()
             "extractedGrams" -> state.extractedGrams.toDouble()

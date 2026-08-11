@@ -6,6 +6,8 @@ import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
+import org.emerge.demo.outofspace.Mode
+import org.emerge.demo.outofspace.world.InputKey
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.render.torus.ui.Ui
@@ -154,6 +156,30 @@ fun main() {
         // said stealing `W` would break a gesture that is in every screenshot — it does, and it is
         // still the right trade: WASD is what a hand rests on, and the toggle is one key either way.
         // The debug engine keeps the arrows.
+        // ── Flight mode ──────────────────────────────────────────────────────
+        //
+        // Taken before everything else, because in flight the pilot's keys belong to the vessel and
+        // nothing else may claim them. Only the mode toggle and ESC are held back, so there is always
+        // a way out.
+        if (controller.mode == Mode.Flight && key != GLFW_KEY_F && key != GLFW_KEY_ESCAPE) {
+            val bound = when (key) {
+                GLFW_KEY_UP, GLFW_KEY_W -> InputKey.Up
+                GLFW_KEY_DOWN, GLFW_KEY_S -> InputKey.Down
+                GLFW_KEY_LEFT, GLFW_KEY_A -> InputKey.Left
+                GLFW_KEY_RIGHT, GLFW_KEY_D -> InputKey.Right
+                GLFW_KEY_Z -> InputKey.A
+                GLFW_KEY_X -> InputKey.B
+                else -> null
+            }
+            if (bound != null) {
+                // Held, not evented: a button is down for as long as the finger is, and the sim
+                // reads that level every tick. See [OutofspaceInput.heldKeys].
+                if (action == GLFW_PRESS) controller.heldKeys = controller.heldKeys or bound.bit
+                else if (action == GLFW_RELEASE) controller.heldKeys = controller.heldKeys and bound.bit.inv()
+            }
+            return@glfwSetKeyCallback
+        }
+
         val pan = when (key) {
             GLFW_KEY_W -> 0
             GLFW_KEY_A -> 1
@@ -190,6 +216,14 @@ fun main() {
         if (action != GLFW_PRESS) return@glfwSetKeyCallback
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
+            // Build or fly. The keyboard cannot do both — see [Mode].
+            GLFW_KEY_F -> {
+                controller.mode = controller.mode.next
+                // Whatever was being panned or aimed is not being panned or aimed any more.
+                panKeys.fill(false)
+                controller.thrustX = 0
+                controller.thrustY = 0
+            }
             GLFW_KEY_R -> controller.rotateBrush()
             GLFW_KEY_H -> controller.overlay = controller.overlay.next
             // Cycles rather than toggles, since there are four tools now. `W` used to do this and

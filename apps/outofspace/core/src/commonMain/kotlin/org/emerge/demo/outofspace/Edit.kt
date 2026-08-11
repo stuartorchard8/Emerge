@@ -7,9 +7,9 @@ import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.InputKey
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 
@@ -31,11 +31,11 @@ sealed interface Edit {
     /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
     data class Cut(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
 
+    /** Binds a button to a different key — see [org.emerge.demo.outofspace.world.KeyInput]. */
+    data class BindKey(val index: Int, val key: InputKey) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val index: Int, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
-
-    /** Retunes a sensor to a different channel. */
-    data class SetChannel(val index: Int, val channel: Channel) : Edit
 
     /** Directional thrust (dx, dy each −1/0/1). Acceleration-based (reducer multiplies by vessel mass). Placeholder engine (ledger: debugImpulseX). */
     data class Thrust(val dx: Int, val dy: Int) : Edit

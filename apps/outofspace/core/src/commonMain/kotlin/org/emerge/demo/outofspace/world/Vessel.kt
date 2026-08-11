@@ -179,7 +179,15 @@ data class VesselState(
      * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
      * drawn dimmed when its activation is zero, which is the answer to "why has this stopped".
      */
-    val signals: Signals = Signals.build { },
+    val signals: SignalField = SignalField.none(machines.size),
+    /**
+     * Which signal network each tile is on, derived every tick — see [SignalNetworks].
+     *
+     * Kept beside [signals] rather than folded into it because the UI asks both questions: what is a
+     * circuit carrying, and *is there a circuit here at all*. The second is the one that answers "why
+     * is my machine not responding", and it deserves a straight answer rather than a zero.
+     */
+    val networks: SignalNetworks = SignalNetworks.derive(grid, conduits),
     /** Derived from where the hull is, every tick — see [StructureMap]. */
     val structure: StructureMap = StructureMap.derive(grid, machines),
     /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
@@ -604,8 +612,8 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Vaporizer -> (machine.input?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
-    is Sensor -> 0L
-    is Hull -> 0L
+    is Sensor, is KeyInput -> 0L
+    is Hull, is Airlock -> 0L
     is Vent -> 0L
     is Pump -> 0L
 }
@@ -619,17 +627,17 @@ fun massIn(machine: Machine?): Long = when (machine) {
  */
 fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
-    is Bridge -> machine.carried.size * Signals.FULL / Bridge.SLOTS
-    is Extractor -> (machine.buffer.mass * Signals.FULL / Extractor.BUFFER_CAP).toInt()
-    is Processor -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is Vaporizer -> (massIn(machine) * Signals.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Smelter -> (massIn(machine) * Signals.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is Storage -> ((machine.contents?.mass ?: 0L) * Signals.FULL / Storage.CAP).toInt()
-    is Sensor -> 0
-    is Hull -> 0
+    is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
+    is Extractor -> (machine.buffer.mass * SignalField.FULL / Extractor.BUFFER_CAP).toInt()
+    is Processor -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Vaporizer -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Smelter -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Storage -> ((machine.contents?.mass ?: 0L) * SignalField.FULL / Storage.CAP).toInt()
+    is Sensor, is KeyInput -> 0
+    is Hull, is Airlock -> 0
     is Vent -> 0
     is Pump -> 0
-}.coerceIn(0, Signals.FULL)
+}.coerceIn(0, SignalField.FULL)
 
 /**
  * A machine's contents broken out by the buffer they sit in, for the inspector.
@@ -663,7 +671,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.slag?.let { "SLAG" to it },
     )
     is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
-    is Sensor, is Vent, is Pump, is Hull -> emptyList()
+    is Sensor, is KeyInput, is Vent, is Pump, is Hull, is Airlock -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
@@ -677,8 +685,8 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
-    is Sensor -> Mixture.EMPTY
-    is Hull -> Mixture.EMPTY
+    is Sensor, is KeyInput -> Mixture.EMPTY
+    is Hull, is Airlock -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
     is Pump -> Mixture.EMPTY
 }

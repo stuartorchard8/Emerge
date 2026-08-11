@@ -1,12 +1,13 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.InputKey
+import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
@@ -73,6 +74,33 @@ class OutofspaceController(
      * machine and a 30 Hz one fill a room at the same rate.
      */
     var injectTile: Int = -1
+
+    /**
+     * Which keys the pilot is holding, as an [InputKey] bitmask — held state, for [thrustX]'s reason
+     * exactly, except that here it is a *level* and not a per-tick event. It is passed straight
+     * through to the reducer rather than turned into edits; see [OutofspaceInput.heldKeys].
+     *
+     * Only read in [Mode.Flight]. In [Mode.Build] the same physical keys pan the camera and pick
+     * brushes, which is why the mode exists at all.
+     */
+    var heldKeys: Int = 0
+
+    /**
+     * Build or fly.
+     *
+     * The keyboard is not big enough for both, and that is not a UI problem to be designed around —
+     * it is the honest shape of the thing. While you are building, WASD pans and the number row picks
+     * a brush; while you are flying, those same keys have to reach the buttons you built. A vessel
+     * that could be edited mid-burn would also need every edit to be safe mid-burn, which is a much
+     * larger promise than this needs to make.
+     */
+    var mode: Mode = Mode.Build
+        set(value) {
+            // Letting go of everything on the way out, so a key held as the mode flips does not stay
+            // held forever in a mode that cannot see it come up.
+            if (value != field) heldKeys = 0
+            field = value
+        }
 
     /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
     var selected: Int = -1
@@ -144,14 +172,23 @@ class OutofspaceController(
     fun wire(index: Int, action: Action, slot: Int, trigger: Trigger?) =
         pending.add(Edit.Wire(index, action, slot, trigger))
 
-    fun setChannel(index: Int, channel: Channel) = pending.add(Edit.SetChannel(index, channel))
+    /** Binds a button to [key]. */
+    fun bindKey(index: Int, key: InputKey) = pending.add(Edit.BindKey(index, key))
 
-    /** Cycles a trigger's channel; the constant is included so a term can be pinned on. */
-    fun cycleTriggerChannel(index: Int, action: Action, slot: Int, delta: Int) {
+    /** Cycles which key a button answers to. */
+    fun cycleInputKey(index: Int, delta: Int) {
+        val current = state.machineCovering(index) as? KeyInput ?: return
+        val all = InputKey.ALL
+        val next = all[((all.indexOf(current.key) + delta) % all.size + all.size) % all.size]
+        bindKey(index, next)
+    }
+
+    /** Cycles a trigger between the constant and the wire under the machine. */
+    fun cycleTriggerSource(index: Int, action: Action, slot: Int, delta: Int) {
         val current = state.machineCovering(index)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
-        val all = Channel.ALL
-        val next = all[((all.indexOf(current.channel) + delta) % all.size + all.size) % all.size]
-        wire(index, action, slot, current.copy(channel = next))
+        val all = SignalSource.ALL
+        val next = all[((all.indexOf(current.source) + delta) % all.size + all.size) % all.size]
+        wire(index, action, slot, current.copy(source = next))
     }
 
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
@@ -160,19 +197,6 @@ class OutofspaceController(
         val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
         val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
         wire(index, action, slot, current.copy(weightPermille = next))
-    }
-
-    /** Retunes whatever broadcasts on this tile — a gauge in the track, or a sensor on the deck. */
-    fun cycleSensorChannel(index: Int, delta: Int) {
-        // Track first, matching the edit's own order: a gauge sits on top of whatever it crosses.
-        val current = state.railAt(index)?.channel
-            ?: when (val m = state.machineCovering(index)) {
-                is Sensor -> m.channel
-                else -> return
-            }
-        val all = Channel.EMITTABLE
-        val next = all[((all.indexOf(current) + delta) % all.size + all.size) % all.size]
-        setChannel(index, next)
     }
 
     /** Drops a rock centred on ([x], [y]) — the stand-in for capture, see [Edit.DropRock]. */
@@ -271,7 +295,8 @@ class OutofspaceController(
         // wants anyway: the impulse is worked out against the mass the edits leave behind.
         val firing = thrustX != 0 || thrustY != 0
         val injecting = injectTile >= 0
-        if (pending.isEmpty() && !firing && !injecting) return OutofspaceInput.EMPTY
+        val held = if (mode == Mode.Flight) heldKeys else 0
+        if (pending.isEmpty() && !firing && !injecting && held == 0) return OutofspaceInput.EMPTY
         val edits = ArrayList<Edit>(pending)
         // Before the thrust for no reason beyond a fixed order, and after this tick's builds so a
         // tile that was walled off a moment ago is walled off for this breath too.
@@ -281,7 +306,7 @@ class OutofspaceController(
         )
         if (firing) edits.add(Edit.Thrust(thrustX, thrustY))
         pending.clear()
-        return OutofspaceInput(edits)
+        return OutofspaceInput(edits, held)
     }
 
     /** Replaces the world — what "new game" and "load" will call. */
@@ -290,6 +315,7 @@ class OutofspaceController(
         pending.clear()
         thrustX = 0
         thrustY = 0
+        heldKeys = 0
         injectTile = -1
         accumulator = 0f
         stepper.reset(newState, Tick(0))

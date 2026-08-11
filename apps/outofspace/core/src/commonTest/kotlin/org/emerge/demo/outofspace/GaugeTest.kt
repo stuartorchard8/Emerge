@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Bridge
-import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -48,15 +47,26 @@ class GaugeTest {
      * A tank at (3,2) with track running out from under its output port, a gauge two tiles along,
      * and a receiving tank at the far end. The gauge reads whatever passes.
      */
-    private fun line(carrying: Resource, channel: Channel = Channel.Amber): VesselState {
+    private fun line(carrying: Resource): VesselState {
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(3, 2)] = Storage(Direction.Right, carrying)
         m[grid.index(10, 2)] = Storage(Direction.Right)
-        joinRow(grid, rails, 4, 9, 2, mapOf(6 to channel))
-        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        joinRow(grid, rails, 4, 9, 2, setOf(6))
+        // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
+        // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
+        val wires = arrayOfNulls<Segment>(grid.size)
+        wires[GAUGE_TILE_X + 2 * grid.width] = Segment(Conduit.Signal)
+        return VesselState(
+            grid,
+            m.toList(),
+            conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
+        )
     }
+
+    /** Where [line] puts its gauge, so a test can ask what that tile's circuit reads. */
+    private val GAUGE_TILE_X = 6
 
     private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.index(6, 2))!!
 
@@ -89,31 +99,47 @@ class GaugeTest {
     }
 
     @Test
-    fun `a gauge broadcasts purity on its channel`() {
+    fun `a gauge puts its purity on the wire beneath it`() {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L))
-        val s = run(line(pure, Channel.Violet), 20)
-        assertEquals(1000, s.signals[Channel.Violet], "pure metal reads 100%")
+        val s = run(line(pure), 20)
+        assertEquals(1000, s.signals.at(s.grid.index(GAUGE_TILE_X, 2)), "pure metal reads 100%")
     }
 
+    /**
+     * The half of the swap worth pinning: a gauge with nothing under it is not an error and not a
+     * broadcast. It reports to whatever run passes beneath, and if none does, to nobody.
+     */
     @Test
-    fun `retuning a gauge is an ordinary edit on the track, not on what is under it`() {
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY)
-        var s = line(ore)
-        val at = s.grid.index(6, 2)
-        s = OutofspaceReducer.reduce(
-            OutofspaceConfig(initialGrid = s.grid),
-            s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.SetChannel(at, Channel.Green)))),
-        )
-        assertEquals(Channel.Green, s.railAt(at)?.channel)
+    fun `a gauge with no wire under it drives nothing`() {
+        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L))
+        val grid = Grid(14, 6)
+        val m = arrayOfNulls<Machine>(grid.size)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        m[grid.index(3, 2)] = Storage(Direction.Right, pure)
+        m[grid.index(10, 2)] = Storage(Direction.Right)
+        joinRow(grid, rails, 4, 9, 2, setOf(6))
+        val bare = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+
+        val s = run(bare, 20)
+        assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")
+        assertTrue(s.railAt(grid.index(6, 2))!!.lastPurity > 0, "though the gauge still took its reading")
     }
 
     @Test
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
         val s = run(workingVessel(Grid(40, 28)), 600)
-        val raw = s.signals[Channel.Amber]
-        val concentrated = s.signals[Channel.Cyan]
+        // The starter plant's two gauges, read through the tiles they sit on rather than through
+        // names — which is the whole difference the wire layer makes. Neither has a run under it in
+        // the shipped vessel, so the readings come off the segments themselves.
+        // Found by scanning rather than by coordinates: the vessel is fitted to its own contents on
+        // construction, so a tile index written down here would be a hostage to its layout. The two
+        // gauges on the main line are the first two in tile order, and that order is left-to-right.
+        val readings = (0 until s.grid.size)
+            .mapNotNull { t -> s.railAt(t)?.takeIf { it.isGauge }?.let { t to it.lastPurity } }
+        assertTrue(readings.size >= 2, "the starter plant should ship two gauges, found ${readings.size}")
+        val raw = readings[0].second
+        val concentrated = readings[1].second
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
         assertTrue(concentrated > raw + 200, "the concentrate should read far higher, got $concentrated")
     }

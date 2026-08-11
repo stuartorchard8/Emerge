@@ -24,7 +24,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 10
+    const val VERSION = 11
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -204,12 +204,16 @@ object Save {
                 put("rate", m.gramsPerTick.toString())
             }
             is Storage -> put("stored", m.contents?.let { writeResource(it) })
-            is Sensor -> put("channel", m.channel.name)
+            // A sensor is its facing and its wiring, both written by the common code around this.
+            is Sensor -> {}
+            // A button is its key and its wiring; the common code writes the second.
+            is KeyInput -> put("key", m.key.name)
             // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
             // heat are all written by the common code around this.
             is Pump -> {}
             is Vent -> put("vented", m.ventedGrams.toString())
-            is Hull -> {}
+            // An airlock is its wiring, and the common code around this writes that.
+            is Hull, is Airlock -> {}
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -224,7 +228,7 @@ object Save {
     private fun writeSegment(s: Segment): String {
         val f = StringBuilder(s.conduit.name)
         f.append(" links=").append(s.links)
-        s.channel?.let { f.append(" channel=").append(it.name) }
+        if (s.isGauge) f.append(" gauge=1")
         // Written only when set, like every other optional field: a file full of `valve=0` would
         // hide the handful of tiles that are actually taps.
         if (s.valve) f.append(" valve=1")
@@ -240,7 +244,7 @@ object Save {
 
     private fun writeWiring(w: Wiring): String =
         Action.entries.joinToString(";") { action ->
-            action.name + ":" + w.triggers(action).joinToString(",") { "${it.channel.name}@${it.weightPermille}" }
+            action.name + ":" + w.triggers(action).joinToString(",") { "${it.source.name}@${it.weightPermille}" }
         }
 
     private fun writeMixture(m: Mixture): String {
@@ -595,20 +599,26 @@ object Save {
                 gramsPerTick = rate(125L),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
-            MachineKind.Sensor -> Sensor(
-                facing = facing(),
-                channel = f["channel"]?.let { name ->
-                    Channel.ALL.firstOrNull { it.name == name } ?: fail("unknown channel '$name'")
-                } ?: Channel.Red,
+            // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
+            // under it, and no colour can be turned back into a piece of geometry that was never laid.
+            MachineKind.Sensor -> Sensor(facing = facing())
+            MachineKind.KeyInput -> KeyInput(
+                key = f["key"]?.let { name ->
+                    InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
+                } ?: InputKey.Up,
             )
             MachineKind.Vent -> Vent(ventedGrams = num("vented", 0L))
             MachineKind.Pump -> Pump(facing())
             MachineKind.Hull -> Hull()
+            MachineKind.Airlock -> Airlock()
             // Track is a segment, not a machine, and has its own line.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve ->
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
                 fail("$kindName is a conduit, not a machine")
         }
-        val wiring = f["wire"]?.let { readWiring(it, fail) } ?: Wiring.RUNNING
+        // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
+        // the same for every machine but the airlock, which ships sealed — and a door that defaulted
+        // to running would come back from a hand-written save wide open.
+        val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
         // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
         val heated = f["k"]?.let { j ->
             machine.withJoules(j.toLongOrNull() ?: fail("bad joules '$j'"))
@@ -626,9 +636,8 @@ object Save {
             conduit = conduit,
             links = links,
             held = f["held"]?.let { readPacket(it, fail) },
-            channel = f["channel"]?.let { name ->
-                Channel.ALL.firstOrNull { it.name == name } ?: fail("unknown channel '$name'")
-            },
+            // `gauge=1` since v11; before that, *having* a channel was what made a segment a gauge.
+            isGauge = f["gauge"] == "1" || f["channel"] != null,
             lastForm = f["lastform"]?.let { name ->
                 Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
             },
@@ -653,10 +662,10 @@ object Save {
             val terms = part.substring(colon + 1)
             val triggers = if (terms.isEmpty()) emptyList() else terms.split(',').map { term ->
                 val atSign = term.indexOf('@')
-                if (atSign < 0) fail("expected CHANNEL@weight, got '$term'")
-                val channelName = term.substring(0, atSign)
+                if (atSign < 0) fail("expected SOURCE@weight, got '$term'")
+                val sourceName = term.substring(0, atSign)
                 Trigger(
-                    Channel.ALL.firstOrNull { it.name == channelName } ?: fail("unknown channel '$channelName'"),
+                    readSource(sourceName, fail),
                     term.substring(atSign + 1).toIntOrNull() ?: fail("bad weight in '$term'"),
                 )
             }
@@ -664,6 +673,26 @@ object Save {
         }
         return wiring
     }
+
+    /**
+     * A term's source, reading both spellings.
+     *
+     * v10 and earlier wrote a colour: `ALWAYS` for the constant and one of six colours otherwise.
+     * Every colour becomes [SignalSource.Wire], which is **lossy on purpose** — six global channels
+     * cannot survive into a world that has none, and there is no wire in an old file to guess at.
+     *
+     * It is nonetheless behaviour-preserving in the case that matters. An unwired `Wire` term reads
+     * 0, which is exactly what an unemitted channel read, so a vessel wired `ALWAYS − RED` goes on
+     * running at full until its owner lays the run that stops it.
+     */
+    private fun readSource(name: String, fail: (String) -> Nothing): SignalSource =
+        when (name) {
+            "ALWAYS", "Always" -> SignalSource.Always
+            "WIRE", "Wire" -> SignalSource.Wire
+            // The v10 palette. Named rather than matched loosely, so a typo is still an error.
+            "Red", "Green", "Blue", "Amber", "Cyan", "Violet" -> SignalSource.Wire
+            else -> fail("unknown signal source '$name'")
+        }
 
     private fun readMixture(text: String, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY

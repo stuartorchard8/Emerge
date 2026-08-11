@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Bridge
-import org.emerge.demo.outofspace.world.Channel
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.FlowCursors
@@ -38,6 +37,7 @@ import org.emerge.demo.outofspace.world.Body
 import org.emerge.demo.outofspace.world.ambientJoules
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.BodySlot
+import org.emerge.demo.outofspace.world.Airlock
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
@@ -51,8 +51,11 @@ import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.reachableCell
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Pump
+import org.emerge.demo.outofspace.world.InputKey
+import org.emerge.demo.outofspace.world.KeyInput
 import org.emerge.demo.outofspace.world.Sensor
-import org.emerge.demo.outofspace.world.Signals
+import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.SignalNetworks
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.StructureMap
@@ -76,6 +79,7 @@ import org.emerge.demo.outofspace.world.fluid.gasCapacityAt
 import org.emerge.demo.outofspace.world.fluid.MomentumField
 import org.emerge.demo.outofspace.world.fluid.ApertureField
 import org.emerge.demo.outofspace.world.fluid.PumpDemand
+import org.emerge.demo.outofspace.world.fluid.airlockOpenness
 import org.emerge.demo.outofspace.world.fluid.applyPumps
 import org.emerge.demo.outofspace.world.fluid.exchangeLayers
 import org.emerge.demo.outofspace.world.fluid.pipeApertures
@@ -100,36 +104,53 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val w = Work(state)
 
         // Sorted by PlayerId for determinism across peers.
+        var heldKeys = 0
         for ((_, input) in inputs.entries.sortedBy { it.key.value }) {
             for (edit in input.edits) w.apply(edit)
+            // Or-ed rather than taken from one player: two people at two seats are both flying, and
+            // "anybody is holding it" is the same rule max-wins already applies on the wire.
+            heldKeys = heldKeys or input.heldKeys
         }
 
-        // Structure first: edits this tick must be reflected.
-        val structure = StructureMap.derive(w.grid, w.machines)
         val occupancy = Occupancy(w.originOf.copyOf())
 
-        val signals = Signals.build { raise ->
+        // Who is joined to whom, this tick, from the wire the player has actually laid. Derived after
+        // the edits above so that a run cut a moment ago has already parted.
+        val networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
+
+        // Every transmitter drives the network under its own tile. There is no addressing step and
+        // nothing names anything: reaching a machine means laying wire to it.
+        val signals = SignalField.build(networks) { raise ->
             for (i in w.machines.indices) {
                 when (val m = w.machines[i]) {
                     is Sensor -> {
                         val target = w.grid.neighbour(i, m.facing)
                         val seen = if (target < 0) -1 else w.originOf[target]
-                        if (seen >= 0) raise(m.channel, fullness(w.machines[seen]))
+                        if (seen >= 0) raise(i, fullness(w.machines[seen]))
                     }
+                    // A finger on a key, on the same footing as any other transmitter.
+                    is KeyInput -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
                     else -> {}
                 }
             }
             // Gauge persists after packet leaves.
-            for (r in w.rails) {
-                val channel = r?.channel ?: continue
-                raise(channel, r.lastPurity)
+            for (t in w.rails.indices) {
+                val r = w.rails[t] ?: continue
+                if (r.isGauge) raise(t, r.lastPurity)
             }
         }
+        w.networks = networks
         w.signals = signals
+
+        // Signals before structure, because an airlock is a wall whose solidity is a signal. Nothing
+        // upstream minds: sensors read machine fullness and gauges read the rail, and neither asks
+        // what is enclosed. Edits this tick are already applied, so both still see them.
+        val openness = airlockOpenness(w.machines, signals)
+        val structure = StructureMap.derive(w.grid, w.machines, openness)
 
         for (i in w.machines.indices) {
             val m = w.machines[i] ?: continue
-            val activation = m.wiring.activation(Action.Run, signals)
+            val activation = m.wiring.activation(Action.Run, signals.at(i))
             w.machines[i] = when (m) {
                 is Extractor -> w.leech(m, activation, i)
                 is Processor -> w.refine(cfg, m, activation, i)
@@ -178,7 +199,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val edges = EdgeGrid(state.grid)
         val conduits = w.conduitsSnapshot()
-        val roomApertures = ApertureField.derive(edges, structure)
+        val roomApertures = ApertureField.derive(edges, structure, openness)
         val plumbing = pipeApertures(edges, conduits)
         val volumes = pipeVolumes(state.grid, conduits)
 
@@ -301,6 +322,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             extractedGrams = w.extractedGrams,
             ventedGrams = w.ventedGrams,
             signals = signals,
+            networks = networks,
             structure = structure,
             occupancy = occupancy,
             generatedJoules = w.generatedJoules,
@@ -380,7 +402,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         grid: Grid,
         machines: List<Machine?>,
         conduits: Conduits,
-        signals: Signals,
+        signals: SignalField,
     ): List<PumpDemand> {
         var demands: MutableList<PumpDemand>? = null
         for (tile in machines.indices) {
@@ -388,9 +410,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (conduits.at(Conduit.Pipe, tile) == null) continue
             val intake = grid.neighbour(tile, pump.facing)
             if (intake < 0) continue
-            val activation = pump.wiring.activation(Action.Run, signals)
+            val activation = pump.wiring.activation(Action.Run, signals.at(tile))
             if (activation <= 0) continue
-            val moles = Pump.MILLIMOLES_PER_TICK * activation / Signals.FULL
+            val moles = Pump.MILLIMOLES_PER_TICK * activation / SignalField.FULL
             if (moles <= 0L) continue
             (demands ?: ArrayList<PumpDemand>(4).also { demands = it }).add(PumpDemand(intake, tile, moles))
         }
@@ -406,7 +428,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /** Grams this tick: rate × activation, with carry-over via [Rate]. */
     private fun throttled(gramsPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
         if (activation <= 0) 0L to carry
-        else Rate.tick(gramsPerTick * activation, Signals.FULL, carry)
+        else Rate.tick(gramsPerTick * activation, SignalField.FULL, carry)
 
     private fun vaporizeToGas(mixture: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
@@ -601,8 +623,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (i in o.indices) o[i] -= 1
         }
 
+        /** Who is joined to whom, set once the wire has been swept. */
+        var networks: SignalNetworks = SignalNetworks.none(state.grid.size)
+
         /** This tick's signal snapshot, set once the sensing pass has run. */
-        var signals: Signals = Signals.build { }
+        var signals: SignalField = SignalField.none(state.grid.size)
 
         /**
          * Joules each **machine** gained this tick from its own work, indexed by where it is stored.
@@ -682,7 +707,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (edit.index !in machines.indices) return
                     when (edit.kind) {
                         // Book energy for new body (heat arriving, not conjured).
-                        MachineKind.Rail, MachineKind.Pipe -> {
+                        MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
                             val c = edit.kind.conduit!!
                             if (layer(c)[edit.index] == null) {
                                 layer(c)[edit.index] = Segment(c).also { built(it.joules) }
@@ -696,7 +721,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                     ?: Segment(Conduit.Pipe, valve = true).also { built(it.joules) }
                         }
                         MachineKind.Gauge -> if (rails[edit.index] == null) {
-                            rails[edit.index] = Segment(Conduit.Rail, channel = Channel.Amber)
+                            rails[edit.index] = Segment(Conduit.Rail, isGauge = true)
                                 .also { built(it.joules) }
                         }
                         MachineKind.Bridge -> placeBridge(edit.index, edit.facing)
@@ -750,17 +775,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                     machines[at] = m.withWiring(m.wiring.with(edit.action, current))
                 }
-                is Edit.SetChannel -> {
-                    val gauge = rails[edit.index]
-                    if (gauge != null && gauge.isGauge) {
-                        rails[edit.index] = gauge.copy(channel = edit.channel)
-                        return
-                    }
+                is Edit.BindKey -> {
                     val at = originAt(edit.index) ?: return
-                    when (val m = machines[at]) {
-                        is Sensor -> machines[at] = m.copy(channel = edit.channel)
-                        else -> {}
-                    }
+                    val m = machines[at]
+                    if (m is KeyInput) machines[at] = m.copy(key = edit.key)
                 }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
@@ -1045,7 +1063,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val m = machines[port.owner] ?: return
             // A storage only lets go while its RUN activation is positive, which is what turns it
             // from a bucket into a valve the moment you wire something to it.
-            if (m is Storage && m.wiring.activation(Action.Run, signals) <= 0) return
+            if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
 
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
@@ -1245,8 +1263,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Bridge -> false
                 is Extractor -> false
                 is Pump -> false
-                is Sensor -> false
-                is Hull -> false
+                is Sensor, is KeyInput -> false
+                is Hull, is Airlock -> false
             }
         }
 
@@ -1271,11 +1289,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Smelter -> Smelter(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
+            MachineKind.KeyInput -> KeyInput()
             MachineKind.Vent -> Vent()
             MachineKind.Pump -> Pump(facing)
             MachineKind.Hull -> Hull()
+            MachineKind.Airlock -> Airlock()
             // Fittings placed directly on layers.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> Hull()
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
+            MachineKind.Wire,
+            -> Hull()
         }
     }
 }

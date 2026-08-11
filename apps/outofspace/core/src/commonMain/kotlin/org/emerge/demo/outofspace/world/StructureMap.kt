@@ -45,13 +45,20 @@ class StructureMap(private val kinds: ByteArray) {
          * skipped entirely, so the tile it stands on is whatever the flood fill would have made it.
          * Nothing downstream needs a case for it — air, heat and rock contact all read this map, and
          * all three then treat the tile as the empty floor it is.
+         *
+         * [openness] names the tiles that are open *this tick* despite being solid things — today,
+         * [Airlock]s that are being signalled. They are skipped exactly as a permeable plate is, so
+         * the fill pours through an open door and the room beyond it correctly becomes outside. Omit
+         * it and every door is shut, which is the right answer for a world being loaded or built.
+         * See [org.emerge.demo.outofspace.world.fluid.airlockOpenness].
          */
-        fun derive(grid: Grid, machines: List<Machine?>): StructureMap {
+        fun derive(grid: Grid, machines: List<Machine?>, openness: IntArray? = null): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
                 if (m.kind.isPermeable) continue
-                val kind = if (m is Hull) Structure.Hull else Structure.Machine
+                if ((openness?.get(i) ?: 0) > 0) continue
+                val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
                 for (t in coveredTiles(grid, i, m.kind.size)) kinds[t] = kind.ordinal.toByte()
             }
 

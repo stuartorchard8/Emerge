@@ -7,13 +7,15 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
-import org.emerge.demo.outofspace.world.Channel
+import org.emerge.demo.outofspace.world.InputKey
+import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Sensor
-import org.emerge.demo.outofspace.world.Signals
+import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.render.torus.ui.Anchor
@@ -94,10 +96,17 @@ class OutofspaceHud {
                 row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
                     if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
+                // One row per circuit the player has actually laid, rather than six fixed colours
+                // most of which read zero. An empty list here means no wire aboard, which is the
+                // honest thing to say.
                 title("SIGNALS")
-                for (channel in Channel.EMITTABLE) {
-                    val value = s.signals[channel]
-                    keyValue(channel.label, "${value / 10}%", channel.color, if (value > 0) channel.color else 0x5A5A5AFFL)
+                if (s.signals.networkCount == 0) {
+                    row("(no wire laid)", 0x5A5A5AFFL)
+                } else {
+                    for (id in 0 until s.signals.networkCount) {
+                        val value = s.signals.ofNetwork(id)
+                        keyValue("circuit $id", "${value / 10}%", 0x9A9A9AFFL, if (value > 0) 0x6EE08AFFL else 0x5A5A5AFFL)
+                    }
                 }
             }
 
@@ -121,6 +130,22 @@ class OutofspaceHud {
             }
 
             panel(Anchor.BottomLeft) {
+                // Which mode owns the keyboard, and how to change it — said first and loudly,
+                // because a player whose WASD has stopped panning needs the answer immediately.
+                val flying = controller.mode == Mode.Flight
+                button(
+                    if (flying) "FLIGHT MODE  ·  F to build" else "BUILD MODE  ·  F to fly",
+                    if (flying) 0x8A5A2AFFL else 0x232A38FFL,
+                ) { controller.mode = controller.mode.next }
+                if (flying) {
+                    val held = InputKey.ALL.filter { InputKey.heldIn(controller.heldKeys, it) }
+                    row(
+                        if (held.isEmpty()) "arrows / WASD / Z / X drive your buttons"
+                        else "holding: ${held.joinToString(" ") { it.label }}",
+                        if (held.isEmpty()) 0x9A9A9AFFL else 0x6EE08AFFL,
+                    )
+                }
+                gap()
                 title("TOOL  ·  ${controller.tool.label}   VIEW  ·  ${controller.overlay.label}")
                 controlRowOfTools(controller)
                 actionRow(
@@ -323,7 +348,7 @@ class OutofspaceHud {
                         )
                         keyValue("of", grams(segment.lastMass))
                     }
-                    segment.channel?.let { keyValue("reporting on", it.label, 0x9A9A9AFFL, it.color) }
+                    if (segment.isGauge) keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
                 }
                 val riding = segment.held
                 if (riding == null) row("(nothing on it)", 0x9A9A9AFFL)
@@ -443,16 +468,31 @@ class OutofspaceHud {
         panel(Anchor.BottomRight, rowHeight = 20f) {
             title("WIRING  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
 
+            // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
+            // under it, and the readout's job is to say whether there is one.
+            val wired = controller.state.networks[index] >= 0
+
+            if (machine is KeyInput) {
+                clauseRow(
+                    lhs = "WHEN KEY",
+                    cmp = machine.key.label,
+                    rhs = if (wired) "${controller.state.signals.at(index) / 10}%" else "(no wire)",
+                    onLhs = { controller.cycleInputKey(index, 1) },
+                    onCmp = { controller.cycleInputKey(index, 1) },
+                    onRhs = { controller.cycleInputKey(index, 1) },
+                )
+                row("held in FLIGHT mode — press F to switch", 0x9A9A9AFFL)
+                gap()
+            }
+
             if (machine is Sensor) {
                 val watched = grid.neighbour(index, machine.facing)
-                val reading = controller.state.signals[machine.channel]
-                clauseRow(
-                    lhs = "EMIT ON",
-                    cmp = machine.channel.label,
-                    rhs = "${reading / 10}%",
-                    onLhs = { controller.cycleSensorChannel(index, 1) },
-                    onCmp = { controller.cycleSensorChannel(index, 1) },
-                    onRhs = { controller.cycleSensorChannel(index, 1) },
+                keyValue(
+                    "EMITS",
+                    if (wired) "${controller.state.signals.at(index) / 10}% on circuit ${controller.state.networks[index]}"
+                    else "(no wire under it)",
+                    0x9A9A9AFFL,
+                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
                 val target = if (watched >= 0) controller.state[watched] else null
                 row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
@@ -460,21 +500,20 @@ class OutofspaceHud {
             }
 
             val gauge = controller.state.railAt(index)
-            if (gauge?.channel != null) {
-                clauseRow(
-                    lhs = "REPORT ON",
-                    cmp = gauge.channel.label,
-                    rhs = "${gauge.lastPurity / 10}%",
-                    onLhs = { controller.cycleSensorChannel(index, 1) },
-                    onCmp = { controller.cycleSensorChannel(index, 1) },
-                    onRhs = { controller.cycleSensorChannel(index, 1) },
+            if (gauge?.isGauge == true) {
+                keyValue(
+                    "REPORTS",
+                    if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[index]}"
+                    else "(no wire under it)",
+                    0x9A9A9AFFL,
+                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
                 gap()
             }
 
             val action = Action.Run
             val triggers = machine.wiring.triggers(action)
-            val activation = machine.wiring.activation(action, controller.state.signals)
+            val activation = machine.wiring.activation(action, controller.state.signals.at(index))
             keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
 
             if (triggers.isEmpty()) {
@@ -482,19 +521,20 @@ class OutofspaceHud {
             } else {
                 for ((slot, trigger) in triggers.withIndex()) {
                     clauseRow(
-                        lhs = if (slot == 0) "WHEN " + trigger.channel.label else "PLUS " + trigger.channel.label,
+                        lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
                         cmp = "x",
                         rhs = signed(trigger.percent),
-                        onLhs = { controller.cycleTriggerChannel(index, action, slot, 1) },
+                        onLhs = { controller.cycleTriggerSource(index, action, slot, 1) },
                         onCmp = { controller.wire(index, action, slot, null) },
                         onRhs = { controller.cycleTriggerWeight(index, action, slot, 1) },
                     )
                 }
             }
             button("+ ADD TERM", 0x2E5A6BFFL) {
-                controller.wire(index, action, triggers.size, Trigger(Channel.Red, Signals.FULL))
+                controller.wire(index, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
             }
-            row("tap channel / weight to cycle, x to delete", 0x7A7A7AFFL)
+            row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
+            row(if (wired) "WIRE reads circuit ${controller.state.networks[index]}" else "WIRE reads 0 — no wire under this tile", 0x7A7A7AFFL)
         }
     }
 

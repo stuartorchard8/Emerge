@@ -26,8 +26,15 @@ data class Segment(
     val links: Int = 0,
     /** What is riding on this tile. Partial packets are normal — see [org.emerge.demo.outofspace.logistics.mergeInto]. */
     val held: Packet? = null,
-    /** Gauge: reads what passes through (full speed, persists after). Segment property, not a building. */
-    val channel: Channel? = null,
+    /**
+     * Gauge: reads what passes through (full speed, persists after). Segment property, not a building.
+     *
+     * It used to carry the channel it broadcast on. It now carries only the fact that it *is* one: a
+     * gauge is a transmitter like any other, and it puts [lastPurity] on the signal network under its
+     * own tile. Layers share tiles, so a gauge on the rail and a wire on the signal layer coexist on
+     * one tile with no ceremony at all.
+     */
+    val isGauge: Boolean = false,
     val lastForm: Form? = null,
     val lastDominant: Species? = null,
     /** The dominant species' share of the last thing through, in permille. */
@@ -56,14 +63,12 @@ data class Segment(
      * pipe to be part of, it needs no ports, and it cannot break a run in two.
      *
      * Meaningful only on [Conduit.Pipe]. Nothing enforces that, in the same way nothing stops a
-     * channel being set on a pipe — the brush only ever sets it on plumbing, and [isValve] is asked
+     * gauge flag being set on a pipe — the brush only ever sets it on plumbing, and [isValve] is asked
      * exclusively by the pipe layer.
      */
     val valve: Boolean = false,
     val joules: Long = conduit.material.ambientPerTile,
 ) {
-    val isGauge: Boolean get() = channel != null
-
     /** True for a length of pipe that is open to the room around it — see [valve]. */
     val isValve: Boolean get() = valve && conduit == Conduit.Pipe
 
@@ -79,13 +84,13 @@ data class Segment(
 
     /** This segment having seen [packet] go past. Reads it; does not consume it. */
     fun reading(packet: Packet): Segment {
-        if (channel == null) return this
+        if (!isGauge) return this
         val dominant = packet.contents.dominant ?: return this
         val mass = packet.mass
         return copy(
             lastForm = (packet as? SolidPacket)?.form,
             lastDominant = dominant,
-            lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * Signals.FULL / mass).toInt(),
+            lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * SignalField.FULL / mass).toInt(),
             lastMass = mass,
         )
     }

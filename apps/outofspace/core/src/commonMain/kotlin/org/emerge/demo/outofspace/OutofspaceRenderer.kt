@@ -12,12 +12,15 @@ import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.Airlock
 import org.emerge.demo.outofspace.world.Hull
+import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Processor
+import org.emerge.demo.outofspace.world.KeyInput
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
@@ -193,6 +196,14 @@ class OutofspaceRenderer {
             }
         }
 
+        // Signal wire under everything: it is the thinnest run and the one most often threaded
+        // beneath a machine to reach it, so anything it passes under should still read clearly.
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                drawWire(state, grid.index(x, y), x, y)
+            }
+        }
+
         // Pipes under track (thinner, different depth).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
@@ -304,6 +315,31 @@ class OutofspaceRenderer {
         }
     }
 
+    /**
+     * One tile of signal wire.
+     *
+     * The same spine as [drawPipe] and [drawRail] — a conduit is a conduit — but thinner than either,
+     * because it carries a reading rather than a thing and should not compete with the runs that move
+     * mass. Its colour is the value on it (Increment C); until something transmits, that is the dull
+     * end of the ramp, which is the honest picture of a wire nobody is driving.
+     */
+    private fun drawWire(state: VesselState, tile: Int, x: Int, y: Int) {
+        val segment = state.conduits.at(Conduit.Signal, tile) ?: return
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        val color = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
+        for (dir in Direction.ALL) {
+            if (!segment.linkedTo(dir)) continue
+            rect(
+                cx + dir.dx * Visual.WIRE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.WIRE_ARM_OFFSET * tilePx,
+                (if (dir.dx != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
+                (if (dir.dy != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
+                color,
+            )
+        }
+        rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, color)
+    }
+
     private fun drawPipe(state: VesselState, tile: Int, x: Int, y: Int) {
         val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
         val cx = (x + 0.5f) * tilePx
@@ -342,9 +378,10 @@ class OutofspaceRenderer {
         }
         // The hub, always drawn
         rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(MachineKind.Rail))
-        segment.channel?.let { channel ->
-            frame(x, y, channel.color)
-        }
+        // A gauge wears a collar so it reads as an instrument in the line rather than as track. It
+        // no longer wears a colour, because it no longer names one: what it reports on is the wire
+        // beneath it, and that wire says its own value.
+        if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
         val packet = segment.held ?: return
         val motion = state.motion
 
@@ -426,8 +463,9 @@ class OutofspaceRenderer {
 
     private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
         val n = m.kind.size
-        // No activation = stopped (red tile).
-        if (m !is Sensor && m.wiring.activation(Action.Run, state.signals) <= 0) {
+        // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
+        // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
+        if (m !is Sensor && m !is KeyInput && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(index)) <= 0) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, index, m)
@@ -470,11 +508,29 @@ class OutofspaceRenderer {
                 }
             }
             is Hull -> tileRect(x, y, 1f, kindColor(MachineKind.Hull))
+            // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
+            // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
+            // and the player should read them as the same kind of thing.
+            is Airlock -> {
+                tileRect(x, y, 1f, kindColor(MachineKind.Airlock))
+                val open = m.wiring.activation(Action.Run, state.signals.at(index))
+                    .coerceIn(0, SignalField.FULL) / SignalField.FULL.toFloat()
+                if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
+            }
+            // A button: its face lights up while it is held, and its key is written on it by the
+            // wiring panel rather than by the tile — a letter at this size would be a smudge.
+            is KeyInput -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.KeyInput))
+                val pressed = state.signals.at(index) / SignalField.FULL.toFloat()
+                tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
+            }
             is Sensor -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Sensor))
-                // Sensor: faces target, wears broadcast colour.
-                edgeMark(x, y, m.facing, m.channel.color)
-                tileRect(x, y, Visual.SENSOR_EYE_SCALE, m.channel.color)
+                // Faces its target, and its eye glows with whatever it is putting on the wire — the
+                // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
+                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(index) / SignalField.FULL.toFloat())
+                edgeMark(x, y, m.facing, emitting)
+                tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
             }
             // Pump intake: arrow shows facing (room direction).
             is Pump -> {
@@ -571,6 +627,23 @@ class OutofspaceRenderer {
      * this used a 220K span, across which an 18K spread was a single flat wash of blue: technically
      * honest and completely useless. An absolute ramp still has to be scaled to the question.
      */
+    /**
+     * [a] to [b] at [f], channel by channel — the wire's value ramp.
+     *
+     * The whole readability argument for the signal layer rests on this: a wire you cannot see the
+     * state of is worse than a global channel, because at least a channel had a readout. A run that
+     * lights up as its sensor fills is the feature.
+     */
+    private fun lerpColor(a: Long, b: Long, f: Float): Long {
+        val t = f.coerceIn(0f, 1f)
+        fun ch(shift: Int): Int {
+            val from = ((a shr shift) and 0xFF).toInt()
+            val to = ((b shr shift) and 0xFF).toInt()
+            return (from + (to - from) * t).toInt()
+        }
+        return rgba(ch(24), ch(16), ch(8), ch(0).toLong())
+    }
+
     private fun temperatureColor(kelvin: Int): Long {
         val alpha = Colors.HEAT_ALPHA
         val f = ((kelvin - Temperature.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
@@ -798,6 +871,11 @@ class OutofspaceRenderer {
         const val EXTRACTOR_FLOOR = 0x3A2C1EFFL
 
         // ── Stopped machine states ──────────────────────────────────────
+        /** The gauge's collar, and the two ends of the wire's value ramp. */
+        const val GAUGE_COLLAR = 0xE0A93AFFL
+        const val WIRE_DARK    = 0x33513FFFL
+        const val WIRE_LIVE    = 0x6EE08AFFL
+
         const val STOPPED_BODY    = 0x1A1A20FFL
         const val STOPPED_INDICATOR = 0x8A3030FFL
 
@@ -875,6 +953,8 @@ class OutofspaceRenderer {
         const val EXTRACTOR_FLOOR_INSET = 0.82f
         const val STOP_INDICATOR_SCALE = 0.34f
         const val SENSOR_EYE_SCALE = 0.3f
+        /** The lit face of a button — big, because it is the one thing you look at while flying. */
+        const val BUTTON_FACE = 0.62f
         const val VENT_CORE_SCALE = 0.4f
 
         // ── Port dimensions ─────────────────────────────────────────────
@@ -894,6 +974,12 @@ class OutofspaceRenderer {
         const val PIPE_ARM_OFFSET = (1f+PIPE_DIAMETER)/4f
         const val RAIL_ARM_LENGTH = (1f-RAIL_DIAMETER)/2f
         const val RAIL_ARM_OFFSET = (1f+RAIL_DIAMETER)/4f
+
+        // ── Signal wire dimensions ──────────────────────────────────────
+        /** Thinner than the pipe: it carries a reading, not a thing, and should not shout. */
+        const val WIRE_DIAMETER = 0.16f
+        const val WIRE_ARM_LENGTH = (1f-WIRE_DIAMETER)/2f
+        const val WIRE_ARM_OFFSET = (1f+WIRE_DIAMETER)/4f
 
         // ── Bridge dimensions ───────────────────────────────────────────
         const val BRIDGE_SPAN_X = 3.0f
@@ -961,10 +1047,14 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
+    MachineKind.KeyInput -> 0x2E3A4AFFL
     MachineKind.Hull -> 0x4A5464FFL
+    // Lighter than hull, so a door reads as a door in a wall at a glance.
+    MachineKind.Airlock -> 0x6E7C90FFL
     MachineKind.Vent -> 0x3A3A44FFL
     MachineKind.Pump -> 0xB07840FFL
     MachineKind.Valve -> 0xD8A860FFL
+    MachineKind.Wire -> 0x4A7A5AFFL
 }
 
 /**
