@@ -181,6 +181,17 @@ class OutofspaceRenderer {
         val mMinY = max(0, minY - MAX_REACH)
         val mMaxY = minOf(grid.height - 1, maxY + MAX_REACH)
 
+        if (overlay == Overlay.None) {
+            // underlay air
+            for (y in minY..maxY) {
+                for (x in minX..maxX) {
+                    val index = grid.index(x, y)
+                    val tint = mixtureColor(state, index)
+                    tileRect(x, y, 1f, tint)
+                }
+            }
+        }
+
         // Floor (buildable area).
         for (y in minY..maxY) {
             for (x in minX..maxX) {
@@ -859,8 +870,8 @@ class OutofspaceRenderer {
     /** Palette colours for machine kinds, tiles, UI states, and overlays. */
     object Colors {
         // ── Backgrounds ─────────────────────────────────────────────────
-        const val TILE_LIGHT  = 0x141A24FFL
-        const val TILE_DARK   = 0x111722FFL
+        const val TILE_LIGHT  = 0x141A2480L
+        const val TILE_DARK   = 0x11172280L
 
         // ── Rock ────────────────────────────────────────────────────────
         // Warm, desaturated.

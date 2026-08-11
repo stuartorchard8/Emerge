@@ -394,7 +394,7 @@ data class VesselState(
      * Ambient where nothing is standing there at all: an empty tile has no fabric to have a
      * temperature, and its air's is [airKelvinAt].
      */
-    fun kelvinAt(index: Int): Int = fabricKelvin[index]
+    fun kelvinAt(index: Int): Int = if (fabricKelvin[index] > 0) fabricKelvin[index] else air.kelvinAt(index)
 
     /**
      * The hottest body on each tile, folded once. The heat overlay asks for every tile every frame,
@@ -402,7 +402,7 @@ data class VesselState(
      * world for a picture that changes once a tick.
      */
     private val fabricKelvin: IntArray by lazy {
-        val out = IntArray(grid.size) { Temperature.AMBIENT_KELVIN }
+        val out = IntArray(grid.size)
         val seen = BooleanArray(grid.size)
         for (body in solids) {
             val k = body.kelvin
