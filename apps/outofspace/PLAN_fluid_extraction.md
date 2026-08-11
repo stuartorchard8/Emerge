@@ -221,9 +221,44 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
    Breaking it needs a non-linear tile term (`x*7 + y*13`); deliberately not built, pending need.
 5. **Cut over.** Replace `stepFluid`/`exchangeLayers`/`applyPumps` in the tick, promote the surviving
    helpers out of `world/fluid/`, delete the package.
+   ✅ **DONE 2026-08-12**, in two commits: `2dd1dc68` (the tick) and `dad38e80` (the package).
+   Suite **1m56s → 38s**, and `PumpTest.which room a pump empties is the one it faces` — failing
+   before this work started — now passes. Everything else matches the pre-existing baseline exactly.
+   ⚠️ **Baseline first.** Out of Space had 10 failures before any of this (the gravity fault), so the
+   gate for steps 5–7 is *diff against a recorded baseline*, never "the suite is green".
+   Gone with the solver, each deliberately: **gas no longer sorts by density** (`applySpeciesDrift`;
+   four `AtmosphereTest` cases deleted rather than weakened), the **undelivered-impulse** term, the
+   **CFL sub-stepping**, and **latent heat** (`cohesionField`/`settleCohesion` — solver-driven, alive
+   in fluidlab, and `chem/`'s phase transitions are untouched).
+   ⚠️ **Momentum is no longer a closed ledger.** `FlightTest.the momentum ledger still balances` is
+   deleted, not parked: the gas has no momentum to be the other half of a push. This is what step 6
+   then ran into.
+   Valves and pumps kept working with only their momentum halves removed, and **§6.1 is answered**:
+   `Volume.kt` stays — diffusion moves a *share*, which is volume-independent, but volume still
+   governs the pressure that valves and pumps read.
 6. **Wire thrust to blocked flux** (§3). Momentum fields, save format and ledger fields are all left
    alone; the work is keeping `applyPressureForce` fed from the diffusion model's pressure field, and
    settling §3.6 (unbounded momentum). No measurement gate (§3.7).
+   ⛔ **ATTEMPTED 2026-08-12 AND REVERTED — §3's premise does not survive the cut-over.** Patch kept
+   at `scratchpad/step6-blocked-flux.patch`; it wires `applyPressureForce` to the pre-diffusion
+   pressure field of both layers and returns thrust to every breach test. What it also does is make
+   `FlightTest.a sealed vessel rings and does not depart` fail with a *growing* excursion.
+   The cause is not a bug in the wiring. `applyPressureForce` splits each face's drop: a closed face
+   pushes the hull, an open one hands `toGas` to the momentum field. Under the solver that share came
+   back — the gas hit the far wall and pushed it — and the test says so in as many words: *"the ship's
+   momentum is minus the gas's"*. Diffusion carries no momentum, so the share never returns and the
+   hull keeps the deficit. **The telescoping in §3 was never a property of `applyPressureForce`
+   alone; it held across the whole solver.** Two ways out, and they are different models:
+   - **(a) Blocked flux, and accept the leak.** Keep the patch; a sealed vessel with any internal
+     pressure gradient drifts. The invariant test has to go or be weakened to an envelope that grows.
+   - **(b) Thrust from vented mass.** Diffusion already knows exactly what leaves each rim face.
+     Impulse per rim face = mass out × a speed derived from the venting cell's pressure, directed
+     along the face normal. **Zero when sealed by construction** — nothing vents, so nothing sums —
+     rather than by a telescoping argument that has to be re-earned. Non-zero only at a real hole,
+     which is what §3 wanted; and it is a magnitude, so it tunes to feel per §3.7.
+   Recommended: **(b)**. It is the same size of change, it keeps the invariant that catches "a sealed
+   ship accelerates from nothing", and it does not need the momentum field at all — which retires
+   §3.6 rather than answering it. **Stu's call.**
 7. **Sweep the tests** (§7). Delete the solver tests; keep thin feature coverage.
 
 ## 6. Open questions — answer before step 4
