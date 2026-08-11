@@ -245,5 +245,6 @@ fun heatPerGram(machine: Machine?): Long = when (machine) {
     is Smelter -> 400_000L
     is Processor -> 40_000L    // crushing and grinding
     is Extractor -> 20_000L
+    is Vaporizer -> 100_000L   // vaporising minerals
     else -> 0L
 }

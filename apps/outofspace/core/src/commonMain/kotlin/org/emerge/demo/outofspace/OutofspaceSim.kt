@@ -134,6 +134,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Extractor -> w.leech(m, activation, i)
                 is Processor -> w.refine(cfg, m, activation, i)
                 is Smelter -> w.melt(cfg, m, activation, i)
+                is Vaporizer -> w.vaporize(m, activation, i)
                 else -> m
             }
         }
@@ -407,6 +408,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (activation <= 0) 0L to carry
         else Rate.tick(gramsPerTick * activation, Signals.FULL, carry)
 
+    private fun vaporizeToGas(mixture: Mixture): Mixture {
+        val out = LongArray(Species.COUNT)
+        for (s in Species.ALL) {
+            val g = mixture[s]
+            if (g <= 0L) continue
+            out[s.ordinal] += g
+        }
+        return Mixture.ofGrams(out)
+    }
+
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input = m.input ?: return m
         val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
@@ -447,6 +458,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
             refined = refined.buffer,
             slag = slag.buffer,
+            carry = carry,
+        )
+    }
+
+    private fun Work.vaporize(m: Vaporizer, activation: Int, at: Int): Vaporizer {
+        val input = m.input ?: return m
+        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
+        val chunkMass = minOf(grams, input.mass)
+        if (chunkMass <= 0L) return m.copy(carry = carry)
+
+        val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        heat(at, chunkMass * heatPerGram(m))
+        val gas = vaporizeToGas(chunk.mixture)
+        val base = at * Species.COUNT
+        val parcel = LongArray(Species.COUNT)
+        for (s in Species.ALL) {
+            val g = gas[s]
+            if (g <= 0L) continue
+            airGrams[base + s.ordinal] += g
+            parcel[s.ordinal] = g
+        }
+        val joules = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+        airJoules[at] += joules
+
+        return m.copy(
+            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
             carry = carry,
         )
     }
