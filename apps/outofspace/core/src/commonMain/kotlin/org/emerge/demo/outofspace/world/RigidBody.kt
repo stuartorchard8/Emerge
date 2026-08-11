@@ -46,12 +46,28 @@ class RigidBody(
     }
 
     /** How many cells of it there are — what everything about the body scales with. */
-    val filled: Int get() = cells.count { it }
+    val filled: Int = cells.count { it }
 
-    val massGrams: Long get() = filled * MATERIAL.gramsPerTile
+    /**
+     * What one of its tiles weighs, from **what the body is actually made of**: a rock's ore, a
+     * fragment's casing. Held rather than recomputed because [massGrams] is read every tick by
+     * every body, and a mixture's density is a loop over the species table.
+     */
+    val gramsPerTile: Long = when (kind) {
+        BodyKind.ROCK -> gramsPerTileOf(oreComposition ?: Mixture.EMPTY)
+        BodyKind.FRAGMENT -> machineKind!!.material.gramsPerTile
+    }
+
+    /** Millijoules per kelvin for one of its tiles, from that same composition. */
+    val capacityPerTile: Long = when (kind) {
+        BodyKind.ROCK -> capacityPerTileOf(oreComposition ?: Mixture.EMPTY)
+        BodyKind.FRAGMENT -> machineKind!!.material.capacityPerTile
+    }
+
+    val massGrams: Long get() = filled * gramsPerTile
 
     /** Millijoules per kelvin, from the same two numbers every other solid's capacity comes from. */
-    val capacity: Long get() = filled * MATERIAL.capacityPerTile
+    val capacity: Long get() = filled * capacityPerTile
 
     val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
 
@@ -99,12 +115,13 @@ class RigidBody(
 
     companion object {
         /**
-         * What bodies are made of, thermally.
+         * How well a rock conducts heat — the one solid property its composition does not supply.
          *
-         * [Material.Firebrick] is not a joke and not a placeholder: an asteroid is a poor conductor
-         * with a lot of thermal mass, which is the same pair of properties a furnace lining is chosen
-         * for, and inventing a second enum entry with the same two numbers would be inventing a
-         * distinction the model cannot express.
+         * Mass and heat capacity now come from [oreComposition] tile by tile, so what is left here
+         * is conductance, and [Material.Firebrick] is not a joke and not a placeholder for it: an
+         * asteroid is a poor conductor, which is the property a furnace lining is chosen for.
+         * Per-species conductance would need a number [Species] does not carry, so a rock conducts
+         * like rock regardless of what it assays at.
          */
         val MATERIAL: Material = Material.Firebrick
 
@@ -145,7 +162,7 @@ class RigidBody(
                 positionX = positionX, positionY = positionY,
                 impulseX = impulseX, impulseY = impulseY,
                 oreComposition = composition,
-                joules = filled * MATERIAL.capacityPerTile * kelvin,
+                joules = filled * capacityPerTileOf(composition) * kelvin,
             )
         }
     }

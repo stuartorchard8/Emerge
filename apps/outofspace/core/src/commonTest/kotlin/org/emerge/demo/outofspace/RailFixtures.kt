@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.gramsPerTileOf
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.STARTER_DEMO_PLATE_Y
@@ -157,8 +158,13 @@ fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<RigidBody> {
 /** Body radius the plate is sized for: five tiles across, 21 cells. */
 const val FEEDSTOCK_RADIUS = 2
 
-/** What one of those weighs — the ore budget of a test that plants a single body. */
-val FEEDSTOCK_GRAMS: Long get() = 21L * RigidBody.MATERIAL.gramsPerTile
+/**
+ * What one of those weighs — the ore budget of a test that plants a single body.
+ *
+ * Derived from the composition the fixture actually spawns, not from a material constant: a rock's
+ * mass is its ore now, so pinning this to anything else would let the two drift apart silently.
+ */
+val FEEDSTOCK_GRAMS: Long get() = 21L * gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
 
 /**
  * The starter vessel **with feedstock on both plates** — what most of these tests mean when they

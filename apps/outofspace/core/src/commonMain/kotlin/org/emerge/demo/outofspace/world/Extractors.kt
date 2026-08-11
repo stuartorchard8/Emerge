@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.chem.Resource
  * It replaces the miner, which minted ore out of nothing at a rate somebody typed. Everything
  * downstream of it is unchanged — same output port, same [Form.Ore] buffer, same backing-up
  * behaviour — because the interesting difference is upstream: this thing has to be **given** a rock,
+ * and what it gets out of one is what that rock is made of.
  * and when the rock is gone it stops. That is the loop closing.
  *
  * Two things about it are unlike every other deck machine, and both are the same choice:
@@ -22,10 +23,11 @@ import org.emerge.demo.outofspace.chem.Resource
  *
  * [input] is how a rate in grams meets a rock measured in whole cells, and it makes the extractor
  * read like every other machine in the game: an input buffer, a rate, an output buffer. Mass leaves
- * a rock one **cell** at a time — 3 kg of [Rock.MATERIAL] — so the machine bites a whole cell off,
- * holds it, and grinds it into the buffer at [gramsPerTick] like a processor working a lump. The
- * rock is never half-eaten, which is what keeps the two ledgers exact against each other, and the
- * ore still comes out in a steady trickle rather than in 3 kg lurches.
+ * a rock one **cell** at a time — a few kilograms of whatever that rock assays at, see
+ * [RigidBody.gramsPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
+ * buffer at [gramsPerTick] like a processor working a lump. A dense body is worth more ore per bite
+ * as well as taking more to shift. The rock is never half-eaten, which is what keeps the two ledgers
+ * exact against each other, and the ore still comes out in a steady trickle rather than in lurches.
  *
  * You can see both halves of that: the rock visibly pits away from the side the machine is working,
  * a cell at a time, while the belt fills smoothly.
@@ -124,7 +126,7 @@ fun biteCell(body: RigidBody, index: Int): Bite {
     )
     return Bite(
         body = left,
-        grams = RigidBody.MATERIAL.gramsPerTile,
+        grams = body.gramsPerTile,
         joules = body.joules - keptJoules,
         impulseX = body.impulseX - keptX,
         impulseY = body.impulseY - keptY,

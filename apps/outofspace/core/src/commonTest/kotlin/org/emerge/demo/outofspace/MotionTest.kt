@@ -88,10 +88,14 @@ class MotionTest {
         // One tick at a time until the extractor ejects, which is the moment being tested.
         var s = line()
         var appeared = -1
-        repeat(40) {
-            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            val tile = cfg.initialGrid.index(4, 3)
-            if (s.motion.appearedAt(tile)) { appeared = tile; return@repeat }
+        // `run`, not `repeat`: `return@repeat` is a *continue*, so the old loop ran all forty ticks
+        // and read whatever the last one said — which is only the ejection tick by luck of timing.
+        run {
+            repeat(40) {
+                s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+                val tile = cfg.initialGrid.index(4, 3)
+                if (s.motion.appearedAt(tile)) { appeared = tile; return@run }
+            }
         }
         assertTrue(appeared >= 0, "the extractor never put anything on the track")
         assertNotNull(s.rails[appeared]?.held, "and what appeared should actually be there")
