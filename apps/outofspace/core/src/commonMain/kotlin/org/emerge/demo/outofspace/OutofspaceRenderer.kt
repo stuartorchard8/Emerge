@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Bridge
@@ -360,16 +361,16 @@ class OutofspaceRenderer {
             y + 0.5f + backY * (1f - alpha),
             lerp(motion.previousMassAt(tile).toFloat(), packet.mass.toFloat(), alpha),
             scale,
-            packet.contents.dominant,
+            packet.contents,
         )
     }
 
     /** Material lump at fractional tile coords. [mass] = size (interpolated), [scale] = appear/disappear. */
-    private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, dominant: Species?) {
+    private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, mixture: Mixture) {
         if (scale <= 0f) return
         val fill = (mass / Capacity.PACKET_GRAMS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
         val side = Visual.PACKET_FILL * fill * scale
-        rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx, packetColor(dominant))
+        rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx, mixture.color.toLong())
     }
 
     private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
@@ -397,7 +398,7 @@ class OutofspaceRenderer {
             rect(
                 cx + b.facing.dx * at * tilePx,
                 cy + b.facing.dy * at * tilePx,
-                size, size, packetColor(packet.contents.dominant),
+                size, size, packet.contents.color.toLong(),
             )
         }
     }
@@ -416,7 +417,7 @@ class OutofspaceRenderer {
                 state.grid.yOf(d.tile) + 0.5f,
                 d.packet.mass.toFloat(),
                 1f - alpha,
-                d.packet.contents.dominant,
+                d.packet.contents,
             )
         }
     }
@@ -464,7 +465,7 @@ class OutofspaceRenderer {
                     rect(
                         (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
                         (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
-                        packetColor(m.contents?.mixture?.dominant),
+                        m.contents?.mixture?.color?.toLong() ?: 0x000000FF,
                     )
                 }
             }
@@ -557,8 +558,6 @@ class OutofspaceRenderer {
         )
     }
 
-    private fun packetColor(dominant: Species?): Long = speciesColor(dominant)
-
     /**
      * Cold blue through neutral at room temperature to hot orange, at a fixed alpha so machine shapes
      * stay faintly readable underneath.
@@ -604,7 +603,7 @@ class OutofspaceRenderer {
         val pressure = state.air.pressureAt(index)
         if (pressure <= 0L) return Colors.OVERLAY_EMPTY
         val f = (pressure.toFloat() / AirField.AMBIENT_AIR.total).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
-        val base = speciesColor(state.air.mixtureAt(index).dominant)
+        val base = state.air.mixtureAt(index).color
         val scale = (f / Visual.PRESSURE_MAX_F).coerceIn(Visual.PRESSURE_MIN_SCALE, Visual.PRESSURE_MAX_SCALE)
         return rgba(
             (((base shr 24) and 0xFF) * scale).toInt(),
