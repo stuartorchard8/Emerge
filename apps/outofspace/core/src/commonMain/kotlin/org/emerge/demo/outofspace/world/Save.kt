@@ -96,6 +96,12 @@ object Save {
             val cursor = state.diverters.forkCursors[tile] ?: 0
             if (cursor != 0) out.append("diverter ").append(tile).append(' ').append(cursor).append('\n')
         }
+        // Which feeder a merge takes from next. A separate line from `diverter` because a tile can
+        // be both, and an older save simply has none of these.
+        for (tile in 0 until state.grid.size) {
+            val cursor = state.diverters.mergeCursors[tile] ?: 0
+            if (cursor != 0) out.append("merge ").append(tile).append(' ').append(cursor).append('\n')
+        }
 
         // Solid heat lives on machines/segments (their `k=` field), not a separate per-tile block.
         // Air per tile: mixture is wordy but readable/editable.
@@ -281,6 +287,7 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<Int, Int>()
+        val merges = HashMap<Int, Int>()
         val piles = HashMap<Int, MutableList<Resource>>()
         val airGrams = LongArray(grid.size * Species.COUNT)
         val airJoules = LongArray(grid.size)
@@ -378,6 +385,7 @@ object Save {
                     bridges[t] = readMachine(tokens.drop(2), version, ::fail) as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
+                "merge" -> merges[tile(1)] = long(2).toInt()
                 // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
@@ -462,7 +470,7 @@ object Save {
             machines = machines.toList(),
             conduits = conduits,
             bridges = bridges.toList(),
-            diverters = FlowCursors(diverters),
+            diverters = FlowCursors(diverters, merges),
             gravity = gravity,
             positionX = positionX,
             positionY = positionY,

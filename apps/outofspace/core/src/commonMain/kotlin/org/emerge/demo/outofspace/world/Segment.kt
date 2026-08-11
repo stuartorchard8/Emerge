@@ -17,7 +17,7 @@ enum class Conduit(val label: String) {
 }
 
 /**
- * One tile of one conduit layer. No inherent direction (sources/sinks decide flow via FlowField).
+ * One tile of one conduit layer. No inherent direction (sources/sinks decide flow via FlowGraph).
  * Inert/plumbing — no wiring, no on/off state.
  */
 data class Segment(

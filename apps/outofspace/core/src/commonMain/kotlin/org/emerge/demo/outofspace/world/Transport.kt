@@ -30,7 +30,18 @@ fun advanceSegments(
      * port until next pass, which is what every other tile on the run does anyway.
      */
     val arrived = BooleanArray(held.size)
+
+    /**
+     * Tiles already walked this pass.
+     *
+     * Only a merge needs this. Deciding whose turn it is means knowing which of the feeders still
+     * have a turn coming — one already walked has had its chance and either moved or could not, and
+     * holding the junction open for it would idle the junction for a tick.
+     */
+    val walked = BooleanArray(held.size)
+
     for (tile in flow.order) {
+        walked[tile] = true
         if (arrived[tile]) continue
         val packet = held[tile] ?: continue
 
@@ -41,25 +52,28 @@ fun advanceSegments(
             continue
         }
 
-        val options = flow.successorsOf(tile)
-        val target = cursors.choose(tile, options) { held[it] == null }
-        if (target >= 0) {
+        val way = cursors.choose(flow, tile) { target ->
+            held[target] == null && mayMerge(flow, cursors, held, walked, tile, target)
+        }
+        if (way != null) {
+            val target = flow.neighbour(tile, way)
+            cursors.mergeUsed(flow.feeders(target), target, tile)
             held[target] = leftover
             held[tile] = null
             arrived[target] = true
-            log?.moved(tile, target, flow.directionBetween(tile, target))
+            log?.moved(tile, target, way)
             moved++
             continue
         }
 
         // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
         // in the successors' own order so a fork behaves the same way it would when moving.
-        for (option in options) {
-            val ahead = held[option.to] ?: continue
+        for (option in flow.successorTiles(tile)) {
+            val ahead = held[option] ?: continue
             val squashed = squashOnto(ahead, leftover) ?: continue
-            held[option.to] = squashed.merged
+            held[option] = squashed.merged
             held[tile] = squashed.rejected
-            arrived[option.to] = true
+            arrived[option] = true
             moved++
             break
         }
@@ -68,55 +82,30 @@ fun advanceSegments(
 }
 
 /**
- * Advance segments for a [FlowField] (multiple components).
+ * Whether [from] is the feeder whose turn it is to move into [target].
  *
- * Iterates tiles in topological order across all components. Each tile's successors come from the
- * component graph that contains it.
+ * Where two runs join, somebody has to go first, and until this existed the answer was whichever
+ * feeder happened to sort earlier — which is not a preference but a starvation: the same run won
+ * every tick for ever and the other never moved at all. A merge takes turns, exactly as a fork does.
+ *
+ * A feeder only counts as waiting if it has something to hand over and has not already been walked
+ * this pass. Otherwise a junction would hold its turn open for a run that is empty, or for one that
+ * has already been past, and lose a tick of throughput to a queue that was never there.
  */
-fun advanceSegments(
-    flow: FlowField,
-    held: Array<Packet?>,
+private fun mayMerge(
+    flow: FlowGraph,
     cursors: FlowCursors,
-    log: MotionLog? = null,
-    absorb: (tile: Int, packet: Packet) -> Packet?,
-): Int {
-    var moved = 0
-    val arrived = BooleanArray(held.size)
-    for (tile in flow.order) {
-        if (arrived[tile]) continue
-        val packet = held[tile] ?: continue
-
-        val leftover = absorb(tile, packet)
-        held[tile] = leftover
-        if (leftover == null) {
-            log?.takenFromRail(tile, packet)
-            continue
-        }
-
-        val options = flow.successorsOf(tile)
-        if (options.isEmpty()) continue
-
-        val target = cursors.choose(tile, options) { held[it] == null }
-        if (target >= 0) {
-            held[target] = leftover
-            held[tile] = null
-            arrived[target] = true
-            log?.moved(tile, target, flow.directionBetween(tile, target))
-            moved++
-            continue
-        }
-
-        for (option in options) {
-            val ahead = held[option.to] ?: continue
-            val squashed = squashOnto(ahead, leftover) ?: continue
-            held[option.to] = squashed.merged
-            held[tile] = squashed.rejected
-            arrived[option.to] = true
-            moved++
-            break
-        }
+    held: Array<Packet?>,
+    walked: BooleanArray,
+    from: Int,
+    target: Int,
+): Boolean {
+    val feeders = flow.feeders(target)
+    if (feeders.size <= 1) return true
+    val turn = cursors.preferredFeeder(feeders, target) { feeder ->
+        held[feeder] != null && (feeder == from || !walked[feeder])
     }
-    return moved
+    return turn == from
 }
 
 /**

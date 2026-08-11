@@ -294,7 +294,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             machines = machines,
             conduits = conduits,
             bridges = bridges,
-            diverters = FlowCursors(w.diverters.snapshot()),
+            diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
             tick = state.tick + 1,
             extractedGrams = w.extractedGrams,
             ventedGrams = w.ventedGrams,
@@ -508,7 +508,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return out
         }
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
-        val diverters: FlowCursors = FlowCursors(state.diverters.snapshot())
+        val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedGrams: Long = state.ventedGrams
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */

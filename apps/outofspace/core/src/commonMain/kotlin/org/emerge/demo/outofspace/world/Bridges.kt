@@ -35,7 +35,7 @@ data class Bridge(
      *
      * Walked from the **far end back**, so a full bridge empties its exit onto the track and shuffles
      * along in the same step rather than stalling for two — the same rule, and for the same reason,
-     * as [org.emerge.demo.outofspace.world.FlowField.order] on the track itself.
+     * as [org.emerge.demo.outofspace.world.FlowGraph.order] on the track itself.
      */
     fun advanced(): Bridge {
         var out = this

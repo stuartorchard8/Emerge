@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.conservationOf
+import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Bridge
@@ -431,41 +432,88 @@ class VesselSimTest {
         assertNotNull(s.railAt(grid.index(3, 2))?.held, "the ingot should still be waiting on the track")
     }
 
-    @Test
-    fun `processors and smelters only accept Ore from the rail and non-Ore passes through`() {
-        val grid = Grid(12, 5)
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+    /**
+     * A belt that keeps moving, with a machine tapping it as material goes by.
+     *
+     * The machine faces **across** the line rather than along it, so its input port lands on a belt
+     * tile while both of its outputs — product ahead, waste below — sit off the rail entirely. That
+     * is what makes the belt a through-route: a machine straddling the line puts its own output back
+     * onto the track behind its input, and material it refuses has nowhere to go but into the mouth
+     * that just refused it.
+     *
+     * What is being tested is the split between the two halves of the rework. The flow graph does not
+     * know what a smelter eats — it says only which way material may travel, and the belt runs
+     * left to right whatever is standing beside it. Whether *this* packet is taken is settled at the
+     * tile, when it is offered. So ore is lifted off in passing and an ingot rides straight past to
+     * the tank at the end, on the same belt, with nothing in the topology distinguishing them.
+     */
+    private fun tappedBelt(machine: Machine, carried: Packet): VesselState {
+        val grid = Grid(12, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        // Empty processor at (4,2), empty storage at (9,2)
-        m[grid.index(4, 2)] = Processor(Direction.Right)
+
+        // The belt: (1,2) through to (8,2), and a tank at the end taking delivery at (8,2).
+        joinRow(grid, rails, 1, 8, 2)
         m[grid.index(9, 2)] = Storage(Direction.Right)
-        // Rail feeds the processor at (3,2) and continues past it to the storage at (8,2)
-        joinRow(grid, rails, 3, 8, 2)
-        rails[grid.index(3, 2)] = rails[grid.index(3, 2)]!!.copy(held = ingot)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
-        s = run(s, Bridge.STEP_TICKS * 4)
-        // Processor refused the ingot — it should advance past the processor
-        assertNotNull(s.railAt(grid.index(5, 2))?.held, "the ingot should pass the processor")
-        // Storage received the ingot from downstream
-        assertNotNull((s[grid.index(9, 2)] as Storage).contents, "the storage should have caught the ingot")
+
+        // The machine sits below the belt facing down, so its input port is the belt tile (4,2)
+        // above it and its outputs are at (4,4) and (3,3), where there is no track to receive them.
+        m[grid.index(4, 3)] = machine
+
+        rails[grid.index(1, 2)] = rails[grid.index(1, 2)]!!.copy(held = carried)
+        val s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        return run(s, 12)
     }
 
     @Test
-    fun `an empty smelter only accepts Ore from the rail`() {
-        val grid = Grid(12, 5)
+    fun `an ingot the processor will not take rides the belt on to the tank`() {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
-        val m = arrayOfNulls<Machine>(grid.size)
-        val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(4, 2)] = Smelter(Direction.Right)
-        m[grid.index(9, 2)] = Storage(Direction.Right)
-        joinRow(grid, rails, 3, 8, 2)
-        rails[grid.index(3, 2)] = rails[grid.index(3, 2)]!!.copy(held = ingot)
-        val s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
-        val s2 = run(s, Bridge.STEP_TICKS * 4)
-        // Smelter refused the ingot — it should pass past it
-        assertNotNull(s2.railAt(grid.index(5, 2))?.held, "the ingot should pass the empty smelter")
+        val s = tappedBelt(Processor(Direction.Down), ingot)
+
+        assertNull((s[grid43(s)] as Processor).input, "the processor should not have taken an ingot")
+        assertEquals(
+            1_000L,
+            (s[s.grid.index(9, 2)] as Storage).contents?.mass,
+            "and the tank at the end of the belt should have caught it",
+        )
     }
+
+    @Test
+    fun `ore on the same belt is lifted off in passing`() {
+        // The other half, on the identical layout: the belt has not changed shape, so the only thing
+        // that decided this packet's fate is what the machine was willing to take.
+        val ore = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 1_000L)))
+        val s = tappedBelt(Processor(Direction.Down), ore)
+        val processor = s[grid43(s)] as Processor
+
+        // Asserted as conservation rather than as "the input buffer is not empty", which is a moment
+        // and not a fact: the processor grinds at 125 g a tick, so whether the ore is still in the
+        // mouth, half separated, or wholly turned into concentrate and tailings depends only on when
+        // you happen to look. What must hold at any tick is that all of it is accounted for.
+        val taken = (processor.input?.mass ?: 0L) +
+            (processor.product?.mass ?: 0L) +
+            (processor.tailings?.mass ?: 0L)
+        assertEquals(1_000L, taken, "the processor should have taken the ore off the belt")
+        assertNull(
+            (s[s.grid.index(9, 2)] as Storage).contents,
+            "so nothing should have reached the tank",
+        )
+    }
+
+    @Test
+    fun `an empty smelter lets an ingot go by`() {
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val s = tappedBelt(Smelter(Direction.Down), ingot)
+
+        assertNull((s[grid43(s)] as Smelter).input, "the smelter should not have taken an ingot")
+        assertEquals(
+            1_000L,
+            (s[s.grid.index(9, 2)] as Storage).contents?.mass,
+            "the ingot should have carried on to the tank",
+        )
+    }
+
+    private fun grid43(s: VesselState): Int = s.grid.index(4, 3)
 
     // ── Edits ─────────────────────────────────────────────────────────────────
 

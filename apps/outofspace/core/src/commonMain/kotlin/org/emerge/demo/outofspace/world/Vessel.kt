@@ -754,14 +754,17 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
 
     // ── 3. Sparse map for diverters ──────────────────────────────────────
-    val newDiverterMap = HashMap<Int, Int>()
-    for ((oldTile, cursor) in diverters.snapshot()) {
-        val ox = grid.xOf(oldTile)
-        val oy = grid.yOf(oldTile)
-        val ni = remapTile(ox, oy)
-        if (ni != null) newDiverterMap[ni] = cursor
+    fun remapCursors(src: Map<Int, Int>): HashMap<Int, Int> {
+        val out = HashMap<Int, Int>()
+        for ((oldTile, cursor) in src) {
+            val ox = grid.xOf(oldTile)
+            val oy = grid.yOf(oldTile)
+            val ni = remapTile(ox, oy)
+            if (ni != null) out[ni] = cursor
+        }
+        return out
     }
-    val newDiverters = FlowCursors(newDiverterMap)
+    val newDiverters = FlowCursors(remapCursors(diverters.snapshot()), remapCursors(diverters.mergeSnapshot()))
 
     // ── 4. Dense field arrays: air / pipeAir (grams + joules) ────────────
     fun remapAirField(src: AirField): AirField {

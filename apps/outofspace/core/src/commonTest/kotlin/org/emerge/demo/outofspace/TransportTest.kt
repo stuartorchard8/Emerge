@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.FlowCursors
-import org.emerge.demo.outofspace.world.FlowField
+import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.advanceSegments
@@ -90,11 +90,11 @@ class TransportTest {
          * nothing about sources. A test about a **fork** must name one, because which way is forward
          * at a junction is a fact about where material entered.
          */
-        fun toward(vararg sinks: Int): FlowField =
-            FlowField.derive(grid, { it in tiles }, ::linked, sinks.toList())
+        fun toward(vararg sinks: Int): FlowGraph =
+            FlowGraph.build(tiles, emptySet(), sinks.toSet(), ::linked, grid)
 
-        fun toward(accepting: List<Int>, full: List<Int> = emptyList(), from: List<Int> = emptyList()): FlowField =
-            FlowField.derive(grid, { it in tiles }, ::linked, accepting, full, from)
+        fun toward(accepting: List<Int>, from: List<Int> = emptyList()): FlowGraph =
+            FlowGraph.build(tiles, from.toSet(), accepting.toSet(), ::linked, grid)
     }
 
     private fun net(): Net = Net()
@@ -109,7 +109,7 @@ class TransportTest {
     }
 
     private fun step(
-        flow: FlowField,
+        flow: FlowGraph,
         held: Array<Packet?>,
         cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
@@ -123,13 +123,17 @@ class TransportTest {
         val n = net().row(2, 8, 3)
 
         val toRight = n.toward(grid.index(8, 3))
-        assertEquals(0, toRight.distanceAt(grid.index(8, 3)), "the sink is the origin")
-        assertEquals(6, toRight.distanceAt(grid.index(2, 3)))
+        for (x in 2..7) {
+            assertEquals(listOf(grid.index(x + 1, 3)), toRight.successorTiles(grid.index(x, 3)), "($x, 3) points the wrong way")
+        }
+        assertEquals(emptyList(), toRight.successorTiles(grid.index(8, 3)), "the sink is the end of the line")
 
         // The identical run, consumed at the other end. Nothing about the tiles changed.
         val toLeft = n.toward(grid.index(2, 3))
-        assertEquals(0, toLeft.distanceAt(grid.index(2, 3)))
-        assertEquals(6, toLeft.distanceAt(grid.index(8, 3)))
+        for (x in 3..8) {
+            assertEquals(listOf(grid.index(x - 1, 3)), toLeft.successorTiles(grid.index(x, 3)), "($x, 3) points the wrong way")
+        }
+        assertEquals(emptyList(), toLeft.successorTiles(grid.index(2, 3)))
     }
 
     @Test
@@ -170,12 +174,15 @@ class TransportTest {
         val deadEnd = grid.index(5, 2)
         val f = n.toward(sink)
 
-        // Note what is *not* claimed: the stub is perfectly reachable, at distance 3, because you can
-        // walk from it back down to the consumer. Being on the field is not the same as being sent
-        // anything. What keeps it empty is that successors only ever run downhill, so the junction
-        // below it never offers it anything — and if a packet were somehow put there it would flow
-        // *out*, which is also right.
-        assertEquals(3, f.distanceAt(deadEnd), "reachable, and further from the consumer than the junction")
+        // Note what is *not* claimed: the stub is not cut out of the graph. It has a way *out* —
+        // back down to the junction — because material stranded on it should drain rather than sit
+        // there for ever. Having a way out is not the same as being sent anything: permission is
+        // per direction, and the junction below simply has no permission pointing up.
+        assertEquals(
+            listOf(grid.index(5, 3)),
+            f.successorTiles(deadEnd),
+            "the stub drains back toward the consumer",
+        )
         assertEquals(
             listOf(grid.index(5, 4)),
             f.successorTiles(grid.index(5, 3)).toList(),
@@ -190,13 +197,25 @@ class TransportTest {
     }
 
     @Test
-    fun `distance is to the nearest consumer, so material picks the closer one`() {
+    fun `a line between two consumers with nothing feeding it drains to one end`() {
+        // This used to claim the midpoint could go either way, on the reasoning that two consumers
+        // are equally good and the diverter should alternate between them. It cannot any more, and
+        // the reason is worth keeping: an edge carries material one way only, and a direction is
+        // only justified by leading to a *producer*. Here there is no producer at all, so nothing
+        // justifies anything and the last consumer traversed claims the whole line.
+        //
+        // A belt whose extractor was just torn out is exactly this, and draining wholly to one end
+        // is the better answer — a midpoint free to go either way dithers, committing to neither.
         val n = net().row(2, 10, 3)
         val f = n.toward(grid.index(2, 3), grid.index(10, 3))
-        assertEquals(4, f.distanceAt(grid.index(6, 3)), "the midpoint is four from either")
-        // The midpoint has two equally good routes, so the diverter decides — and it alternates,
-        // which makes a line between two consumers split its throughput evenly.
-        assertEquals(2, f.successorTiles(grid.index(6, 3)).size)
+        for (x in 2..9) {
+            assertEquals(
+                listOf(grid.index(x + 1, 3)),
+                f.successorTiles(grid.index(x, 3)),
+                "($x, 3) should have joined the drain",
+            )
+        }
+        assertEquals(emptyList(), f.successorTiles(grid.index(10, 3)), "which ends at the far consumer")
     }
 
     // ── Explicit connection ───────────────────────────────────────────────────
@@ -208,7 +227,7 @@ class TransportTest {
         val n = net().row(2, 8, 3).row(2, 8, 4)
         val f = n.toward(grid.index(8, 3))
 
-        assertEquals(6, f.distanceAt(grid.index(2, 3)), "its own row is fed")
+        assertTrue(f.isFed(grid.index(2, 3)), "its own row is fed")
         assertFalse(f.isFed(grid.index(2, 4)), "the row beneath is a different run")
         assertFalse(f.isFed(grid.index(8, 4)), "even the tile directly under the consumer")
     }
@@ -230,7 +249,7 @@ class TransportTest {
         val n = net().row(2, 5, 3).lay(grid.index(6, 3))   // 6 is adjacent to 5, but unjoined
         val f = n.toward(grid.index(6, 3))
 
-        assertTrue(f.isFed(grid.index(6, 3)), "the stub is the sink, so it is trivially at distance 0")
+        assertTrue(f.isFed(grid.index(6, 3)), "the stub is the sink, so it is trivially part of the flow")
         assertFalse(f.isFed(grid.index(5, 3)), "but nothing reaches it")
         val h = held(n, grid.index(5, 3) to lump())
         step(f, h)
@@ -398,69 +417,87 @@ class TransportTest {
         assertTrue(arrived, "the far producer's material never reached the consumer")
     }
 
-    // ── A consumer with no room is traffic to drive round, not a wall ─────────
+    // ── A consumer that refuses is traffic to drive round, not a wall ─────────
 
     /**
-     * The bug that made this whole section necessary, in its simplest form.
+     * The section that made the graph state-independent.
      *
-     * A consumer partway along a run has filled up. Everything behind it should carry on to the one
-     * at the end. The first version of pulling could not do this at all: a tile with an input port
-     * was distance zero and distance zero had no successors, so a packet the full machine refused
-     * was pinned to that tile for ever and the rest of the line jammed behind it.
+     * A consumer partway along a run refuses what is offered — it is full, or it only takes ore and
+     * this is an ingot. Everything behind it should carry on to the one at the end.
+     *
+     * There were two earlier goes at this and both put the refusal into the *topology*. The first
+     * made every input port distance zero, and distance zero had no successors, so a refused packet
+     * was pinned to that tile for ever and the line jammed behind it. The second fixed that by
+     * demoting a full consumer to a transit tile — which worked, but meant the shape of the network
+     * now depended on how full a smelter happened to be, and every rule about direction had to be
+     * restated in terms of fullness. Filtering by *form* is what made that untenable: "full" is one
+     * bit, but "would take this particular packet" is a question you cannot answer before you know
+     * which packet.
+     *
+     * So the graph no longer knows. Every input port is a destination, permanently, and a tile at a
+     * destination still has permission to move onward. Refusal happens at the tile, when a specific
+     * packet is offered, and the traffic simply keeps going.
      */
     @Test
-    fun `material runs past a consumer that has no room to one that has`() {
+    fun `material runs past a consumer that refuses it to one that will take it`() {
         val n = net().row(2, 8, 3)
-        val fullOne = grid.index(5, 3)
+        val refuses = grid.index(5, 3)
         val end = grid.index(8, 3)
-        val f = n.toward(accepting = listOf(end), full = listOf(fullOne))
+        // Both machines are destinations as far as the graph is concerned. Nothing here says which
+        // of them has room.
+        val f = n.toward(accepting = listOf(refuses, end), from = listOf(grid.index(2, 3)))
 
-        // The full one is an ordinary transit tile: it has a downhill successor, pointing onward.
-        assertEquals(3, f.distanceAt(fullOne), "measured from the consumer that can actually take it")
-        assertEquals(listOf(grid.index(6, 3)), f.successorTiles(fullOne).toList())
+        // A destination partway along is an ordinary transit tile too: it still points onward.
+        assertEquals(listOf(grid.index(6, 3)), f.successorTiles(refuses), "a consumer is not a wall")
 
+        // The stretch between two consumers is a two-way street — either end is a real destination —
+        // so the packet is free to hesitate there. The cursor is what carries it through, and it has
+        // to persist across ticks to do that.
         val h = held(n, grid.index(2, 3) to lump())
+        val cursors = FlowCursors()
         val taken = mutableListOf<Int>()
-        repeat(12) {
-            step(f, h) { tile, packet ->
+        repeat(20) {
+            step(f, h, cursors) { tile, packet ->
                 // The near building refuses everything; the far one takes it.
                 if (tile == end) { taken.add(grid.xOf(tile)); null } else packet
             }
         }
-        assertEquals(listOf(8), taken, "it should have got past the full machine")
+        assertEquals(listOf(8), taken, "it should have got past the machine that refused it")
     }
 
     /**
-     * The other half, and the reason a full consumer is *demoted* rather than deleted.
+     * The other half, and the reason a refusing consumer is not cut out of the graph.
      *
      * With nowhere better to be, material still travels toward the blockage and packs in behind it.
-     * Dropping full consumers from the field entirely also fixed the bug above, but it emptied every
-     * jammed line: the belt went bare while the backlog hid inside the machine feeding it. A jam
-     * should be the most visible thing on the deck.
+     * Deleting jammed consumers from the field also fixed the bug above, but it emptied every jammed
+     * line: the belt went bare while the backlog hid inside the machine feeding it. A jam should be
+     * the most visible thing on the deck.
+     *
+     * That falls out for free now — the graph never knew the consumer was jammed, so it never
+     * stopped pointing at it.
      */
     @Test
-    fun `when the only consumer is full, material still queues up against it`() {
+    fun `when the only consumer refuses, material still queues up against it`() {
         val n = net().row(2, 8, 3)
         val end = grid.index(8, 3)
-        val f = n.toward(accepting = emptyList(), full = listOf(end))
+        val f = n.toward(accepting = listOf(end), from = listOf(grid.index(2, 3)))
 
         assertTrue(f.isFed(grid.index(2, 3)), "the run still has a direction")
-        assertEquals(listOf(grid.index(7, 3)), f.successorTiles(grid.index(6, 3)).toList())
+        assertEquals(listOf(grid.index(7, 3)), f.successorTiles(grid.index(6, 3)))
 
         val h = held(n, grid.index(2, 3) to lump(), grid.index(3, 3) to lump())
+        // Nobody takes anything: the absorb callback hands every packet straight back.
         repeat(12) { step(f, h) }
         assertEquals(1_000L, h[end]?.mass, "the leader is against the blockage")
         assertEquals(1_000L, h[grid.index(7, 3)]?.mass, "and the next one is right behind it")
     }
 
-    @Test
-    fun `an accepting consumer anywhere beats a full one next door`() {
-        // The penalty has to be heavier than any distance, or a run would prefer the blockage simply
-        // because it was closer — which is the jam this fix exists to clear.
-        val n = net().row(2, 8, 3)
-        val f = n.toward(accepting = listOf(grid.index(8, 3)), full = listOf(grid.index(3, 3)))
-        assertEquals(listOf(grid.index(5, 3)), f.successorTiles(grid.index(4, 3)).toList(), "onward, not back")
-    }
+    // There is deliberately no test that the graph is unchanged when a machine fills up. Under the
+    // demotion model that needed watching — a run could prefer a blockage simply because it was
+    // closer, so a full consumer had to be pushed further away than any real distance could reach,
+    // and the size of that penalty was a thing to get wrong. There is nothing to tune now and no
+    // second graph to compare against: [FlowGraph.build] takes track, ports and sources, and there
+    // is no argument through which fullness could reach it. The signature is the assertion.
 
     /**
      * The one that would catch the artifact. Same run, same buildings, same everything — but the
@@ -642,7 +679,7 @@ class TransportTest {
      * decided by where material came in, so a fork with nothing feeding it is not a fork — it is two
      * consumers with some track between them.
      */
-    private fun why(): Pair<Net, FlowField> {
+    private fun why(): Pair<Net, FlowGraph> {
         val n = net().row(2, 5, 3)
             .lay(grid.index(5, 2)).join(grid.index(5, 3), Direction.Up)
             .lay(grid.index(5, 4)).join(grid.index(5, 3), Direction.Down)
@@ -709,6 +746,87 @@ class TransportTest {
         assertEquals(saved, mapOf(grid.index(5, 3) to 1), "and it is the state it looks like")
     }
 
+    // ── Merges ────────────────────────────────────────────────────────────────
+
+    /**
+     * Two runs joining one line, both loaded, every tick.
+     *
+     * From a save Stu sent: a junction fed from two directions took from the same one every single
+     * tick and the other never moved at all. Not a preference — a starvation. There was no merge
+     * arbitration in the transport layer at all: a fork had a cursor and took turns, and a merge was
+     * settled by whichever feeder happened to sort earlier in the traversal order, which never
+     * changes. A merge takes turns now, exactly as a fork does.
+     */
+    private fun merging(): Triple<Net, FlowGraph, Pair<Int, Int>> {
+        val n = net().row(2, 6, 3).lay(grid.index(5, 4)).join(grid.index(5, 3), Direction.Down)
+        val f = n.toward(
+            accepting = listOf(grid.index(2, 3)),
+            from = listOf(grid.index(6, 3), grid.index(5, 4)),
+        )
+        return Triple(n, f, grid.index(6, 3) to grid.index(5, 4))
+    }
+
+    @Test
+    fun `a merge alternates instead of starving one of its feeders`() {
+        val (n, f, feeders) = merging()
+        val (fromRight, fromBelow) = feeders
+        val junction = grid.index(5, 3)
+        assertEquals(
+            listOf(fromBelow, fromRight).sorted(),
+            f.feeders(junction).sorted(),
+            "the junction is fed from both",
+        )
+
+        val cursors = FlowCursors()
+        val sent = mutableListOf<String>()
+        repeat(6) {
+            val h = held(n, fromRight to lump(), fromBelow to lump())
+            step(f, h, cursors)
+            if (h[fromRight] == null) sent.add("right")
+            if (h[fromBelow] == null) sent.add("below")
+        }
+        assertEquals(
+            listOf("right", "below", "right", "below", "right", "below"),
+            sent,
+            "each feeder should get every other turn",
+        )
+    }
+
+    @Test
+    fun `an empty feeder does not consume its turn at a merge`() {
+        // The same courtesy a fork extends to a blocked branch. A junction whose turn falls on a run
+        // with nothing on it must take from the run that does, or a quiet feeder would cost the busy
+        // one half its throughput for nothing.
+        val (n, f, feeders) = merging()
+        val (fromRight, fromBelow) = feeders
+
+        val cursors = FlowCursors()
+        var delivered = 0
+        repeat(6) {
+            // Only ever the one feeder loaded; the other is bare track.
+            val h = held(n, fromBelow to lump())
+            step(f, h, cursors)
+            if (h[fromBelow] == null) delivered++
+        }
+        assertEquals(6, delivered, "every packet should have got away")
+        assertNull(f.feeders(grid.index(5, 3)).firstOrNull { it !in setOf(fromRight, fromBelow) })
+    }
+
+    @Test
+    fun `merge cursor state survives a round trip`() {
+        val (n, f, feeders) = merging()
+        val (fromRight, fromBelow) = feeders
+        val cursors = FlowCursors()
+        step(f, held(n, fromRight to lump(), fromBelow to lump()), cursors)
+        val saved = cursors.mergeSnapshot()
+        assertTrue(saved.isNotEmpty(), "a junction that has taken from someone remembers who")
+
+        val resumed = FlowCursors(cursors.snapshot(), saved)
+        val h = held(n, fromRight to lump(), fromBelow to lump())
+        step(f, h, resumed)
+        assertNull(h[fromBelow], "resuming continues the alternation rather than starting over")
+    }
+
     // ── Determinism ───────────────────────────────────────────────────────────
 
     @Test
@@ -724,14 +842,62 @@ class TransportTest {
         assertEquals(digest(), digest())
     }
 
+    /**
+     * A consumer partway along a line that carries on to a second consumer.
+     *
+     * From a save Stu sent: material crawled past the first tank at half speed. The order the
+     * advance walks tiles in was layered by hops from the *nearest* sink, and a consumer is zero
+     * hops from itself — so it sorted to the very front, ahead of the tiles it feeds. Material it
+     * refused could then only move on the ticks when the tile ahead happened to already be empty.
+     *
+     * Half throughput is the mild version. The rule it broke is the one the single-pass advance
+     * rests on, so it is asserted directly here rather than through anything that stands in for it.
+     */
+    @Test
+    fun `a consumer partway along a run does not halve what gets past it`() {
+        val n = net().row(2, 10, 3)
+        val partway = grid.index(5, 3)
+        val f = n.toward(accepting = listOf(partway, grid.index(10, 3)), from = listOf(grid.index(2, 3)))
+
+        val position = f.order.withIndex().associate { (i, tile) -> tile to i }
+        for (tile in f.order) {
+            for (target in f.successorTiles(tile)) {
+                assertTrue(
+                    position.getValue(target) < position.getValue(tile),
+                    "$tile is walked before $target, which it feeds",
+                )
+            }
+        }
+
+        // And the throughput that followed from it: a packet a tick, with the run kept full behind.
+        val h = held(n, grid.index(2, 3) to lump())
+        val cursors = FlowCursors()
+        var arrived = 0
+        repeat(8) {
+            step(f, h, cursors) { tile, packet ->
+                // The near consumer refuses everything; only the far one takes delivery.
+                if (tile == grid.index(10, 3)) { arrived++; null } else packet
+            }
+            if (h[grid.index(2, 3)] == null) h[grid.index(2, 3)] = lump()
+        }
+        assertEquals(1_000L, h[partway]?.mass, "the run is packed right through the near consumer")
+        assertEquals(1_000L, h[grid.index(6, 3)]?.mass, "including the tile just past it")
+    }
+
     @Test
     fun `the traversal order is total, so nothing depends on sort stability`() {
         val n = net().row(2, 6, 3).row(2, 6, 4)
         val f = n.toward(grid.index(6, 3), grid.index(6, 4))
         val order = f.order.toList()
         assertEquals(order.size, order.toSet().size, "every fed tile appears exactly once")
-        // Distances are non-decreasing along the order: that is the property advancing relies on.
-        val distances = order.map { f.distanceAt(it) }
-        assertEquals(distances.sorted(), distances)
+        // The property advancing actually relies on, asserted directly rather than through a proxy:
+        // a tile is never walked before somewhere it can send material to.
+        val position = order.withIndex().associate { (i, tile) -> tile to i }
+        for (tile in order) {
+            for (target in f.successorTiles(tile)) {
+                val ahead = position[target] ?: continue
+                assertTrue(ahead < position.getValue(tile), "$tile was walked before $target, which it feeds")
+            }
+        }
     }
 }

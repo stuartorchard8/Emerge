@@ -22,19 +22,3 @@ data class Diverters private constructor(private val map: Map<Int, Int> = emptyM
         fun of(cursor: Map<Int, Int>): Diverters = if (cursor.isEmpty()) EMPTY else Diverters(cursor.toMap())
     }
 }
-
-/** Mutable diverter cursors for one tick — delegates to [FlowCursors]. */
-@Deprecated("Use FlowCursors directly", level = DeprecationLevel.WARNING)
-class DiverterWork(diverters: Diverters) {
-    private val cursors = FlowCursors(diverters.cursor)
-
-    fun choose(tile: Int, options: IntArray, isFree: (Int) -> Boolean): Int {
-        return cursors.chooseInt(tile, options, isFree)
-    }
-
-    fun snapshot(): Diverters = Diverters.of(cursors.forkCursors)
-
-    companion object {
-        val EMPTY: DiverterWork = DiverterWork(Diverters.EMPTY)
-    }
-}
