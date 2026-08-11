@@ -5,6 +5,7 @@ import kotlinx.browser.window
 import org.emerge.demo.fluidlab.FluidlabController
 import org.emerge.demo.fluidlab.FluidlabHud
 import org.emerge.demo.fluidlab.FluidlabRenderer
+import org.emerge.demo.fluidlab.Overlay
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.Ui
 import org.w3c.dom.HTMLCanvasElement
@@ -31,13 +32,16 @@ fun main() {
 
 private fun start(canvas: HTMLCanvasElement) {
     val controller = FluidlabController()
-    val renderer = FluidlabRenderer(controller.cfg)
+    val renderer = FluidlabRenderer()
     val hud = FluidlabHud()
     val ui = Ui()
 
+    var overlay = Overlay.Density
+
     hud.onTogglePause = { controller.paused = !controller.paused }
-    hud.onClear = { controller.clear() }
-    hud.onSpawnBurst = { repeat(50) { controller.spawnAt(0f, 0f) } }
+    hud.onStep = { controller.stepTicks(1) }
+    hud.onReset = { controller.reset() }
+    hud.onCycleOverlay = { overlay = Overlay.entries[(overlay.ordinal + 1) % Overlay.entries.size] }
 
     fun applySize() {
         val dpr = window.devicePixelRatio
@@ -90,8 +94,9 @@ private fun start(canvas: HTMLCanvasElement) {
             ui.hitTestUp(x, y)
             ui.releaseHold()
         } else if (!dragged) {
-            val w = renderer.screenToWorld(x, y)
-            controller.spawnAt(w[0], w[1])
+            // Toggle the wall under the pointer — breach a room, or seal it back up.
+            val tile = renderer.tileAt(controller.state, x, y)
+            if (tile >= 0) controller.setWall(tile, controller.state.walls[tile] == null)
         }
         down = false; dragged = false; uiConsumed = false
     })
@@ -99,8 +104,7 @@ private fun start(canvas: HTMLCanvasElement) {
     canvas.addEventListener("wheel", { ev ->
         val e = ev as WheelEvent
         e.preventDefault()
-        val (x, y) = toPx(e)
-        renderer.zoomAtScreen(x, y, 1.1.pow((-e.deltaY / 100.0).coerceIn(-24.0, 24.0)).toFloat())
+        renderer.zoomBy(1.1.pow((-e.deltaY / 100.0).coerceIn(-24.0, 24.0)).toFloat())
     })
 
     var last = 0.0
@@ -108,8 +112,8 @@ private fun start(canvas: HTMLCanvasElement) {
         val delta = if (last == 0.0) 0f else ((ts - last) / 1000.0).toFloat().coerceIn(0f, 0.25f)
         last = ts
         ui.advanceClock(delta)
-        renderer.draw(controller.tick(delta))
-        hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)
+        renderer.draw(controller.tick(delta), overlay)
+        hud.build(ui, controller, overlay, if (delta > 0f) 1f / delta else 0f)
         ui.draw()
         window.requestAnimationFrame(::frame)
     }

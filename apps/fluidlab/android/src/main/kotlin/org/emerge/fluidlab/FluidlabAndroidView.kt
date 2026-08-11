@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import org.emerge.demo.fluidlab.FluidlabController
 import org.emerge.demo.fluidlab.FluidlabHud
 import org.emerge.demo.fluidlab.FluidlabRenderer
+import org.emerge.demo.fluidlab.Overlay
 import org.emerge.render.torus.ui.Ui
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -58,12 +59,15 @@ internal class FluidlabAndroidView(context: Context) : GLSurfaceView(context) {
         renderMode = RENDERMODE_CONTINUOUSLY
     }
 
+    private var overlay = Overlay.Density
+
     private fun setup() {
-        renderer = FluidlabRenderer(controller.cfg)
+        renderer = FluidlabRenderer()
         hud = FluidlabHud().also {
             it.onTogglePause = { controller.paused = !controller.paused }
-            it.onClear = { controller.clear() }
-            it.onSpawnBurst = { repeat(50) { controller.spawnAt(0f, 0f) } }
+            it.onStep = { controller.stepTicks(1) }
+            it.onReset = { controller.reset() }
+            it.onCycleOverlay = { overlay = Overlay.entries[(overlay.ordinal + 1) % Overlay.entries.size] }
         }
         ui = Ui().also { it.setDensity(density) }
     }
@@ -79,8 +83,8 @@ internal class FluidlabAndroidView(context: Context) : GLSurfaceView(context) {
 
         ui.advanceClock(delta)
         val state = controller.tick(delta)
-        renderer.draw(state)
-        hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)
+        renderer.draw(state, overlay)
+        hud.build(ui, controller, overlay, if (delta > 0f) 1f / delta else 0f)
         ui.draw()
     }
 
@@ -111,7 +115,7 @@ internal class FluidlabAndroidView(context: Context) : GLSurfaceView(context) {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (pointers > 1) {
-                        if (pinchDist > 0f && spread > 0f) renderer.zoomAtScreen(midX, midY, spread / pinchDist)
+                        if (pinchDist > 0f && spread > 0f) renderer.zoomBy(spread / pinchDist)
                         pinchDist = spread
                     } else {
                         val dx = x - lastX
@@ -126,8 +130,9 @@ internal class FluidlabAndroidView(context: Context) : GLSurfaceView(context) {
                         ui.hitTestUp(x, y)
                         ui.releaseHold()
                     } else if (!dragged) {
-                        val w = renderer.screenToWorld(x, y)
-                        controller.spawnAt(w[0], w[1])
+                        // Tap toggles the wall under the finger — breach a room, or seal it back up.
+                        val tile = renderer.tileAt(controller.state, x, y)
+                        if (tile >= 0) controller.setWall(tile, controller.state.walls[tile] == null)
                     }
                     uiConsumed = false
                     pinchDist = 0f

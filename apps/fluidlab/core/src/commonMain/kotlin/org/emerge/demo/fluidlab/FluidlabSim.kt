@@ -1,100 +1,192 @@
 package org.emerge.demo.fluidlab
 
+import org.emerge.demo.fluidlab.chem.Species
+import org.emerge.demo.fluidlab.world.AirField
+import org.emerge.demo.fluidlab.world.Grid
+import org.emerge.demo.fluidlab.world.Hull
+import org.emerge.demo.fluidlab.world.Machine
+import org.emerge.demo.fluidlab.world.StructureMap
+import org.emerge.demo.fluidlab.world.Temperature
+import org.emerge.demo.fluidlab.world.fluid.ApertureField
+import org.emerge.demo.fluidlab.world.fluid.EdgeGrid
+import org.emerge.demo.fluidlab.world.fluid.gasCapacityAt
+import org.emerge.demo.fluidlab.world.fluid.stepFluid
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
- * The simulation. Replace all of this with your game — it exists to show the shape the engine
- * expects, not because bouncing discs are interesting.
+ * **Fluidlab** — the momentum-solving fluid simulation, extracted from Out of Space so it stays
+ * runnable after that game stopped using it. See `apps/outofspace/PLAN_fluid_extraction.md`.
  *
- * The contract that matters is [SimReducer]: `reduce(cfg, state, inputs) -> state` must be a pure
- * function. Nothing outside it may mutate the state, and it must not read wall-clock time, platform
- * `Random`, or anything else that differs between two machines. Hold that line and you get replay,
- * save/load, headless tests, and lockstep multiplayer for free; break it and all four break at once.
+ * Out of Space wanted an atmosphere *inside a vessel*, so its tick had to interleave the solver with
+ * machines, rails, signals, heat conduction and flight. None of that is here. This is the solver and
+ * a box to run it in: a grid, walls, air, and [stepFluid]. What was a supporting subsystem is now the
+ * whole program, which is the point — it can be driven, broken and read directly rather than through
+ * a game that happens to contain it.
  *
- * This state is a `List<Body>` of immutable values because that reads clearly. Real worlds here
- * (Cyto, Scavengers) hold thousands to millions of entities and use the engine's structure-of-arrays
- * ECS (`org.emerge.sim.core.ecs.soa`) instead — parallel `FloatArray`s mutated in place, which the
- * reducer contract still permits as long as the mutation is confined to the tick. Start with the
- * list; move when you have measured that you need to.
+ * The reducer contract still holds ([SimReducer]: `reduce` is pure, no wall clock, no platform RNG),
+ * because that is what buys replay, headless tests and identical behaviour across the three hosts.
  */
 data class FluidlabConfig(
-    /** Side length of the square, toroidal world. World coordinates run over `[-size/2, +size/2)`. */
-    val worldSize: Float = 2f,
-    /** Fixed timestep. The sim always advances in whole ticks of this length, never by frame delta. */
+    val width: Int = 32,
+    val height: Int = 24,
+    /**
+     * Which way is down, and how hard. `+y` is screen-down — the solver's convention, see [EdgeGrid].
+     * [FREEFALL] turns gravity off entirely, which is the honest way to watch pressure alone: with no
+     * body force there is no hydrostatic gradient, so anything that still moves, moves because of a
+     * pressure difference.
+     */
+    val gravity: Frac2 = DOWN,
+    /**
+     * Whether boiling and condensing cost and release energy.
+     *
+     * Off by default, matching [stepFluid], and off means a tick is bit-identical to one simulated
+     * before latent heat existed. On, the mass and energy ledgers stop balancing — not from a bug but
+     * because the energy moves into a reservoir nothing here counts yet. [FluidStepReport.cohesionUnpaid]
+     * is the part the tick could not charge for.
+     */
+    val latentHeat: Boolean = false,
+    /** Fixed timestep. The sim advances in whole ticks, never by frame delta. */
     val secondsPerTick: Float = 1f / 60f,
-    /** Hard cap, so a stuck finger on the spawn button can't grow the world without bound. */
-    val maxBodies: Int = 4000,
-    /** How sharply velocities curve each tick — the only thing making the demo world move. */
-    val swirlPerTick: Float = 0.004f,
+) {
+    companion object {
+        val DOWN = Frac2(Frac(0L, 1), Frac(1L, 1))
+        val FREEFALL = Frac2(Frac(0L, 1), Frac(0L, 1))
+    }
+}
+
+/** What one tick of the solver did, kept on the state so the harness and HUD can read it. */
+data class FluidStepReport(
+    val ventedGrams: Long = 0L,
+    val ventedJoules: Long = 0L,
+    /** Impulse on the hull — the reaction to air pressing on walls it cannot get through. */
+    val vesselX: Long = 0L,
+    val vesselY: Long = 0L,
+    /** Thrust against the expelled gas, which is not the same thing as [vesselX] — see `FluidStep`. */
+    val escapedX: Long = 0L,
+    val escapedY: Long = 0L,
+    /** Impulse the pressure solve had nowhere to put. Size measures discretisation error in thrust. */
+    val undeliveredX: Long = 0L,
+    val undeliveredY: Long = 0L,
+    /** 1 = gas moves under a tile per tick. Climbing toward MAX = the explicit solver is being outrun. */
+    val subSteps: Int = 0,
+    /** Latent heat the tick could not charge for. Physically should always be zero — see [FluidlabConfig]. */
+    val cohesionUnpaid: Long = 0L,
 )
 
-/** One simulated thing. */
-data class Body(
-    val x: Float,
-    val y: Float,
-    val vx: Float,
-    val vy: Float,
-    val radius: Float,
-    /** 0..1, straight through to the renderer's palette. */
-    val hue: Float,
-)
+/** One edit to the world, applied at the top of a tick. Values, not callbacks, so replays work. */
+sealed interface FluidlabEdit {
+    /** Put a wall at [tile], or take one away. */
+    data class SetWall(val tile: Int, val present: Boolean) : FluidlabEdit
 
-/**
- * Everything one player asks of one tick. Inputs are values, not callbacks: they are what a network
- * transport serialises and what a replay file records.
- */
+    /** Add [grams] of [species] at [tile], carrying enough energy to sit at [kelvin]. */
+    data class Inject(val tile: Int, val species: Species, val grams: Long, val kelvin: Int) : FluidlabEdit
+
+    /** Take all the air out of [tile] — an instant local vacuum. */
+    data class Evacuate(val tile: Int) : FluidlabEdit
+
+    /** Add [joules] to [tile]'s air without adding any mass. Negative cools it. */
+    data class Heat(val tile: Int, val joules: Long) : FluidlabEdit
+}
+
 data class FluidlabInput(
-    val spawns: List<Pair<Float, Float>> = emptyList(),
-    val clear: Boolean = false,
+    val edits: List<FluidlabEdit> = emptyList(),
 ) : SimInput {
     companion object {
         val EMPTY = FluidlabInput()
     }
 }
 
-/** The whole world at one instant. */
+/**
+ * The whole world at one instant.
+ *
+ * [walls] is a `List<Machine?>` of [Hull] or null rather than a `BooleanArray` because [StructureMap]
+ * derives enclosure from machines, and reusing that is what keeps this the *same* solver Out of Space
+ * ran rather than a lookalike. A lab that quietly rebuilt its own structure model would stop being
+ * evidence about the original.
+ */
 data class FluidlabState(
-    val bodies: List<Body>,
+    val grid: Grid,
+    val walls: List<Machine?>,
+    val air: AirField,
+    val momentumX: LongArray,
+    val momentumY: LongArray,
     val tick: Long,
-    /** PRNG state carried in the snapshot — never seed from the platform, that desyncs peers. */
-    val randomSeed: Long,
+    val report: FluidStepReport = FluidStepReport(),
+    /** Running totals, so a long run can be checked for conservation without watching every tick. */
+    val totalVentedGrams: Long = 0L,
+    val totalVentedJoules: Long = 0L,
 ) {
+    /** Total gas mass in the world. With no venting this must not change — the first thing to check. */
+    fun totalGrams(): Long {
+        val grams = air.copyGrams()
+        var sum = 0L
+        for (g in grams) sum += g
+        return sum
+    }
+
+    fun totalJoules(): Long {
+        val joules = air.copyJoules()
+        var sum = 0L
+        for (j in joules) sum += j
+        return sum
+    }
+
+    /** Structure derived from the walls — what the solver treats as solid, enclosed, or vacuum. */
+    fun structure(): StructureMap = StructureMap.derive(grid, walls)
+
+    // Arrays in a data class: equals/hashCode would compare by identity and lie. Nothing depends on
+    // structural equality of a world, so the honest move is to not offer it.
+    override fun equals(other: Any?): Boolean = this === other
+    override fun hashCode(): Int = tick.hashCode()
+
     companion object {
-        /** A world with [count] bodies scattered by the deterministic PRNG from [seed]. */
-        fun initial(cfg: FluidlabConfig, count: Int = 120, seed: Long = 0x5EEDL): FluidlabState {
-            var s = seed
-            val bodies = ArrayList<Body>(count)
-            repeat(count) {
-                val (nx, s1) = nextUnit(s); s = s1
-                val (ny, s2) = nextUnit(s); s = s2
-                val (nvx, s3) = nextUnit(s); s = s3
-                val (nvy, s4) = nextUnit(s); s = s4
-                val (nh, s5) = nextUnit(s); s = s5
-                bodies.add(
-                    Body(
-                        x = (nx - 0.5f) * cfg.worldSize,
-                        y = (ny - 0.5f) * cfg.worldSize,
-                        vx = (nvx - 0.5f) * 0.4f,
-                        vy = (nvy - 0.5f) * 0.4f,
-                        radius = 0.012f,
-                        hue = nh,
-                    ),
-                )
+        /**
+         * A sealed box of ordinary air with a one-tile wall border, which is the smallest world in
+         * which anything interesting can be asked: it holds pressure, so a breach means something.
+         */
+        fun sealedRoom(cfg: FluidlabConfig = FluidlabConfig()): FluidlabState {
+            val grid = Grid(cfg.width, cfg.height)
+            val walls = MutableList<Machine?>(grid.size) { null }
+            for (x in 0 until grid.width) {
+                walls[grid.index(x, 0)] = Hull()
+                walls[grid.index(x, grid.height - 1)] = Hull()
             }
-            return FluidlabState(bodies, tick = 0, randomSeed = s)
+            for (y in 0 until grid.height) {
+                walls[grid.index(0, y)] = Hull()
+                walls[grid.index(grid.width - 1, y)] = Hull()
+            }
+            val structure = StructureMap.derive(grid, walls)
+            val edges = EdgeGrid(grid)
+            return FluidlabState(
+                grid = grid,
+                walls = walls,
+                air = AirField.ambient(grid, structure),
+                momentumX = LongArray(edges.xEdgeCount),
+                momentumY = LongArray(edges.yEdgeCount),
+                tick = 0,
+            )
+        }
+
+        /** An empty grid: no walls, no air. Everything vents to the rim. */
+        fun vacuum(cfg: FluidlabConfig = FluidlabConfig()): FluidlabState {
+            val grid = Grid(cfg.width, cfg.height)
+            val edges = EdgeGrid(grid)
+            return FluidlabState(
+                grid = grid,
+                walls = MutableList(grid.size) { null },
+                air = AirField.of(LongArray(grid.size * Species.COUNT)),
+                momentumX = LongArray(edges.xEdgeCount),
+                momentumY = LongArray(edges.yEdgeCount),
+                tick = 0,
+            )
         }
     }
 }
 
-/**
- * The reducer. Every rule of the game lives in here or in something it calls.
- *
- * Note how the per-player inputs are folded in **sorted by [PlayerId]** rather than in map order:
- * two peers must apply the same inputs in the same order or their worlds diverge on the first tick
- * where two players act at once.
- */
 object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput> {
 
     override fun reduce(
@@ -102,86 +194,87 @@ object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput
         state: FluidlabState,
         inputs: Map<PlayerId, FluidlabInput>,
     ): FluidlabState {
-        val ordered = inputs.entries.sortedBy { it.key.value }
-        if (ordered.any { it.value.clear }) {
-            return state.copy(bodies = emptyList(), tick = state.tick + 1)
-        }
+        val grid = state.grid
+        val grams = state.air.copyGrams()
+        val joules = state.air.copyJoules()
+        val mx = state.momentumX.copyOf()
+        val my = state.momentumY.copyOf()
+        var walls = state.walls
 
-        val dt = cfg.secondsPerTick
-        val half = cfg.worldSize * 0.5f
-        val moved = ArrayList<Body>(state.bodies.size + 8)
-        for (b in state.bodies) {
-            // A slow rotation of the velocity vector, so the world visibly does something. Small-angle
-            // rotation: (vx, vy) turned by `swirl` radians, normalised back to its original speed.
-            val a = cfg.swirlPerTick
-            val vx = b.vx - b.vy * a
-            val vy = b.vy + b.vx * a
-            moved.add(b.copy(x = wrap(b.x + vx * dt, half), y = wrap(b.y + vy * dt, half), vx = vx, vy = vy))
-        }
+        // Sorted by PlayerId, not map order: two peers must apply the same edits in the same order.
+        for ((_, input) in inputs.entries.sortedBy { it.key.value }) {
+            for (edit in input.edits) {
+                when (edit) {
+                    is FluidlabEdit.SetWall -> {
+                        if (edit.tile !in 0 until grid.size) continue
+                        val next = walls.toMutableList()
+                        next[edit.tile] = if (edit.present) Hull() else null
+                        walls = next
+                    }
 
-        var seed = state.randomSeed
-        for ((_, input) in ordered) {
-            for ((sx, sy) in input.spawns) {
-                if (moved.size >= cfg.maxBodies) break
-                val (nvx, s1) = nextUnit(seed); seed = s1
-                val (nvy, s2) = nextUnit(seed); seed = s2
-                val (nh, s3) = nextUnit(seed); seed = s3
-                moved.add(
-                    Body(
-                        x = wrap(sx, half),
-                        y = wrap(sy, half),
-                        vx = (nvx - 0.5f) * 0.4f,
-                        vy = (nvy - 0.5f) * 0.4f,
-                        radius = 0.012f,
-                        hue = nh,
-                    ),
-                )
+                    is FluidlabEdit.Inject -> {
+                        if (edit.tile !in 0 until grid.size || edit.grams <= 0L) continue
+                        grams[edit.tile * Species.COUNT + edit.species.ordinal] += edit.grams
+                        // Energy derived from the mass so the gas arrives at the stated temperature
+                        // rather than at whatever the tile's existing joules imply. Capacity is read
+                        // *after* the mass lands, which is what makes the two agree.
+                        joules[edit.tile] = gasCapacityAt(grams, edit.tile) * edit.kelvin
+                    }
+
+                    is FluidlabEdit.Evacuate -> {
+                        if (edit.tile !in 0 until grid.size) continue
+                        val base = edit.tile * Species.COUNT
+                        for (s in Species.ALL) grams[base + s.ordinal] = 0L
+                        joules[edit.tile] = 0L
+                    }
+
+                    is FluidlabEdit.Heat -> {
+                        if (edit.tile !in 0 until grid.size) continue
+                        joules[edit.tile] = (joules[edit.tile] + edit.joules).coerceAtLeast(0L)
+                    }
+                }
             }
         }
 
-        return FluidlabState(bodies = moved, tick = state.tick + 1, randomSeed = seed)
+        val edges = EdgeGrid(grid)
+        val structure = StructureMap.derive(grid, walls)
+        val step = stepFluid(
+            edges = edges,
+            apertures = ApertureField.derive(edges, structure),
+            grams = grams,
+            mx = mx,
+            my = my,
+            gravity = cfg.gravity,
+            gasJoules = joules,
+            volumes = null,
+            latentHeat = cfg.latentHeat,
+        )
+
+        return state.copy(
+            walls = walls,
+            air = step.air,
+            momentumX = step.momentumX,
+            momentumY = step.momentumY,
+            tick = state.tick + 1,
+            report = FluidStepReport(
+                ventedGrams = step.ventedGrams,
+                ventedJoules = step.ventedJoules,
+                vesselX = step.vesselX,
+                vesselY = step.vesselY,
+                escapedX = step.escapedX,
+                escapedY = step.escapedY,
+                undeliveredX = step.undeliveredX,
+                undeliveredY = step.undeliveredY,
+                subSteps = step.subSteps,
+                cohesionUnpaid = step.cohesionUnpaid,
+            ),
+            totalVentedGrams = state.totalVentedGrams + step.ventedGrams,
+            totalVentedJoules = state.totalVentedJoules + step.ventedJoules,
+        )
     }
 
-    /**
-     * Applies a delta snapshot from the host. Full-snapshot demos just take the delta wholesale;
-     * a demo that sends partial state merges it here.
-     */
     override fun patchState(state: FluidlabState, delta: FluidlabState): FluidlabState = delta
 }
 
-/** Toroidal wrap into `[-half, +half)`. */
-fun wrap(v: Float, half: Float): Float {
-    val size = half * 2f
-    var r = v
-    while (r >= half) r -= size
-    while (r < -half) r += size
-    return r
-}
-
-/**
- * Shortest signed distance from 0 to [d] on a torus of [size] — use this for *every* difference
- * between two world positions (rendering offsets, distance checks, steering). Plain subtraction is
- * wrong near the seam and the bug it causes only shows up at the edges of the world.
- */
-fun wrapDelta(d: Float, size: Float): Float {
-    val half = size * 0.5f
-    var r = d
-    while (r > half) r -= size
-    while (r < -half) r += size
-    return r
-}
-
-/**
- * SplitMix64 — a deterministic PRNG whose state is one `Long`, so it serialises with the snapshot.
- * Returns the value in `[0, 1)` plus the next seed; the caller threads the seed through, which keeps
- * the reducer pure.
- */
-fun nextUnit(seed: Long): Pair<Float, Long> {
-    var z = seed + -0x61c8864680b583ebL
-    val next = z
-    z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
-    z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
-    z = z xor (z ushr 31)
-    // Top 24 bits → a float in [0,1): enough precision for a Float, and never negative.
-    return ((z ushr 40).toFloat() / (1 shl 24).toFloat()) to next
-}
+/** Ambient air temperature, re-exported so hosts and scripts need not reach into `world`. */
+val AMBIENT_KELVIN: Int get() = Temperature.AMBIENT_KELVIN

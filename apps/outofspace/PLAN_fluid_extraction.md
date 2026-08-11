@@ -167,8 +167,21 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
    but it means "Out of Space is green" is not available as a gate for steps 5–7.
 3. **Give fluidlab a harness.** A minimal driver (headless tick + the existing overlays) so it is a
    *runnable* sim and not an archive. This is the whole point of A over "tag and delete", so it isn't
-   optional. `BoilingTest`, `BreachSymmetryTest` and `ThrustBalanceTest` come along as its
-   acceptance tests.
+   optional.
+   ✅ **DONE 2026-08-11.** The template's bouncing-disc reducer is replaced by the lab: a grid, walls,
+   air and a tick that calls `stepFluid`, with edits (wall/inject/evacuate/heat) as reducer *inputs*
+   so replay and determinism survive. All four hosts draw it (five overlays: density, pressure, heat,
+   flow, species; click a tile to breach or seal it).
+   **The headless `fluidlabAgent` harness is the real deliverable** — text-only, no GL, with
+   `field`/`probe`/`state`/`expect`. Text over screenshots is inherited from Out of Space's harness on
+   purpose: model corrections come from two quantities disagreeing, which only numbers show.
+   Acceptance scripts in `apps/fluidlab/agent-scripts/` (conservation, breach, boil) all exit 0.
+   Suite: 122 tests, 0 failures, slowest 0.1s. JVM + JS + Android + web all compile.
+   **Measured behaviour** (this is the extraction working, end to end): a sealed 20×14 room holds
+   216,000 g and 63,866,958,624 J *exactly* over 100 ticks with zero hull impulse — the telescoping
+   property of §3 holding. Breach the ceiling and 24,800 g leaves over 60 ticks with
+   `room + ledger == start` to the gram and to the joule, hull impulse going non-zero and downward,
+   away from the hole.
 4. **Build rapid diffusion in Out of Space**, behind the existing call sites, with the momentum
    arguments still present but ignored. Gate: new `RapidDiffusionTest` (equilibrium reached, mass and
    joules conserved exactly, no negative tiles, rim venting books correctly).

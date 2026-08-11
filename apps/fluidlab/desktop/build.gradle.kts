@@ -24,6 +24,17 @@ application {
 // (rather than leaving them as classes you remember) is what makes them usable from CI and by an
 // agent. Cyto's build file is worth copying from when you want a scripted, screenshotting harness.
 //
+tasks.register<JavaExec>("fluidlabAgent") {
+    group = "application"
+    description = "Headless, script-driven Fluidlab harness for agents/CI: build a situation, run it " +
+        "for a stated number of ticks, and read it back as ASCII fields, per-tile probes or totals. " +
+        "--args=\"<scriptFile|->\""
+    mainClass = "org.emerge.desktop.FluidlabAgentHarnessKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+    standardInput = System.`in`   // so `--args=-` can take a script on stdin
+}
+
 // tasks.register<JavaExec>("benchFluidlab") {
 //     group = "verification"
 //     description = "Headless tick profiler: runs N ticks and prints the per-phase breakdown."

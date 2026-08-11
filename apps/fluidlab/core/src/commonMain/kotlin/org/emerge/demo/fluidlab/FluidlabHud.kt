@@ -8,38 +8,53 @@ import org.emerge.render.torus.ui.Ui
  *
  * Immediate mode means there are no widget objects and no state to keep in sync: every frame you
  * describe the panels you want from the state you have, and a click runs the lambda you passed this
- * frame. Deleting a panel is deleting its code.
+ * frame.
  *
- * The whole widget set is browsable — run `./gradlew :engine:render:ui-gallery:run` for a live
- * window with one panel per widget kind, and read `UIGallery.kt` beside it for the call sites.
- *
- * Sizes are **dp**, scaled to pixels by [Ui.setDensity]. Desktop leaves the scale at 1 (dp == px);
- * a phone host sets it from the display density, which is why the same code is legible on both.
+ * What it shows is chosen for a *lab*: the ledger totals and the solver's own error terms, not a
+ * score. `Sub-steps` and `Undelivered` are the two that say whether to trust what is on screen —
+ * see [FluidStepReport].
  */
 class FluidlabHud {
 
     /** Set by the host so the buttons can drive it — the HUD never reaches into the sim itself. */
-    var onSpawnBurst: () -> Unit = {}
-    var onClear: () -> Unit = {}
     var onTogglePause: () -> Unit = {}
+    var onStep: () -> Unit = {}
+    var onReset: () -> Unit = {}
+    var onCycleOverlay: () -> Unit = {}
 
-    fun build(ui: Ui, controller: FluidlabController, fps: Float) {
+    fun build(ui: Ui, controller: FluidlabController, overlay: Overlay, fps: Float) {
+        val state = controller.state
+        val report = state.report
         ui.frame {
             panel(Anchor.TopLeft) {
                 title("FLUIDLAB")
-                keyValue("Tick", controller.tick.toString())
-                keyValue("Bodies", controller.bodyCount.toString())
+                keyValue("Tick", state.tick.toString())
                 keyValue("FPS", fps.toInt().toString())
-                keyValue("Speed", "${controller.speed}x")
+                keyValue("Overlay", overlay.name)
+                gap()
+                keyValue("Mass g", state.totalGrams().toString())
+                keyValue("Vented g", state.totalVentedGrams.toString())
+                keyValue("Hull impulse", "${report.vesselX}, ${report.vesselY}")
+            }
+            panel(Anchor.TopRight) {
+                title("SOLVER")
+                // Both of these are error terms the solver reports rather than hides. Sub-steps
+                // climbing means the gas is outrunning an explicit scheme; undelivered impulse is
+                // thrust the pressure solve had nowhere to put. Either one growing means the picture
+                // on screen is discretisation, not physics.
+                keyValue("Sub-steps", report.subSteps.toString())
+                keyValue("Undelivered", "${report.undeliveredX}, ${report.undeliveredY}")
+                keyValue("Cohesion unpaid", report.cohesionUnpaid.toString())
             }
             panel(Anchor.BottomLeft) {
                 title("CONTROLS")
                 button(if (controller.paused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { onTogglePause() }
-                button("SPAWN 50", 0x2E8B40FFL) { onSpawnBurst() }
-                button("CLEAR", 0xCC3333FFL) { onClear() }
+                button("STEP", 0x6E6E8AFFL) { onStep() }
+                button("OVERLAY", 0x2E8B40FFL) { onCycleOverlay() }
+                button("RESET", 0xCC3333FFL) { onReset() }
                 gap()
                 row("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
-                row("Click empty space to spawn", 0x9A9A9AFFL)
+                row("Click a tile to breach it", 0x9A9A9AFFL)
             }
         }
     }

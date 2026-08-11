@@ -1,0 +1,20 @@
+# Phase transition: pour water into a room and heat it hard.
+#
+# The reason this script exists is that phase behaviour is the one part of the model Out of Space
+# kept, so it is the part most worth being able to re-run here after the split.
+new sealed 20 14
+latent on
+inject 10 7 Water 20000 300
+run 20
+field species
+probe 10 7
+
+heat 10 7 400000000
+run 40
+probe 10 7
+field heat
+
+# Latent heat moves energy into a reservoir nothing counts yet, so totals are NOT expected to
+# balance with `latent on` — see FluidlabConfig.latentHeat. What must hold is that the tick never
+# fails to charge for it: a non-zero value here is the discretisation admitting it stepped too far.
+expect cohesionunpaid == 0

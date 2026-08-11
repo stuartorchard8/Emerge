@@ -3,6 +3,7 @@ package org.emerge.desktop
 import org.emerge.demo.fluidlab.FluidlabController
 import org.emerge.demo.fluidlab.FluidlabHud
 import org.emerge.demo.fluidlab.FluidlabRenderer
+import org.emerge.demo.fluidlab.Overlay
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
@@ -42,13 +43,16 @@ fun main() {
 
     // Everything GL must be constructed *after* the context is current.
     val controller = FluidlabController()
-    val renderer = FluidlabRenderer(controller.cfg)
+    val renderer = FluidlabRenderer()
     val hud = FluidlabHud()
     val ui = Ui()
 
+    var overlay = Overlay.Density
+
     hud.onTogglePause = { controller.paused = !controller.paused }
-    hud.onClear = { controller.clear() }
-    hud.onSpawnBurst = { repeat(50) { controller.spawnAt(randomWorld(controller.cfg.worldSize), randomWorld(controller.cfg.worldSize)) } }
+    hud.onStep = { controller.stepTicks(1) }
+    hud.onReset = { controller.reset() }
+    hud.onCycleOverlay = { overlay = Overlay.entries[(overlay.ordinal + 1) % Overlay.entries.size] }
 
     var mouseDown = false
     var dragged = false
@@ -72,9 +76,11 @@ fun main() {
                 ui.hitTestUp(px, py)
                 ui.releaseHold()
             } else if (!dragged) {
-                // A click that didn't drag and didn't hit the UI is a world action.
-                val w = renderer.screenToWorld(px, py)
-                controller.spawnAt(w[0], w[1])
+                // A click that didn't drag and didn't hit the UI is a world action: toggle the wall
+                // under the cursor. Breaching a sealed room is the single most useful thing to be able
+                // to do by hand here, and putting the wall back is how you watch it re-pressurise.
+                val tile = renderer.tileAt(controller.state, px, py)
+                if (tile >= 0) controller.setWall(tile, controller.state.walls[tile] == null)
             }
             uiConsumed = false
         }
@@ -92,14 +98,16 @@ fun main() {
     }
 
     glfwSetScrollCallback(window) { _, _, yoffset ->
-        val (px, py) = cursorPixel(window)
-        renderer.zoomAtScreen(px, py, 1.1f.pow(yoffset.toFloat().coerceIn(-24f, 24f)))
+        renderer.zoomBy(1.1f.pow(yoffset.toFloat().coerceIn(-24f, 24f)))
     }
 
     glfwSetKeyCallback(window) { _, key, _, action, _ ->
         if (action != GLFW_PRESS) return@glfwSetKeyCallback
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
+            GLFW_KEY_PERIOD -> controller.stepTicks(1)
+            GLFW_KEY_O -> overlay = Overlay.entries[(overlay.ordinal + 1) % Overlay.entries.size]
+            GLFW_KEY_F -> renderer.fitTo(controller.state)
             GLFW_KEY_R -> controller.reset()
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
@@ -133,8 +141,9 @@ fun main() {
         val state = controller.tick(delta)
 
         // Draw order: world, then UI on top of it.
-        renderer.draw(state)
-        hud.build(ui, controller, fps)
+        val (curX, curY) = cursorPixel(window)
+        renderer.draw(state, overlay, renderer.tileAt(state, curX, curY))
+        hud.build(ui, controller, overlay, fps)
         ui.draw()
 
         glfwSwapBuffers(window)
@@ -147,13 +156,6 @@ fun main() {
 }
 
 private const val DRAG_THRESHOLD = 4f
-
-/**
- * Host-side randomness for a UI convenience (where to scatter a burst). Note that it is *not* used
- * for anything the sim depends on — a spawn position becomes an input value, which the reducer then
- * treats as data. Platform randomness inside the reducer would desync every peer.
- */
-private fun randomWorld(worldSize: Float): Float = (kotlin.random.Random.nextFloat() - 0.5f) * worldSize
 
 private fun updateResolution(window: Long, ui: Ui, renderer: FluidlabRenderer) {
     MemoryStack.stackPush().use { st ->

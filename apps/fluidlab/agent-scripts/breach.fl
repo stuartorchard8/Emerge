@@ -1,0 +1,13 @@
+# A hole in the ceiling: air leaves, the ledger accounts for it, and the hull takes the reaction.
+new sealed 20 14
+breach 10 0
+run 60
+
+# Something must have left...
+expect vented > 0
+# ...and the solve must not be dumping impulse it could not place. Undelivered climbing is the
+# tell that the discretisation is being outrun, so it is asserted rather than merely printed.
+expect undelivered == 0
+
+field pressure
+state

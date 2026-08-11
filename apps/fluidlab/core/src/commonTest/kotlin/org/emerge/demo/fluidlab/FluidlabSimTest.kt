@@ -1,90 +1,112 @@
 package org.emerge.demo.fluidlab
 
-import org.emerge.sim.core.PlayerId
+import org.emerge.demo.fluidlab.chem.Species
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The tests a new app should start with. Because the reducer is pure and platform-free, all of this
- * runs headlessly in milliseconds on every target — no window, no GL, no device.
+ * The lab's own contract — that the box around the solver is honest.
  *
- * The first test is the important one. A **golden digest** over the world after N ticks is the
- * cheapest possible tripwire for "I changed the sim and didn't mean to": it fails the moment a
- * refactor perturbs the trajectory, and passes silently when it doesn't. Cyto runs the same idea at
- * scale (`CytoGoldenTest`) — when it goes red, verify the new trajectory is *correct* before
- * re-baselining, or you have simply blessed the bug.
+ * These are not tests of the solver: that is what the copied `fluid/` and `chem/` suites are for.
+ * These check the three things the extraction could plausibly have broken while wiring it into a new
+ * app — that a sealed world conserves what it holds, that the ledger accounts for what leaves, and
+ * that the hull reaction is zero exactly when it should be.
+ *
+ * Tick counts are small on purpose: the whole file runs in well under a second. Where a number is
+ * asserted it is derived (a total against its own parts), never a pinned literal — a literal here
+ * would be pinning today's discretisation and would turn every future tuning change into a test fight.
  */
 class FluidlabSimTest {
 
-    private val cfg = FluidlabConfig()
+    private val cfg = FluidlabConfig(width = 16, height = 12)
 
-    /** Digest of the whole world — order-sensitive, so a reordering is a failure too. */
-    private fun digest(state: FluidlabState): Long {
-        var h = 1125899906842597L
-        h = h * 31 + state.bodies.size
-        for (b in state.bodies) {
-            h = h * 31 + b.x.toRawBits()
-            h = h * 31 + b.y.toRawBits()
-            h = h * 31 + b.vx.toRawBits()
-            h = h * 31 + b.vy.toRawBits()
-        }
-        return h
-    }
+    @Test
+    fun `a sealed room holds every gram and every joule`() {
+        val start = FluidlabState.sealedRoom(cfg)
+        val controller = FluidlabController(cfg, start)
 
-    private fun run(ticks: Int, seed: Long = 0x5EEDL): FluidlabState {
-        var s = FluidlabState.initial(cfg, seed = seed)
-        repeat(ticks) { s = FluidlabReducer.reduce(cfg, s, emptyMap()) }
-        return s
+        val end = controller.stepTicks(40)
+
+        assertEquals(start.totalGrams(), end.totalGrams(), "mass changed in a sealed room")
+        assertEquals(start.totalJoules(), end.totalJoules(), "energy changed in a sealed room")
+        assertEquals(0L, end.totalVentedGrams, "a sealed room vented")
     }
 
     @Test
-    fun `two runs from the same seed are bit-identical`() {
-        assertEquals(digest(run(500)), digest(run(500)))
+    fun `a sealed room pushes itself nowhere`() {
+        val controller = FluidlabController(cfg, FluidlabState.sealedRoom(cfg))
+
+        val end = controller.stepTicks(40)
+
+        // The telescoping property `applyPressureForce` documents: internal pressure terms cancel
+        // exactly, so a hull with no hole in it cannot accelerate itself. This is the invariant worth
+        // keeping when Out of Space drops the solver — a ship that thrusts from nothing reads as a
+        // mystery bug rather than as something needing tuning.
+        assertEquals(0L, end.report.vesselX, "a sealed room developed sideways thrust")
+        assertEquals(0L, end.report.vesselY, "a sealed room developed vertical thrust")
     }
 
     @Test
-    fun `different seeds give different worlds`() {
-        assertTrue(digest(run(100, seed = 1L)) != digest(run(100, seed = 2L)))
+    fun `what leaves through a breach is what the ledger says left`() {
+        val start = FluidlabState.sealedRoom(cfg)
+        val controller = FluidlabController(cfg, start)
+        // A hole in the ceiling, one tile wide.
+        controller.setWall(start.grid.index(8, 0), false)
+
+        val end = controller.stepTicks(40)
+
+        assertTrue(end.totalVentedGrams > 0L, "a breached room vented nothing")
+        assertEquals(
+            start.totalGrams(),
+            end.totalGrams() + end.totalVentedGrams,
+            "mass is neither in the room nor on the ledger",
+        )
+        assertEquals(
+            start.totalJoules(),
+            end.totalJoules() + end.totalVentedJoules,
+            "energy is neither in the room nor on the ledger",
+        )
     }
 
     @Test
-    fun `bodies stay inside the toroidal world`() {
-        val half = cfg.worldSize * 0.5f
-        for (b in run(1000).bodies) {
-            assertTrue(b.x >= -half && b.x < half, "x out of range: ${b.x}")
-            assertTrue(b.y >= -half && b.y < half, "y out of range: ${b.y}")
-        }
+    fun `a breach pushes the hull away from the hole`() {
+        val start = FluidlabState.sealedRoom(cfg)
+        val controller = FluidlabController(cfg, start)
+        controller.setWall(start.grid.index(8, 0), false)
+
+        val end = controller.stepTicks(20)
+
+        // Hole in the ceiling (-y), so the reaction is downward (+y is screen-down). Asserting the
+        // sign and not the size: the magnitude is a discretisation, the direction is physics.
+        assertTrue(end.report.vesselY > 0L, "venting upward did not push the hull down (${end.report.vesselY})")
     }
 
     @Test
-    fun `input order does not depend on map iteration order`() {
-        val a = mapOf(PlayerId(0) to FluidlabInput(spawns = listOf(0.1f to 0.1f)), PlayerId(1) to FluidlabInput(spawns = listOf(-0.2f to 0.3f)))
-        val b = mapOf(PlayerId(1) to FluidlabInput(spawns = listOf(-0.2f to 0.3f)), PlayerId(0) to FluidlabInput(spawns = listOf(0.1f to 0.1f)))
-        val start = FluidlabState.initial(cfg)
-        assertEquals(digest(FluidlabReducer.reduce(cfg, start, a)), digest(FluidlabReducer.reduce(cfg, start, b)))
+    fun `injected gas arrives at the temperature it was asked for`() {
+        val start = FluidlabState.sealedRoom(cfg)
+        val controller = FluidlabController(cfg, start)
+        val tile = start.grid.index(8, 6)
+
+        controller.inject(tile, Species.Water, grams = 4_000, kelvin = 500)
+        val end = controller.stepTicks(1)
+
+        assertTrue(end.air.gramsOf(tile, Species.Water) > 0L, "the water never arrived")
+        // One tick of transport moves heat around, so this is a neighbourhood, not an equality: the
+        // point is that it landed hot rather than at whatever the tile's prior joules implied.
+        assertTrue(end.air.kelvinAt(tile) > AMBIENT_KELVIN, "injected gas arrived cold")
     }
 
     @Test
-    fun `spawns are capped`() {
-        val small = cfg.copy(maxBodies = 130)
-        var s = FluidlabState.initial(small)
-        repeat(20) {
-            s = FluidlabReducer.reduce(small, s, mapOf(PlayerId(0) to FluidlabInput(spawns = List(10) { 0f to 0f })))
-        }
-        assertEquals(130, s.bodies.size)
-    }
+    fun `an edit made while paused still lands`() {
+        val start = FluidlabState.sealedRoom(cfg)
+        val controller = FluidlabController(cfg, start)
+        controller.paused = true
+        val tile = start.grid.index(4, 4)
 
-    @Test
-    fun `clear empties the world`() {
-        val s = FluidlabReducer.reduce(cfg, FluidlabState.initial(cfg), mapOf(PlayerId(0) to FluidlabInput(clear = true)))
-        assertEquals(0, s.bodies.size)
-    }
+        controller.setWall(tile, true)
+        controller.tick(1f)
 
-    @Test
-    fun `wrapDelta takes the short way round the torus`() {
-        assertEquals(-0.2f, wrapDelta(1.8f, 2f), 1e-6f)
-        assertEquals(0.2f, wrapDelta(-1.8f, 2f), 1e-6f)
-        assertEquals(0.5f, wrapDelta(0.5f, 2f), 1e-6f)
+        assertTrue(controller.state.walls[tile] != null, "a wall placed while paused never appeared")
     }
 }

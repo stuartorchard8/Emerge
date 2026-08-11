@@ -46,6 +46,9 @@
       <SelectionState runConfigName="apps.outofspace.android">
         <option name="selectionMode" value="DROPDOWN" />
       </SelectionState>
+      <SelectionState runConfigName="apps.fluidlab.android">
+        <option name="selectionMode" value="DROPDOWN" />
+      </SelectionState>
     </selectionStates>
   </component>
 </project>

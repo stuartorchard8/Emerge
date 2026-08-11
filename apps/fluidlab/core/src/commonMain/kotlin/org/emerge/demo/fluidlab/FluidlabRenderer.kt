@@ -1,60 +1,64 @@
 package org.emerge.demo.fluidlab
 
+import org.emerge.demo.fluidlab.chem.Species
+import org.emerge.demo.fluidlab.world.AirField
+import org.emerge.demo.fluidlab.world.Temperature
+import org.emerge.demo.fluidlab.world.fluid.AMBIENT_PRESSURE
+import org.emerge.demo.fluidlab.world.fluid.EdgeGrid
 import org.emerge.render.torus.GPU
-import org.emerge.render.torus.GpuFloatBuffer
-import org.emerge.render.torus.Mat4
-import org.emerge.render.torus.put
-import org.emerge.render.torus.shader.CircleShader
+import org.emerge.render.torus.ui.UiRectRenderer
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
+
+/** What the tile tint means. The lab is mostly *looking* at fields, so this is the main control. */
+enum class Overlay {
+    /** Air density relative to ambient — the plain "where is the gas" view. */
+    Density,
+
+    /** Pressure relative to ambient. Not the same as density: heavy gas is dense but not high-pressure. */
+    Pressure,
+
+    /** Kelvin, ramped either side of ambient. */
+    Heat,
+
+    /** Speed on the faces, so circulation and jets are visible. */
+    Flow,
+
+    /** Which species dominates the tile, in its own colour. */
+    Species,
+}
 
 /**
- * Draws the world, and owns the camera.
+ * Draws the grid, and owns the camera.
  *
- * Everything here runs on the GL thread and only on the GL thread — construct it inside
- * `onSurfaceCreated` / after `glfwMakeContextCurrent`, never in a field initialiser that runs
- * earlier, or shader compilation happens with no current context.
+ * Everything here runs on the GL thread and only on the GL thread — construct it after the context
+ * is current, never in a field initialiser that runs earlier.
  *
- * The engine's [CircleShader] draws instanced discs: one draw call for every body in the world,
- * with per-instance transform, colour and alpha. Give it a matrix per body and it will happily
- * take thousands. Game-specific looks belong in your own shader beside this file — see
- * `apps/cyto/core/.../CytoCellShader.kt` or `apps/drockets/core/.../shader/PlanetShader.kt`,
- * and note the `registerShaderCodegen` line in a build file, which turns `.vert`/`.frag` files
- * into Kotlin sources so shaders work on desktop GL, GLES and WebGL alike.
+ * Unlike the template's instanced discs, this is one quad per tile through [UiRectRenderer], which is
+ * what Out of Space used and is plenty: a lab grid is thousands of cells, not millions of entities.
+ * The camera is in **tile** coordinates rather than world units, so a zoom keeps whole tiles aligned
+ * to pixels and the field stays readable rather than shimmering.
  */
-class FluidlabRenderer(private val cfg: FluidlabConfig = FluidlabConfig()) {
+class FluidlabRenderer {
 
-    // ── Camera ────────────────────────────────────────────────────────────────────
-    // World-space point at the centre of the screen, and NDC units per world unit vertically.
-    // zoom == 1 fits exactly `worldSize` world units into the screen height.
-    private var camX = 0f
-    private var camY = 0f
-    private var zoom = 1f
+    private val rects = UiRectRenderer(maxRects = MAX_RECTS)
 
     private var resW = 1f
     private var resH = 1f
 
-    private val vao = GPU.genAndBindVertexArrays()
-    private val vbo = GPU.genBuffers()
-    private val circleShader = CircleShader()
+    var camX = 0f
+        private set
+    var camY = 0f
+        private set
+    var tilePx = 22f
+        private set
 
-    private var matrices = FloatArray(0)
-    private var primaryIds = FloatArray(0)
-    private var shapes = FloatArray(0)
-    private var alphas = FloatArray(0)
-    private var tints = FloatArray(0)
-
-    private val matView = Mat4.scratch()
-    private val matModel = Mat4.scratch()
-    private val matT = Mat4.scratch()
-    private val matS = Mat4.scratch()
-    private val matOut = Mat4.scratch()
-
-    init {
-        GPU.bindVertexArray(vao)
-        uploadVerts()
-        ensureCapacity(256)
-    }
+    private val centers = FloatArray(MAX_RECTS * 2)
+    private val halfSizes = FloatArray(MAX_RECTS * 2)
+    private val colors = FloatArray(MAX_RECTS * 4)
+    private var count = 0
 
     fun setResolution(widthPx: Float, heightPx: Float) {
         resW = max(1f, widthPx)
@@ -62,165 +66,181 @@ class FluidlabRenderer(private val cfg: FluidlabConfig = FluidlabConfig()) {
         GPU.setViewport(0, 0, resW.toInt(), resH.toInt())
     }
 
-    /** Pixels per world unit at the current zoom — identical on both axes, so circles stay circular. */
-    private val pixelsPerWorldUnit: Float get() = zoom * resH * 0.5f
+    /** Centres the camera on the grid and picks a zoom that fits it — the "I just want to see it" call. */
+    fun fitTo(state: FluidlabState) {
+        camX = state.grid.width * 0.5f
+        camY = state.grid.height * 0.5f
+        val fit = min(resW / state.grid.width, resH / state.grid.height)
+        tilePx = fit.coerceIn(MIN_TILE_PX, MAX_TILE_PX)
+    }
 
-    /** Drag-to-pan: moves the camera so the world appears to follow the pointer. */
     fun panByPixels(dxPixels: Float, dyPixels: Float) {
-        val s = pixelsPerWorldUnit
-        camX -= dxPixels / s
-        camY -= dyPixels / s
-        camX = wrap(camX, cfg.worldSize * 0.5f)
-        camY = wrap(camY, cfg.worldSize * 0.5f)
+        camX -= dxPixels / tilePx
+        camY -= dyPixels / tilePx
     }
 
-    /** Wheel/pinch zoom that keeps the world point under [px],[py] pinned there. */
-    fun zoomAtScreen(px: Float, py: Float, factor: Float) {
+    fun zoomBy(factor: Float) {
         if (!factor.isFinite() || factor <= 0f) return
-        val before = screenToWorld(px, py)
-        zoom = (zoom * factor).coerceIn(MIN_ZOOM, MAX_ZOOM)
-        val after = screenToWorld(px, py)
-        camX = wrap(camX + wrapDelta(before[0] - after[0], cfg.worldSize), cfg.worldSize * 0.5f)
-        camY = wrap(camY + wrapDelta(before[1] - after[1], cfg.worldSize), cfg.worldSize * 0.5f)
+        tilePx = (tilePx * factor).coerceIn(MIN_TILE_PX, MAX_TILE_PX)
     }
 
-    /** Framebuffer pixel → world coordinates. Pair this with [worldToScreen] for labels/pick tests. */
-    fun screenToWorld(px: Float, py: Float): FloatArray {
-        val ndcX = px / resW * 2f - 1f
-        val ndcY = 1f - py / resH * 2f
-        val aspect = resW / resH
-        return floatArrayOf(
-            camX + ndcX * aspect / zoom,
-            camY - ndcY / zoom,
-        )
+    /** Framebuffer pixel → tile index, or -1 if that is off the grid. */
+    fun tileAt(state: FluidlabState, px: Float, py: Float): Int {
+        val x = ((px - resW * 0.5f) / tilePx + camX).toInt()
+        val y = ((py - resH * 0.5f) / tilePx + camY).toInt()
+        return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    /** World coordinates → framebuffer pixel. */
-    fun worldToScreen(wx: Float, wy: Float): FloatArray {
-        val aspect = resW / resH
-        val dx = wrapDelta(wx - camX, cfg.worldSize)
-        val dy = wrapDelta(wy - camY, cfg.worldSize)
-        val ndcX = dx * zoom / aspect
-        val ndcY = -dy * zoom
-        return floatArrayOf((ndcX + 1f) * 0.5f * resW, (1f - ndcY) * 0.5f * resH)
-    }
-
-    /** Draws one frame of [state]. Call before the UI draws, so panels sit on top. */
-    fun draw(state: FluidlabState) {
-        GPU.setClearColor(0.04f, 0.05f, 0.08f, 1f)
-        GPU.clearColorBuffer()
-
-        GPU.bindVertexArray(vao)
+    fun draw(state: FluidlabState, overlay: Overlay = Overlay.Density, hoveredTile: Int = -1) {
+        count = 0
         GPU.enableBlend()
-        GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
 
-        computeViewMatrix()
-        ensureCapacity(state.bodies.size)
+        val grid = state.grid
+        val structure = state.structure()
 
-        var n = 0
-        for (b in state.bodies) {
-            if (n >= CircleShader.MAX_INSTANCES) break
-            // Cull what is off-screen. At fluidlab scale this is free; at Cyto scale it is the
-            // difference between a smooth frame and a slideshow, so the habit is worth forming.
-            val dx = wrapDelta(b.x - camX, cfg.worldSize)
-            val dy = wrapDelta(b.y - camY, cfg.worldSize)
-            val halfW = (resW / resH) / zoom + b.radius
-            val halfH = 1f / zoom + b.radius
-            if (abs(dx) > halfW || abs(dy) > halfH) continue
-
-            matT.setTranslation(dx, dy)
-            matS.setScale(b.radius, b.radius)
-            matModel.setProduct(matT, matS)
-            matOut.setProduct(matView, matModel)
-            matOut.copyInto(matrices, n * Mat4.FLOATS)
-
-            primaryIds[n] = 0f
-            shapes[n] = CircleShader.SHAPE_DISC
-            alphas[n] = 1f
-            val rgb = hueToRgb(b.hue)
-            tints[n * 3] = rgb[0]
-            tints[n * 3 + 1] = rgb[1]
-            tints[n * 3 + 2] = rgb[2]
-            n++
+        // Backdrop, so vacuum outside the hull reads as empty rather than as whatever was last drawn.
+        for (tile in 0 until grid.size) {
+            val x = grid.xOf(tile)
+            val y = grid.yOf(tile)
+            if (state.walls[tile] != null) {
+                tileRect(x, y, 1f, WALL)
+                continue
+            }
+            tileRect(x, y, 1f, if (structure.isContained(tile)) INTERIOR else VACUUM)
+            val tint = when (overlay) {
+                Overlay.Density -> ramp(state.air.densityAt(tile).toFloat() / AirField.AMBIENT_AIR.total)
+                Overlay.Pressure -> ramp(state.air.pressureAt(tile).toFloat() / AMBIENT_PRESSURE)
+                Overlay.Heat -> heatColor(state.air.kelvinAt(tile))
+                Overlay.Flow -> 0L
+                Overlay.Species -> speciesTint(state.air, tile)
+            }
+            if (tint != 0L) tileRect(x, y, 1f, tint)
         }
 
-        circleShader.drawInstanced(
-            vOffset = 0,
-            instanceCount = n,
-            matricesColMajor = matrices,
-            primaryIds = primaryIds,
-            shapes = shapes,
-            alphas = alphas,
-            tintColorsRgb = tints,
-        )
+        if (overlay == Overlay.Flow) drawFlow(state)
+
+        if (hoveredTile >= 0) tileRect(grid.xOf(hoveredTile), grid.yOf(hoveredTile), 1f, HOVER)
+
+        rects.drawInstanced(count, centers, halfSizes, colors)
         GPU.disableBlend()
     }
 
-    /** Frees GPU objects. Desktop hosts call this on window close; mobile hosts let the context die. */
-    fun cleanup() {
-        circleShader.deleteProgram()
-        GPU.deleteBuffers(vbo)
-        vao?.let { GPU.deleteVertexArrays(it) }
-    }
-
-    // ── Internals ─────────────────────────────────────────────────────────────────
-
     /**
-     * World → clip space. Only a scale: the per-body translation is folded into the model matrix so
-     * it can be the *wrapped* delta to the camera, which is what makes a body at the far edge of the
-     * torus draw just off the near edge instead of flying across the screen.
+     * Face momentum as a streak from each tile centre.
+     *
+     * Scaled to the fastest face on screen rather than to a fixed constant, because the interesting
+     * range spans orders of magnitude — a breach jet and ordinary convection cannot share a scale, and
+     * a fixed one renders whichever it was not tuned for as either blank or saturated.
      */
-    private fun computeViewMatrix() {
-        val aspect = resW / resH
-        // Negative Y so world +y points down the screen, matching pointer coordinates.
-        matView.setScale(zoom / aspect, -zoom)
-    }
-
-    private fun ensureCapacity(count: Int) {
-        val n = count.coerceAtMost(CircleShader.MAX_INSTANCES)
-        if (n <= alphas.size) return
-        val cap = maxOf(n, alphas.size * 2, 256).coerceAtMost(CircleShader.MAX_INSTANCES)
-        matrices = FloatArray(cap * Mat4.FLOATS)
-        primaryIds = FloatArray(cap)
-        shapes = FloatArray(cap)
-        alphas = FloatArray(cap)
-        tints = FloatArray(cap * 3)
-    }
-
-    private fun uploadVerts() {
-        // One triangle that circumscribes the unit circle. The shader discards fragments outside the
-        // disc, so three vertices draw a perfectly round, antialiased circle at any zoom.
-        val verts = floatArrayOf(
-            -1f, 1.7320508f,
-            2f, 0f,
-            -1f, -1.7320508f,
-        )
-        val buf = GpuFloatBuffer(verts.size)
-        buf.put(verts).flip()
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, vbo)
-        GPU.enableVertexAttribArray(0)
-        GPU.putVertexAttribPointer(0, 2, GPU.FLOAT, false, 2 * 4, 0)
-        GPU.bufferData(GPU.ARRAY_BUFFER, verts.size, buf, GPU.STATIC_DRAW)
-        GPU.bindBuffer(GPU.ARRAY_BUFFER, 0)
-    }
-
-    private fun hueToRgb(hue: Float): FloatArray {
-        val h = (hue - kotlin.math.floor(hue)) * 6f
-        val i = h.toInt()
-        val f = h - i
-        val q = 1f - f
-        return when (i) {
-            0 -> floatArrayOf(1f, f, 0f)
-            1 -> floatArrayOf(q, 1f, 0f)
-            2 -> floatArrayOf(0f, 1f, f)
-            3 -> floatArrayOf(0f, q, 1f)
-            4 -> floatArrayOf(f, 0f, 1f)
-            else -> floatArrayOf(1f, 0f, q)
+    private fun drawFlow(state: FluidlabState) {
+        val grid = state.grid
+        val edges = EdgeGrid(grid)
+        var peak = 0f
+        val speeds = FloatArray(grid.size)
+        for (tile in 0 until grid.size) {
+            if (state.walls[tile] != null) continue
+            val x = grid.xOf(tile)
+            val y = grid.yOf(tile)
+            // Tile-centred velocity is the mean of its two opposing faces — the staggered grid stores
+            // them on the faces precisely so this averaging is the only place centring happens.
+            val vx = (state.momentumX[edges.xEdge(x, y)] + state.momentumX[edges.xEdge(x + 1, y)]) * 0.5f
+            val vy = (state.momentumY[edges.yEdge(x, y)] + state.momentumY[edges.yEdge(x, y + 1)]) * 0.5f
+            val s = sqrt(vx * vx + vy * vy)
+            speeds[tile] = s
+            if (s > peak) peak = s
+        }
+        if (peak <= 0f) return
+        for (tile in 0 until grid.size) {
+            val s = speeds[tile]
+            if (s <= 0f) continue
+            val f = (s / peak).coerceIn(0f, 1f)
+            tileRect(grid.xOf(tile), grid.yOf(tile), 0.2f + 0.6f * f, flowColor(f))
         }
     }
 
+    fun cleanup() = rects.deleteProgram()
+
+    // ── Colour ───────────────────────────────────────────────────────────────────
+
+    /** Diverging ramp about 1.0 = ambient: blue below, red above. */
+    private fun ramp(f: Float): Long {
+        if (f <= 0f) return 0L
+        val d = ((f - 1f) / SPAN).coerceIn(-1f, 1f)
+        return if (d <= 0f) {
+            val c = -d
+            rgba((90 * (1f - c) + 20 * c).toInt(), (120 * (1f - c) + 60 * c).toInt(), (200).toInt(), ALPHA)
+        } else {
+            rgba((90 + 165 * d).toInt(), (120 * (1f - d) + 40 * d).toInt(), (200 * (1f - d) + 40 * d).toInt(), ALPHA)
+        }
+    }
+
+    private fun heatColor(kelvin: Int): Long {
+        val d = ((kelvin - Temperature.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
+        return if (d <= 0f) {
+            rgba((60 * (1f + d)).toInt() + 20, (90 * (1f + d)).toInt() + 30, 220, ALPHA)
+        } else {
+            rgba(220, (140 * (1f - d)).toInt() + 40, (60 * (1f - d)).toInt() + 20, ALPHA)
+        }
+    }
+
+    private fun flowColor(f: Float): Long = rgba(220, (200 * (1f - f)).toInt() + 40, 60, (120 + 120 * f).toInt())
+
+    private fun speciesTint(air: AirField, tile: Int): Long {
+        var best: Species? = null
+        var bestGrams = 0L
+        for (s in Species.ALL) {
+            val g = air.gramsOf(tile, s)
+            if (g > bestGrams) { bestGrams = g; best = s }
+        }
+        if (best == null) return 0L
+        val c = org.emerge.demo.fluidlab.chem.speciesColor(best)
+        // Palette colours are opaque; the overlay sits on top of the backdrop, so re-alpha it.
+        return (c and 0xFFFFFF00L) or ALPHA.toLong()
+    }
+
+    private fun rgba(r: Int, g: Int, b: Int, a: Int): Long =
+        ((r.coerceIn(0, 255).toLong() shl 24) or (g.coerceIn(0, 255).toLong() shl 16) or
+            (b.coerceIn(0, 255).toLong() shl 8) or a.coerceIn(0, 255).toLong())
+
+    // ── Batching ─────────────────────────────────────────────────────────────────
+
+    private fun tileRect(x: Int, y: Int, scale: Float, color: Long) =
+        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
+
+    /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
+    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long) {
+        if (count >= MAX_RECTS) return
+        val px = wx - camX * tilePx + resW * 0.5f
+        val py = wy - camY * tilePx + resH * 0.5f
+        // Cheap off-screen reject: a lab grid is small, but a zoomed-in view still culls most of it.
+        if (px + w < 0f || px - w > resW || py + h < 0f || py - h > resH) return
+        centers[count * 2] = px / resW * 2f - 1f
+        centers[count * 2 + 1] = 1f - py / resH * 2f
+        halfSizes[count * 2] = w / resW
+        halfSizes[count * 2 + 1] = h / resH
+        colors[count * 4] = ((color shr 24) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 1] = ((color shr 16) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 2] = ((color shr 8) and 0xFF).toFloat() / 255f
+        colors[count * 4 + 3] = (color and 0xFF).toFloat() / 255f
+        count++
+    }
+
     companion object {
-        private const val MIN_ZOOM = 0.2f
-        private const val MAX_ZOOM = 60f
+        private const val MAX_RECTS = 32_000
+        private const val MIN_TILE_PX = 4f
+        private const val MAX_TILE_PX = 64f
+
+        /** Fraction either side of ambient that saturates the density/pressure ramp. */
+        private const val SPAN = 1.0f
+
+        /** Kelvin either side of ambient that saturates the heat ramp. */
+        private const val RAMP_SPAN = 60f
+
+        private const val ALPHA = 190
+
+        private const val WALL = 0x5A6472FFL
+        private const val INTERIOR = 0x10141AFFL
+        private const val VACUUM = 0x05070AFFL
+        private const val HOVER = 0xFFFFFF30L
     }
 }

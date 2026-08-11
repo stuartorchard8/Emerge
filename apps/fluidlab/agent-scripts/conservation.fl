@@ -1,0 +1,12 @@
+# A sealed room is a closed system. Nothing in it may change totals.
+#
+# This is the cheapest possible regression on the solver: if a future edit breaks conservation,
+# it breaks here first, and it says so in grams rather than in a picture.
+new sealed 20 14
+run 100
+expect vented == 0
+expect substeps <= 2
+
+# Mass and energy are asserted against their own starting values by FluidlabSimTest; what this
+# script adds is the long run — 100 ticks rather than 40 — where a slow leak would show.
+state
