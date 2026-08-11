@@ -1,0 +1,92 @@
+package org.emerge.demo.fluidlab.world
+
+/**
+ * Every tile's [Structure], derived rather than authored.
+ *
+ * The player never paints "floor". They build **hull**, and the inside is whatever the hull encloses:
+ * a flood fill inward from the grid's edge marks everything space can reach, and what it cannot reach
+ * is interior. That gives the right answer to "what is outside the hull" for free, and it makes a
+ * breach mean exactly what it should — knock out one hull tile and the fill pours in, so the room
+ * *becomes* outside, with no separate concept of a leak.
+ *
+ * Derived every tick. A flood fill over a grid this size is a rounding error next to the rest of the
+ * tick, and the alternative — caching it and invalidating on edits — is a class of bug for no gain.
+ */
+class StructureMap(private val kinds: ByteArray) {
+
+    operator fun get(index: Int): Structure = Structure.entries[kinds[index].toInt()]
+
+    /** Solid: air can neither sit in this tile nor cross it. Walls and machines both. */
+    fun isImpermeable(index: Int): Boolean =
+        kinds[index].toInt() == Structure.Hull.ordinal || kinds[index].toInt() == Structure.Machine.ordinal
+
+    fun isPermeable(index: Int): Boolean = !isImpermeable(index)
+
+    fun isContained(index: Int): Boolean = kinds[index].toInt() != Structure.Vacuum.ordinal
+
+    val interiorCount: Int get() = kinds.count { it.toInt() == Structure.Interior.ordinal }
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is StructureMap && kinds.contentEquals(other.kinds))
+
+    override fun hashCode(): Int = kinds.contentHashCode()
+
+    companion object {
+        /**
+         * Flood-fills space in from every edge tile, stopping at anything solid. Anything not
+         * reached and not solid is interior.
+         *
+         * Almost every deck machine blocks, over its whole footprint — a smelter is a solid object,
+         * and a tile of solid object is not somewhere air can be. Conduits are not in this list at
+         * all: rails and bridges live on their own layers and share a tile with the deck beneath
+         * them, so a belt running through a room does not divide it.
+         *
+         * The exception is a [MachineKind.isPermeable] one, which is a plate and not a block: it is
+         * skipped entirely, so the tile it stands on is whatever the flood fill would have made it.
+         * Nothing downstream needs a case for it — air, heat and rock contact all read this map, and
+         * all three then treat the tile as the empty floor it is.
+         *
+         * [openness] names the tiles that are open *this tick* despite being solid things — today,
+         * [Airlock]s that are being signalled. They are skipped exactly as a permeable plate is, so
+         * the fill pours through an open door and the room beyond it correctly becomes outside. Omit
+         * it and every door is shut, which is the right answer for a world being loaded or built.
+         * See [org.emerge.demo.fluidlab.world.fluid.airlockOpenness].
+         */
+        fun derive(grid: Grid, machines: List<Machine?>, openness: IntArray? = null): StructureMap {
+            val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
+            for (i in machines.indices) {
+                val m = machines[i] ?: continue
+                if (m.kind.isPermeable) continue
+                if ((openness?.get(i) ?: 0) > 0) continue
+                val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
+                for (t in coveredTiles(grid, i, m.kind.size)) kinds[t] = kind.ordinal.toByte()
+            }
+
+            // Breadth-first from the border. An explicit stack rather than recursion: a 48x28 grid is
+            // 1344 deep in the worst case and this also runs on JS.
+            val stack = ArrayDeque<Int>()
+            fun seed(index: Int) {
+                if (kinds[index].toInt() == Structure.Interior.ordinal) {
+                    kinds[index] = Structure.Vacuum.ordinal.toByte()
+                    stack.addLast(index)
+                }
+            }
+            for (x in 0 until grid.width) {
+                seed(grid.index(x, 0))
+                seed(grid.index(x, grid.height - 1))
+            }
+            for (y in 0 until grid.height) {
+                seed(grid.index(0, y))
+                seed(grid.index(grid.width - 1, y))
+            }
+            while (stack.isNotEmpty()) {
+                val at = stack.removeLast()
+                for (dir in Direction.ALL) {
+                    val next = grid.neighbour(at, dir)
+                    if (next >= 0) seed(next)
+                }
+            }
+            return StructureMap(kinds)
+        }
+    }
+}

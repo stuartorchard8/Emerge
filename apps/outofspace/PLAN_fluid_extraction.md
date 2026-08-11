@@ -53,8 +53,16 @@ Two-way, and the game side is concentrated in one function:
 - **fluid → game**: `Grid`, `AirField`, `StructureMap`, `Conduits`/`Conduit`, `Pump`, `Machine`,
   `Airlock`, `SignalField`, `Temperature`, `Direction`, `Action`, plus `chem` and `Frac2`.
 
-That second column is why the new app can't be a pure lift: it inherits ~950 lines of vessel world
-model just to compile. That is the accepted tax of Option A (§8).
+That second column is why the new app can't be a pure lift: it inherits a slab of vessel world model
+just to compile. That is the accepted tax of Option A (§8).
+
+**Measured at step 2** (the estimate above was ~950 lines; the transitive closure is bigger):
+**1,565 lines** across 19 `world/` files + `logistics/Packet.kt`, carrying 2,614 lines of fluid and
+1,116 of chem. The closure pulled in more than the direct-import list predicted — `StructureMap` needs
+`Structure` + `coveredTiles` (`Occupancy.kt`), `Machine` needs `MachineKind`/`Footprint`/`Composition`/
+`Wiring`, `Segment` needs `logistics/Packet`, `SignalField` needs `SignalNetworks`. Worth knowing
+before step 5: **those same files are what the diffusion model will still need**, so none of this is
+wasted — the tax is duplication, not dead weight.
 
 ## 3. Momentum: the fields stay, and thrust survives via blocked flux
 
@@ -148,8 +156,15 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
 2. **Copy** (do not move) `world/fluid/` + the 14 `commonTest/.../fluid/` tests into fluidlab, plus the
    world-model types they need (§2, second column). Copy `chem/` too — the sim needs it and fluidlab
    must not depend on outofspace. Renaming packages `demo.outofspace` → `demo.fluidlab`.
-   Gate: fluidlab's own tests green, in isolation. **Out of Space is untouched and still green at this
-   point** — the freeze is complete and safe before any deletion happens.
+   Gate: fluidlab's own tests green, in isolation. **Out of Space is untouched at this point** — the
+   freeze is complete and safe before any deletion happens.
+   ✅ **DONE 2026-08-11.** 123 tests, 0 failures (2 pre-existing `@Ignore`s), JVM + JS both compile.
+   `chem` was severed from the renderer by inlining `speciesColor`'s 13 palette constants into
+   `chem/SpeciesColor.kt` — cheaper than carrying a 1,000-line renderer across for one colour lookup.
+   ⚠️ Out of Space had **pre-existing** test failures before this work began (`RockTest`, `FlightTest`,
+   `RockContactTest`, `PumpTest`, `ProcessorChainTest` — bodies "hung in the air", a gravity fault).
+   Confirmed by Stu as predating the extraction. **Not caused by, and not in scope for, this work** —
+   but it means "Out of Space is green" is not available as a gate for steps 5–7.
 3. **Give fluidlab a harness.** A minimal driver (headless tick + the existing overlays) so it is a
    *runnable* sim and not an archive. This is the whole point of A over "tag and delete", so it isn't
    optional. `BoilingTest`, `BreachSymmetryTest` and `ThrustBalanceTest` come along as its
@@ -188,6 +203,13 @@ is going away while the other tests things that are staying:
 `BreachSymmetryTest`, `ThrustBalanceTest`. **Delete from Out of Space.** They come along to fluidlab in
 step 2 as a byproduct of copying the package — that copy is free, so take it; nothing is maintained on
 the Out of Space side.
+
+> **Step 2 correction:** the copy was free for 11 of the 14. `BreachSymmetryTest`, `ThermalTest` and
+> `ThrustBalanceTest` are whole-*vessel* integration tests — they need `OutofspaceController`,
+> `VesselState`, `OutofspaceReducer` and `starterVessel`, i.e. the entire game — so taking them would
+> have dragged Out of Space into fluidlab and defeated the extraction. **Not copied.** This lands
+> tidily: the sealed-vessel invariant carve-out below wants to live in Out of Space anyway, which is
+> exactly where those two tests already are.
 
 **Group B — the 6 that assert *through* the solver at the game level:** `AtmosphereTest`,
 `PipeFluidTest`, `ValveTest`, `PumpTest`, `AirlockTest`, `GridVentTest`. These are not solver tests —
