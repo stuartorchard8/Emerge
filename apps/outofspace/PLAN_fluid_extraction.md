@@ -185,6 +185,22 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
 4. **Build rapid diffusion in Out of Space**, behind the existing call sites, with the momentum
    arguments still present but ignored. Gate: new `RapidDiffusionTest` (equilibrium reached, mass and
    joules conserved exactly, no negative tiles, rim venting books correctly).
+   ✅ **DONE 2026-08-12.** `world/fluid/Diffusion.kt` — `diffuseFluid` (the model) plus
+   `diffuseAsFluidStep` (the same tick shaped as a `FluidStep`, so step 5's cut-over is a call swap,
+   not a rewrite of the tick body). Nothing calls it yet: **Out of Space behaves identically**, which
+   matters because its suite is not available as a gate (step 2's note). `RapidDiffusionTest`:
+   5 tests, 0 failures, 0.155s; JVM + JS compile.
+   Shape as §4 specified — gather not scatter, each face evaluated once from each side through the
+   same `quantum` of the same pre-tick count, `DENOM = 5`. **Joules ride the mass**: what crosses a
+   face is the same *fraction* of the tile's energy as of its mass, rather than joules diffusing on
+   their own account, which would strand energy in cells with no capacity to hold it (they read as
+   ambient, so it vanishes from every gauge).
+   ⚠️ **Integer diffusion has many fixed points, not one.** A sealed box with a total divisible by
+   the tile count does *not* settle exactly flat — 400 ticks lands tiles a gram or two either side,
+   because flooring makes every near-uniform state a fixed point too. Flat is reachable, it is just
+   not the only attractor. So the no-degree-bias test asserts *within 1% of the mean* — chosen to
+   discriminate the failure it guards (a per-degree divisor gives the middle ~2× the edges), not as a
+   tolerance anyone should tune.
 5. **Cut over.** Replace `stepFluid`/`exchangeLayers`/`applyPumps` in the tick, promote the surviving
    helpers out of `world/fluid/`, delete the package.
 6. **Wire thrust to blocked flux** (§3). Momentum fields, save format and ledger fields are all left
