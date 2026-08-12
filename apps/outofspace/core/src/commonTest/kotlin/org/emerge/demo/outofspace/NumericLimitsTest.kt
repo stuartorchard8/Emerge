@@ -356,6 +356,31 @@ class NumericLimitsTest {
                 designMaxKelvin,
             1,
         )
+        // ⚠️ A rock tile is not a deck tile, and `tile joules` above does not bound one. That row
+        // uses [densestTileCapacity], a *machine* capacity — machines are hollow (`fillPermille`),
+        // where a rock is solid all through, so a rock tile is some 177x heavier than the densest
+        // thing that row measures. Two variants, because the difference between them is the whole
+        // question of how conservative to be:
+        //
+        //   - the honest one, `max over species of (tile mass x its OWN specific heat)`. No material
+        //     is both the densest and the most heat-hungry, so this is a real material.
+        //   - the fictional pairing the [capacityPerTileOf] row uses, densest x hottest.
+        budget(
+            "solid tile joules: the heaviest real material at max kelvin",
+            Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } * designMaxKelvin,
+            1,
+        )
+        budget(
+            "solid tile joules: densest x hottest (a material that does not exist)",
+            densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() } * designMaxKelvin,
+            1,
+        )
+        budget(
+            "solid tile joules: the heaviest real material at AMBIENT",
+            Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } *
+                Temperature.AMBIENT_KELVIN.toLong(),
+            1,
+        )
         // A whole free body, which is NOT a ledger and is stored on the body itself — the gap the
         // audit found when a 21-tile uranium rock read −184 K at 10⁶. Every other energy row here is
         // per tile or a ledger aggregate, so a single physical object holding its own joules across
