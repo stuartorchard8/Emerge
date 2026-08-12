@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Flight
@@ -165,6 +166,21 @@ const val FEEDSTOCK_RADIUS = 2
  * mass is its ore now, so pinning this to anything else would let the two drift apart silently.
  */
 val FEEDSTOCK_GRAMS: Long get() = 21L * gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+
+/**
+ * How many ticks it takes to shift [grams] along a belt, plus a little slack.
+ *
+ * ⚠️ **Use this instead of a hard-coded tick count** in any test that waits for material to arrive.
+ * A belt tile holds one packet and a machine hands over one per tick, so the whole logistics layer
+ * runs at exactly `Capacity.PACKET_GRAMS` per tick — and that is a **tuning dial**. When it went
+ * from a tonne to 100 kg, every test with a literal budget in it started failing for a reason that
+ * had nothing to do with what it was testing, and a reader looking at `run(s, 240)` has no way to
+ * tell whether 240 is a deadline, a measurement or a guess.
+ *
+ * The slack is a quarter on top, because a line has to fill before it can deliver and the first few
+ * packets are in transit rather than arriving.
+ */
+fun ticksToMove(grams: Long): Int = ((grams / Capacity.PACKET_GRAMS) * 5L / 4L).toInt() + 20
 
 /**
  * The starter vessel **with feedstock on both plates** — what most of these tests mean when they

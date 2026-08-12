@@ -162,18 +162,26 @@ energy-dimensioned constant in `commonMain` derives from it:
 
 | constant | was | now |
 |---|---|---|
-| `Capacity.PACKET_GRAMS` | `1_000_000L` | `1 × TONNE` — the logistics quantum everything else counts in |
-| `MACHINE_BUFFER_CAP` | `4_000_000L` | `4 × PACKET_GRAMS` |
-| `MACHINE_OUTPUT_CAP` | `4_000_000L` | `4 × PACKET_GRAMS`, deliberately equal to the input |
-| `Storage.CAP` | `20_000_000L` | `20 × PACKET_GRAMS` |
-| `Extractor.BUFFER_CAP` | `5_000_000L` | `5 × PACKET_GRAMS` |
-| machine `gramsPerTick` ×4 | `250_000L` / `125_000L` | `250` / `125 × KILOGRAM` |
+| `Capacity.PACKET_GRAMS` | `1_000_000L` | `100 × KILOGRAM` — the logistics quantum and the belt's throughput |
+| `MACHINE_BUFFER_CAP` | `4_000_000L` | `4 × TONNE` — 40 ticks of throughput |
+| `MACHINE_OUTPUT_CAP` | `4_000_000L` | `4 × TONNE`, deliberately equal to the input |
+| `Storage.CAP` | `20_000_000L` | `20 × TONNE` |
+| `Extractor.BUFFER_CAP` | `5_000_000L` | `5 × TONNE` — 50 ticks |
+| machine `gramsPerTick` ×4 | `250_000L` / `125_000L` | `PACKET_GRAMS` — one belt-load a tick, all four |
 | `Edit.INJECT_GRAMS` | `1000L` | `1 × KILOGRAM` |
 | `Material.AIR_FILM` | `20_000L` | `20 × JOULE` — **energy**-dimensioned, so it moves with `MILLIJOULE` |
 
-Stating the buffers as **counts of packets** rather than as masses of their own turned out to be the
-better form for a reason that is not about rescaling: a buffer that is not a whole number of packets
-has a remainder no belt can ever deliver, and the machine reads as stuck just short of full.
+⚠️ **Buffers are sized in ticks of throughput, not in belt-loads** — and that distinction was learnt
+the hard way. Written first as `4 × PACKET_GRAMS`, they shrank tenfold the moment the belt-load went
+from a tonne to 100 kg, leaving every machine with two ticks of buffer. A buffer's job is to
+decouple a machine from its supply *for a while*, and the unit of "a while" is ticks.
+
+⚠️ **A producer may never out-produce the belt it feeds.** A belt tile holds one packet and a machine
+hands over at most one per tick, so belt throughput *is* `PACKET_GRAMS` per tick — the hard ceiling
+for every machine. The old hard-coded rates (250/125 kg per tick) were suddenly 2.5× what the belts
+could carry, which broke every refinery line silently. All four producers now derive their rate from
+the packet, so the invariant is stated rather than coincidental, and `BudgetParityTest` asserts it
+for each of them.
 
 Already ratios and needing nothing, which is the pattern: `Negligible` (per-mille of ambient),
 `Material.RADIANCE` (a fraction of a hull plate's capacity), `Edit.WATER_INJECT_GRAMS` (a 64th of a
@@ -187,14 +195,20 @@ masses would make every pump a million times stronger. Called out on the constan
 **Test**: `BudgetParityTest`, and it is written to **survive step 8** — each assertion divides by the
 unit, so it states a fact in grams and joules rather than pinning an integer. Asserting
 `PACKET_GRAMS == 1_000_000` would need re-baselining by hand the moment the knob moves, which is the
-worst habit a rescale could teach. Asserting *a packet is one tonne* is true at every scale.
+worst habit a rescale could teach. Asserting *a packet is 100 kg* is true at every scale.
 
 **Dry-run**: `MICROGRAMS_PER_UNIT` was temporarily set to `1` and `BudgetParityTest` stayed green, so
 the derivation chain does hold at the target unit. Step 8 is now a one-line change.
 
-**Deliberately deferred**: ~134 gram literals in `commonTest`. They are fixtures rather than
-constants, step 8 is the check for them, and rewriting them now would be a large diff with no
-guard — better done when the knob moves and the failures say which ones actually mattered.
+**Test literals**: the belt-load change forced part of this early. `PacketTest`'s expectations are
+now fractions of `Capacity.PACKET_GRAMS`, and `RailFixtures.ticksToMove` replaces hard-coded tick
+budgets in the tests that wait for material to arrive — `run(s, 240)` told a reader nothing about
+whether 240 was a deadline, a measurement or a guess. The rest of the ~134 literals stay for step 8.
+
+**Found in passing**: `Save.kt` restated all four machine rates as literals in its load fallback, so
+a save without a `rate` field loaded a machine running at whatever the rate was when that function
+was written. Third instance of the "caller restates a constant it does not own" family, after the
+argon injector and `AirField.mixtureAt`. Now derived from each machine's own default.
 
 **Fixed in passing**: the step-1 tripwire used `String.format`, a JVM-only API, in **commonTest** —
 so `compileTestKotlinJs` had been broken since it landed while every JVM run stayed green. Exactly

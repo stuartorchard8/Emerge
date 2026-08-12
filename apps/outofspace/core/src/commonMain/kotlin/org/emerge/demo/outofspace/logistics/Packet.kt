@@ -37,20 +37,18 @@ data class FluidPacket(override val contents: Mixture) : Packet {
  */
 object Capacity {
     /**
-     * Max grams per packet: a tonne. Separate from Rate (throughput).
+     * Max grams per packet: **100 kg**, a lump one person could not lift. Separate from [Rate],
+     * which is throughput.
      *
-     * A lump on a belt used to be a kilogram, back when a tile of rock was three. Solids are at
-     * their real densities now — a tile of ore is about four tonnes — so a belt that moved kilograms
-     * would take an hour to shift one boulder. Everything measured in grams moved up by a thousand
-     * with it; the masses themselves moved by rather more (see [org.emerge.demo.outofspace.world.Material]),
-     * so the refinery runs about a third slower per rock than it used to, in exchange for numbers
-     * that stay round.
+     * Solids are at their real densities, so a tile of ore is about four tonnes — roughly forty of
+     * these. A boulder is therefore a few dozen belt-loads rather than a handful, which is what
+     * makes a mining line read as a continuous stream instead of a trickle of enormous lumps.
      *
-     * **Derivation**: one tonne. This is the quantum the whole logistics layer is built on — every
-     * buffer below is a small whole number of these — so it is stated in [Budget]'s units and
+     * **Derivation**: `100 × KILOGRAM`. This is the quantum the whole logistics layer is built on —
+     * every buffer is a small whole number of these — so it is stated in [Budget]'s units and
      * everything else refers back to it rather than restating a mass of its own.
      */
-    val PACKET_GRAMS: Long = 1L * Budget.TONNE
+    const val PACKET_GRAMS: Long = 100L * Budget.KILOGRAM
 
     /** The measure capacity is expressed in. Mass today; see the class note for why it is a function. */
     fun quantityOf(packet: Packet): Long = packet.mass
@@ -62,9 +60,9 @@ object Capacity {
 /**
  * Scales a whole-gram rate by a fraction **without losing the fraction**.
  *
- * A machine's throughput is stated per *tick*, so the clock never enters this: an extractor is 250 g/tick
- * and that is a whole number by construction. What is not whole is a **throttle**. A processor run
- * at 45% of 125 g/tick owes 56.25 g, and there is no honest integer for that. Rounding it away every
+ * A machine's throughput is stated per *tick*, so the clock never enters this: an extractor is
+ * 250 kg/tick and that is a whole number by construction. What is not whole is a **throttle**. A
+ * processor run at 45% of 125 kg/tick owes 56.25 kg, and there is no honest integer for that. Rounding it away every
  * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is
  * a lot. So the fraction is carried in state: each tick adds the scaled numerator to a carry, takes
  * out whole grams, and keeps the remainder for next time. Over any run of ticks the delivered total

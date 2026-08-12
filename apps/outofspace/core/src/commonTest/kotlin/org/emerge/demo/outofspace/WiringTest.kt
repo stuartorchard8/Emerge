@@ -195,9 +195,14 @@ class WiringTest {
             val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
             return (s[grid.index(2, 2)] as Extractor).buffer.mass
         }
-        assertEquals(Capacity.PACKET_GRAMS, groundInASecond(wiring(SignalSource.Always to 1000)))
-        assertEquals(Capacity.PACKET_GRAMS / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
-        assertEquals(Capacity.PACKET_GRAMS / 4, groundInASecond(wiring(SignalSource.Always to 250)))
+        // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_GRAMS`, which was
+        // the same number only by the coincidence that a packet was four ticks' output — a
+        // coincidence that died when the belt-load dropped to 100 kg. What the throttle governs is
+        // the *rate*, so the rate is what the expectation is built from.
+        val full = 4L * Extractor(Direction.Right).gramsPerTick
+        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 1000)))
+        assertEquals(full / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
+        assertEquals(full / 4, groundInASecond(wiring(SignalSource.Always to 250)))
         assertEquals(0L, groundInASecond(wiring(SignalSource.Always to -1000)), "negative activation stops it")
     }
 
@@ -273,7 +278,10 @@ class WiringTest {
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
-        s = run(s, 160)
+        // Long enough to fill the tank at belt rate, and then half again because the throttle
+        // slows the last of it down. Derived rather than typed: filling a tank takes as many ticks
+        // as it takes packets, and how big a packet is is a tuning dial.
+        s = run(s, ticksToMove(Storage.CAP) * 3 / 2)
         val onTheWire = s.signals.at(grid.index(2, 3))
         assertTrue(onTheWire > 800, "the tank should be reading nearly full, got $onTheWire")
 
@@ -287,7 +295,7 @@ class WiringTest {
 
     @Test
     fun `the starter vessel ships that same loop, working`() {
-        val s = run(workingVessel(Grid(40, 28)), 160)
+        val s = run(workingVessel(Grid(40, 28)), ticksToMove(Storage.CAP) * 3 / 2)
         // Found by its wiring rather than by coordinates — the vessel is fitted to its contents on
         // construction, so a written-down tile index would be a hostage to its layout. There is
         // exactly one machine aboard that reads a wire, and it is the demonstration extractor.

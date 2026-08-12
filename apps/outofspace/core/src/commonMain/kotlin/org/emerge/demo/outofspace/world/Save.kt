@@ -555,6 +555,14 @@ object Save {
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
 
         // V1 rate was per second; V2+ is per tick. Convert v1 by dividing by V1_TICKS_PER_SECOND.
+        /**
+         * A machine's throughput, defaulting to **that machine kind's own current default**.
+         *
+         * ⚠️ The fallback used to be a literal per machine — a fourth copy of a number already
+         * stated on the data class — so a save with no `rate` field loaded a machine running at
+         * whatever the rate was when this function was written. That is the "caller restates a
+         * constant it does not own" family again, and it survived a rate change silently.
+         */
         fun rate(fallback: Long): Long {
             val stored = num("rate", fallback * V1_TICKS_PER_SECOND)
             return if (version < 2) stored / V1_TICKS_PER_SECOND else num("rate", fallback)
@@ -576,26 +584,26 @@ object Save {
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
                 input = res("in"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(250_000L),
+                gramsPerTick = rate(Extractor(Direction.Right).gramsPerTick),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
                 input = res("in"), product = res("out"), tailings = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125_000L),
+                gramsPerTick = rate(Processor(Direction.Right).gramsPerTick),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
                 input = res("in"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125_000L),
+                gramsPerTick = rate(Vaporizer(Direction.Right).gramsPerTick),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 input = res("in"), refined = res("out"), slag = res("waste"),
                 carry = num("carry", 0L),
-                gramsPerTick = rate(125_000L),
+                gramsPerTick = rate(Smelter(Direction.Right).gramsPerTick),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire

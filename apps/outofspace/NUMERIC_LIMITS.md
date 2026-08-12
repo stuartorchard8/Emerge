@@ -20,7 +20,7 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 | Physical anchors | §11 — what reality pins these ranges to, and why k=1000 falls out of specific heat |
 | Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); the heaviest buildable vessel fits today at 0.7× — see the correction in §5 |
 | Next | `apportion`: `weight * target` — **safe k ≈ 152** (k², at a full Storage) |
-| Next | ship-wide joules at 3000 K — **safe k ≈ 49** at the absolute worst packing |
+| Next | ship-wide joules at 3000 K — **safe k ≈ 1.2e3** at the absolute worst packing |
 | Already broken at k=1 | `reducedPressure` at the packing wall (§6.1) |
 | Already broken at k=1 | diffusion strands anything under 5 units (§6.2) |
 | Recommended | **k = 100** as-is; **k = 1000** after five fixes (§8, listed by the tripwire in §9) |
@@ -104,8 +104,8 @@ Structure mass is `gramsPerTile × thermalTiles`, deflated by `fillPermille`.
 | WIRE | 14,873 | 5,726,336 | 1 |
 
 Measured whole-ship mass for a bare 96×60 hull: **110,523,137 g**. A 5760-tile grid packed solid
-with extractors would be 8.09e10 g — the absolute upper bound on vessel mass, and the figure the
-worst case in §5 uses.
+with extractors would be 3.23e9 g — the absolute upper bound on vessel mass, and the figure the
+worst case in §5 uses. (A grid holds 230 extractors, not 5760: see the §5 correction.)
 
 ### 3.4 Enforced cargo caps
 
@@ -116,9 +116,14 @@ These are hard, checked ceilings, which makes them better bounds than any measur
 | `Storage.CAP` | 20,000,000 |
 | `Extractors.BUFFER_CAP` | 5,000,000 |
 | `MACHINE_BUFFER_CAP` / `MACHINE_OUTPUT_CAP` | 4,000,000 |
-| `Packet.PACKET_GRAMS` | 1,000,000 |
+| `Packet.PACKET_GRAMS` | 100,000 |
 
 A full Storage (2e7 g) is the largest single mass any one holder can present to a function.
+
+⚠️ **The buffers are sized in ticks of throughput; only the packet is a belt-load.** They were
+briefly written as multiples of `PACKET_GRAMS`, and when the belt-load dropped from a tonne to
+100 kg on 2026-08-12 every buffer silently shrank tenfold with it — leaving machines with two ticks
+of buffer and an extractor that stalled before its throttle could do anything. See `Budget.kt`.
 
 ---
 
@@ -158,7 +163,7 @@ when they look roomy today.
 | # | Expression | k^ | worst case | safe k |
 |---|---|---|---|---|
 | 1 | `velocityX`: `vesselImpulse * PER_TILE` | 1 | ship at 2 tiles/tick | **16.7** (reference ship) — see below |
-| 2 | ship joules: heaviest machine at 3000 K × 5760 | 1 | 1.89e17 | **49** |
+| 2 | ship joules: densest deck across 5760 tiles | 1 | 7.57e15 | **1.2e3** |
 | 3 | `apportion`: `weight * target` | **2** | full Storage, 4.0e14 | **152** |
 | 4 | `apportion`: `weight * target` | **2** | machine buffer, 1.6e13 | 759 |
 | 5 | `potentialOf`: `pressure * SOUND_IMPULSE` | **2** | close-packed liquid | 648 |
@@ -169,7 +174,7 @@ when they look roomy today.
 | 10 | `potentialOf` at 10 atm (ordinary play) | **2** | 8.6e7 | 3.3e5 |
 | 11 | `millimolesOf`: `grams * 1e6/molarMass` | 1 | packed water | 2.1e8 |
 | 12 | body joules: heaviest machine at 3000 K | 1 | 3.29e13 | 2.8e5 |
-| 13 | solid mass: full ship of extractors | 1 | 8.09e10 | 1.1e8 |
+| 13 | solid mass: full ship of extractors | 1 | 3.23e9 | 2.9e9 |
 | 14 | cargo: `Storage.CAP` × 5760 tiles | 1 | 1.15e11 | 8.0e7 |
 | 15 | `gramsPerTileOf`: `total * VOLUME_UNIT` | 1 | composition totals ~1000 | 9.2e6 |
 

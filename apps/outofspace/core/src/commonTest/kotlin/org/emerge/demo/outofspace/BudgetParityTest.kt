@@ -41,17 +41,32 @@ class BudgetParityTest {
     @Test
     fun `every derived constant still means the quantity it meant before the audit`() {
         // ── Logistics: the packet is the quantum, everything else is a count of them ──
-        assertEquals(1_000_000L, Capacity.PACKET_GRAMS.grams, "a packet is one tonne")
-        assertEquals(4L, MACHINE_BUFFER_CAP / Capacity.PACKET_GRAMS, "input buffer is four packets")
-        assertEquals(4L, MACHINE_OUTPUT_CAP / Capacity.PACKET_GRAMS, "output buffer is four packets")
-        assertEquals(20L, Storage.CAP / Capacity.PACKET_GRAMS, "storage is twenty packets")
-        assertEquals(5L, Extractor.BUFFER_CAP / Capacity.PACKET_GRAMS, "extractor buffer is five packets")
+        assertEquals(100_000L, Capacity.PACKET_GRAMS.grams, "a packet is 100 kg")
+        // Buffers are sized in TICKS OF THROUGHPUT, not in belt-loads — see MACHINE_BUFFER_CAP for
+        // the bug that taught the difference. So they are asserted as masses, independent of packets.
+        assertEquals(4_000_000L, MACHINE_BUFFER_CAP.grams, "input buffer is four tonnes")
+        assertEquals(4_000_000L, MACHINE_OUTPUT_CAP.grams, "output buffer is four tonnes")
+        assertEquals(20_000_000L, Storage.CAP.grams, "storage is twenty tonnes")
+        assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
-        // ── Machine throughput, in grams per tick ──
-        assertEquals(250_000L, Extractor(Direction.Right).gramsPerTick.grams, "extractor 250 kg/tick")
-        assertEquals(125_000L, Smelter(Direction.Right).gramsPerTick.grams, "smelter 125 kg/tick")
-        assertEquals(125_000L, Processor(Direction.Right).gramsPerTick.grams, "processor 125 kg/tick")
-        assertEquals(125_000L, Vaporizer(Direction.Right).gramsPerTick.grams, "vaporizer 125 kg/tick")
+        // The relationships that actually matter, stated as the ratios they are.
+        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(Direction.Right).gramsPerTick, "40 ticks of buffer")
+        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(Direction.Right).gramsPerTick, "50 ticks of buffer")
+
+        // ── Machine throughput ──
+        //
+        // ⚠️ THE structural invariant of the logistics layer: a belt tile holds one packet and a
+        // machine hands over at most one per tick, so no producer may exceed one belt-load per tick
+        // or it starves its own output. Asserted for every producer rather than for one, because
+        // this is the property that broke when the belt-load shrank and it broke silently.
+        for ((what, rate) in listOf(
+            "extractor" to Extractor(Direction.Right).gramsPerTick,
+            "smelter" to Smelter(Direction.Right).gramsPerTick,
+            "processor" to Processor(Direction.Right).gramsPerTick,
+            "vaporizer" to Vaporizer(Direction.Right).gramsPerTick,
+        )) {
+            assertEquals(Capacity.PACKET_GRAMS, rate, "$what must produce exactly one belt-load a tick")
+        }
 
         // ── Debug tools ──
         assertEquals(1_000L, Edit.INJECT_GRAMS.grams, "the injector delivers a kilogram a tick")

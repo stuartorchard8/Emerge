@@ -98,8 +98,8 @@ class VesselSimTest {
         // A full tank at the end of the run. It should pack solid from the end nearest the tank.
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
-        // Long enough to fill the 20kg tank at 1kg a second, and then back the line up behind it.
-        s = run(s, 240)
+        // Long enough to fill the tank and then back the line up behind it.
+        s = run(s, ticksToMove(Storage.CAP + Extractor.BUFFER_CAP))
 
         val carried = (4..7).map { s.railAt(grid.index(it, 2))?.held?.mass ?: 0L }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
@@ -250,7 +250,7 @@ class VesselSimTest {
     fun `a jam clears from the front when the blockage is removed`() {
         val grid = Grid(12, 5)
         var s = oreLine(grid, toX = 7)
-        s = run(s, 240)
+        s = run(s, ticksToMove(Storage.CAP + Extractor.BUFFER_CAP))
 
         // Tear out the full tank and put a vent on the end of the run instead. The vent takes
         // anything, so the line drains from the front — the tile nearest the consumer moves first.
@@ -333,7 +333,7 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
         )
-        s = run(s, 400)
+        s = run(s, ticksToMove(FEEDSTOCK_GRAMS))
 
         assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")
         assertEquals(FEEDSTOCK_GRAMS, s.extractedGrams, "and every gram of it should have become ore")
@@ -363,7 +363,7 @@ class VesselSimTest {
             bodies = feed,
         )
 
-        s = run(s, 240)
+        s = run(s, ticksToMove(Storage.CAP))
         assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
         assertEquals(0L, s.stockpile[Form.IronIngot].total, "and no ingot should ever reach the store")
         assertBalanced(s, "ore straight to smelter")

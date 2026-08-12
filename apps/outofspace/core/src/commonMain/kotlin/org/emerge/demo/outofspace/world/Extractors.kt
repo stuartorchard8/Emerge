@@ -39,7 +39,20 @@ data class Extractor(
     val input: Resource? = null,
     val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
-    val gramsPerTick: Long = 250L * Budget.KILOGRAM,
+    /**
+     * Grams per tick at full activation: **one belt-load**.
+     *
+     * ⚠️ **A producer must never out-produce the belt it feeds.** A belt tile holds one packet and a
+     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_GRAMS]
+     * per tick — which makes that the ceiling for every machine in the game. Deriving the rate from
+     * the packet states the invariant instead of leaving it to two literals that happen to agree:
+     * when the belt-load went from a tonne to 100 kg, the old hard-coded rates were suddenly 2.5x
+     * what the belts could carry and every refinery line silently became throughput-broken.
+     *
+     * Tunable per machine later — a slow smelter and a fast one are a reasonable thing to want — but
+     * the cap is structural and anything above it is a machine that starves its own output.
+     */
+    val gramsPerTick: Long = Capacity.PACKET_GRAMS,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Extractor),
 ) : Directed {
@@ -52,12 +65,13 @@ data class Extractor(
         /**
          * How much chewed rock an extractor holds before it stops biting.
          *
-         * **Derivation**: five belt-loads — a little over one tile of ore, so the machine can hold
-         * roughly one cell's worth of what it just bit off while the belt takes it away. Bigger than
-         * [MACHINE_BUFFER_CAP] on purpose: an extractor's supply arrives in whole cells rather than
-         * in packets, so it needs room for a bite it cannot refuse.
+         * **Derivation**: five tonnes — **20 ticks** at its own 250 kg/tick, so the machine keeps
+         * grinding for a while when the belt pauses. A bite is a whole cell and weighs more than
+         * this, but a bite lands in [input] and is ground into the buffer at [gramsPerTick], so what
+         * this sizes is the gap between grinding and collection rather than the bite. In ticks and
+         * not in belt-loads, for the reason on [MACHINE_BUFFER_CAP].
          */
-        val BUFFER_CAP = 5L * Capacity.PACKET_GRAMS
+        val BUFFER_CAP = 5L * Budget.TONNE
     }
 }
 

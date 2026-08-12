@@ -1,7 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.logistics.Capacity
-
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
  * of the world is a snapshot of the world.
@@ -68,12 +66,17 @@ sealed interface Directed : Machine {
 /**
  * Machine input buffers hold this much before they stop accepting.
  *
- * **Derivation**: four belt-loads ([Capacity.PACKET_GRAMS]). Stated against the packet rather than
- * as a mass of its own, because what this number actually controls is *how many deliveries a machine
- * can be ahead of itself* — a buffer that is not a whole number of packets has a remainder no belt
- * can ever fill, and the machine reads as stuck just short of full.
+ * **Derivation**: four tonnes — **32 ticks** of a 125 kg/tick machine's throughput, so a machine can
+ * run for a good few seconds on a full buffer while its feed is interrupted.
+ *
+ * ⚠️ Sized in *ticks of throughput*, not in belt-loads, and that distinction has already bitten
+ * once. Written as `4 × PACKET_GRAMS` it silently shrank tenfold when the belt-load went from a
+ * tonne to 100 kg, leaving every machine with two ticks of buffer — enough that an extractor
+ * stalled before its throttle could make any difference, which is a behaviour change nobody asked
+ * for. A buffer's job is to decouple a machine from its supply *for a while*; the unit of "a while"
+ * is ticks.
  */
-val MACHINE_BUFFER_CAP = 4L * Capacity.PACKET_GRAMS
+val MACHINE_BUFFER_CAP = 4L * Budget.TONNE
 
 /**
  * And output buffers hold this much before the machine stops *running*.
@@ -83,7 +86,7 @@ val MACHINE_BUFFER_CAP = 4L * Capacity.PACKET_GRAMS
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
  *
- * **Derivation**: the same four belt-loads as [MACHINE_BUFFER_CAP], and deliberately equal to it —
- * a machine that can hoard more output than input would drain its feed before it stalled.
+ * **Derivation**: the same four tonnes as [MACHINE_BUFFER_CAP], and deliberately equal to it — a
+ * machine that can hoard more output than input would drain its feed before it stalled.
  */
-val MACHINE_OUTPUT_CAP = 4L * Capacity.PACKET_GRAMS
+val MACHINE_OUTPUT_CAP = 4L * Budget.TONNE

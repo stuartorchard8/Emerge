@@ -112,7 +112,16 @@ class MotionTest {
             val d = s.motion.departures.firstOrNull() ?: return@repeat
             assertEquals(cfg.initialGrid.index(8, 3), d.tile, "the tank's input port is at (8, 3)")
             assertTrue(d.packet.mass > 0L, "and something real went into it")
-            assertNull(s.rails[d.tile]?.held, "the tile it left is empty now — that is what leaving is")
+            // Not the *same* packet, rather than no packet at all. Those were the same statement
+            // while a belt was starved: a machine produced a fraction of a packet per tick, so the
+            // port tile sat empty most ticks and "empty" was a fine proxy for "left". Now every
+            // producer runs at exactly one belt-load per tick, so the line is saturated and the tile
+            // is refilled from behind on the very tick it is emptied. Emptiness stopped being
+            // evidence of departure; identity still is.
+            assertTrue(
+                s.rails[d.tile]?.held !== d.packet,
+                "the packet that departed is still sitting on the tile it left",
+            )
             seen = true
         }
         assertTrue(seen, "nothing ever reached the tank")
