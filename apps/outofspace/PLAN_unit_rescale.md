@@ -776,6 +776,45 @@ exists for is a **mass** floor (diffusion stranding), so decoupling costs nothin
 
 **Awaiting a decision from Stu before proceeding.**
 
+#### Energy decoupled from mass — **DONE** (Stu's call, 2026-08-12)
+
+`Budget` now has **two knobs**. `MILLIJOULE == GRAM` is gone, and with it `ENERGY_PER_MASS`:
+
+| knob | today | step 8 |
+| --- | --- | --- |
+| `MICROGRAMS_PER_UNIT` | 1,000,000 (1 g) | 1 (1 µg) |
+| `NANOJOULES_PER_UNIT` | 1,000,000 (1 mJ) | 10,000,000 (1 **centijoule**) |
+
+Energy goes *coarser*, which is the opposite of everything else here and needs its own justification:
+the floor this plan exists for is a **mass** floor, and nothing in the game has ever wanted a finer
+joule. What energy is short of is *range*. Ten times coarser is what takes a rock tile from 966,000
+to 9.66e6 and pulls `atmosphere joules` out of the red with it.
+
+The relation is now one named constant, `Budget.CAPACITY_DIVISOR = NANOJOULES_PER_UNIT /
+MICROGRAMS_PER_UNIT`, standing exactly where the old lock stood. **It is 1 today**, which is why
+`grams * specificHeat` has always read correctly with no conversion constant, and why introducing it
+changes nothing until a knob moves. Two capacity sites take it: `gasCapacityAt` (whole product first,
+so a trace gas is not rounded out of its own capacity) and `capacityPerTileOf` (applied to the mass,
+*not* folded into the scale — folding it in pushes the denominator to 1e13, past the point
+`scaledRatio` must reduce, and costs half a per cent on every capacity in the game).
+
+**Save v14** carries both units in its header, and each read site names its dimension. That
+immediately caught two fields riding the wrong factor — `radiated` and a conduit's stored `k=` are
+joules and were scaling with mass, which was invisible while the two factors were the same number.
+
+⚠️ **And it caught a rule I had derived from one dimension's history.** `readScale` refused any file
+whose unit did not divide evenly by this build's, "because a unit only ever goes down" — true of
+mass, and with no evidence whatever for energy. A coarser energy unit made every save the game had
+ever written unreadable, including one written by the same build a line earlier. The replacement
+(`Rescale`) handles both directions and states why they are not symmetrical: widening is exact,
+narrowing rounds, and narrowing is fine **precisely because what it discards is below what the
+reading build can represent at all**. `SaveTest` now asserts the size of that error rather than the
+old refusal, and exercises each dimension separately so a field on the wrong factor fails.
+
+⚠️ **The whole of `NumericLimitsTest` is a today's-units instrument**, not just the two velocity
+cases noted below. It extrapolates from measured worsts; run it with a knob already turned and every
+row double-scales. Measure at today's units with `targetMassScale` raised.
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the

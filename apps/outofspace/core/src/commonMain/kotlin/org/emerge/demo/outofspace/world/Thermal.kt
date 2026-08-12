@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
+
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Temperature
 
@@ -24,7 +26,10 @@ fun gasCapacityAt(grams: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
     for (s in Species.ALL) sum += grams[base + s.ordinal] * s.specificHeat
-    return sum
+    // The whole product first, then the divisor: dividing per species would round a trace gas out of
+    // its own capacity. [Budget.CAPACITY_DIVISOR] is 1 at today's units, so this is the expression it
+    // has always been — see that constant for the relation it carries.
+    return sum / Budget.CAPACITY_DIVISOR
 }
 
 /** Capacity/energy scale: 1000 (matches Species.specificHeat per-kg → gram units). */

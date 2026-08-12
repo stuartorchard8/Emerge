@@ -83,37 +83,57 @@ class SaveTest {
      * to restate the list of which fields are mass-dimensioned, which is precisely the knowledge
      * being tested. It would agree with the migration by construction and catch nothing.
      *
-     * So this changes **one token**: the unit in the header, and nothing else in the file. The same
-     * bytes are then read as a coarse-unit world and as a native one, and every mass in the first
-     * must be exactly `factor` times the second while everything dimensionless is untouched. A field
-     * the migration forgot fails the first half. A field it scales that it should not — a rock's
-     * composition, a tile index, a tick count — fails the second.
+     * So this changes **one token**: a unit in the header, and nothing else in the file. The same
+     * bytes are then read as a coarse-unit world and as a native one, and every quantity in *that
+     * dimension* must be exactly `factor` times the second while everything else is untouched. A
+     * field the migration forgot fails the first half. A field it scales that it should not — a
+     * rock's composition, a tile index, a tick count — fails the second.
+     *
+     * ⚠️ Done **once per dimension** since v14 split the mass and energy units apart. That is
+     * strictly stronger than the single pass it replaces: a field assigned to the *wrong* dimension
+     * now fails, where before the two factors were the same number and nothing could tell them
+     * apart. It is also what caught the split being incomplete — `radiated` is joules and was still
+     * riding the mass factor.
      */
     @Test
-    fun `a save from a coarser mass unit is multiplied up, and only where it should be`() {
+    fun `a save from a coarser unit is multiplied up, and only where it should be`() {
         val factor = 1_000L
         val played = run(starterVessel(cfg.initialGrid), 200)
         val native = Save.write(played)
-
-        // The one edit: same numbers, but the file now claims each was worth 1000x as much.
-        val header = native.lineSequence().first().split(' ')
-        val coarse = native.replaceFirst(
-            header.joinToString(" "),
-            "outofspace ${header[1]} ${header[2].toLong() * factor}",
-        )
-
         val here = Save.read(native)
-        val there = Save.read(coarse)
 
-        // ── Mass, energy and momentum: all up by the factor ──
-        assertEquals(here.extractedGrams * factor, there.extractedGrams, "extracted")
-        assertEquals(here.ventedGrams * factor, there.ventedGrams, "vented")
-        assertEquals(here.generatedJoules * factor, there.generatedJoules, "generated")
-        assertEquals(here.radiatedJoules * factor, there.radiatedJoules, "radiated")
-        assertEquals(here.baselineJoules * factor, there.baselineJoules, "baseline joules")
-        assertEquals(here.baselineAirGrams * factor, there.baselineAirGrams, "baseline air")
-        assertEquals(here.insertedJoules * factor, there.insertedJoules, "inserted")
-        assertEquals(here.solidToAirJoules * factor, there.solidToAirJoules, "solid to air")
+        /** The same file, claiming the unit in header slot [slot] was worth [factor] times as much. */
+        fun coarsenedAt(slot: Int): VesselState {
+            val header = native.lineSequence().first().split(' ')
+            val edited = header.toMutableList()
+            edited[slot] = (header[slot].toLong() * factor).toString()
+            return Save.read(native.replaceFirst(header.joinToString(" "), edited.joinToString(" ")))
+        }
+
+        val heavier = coarsenedAt(2)
+        val hotter = coarsenedAt(3)
+
+        // ── Mass and momentum move with the mass unit, and only with it ──
+        for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
+            "extracted" to { it.extractedGrams },
+            "vented" to { it.ventedGrams },
+            "baseline air" to { it.baselineAirGrams },
+        )) {
+            assertEquals(read(here) * factor, read(heavier), "$what under a coarser mass unit")
+            assertEquals(read(here), read(hotter), "$what is not an energy")
+        }
+
+        // ── Energy moves with the energy unit, and only with it ──
+        for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
+            "generated" to { it.generatedJoules },
+            "radiated" to { it.radiatedJoules },
+            "baseline joules" to { it.baselineJoules },
+            "inserted" to { it.insertedJoules },
+            "solid to air" to { it.solidToAirJoules },
+        )) {
+            assertEquals(read(here) * factor, read(hotter), "$what under a coarser energy unit")
+            assertEquals(read(here), read(heavier), "$what is not a mass")
+        }
         // ⚠️ NOT `massGrams` or `storedJoules`, and finding that out is what this test was for.
         // A vessel's mass is *derived* from `Material.composition` and the species densities — it is
         // never written to the file at all — so it is already in this build's units and must not
@@ -131,37 +151,90 @@ class SaveTest {
             val a = here.air.mixtureAt(t)
             if (a.isEmpty) continue
             airTiles++
-            assertEquals(a.total * factor, there.air.mixtureAt(t).total, "air at tile $t")
+            assertEquals(a.total * factor, heavier.air.mixtureAt(t).total, "air at tile $t")
         }
         assertTrue(airTiles > 0, "the fixture must have air in it")
 
         // ── Dimensionless: identical ──
-        assertEquals(here.tick, there.tick, "a tick count is not a mass")
-        assertEquals(here.grid, there.grid, "nor is a grid")
-        assertEquals(here.positionX, there.positionX, "nor is a position — it is in tiles")
-        assertEquals(here.positionY, there.positionY, "nor is a position — it is in tiles")
-        assertEquals(here.machines.count { it != null }, there.machines.count { it != null }, "machine count")
+        assertEquals(here.tick, heavier.tick, "a tick count is not a mass")
+        assertEquals(here.grid, heavier.grid, "nor is a grid")
+        assertEquals(here.positionX, heavier.positionX, "nor is a position — it is in tiles")
+        assertEquals(here.positionY, heavier.positionY, "nor is a position — it is in tiles")
+        assertEquals(here.machines.count { it != null }, heavier.machines.count { it != null }, "machine count")
         // The trap this whole family of bugs lives in: same syntax as air, entirely different meaning.
         for (i in here.bodies.indices) {
             assertEquals(
                 here.bodies[i].oreComposition,
-                there.bodies[i].oreComposition,
+                heavier.bodies[i].oreComposition,
                 "a rock's composition is proportions, not grams",
             )
         }
     }
 
+    /**
+     * A file written in a **finer** unit than this build is rounded, not refused.
+     *
+     * ⚠️ This asserted the opposite until v14, on the stated grounds that dividing "would round
+     * every mass in the world, and silently halving somebody's cargo is worse than declining to open
+     * the file". The reasoning was sound and the premise was not: it assumed a unit only ever gets
+     * finer, which was true of mass and had no evidence at all for energy. Making the energy unit ten
+     * times coarser then made every save the game had ever written unreadable — including one
+     * written by the same build a line earlier.
+     *
+     * What is actually true is narrower and worth stating. Narrowing rounds, and what it discards is
+     * **smaller than one integer of the unit doing the reading** — that is, below anything this build
+     * could have represented in the first place. That is not silent loss of cargo; it is the same
+     * rounding any store into a coarser field takes. So the assertion is on the size of the error,
+     * which is the property that actually matters.
+     */
     @Test
-    fun `a save finer than this build is refused rather than rounded`() {
-        // The one direction that cannot be migrated: dividing would round every mass in the world,
-        // and silently halving somebody's cargo is worse than declining to open the file.
+    fun `a save finer than this build is rounded, and by less than one unit`() {
+        val played = run(starterVessel(cfg.initialGrid), 60)
+        val native = Save.write(played)
+        val header = native.lineSequence().first().split(' ')
+        val factor = 10L
+
+        val mass = listOf<Pair<String, (VesselState) -> Long>>(
+            "extracted" to { it.extractedGrams },
+            "vented" to { it.ventedGrams },
+        )
+        val energy = listOf<Pair<String, (VesselState) -> Long>>(
+            "radiated" to { it.radiatedJoules },
+            "baseline joules" to { it.baselineJoules },
+        )
+
+        for ((slot, dimension) in listOf(2 to ("mass" to mass), 3 to ("energy" to energy))) {
+            val (what, fields) = dimension
+            val edited = header.toMutableList()
+            edited[slot] = (header[slot].toLong() / factor).toString()
+            val finer = Save.read(native.replaceFirst(header.joinToString(" "), edited.joinToString(" ")))
+            val here = Save.read(native)
+
+            // Every quantity in that dimension comes back a factor smaller, to within the rounding —
+            // never refused, and never off by more than the one unit the division cannot represent.
+            for ((name, read) in fields) {
+                val expected = read(here) / factor
+                val actual = read(finer)
+                assertTrue(
+                    actual in (expected - 1)..(expected + 1),
+                    "$name from a $what unit ${factor}x finer: expected about $expected, got $actual",
+                )
+            }
+        }
+    }
+
+    /** A unit that is not a number, or not positive, is still a broken file rather than a rounding. */
+    @Test
+    fun `an unreadable unit is refused`() {
         val native = Save.write(starterVessel(cfg.initialGrid))
         val header = native.lineSequence().first().split(' ')
-        val finer = native.replaceFirst(
-            header.joinToString(" "),
-            "outofspace ${header[1]} ${header[2].toLong() / 10}",
-        )
-        assertFailsWith<SaveError> { Save.read(finer) }
+        for (bad in listOf("nonsense", "0", "-1000")) {
+            val edited = header.toMutableList()
+            edited[2] = bad
+            assertFailsWith<SaveError>("a mass unit of '$bad' should not load") {
+                Save.read(native.replaceFirst(header.joinToString(" "), edited.joinToString(" ")))
+            }
+        }
     }
 
     @Test

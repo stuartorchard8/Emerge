@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Every rescaled constant still means the same **physical** quantity.
@@ -39,8 +40,8 @@ class BudgetParityTest {
     /** Grams, whatever a gram currently costs in integers. */
     private val Long.grams: Long get() = this / Budget.GRAM
 
-    /** Millijoules, likewise. */
-    private val Long.millijoules: Long get() = this / Budget.MILLIJOULE
+    /** Joules, likewise. */
+    private val Long.joules: Long get() = this / Budget.JOULE
 
     @Test
     fun `every derived constant still means the quantity it meant before the audit`() {
@@ -76,7 +77,7 @@ class BudgetParityTest {
         assertEquals(1_000L, Edit.INJECT_GRAMS.grams, "the injector delivers a kilogram a tick")
 
         // ── Energy-dimensioned, so measured against the energy unit and not the mass one ──
-        assertEquals(20_000L, Material.AIR_FILM.millijoules, "the air film is 20 J/K/tick")
+        assertEquals(20L, Material.AIR_FILM.joules, "the air film is 20 J/K/tick")
 
         // ── chem: the critical densities, audited in step 8 ──
         //
@@ -120,16 +121,33 @@ class BudgetParityTest {
     }
 
     /**
-     * The mass/energy relation the capacity expressions silently depend on.
+     * The mass/energy relation the capacity expressions depend on, now that it is *stated* rather
+     * than enforced by holding the two units equal.
      *
-     * `gasCapacityAt` reads `grams * specificHeat` with no conversion constant, which is only correct
-     * because specific heat is per-kilogram and [Budget.ENERGY_PER_MASS] is 1000. If that relation is
-     * ever broken, every heat capacity in the game becomes wrong by the ratio — quietly, and in a way
-     * no other test in the suite would attribute to this cause.
+     * `gasCapacityAt` reads `grams * specificHeat / CAPACITY_DIVISOR`, and that is only correct if
+     * the divisor really is the ratio the units imply. Asserted from the two knobs rather than as a
+     * remembered number, so it stays true when either moves — if it is ever wrong, every heat
+     * capacity in the game is wrong by the same factor, quietly, and no other test in the suite
+     * would attribute it to this cause.
      */
     @Test
-    fun `the energy unit stays a thousandth of the mass unit`() {
-        assertEquals(1_000L, Budget.ENERGY_PER_MASS)
-        assertEquals(Budget.GRAM * 1_000L, Budget.JOULE)
+    fun `the capacity divisor is exactly the ratio between the two units`() {
+        // capacity = mass x c x u_mass / (1000 x u_energy), with u_mass in grams and u_energy in
+        // joules. In micrograms and nanojoules the thousands and the 1e-6s cancel to this ratio.
+        assertEquals(
+            Budget.NANOJOULES_PER_UNIT / Budget.MICROGRAMS_PER_UNIT,
+            Budget.CAPACITY_DIVISOR,
+        )
+        assertTrue(
+            Budget.NANOJOULES_PER_UNIT % Budget.MICROGRAMS_PER_UNIT == 0L,
+            "the energy unit must be a whole multiple of the mass unit, or the divisor truncates",
+        )
+        // A physical statement the two knobs have to keep agreeing on: warming a kilogram of water
+        // by one kelvin costs 4182 joules, whatever either unit currently is.
+        assertEquals(
+            4_182L,
+            Budget.KILOGRAM * Species.Water.specificHeat / Budget.CAPACITY_DIVISOR / Budget.JOULE,
+            "a kilogram of water still costs 4182 J/K",
+        )
     }
 }

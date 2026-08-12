@@ -110,7 +110,17 @@ fun capacityPerTileOf(mixture: Mixture): Long {
     // specific heat (4182, a physical constant) and the second by the tile mass itself. Neither
     // mentions the scale, so the precision of the average and the headroom of the product stop
     // trading against each other and the row goes to a safe unit of 1.2e8 at any scale.
-    return scaledRatio(meanSpecificHeatMilli(mixture), SPECIFIC_HEAT_SCALE, gramsPerTileOf(mixture))
+    //
+    // [Budget.CAPACITY_DIVISOR] is applied to the *mass* and not folded into the scale, which would
+    // be the obvious place for it. Folding it in makes the denominator 1e13, far past the point
+    // [scaledRatio] has to start reducing, and the reduction shifts a nine-digit mean specific heat
+    // down to three digits — half a per cent of error on every capacity in the game. Dividing the
+    // tile mass instead costs the sub-milligram part of a tile, which is nothing.
+    return scaledRatio(
+        meanSpecificHeatMilli(mixture),
+        SPECIFIC_HEAT_SCALE,
+        gramsPerTileOf(mixture) / Budget.CAPACITY_DIVISOR,
+    )
 }
 
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */

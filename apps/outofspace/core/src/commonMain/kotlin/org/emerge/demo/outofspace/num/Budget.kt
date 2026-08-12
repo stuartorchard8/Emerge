@@ -39,27 +39,53 @@ package org.emerge.demo.outofspace.num
  *   mass-dimensioned in the source and is not.
  * - `Frac` — belongs to the engine, and bounds accelerations rather than masses.
  *
- * ### The relation between mass and energy is not free
+ * ### The relation between mass and energy WAS not free, and now it is
  *
  * Specific heat is quoted per **kilogram**, so a heat capacity is `mass × specificHeat × Kₑ/(1000·Kₘ)`.
- * Holding [ENERGY_PER_MASS] at 1000 makes that factor exactly **1**, which is why `gasCapacityAt`
- * can read `grams * specificHeat` today with no conversion constant anywhere. Break the relation and
- * a lossy divisor has to be carried through every capacity in the game. See the plan's §3.
+ * That factor used to be pinned at exactly **1** by holding the energy unit equal to the mass unit,
+ * which is why `gasCapacityAt` could read `grams * specificHeat` with no conversion constant.
+ *
+ * ⚠️ **That lock is what stopped the rescale at step 8, and it is gone.** Locked together, a
+ * millionfold finer gram made a millionfold finer joule — one integer of energy became a
+ * *nanojoule* — and a rock's thermal energy stopped fitting in a `Long`. Measured: every mass row in
+ * `NumericLimitsTest` cleared 10⁶ with room to spare, and every row that failed was an energy row.
+ * The two dimensions want different units and pretending otherwise cost the whole target.
+ *
+ * So there are now **two knobs**, and the factor between them is [CAPACITY_DIVISOR] — one named
+ * constant, in one place, exactly as the single lock was. Its being 1 today is what makes this
+ * change bit-for-bit invisible at the current units.
  */
 object Budget {
 
     /**
-     * **The knob.** One integer of mass, in micrograms.
+     * **The mass knob.** One integer of mass, in micrograms.
      *
-     * `1_000_000` is one gram per integer — today's unit, and the value this sits at while steps 2
-     * through 7 prepare the ground. Step 8 lowers it to `1`, making one integer one microgram and
-     * buying six orders of magnitude at the bottom of the range, which is what turns "negligible"
-     * into something genuinely negligible rather than half a percent of a tile.
+     * `1_000_000` is one gram per integer — today's unit. Step 8 lowers it to `1`, making one integer
+     * one microgram and buying six orders at the bottom of the range, which is what turns
+     * "negligible" into something genuinely negligible rather than half a percent of a tile.
      *
-     * Stated as micrograms-per-unit rather than as a multiplier so that it only ever goes *down*,
-     * and so the target is a real physical unit rather than an anonymous factor.
+     * Stated as micrograms-per-unit rather than as a multiplier so that it only ever goes *down*, and
+     * so the target is a real physical unit rather than an anonymous factor.
      */
     const val MICROGRAMS_PER_UNIT: Long = 1_000_000L
+
+    /**
+     * **The energy knob.** One integer of energy, in nanojoules.
+     *
+     * `1_000_000` is one millijoule per integer — today's unit, and where the whole game's thermal
+     * behaviour has always lived. Step 8 raises it to `10_000_000`, one **centijoule** per integer:
+     * ten times *coarser*, not finer.
+     *
+     * Coarser deserves its own justification, since every other move in this plan is toward finer.
+     * The floor the rescale exists for is a **mass** floor — diffusion stranding, `Negligible`, a
+     * trace of gas in a tile. Nothing wants a finer joule; the millijoule has never been the limiting
+     * quantity in anything. What energy needs is *range*, and it is short of it: with bodies storing
+     * their joules per tile, a rock tile supports a mass scale of 966,000 against a target of 10⁶.
+     * Ten times coarser turns that into 9.66e6 and takes `atmosphere joules` out of the red with it.
+     *
+     * ⚠️ Must stay a whole multiple of [MICROGRAMS_PER_UNIT], since [CAPACITY_DIVISOR] divides them.
+     */
+    const val NANOJOULES_PER_UNIT: Long = 1_000_000L
 
     /** One gram, in whatever the current unit is. The base every mass constant is written against. */
     const val GRAM: Long = 1_000_000L / MICROGRAMS_PER_UNIT
@@ -71,17 +97,26 @@ object Budget {
     const val TONNE: Long = 1_000L * KILOGRAM
 
     /**
-     * How many energy units there are per mass unit, and it is **not** a free choice.
+     * One joule, in whatever the current energy unit is. The base every energy constant is written
+     * against.
      *
-     * Forced to 1000 by specific heat being quoted per kilogram — see the class note. Energy is
-     * carried in millijoules today, so this being 1000 is exactly the statement that a millijoule
-     * per gram is the pairing the capacity expressions already assume.
+     * The joule rather than the millijoule, because the millijoule stops being representable the
+     * moment the energy unit is coarser than one — which step 8 makes it. An energy constant that
+     * cannot be stated in whole joules is below the resolution of the field it would be stored in,
+     * so this is the right place for the floor to sit.
      */
-    const val ENERGY_PER_MASS: Long = 1_000L
+    const val JOULE: Long = 1_000_000_000L / NANOJOULES_PER_UNIT
 
-    /** One millijoule, the unit every `joules` field and every capacity is actually counted in. */
-    const val MILLIJOULE: Long = GRAM * ENERGY_PER_MASS / 1_000L
-
-    /** A thousand millijoules. */
-    const val JOULE: Long = 1_000L * MILLIJOULE
+    /**
+     * What a `mass × specificHeat` product must be divided by to become a heat capacity.
+     *
+     * The one number that carries the relation between the two knobs, and the only thing standing
+     * where the old `MILLIJOULE == GRAM` lock used to. Specific heat is J/kg/K, so
+     * `capacity = mass_units × c × u_mass / (1000 × u_energy)`, and with the units expressed in
+     * micrograms and nanojoules the 1000s and the 1e-6s cancel to exactly this ratio.
+     *
+     * **It is 1 today**, which is why `grams * specificHeat` has always read correctly with no
+     * conversion constant anywhere, and why introducing it changes nothing until a knob moves.
+     */
+    const val CAPACITY_DIVISOR: Long = NANOJOULES_PER_UNIT / MICROGRAMS_PER_UNIT
 }

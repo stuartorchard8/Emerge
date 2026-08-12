@@ -527,12 +527,10 @@ fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, ful
 fun cohesionJoules(densityR: Long, species: Species, volume: Int, full: Int): Long {
     val c = CRITICAL[species] ?: return 0L
     val attraction = 3L * densityR * densityR / SCALE
-    return -(c.pressure * attraction / SCALE) * volume / full * CAPACITY_SCALE
+    return -(c.pressure * attraction / SCALE) * volume / full * Budget.JOULE
 }
 
-/**
- * Millijoules per unit of the pressure scale. The pressure field is millimoles scaled by
- * temperature, so a pressure times a volume is already an energy up to this factor, which is the
- * same thousand that [Species.specificHeat] carries.
- */
-private const val CAPACITY_SCALE = 1000L
+// The pressure field is millimoles scaled by temperature, so a pressure times a volume is already an
+// energy in joules up to the reference temperature — hence [Budget.JOULE] above, which was a bare
+// 1000 while the energy unit happened to be the millijoule.
+
