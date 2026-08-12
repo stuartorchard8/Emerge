@@ -205,6 +205,11 @@ class SaveTest {
 
         for ((slot, dimension) in listOf(2 to ("mass" to mass), 3 to ("energy" to energy))) {
             val (what, fields) = dimension
+            // ⚠️ Only meaningful while this build's own unit has room to be divided. At the finest
+            // unit the plan targets — one microgram — there is no whole number below it, so there is
+            // no such thing as a finer file and nothing to assert. Skipped rather than faked, since
+            // a fabricated "finer" unit of zero tests the argument parser and not the migration.
+            if (header[slot].toLong() < factor) continue
             val edited = header.toMutableList()
             edited[slot] = (header[slot].toLong() / factor).toString()
             val finer = Save.read(native.replaceFirst(header.joinToString(" "), edited.joinToString(" ")))

@@ -922,7 +922,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 composition = DEFAULT_ORE_BODY,
             )
             bodies.add(body)
-            built(body.joules)
+            built(body.joules.total)
         }
 
         /** Place building (click names centre, footprint grows around it). */

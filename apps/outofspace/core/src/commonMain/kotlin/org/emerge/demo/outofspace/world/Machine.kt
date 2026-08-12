@@ -112,6 +112,21 @@ class TileJoules private constructor(private val perTile: LongArray) {
         return TileJoules(next)
     }
 
+    /**
+     * The same energy with tile [index] gone — one shorter, and the rest untouched.
+     *
+     * For a body losing a tile, which a machine cannot do and a rock does every time an extractor
+     * bites it. **Conservation is structural**: what leaves is exactly `this[index]` and what stays
+     * is exactly everything else, so the two add back to the original with no rounding involved at
+     * all. The share-of-the-whole arithmetic this replaces had to be written as a remainder of a
+     * single truncating divide to achieve the same thing.
+     */
+    fun dropping(index: Int): TileJoules {
+        val next = LongArray(perTile.size - 1)
+        for (i in next.indices) next[i] = if (i < index) perTile[i] else perTile[i + 1]
+        return TileJoules(next)
+    }
+
     override fun equals(other: Any?): Boolean =
         this === other || (other is TileJoules && perTile.contentEquals(other.perTile))
 

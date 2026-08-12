@@ -136,23 +136,30 @@ fun reachableCell(body: RigidBody, x0: Int, y0: Int, x1: Int, y1: Int): Int {
 fun biteCell(body: RigidBody, index: Int): Bite {
     require(body.cells[index]) { "cell $index of $body is not there to be taken" }
     val filled = body.filled
-    if (filled <= 1) return Bite(null, body.massGrams, body.joules, body.impulseX, body.impulseY)
+    if (filled <= 1) return Bite(null, body.massGrams, body.joules.total, body.impulseX, body.impulseY)
 
     val cells = body.cells.copyOf()
     cells[index] = false
-    val keptJoules = body.joules * (filled - 1) / filled
+    // [RigidBody.joules] is indexed by a cell's ordinal among the filled ones, so the cell being
+    // taken has to be counted to, not indexed to. Heat now leaves as **the cell's own energy** and
+    // not as a share of the whole: the same number while a body is isothermal, which it always is
+    // today, and the right one the moment anything makes it otherwise.
+    var ordinal = 0
+    for (i in 0 until index) if (body.cells[i]) ordinal++
+    val takenJoules = body.joules[ordinal]
+
     val keptX = body.impulseX * (filled - 1) / filled
     val keptY = body.impulseY * (filled - 1) / filled
     val left = body.copy(
         width = body.width, height = body.height, cells = cells,
         positionX = body.positionX, positionY = body.positionY,
         impulseX = keptX, impulseY = keptY,
-        joules = keptJoules,
+        joules = body.joules.dropping(ordinal),
     )
     return Bite(
         body = left,
         grams = body.gramsPerTile,
-        joules = body.joules - keptJoules,
+        joules = takenJoules,
         impulseX = body.impulseX - keptX,
         impulseY = body.impulseY - keptY,
     )

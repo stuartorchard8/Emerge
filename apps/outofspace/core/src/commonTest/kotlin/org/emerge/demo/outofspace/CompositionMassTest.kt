@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.biteCell
 import org.emerge.demo.outofspace.world.capacityPerTileOf
+import org.emerge.demo.outofspace.world.TileJoules
 import org.emerge.demo.outofspace.world.gramsPerTileOf
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidGramsPerTile
@@ -170,7 +171,7 @@ class CompositionMassTest {
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
             machineKind = MachineKind.Smelter,
-            joules = 0L,
+            joules = TileJoules.uniform(1, 0L),
         )
         assertEquals(MachineKind.Smelter.gramsPerTile, fragment.massGrams)
         assertEquals(MachineKind.Smelter.capacityPerTile, fragment.capacity)

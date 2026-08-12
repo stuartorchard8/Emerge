@@ -815,6 +815,33 @@ old refusal, and exercises each dimension separately so a field on the wrong fac
 cases noted below. It extrapolates from measured worsts; run it with a knob already turned and every
 row double-scales. Measure at today's units with `targetMassScale` raised.
 
+#### 🟢 The overflow budget now holds at the target — and a correction to how it was read
+
+`NumericLimitsTest` is **green at `targetMassScale = 1_000_000`**. That is the first time in this
+plan that the tripwire has asserted the target is reachable rather than measured how far off it was.
+
+⚠️ **Correcting the table I put in front of Stu.** It said `ship joules` would still be red at
+12,200. That was computed with the tripwire's own model, and **the model was wrong** in a way the
+decoupling created: `budget()` extrapolated every row by the mass scale, which was correct only while
+the energy unit was locked to the mass unit. It no longer is, and the consequence is not a
+refinement — **an energy quantity is a physical number of joules divided by the energy unit, so how
+many integers it takes does not depend on the mass unit at all.** Every joules row was reading `k¹`
+in mass and is `k⁰`. `budget()` now takes a `Dim`, stated per row rather than inferred, because a row
+that ignores a unit it really depends on reads green over a live overflow — §6.4's lesson again.
+
+Under the corrected model **the energy problem dissolves the moment the two units are separated**:
+`ship joules` and `atmosphere joules`, red and parked since step 2, are no longer range-bound at all.
+The centijoule is 10× of margin on top, not the thing that fixes it — and by the same token
+**per-tile body joules was not required for range either**. A 21-tile uranium rock at 1 mJ per
+integer is 1.13e13, which fits a `Long` comfortably; it was the *nanojoule* that made it 1.13e19.
+Both were recommended on the strength of the broken model, and one would have done.
+
+Per-tile body storage is kept, on its merits rather than its arithmetic: it is the structure machines
+already have, conservation through a bite becomes structural (`TileJoules.dropping` takes exactly one
+cell's energy, no truncating-remainder trick), and it is the precondition for ever putting free
+bodies into `stepSolidHeat` — which they are **not** in today, so a rock still conducts with nothing,
+including itself.
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the

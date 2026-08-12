@@ -71,7 +71,7 @@ object Save {
             out.append("body ").append(b.width).append(' ').append(b.height)
                 .append(' ').append(b.positionX).append(' ').append(b.positionY)
                 .append(' ').append(b.impulseX).append(' ').append(b.impulseY)
-                .append(' ').append(b.joules)
+                .append(' ').append(writeTileJoules(b.joules))
                 .append(' ').append(writeMixture(b.oreComposition!!))
                 .append(' ')
             for (c in b.cells) out.append(if (c) '1' else '0')
@@ -254,6 +254,28 @@ object Save {
      * reloaded machine holds exactly what it held before, to the joule. Anything else would make
      * save/load a slow leak, and the energy ledger would eventually notice.
      */
+    /**
+     * A free body's per-cell energy, or a pre-v14 single figure spread across [cells].
+     *
+     * Spread rather than given to one cell, because that is what the single figure meant: a body has
+     * never conducted with anything, including itself, so its energy was always uniform and the only
+     * question is how many numbers it took to say so.
+     */
+    private fun bodyJoules(
+        field: String,
+        cells: Int,
+        scale: Rescale,
+        fail: (String) -> Nothing,
+    ): TileJoules {
+        if (',' !in field) {
+            val total = scale.of(field.toLongOrNull() ?: fail("bad body joules '$field'"))
+            return TileJoules.uniform(cells, 0L).plusSpread(total)
+        }
+        val parts = field.split(',')
+        if (parts.size != cells) fail("a $cells-cell body has ${parts.size} per-cell joules")
+        return TileJoules.of(LongArray(cells) { scale.of(parts[it].toLongOrNull() ?: fail("bad body joules '$field'")) })
+    }
+
     private fun readTileJoules(
         field: String,
         machine: Machine,
@@ -550,7 +572,10 @@ object Save {
                             // Position is in Flight units — tiles, not mass — so it does not move.
                             positionX = long(3), positionY = long(4),
                             impulseX = scaled(5), impulseY = scaled(6),
-                            joules = energy(7),
+                            // Per filled cell since v14; one figure before that, spread evenly —
+                            // which is exactly what it meant, since a body has never been anything
+                            // but isothermal.
+                            joules = bodyJoules(tokens[7], bits.count { it == '1' }, energyScale, ::fail),
                             // ⚠️ NOT scaled. A rock's composition is *proportions*, the same shape
                             // of value as `Material.composition`, and multiplying it would be
                             // meaningless rather than merely wrong — see `capacityPerTileOf`.

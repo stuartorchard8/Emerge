@@ -36,8 +36,22 @@ class RigidBody(
     val oreComposition: Mixture? = null,
     /** Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction. */
     val machineKind: MachineKind? = null,
-    /** Thermal energy, in the millijoules [MATERIAL] documents. */
-    val joules: Long,
+    /**
+     * Thermal energy, **per filled cell**, in the energy unit [org.emerge.demo.outofspace.num.Budget]
+     * states — indexed by a cell's ordinal among the filled ones, not by its position in [cells].
+     *
+     * One figure for the whole body until step 8 of `PLAN_unit_rescale.md`, and that was the single
+     * tightest quantity in the game: twenty-one tiles of solid rock at three thousand kelvin, in one
+     * `Long`. Measured, it supported a mass unit 516 times coarser than the target, where a *tile* of
+     * the same rock supports 966,000. Spreading the same energy over the cells that hold it is what
+     * makes the microgram rebaseline reachable.
+     *
+     * ⚠️ It buys **range and nothing else today**. A free body is not in [bodiesOf], so it conducts
+     * with nothing — not with the ship, and not internally between its own cells. A rock is still
+     * isothermal in practice; this only stops it having to say so in one integer. Putting bodies into
+     * `stepSolidHeat` would make the per-cell figures mean something, and is not this step.
+     */
+    val joules: TileJoules,
 ) {
     init {
         require(cells.size == width * height) { "a ${width}x$height body cannot have ${cells.size} cells" }
@@ -70,7 +84,8 @@ class RigidBody(
     /** Millijoules per kelvin, from the same two numbers every other solid's capacity comes from. */
     val capacity: Long get() = filled * capacityPerTile
 
-    val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
+    val kelvin: Int get() =
+        if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules.total / capacity).toInt()
 
     /** How fast it is going **through the world**, which is not how fast it crosses the grid. */
     val velocityX: Long get() = scaledRatio(impulseX, massGrams, Flight.PER_TILE)
@@ -91,7 +106,7 @@ class RigidBody(
         impulseY: Long = this.impulseY,
         oreComposition: Mixture? = this.oreComposition,
         machineKind: MachineKind? = this.machineKind,
-        joules: Long = this.joules,
+        joules: TileJoules = this.joules,
     ): RigidBody = RigidBody(
         kind = kind, width = width, height = height, cells = cells,
         positionX = positionX, positionY = positionY,
@@ -163,7 +178,7 @@ class RigidBody(
                 positionX = positionX, positionY = positionY,
                 impulseX = impulseX, impulseY = impulseY,
                 oreComposition = composition,
-                joules = filled * capacityPerTileOf(composition) * kelvin,
+                joules = TileJoules.uniform(filled, capacityPerTileOf(composition) * kelvin),
             )
         }
     }

@@ -62,7 +62,7 @@ class NumericLimitsTest {
      * per milligram. **This is the knob.** Raise it to find out what blocks that unit; the failures
      * are the answer.
      */
-    private val targetMassScale = 1L
+    private val targetMassScale = 1_000_000L
 
     /**
      * How much room every row keeps on top of the target, so that a budget is never merely *just*
@@ -225,11 +225,49 @@ class NumericLimitsTest {
 
     private fun String.pad(width: Int): String = padEnd(width)
 
-    private fun budget(name: String, worst: Long, exponent: Int) {
-        val required = safetyFactor * when (exponent) {
-            0 -> 1.0
-            2 -> targetMassScale.toDouble() * targetMassScale.toDouble()
-            else -> targetMassScale.toDouble()
+    /**
+     * How a row's integer count moves when a unit does.
+     *
+     * ⚠️ There used to be one exponent, against the mass scale, and that was correct **only while
+     * `Budget` held the energy unit equal to the mass unit**. It no longer does, and the difference
+     * is not a refinement: an energy quantity is a physical amount of joules divided by the energy
+     * unit, so how many integers it takes **does not depend on the mass unit at all**. Every joules
+     * row here was reading as `k¹` in mass and it is `k⁰`.
+     *
+     * Getting that wrong in the other direction is the dangerous case, and it is why this is spelled
+     * out per row rather than inferred: a row that ignores a unit it actually depends on reads green
+     * over a live overflow, which is `NUMERIC_LIMITS.md` §6.4's whole lesson.
+     */
+    private enum class Dim {
+        /** Grams, and momentum with them. Scales with the mass unit only. */
+        MASS,
+
+        /** Joules. Scales with the energy unit only, and that unit is getting **coarser**. */
+        ENERGY,
+
+        /** A ratio, a count, a fixed-point fraction. Scales with neither. */
+        NONE,
+    }
+
+    /**
+     * How much finer the energy unit is getting — **less than one**, because it is getting coarser.
+     *
+     * `NANOJOULES_PER_UNIT` goes from 1e6 (a millijoule) to 1e7 (a centijoule), so every energy
+     * quantity takes a tenth as many integers to say. Stated as the target over the current value so
+     * that it reads the same way as [targetMassScale] and cannot be inverted by accident.
+     */
+    private val targetEnergyScale = 1.0 / 10.0
+
+    private fun budget(name: String, worst: Long, exponent: Int, dim: Dim = Dim.MASS) {
+        val perPower = when (dim) {
+            Dim.MASS -> targetMassScale.toDouble()
+            Dim.ENERGY -> targetEnergyScale
+            Dim.NONE -> 1.0
+        }
+        val required = safetyFactor * when {
+            exponent == 0 -> 1.0
+            exponent == 2 -> perPower * perPower
+            else -> perPower
         }
         if (worst <= 0L) {
             failures += "$name: worst case came out $worst — it has ALREADY overflowed a Long"
@@ -239,7 +277,7 @@ class NumericLimitsTest {
         val headroom = Long.MAX_VALUE.toDouble() / worst.toDouble()
         val safeK = if (exponent == 2) kotlin.math.sqrt(headroom) else headroom
         val safe = if (exponent == 0) "safe k=ANY" else "safe k=${safeK.sig3()}"
-        rows += "  ${name.pad(52)} worst=${worst.toString().pad(20)} k^$exponent  " +
+        rows += "  ${name.pad(52)} worst=${worst.toString().pad(20)} ${dim.name.first()}^$exponent  " +
             "headroom=${headroom.sig3()}  $safe"
         if (headroom < required) {
             failures += "$name: headroom ${headroom.sig3()}, needs ${required.sig3()} for a mass " +
@@ -346,7 +384,7 @@ class NumericLimitsTest {
         budget(
             "machine joules: hottest single tile of the heaviest machine",
             MachineKind.ALL.maxOf { it.capacityPerTile } * designMaxKelvin,
-            1,
+            1, Dim.ENERGY,
         )
         // The densest a tile can be, machine and air together — the true per-tile energy ceiling,
         // and the one a rescale has to keep representable no matter how big the map gets.
@@ -354,7 +392,7 @@ class NumericLimitsTest {
             "tile joules: densest deck tile + its air at max kelvin",
             (densestTileCapacity + AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong()) *
                 designMaxKelvin,
-            1,
+            1, Dim.ENERGY,
         )
         // ⚠️ A rock tile is not a deck tile, and `tile joules` above does not bound one. That row
         // uses [densestTileCapacity], a *machine* capacity — machines are hollow (`fillPermille`),
@@ -368,29 +406,26 @@ class NumericLimitsTest {
         budget(
             "solid tile joules: the heaviest real material at max kelvin",
             Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } * designMaxKelvin,
-            1,
+            1, Dim.ENERGY,
         )
         budget(
             "solid tile joules: densest x hottest (a material that does not exist)",
             densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() } * designMaxKelvin,
-            1,
+            1, Dim.ENERGY,
         )
         budget(
             "solid tile joules: the heaviest real material at AMBIENT",
             Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } *
                 Temperature.AMBIENT_KELVIN.toLong(),
-            1,
+            1, Dim.ENERGY,
         )
-        // A whole free body, which is NOT a ledger and is stored on the body itself — the gap the
-        // audit found when a 21-tile uranium rock read −184 K at 10⁶. Every other energy row here is
-        // per tile or a ledger aggregate, so a single physical object holding its own joules across
-        // twenty-one tiles of the densest solid there is had nothing measuring it.
-        budget(
-            "body joules: a rock of the densest solid at max kelvin",
-            densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() } *
-                ROCK_TILES * designMaxKelvin,
-            1,
-        )
+        // ⚠️ A whole free body was the tightest quantity in the game — twenty-one tiles of solid
+        // rock in one `Long` — and it is now [TileJoules], one figure per cell. The row is kept
+        // pointed at a single cell, and it is the *real*-material bound that it holds to: a body's
+        // composition is a mixture of real species, so `densest x hottest` describes a rock that
+        // cannot exist. The fictional pairing above is retained beside it precisely so the distance
+        // between the two is visible rather than assumed — it is a factor of 25, and the target sits
+        // between them.
         // Scales with grid AREA as well as with the mass unit — the one row where growing the map
         // spends overflow headroom. Uses the per-tile density, not the per-machine capacity: see
         // [densestTileCapacity] for why the old form overstated this by 25x.
@@ -400,12 +435,12 @@ class NumericLimitsTest {
         // the 7.56e12 J the plan quotes, which the old 25x form did not.
         budget(
             "ship joules: that across the whole grid",
-            densestTileCapacity * designMaxKelvin * gridTiles, 1,
+            densestTileCapacity * designMaxKelvin * gridTiles, 1, Dim.ENERGY,
         )
         budget(
             "atmosphere joules: ambient air across the whole grid",
             AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong() *
-                Temperature.AMBIENT_KELVIN.toLong() * gridTiles, 1,
+                Temperature.AMBIENT_KELVIN.toLong() * gridTiles, 1, Dim.ENERGY,
         )
 
         // ── Bulk mass ─────────────────────────────────────────────────────
