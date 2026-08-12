@@ -563,9 +563,48 @@ fields are fine-unit and which are coarse (step 3).
 **Test**: a fixture save from the current version loads and produces an identical world to one built
 natively.
 
-### 8. Turn the knob
-Set `targetMassScale` to 10⁶ in `NumericLimitsTest` and make it green. Then flip the real unit,
-re-measure the peaks from `NUMERIC_LIMITS.md` §10, and update both documents in the same commit.
+### 8. Turn the knob — **ATTEMPTED 2026-08-12, and it is not a one-line change**
+
+`NumericLimitsTest` at `targetMassScale = 10⁶` is **green** — the overflow budget holds, which is
+what steps 1–6b were for. The knob was then turned for real (`MICROGRAMS_PER_UNIT = 1`) and the
+suite went to **39 failures**, so the knob has been turned back and the step is not done.
+
+#### The finding: step 2's audit covered `world/`, not `chem/`
+
+Step 2 recorded "every mass- and energy-dimensioned constant in `commonMain` derives from
+[Budget]". That is not true, and the dry-run that was supposed to prove it could not have: it ran
+`BudgetParityTest`, which asserts facts about **the constants on the audit's own list**. A constant
+the audit never saw is a constant the test never checks. Only seven files reference `Budget` at all.
+
+Confirmed misses, each found by turning the knob and reading the first failure:
+
+| constant | where | what it actually is |
+|---|---|---|
+| `AirField.AMBIENT_AIR` | `world/Atmosphere.kt` | a real **kilogram** of air per tile, written `755L, 231L, 13L, 1L`. Reads like parts per thousand, and at one gram per unit the two coincide — which is why it survived. At a microgram it made a tile of air weigh a **milligram**. **Fixed** (a no-op at today's unit). |
+| `CRITICAL[…].gramsPerTile` | `chem/StateEquation.kt` | `kgPerCubicMetre * TILE_LITRES` — a density in bare grams. Every reduced density is measured against it, so the packing-wall `require` fires immediately. |
+| `millimolesIn` / `millimolesOf` | `chem/StateEquation.kt`, `world/` | the **mass-to-moles bridge**, and so the single point where a mass unit enters the chemistry at all. `grams * (MILLI*MILLI/molarMass) / MILLI` assumes one unit is one gram. |
+
+Fixing `AMBIENT_AIR` alone took the count from 39 to **58**, which is the shape of this step: each
+correction lets the next layer of the sim run far enough to fail. That is the tripwire's own lesson
+in a different costume — a budget derived from the auditor's list read green over the constants the
+auditor never listed.
+
+#### What remains
+
+1. Audit `chem/` the way step 2 audited `world/`: critical densities, the molar bridge, and anything
+   else that reads as grams. This is the substantive half and it is not large — the chemistry has
+   few constants — but it is exacting.
+2. Then re-run and work through the residual **test literals**. Step 2 left "the rest of the ~134
+   literals" for this step deliberately. These are moved expected values in the strict sense, so
+   they come to Stu rather than being edited quietly — though most are of the form
+   `expected: <100000000000> but was: <10000000>`, i.e. a test that restated a constant it does not
+   own, and the fix is to express it in `Budget` terms rather than to pick a new number.
+3. Only then re-measure `NUMERIC_LIMITS.md` §10 and update both documents.
+
+**Fixed in passing**: `scaledRatio` divided by zero when handed a zero `scale`. Not hypothetical —
+`vanDerWaalsPressure` passes `8 × temperatureR`, which rounds to zero for a cold enough gas, and
+that is what a tile of air becomes the instant an upstream mass constant is wrong. It now returns
+zero, turning a crash a long way from its cause into an ordinary result.
 
 ### 9. Re-derive what the new floor buys
 With the unit changed, the diffusion stranding floor is 5 units = 5 pg, i.e. 5e-12 of a tile-load.

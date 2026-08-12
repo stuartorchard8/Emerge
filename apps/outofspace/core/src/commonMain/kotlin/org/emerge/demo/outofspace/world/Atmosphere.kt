@@ -97,6 +97,11 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
          * atmosphere twenty times too rich in carbon dioxide. Now that [Species.Argon] exists, both
          * are stated at their real values.
          *
+         * ⚠️ Stated in [Budget.GRAM]s and not in bare integers: this is a **mass**, a real kilogram
+         * of air in a tile, and not the composition it also gets used as. It reads like parts per
+         * thousand because at one gram per unit the two coincide — which is exactly why it survived
+         * the step 2 audit unnoticed and turned a tile of air into a milligram at step 8.
+         *
          * ⚠️ **One gram is below the diffusion stranding floor**, which is five (`SLOTS/FACE_SHARE`),
          * so ambient CO₂ **cannot move** at the current mass scale — it sits in whatever tile it
          * starts in. That is not a defect introduced here; it is the existing quantisation, finally
@@ -105,10 +110,10 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
          * smaller than a gram. See `NUMERIC_LIMITS.md` §6.2.
          */
         val AMBIENT_AIR: Mixture = Mixture.of(
-            Species.Nitrogen to 755L,
-            Species.Oxygen to 231L,
-            Species.Argon to 13L,
-            Species.CarbonDioxide to 1L,
+            Species.Nitrogen to 755L * Budget.GRAM,
+            Species.Oxygen to 231L * Budget.GRAM,
+            Species.Argon to 13L * Budget.GRAM,
+            Species.CarbonDioxide to 1L * Budget.GRAM,
         )
 
         /**

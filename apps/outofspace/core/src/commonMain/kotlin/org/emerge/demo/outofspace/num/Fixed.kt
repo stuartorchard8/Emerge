@@ -45,7 +45,12 @@ package org.emerge.demo.outofspace.num
  * the *physics*.
  */
 fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
-    if (denominator <= 0L || numerator == 0L) return 0L
+    // ⚠️ `scale` is guarded because the reduction below divides by it. A zero scale is not
+    // hypothetical: `vanDerWaalsPressure` passes `8 × temperatureR`, and a reduced temperature
+    // rounds to zero for any gas cold enough — which is what a tile of air becomes the moment
+    // anything upstream gets its mass unit wrong. The answer is zero either way, so the guard costs
+    // nothing and turns a crash a long way from its cause into an ordinary result.
+    if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
     var n = numerator
     var d = denominator
     // Below this, `remainder × scale` cannot overflow, because the remainder is smaller than `d`.
