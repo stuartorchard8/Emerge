@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -20,14 +21,26 @@ private const val VOLUME_UNIT: Long = 1_000_000_000L
 /**
  * What a tile of pure [Species] weighs, at its real density.
  *
- * No scale factor. A tile is [TILE_LITRES] of room — a cube a little under a metre on a side — and a
- * tile of iron is what that much iron weighs, six and a half tonnes. Everything solid in the vessel
- * is now stated at this scale, which is the scale the *gas* was always at: [AirField.AMBIENT_AIR]
- * puts a real kilogram of air in a tile. Before this the solids were three orders under, and the
- * visible consequence was a steel ship that weighed about as much as the air inside it.
+ * A tile is [TILE_LITRES] of room — a cube a little under a metre on a side — and a tile of iron is
+ * what that much iron weighs, six and a half tonnes. Everything solid in the vessel is stated at
+ * this scale, which is the scale the *gas* was always at: [AirField.AMBIENT_AIR] puts a real
+ * kilogram of air in a tile. Before that the solids were three orders under, and the visible
+ * consequence was a steel ship that weighed about as much as the air inside it.
+ *
+ * `kg/m³ × litres` is grams because a cubic metre is a thousand litres, so [Budget.GRAM] is the only
+ * factor between the textbook density and the integer. Its doc used to read "no scale factor", which
+ * was true of the arithmetic and false about the meaning — the twin of `Critical.gramsPerTile` and
+ * the same miss, found the same way. At 10⁶ without it a tile of iron weighed six and a half
+ * **grams**, and every rock, hull plate and machine in the vessel with it.
  */
 val Species.solidGramsPerTile: Long
-    get() = solidKgPerCubicMetre.toLong() * TILE_LITRES
+    get() = solidKgPerCubicMetre.toLong() * TILE_LITRES * Budget.GRAM
+
+/**
+ * The densest thing there is, and so the reference every other density is measured against in
+ * [gramsPerTileOf]. Osmium, which is on the species table for exactly this purpose.
+ */
+private val REFERENCE_DENSITY: Long get() = Species.Osmium.solidGramsPerTile
 
 /**
  * What a tile of [mixture] weighs, from what it is made of.
@@ -47,29 +60,33 @@ fun gramsPerTileOf(mixture: Mixture): Long {
     // below is accurate to a few parts per million, and "a tile of iron weighs what a tile of iron
     // weighs" should not be approximate.
     mixture.dominant?.let { if (mixture[it] == total) return it.solidGramsPerTile }
-    var volume = 0L
+    // ── Everything below is a ratio of two like quantities, so the mass unit cancels ──
+    //
+    // The obvious loop accumulates `grams / density` directly, and that cannot survive a rescale:
+    // `grams` is a *proportion* — a per-mille figure, a few hundred, and it does not move when the
+    // unit moves — while `density` is a real tile mass and moves in full. The ratio between them is
+    // therefore not scale-free at all; at one microgram per unit it is 6e-11 and floors to nothing
+    // however much fixed point is thrown at it. [scaledRatio] cannot rescue it either, since
+    // reducing that fraction shifts a three-digit numerator straight to zero.
+    //
+    // So each density is expressed against [REFERENCE_DENSITY] first. `ρ₀ / ρᵢ` is a ratio of two
+    // real densities — unit-free, order one, and exact in fixed point — and the mixture's own
+    // proportions are likewise taken as fractions of its total. The mass unit then enters exactly
+    // once, at the end, carried by the reference density alone.
+    var weighted = 0L
     for (species in Species.ALL) {
         val grams = mixture[species]
         if (grams <= 0L) continue
-        // Whole part and remainder separately: `grams * VOLUME_UNIT` would overflow for a serious
-        // pile of ore, and truncating the division would lose most of the value for a small one.
-        val density = species.solidGramsPerTile
-        volume += grams / density * VOLUME_UNIT + grams % density * VOLUME_UNIT / density
+        val relative = scaledRatio(REFERENCE_DENSITY, species.solidGramsPerTile, VOLUME_UNIT)
+        weighted += scaledRatio(grams, total, relative)
     }
-    // `total * VOLUME_UNIT` breaks at 9.2e9 grams, and the only reason it never has is that both
-    // call sites happen to pass per-mille compositions summing to about 1000 (Material.composition;
-    // RockSpawner normalises). That is an *unstated invariant*: nothing declares it, nothing checks
-    // it, and handing this function a real pile of ore — which its signature plainly invites — would
-    // have wrapped it silently. Step 4 of PLAN_unit_rescale.md.
-    //
-    // ⚠️ Note this is [scaledRatio] and NOT the whole/remainder split the loop above uses, which was
-    // the first thing tried and is a no-op here. That split moves the bound from `total` to
-    // `volume` — but `volume` is itself proportional to `total`, and the ratio between them is a
-    // density over VOLUME_UNIT, i.e. far *below* one. So the whole part is zero, the remainder is
-    // the whole of `total`, and the expression is exactly what it was. The loop's split works
-    // because its divisor is a fixed density; a divisor that grows with the dividend needs the
-    // fraction reduced instead.
-    return if (volume <= 0L) 0L else scaledRatio(total, volume, VOLUME_UNIT)
+    // `ρ_mix = ρ₀ / Σ fᵢ·(ρ₀/ρᵢ)`, which is the harmonic mean rearranged so that the only
+    // dimensioned term left is the reference density. The normalisation by [total] above is what
+    // makes this independent of how the caller chose to state its proportions — per mille, per cent
+    // or as a real pile of ore. That used to be an *unstated invariant*: nothing declared that
+    // compositions had to sum to about 1000, nothing checked it, and handing this function a real
+    // pile — which its signature plainly invites — wrapped it silently.
+    return if (weighted <= 0L) 0L else scaledRatio(VOLUME_UNIT, weighted, REFERENCE_DENSITY)
 }
 
 /**

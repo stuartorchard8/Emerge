@@ -679,6 +679,44 @@ Effect at 10⁶: 50 → **41, and all ten exceptions gone.** `ValveTest`, `PumpT
 `EditorToolsTest` are clear. Two `HeatTest` failures appeared — newly *reached*, not a regression:
 the run now gets far enough to execute them.
 
+#### `Species.solidGramsPerTile` — the third bare-grams density, and the biggest
+
+The twin of `Critical.gramsPerTile`, found the same way and missed for the same reason: its doc read
+**"No scale factor"**, which was true of the arithmetic and false about the meaning. At 10⁶ without
+[Budget.GRAM] a tile of iron weighed six and a half **grams**, and every rock, hull plate and machine
+in the vessel with it — which is why the extractor bit nothing, the belts carried nothing and every
+logistics test read `0`.
+
+Adding the factor broke `gramsPerTileOf`, and the break is the interesting half. Its loop accumulated
+`grams / density`, where `grams` is a **proportion** — a per-mille figure that does not move when the
+unit moves — and `density` is a real tile mass that moves in full. That ratio is not scale-free at
+all; at one microgram it is 6e-11 and floors to nothing however much fixed point is thrown at it, and
+`scaledRatio` cannot rescue it either, since reducing the fraction shifts a three-digit numerator
+straight to zero.
+
+So each density is now expressed against **`REFERENCE_DENSITY`** (osmium — which is on the species
+table for precisely this purpose) before anything else happens. `ρ₀/ρᵢ` is a ratio of two real
+densities: unit-free, order one, exact in fixed point. The mixture's proportions are likewise taken
+as fractions of their own total, which also retires the *unstated invariant* that compositions had to
+sum to about 1000. The mass unit enters exactly once, at the end, carried by the reference density.
+
+Against an exact-rational oracle for `DEFAULT_ORE_BODY` the rearrangement is **400× more accurate**:
+
+| | g/tile | error |
+| --- | --- | --- |
+| old | 3,956,510 | +13.37 ppm |
+| new | 3,956,457 | **−0.03 ppm** |
+
+⚠️ That 13 ppm flips one previously-green test at today's unit — `RockContactTest :: a body that
+lands on the deck settles and stays put`, where the rock now rises instead of falling. **Landed
+deliberately (Stu, 2026-08-12)**: its three siblings and `RockTest :: a body over the deck falls
+toward it` are already red, so it is the same known-broken gravity/contact area rather than a new
+one. Standing failures at today's unit are therefore **8**, not 7. The sensitivity itself is a signal
+worth returning to: a 13-ppm mass change should not decide which way a body falls.
+
+Effect at 10⁶: 41 → **27**. `VesselSimTest`, `MotionTest`, `WiringTest`, `GaugeTest`,
+`FootprintTest`, `SignalWiringTest` and `RockTest` all clear.
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the
