@@ -63,7 +63,7 @@ fun structureMassGrams(machines: List<Machine?>, conduits: Conduits, bridges: Li
  * Every gram the vessel is carrying rather than made of: in machine buffers, on the track, on the
  * spans, and lying loose on the deck.
  *
- * The body of [VesselState.inTransitGrams], lifted out so that the mass a thrust is divided by and
+ * The body of [VesselState.inTransitMass], lifted out so that the mass a thrust is divided by and
  * the mass the conservation check compares are provably the same walk. Two implementations of "what
  * is aboard" would disagree the first time a buffer was added to one of them, and the disagreement
  * would look like the ship getting heavier for no reason.

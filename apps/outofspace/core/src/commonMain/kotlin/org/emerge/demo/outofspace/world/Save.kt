@@ -54,15 +54,15 @@ object Save {
         // Felt gravity baseline; a world reloaded without it coasts for one tick under plating alone.
         out.append("thrust ").append(state.netImpulseX).append(' ').append(state.netImpulseY).append('\n')
         out.append("tick ").append(state.tick).append('\n')
-        out.append("extracted ").append(state.extractedGrams).append('\n')
-        out.append("vented ").append(state.ventedGrams).append('\n')
-        out.append("generated ").append(state.generatedJoules).append('\n')
-        out.append("radiated ").append(state.radiatedJoules).append('\n')
-        out.append("airvented ").append(state.airVentedGrams).append('\n')
+        out.append("extracted ").append(state.extractedMass).append('\n')
+        out.append("vented ").append(state.ventedMass).append('\n')
+        out.append("generated ").append(state.generatedEnergy).append('\n')
+        out.append("radiated ").append(state.radiatedEnergy).append('\n')
+        out.append("airvented ").append(state.airVentedMass).append('\n')
         out.append("baselinejoules ").append(state.baselineJoules).append('\n')
         out.append("inserted ").append(state.insertedJoules).append('\n')
         out.append("acquired ").append(state.acquiredJoules).append('\n')
-        out.append("solidtoair ").append(state.solidToAirJoules).append('\n')
+        out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirGrams).append('\n')
         // Bodies: free mass, no tracking beyond the list itself.
 
@@ -120,7 +120,7 @@ object Save {
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyJoules())
-        out.append("airventedheat ").append(state.airVentedJoules).append('\n')
+        out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
         out.append("airinjected ").append(state.injectedAirGrams)
@@ -636,16 +636,16 @@ object Save {
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
             tick = tick,
-            extractedGrams = extracted,
-            ventedGrams = vented,
-            generatedJoules = generated,
-            radiatedJoules = radiated,
-            airVentedGrams = airVented,
+            extractedMass = extracted,
+            ventedMass = vented,
+            generatedEnergy = generated,
+            radiatedEnergy = radiated,
+            airVentedMass = airVented,
             structure = structure,
             occupancy = occupancy,
             insertedJoules = inserted,
             acquiredJoules = acquired,
-            solidToAirJoules = solidToAir,
+            solidToAirEnergy = solidToAir,
             // A missing baseline means the world's own totals, which is right for a handwritten
             // world and harmless for a saved one, where the line is always present. A version 4
             // file's baseline described the per-tile field, so it is not carried across: the
@@ -658,7 +658,7 @@ object Save {
             pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
             // Both fields, because they share one ledger — see VesselState.baselineAirGrams.
             baselineAirGrams = baselineAir ?: (air.totalGrams + pipeAir.totalGrams),
-            airVentedJoules = airVentedJoules,
+            airVentedEnergy = airVentedJoules,
             injectedAirGrams = injectedAirGrams,
             injectedAirJoules = injectedAirJoules,
             baselineAirJoules = baselineAirJoules ?: (air.totalJoules + pipeAir.totalJoules),

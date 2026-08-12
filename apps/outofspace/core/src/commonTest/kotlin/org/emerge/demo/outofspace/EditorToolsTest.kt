@@ -137,7 +137,7 @@ class EditorToolsTest {
     fun `injected gas is admitted, so the air ledger stays balanced`() {
         val c = layered()
         val at = OPEN_TILE
-        val before = c.state.atmosphereGrams
+        val before = c.state.atmosphereMass
 
         repeat(10) {
             c.injectTile = at
@@ -148,7 +148,7 @@ class EditorToolsTest {
 
         val s = c.state
         assertEquals(10L * Edit.INJECT_GRAMS, s.injectedAirGrams, "ten ticks is ten kilograms")
-        assertTrue(s.atmosphereGrams > before, "the room did not actually get any heavier")
+        assertTrue(s.atmosphereMass > before, "the room did not actually get any heavier")
         assertEquals(0L, s.airBalance, "the air ledger broke")
         EnergyLedgers.assertAirBalanced(s, "the air's energy ledger broke")
     }
@@ -182,7 +182,7 @@ class EditorToolsTest {
     fun `injecting into a solid machine does nothing at all`() {
         val c = layered()
         val at = grid.index(6, 5)   // the tank, which is impermeable
-        val before = c.state.atmosphereGrams
+        val before = c.state.atmosphereMass
 
         repeat(5) { c.injectTile = at; c.stepOnce() }
         c.injectTile = -1
@@ -190,7 +190,7 @@ class EditorToolsTest {
 
         val s = c.state
         assertEquals(0L, s.injectedAirGrams, "a refused breath was booked anyway")
-        assertEquals(before, s.atmosphereGrams, "gas got into a solid tank")
+        assertEquals(before, s.atmosphereMass, "gas got into a solid tank")
         assertEquals(0L, s.airBalance)
     }
 

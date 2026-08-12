@@ -1,8 +1,5 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Form
-import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Grid
@@ -139,14 +136,14 @@ class GridVentTest {
         val after = before.remapped(Grid(12, 14), 0, 0)
 
         assertTrue(
-            after.atmosphereGrams < before.atmosphereGrams,
+            after.atmosphereMass < before.atmosphereMass,
             "the fixture discarded no air, so this case proves nothing",
         )
         // The identity, not a re-derived loop: what is left plus what went overboard is what there
         // was. Nothing else can be true of a vent.
         assertEquals(
-            before.atmosphereGrams,
-            after.atmosphereGrams + (after.airVentedGrams - before.airVentedGrams),
+            before.atmosphereMass,
+            after.atmosphereMass + (after.airVentedMass - before.airVentedMass),
             "grams discarded by the shrink were not booked to airVentedGrams",
         )
         assertEquals(0L, after.airBalance, "airBalance after a shrink")
@@ -171,7 +168,7 @@ class GridVentTest {
         )
         assertEquals(
             before.atmosphereJoules,
-            after.atmosphereJoules + (after.airVentedJoules - before.airVentedJoules),
+            after.atmosphereJoules + (after.airVentedEnergy - before.airVentedEnergy),
             "joules discarded by the shrink were not booked to airVentedJoules",
         )
         EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a shrink")
@@ -232,7 +229,7 @@ class GridVentTest {
         // cells are the six columns of gas that were to the left of it.
         val after = before.remapped(Grid(12, 14), -6, 0)
 
-        assertTrue(after.atmosphereGrams < before.atmosphereGrams, "nothing was discarded")
+        assertTrue(after.atmosphereMass < before.atmosphereMass, "nothing was discarded")
         assertEquals(0L, after.airBalance, "airBalance after a near-side shrink")
         EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a near-side shrink")
         assertEquals(0L, momentumX(after), "momentum identity on x")
@@ -248,11 +245,11 @@ class GridVentTest {
         val before = gassyWorld()
         val after = before.remapped(Grid(28, 20), 4, 3)
 
-        assertEquals(before.airVentedGrams, after.airVentedGrams, "growth vented grams")
-        assertEquals(before.airVentedJoules, after.airVentedJoules, "growth vented joules")
+        assertEquals(before.airVentedMass, after.airVentedMass, "growth vented grams")
+        assertEquals(before.airVentedEnergy, after.airVentedEnergy, "growth vented joules")
         assertEquals(before.exhaustMomentumX, after.exhaustMomentumX, "growth vented x momentum")
         assertEquals(before.exhaustMomentumY, after.exhaustMomentumY, "growth vented y momentum")
-        assertEquals(before.atmosphereGrams, after.atmosphereGrams, "growth changed the air mass")
+        assertEquals(before.atmosphereMass, after.atmosphereMass, "growth changed the air mass")
     }
 
     @Test
@@ -262,8 +259,8 @@ class GridVentTest {
         val back = grown.remapped(Grid(20, 14), -4, -3)
 
         // The padding was vacuum, so the round trip is the identity on the gas and books nothing.
-        assertEquals(before.atmosphereGrams, back.atmosphereGrams, "gas did not survive the round trip")
-        assertEquals(before.airVentedGrams, back.airVentedGrams, "vacuum padding was booked as vented")
+        assertEquals(before.atmosphereMass, back.atmosphereMass, "gas did not survive the round trip")
+        assertEquals(before.airVentedMass, back.airVentedMass, "vacuum padding was booked as vented")
         assertEquals(0L, back.airBalance, "airBalance after a round trip")
         assertEquals(0L, momentumX(back), "momentum identity on x after a round trip")
     }

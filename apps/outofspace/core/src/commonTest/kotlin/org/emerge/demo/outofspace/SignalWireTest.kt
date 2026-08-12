@@ -144,6 +144,6 @@ class SignalWireTest {
         }
 
         assertEquals(bare.structure, wired.structure, "wire changed what the hull encloses")
-        assertEquals(bare.atmosphereGrams, wired.atmosphereGrams, "wire took up room in the air")
+        assertEquals(bare.atmosphereMass, wired.atmosphereMass, "wire took up room in the air")
     }
 }

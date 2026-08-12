@@ -4,13 +4,11 @@ import org.emerge.demo.outofspace.world.atKelvin
 import org.emerge.demo.outofspace.world.kelvin
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.capacityPerTile
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -18,12 +16,9 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.thermalTiles
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.Vent
-import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
@@ -154,7 +149,7 @@ class HeatTest {
             if (it % 83 == 0) assertEnergyBalanced(s, "tick ${s.tick}")
         }
         assertEnergyBalanced(s, "final")
-        assertTrue(s.generatedJoules > 0L, "the smelter should have produced waste heat")
+        assertTrue(s.generatedEnergy > 0L, "the smelter should have produced waste heat")
     }
 
 //    @Test
@@ -225,7 +220,7 @@ class HeatTest {
         val machines = room.machines.toMutableList()
         val wall = machines[hot]!!
         machines[hot] = wall.atKelvin(4_000)
-        var s = room.copy(machines = machines.toList()).let { it.copy(baselineJoules = it.storedJoules) }
+        var s = room.copy(machines = machines.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
@@ -274,8 +269,8 @@ class HeatTest {
         // all. That was a property of the field rather than of the world: a furnace in vacuum is
         // still a furnace full of hot firebrick, and what vacuum actually does is make radiation the
         // only way out. So it stores its heat, and sheds it slowly.
-        assertTrue(s.storedJoules > 0L, "a furnace in vacuum is still a hot furnace")
-        assertTrue(s.radiatedJoules > 0L, "and the only way out is radiation")
+        assertTrue(s.storedEnergy > 0L, "a furnace in vacuum is still a hot furnace")
+        assertTrue(s.radiatedEnergy > 0L, "and the only way out is radiation")
         assertTrue(s.kelvinAt(grid.index(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
         assertEnergyBalanced(s, "bare machine")
     }
@@ -292,7 +287,7 @@ class HeatTest {
     @Test
     fun `two runs of a heated world are identical`() {
         fun digest(s: VesselState) = buildString {
-            append(s.storedJoules).append('|').append(s.radiatedJoules).append('|').append(s.generatedJoules)
+            append(s.storedEnergy).append('|').append(s.radiatedEnergy).append('|').append(s.generatedEnergy)
             for (i in 0 until s.grid.size) append(s.kelvinAt(i)).append(',')
         }
         val grid = Grid(40, 28)

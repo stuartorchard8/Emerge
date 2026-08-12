@@ -13,8 +13,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.sim.core.PlayerId
-import org.emerge.sim.core.physics.primitives.Frac
-import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -53,8 +51,8 @@ class AtmosphereTest {
     private fun assertAirBalanced(s: VesselState, what: String) {
         assertEquals(
             s.baselineAirGrams,
-            s.atmosphereGrams + s.airVentedGrams,
-            "$what: aboard ${s.atmosphereGrams} + vented ${s.airVentedGrams}",
+            s.atmosphereMass + s.airVentedMass,
+            "$what: aboard ${s.atmosphereMass} + vented ${s.airVentedMass}",
         )
     }
 
@@ -79,13 +77,13 @@ class AtmosphereTest {
     fun `air is conserved on every tick of a working vessel`() {
         var s = starterVessel(Grid(40, 28))
         val cfg = cfgFor(s.grid)
-        assertTrue(s.atmosphereGrams > 0L, "a sealed vessel starts with air in it")
+        assertTrue(s.atmosphereMass > 0L, "a sealed vessel starts with air in it")
         repeat(160) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 79 == 0) assertAirBalanced(s, "tick ${s.tick}")
         }
         assertAirBalanced(s, "final")
-        assertEquals(0L, s.airVentedGrams, "an intact hull loses nothing")
+        assertEquals(0L, s.airVentedMass, "an intact hull loses nothing")
     }
 
     @Test
@@ -233,12 +231,12 @@ class AtmosphereTest {
         val g = room.grid
         val wall = g.index(4, 3)
         var s = run(room, 20)   // settle first, so the wall tile is holding a known amount
-        val aboard = s.atmosphereGrams
+        val aboard = s.atmosphereMass
         assertTrue(s.air.pressureAt(wall) > 0L, "the tile we are about to wall off had air in it")
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
         assertEquals(0L, s.air.pressureAt(wall), "a hull tile is not part of the atmosphere")
-        assertEquals(aboard, s.atmosphereGrams, "and not a gram of it was lost")
+        assertEquals(aboard, s.atmosphereMass, "and not a gram of it was lost")
         assertAirBalanced(s, "after walling")
     }
 
@@ -266,14 +264,14 @@ class AtmosphereTest {
         val g = room.grid
         val at = g.index(5, 3)
         var s = run(room, 20)
-        val aboard = s.atmosphereGrams
+        val aboard = s.atmosphereMass
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Storage, Direction.Right))))
         assertTrue(s.machines[at] != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {
             assertEquals(0L, s.air.pressureAt(g.index(x, y)), "($x,$y) is under the machine")
         }
-        assertEquals(aboard, s.atmosphereGrams, "every gram of it moved rather than vanishing")
+        assertEquals(aboard, s.atmosphereMass, "every gram of it moved rather than vanishing")
         assertAirBalanced(s, "after a footprint landed")
     }
 
@@ -314,17 +312,17 @@ class AtmosphereTest {
         val wall = g.index(4, 3)
         var s = run(room, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
         s = run(s, 20)
-        val aboard = s.atmosphereGrams
+        val aboard = s.atmosphereMass
 
         s = run(s, 20, OutofspaceInput(listOf(Edit.Remove(wall))))
         assertTrue(s.air.pressureAt(wall) > 0L, "the room flowed back into it")
-        assertEquals(aboard, s.atmosphereGrams, "an intact hull still loses nothing")
+        assertEquals(aboard, s.atmosphereMass, "an intact hull still loses nothing")
     }
 
     @Test
     fun `two runs of a breathing world are identical`() {
         fun digest(s: VesselState) = buildString {
-            append(s.atmosphereGrams).append('|').append(s.airVentedGrams)
+            append(s.atmosphereMass).append('|').append(s.airVentedMass)
             for (i in 0 until s.grid.size) append(s.air.pressureAt(i)).append(',')
         }
         val grid = Grid(40, 28)

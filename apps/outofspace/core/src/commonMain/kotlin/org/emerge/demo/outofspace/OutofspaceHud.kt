@@ -53,7 +53,7 @@ class OutofspaceHud {
                 keyValue("Speed", "${controller.speed}x")
                 gap()
                 title("FLIGHT")
-                keyValue("Mass", grams(s.massGrams))
+                keyValue("Mass", grams(s.mass))
                 keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
                 keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
                 keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
@@ -65,17 +65,17 @@ class OutofspaceHud {
                 }
                 gap()
                 title("MASS BALANCE")
-                keyValue("Extracted", grams(s.extractedGrams))
-                keyValue("Aboard", grams(s.inTransitGrams))
-                keyValue("- in storage", grams(s.stockpile.totalGrams))
-                keyValue("Vented", grams(s.ventedGrams))
+                keyValue("Extracted", grams(s.extractedMass))
+                keyValue("Aboard", grams(s.inTransitMass))
+                keyValue("- in storage", grams(s.stockpile.totalMass))
+                keyValue("Vented", grams(s.ventedMass))
                 // Storage is a view over storages (part of "aboard").
-                val balanced = s.extractedGrams == s.inTransitGrams + s.ventedGrams
+                val balanced = s.extractedMass == s.inTransitMass + s.ventedMass
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ATMOSPHERE")
-                keyValue("Aboard", grams(s.atmosphereGrams))
-                keyValue("Lost", grams(s.airVentedGrams))
+                keyValue("Aboard", grams(s.atmosphereMass))
+                keyValue("Lost", grams(s.airVentedMass))
                 // Only shown once it is non-zero: the bellows is a debug tool, and a row reading
                 // "injected 0g" on every world that never touched it is a row nobody reads.
                 if (s.injectedAirGrams != 0L) keyValue("Injected", grams(s.injectedAirGrams))
@@ -83,11 +83,11 @@ class OutofspaceHud {
                 row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ENERGY")
-                keyValue("Generated", joules(s.generatedJoules))
-                keyValue("Radiated", joules(s.radiatedJoules))
-                keyValue("Stored", joules(s.storedJoules))
-                keyValue("To air", joules(s.solidToAirJoules / 1000L))
-                keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
+                keyValue("Generated", joules(s.generatedEnergy))
+                keyValue("Radiated", joules(s.radiatedEnergy))
+                keyValue("Stored", joules(s.storedEnergy))
+                keyValue("To air", joules(s.solidToAirEnergy / 1000L))
+                keyValue("Air heat vented", joules(s.airVentedEnergy / 1000L))
                 // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
                 // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
                 // overflow at the target mass unit and that is accepted for the duration, so a LEAK

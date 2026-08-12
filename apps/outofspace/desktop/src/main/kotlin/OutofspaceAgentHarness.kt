@@ -642,15 +642,15 @@ object OutofspaceAgentHarness {
         private fun trend(samples: Int, ticksEach: Int) {
             println("[agent] trend: %8s %12s %10s %12s %10s %10s".format(
                 "tick", "airGrams", "dAir", "storedJ", "peakSpd"))
-            var lastAir = state.atmosphereGrams
+            var lastAir = state.atmosphereMass
             repeat(samples) {
                 repeat(ticksEach) { controller.stepOnce() }
-                val air = state.atmosphereGrams
+                val air = state.atmosphereMass
                 println("[agent]        %8d %12d %10d %12d %10.5f %10d".format(
-                    controller.tick, air, air - lastAir, state.storedJoules, state.flow.peakSpeed()))
+                    controller.tick, air, air - lastAir, state.storedEnergy, state.flow.peakSpeed()))
                 lastAir = air
             }
-            println("[agent]   baseline air ${state.baselineAirGrams}g, vented ${state.airVentedGrams}g " +
+            println("[agent]   baseline air ${state.baselineAirGrams}g, vented ${state.airVentedMass}g " +
                 "(balance ${state.airBalance}g)")
         }
 
@@ -664,34 +664,34 @@ object OutofspaceAgentHarness {
             "originY" -> state.positionY.toDouble() / Flight.PER_TILE
             // Rooms and pipes together, because they share one ledger and `airBalance` below is
             // that ledger. `pipeGrams` separates them for a script that cares which side gas is on.
-            "airGrams" -> state.atmosphereGrams.toDouble()
+            "airGrams" -> state.atmosphereMass.toDouble()
             "pipeGrams" -> state.pipeAir.totalGrams.toDouble()
-            "airVented" -> state.airVentedGrams.toDouble()
+            "airVented" -> state.airVentedMass.toDouble()
             // The flight loop's own number: what the gas leaving has pushed the ship by. Note it
             // counts the *reaction*, so venting to starboard makes this negative.
             "impulseX" -> state.vesselImpulseX.toDouble()
             "impulseY" -> state.vesselImpulseY.toDouble()
             "injectedAir" -> state.injectedAirGrams.toDouble()
             "airBalance" -> state.airBalance.toDouble()
-            "extractedGrams" -> state.extractedGrams.toDouble()
-            "ventedGrams" -> state.ventedGrams.toDouble()
-            "inTransitGrams" -> state.inTransitGrams.toDouble()
-            "stockpileGrams" -> state.stockpile.totalGrams.toDouble()
-            "storedJoules" -> state.storedJoules.toDouble()
-            "generatedJoules" -> state.generatedJoules.toDouble()
-            "radiatedJoules" -> state.radiatedJoules.toDouble()
-            "solidToAirJoules" -> state.solidToAirJoules.toDouble()
+            "extractedGrams" -> state.extractedMass.toDouble()
+            "ventedGrams" -> state.ventedMass.toDouble()
+            "inTransitGrams" -> state.inTransitMass.toDouble()
+            "stockpileGrams" -> state.stockpile.totalMass.toDouble()
+            "storedJoules" -> state.storedEnergy.toDouble()
+            "generatedJoules" -> state.generatedEnergy.toDouble()
+            "radiatedJoules" -> state.radiatedEnergy.toDouble()
+            "solidToAirJoules" -> state.solidToAirEnergy.toDouble()
             // The whole solid balance as one number, so a script can `expect heatBalance == 0`
             // rather than reassembling five terms. Zero, always — see [VesselState.baselineJoules].
             "heatBalance" -> (
-                state.storedJoules + state.radiatedJoules + state.solidToAirJoules -
-                    state.generatedJoules - state.acquiredJoules - state.insertedJoules - state.baselineJoules
+                state.storedEnergy + state.radiatedEnergy + state.solidToAirEnergy -
+                    state.generatedEnergy - state.acquiredJoules - state.insertedJoules - state.baselineJoules
                 ).toDouble()
             "airHeatBalance" -> state.airJouleBalance.toDouble()
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
             // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
             // about how long the starter vessel's extractor has been running.
-            "massBalance" -> (state.inTransitGrams + state.ventedGrams - state.extractedGrams).toDouble()
+            "massBalance" -> (state.inTransitMass + state.ventedMass - state.extractedMass).toDouble()
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
@@ -735,7 +735,7 @@ object OutofspaceAgentHarness {
                     state.bodyImpulseY
                 ).toDouble()
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
-            "massGrams" -> state.massGrams.toDouble()
+            "massGrams" -> state.mass.toDouble()
             "thrustX" -> state.netImpulseX.toDouble()
             "thrustY" -> state.netImpulseY.toDouble()
             "velocityX" -> state.velocityX.toDouble() / Flight.PER_TILE

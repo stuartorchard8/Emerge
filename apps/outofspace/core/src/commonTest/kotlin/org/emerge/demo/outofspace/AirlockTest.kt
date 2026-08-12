@@ -78,8 +78,8 @@ class AirlockTest {
         val start = roomWithDoor(Airlock())
         val after = run(start, 60)
 
-        assertEquals(0L, after.airVentedGrams, "a shut door vents nothing")
-        assertEquals(start.atmosphereGrams, after.atmosphereGrams, "and the room keeps all of its air")
+        assertEquals(0L, after.airVentedMass, "a shut door vents nothing")
+        assertEquals(start.atmosphereMass, after.atmosphereMass, "and the room keeps all of its air")
     }
 
     /**
@@ -92,8 +92,8 @@ class AirlockTest {
         val withDoor = run(roomWithDoor(Airlock()), 60)
         val withWall = run(roomWithDoor(Hull()), 60)
 
-        assertEquals(withWall.atmosphereGrams, withDoor.atmosphereGrams)
-        assertEquals(withWall.airVentedGrams, withDoor.airVentedGrams)
+        assertEquals(withWall.atmosphereMass, withDoor.atmosphereMass)
+        assertEquals(withWall.airVentedMass, withDoor.airVentedMass)
     }
 
     @Test
@@ -110,10 +110,10 @@ class AirlockTest {
         val after = run(start, 60)
 
         assertTrue(
-            after.atmosphereGrams < start.atmosphereGrams,
-            "an open door should have drained the room: ${start.atmosphereGrams} -> ${after.atmosphereGrams}",
+            after.atmosphereMass < start.atmosphereMass,
+            "an open door should have drained the room: ${start.atmosphereMass} -> ${after.atmosphereMass}",
         )
-        assertTrue(after.airVentedGrams > 0L, "and the gas that left should be booked as vented")
+        assertTrue(after.airVentedMass > 0L, "and the gas that left should be booked as vented")
     }
 
     /**
@@ -123,7 +123,7 @@ class AirlockTest {
     @Test
     fun `venting through an airlock keeps the air ledger balanced`() {
         val s = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 60)
-        assertEquals(0L, s.airBalance, "aboard ${s.atmosphereGrams} + vented ${s.airVentedGrams}")
+        assertEquals(0L, s.airBalance, "aboard ${s.atmosphereMass} + vented ${s.airVentedMass}")
     }
 
     /**
@@ -147,8 +147,8 @@ class AirlockTest {
      */
     @Test
     fun `a wider signal vents faster`() {
-        val ajar = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL / 4))), 30).airVentedGrams
-        val wide = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 30).airVentedGrams
+        val ajar = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL / 4))), 30).airVentedMass
+        val wide = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 30).airVentedMass
 
         assertTrue(ajar > 0L, "a quarter-open door still leaks")
         assertTrue(wide > ajar, "and a fully open one leaks faster: $wide vs $ajar")

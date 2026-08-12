@@ -92,7 +92,7 @@ class PipeFluidTest {
             after.pipeAir.totalGrams,
             "the pipes gained or lost gas with nothing connected to them",
         )
-        assertEquals(0L, after.airVentedGrams, "a sealed pipe network vented")
+        assertEquals(0L, after.airVentedMass, "a sealed pipe network vented")
     }
 
     @Test
@@ -100,7 +100,7 @@ class PipeFluidTest {
         val after = run(charged(), 200)
         assertEquals(
             after.baselineAirGrams,
-            after.atmosphereGrams + after.airVentedGrams,
+            after.atmosphereMass + after.airVentedMass,
             "rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
     }
@@ -183,7 +183,7 @@ class PipeFluidTest {
         assertTrue(after.air.totalGrams > roomBefore, "the gas did not arrive in the room")
         assertEquals(
             after.baselineAirGrams,
-            after.atmosphereGrams + after.airVentedGrams,
+            after.atmosphereMass + after.airVentedMass,
             "cutting a pipe minted or destroyed gas",
         )
     }

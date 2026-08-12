@@ -155,7 +155,7 @@ class FlightTest {
 
         val s = controller.state
         assertEquals(0L, s.exhaustMomentumX, "gas had already left, so this proved nothing")
-        assertEquals(s.baselineAirGrams, s.atmosphereGrams, "and not a gram of it had gone overboard")
+        assertEquals(s.baselineAirGrams, s.atmosphereMass, "and not a gram of it had gone overboard")
         assertTrue(s.netImpulseX > 0L, "the ship felt nothing on the tick the hull opened")
         assertTrue(s.velocityX > 0L, "and so it was already moving")
     }
@@ -299,7 +299,7 @@ class FlightTest {
         heavy.thrustX = 1
         repeat(BURN_TICKS) { light.stepOnce(); heavy.stepOnce() }
 
-        assertTrue(heavy.state.massGrams > light.state.massGrams, "the ballast weighed nothing")
+        assertTrue(heavy.state.mass > light.state.mass, "the ballast weighed nothing")
         assertEquals(
             light.state.velocityX, heavy.state.velocityX,
             "same engine, same acceleration, different mass — and different speeds",

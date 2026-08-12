@@ -7,9 +7,6 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Bridge
-import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -244,8 +241,8 @@ class FootprintTest {
             }
             return VesselState(grid, m.toList())
         }
-        val small = room(MachineKind.Processor).storedJoules
-        val large = room(MachineKind.Smelter).storedJoules
+        val small = room(MachineKind.Processor).storedEnergy
+        val large = room(MachineKind.Smelter).storedEnergy
         assertTrue(
             large > small,
             "twenty-five tiles of furnace should hold more heat than nine of mill: $large vs $small",
@@ -261,6 +258,6 @@ class FootprintTest {
             s.stockpile[Form.IronIngot][Species.Iron],
             "and it is pure",
         )
-        assertEquals(s.extractedGrams, s.inTransitGrams + s.ventedGrams, "conserving throughout")
+        assertEquals(s.extractedMass, s.inTransitMass + s.ventedMass, "conserving throughout")
     }
 }

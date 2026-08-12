@@ -19,8 +19,6 @@ import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsBreakdown
-import org.emerge.demo.outofspace.world.starterVessel
-import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -88,15 +86,15 @@ class GaugeTest {
         val gauge = gaugeOf(s)
         assertEquals(null, gauge.held, "the packet moved on")
         assertEquals(410, gauge.lastPurity, "but the reading stayed")
-        assertEquals(Capacity.PACKET_GRAMS, s.stockpile.totalGrams, "and it was passed through, not consumed")
+        assertEquals(Capacity.PACKET_GRAMS, s.stockpile.totalMass, "and it was passed through, not consumed")
     }
 
     @Test
     fun `a gauge measures without taking, so it costs the line nothing`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4 * Capacity.PACKET_GRAMS))
         val s = run(line(ore), 120)
-        assertEquals(4 * Capacity.PACKET_GRAMS, s.stockpile.totalGrams, "every gram arrived at the far end")
-        assertEquals(s.extractedGrams + 4 * Capacity.PACKET_GRAMS, s.inTransitGrams + s.ventedGrams, "and none went missing")
+        assertEquals(4 * Capacity.PACKET_GRAMS, s.stockpile.totalMass, "every gram arrived at the far end")
+        assertEquals(s.extractedMass + 4 * Capacity.PACKET_GRAMS, s.inTransitMass + s.ventedMass, "and none went missing")
     }
 
     @Test
@@ -152,7 +150,7 @@ class GaugeTest {
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {
-                assertEquals(s.extractedGrams, s.inTransitGrams + s.ventedGrams, "tick ${s.tick}")
+                assertEquals(s.extractedMass, s.inTransitMass + s.ventedMass, "tick ${s.tick}")
             }
         }
     }

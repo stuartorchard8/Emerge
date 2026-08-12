@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 
 /**
  * The global construction inventory: how much of each [Form] the vessel has to build with, and what
@@ -23,7 +22,7 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
 
     operator fun get(form: Form): Mixture = byForm[form.ordinal]
 
-    val totalGrams: Long get() {
+    val totalMass: Long get() {
         var sum = 0L
         for (m in byForm) sum += m.total
         return sum

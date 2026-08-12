@@ -198,7 +198,7 @@ class GridFitTest {
         // which cost a qwen session; the rest of the suite says it correctly, e.g. VesselSimTest:61.
         assertEquals(
             0L,
-            s.inTransitGrams + s.ventedGrams - s.extractedGrams,
+            s.inTransitMass + s.ventedMass - s.extractedMass,
             "massBalance $whenever",
         )
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.
@@ -247,10 +247,10 @@ class GridFitTest {
         for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }
-        append('|').append(s.atmosphereGrams).append('|').append(s.atmosphereJoules)
-        append('|').append(s.storedJoules).append('|').append(s.radiatedJoules)
+        append('|').append(s.atmosphereMass).append('|').append(s.atmosphereJoules)
+        append('|').append(s.storedEnergy).append('|').append(s.radiatedEnergy)
         append('|').append(s.vesselImpulseX).append('|').append(s.vesselImpulseY)
-        append('|').append(s.extractedGrams).append('|').append(s.ventedGrams)
+        append('|').append(s.extractedMass).append('|').append(s.ventedMass)
         append('|').append(s.stockpile.toString())
         for (b in s.bodies.sortedWith(compareBy({ b -> b.positionX }, { b -> b.positionY }))) {
             append('|').append(b.positionX).append(',').append(b.positionY)

@@ -9,13 +9,11 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Bridge
-import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
-import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.portsOf
@@ -282,11 +280,11 @@ class BridgeTest {
         val at = grid.index(9, 5)
         var s = crossing(bridged = true)
         s = run(s, Bridge.STEP_TICKS * 4)
-        val before = s.inTransitGrams
+        val before = s.inTransitMass
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(at))))
         assertNull(s.bridges[at], "the bridge is gone")
-        assertEquals(before, s.inTransitGrams, "and whatever was inside it fell on the deck")
+        assertEquals(before, s.inTransitMass, "and whatever was inside it fell on the deck")
     }
 
     @Test
@@ -296,7 +294,7 @@ class BridgeTest {
             val cfg = OutofspaceConfig(initialGrid = grid)
             repeat(600) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
             return buildString {
-                append(s.inTransitGrams).append('|').append(s.ventedGrams).append('|').append(s.diverters)
+                append(s.inTransitMass).append('|').append(s.ventedMass).append('|').append(s.diverters)
                 for (r in s.rails) append(r?.held?.mass ?: 0L).append(',')
             }
         }

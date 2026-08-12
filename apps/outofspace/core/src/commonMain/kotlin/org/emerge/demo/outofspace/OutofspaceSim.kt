@@ -34,7 +34,6 @@ import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Body
-import org.emerge.demo.outofspace.world.ambientJoules
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.Airlock
@@ -65,11 +64,9 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.driftBodies
-import org.emerge.demo.outofspace.world.frameAcceleration
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMassGrams
-import org.emerge.demo.outofspace.world.spoilsOf
 import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
@@ -173,7 +170,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         // Felt gravity: plating + engine impulse from previous tick (fluid solved under this gravity). See [experiencedGravity].
-        val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.massGrams)
+        val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.mass)
 
         // ── Heat ──────────────────────────────────────────────────────────────
         //
@@ -330,24 +327,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
             tick = state.tick + 1,
-            extractedGrams = w.extractedGrams,
-            ventedGrams = w.ventedGrams,
+            extractedMass = w.extractedGrams,
+            ventedMass = w.ventedGrams,
             signals = signals,
             networks = networks,
             structure = structure,
             occupancy = occupancy,
-            generatedJoules = w.generatedJoules,
-            radiatedJoules = state.radiatedJoules + conducted.radiated,
+            generatedEnergy = w.generatedJoules,
+            radiatedEnergy = state.radiatedEnergy + conducted.radiated,
             insertedJoules = w.insertedJoules,
             acquiredJoules = w.acquiredJoules,
             // Solid→air energy (see [SolidHeatStep]).
-            solidToAirJoules = state.solidToAirJoules + conducted.toAir,
+            solidToAirEnergy = state.solidToAirEnergy + conducted.toAir,
             air = fluid.air,
             pipeAir = pipes.air,
             pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
-            airVentedGrams = state.airVentedGrams + fluid.ventedGrams,
+            airVentedMass = state.airVentedMass + fluid.ventedGrams,
             // Separate from radiatedJoules: cleaner ledger.
-            airVentedJoules = state.airVentedJoules + fluid.ventedJoules,
+            airVentedEnergy = state.airVentedEnergy + fluid.ventedJoules,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirGrams = w.injectedAirGrams,
             injectedAirJoules = w.injectedAirJoules,
@@ -571,7 +568,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
-        var extractedGrams: Long = state.extractedGrams
+        var extractedGrams: Long = state.extractedMass
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
@@ -588,7 +585,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
-        var ventedGrams: Long = state.ventedGrams
+        var ventedGrams: Long = state.ventedMass
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
         var injectedAirGrams: Long = state.injectedAirGrams
@@ -657,7 +654,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * write made by an earlier one.
          */
         val heatAdded: LongArray = LongArray(state.grid.size)
-        var generatedJoules: Long = state.generatedJoules
+        var generatedJoules: Long = state.generatedEnergy
         var insertedJoules: Long = state.insertedJoules
         var acquiredJoules: Long = state.acquiredJoules
 
@@ -998,7 +995,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * ⚠️ **Three things leave the rock together and all three must be booked here**, because the
          * rock is not part of the vessel and each of them lands in something that is:
          *
-         *  - mass, which becomes ore and moves [VesselState.extractedGrams];
+         *  - mass, which becomes ore and moves [VesselState.extractedMass];
          *  - heat, which goes into the casing and is a *transfer* rather than work, so it is
          *    [absorb]ed and not [heat]ed — putting it through the generated-joules term would mint
          *    energy that was already in the world;

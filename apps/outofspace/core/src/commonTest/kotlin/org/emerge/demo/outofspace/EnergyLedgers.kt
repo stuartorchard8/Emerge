@@ -60,7 +60,7 @@ object EnergyLedgers {
     /**
      * Both energy identities: the fabric's and the air's.
      *
-     * They go together because the coupling term [VesselState.solidToAirJoules] appears in each with
+     * They go together because the coupling term [VesselState.solidToAirEnergy] appears in each with
      * the opposite sign — checking one alone proves nothing, since a transfer that leaks out of one
      * ledger and mints into the other leaves both halves looking closed. That was a real bug in the
      * valve, caught only once a joule actually crossed.

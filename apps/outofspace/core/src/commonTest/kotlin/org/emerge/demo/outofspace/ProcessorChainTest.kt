@@ -10,10 +10,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Vent
@@ -200,8 +198,8 @@ class ProcessorChainTest {
             )
         }
         assertEquals(
-            s.extractedGrams,
-            s.inTransitGrams + s.ventedGrams,
+            s.extractedMass,
+            s.inTransitMass + s.ventedMass,
             "and a stalled chain still conserves mass",
         )
     }

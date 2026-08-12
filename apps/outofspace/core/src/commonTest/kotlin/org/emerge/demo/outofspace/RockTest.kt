@@ -146,7 +146,7 @@ class RockTest {
         val loaded = Save.read(Save.write(played))
         assertEquals(2, played.bodies.size, "nothing was dropped, so this proved nothing")
         assertEquals(played.bodies, loaded.bodies)
-        assertEquals(played.storedJoules, loaded.storedJoules)
+        assertEquals(played.storedEnergy, loaded.storedEnergy)
         // The text, not just the state — the sharper check, because it fails on anything the format
         // forgot rather than on anything the comparison happened to look at.
         assertEquals(Save.write(played), Save.write(loaded))

@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.chem.conservationOf
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.SolidPacket
@@ -60,9 +59,9 @@ class VesselSimTest {
         // Storage contents are part of inTransitGrams -- the stockpile is a view over the storages,
         // not an account beside them -- so there is no separate "banked" term to add here.
         assertEquals(
-            s.extractedGrams,
-            s.inTransitGrams + s.ventedGrams,
-            "$what: extracted ${s.extractedGrams} != aboard ${s.inTransitGrams} + vented ${s.ventedGrams}",
+            s.extractedMass,
+            s.inTransitMass + s.ventedMass,
+            "$what: extracted ${s.extractedMass} != aboard ${s.inTransitMass} + vented ${s.ventedMass}",
         )
     }
 
@@ -144,7 +143,7 @@ class VesselSimTest {
         )
 
         assertEquals(Storage.CAP, (s[grid.index(8, 5)] as Storage).contents?.mass, "the tank filled")
-        assertTrue(s.ventedGrams > 0L, "and the rest went up the branch and overboard")
+        assertTrue(s.ventedMass > 0L, "and the rest went up the branch and overboard")
         assertBalanced(s, "line with a full tank and an open vent")
     }
 
@@ -174,12 +173,12 @@ class VesselSimTest {
             120,
         )
 
-        assertTrue(s.ventedGrams > 0L, "the vent took a share")
+        assertTrue(s.ventedMass > 0L, "the vent took a share")
         val stored = (s[grid.index(9, 5)] as Storage).contents?.mass ?: 0L
         assertTrue(stored > 0L, "and so did the tank, which used to get nothing at all")
         // Not an exact split: the tank stops pulling when it fills, and everything then goes
         // overboard. Both being fed while both can take is the property that matters.
-        assertTrue(stored >= s.ventedGrams / 2, "and the shares are comparable, not lopsided: $stored vs ${s.ventedGrams}")
+        assertTrue(stored >= s.ventedMass / 2, "and the shares are comparable, not lopsided: $stored vs ${s.ventedMass}")
         assertBalanced(s, "forked line")
     }
 
@@ -258,7 +257,7 @@ class VesselSimTest {
             Edit.Remove(grid.index(8, 2)),
             Edit.Place(grid.index(7, 2), MachineKind.Vent, Direction.Right),
         )))
-        assertTrue(s.ventedGrams > 0L, "material should have gone overboard")
+        assertTrue(s.ventedMass > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
     }
 
@@ -336,12 +335,12 @@ class VesselSimTest {
         s = run(s, ticksToMove(FEEDSTOCK_GRAMS))
 
         assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")
-        assertEquals(FEEDSTOCK_GRAMS, s.extractedGrams, "and every gram of it should have become ore")
+        assertEquals(FEEDSTOCK_GRAMS, s.extractedMass, "and every gram of it should have become ore")
         assertBalanced(s, "extractor into a vent")
 
         // Nothing more arrives, however long it is left running.
         val after = run(s, 100)
-        assertEquals(s.extractedGrams, after.extractedGrams, "an empty plate produces nothing")
+        assertEquals(s.extractedMass, after.extractedMass, "an empty plate produces nothing")
     }
 
     @Test
@@ -364,7 +363,7 @@ class VesselSimTest {
         )
 
         s = run(s, ticksToMove(Storage.CAP))
-        assertTrue(s.ventedGrams > 0L, "slag should be pouring out the side")
+        assertTrue(s.ventedMass > 0L, "slag should be pouring out the side")
         assertEquals(0L, s.stockpile[Form.IronIngot].total, "and no ingot should ever reach the store")
         assertBalanced(s, "ore straight to smelter")
     }
@@ -415,7 +414,7 @@ class VesselSimTest {
         // Take the tank away and the stockpile goes with it: availability is a fact about where
         // things are, not a number banked somewhere safe.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.index(4, 2)))))
-        assertEquals(0L, s.stockpile.totalGrams)
+        assertEquals(0L, s.stockpile.totalMass)
     }
 
     @Test
@@ -598,7 +597,7 @@ class VesselSimTest {
             if (it % 97 == 0) assertBalanced(s, "tick ${s.tick}")
         }
         assertBalanced(s, "final")
-        assertTrue(s.extractedGrams > 50_000L, "the line should have moved real tonnage: ${s.extractedGrams}")
+        assertTrue(s.extractedMass > 50_000L, "the line should have moved real tonnage: ${s.extractedMass}")
     }
 
     @Test
@@ -614,8 +613,8 @@ class VesselSimTest {
         // made a perfectly healthy world look 5kg short.
         val onTrack = s.rails.fold(Mixture.EMPTY) { acc, r -> acc + (r?.held?.contents ?: Mixture.EMPTY) }
         val inWorld = s.machines.fold(onTrack) { acc, m -> acc + contentsOf(m) }
-        val accountedFor = inWorld.total + s.ventedGrams
-        assertEquals(s.extractedGrams, accountedFor)
+        val accountedFor = inWorld.total + s.ventedMass
+        assertEquals(s.extractedMass, accountedFor)
 
         // And no species appeared from nowhere: only what the ore body contains is present.
         val fromOreBody = setOf(Species.Iron, Species.Silica, Species.Copper, Species.Titanium)
@@ -626,7 +625,7 @@ class VesselSimTest {
     @Test
     fun `two runs of the same world are identical`() {
         fun digest(s: VesselState): String = buildString {
-            append(s.tick).append('|').append(s.extractedGrams).append('|').append(s.ventedGrams)
+            append(s.tick).append('|').append(s.extractedMass).append('|').append(s.ventedMass)
             append('|').append(s.stockpile.toString())
             for (m in s.machines) append('|').append(m?.toString() ?: "-")
         }

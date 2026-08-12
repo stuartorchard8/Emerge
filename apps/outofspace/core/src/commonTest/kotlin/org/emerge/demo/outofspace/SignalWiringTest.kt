@@ -98,7 +98,7 @@ class SignalWiringTest {
     private fun extractor(s: VesselState) = s[grid.index(extractorAt.first, extractorAt.second)] as Extractor
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
-    private fun ground(s: VesselState): Long = s.extractedGrams - (extractor(s).input?.mass ?: 0L)
+    private fun ground(s: VesselState): Long = s.extractedMass - (extractor(s).input?.mass ?: 0L)
 
     // ── The point of the plan ─────────────────────────────────────────────────
 

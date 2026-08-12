@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
@@ -19,8 +18,6 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.ambientJoules
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.thermalTiles
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -70,7 +67,7 @@ class BodyHeatTest {
         val list = machines.toMutableList()
         val m = list[at]!!
         list[at] = m.atKelvin(kelvin)
-        return copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
+        return copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
     }
 
     private fun VesselState.railKelvin(tile: Int): Int {
@@ -102,7 +99,7 @@ class BodyHeatTest {
         val cold = (list[at] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
         val perTile = MachineKind.Smelter.capacityPerTile
         list[at] = cold.withJoules(cold.joules.with(0, perTile * 2_000L))
-        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
+        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
 
         fun tiles(s: VesselState) = (s.machines[at] as Machine).joules
         val start = tiles(seeded)
@@ -208,7 +205,7 @@ class BodyHeatTest {
         val rails = world.rails.toMutableList()
         rails[source] = rails[source]!!.copy(joules = Conduit.Rail.capacityPerTile * 2_000L)
         var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
-        s = s.copy(baselineJoules = s.storedJoules)
+        s = s.copy(baselineJoules = s.storedEnergy)
 
         val settled = run(s, 40)
         val alongTheRun = settled.railKelvin(g.index(6, topRow))
@@ -236,7 +233,7 @@ class BodyHeatTest {
         )
         // Nothing arrives from outside and nothing is conducted into it: space is not a cold
         // reservoir the hull can convect into, it is empty, and radiation is the only path out.
-        assertTrue(settled.radiatedJoules > 0L, "and the exposed face radiates")
+        assertTrue(settled.radiatedEnergy > 0L, "and the exposed face radiates")
     }
 
     @Test
@@ -255,7 +252,7 @@ class BodyHeatTest {
             val list = s.machines.toMutableList()
             val m = list[at]!!
             list[at] = m.withJoules(m.joules.plusSpread(20_000_000_000L))
-            return s.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
+            return s.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
         }
 
         val hotFurnace = bump(furnace).kelvinAt(at) - Temperature.AMBIENT_KELVIN

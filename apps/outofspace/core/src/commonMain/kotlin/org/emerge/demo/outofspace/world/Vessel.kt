@@ -17,16 +17,16 @@ import org.emerge.sim.core.physics.primitives.Frac2
  * the cheap insurance that keeps acceleration-derived gravity a later decision rather than a
  * rewrite: no code is allowed to assume "down" is a constant or implied by array order.
  *
- * [ventedGrams] and [extractedGrams] exist so conservation can be checked across the *whole world*,
+ * [ventedMass] and [extractedMass] exist so conservation can be checked across the *whole world*,
  * not just one operation. A vent is the only place matter legitimately leaves and an extractor the
  * only place ore legitimately arrives, so `extracted == in-world + vented` must hold on every tick.
  * That invariant catches an entire category of logistics bug at once.
  *
- * Since H3 nothing mints ore: [extractedGrams] is mass that came **off a rock**, so it is a term in
+ * Since H3 nothing mints ore: [extractedMass] is mass that came **off a rock**, so it is a term in
  * the rock ledger too — hinging the ore and mass balances on the same number.
  *
  * There is no separate "banked" term any more: the [Stockpile] is derived from the storages, so what
- * it holds is already counted in [inTransitGrams] and adding it again would double-count.
+ * it holds is already counted in [inTransitMass] and adding it again would double-count.
  */
 data class VesselState(
     val grid: Grid,
@@ -110,7 +110,7 @@ data class VesselState(
      * Where the vessel has got to, in the billionths of a tile [Flight.PER_TILE] counts.
      *
      * The only genuinely new state increment G adds, and the only part of flight that has to be
-     * stored: velocity is [vesselImpulseX] over [massGrams] and can always be recomputed, whereas a
+     * stored: velocity is [vesselImpulseX] over [mass] and can always be recomputed, whereas a
      * position is a history of velocities and cannot be recomputed from anything.
      *
      * It is a position in **open space**, not on the grid. The grid is the vessel's own frame and
@@ -133,25 +133,25 @@ data class VesselState(
     /**
      * Free-floating solids: rocks — see [RigidBody].
      *
-     * ⚠️ **Not part of "aboard".** A rock is not in [inTransitGrams] and not in [massGrams], so it
+     * ⚠️ **Not part of "aboard".** A rock is not in [inTransitMass] and not in [mass], so it
      * neither breaks the mass balance nor slows the ship down while it is loose. Its mass has
      * its own ledger.
      */
     val bodies: List<RigidBody> = emptyList(),
     val tick: Long = 0L,
-    val extractedGrams: Long = 0L,
-    val ventedGrams: Long = 0L,
+    val extractedMass: Long = 0L,
+    val ventedMass: Long = 0L,
 
     /**
      * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
-     * away to space. The thermal counterpart of [extractedGrams] and [ventedGrams], and they buy the
+     * away to space. The thermal counterpart of [extractedMass] and [ventedMass], and they buy the
      * same thing: `stored + radiated − generated` must never move, so an energy leak is one
      * assertion away rather than a mystery.
      */
-    val generatedJoules: Long = 0L,
-    val radiatedJoules: Long = 0L,
-    /** Cumulative grams of atmosphere lost to space. Air's counterpart to [radiatedJoules]. */
-    val airVentedGrams: Long = 0L,
+    val generatedEnergy: Long = 0L,
+    val radiatedEnergy: Long = 0L,
+    /** Cumulative grams of atmosphere lost to space. Air's counterpart to [radiatedEnergy]. */
+    val airVentedMass: Long = 0L,
     /**
      * Cumulative grams of atmosphere put into the world by [org.emerge.demo.outofspace.Edit.Inject]
      * — the debug bellows — rather than by any gas coming from anywhere.
@@ -217,7 +217,7 @@ data class VesselState(
      */
     val baselineAirJoules: Long = air.totalJoules + pipeAir.totalJoules,
     /** Cumulative joules blown overboard with escaping gas. */
-    val airVentedJoules: Long = 0L,
+    val airVentedEnergy: Long = 0L,
     /**
      * The energy the world's **solids** started with. Fixed at construction so the thermal balance
      * has something to be compared against — the twin of [baselineAirGrams]. Bodies are not solids
@@ -229,11 +229,11 @@ data class VesselState(
      * and the two terms beyond the obvious ones are:
      *
      *  - [insertedJoules], energy the player inserts via debug features (placing machines, etc.).
-     *  - [solidToAirJoules], because the fabric and the atmosphere now exchange heat, so what one
+     *  - [solidToAirEnergy], because the fabric and the atmosphere now exchange heat, so what one
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
      *  - [acquiredJoules], energy the grid acquires from bodies when the extractor bites — bodies
-     *    are in [storedJoules] but their energy enters the grid from outside, so subtracting
+     *    are in [storedEnergy] but their energy enters the grid from outside, so subtracting
      *    [acquiredJoules] cancels the double-count: `stored` holds the joules and `acquired`
      *    records the transfer so the ledger stays closed.
      */
@@ -249,7 +249,7 @@ data class VesselState(
      */
     val acquiredJoules: Long = 0L,
     /** Cumulative net energy conducted from the solids into the atmosphere. Negative the other way. */
-    val solidToAirJoules: Long = 0L,
+    val solidToAirEnergy: Long = 0L,
     /**
      * How the air is moving: momentum on the faces between tiles — see [MomentumField].
      *
@@ -469,16 +469,16 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedJoules: Long get() = solidJoules(machines, conduits, bridges)
+    val storedEnergy: Long get() = solidJoules(machines, conduits, bridges)
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
-    val atmosphereGrams: Long get() = air.totalGrams + pipeAir.totalGrams
+    val atmosphereMass: Long get() = air.totalGrams + pipeAir.totalGrams
 
     /**
      * The heat that atmosphere is carrying, in the rooms and in the pipes — what [baselineAirJoules]
      * anchors.
      *
-     * The counterpart to [atmosphereGrams], and it arrived a whole increment later than it should
+     * The counterpart to [atmosphereMass], and it arrived a whole increment later than it should
      * have. The mass side got a both-fields total when the pipes were built; the energy side kept
      * reading `air.totalJoules` alone. That was invisible for exactly as long as the pipe layer was
      * sealed — no gas crossed, so no joules crossed — and the moment a valve opened, every joule that
@@ -494,17 +494,17 @@ data class VesselState(
      *
      * One property rather than the sum written out at each of the four places that wanted it — the
      * HUD, the harness, the fixtures and the tests. That is not tidiness: [atmosphereJoules] arrived
-     * a whole increment after [atmosphereGrams] because the two were summed at separate call sites
+     * a whole increment after [atmosphereMass] because the two were summed at separate call sites
      * and only one of them learned about the pipes, and nothing failed until gas moved. Two
      * quantities that share a baseline have to be summed in one place, or eventually they are not
      * summed the same way.
      */
-    val airBalance: Long get() = atmosphereGrams + airVentedGrams - injectedAirGrams - baselineAirGrams
+    val airBalance: Long get() = atmosphereMass + airVentedMass - injectedAirGrams - baselineAirGrams
 
     /**
      * The same statement about the air's energy — [airBalance]'s twin, and zero for its reasons.
      *
-     * ⚠️ It carries **one term the mass identity does not**: [solidToAirJoules]. Heat crosses between
+     * ⚠️ It carries **one term the mass identity does not**: [solidToAirEnergy]. Heat crosses between
      * the fabric and the gas and mass never does, so what the solid ledger says it gave, this one has
      * to be holding. Leave it out and a warm room reads as a leak — which is exactly what the first
      * version of this property did.
@@ -512,7 +512,7 @@ data class VesselState(
      * ⚠️ **PARKED — see [heatBalance].** This one is parked with it, for the same reason.
      */
     val airJouleBalance: Long
-        get() = atmosphereJoules + airVentedJoules - solidToAirJoules - injectedAirJoules -
+        get() = atmosphereJoules + airVentedEnergy - solidToAirEnergy - injectedAirJoules -
             baselineAirJoules
 
     /**
@@ -542,8 +542,8 @@ data class VesselState(
      * switch is `EnergyLedgers.PARKED` in commonTest, and the parked list is in the plan.
      */
     val heatBalance: Long
-        get() = storedJoules + radiatedJoules + solidToAirJoules -
-            generatedJoules - insertedJoules - acquiredJoules - baselineJoules
+        get() = storedEnergy + radiatedEnergy + solidToAirEnergy -
+            generatedEnergy - insertedJoules - acquiredJoules - baselineJoules
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =
@@ -555,13 +555,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitGrams: Long get() = cargoGrams(machines, conduits, bridges)
+    val inTransitMass: Long get() = cargoGrams(machines, conduits, bridges)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val massGrams: Long get() = vesselMassGrams(machines, conduits, bridges)
+    val mass: Long get() = vesselMassGrams(machines, conduits, bridges)
 
     /**
      * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
@@ -570,8 +570,8 @@ data class VesselState(
      * its mass, so there is no accumulated velocity to drift and nothing to be wrong about across a
      * save. See [Flight] for what counts as the ship and why the atmosphere does not.
      */
-    val velocityX: Long get() = scaledRatio(vesselImpulseX, massGrams, Flight.PER_TILE)
-    val velocityY: Long get() = scaledRatio(vesselImpulseY, massGrams, Flight.PER_TILE)
+    val velocityX: Long get() = scaledRatio(vesselImpulseX, mass, Flight.PER_TILE)
+    val velocityY: Long get() = scaledRatio(vesselImpulseY, mass, Flight.PER_TILE)
 
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
@@ -579,7 +579,7 @@ data class VesselState(
      * This is what the fluid is run under — [gravity] alone never is any more. See
      * [experiencedGravity] for the sign, and for why only one axis of the thrust survives.
      */
-    val feltGravity: Frac2 get() = experiencedGravity(gravity, netImpulseX, netImpulseY, massGrams)
+    val feltGravity: Frac2 get() = experiencedGravity(gravity, netImpulseX, netImpulseY, mass)
 
     /**
      * The ship's acceleration in its own frame, which is what makes the vessel frame a non-inertial
@@ -589,7 +589,7 @@ data class VesselState(
      * named because a rock outside the hull needs *this* half and must not be handed the plating —
      * see [feltBy]. Two consumers of one term beats two derivations of it.
      */
-    val frameAcceleration: Frac2 get() = frameAcceleration(netImpulseX, netImpulseY, massGrams)
+    val frameAcceleration: Frac2 get() = frameAcceleration(netImpulseX, netImpulseY, mass)
 
     fun withMachine(index: Int, machine: Machine?): VesselState =
         copy(machines = machines.toMutableList().also { it[index] = machine })
@@ -931,8 +931,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         pipeMomentum = newPipeMomentum,
         bodies = newBodies,
         // vented quantities — grow: difference is zero, no special case needed
-        airVentedGrams = airVentedGrams + ventedGas,
-        airVentedJoules = airVentedJoules + ventedJoules,
+        airVentedMass = airVentedMass + ventedGas,
+        airVentedEnergy = airVentedEnergy + ventedJoules,
         exhaustMomentumX = exhaustMomentumX + ventedMomX,
         exhaustMomentumY = exhaustMomentumY + ventedMomY,
         // baselines passed through explicitly to avoid recompute on copy

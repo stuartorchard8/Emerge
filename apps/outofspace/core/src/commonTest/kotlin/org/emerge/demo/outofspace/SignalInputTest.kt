@@ -173,8 +173,8 @@ class SignalInputTest {
         val idle = run(start, 60, held = 0)
         val flying = run(start, 60, held = InputKey.Right.bit)
 
-        assertEquals(0L, idle.airVentedGrams, "with nobody holding the key the door stays shut")
-        assertTrue(flying.airVentedGrams > 0L, "held, it should be venting: ${flying.airVentedGrams}g")
+        assertEquals(0L, idle.airVentedMass, "with nobody holding the key the door stays shut")
+        assertTrue(flying.airVentedMass > 0L, "held, it should be venting: ${flying.airVentedMass}g")
         assertTrue(
             flying.vesselImpulseX < 0L,
             "exhaust went +x, so the ship should go -x: ${flying.vesselImpulseX}",

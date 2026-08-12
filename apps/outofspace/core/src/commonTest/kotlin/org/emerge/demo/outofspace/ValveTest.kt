@@ -89,7 +89,7 @@ class ValveTest {
     private fun assertBalanced(s: VesselState, what: String) {
         assertEquals(
             s.baselineAirGrams,
-            s.atmosphereGrams + s.airVentedGrams,
+            s.atmosphereMass + s.airVentedMass,
             "$what: rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
         EnergyLedgers.assertAirBalanced(s, what)

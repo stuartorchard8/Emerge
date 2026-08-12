@@ -9,9 +9,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.SignalSource
-import org.emerge.demo.outofspace.world.Trigger
-import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -25,7 +22,6 @@ import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
-import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -116,8 +112,8 @@ class SaveTest {
 
         // ── Mass and momentum move with the mass unit, and only with it ──
         for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
-            "extracted" to { it.extractedGrams },
-            "vented" to { it.ventedGrams },
+            "extracted" to { it.extractedMass },
+            "vented" to { it.ventedMass },
             "baseline air" to { it.baselineAirGrams },
         )) {
             assertEquals(read(here) * factor, read(heavier), "$what under a coarser mass unit")
@@ -126,11 +122,11 @@ class SaveTest {
 
         // ── Energy moves with the energy unit, and only with it ──
         for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
-            "generated" to { it.generatedJoules },
-            "radiated" to { it.radiatedJoules },
+            "generated" to { it.generatedEnergy },
+            "radiated" to { it.radiatedEnergy },
             "baseline joules" to { it.baselineJoules },
             "inserted" to { it.insertedJoules },
-            "solid to air" to { it.solidToAirJoules },
+            "solid to air" to { it.solidToAirEnergy },
         )) {
             assertEquals(read(here) * factor, read(hotter), "$what under a coarser energy unit")
             assertEquals(read(here), read(heavier), "$what is not a mass")
@@ -144,7 +140,7 @@ class SaveTest {
         // "every mass in the world scales" without asking where each number came from.
 
         // Guards the guard: if the world were empty these would all be 0 == 0.
-        assertTrue(here.extractedGrams > 0 || here.baselineAirGrams > 0, "the fixture must have mass in it")
+        assertTrue(here.extractedMass > 0 || here.baselineAirGrams > 0, "the fixture must have mass in it")
 
         // Air, tile by tile, is the biggest mass field in the game and goes through readMixture.
         var airTiles = 0
@@ -196,11 +192,11 @@ class SaveTest {
         val factor = 10L
 
         val mass = listOf<Pair<String, (VesselState) -> Long>>(
-            "extracted" to { it.extractedGrams },
-            "vented" to { it.ventedGrams },
+            "extracted" to { it.extractedMass },
+            "vented" to { it.ventedMass },
         )
         val energy = listOf<Pair<String, (VesselState) -> Long>>(
-            "radiated" to { it.radiatedJoules },
+            "radiated" to { it.radiatedEnergy },
             "baseline joules" to { it.baselineJoules },
         )
 
@@ -267,14 +263,14 @@ class SaveTest {
         val played = run(starterVessel(cfg.initialGrid), 300)
         val reloaded = Save.read(Save.write(played))
 
-        assertEquals(played.extractedGrams, reloaded.extractedGrams)
-        assertEquals(played.ventedGrams, reloaded.ventedGrams)
-        assertEquals(played.inTransitGrams, reloaded.inTransitGrams)
+        assertEquals(played.extractedMass, reloaded.extractedMass)
+        assertEquals(played.ventedMass, reloaded.ventedMass)
+        assertEquals(played.inTransitMass, reloaded.inTransitMass)
         assertEquals(played.baselineJoules, reloaded.baselineJoules)
         assertEquals(played.baselineAirGrams, reloaded.baselineAirGrams)
         assertEquals(
-            reloaded.extractedGrams,
-            reloaded.inTransitGrams + reloaded.ventedGrams,
+            reloaded.extractedMass,
+            reloaded.inTransitMass + reloaded.ventedMass,
             "the mass balance did not survive the round trip",
         )
     }
@@ -409,8 +405,8 @@ class SaveTest {
     fun `heat and air come back tile by tile, not just in total`() {
         val played = run(starterVessel(cfg.initialGrid), 200)
         val back = Save.read(Save.write(played))
-        assertEquals(played.storedJoules, back.storedJoules)
-        assertEquals(played.atmosphereGrams, back.atmosphereGrams)
+        assertEquals(played.storedEnergy, back.storedEnergy)
+        assertEquals(played.atmosphereMass, back.atmosphereMass)
         // Body by body rather than tile by tile: solid heat lives on the machine and the segment
         // now, so the thing that has to survive a round trip is each object's own energy.
         for (tile in 0 until played.grid.size) {

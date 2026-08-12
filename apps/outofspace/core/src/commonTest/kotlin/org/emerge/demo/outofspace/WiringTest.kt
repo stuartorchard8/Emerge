@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Bridge
 import org.emerge.demo.outofspace.world.Conduit
@@ -22,7 +21,6 @@ import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Sensor
 import org.emerge.demo.outofspace.world.SignalField
-import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
@@ -30,7 +28,6 @@ import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -274,7 +271,7 @@ class WiringTest {
         // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
         // lurches that say nothing about a rate.
         fun ground(w: VesselState): Long =
-            w.extractedGrams - ((w[grid.index(2, 3)] as Extractor).input?.mass ?: 0L)
+            w.extractedMass - ((w[grid.index(2, 3)] as Extractor).input?.mass ?: 0L)
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
@@ -389,8 +386,8 @@ class WiringTest {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 89 == 0) {
                 assertEquals(
-                    s.extractedGrams,
-                    s.inTransitGrams + s.ventedGrams,
+                    s.extractedMass,
+                    s.inTransitMass + s.ventedMass,
                     "tick ${s.tick}",
                 )
             }
@@ -400,7 +397,7 @@ class WiringTest {
     @Test
     fun `two runs of the wired world are identical`() {
         fun digest(s: VesselState) = buildString {
-            append(s.tick).append(s.extractedGrams).append(s.ventedGrams).append(s.stockpile)
+            append(s.tick).append(s.extractedMass).append(s.ventedMass).append(s.stockpile)
             for (m in s.machines) append(m?.toString() ?: "-")
         }
         val grid = Grid(40, 28)

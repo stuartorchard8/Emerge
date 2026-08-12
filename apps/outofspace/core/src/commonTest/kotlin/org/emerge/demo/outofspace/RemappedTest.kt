@@ -1,8 +1,5 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Form
-import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Conduit
@@ -425,7 +422,7 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // mass = massGrams + ventedGrams + extractedGrams (should be invariant)
-        fun massBalance(s: VesselState) = s.massGrams + s.ventedGrams + s.extractedGrams
+        fun massBalance(s: VesselState) = s.mass + s.ventedMass + s.extractedMass
         assertEquals(massBalance(s0), massBalance(s1), "massBalance must be preserved")
     }
 
