@@ -1,608 +1,204 @@
-# Trigonometry-Free Rotation Plan
+# Rotation Plan — status and design
 
-*Draft, 2026-08-09. Nothing built. Replaces the angle-centric approach in PLAN_vessel_rotation.md
-with a direction-vector approach that avoids sin()/cos()/atan2() in hot paths.*
-
----
-
-## 1. The core idea
-
-Store rotation as a **direction vector** instead of an angle:
-
-```
-// Instead of:
-val angle: Frac  // radians, requires cos(angle), sin(angle) every time you need a direction
-
-// Store:
-val forward: Norm  // already a (cos, sin) pair — zero trig needed
-```
-
-The `Norm` type already exists in the codebase (`engine/sim/core/physics/primitives/Norm.kt`)
-and is exactly this: a normalized (x, y) direction vector.
-
-**Why this matters for outofspace:**
-- `Norm.fromAngle()` and `Norm.asAngle` currently use `cos`/`sin`/`atan2` (marked TODO)
-- `Frac2.rotateByAngle()` calls `Norm.fromAngle()` every time
-- These are the trig hot-spots for vessel rotation
-- The Reddit approach eliminates them from the per-tick path
+*Rewritten 2026-08-13. Supersedes the 2026-08-09 draft, which proposed direction-vector rotation for
+outofspace. **That draft's central choice was rejected** — see §2 for why. §1 is where the work is.*
 
 ---
 
-## 2. Direction vector rotation mechanics
+## 1. STATE OF PLAY — read this first
 
-### 2.1 Storing rotation state
+### ✅ Step 1 is VERIFIED and COMMITTED as `3ea0a1fd` (2026-08-13).
 
-```kotlin
-// Forward direction unit vector (cos, sin pair)
-// Initialized to (1, 0) — ship faces along +x (right)
-val forward: Norm = Norm(Frac(1), Frac(0))
-```
+All 8 `TrigTest` assertions pass on JVM, `compileTestKotlinJs` is green (the common-source-set JS
+trap), and Scavengers, Drockets, Cyto and Out of Space test suites are green.
 
-This is `Frac2` normalized — the `cosθ, sinθ` pair without ever computing an angle.
+Three bugs were caught between writing and passing, all of them mine, all now fixed in the commit:
 
-### 2.2 Turning (rotating the direction vector)
+1. **`atan2` picked its normalisation shift from the larger *signed* value, not the larger
+   magnitude.** `vx` is non-negative after the half-plane fold but `vy` is not, so a straight-down
+   vector `(0, −n)` gave `m = 0` and an **infinite shift loop**; `(small x, large −y)` instead
+   picked a shift that overflowed `vy`. Fixed by taking `max(vx, |vy|)`.
+2. **The ±π branch cut was decided by CORDIC noise.** On the `y == 0` axis the true residual is
+   exactly zero, but the loop drives `vy` away and back and lands on a residual whose *sign* is
+   arbitrary — which at the cut is the difference between +π and −π. `atan2(0, −1)` and
+   `atan2(0, −Int.MAX_VALUE)` disagreed despite being the same direction. Fixed by handling `y == 0`
+   up front and returning +π, matching `atan2`'s own convention.
+3. **Two test bugs of my own.** The axes test asserted one specific neighbour of π/2 after its own
+   comment said either was correct, and the round-trip test swept `Int.MIN_VALUE` — see below.
 
-Use the 2D rotation matrix multiplication directly, without `sin/cos`:
+### ⚠️ The one round-trip exception, and why it is not Trig's fault
 
-```kotlin
-// To rotate 'forward' clockwise by rotationSpeed per tick:
-val nextX = forward.x - rotationSpeed * forward.y
-val nextY = forward.y + rotationSpeed * forward.x
+`asAngle(fromAngle(a)) == a` exactly for every `a` **except `Int.MIN_VALUE`** — measured as 1
+mismatch in 200 000 swept angles, and the only one. This is a property of `Coord`, not of `Trig`:
+`Coord` scales as `raw / Int.MAX_VALUE` but wraps on `Int` overflow, so its angular **period is
+2³² while a full turn is 2·Int.MAX_VALUE = 2³² − 2**. Those disagree by two raw units, and
+`Int.MIN_VALUE` is the one raw that falls in the gap — an angle just past −π with no representable
+fixed point. Widening the sweep will not find another. Fixing it would mean rescaling every angle in
+the engine, which is a separate decision and not this change's business.
 
-// Re-normalize to prevent floating-point drift
-val nextLen = Frac2(nextX, nextY).len
-val newForward = Frac2(nextX, nextY) / nextLen  // = Norm via /
-```
+### ⚠️ No golden moved, but do not read that as "nothing changed"
 
-This is the **complex number rotation** — identical to the rotation matrix but expressed
-as vector arithmetic. No trig.
+I expected a shift and there wasn't one. The reason is worth knowing before trusting these suites
+again: **neither `ScavengersDeterminismTest` nor `DrocketsDeterminismTest` pins a trajectory.** Both
+run the sim twice and assert the two runs agree — `ScavengersDeterminismTest.kt:43` says so outright
+("we assert the two runs agree, not any particular value"). They are reproducibility tests, not
+goldens, and they **cannot detect a behaviour change** of this kind by construction. Scavengers and
+Drockets trajectories almost certainly *did* move, and nothing in the repo would notice.
 
-For **Frac2 rotation** (used in `Frac2.rotateByAngle()`), this is the replacement:
+`CytoGoldenTest` *is* a stored digest and is unchanged — correctly, because cyto's single call site
+(`CytoSoaReducer.kt:365`) is a degenerate fallback for a zero neighbour vector.
 
-```kotlin
-// OLD (uses Norm.fromAngle → cos/sin):
-fun Frac2.rotateByAngle(angle: Coord): Frac2 {
-    val rotation = Norm.fromAngle(angle)
-    return Frac2(x * rotation.x - y * rotation.y,
-                 x * rotation.y + y * rotation.x)
-}
+### ⚠️ Two traps for whoever picks this up
 
-// NEW (pure vector, no trig):
-fun Frac2.rotateByForward(forward: Norm, up: Norm): Frac2 {
-    // up = perpendicular to forward (counter-clockwise 90°): (-forward.y, forward.x)
-    // rotation: x' = x·cos - y·sin = x·forward.x - y·forward.y
-    //           y' = x·sin + y·cos = x·forward.y + y·forward.x
-    return Frac2(
-        x * forward.x - y * forward.y,
-        x * forward.y + y * forward.x
-    )
-}
-```
+- **Do not use `--rerun-tasks` on this repo.** It invalidates the up-to-date state of the whole
+  multiplatform graph; the rebuild ran 25+ minutes without finishing and cost a whole session.
+- **`./gradlew test` currently fails on `:apps:fluidlab:core`, and it is not related to this work.**
+  `world/fluid/Drift.kt` has a local `val mass` (a `Long`) colliding with a parameter that should be
+  the `LongArray`, so it does not compile — introduced by `c5f7f49a`, the grams/joules bulk rename,
+  and exactly the "a bulk rename onto a name that already exists changes meaning silently" hazard.
+  It references none of the APIs touched here. Left alone deliberately; **it is a live bug on main.**
+  Until it is fixed, run the modules directly:
+  ```
+  ./gradlew :engine:sim:core:jvmTest :apps:scavengers:core:jvmTest \
+            :apps:drockets:core:jvmTest :apps:cyto:core:jvmTest :apps:outofspace:core:jvmTest
+  ```
 
-Wait — this is just a dot-product-style computation. The rotation matrix IS:
-```
-[ cos  -sin ]   [ forward.x  -forward.y ]
-[ sin   cos ] = [ forward.y   forward.x ]
-```
+### What was built
 
-So `Frac2.rotateBy(forward)` is already what we'd get from `Norm.fromAngle()`, just without the
-`atan2 → cos/sin` conversion. **We're removing the angle as an intermediate step entirely.**
+| File | Change |
+|------|--------|
+| `Trig.kt` (new) | Integer CORDIC. No floating point. One `atan` table serves both directions: rotation mode → `cos`/`sin`, vectoring mode → `atan2`. |
+| `Norm.kt` | `fromAngle`/`asAngle` call `Trig`. Both `TODO`s and all six `kotlin.math` imports gone. |
+| `Frac2.kt` | Added `rotateBy(Norm)`. `rotateByAngle` now delegates to it, so they are one implementation. |
+| `TrigTest.kt` (new) | Accuracy, unit length, cardinal exactness, round-trip, `rotateBy`/`rotateByAngle` agreement. |
 
-### 2.3 Renormalization
+### Measured in a numerical prototype, not in Kotlin
 
-The rotation step preserves length mathematically, but floating-point arithmetic accumulates
-error. Renormalize periodically:
+The algorithm and every constant were validated in Python first
+(`scratchpad/kotlin_exact.py`, not in the repo), **emulating Kotlin's exact semantics**: truncating
+division, arithmetic `shr`, and a `Long` overflow assertion on every intermediate.
 
-```kotlin
-// Every tick (cheap — Frac2.len uses longISqrt, already optimized)
-val currentForward = Frac2(nextX, nextY)
-val newForward = if (currentForward.lenSq > Frac(0)) {
-    Norm(currentForward.x / currentForward.len, currentForward.y / currentForward.len)
-} else {
-    Norm(Frac(1), Frac(0))  // degenerate case
-}
-```
+| | old `Float` path | new integer CORDIC |
+|---|---|---|
+| `fromAngle` max error | **641 raw units** | **0.53** |
+| `asAngle` max error | — | **0.50** |
+| `fromAngle` → `asAngle` round trip | — | **exact, 0 drift** |
+| Cross-platform agreement | not guaranteed | bit-identical by construction |
+
+So the tolerances in `TrigTest` (≤ 1.0 raw) are derived from measurement, not guessed. **If a test
+fails by a small margin, the bug is in the Kotlin transcription, not the tolerance** — do not relax
+it without re-deriving. That rule earned its keep: every one of the three failures above was a real
+defect in the implementation or the test, and not one of them was the tolerance being too tight.
+
+Two portability traps were caught in the prototype and are already handled in `Trig.kt`. Both would
+have compiled clean and been wrong:
+1. **Python's `%` is non-negative; Kotlin's takes the dividend's sign.** Angle folding needed an
+   explicit floored modulo, written out because `Long.floorDiv` is not in the common stdlib.
+2. **`v * Int.MAX_VALUE / 2⁴⁰` overflows `Long` at 2⁷².** Fixed by holding the rotating vector at
+   `Int.MAX_VALUE shl 9` so the conversion back to a `Frac` is a shift and a round, not a multiply.
 
 ---
 
-## 3. Impact on outofspace components
-
-### 3.1 VesselState — the main change
-
-**Add:**
-```kotlin
-val angle: Frac = Frac(0)              // keep for UI/debug (derived, not authoritative)
-val angVel: Frac = Frac(0)             // angular velocity (radians/tick → direction-vector delta)
-```
-
-Actually — if we use direction vectors, we don't store `angVel` as a scalar. We update the
-`forward` vector directly. But for angular momentum conservation, we still need an angular
-state. The question is: **what do we store?**
-
-Two options:
-
-**Option A: Store angle + derive direction**
-```kotlin
-val angle: Frac      // the "real" state
-val angVel: Frac     // angular velocity
-val forward: Norm    // derived: Norm.fromAngle(angle) — but this uses trig!
-```
-
-This doesn't help — we still convert angle → direction with trig.
-
-**Option B: Store direction vector + derive angle**
-```kotlin
-val forward: Norm    // the "real" state (the direction vector)
-val angVel: Frac     // scalar — rate of change of heading
-```
-
-Update rule:
-```kotlin
-// On each tick:
-// 1. Compute angular acceleration from torque
-angAccel = torque / momentOfInertia
-angVel += angAccel
-
-// 2. Rotate the forward vector using rotation matrix
-val headingAngle = forward.asAngle  // only for computing rotation delta?
-// No — we need the rotation speed as an angle to use in the matrix...
-```
-
-Hmm, this is the trickier part. The rotation matrix needs `cos(ω·dt)` and `sin(ω·dt)` where
-`ω` is angular velocity. If `ω` is small (per-tick), we can approximate:
-
-```
-cos(ω) ≈ 1
-sin(ω) ≈ ω
-```
-
-So for small angular steps:
-```kotlin
-val ω = angVel.toFrac()  // scalar angular velocity as Frac
-val newForwardX = forward.x - ω * forward.y
-val newForwardY = forward.y + ω * forward.x
-val newForwardLen = Frac2(newForwardX, newForwardY).len
-forward = Norm(newForwardX / newForwardLen, newForwardY / newForwardLen)
-```
-
-This is the **small-angle approximation** — it's exactly what the Reddit post shows as the
-"matrix-free rotation." The renormalization step absorbs the small errors.
-
-**Verdict: Option B (store direction vector, angVel as scalar for torque integration).**
-
-### 3.2 Felt gravity (rotation's main effect)
-
-**Current** (from VesselState):
-```kotlin
-val feltGravity: Frac2 get() = experiencedGravity(gravity, netImpulseX, netImpulseY, massGrams)
-
-fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long, massGrams: Long): Frac2 {
-    val a = frameAcceleration(netImpulseX, netImpulseY, massGrams)
-    return Frac2(Frac(deckGravity.x.raw - a.x.raw), Frac(deckGravity.y.raw - a.y.raw))
-}
-```
-
-**With rotation**, gravity is derived from the ship's orientation:
-```kotlin
-// The "down" direction in world frame is the ship's backward/upward direction.
-// If forward = (cos θ, sin θ), then down = (-sin θ, cos θ) = (-forward.y, forward.x)
-
-val shipDown: Norm get() = Norm(-forward.y, forward.x)
-
-val feltGravity: Frac2 get() {
-    val deckGravity = platingGravity  // user setting: (0, 1) for 1g down, (0, 0) for freefall
-    val shipAccel = frameAcceleration(netImpulseX, netImpulseY, massGrams)
-    
-    // Rotate deck gravity by ship's orientation
-    val rotatedDeck = deckGravity.rotateBy(forward)  // see new Frac2.rotateBy(Norm) below
-    
-    return Frac2(
-        Frac(rotatedDeck.x.raw - shipAccel.x.raw),
-        Frac(rotatedDeck.y.raw - shipAccel.y.raw)
-    )
-}
-```
-
-Wait, but `deckGravity` is `(0, 1)` for 1g (straight down on screen). If the ship rotates 90°,
-the deck gravity should still be `(0, 1)` — it's a setting. What rotates is how the crew feels it.
-
-Actually, looking at the PLAN_vessel_rotation.md more carefully:
-
-> feltGravity = rotate(platingGravity, angle) - shipAccelerationRotated
-
-The idea is: when the ship rotates, the gravity the crew feels rotates with it. If the ship
-orients so its +x edge is "down," then gravity in grid coordinates becomes `(1, 0)`.
-
-So `platingGravity` is the **setting** and `feltGravity` is **derived from orientation**:
-
-```kotlin
-// Plating gravity as a setting (what the ship WOULD feel with no acceleration)
-val platingGravity: Frac2 = Frac2(Frac(0), Frac(1))  // or FREEFALL
-
-// With ship orientation:
-// If forward = (1, 0) (facing right), and platingGravity = (0, 1) (screen-down),
-// then felt = (0, 1) — normal, ship upright.
-// If forward = (0, 1) (facing down), platingGravity = (0, 1),
-// then felt = (1, 0) — gravity pulls along +x (ship is now "sideways").
-
-// The felt direction is: rotate platingGravity by the ship's orientation.
-// This is the same as dot product with the rotation basis:
-//   felt.x = platingGravity · forward      (projection onto forward axis)
-//   felt.y = platingGravity · up           (projection onto perpendicular axis)
-// where up = (-forward.y, forward.x)
-val feltGravity: Frac2 get() {
-    val up = Norm(-forward.y, forward.x)
-    val projected = Frac2(
-        platingGravity.x * forward.x + platingGravity.y * forward.y,
-        platingGravity.x * up.x + platingGravity.y * up.y
-    )
-    return Frac2(
-        Frac(projected.x.raw - frameAcceleration.x.raw),
-        Frac(projected.y.raw - frameAcceleration.y.raw)
-    )
-}
-```
-
-Actually, let me think about this more carefully. The `feltGravity` is a **Frac2 vector** —
-it has x and y components in grid coordinates. The ship's orientation determines which grid
-direction is "down" relative to the ship.
-
-Simpler approach:
-
-```kotlin
-// Ship's "down" in grid coordinates: perpendicular to forward, pointing outward from hull.
-// If ship faces right (forward = (1,0)), down = (0,1) — screen-down.
-// If ship faces down (forward = (0,1)), down = (1,0) — right is down.
-val gridDown: Frac2
-    get() = platingGravity.rotateBy(forward)
-
-// rotateBy for Frac2: apply the rotation matrix defined by forward
-fun Frac2.rotateBy(forward: Norm): Frac2 {
-    val upX = -forward.y
-    val upY = forward.x
-    return Frac2(
-        this.x * forward.x + this.y * upX,
-        this.x * forward.y + this.y * upY
-    )
-}
-```
-
-Hmm, this is getting complicated. Let me reconsider. The key insight is that `Frac2` already
-has `rotateByAngle`. What we want is `rotateBy(Norm)` — the same thing but using a direction
-vector instead of an angle:
-
-```kotlin
-// Frac2.kt addition:
-fun Frac2.rotateBy(forward: Norm): Frac2 {
-    // Rotation matrix: [cos  -sin] = [forward.x  -forward.y]
-    //                   [sin   cos ]   [forward.y   forward.x]
-    return Frac2(
-        x * forward.x - y * forward.y,
-        x * forward.y + y * forward.x
-    )
-}
-```
-
-This is **identical** to the current `rotateByAngle` but avoids the `Norm.fromAngle(angle)` call
-which does `atan2 → cos/sin`. Instead it uses `forward` which is already `(cos, sin)`.
-
-### 3.3 Torque and angular dynamics
-
-```kotlin
-// Torque from offset thrust:
-// τ = r × F (cross product of lever arm and thrust force)
-fun torqueFromThrust(offsetX: Long, offsetY: Long, thrustX: Long, thrustY: Long): Long {
-    // 2D cross product: τ = r.x * F.y - r.y * F.x
-    return offsetX * thrustY - offsetY * thrustX
-}
-
-// Angular acceleration:
-val angAccel: Frac = Frac(torque / momentOfInertia)
-
-// Update angular velocity and forward vector:
-angVel += angAccel * dt
-val ω = angVel * dt  // small angle per tick
-
-// Rotate forward vector (small-angle approximation):
-val newForwardX = forward.x - ω * forward.y
-val newForwardY = forward.y + ω * forward.x
-val newForwardLen = Frac2(newForwardX, newForwardY).len
-forward = if (newForwardLen.raw > 0) {
-    Norm(newForwardX / newForwardLen, newForwardY / newForwardLen)
-} else {
-    Norm(Frac(1), Frac(0))
-}
-```
-
-### 3.4 Moment of inertia
-
-The ship's moment of inertia `I` depends on mass distribution:
-
-```kotlin
-// I = Σ m_i · r_i²
-// where r_i is the distance of mass element i from the ship's center of mass
-val momentOfInertia: Long
-    get() {
-        // For a grid of machines, compute Σ m · r² from the center of mass
-        val (cx, cy) = centerOfMass
-        return machines.sumOf { machine ->
-            val m = machine?.mass ?: 0L
-            if (m == 0L) 0L else {
-                val (mx, my) = machineCenter
-                m * ((mx - cx) * (mx - cx) + (my - cy) * (my - cy))
-            }
-        }
-    }
-```
-
-This is the same regardless of angle representation.
-
-### 3.5 Rock collision torque
-
-When a rock collides with the hull off-center:
-
-```kotlin
-// Rock impact torque: τ = r × J
-// r = vector from ship center of mass to impact point
-// J = impulse delivered by rock
-fun rockTorque(rock: Rock, impactX: Long, impactY: Long): Long {
-    val (cx, cy) = centerOfMass
-    val dx = impactX - cx
-    val dy = impactY - cy
-    return dx * rock.impulseY - dy * rock.impulseX
-}
-```
-
-Same as before — no change. The torque is a scalar in 2D.
-
-### 3.6 Renderer — drawing rotated entities
-
-The renderer needs to draw the ship at its current orientation. Currently it draws axis-aligned
-rectangles only. With direction-vector rotation:
-
-```kotlin
-// For each entity that needs rotation:
-// Compute its world-space vertices from local-space using the direction vector
-
-// A machine at grid tile (tx, ty) with size (w, h):
-// Its local corners (relative to tile origin): (0,0), (w,0), (w,h), (0,h)
-// Its world-space corners (rotated by forward):
-for (corner in corners) {
-    val wx = corner.x * forward.x - corner.y * forward.y
-    val wy = corner.x * forward.y + corner.y * forward.x
-    drawRect(worldX + wx, worldY + wy, ...)
-}
-```
-
-For a full screen rotation (the ship stays centered, everything else rotates around it):
-
-```kotlin
-// Apply camera rotation — same as PLAN_vessel_rotation.md §6.2:
-// mat4 = translate(-center) × rotateZ(angle) × translate(center)
-// But: we don't have the angle. We have the forward vector.
-// Angle = atan2(forward.y, forward.x) — ONE call per frame, not per entity.
-val screenAngle = forward.asAngle  // ONE trig call per frame, acceptable
-```
-
-This is the key win: **one `atan2` per frame instead of per-body-per-tick**.
-
-### 3.7 Debris settling with rotated gravity
-
-From PLAN_vessel_rotation.md §5.1:
-
-> `downDirection(gravity)` quantizes to N/S/E/W. With diagonal gravity, a debris pile would
-> freeze or jitter. This is already documented — "a gravity that leans 99 parts down and 1 part
-> right falls down; nothing else is a defensible rule."
-
-**With direction-vector rotation**, gravity can point in any direction. The `downDirection`
-function needs to handle this. Two approaches:
-
-1. **Keep 4-direction quantization** (simplest, already works):
-   ```kotlin
-   // downDirection already handles this by comparing |x| vs |y|
-   ```
-
-2. **Extend to 8 directions** (NE, NW, SE, SW):
-   ```kotlin
-   // When gravity leans equally on both axes:
-   if (abs(x) > threshold && abs(y) > threshold) {
-       // Use sign of x and sign of y to determine diagonal direction
-       return when {
-           x > 0 && y > 0 -> Direction.SE
-           x < 0 && y > 0 -> Direction.NE
-           x < 0 && y < 0 -> Direction.NW
-           x > 0 && y < 0 -> Direction.SW
-           else -> null
-       }
-   }
-   ```
-
-Verdict: keep 4-direction for now. Diagonal gravity can quantize to nearest axis.
-
-### 3.8 Angular momentum conservation
-
-The key invariant: **angular momentum is conserved in the absence of external torque.**
-
-```kotlin
-// Before collision:
-val L_before = ship.I * ship.angVel + rock.angularMomentumAboutCOM
-
-// After collision:
-val L_after = ship.I * (ship.angVel + angVelDelta) + rock.angularMomentumAboutCOM
-
-// L_before == L_after (in absence of external torque)
-```
-
-This is the same regardless of how we represent the ship's orientation.
+## 2. Why the original direction-vector plan was rejected
+
+The 2026-08-09 draft wanted to store `forward: Norm` in outofspace specifically to avoid
+`Norm.fromAngle`. Three findings killed it:
+
+1. **The engine already has a rotation model, and it is angle-centric.** `TransformComponent.ang:
+   Coord`, `MotionComponent.angVel`, `ImpulseComponent.angVel`, integrated in `IntegrationSystem.kt:31`,
+   with codecs and SoA columns. Scavengers and Drockets both use it. Outofspace does *not* use the
+   engine ECS, but adopting a second, incompatible representation for the same concept is a cost with
+   no payer.
+2. **`Coord` is the better representation for "every body has rotation".** Int overflow *is* modular
+   arithmetic on turns, so it wraps exactly and never drifts; composition is addition, so
+   `worldAng = vesselAng + localAng` is exact for a body attached to the vessel. Normalised direction
+   vectors requantise on every renormalise (`Frac2.len` quantises to ~4.7e-10) and compound that error
+   per body per tick. Saves are one `Int` that round-trips exactly.
+3. **The plan's stated motivation was the wrong diagnosis.** It framed the problem as *trig is slow*.
+   With one rotating body, one `cos`/`sin` per tick is nothing. The actual defect was that
+   `Norm.fromAngle` did a **`Float`** round trip — 24-bit mantissa under a 31-bit fixed-point type,
+   throwing away seven bits, with no cross-platform bit-identity guarantee. Fixing the primitive fixes
+   it for the whole engine; routing around it fixed it for one app and left the hazard in place.
+
+⚠️ **Latent, pre-existing, and NOT addressed here:** Scavengers calls `Norm.fromAngle` /
+`rotateByAngle` from `ShipThrustSystem`, `LandingSystem`, `DamageSystem` and `RespawnSystem` — sim
+systems, inside a lockstep multiplayer game, where JVM host and JS/Android client are not guaranteed
+to agree on `cos(Float)`. Step 1 removes the float and therefore the hazard, but **nobody has
+confirmed this was ever causing an observed desync**, and it is a separate question from the known
+`JOIN_IMPULSE` join bug. Do not conflate them.
 
 ---
 
-## 4. What changes vs. the angle-centric plan
+## 3. The remaining steps — agreed scope, nothing built
 
-| Aspect | Angle-centric (PLAN_vessel_rotation.md) | Direction-vector |
-|--------|------------------------------------------|------------------|
-| Ship state | `angle: Frac`, `angVel: Frac` | `forward: Norm`, `angVel: Frac` |
-| Update angle | `angle += angVel * dt` | `forward = rotate(forward, ω)` |
-| Rotate vector | `vec.rotateByAngle(angle)` | `vec.rotateBy(forward)` |
-| Renderer angle | `angle` directly | `forward.asAngle` (ONE call) |
-| Per-tick trig | `cos(angle)`, `sin(angle)` per body | **None** |
-| Per-frame trig | None | `atan2` for renderer angle |
-| Angular dynamics | Same (torque → angAccel → angVel) | Same |
-| Gravity rotation | `rotate(platingGravity, angle)` | `platingGravity.rotateBy(forward)` |
-| Moment of inertia | Same | Same |
+End state (Stu, 2026-08-13): **every body has rotation like the vessel, with collisions imparting
+torque as well as momentum.** Scavengers and Drockets already do this, but only with circle colliders.
 
----
+### Step 2 — vessel `ang` / `angVel` and torque
 
-## 5. Incremental implementation plan
+**Next up. Nothing built.** Groundwork surveyed 2026-08-13, recorded here so it need not be re-derived:
 
-### Phase 0: Add `Frac2.rotateBy(Norm)` to engine
-**Files:** `engine/sim/core/src/commonMain/kotlin/.../Frac2.kt`
-**Cost:** ~0.5 days
+- **Where the linear impulse is booked:** `OutofspaceSim.kt:326-327`. `netImpulseX/Y` is a sum of
+  five contributions — `pushed.vesselX`, `pipePushed.vesselX`, `thrustX`, `−handedX`,
+  `−w.exhaustMomentumX`. Angular is the **same five terms crossed with their application point**,
+  so the honest change is to give each of those producers a position and book `τ = rₓF_y − r_yF_x`
+  alongside, not to bolt torque onto the total afterwards. The total has already lost the positions.
+- **Where it lands in state:** `state.copy(...)` at `OutofspaceSim.kt:328` sets `vesselImpulseX/Y`
+  (running total) and `netImpulseX/Y` (this tick). `angImpulse`/`netTorque` are the twins to add.
+  Position integrates explicitly from start-of-tick velocity (`positionX = newPositionX`); `ang`
+  should integrate from start-of-tick `angVel` the same way, for the same reason.
+- **Moment of inertia:** extend the **existing** walk in `structureMass()` (`Flight.kt:48`) to
+  accumulate `Σ m·r²` about the centre of mass in the same pass — it already visits machines,
+  conduits and bridges with their masses. Do **not** write a second walk; that function's KDoc says
+  why, and `vesselMass()` is already built by composing it rather than duplicating it.
+- **Save:** `Save.kt:55` writes `thrust <x> <y>` and `Save.kt:507` reads it. ⚠️ Memory's warning
+  applies directly here — **a string literal in this file is a save keyword**, so add a new keyword
+  rather than widening `thrust`, and bump the version with a migration.
+- ⚠️ `state.velocityX/Y` is handed to `driftBodies` (`OutofspaceSim.kt:307`) as *the velocity of the
+  grid*. Once the grid rotates, a body's grid-frame velocity picks up an `ω × r` term and that call
+  is where it has to enter. It is the one place where step 2 leaks into step 4.
 
-Add a new method:
-```kotlin
-fun Frac2.rotateBy(forward: Norm): Frac2 {
-    return Frac2(
-        x * forward.x - y * forward.y,
-        x * forward.y + y * forward.x
-    )
-}
-```
+Failing test first: an unbalanced thruster layout spins the ship, a balanced one does not — and a
+third case worth pinning, since it is the one a wrong `r` still passes: **a single thruster on the
+centreline produces zero torque at every throttle**.
 
-This is a drop-in replacement for `rotateByAngle` that doesn't use trig. No behavior change
-until callers switch.
+### Step 3 — world frame + camera mode
+World coordinates **do not exist today**; this step creates them. Camera becomes player-selectable:
+**Flight → world-relative, Build → grid-relative** (Stu's call).
 
-### Phase 1: Add direction-vector rotation to vessel state
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../Vessel.kt`
-**Cost:** ~1 day
+Drockets already does exactly this toggle at `WorldRenderer.kt:494`
+(`Coord(focusRotationOffset.raw - transform.ang.raw)`) — copy that pattern rather than inventing one.
 
-Add to `VesselState`:
-```kotlin
-val shipAngle: Frac = Frac(0),       // for UI/debug (derived from forward)
-val shipAngVel: Frac = Frac(0),      // angular velocity
-val shipForward: Norm = Norm(Frac(1), Frac(0)),  // ship orientation
-```
+### Step 4 — `RigidBody` orientation, and collisions imparting torque
+`RigidBody` currently has **no orientation at all**: a box plus a row-major solid mask, axis-aligned.
+This is where the polygon-vs-circle gap bites and it is the largest step.
 
-Add angular dynamics to the flight/reducer:
-```kotlin
-// Compute torque from offset thrust
-val torque = torqueFromThrust(offsetX, offsetY, thrustX, thrustY)
-val angAccel = Frac(torque / shipMomentOfInertia)
+⚠️ **Do not start here.** Memory records six standing failures already sitting in the free-body
+gravity/contact area (plus `ProcessorChainTest`), pre-dating the unit rescale. Clear or at least
+understand those before adding spin to that code, or you will be debugging two things at once.
 
-// Update
-shipAngVel += angAccel
-val ω = shipAngVel * dt
-val newFx = shipForward.x - ω * shipForward.y
-val newFy = shipForward.y + ω * shipForward.x
-val newLen = Frac2(newFx, newFy).len
-newForward = if (newLen.raw > 0) Norm(newFx / newLen, newFy / newLen) else Norm(Frac(1), Frac(0))
-```
-
-Derive `shipAngle` for display:
-```kotlin
-// Only for UI — one atan2 per frame is acceptable
-val shipAngle: Frac = shipForward.asAngle.raw.toFrac()
-```
-
-### Phase 2: Derived felt gravity
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../Vessel.kt`, `Flight.kt`
-**Cost:** ~0.5 days
-
-Change `experiencedGravity` to use `shipForward`:
-```kotlin
-val feltGravity: Frac2 get() {
-    val rotatedDeck = platingGravity.rotateBy(shipForward)
-    val shipAccel = frameAcceleration(netImpulseX, netImpulseY, massGrams)
-    return Frac2(
-        Frac(rotatedDeck.x.raw - shipAccel.x.raw),
-        Frac(rotatedDeck.y.raw - shipAccel.y.raw)
-    )
-}
-```
-
-### Phase 3: Renderer rotation
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../OutofspaceRenderer.kt`
-**Cost:** ~1.5 days
-
-Use `shipForward.asAngle` for camera rotation (ONE trig call per frame).
-Draw ship entities at their rotated orientation.
-
-### Phase 4: Rock collision torque
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../RockContact.kt`
-**Cost:** ~1 day
-
-Add off-center collision torque:
-```kotlin
-// When rock collides with hull:
-val torque = rockTorque(rock, impactX, impactY)
-// Apply to ship's angVel in the reducer
-```
-
-### Phase 5: Debris quantization
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../Debris.kt`
-**Cost:** ~0.5 days
-
-Extend `downDirection` to handle diagonal gravity if desired.
-
-### Phase 6: Save/load migration
-**Files:** `apps/outofspace/core/src/commonMain/kotlin/.../Save.kt`
-**Cost:** ~0.5 days
-
-Store `shipForward` instead of `shipAngle` (or derive `forward` from stored angle).
-Version the save format.
-
-**Total: ~4.5 days** (vs ~8 days for the angle-centric plan)
+### Explicitly parked
+- **Centrifugal force in the fluid sim.** Stu, 2026-08-13: the fluid sim was dramatically simplified
+  and he does not want it touched for a while. Note this is the *only* physically real coupling
+  between vessel rotation and felt gravity — see §4.
+- **Rotated rocks in the renderer**, and 8-way `downDirection` quantisation. Neither is needed for
+  steps 2–3.
 
 ---
 
-## 6. What stays the same (no changes needed)
+## 4. A correction to the old draft worth keeping
 
-- **Fluid solver** — already handles any gravity direction (Drift.kt, Buoyancy.kt)
-- **Heat conduction** — topological, grid-adjacent
-- **Machine placement** — grid-locked
-- **Moment of inertia calculation** — mass distribution, independent of orientation
-- **Angular momentum conservation** — same math, just different state representation
-- **Rock movement** — rocks stay in grid frame, don't need rotation
-- **Sweep collision** — grid-based, axis-aligned
+The 2026-08-09 draft's §3.2 proposed `feltGravity = platingGravity.rotateBy(forward) − frameAcceleration`.
+**That is wrong**, and the draft half-noticed ("Wait —", "Hmm, this is getting complicated") without
+resolving it.
 
----
+`VesselState.gravity` defaults to `FREEFALL`, and the KDoc at `Vessel.kt:598-611` is emphatic about
+why: there is no deck plating, "down" is earned by burning. So `feltGravity` is in practice just
+`−frameAcceleration`, and `frameAcceleration` derives from `netImpulseX/Y`, which is booked by
+thrusters **bolted to the grid**. Rotating the ship rotates the thrusters with it. **Felt gravity in
+the vessel frame does not change.** Rotating `platingGravity` by the orientation is either a no-op or
+it silently redefines `gravity` as an external field, contradicting the field's documented meaning.
 
-## 7. What the Reddit approach gives us
-
-1. **Zero trig in the per-tick path** — `cos`, `sin`, `atan2` eliminated from hot loops
-2. **Cleaner math** — rotation is just a rotation matrix multiplication
-3. **Already normalized** — `Norm` is always unit length (after renormalization)
-4. **Consistent with engine** — `Frac2.len`, `Frac2.norm`, `Norm.dot` all already exist
-5. **Simpler renderer** — one `atan2` per frame instead of per-body trig
-6. **Direction-based API** — `rotateBy(forward)` is clearer than `rotateByAngle(angle)`
-
-## 8. What it costs
-
-1. **`Norm.asAngle` still uses `atan2`** — but only called once per frame for renderer
-2. **Renormalization adds a `sqrt` per tick** — but `Frac2.len` uses optimized `longISqrt`
-3. **Direction vector is less intuitive for humans** — but the angle is derived for display anyway
-
----
-
-## 9. Open questions
-
-1. **Should `Frac2.rotateBy(Norm)` replace `Frac2.rotateByAngle(Coord)` entirely?**
-   - Yes — `rotateByAngle` can delegate to `rotateBy(Norm.fromAngle(angle))` for backward compat
-   - Eventually deprecate `rotateByAngle`
-
-2. **Should rocks get rotation?**
-   - Currently no: rocks are `BooleanArray` shapes (axis-aligned)
-   - Adding rotation to rocks would require either:
-     a. Pre-computed rotation states (limited orientations)
-     b. Runtime vertex transformation (expensive per tick)
-     c. SAT collision with rotated polygons (complex)
-   - Defer to after direction-vector rotation is working
-
-3. **Should the renderer draw rotated hulls?**
-   - Currently: hulls are axis-aligned rectangles (grid tiles)
-   - With direction-vector: hulls can be drawn at ship's orientation
-   - The renderer would need to transform each hull tile's vertices
-
-4. **What about `Norm.fromAngle` and `Norm.asAngle` — should they stay?**
-   - Keep for boundary conditions (save/load, mouse input, UI display)
-   - Mark as "expensive — avoid in hot paths"
+The only real coupling is **centrifugal** — ω²r, pointing outward, and *position-dependent*, whereas
+every consumer (`applyBuoyancy`, `applySpeciesDrift`, `downDirection`) takes one global gravity vector
+for the whole grid. That is a design decision about the fluid pass, not a refactor. Parked per §3.
