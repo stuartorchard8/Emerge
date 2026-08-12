@@ -189,7 +189,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val added = w.heatAdded[i]
             if (added == 0L) continue
             val m = w.machines[i] ?: continue
-            w.machines[i] = m.withJoules(m.joules + added)
+            w.machines[i] = m.withJoules(m.joules.plusSpread(added))
         }
         val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
         val conducted = stepSolidHeat(
@@ -696,13 +696,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val body = bodies[i]
                 if (joules[i] == body.joules) continue
                 when (body.slot) {
-                    BodySlot.Deck -> machines[body.at]?.let { machines[body.at] = it.withJoules(joules[i]) }
+                    // A machine is several bodies now, one per tile, so the tile has to be named
+                    // as well as the machine — see [Body.part].
+                    BodySlot.Deck -> machines[body.at]?.let {
+                        machines[body.at] = it.withJoules(it.joules.with(body.part, joules[i]))
+                    }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
                         layer(c)[body.at]?.let { layer(c)[body.at] = it.copy(joules = joules[i]) }
                     }
-                    BodySlot.Span -> bridges[body.at]?.let { bridges[body.at] = it.withJoules(joules[i]) as Bridge }
+                    BodySlot.Span -> bridges[body.at]?.let {
+                        bridges[body.at] = it.withJoules(it.joules.with(body.part, joules[i])) as Bridge
+                    }
                 }
             }
         }
@@ -818,7 +824,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun removeBridge(at: Int): Boolean {
             val bridge = bridges.getOrNull(at) ?: return false
             bridges[at] = null
-            scrapped(bridge.joules)
+            scrapped(bridge.joules.total)
             return true
         }
 
@@ -842,7 +848,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val origin = originAt(at) ?: return false
             val machine = machines[origin] ?: return false
             for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = -1
-            scrapped(machine.joules)
+            scrapped(machine.joules.total)
             machines[origin] = null
             return true
         }
@@ -934,7 +940,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!kind.isPermeable && !tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
 
             machines[at] = built
-            built(built.joules)
+            built(built.joules.total)
             for (t in covered) originOf[t] = at
         }
 
@@ -954,7 +960,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (ports.size < 2) return
             if (portsClash(ports)) return
             bridges[at] = built
-            built(built.joules)
+            built(built.joules.total)
         }
 
         /** Any two ports of the same conduit on one tile clash. */

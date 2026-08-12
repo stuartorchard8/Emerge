@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Save
+import org.emerge.demo.outofspace.world.atKelvin
+import org.emerge.demo.outofspace.world.kelvin
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.capacityPerTile
 
@@ -66,13 +69,85 @@ class BodyHeatTest {
     private fun VesselState.heatMachine(at: Int, kelvin: Int): VesselState {
         val list = machines.toMutableList()
         val m = list[at]!!
-        list[at] = m.withJoules(m.kind.capacityPerTile * m.kind.thermalTiles * kelvin)
+        list[at] = m.atKelvin(kelvin)
         return copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
     }
 
     private fun VesselState.railKelvin(tile: Int): Int {
         val s = rails[tile] ?: error("no track at $tile")
         return (s.joules / s.conduit.capacityPerTile).toInt()
+    }
+
+    /**
+     * Step 6b of `PLAN_unit_rescale.md`: a machine is a set of adjacent tiles, not a lump.
+     *
+     * This is the acceptance test for the whole change, and it is written to fail loudly against
+     * the old model rather than to describe the new one — under a lump, *every* assertion below is
+     * impossible, because a machine had exactly one number and no inside for heat to be uneven in.
+     *
+     * A smelter is five tiles across, so the far face is four tiles of firebrick away from the near
+     * one. Firebrick is the most insulating material in the game, which is what makes a furnace a
+     * furnace, and it is therefore also the machine where an internal gradient should be most
+     * visible rather than least.
+     */
+    @Test
+    fun `heat one face of a smelter and the far face lags behind`() {
+        val g = Grid(14, 14)
+        val at = g.index(6, 6)
+        val world = room(12, 12) { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null }
+
+        // The whole machine cold, then one corner tile of it made very hot. Part 0 is the first
+        // tile of the footprint — a corner — and part 24 is the opposite corner, four tiles away.
+        val list = world.machines.toMutableList()
+        val cold = (list[at] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
+        val perTile = MachineKind.Smelter.capacityPerTile
+        list[at] = cold.withJoules(cold.joules.with(0, perTile * 2_000L))
+        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
+
+        fun tiles(s: VesselState) = (s.machines[at] as Machine).joules
+        val start = tiles(seeded)
+        assertEquals(25, start.size, "a five-by-five smelter stores twenty-five figures, not one")
+
+        val settled = run(seeded, 20)
+        val end = tiles(settled)
+
+        // The near corner cools and the far one warms: heat crossed the machine's own body, which
+        // is conduction that did not exist before this step and is not written anywhere — it falls
+        // out of the contact rules already in stepSolidHeat, once a machine is several bodies.
+        assertTrue(end[0] < start[0], "the heated corner should have cooled: ${start[0]} -> ${end[0]}")
+        assertTrue(end[24] > start[24], "the far corner should have warmed: ${start[24]} -> ${end[24]}")
+
+        // And it has NOT equalised. This is the assertion that says the machine is a real object in
+        // the world with an inside, rather than a bookkeeping change that stores one temperature in
+        // twenty-five places: firebrick is a poor conductor, so twenty ticks is nowhere near enough
+        // to level two and a half metres of it.
+        assertTrue(
+            end[0] > end[24] * 2,
+            "the machine must still be uneven across itself: near=${end[0]} far=${end[24]}",
+        )
+    }
+
+    @Test
+    fun `a machine keeps every joule it had when it is saved and loaded`() {
+        // The migration in Save.readTileJoules spreads an old file's single figure across the tiles,
+        // and a spread that dropped its remainder would make save/load a slow leak that the energy
+        // ledger would eventually notice. Round-tripping an uneven machine covers both directions.
+        val g = Grid(14, 14)
+        val at = g.index(6, 6)
+        val world = room(12, 12) { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null }
+        val list = world.machines.toMutableList()
+        val m = (list[at] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
+        // Deliberately not divisible by twenty-five, so a lost remainder shows up.
+        list[at] = m.withJoules(m.joules.with(3, m.joules[3] + 1_000_000_007L))
+        val before = world.copy(machines = list.toList())
+
+        val after = Save.read(Save.write(before))
+        val restored = after.machines[at] as Machine
+        assertEquals(
+            (before.machines[at] as Machine).joules,
+            restored.joules,
+            "a saved machine must come back holding exactly what it held, tile by tile",
+        )
     }
 
     @Test
@@ -96,7 +171,7 @@ class BodyHeatTest {
         // And it is *its own* temperature, not the furnace's: iron holds far less than firebrick, so
         // it warms fast, but the two are separate bodies and never become one number.
         val furnace = settled.machines[under] as? Machine ?: error("no machine at $under")
-        val furnaceKelvin = (furnace.joules / (furnace.kind.capacityPerTile * furnace.kind.thermalTiles)).toInt()
+        val furnaceKelvin = furnace.kelvin
         assertTrue(
             settled.railKelvin(under) != furnaceKelvin,
             "but the two are still separate bodies with separate temperatures: rail=${settled.railKelvin(under)}K furnace=${furnaceKelvin}K",
@@ -179,7 +254,7 @@ class BodyHeatTest {
         fun bump(s: VesselState): VesselState {
             val list = s.machines.toMutableList()
             val m = list[at]!!
-            list[at] = m.withJoules(m.joules + 20_000_000_000L)
+            list[at] = m.withJoules(m.joules.plusSpread(20_000_000_000L))
             return s.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedJoules) }
         }
 
@@ -203,7 +278,7 @@ class BodyHeatTest {
             mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Place(at, MachineKind.Hull, Direction.Right)))),
         )
         assertEquals(
-            ambientJoules(MachineKind.Hull),
+            ambientJoules(MachineKind.Hull).total,
             s.insertedJoules,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
@@ -216,7 +291,7 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.insertedJoules < ambientJoules(MachineKind.Hull) / 1_000L,
+            s.insertedJoules < ambientJoules(MachineKind.Hull).total / 1_000L,
             "and scrapping it takes that heat back out: ${s.insertedJoules}",
         )
     }

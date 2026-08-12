@@ -22,23 +22,108 @@ sealed interface Machine {
     val wiring: Wiring
 
     /**
-     * How much thermal energy this machine is holding, in the millijoules [Material] documents.
+     * How much thermal energy this machine is holding, in the millijoules [Material] documents —
+     * **one figure per tile of it**, not one for the whole machine.
      *
      * On the machine rather than in a field beside it, and that is load-bearing — see [Body]. A
      * parallel array keyed by tile would be desynchronised by `copy(machines = …)`, which is the
      * operation every save load, every fixture and every player edit goes through, and the symptom
      * is a freshly laid rail inheriting the energy of the furnace that used to stand there. Here,
      * a machine's capacity and a machine's energy are properties of the same value and cannot come
-     * apart.
+     * apart. Storing per tile does not weaken that: the array belongs to the machine, so it travels
+     * with it and is replaced with it.
      *
      * Defaults to room temperature for the machine's own footprint and material, so placing one
      * needs no separate act of initialisation.
      */
-    val joules: Long
+    val joules: TileJoules
 
     fun withWiring(wiring: Wiring): Machine
 
-    fun withJoules(joules: Long): Machine
+    fun withJoules(joules: TileJoules): Machine
+}
+
+/**
+ * A machine's thermal energy, one entry per tile of it.
+ *
+ * ### Why per tile
+ *
+ * Step 6b of `PLAN_unit_rescale.md`. Held as a lump, the largest number a machine can store is
+ * `capacityPerTile × thermalTiles × maxKelvin`, and that `thermalTiles` — 25, for the machines that
+ * dominate — was the last thing standing between the game and a microgram mass unit. Per tile, the
+ * factor leaves the expression and the bound becomes one a single tile can carry, which the budget
+ * already had room for.
+ *
+ * But the reason it is *right* is not the arithmetic. A machine is a real part of the world sitting
+ * on a set of adjacent tiles, and one temperature for a five-by-five smelter was a claim that heat
+ * crosses two and a half metres of steel instantly. It does not. With a figure per tile, the
+ * existing conduction pass — which already joins any two impermeable bodies across a shared face —
+ * makes a machine conduct through *itself*, and a smelter acquires a hot face and a cool one with
+ * no new physics written for it.
+ *
+ * ### Why a class and not a `LongArray`
+ *
+ * Every machine is a `data class`, and a `LongArray` field would give them all **reference**
+ * equality: two identical smelters would compare unequal, and `copy()` would share one array
+ * between the original and the copy — a mutation through either being visible in both, in a code
+ * base whose central promise is that a snapshot of the world is a snapshot of the world. This wraps
+ * the array so that equality is by content and the contents are never handed out mutable.
+ */
+class TileJoules private constructor(private val perTile: LongArray) {
+
+    val size: Int get() = perTile.size
+
+    operator fun get(index: Int): Long = perTile[index]
+
+    /** Every tile's energy added up — what the ledgers and the scrap value want. */
+    val total: Long get() {
+        var sum = 0L
+        for (j in perTile) sum += j
+        return sum
+    }
+
+    /** The same energy with [index] replaced. Returns a new value; nothing here mutates. */
+    fun with(index: Int, joules: Long): TileJoules {
+        val next = perTile.copyOf()
+        next[index] = joules
+        return TileJoules(next)
+    }
+
+    /**
+     * [added] joules spread evenly across every tile.
+     *
+     * Even, because waste heat is made by the *work* a machine does and the work happens throughout
+     * it — there is no more reason for a smelter's furnace losses to appear in one corner than
+     * another. The remainder goes to the first tiles rather than being dropped, so that repeatedly
+     * adding less than one joule per tile still warms the machine instead of vanishing.
+     */
+    fun plusSpread(added: Long): TileJoules {
+        if (perTile.isEmpty()) return this
+        val next = perTile.copyOf()
+        val each = added / perTile.size
+        var remainder = added - each * perTile.size
+        for (i in next.indices) {
+            var share = each
+            if (remainder > 0) { share++; remainder-- } else if (remainder < 0) { share--; remainder++ }
+            next[i] += share
+        }
+        return TileJoules(next)
+    }
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is TileJoules && perTile.contentEquals(other.perTile))
+
+    override fun hashCode(): Int = perTile.contentHashCode()
+
+    override fun toString(): String = perTile.joinToString(prefix = "TileJoules[", postfix = "]")
+
+    companion object {
+        /** [count] tiles all holding [each]. */
+        fun uniform(count: Int, each: Long): TileJoules = TileJoules(LongArray(count) { each })
+
+        /** Takes ownership of [values] — callers must not keep a reference to it. */
+        fun of(values: LongArray): TileJoules = TileJoules(values)
+    }
 }
 
 /**
@@ -53,9 +138,27 @@ sealed interface Machine {
 val MachineKind.thermalTiles: Int
     get() = if (this == MachineKind.Bridge) 3 else size * size
 
-/** What a freshly built machine of this kind holds: all of it, at room temperature. */
-fun ambientJoules(kind: MachineKind): Long =
-    kind.capacityPerTile * kind.thermalTiles * Temperature.AMBIENT_KELVIN
+/**
+ * The machine's temperature **averaged over its tiles**.
+ *
+ * ⚠️ A machine no longer *has* a temperature — it has one per tile, and that is the point of storing
+ * them separately. This is the mean, which is the right answer for a readout, a ledger or a test that
+ * cares how much heat is in the thing, and the wrong one for anything that cares where the heat is.
+ * Reach for [Machine.joules] directly when the gradient is the subject.
+ */
+val Machine.kelvin: Int
+    get() {
+        val capacity = kind.capacityPerTile * kind.thermalTiles
+        return if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules.total / capacity).toInt()
+    }
+
+/** The same machine with every one of its tiles at [kelvin] — how a uniform body is stated. */
+fun Machine.atKelvin(kelvin: Int): Machine =
+    withJoules(TileJoules.uniform(kind.thermalTiles, kind.capacityPerTile * kelvin))
+
+/** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
+fun ambientJoules(kind: MachineKind): TileJoules =
+    TileJoules.uniform(kind.thermalTiles, kind.capacityPerTile * Temperature.AMBIENT_KELVIN)
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {

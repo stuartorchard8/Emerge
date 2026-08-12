@@ -4,11 +4,11 @@ package org.emerge.demo.outofspace.world
 data class Vent(
     val ventedGrams: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: Long = ambientJoules(MachineKind.Vent),
+    override val joules: TileJoules = ambientJoules(MachineKind.Vent),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Vent
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 }
 
 /**
@@ -21,11 +21,11 @@ data class Vent(
  */
 data class Hull(
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: Long = ambientJoules(MachineKind.Hull),
+    override val joules: TileJoules = ambientJoules(MachineKind.Hull),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Hull
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 }
 
 /**
@@ -45,11 +45,11 @@ data class Hull(
  */
 data class Airlock(
     override val wiring: Wiring = SEALED,
-    override val joules: Long = ambientJoules(MachineKind.Airlock),
+    override val joules: TileJoules = ambientJoules(MachineKind.Airlock),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Airlock
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 
     companion object {
         /** Wired to nothing: a freshly placed door holds pressure until it is given a channel. */

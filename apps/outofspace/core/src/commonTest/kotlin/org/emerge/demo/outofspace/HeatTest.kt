@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.atKelvin
+import org.emerge.demo.outofspace.world.kelvin
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.capacityPerTile
@@ -222,13 +224,13 @@ class HeatTest {
         val hot = g.index(3, 1)             // a wall tile, driven to 4000K
         val machines = room.machines.toMutableList()
         val wall = machines[hot]!!
-        machines[hot] = wall.withJoules(wall.joules * 4_000 / Temperature.AMBIENT_KELVIN)
+        machines[hot] = wall.atKelvin(4_000)
         var s = room.copy(machines = machines.toList()).let { it.copy(baselineJoules = it.storedJoules) }
 
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = s.machines.filterNotNull().maxOfOrNull { (it.joules / (it.kind.capacityPerTile * it.kind.thermalTiles.toLong())).toInt() } ?: Temperature.AMBIENT_KELVIN
+            val peak = s.machines.filterNotNull().maxOfOrNull { it.kelvin } ?: Temperature.AMBIENT_KELVIN
             assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }

@@ -24,6 +24,15 @@ class Body(
     val slot: BodySlot,
     /** The index it is stored at — its centre tile for a machine, its own tile for a fitting. */
     val at: Int,
+    /**
+     * Which of a machine's tiles this is, as an index into its [Machine.joules].
+     *
+     * Zero for anything that is still stored as one piece — a fitting, a bridge — where [at] alone
+     * identifies where the energy goes back. For a machine it is the other half of the address:
+     * [at] says which machine and this says which of its tiles, and both are needed now that a
+     * machine is several bodies rather than one.
+     */
+    val part: Int = 0,
     /** Every tile it is present on. One for a fitting, three for a span, a footprint for a machine. */
     val tiles: IntArray,
     val material: Material,
@@ -90,18 +99,33 @@ fun bodiesOf(
     val out = ArrayList<Body>(64)
     for (i in machines.indices) {
         val m = machines[i] ?: continue
-        out.add(
-            Body(
-                slot = BodySlot.Deck,
-                at = i,
-                tiles = coveredTiles(grid, i, m.kind.size).toIntArray(),
-                material = m.kind.material,
-                permeable = false,
-                joules = m.joules,
-                capacity = m.kind.capacityPerTile * m.kind.thermalTiles,
-                conductance = m.kind.conductance,
+        // ⚠️ One body per TILE of the machine, not one per machine — step 6b of
+        // PLAN_unit_rescale.md. Everything interesting about that follows from doing it here and
+        // nowhere else: [stepSolidHeat] already joins any two impermeable bodies that share a tile
+        // face, and the tiles of one machine are exactly that, so a machine begins conducting
+        // through *itself* without a line of new physics. A five-by-five smelter stops being one
+        // temperature and grows a hot face and a cool one.
+        //
+        // Placement enforces `footprintFits`, so a machine's footprint is never clipped by the grid
+        // edge and this index lines up with the `thermalTiles` slots its energy is stored in. The
+        // bound guards the one case that is not a placed machine: a grid that shrank underneath it.
+        val covered = coveredTiles(grid, i, m.kind.size)
+        for (part in covered.indices) {
+            if (part >= m.joules.size) break
+            out.add(
+                Body(
+                    slot = BodySlot.Deck,
+                    at = i,
+                    part = part,
+                    tiles = intArrayOf(covered[part]),
+                    material = m.kind.material,
+                    permeable = false,
+                    joules = m.joules[part],
+                    capacity = m.kind.capacityPerTile,
+                    conductance = m.kind.conductance,
+                )
             )
-        )
+        }
     }
     conduits.all { conduit, i, s ->
         out.add(
@@ -124,19 +148,31 @@ fun bodiesOf(
         // The three tiles it looks like: the one it is stored on and one either side along its
         // facing. It occupies none of them on any layer, which is what a bridge is — but it is
         // still three tiles of metal sitting in three tiles of room, and heat does not care whether
-        // something claims the floor space.
-        out.add(
-            Body(
-                slot = BodySlot.Span,
-                at = i,
-                tiles = spanTiles(grid, i, b.facing),
-                material = b.conduit.material,
-                permeable = true,
-                joules = b.joules,
-                capacity = b.conduit.capacityPerTile * MachineKind.Bridge.thermalTiles,
-                conductance = b.conduit.conductance,
+        // something claims the floor space. Split per tile for the same reasons a machine is.
+        //
+        // ⚠️ The part index is the position along the span and **not** the position in a list of
+        // the tiles that happen to be on the grid. A span at the rim loses an end, and if the index
+        // came from a compacted list the survivors would shift up one and the bridge would be
+        // holding its neighbour's heat. Walking the three offsets and skipping the missing one
+        // keeps every slot addressed by what it *is*.
+        val span = spanParts(grid, i, b.facing)
+        for (part in span.indices) {
+            val tile = span[part]
+            if (tile < 0 || part >= b.joules.size) continue
+            out.add(
+                Body(
+                    slot = BodySlot.Span,
+                    at = i,
+                    part = part,
+                    tiles = intArrayOf(tile),
+                    material = b.conduit.material,
+                    permeable = true,
+                    joules = b.joules[part],
+                    capacity = b.conduit.capacityPerTile,
+                    conductance = b.conduit.conductance,
+                )
             )
-        )
+        }
     }
     return out
 }
@@ -150,19 +186,27 @@ fun solidJoules(
     bridges: List<Machine?>,
 ): Long {
     var sum = 0L
-    for (m in machines) sum += m?.joules ?: 0L
+    for (m in machines) sum += m?.joules?.total ?: 0L
     conduits.all { _, _, s -> sum += s.joules }
-    for (b in bridges) sum += b?.joules ?: 0L
+    for (b in bridges) sum += b?.joules?.total ?: 0L
     return sum
 }
 
 /** The three tiles a bridge occupies: its middle, and one either side along [facing]. */
 fun spanTiles(grid: Grid, middle: Int, facing: Direction): IntArray {
-    val back = grid.neighbour(middle, facing.opposite)
-    val front = grid.neighbour(middle, facing)
     val out = ArrayList<Int>(3)
-    if (back >= 0) out.add(back)
-    out.add(middle)
-    if (front >= 0) out.add(front)
+    for (tile in spanParts(grid, middle, facing)) if (tile >= 0) out.add(tile)
     return out.toIntArray()
 }
+
+/**
+ * The same three tiles, **positionally**: back, middle, front, with `-1` for an end off the grid.
+ *
+ * [spanTiles] compacts the missing ends away, which is right for anything that only wants to visit
+ * the tiles and wrong for anything that stores something per tile — see the note in [bodiesOf].
+ */
+fun spanParts(grid: Grid, middle: Int, facing: Direction): IntArray = intArrayOf(
+    grid.neighbour(middle, facing.opposite),
+    middle,
+    grid.neighbour(middle, facing),
+)

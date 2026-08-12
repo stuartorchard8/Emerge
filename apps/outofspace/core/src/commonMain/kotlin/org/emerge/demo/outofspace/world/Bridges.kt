@@ -18,12 +18,12 @@ data class Bridge(
     /** At the output end, waiting to be put down on the track there. */
     val exit: Packet? = null,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: Long = ambientJoules(MachineKind.Bridge),
+    override val joules: TileJoules = ambientJoules(MachineKind.Bridge),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Bridge
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 
     /** Everything aboard, input end first. */
     val carried: List<Packet> get() = listOfNotNull(entry, middle, exit)

@@ -23,7 +23,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 11
+    const val VERSION = 12
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -220,8 +220,46 @@ object Save {
         // And omitted at room temperature, for the same reason: a file full of identical `k=`
         // fields hides the one machine that is actually hot. Version 5 and later; a version 4 file
         // has no per-body heat at all and every body loads at ambient.
-        if (m.joules != ambientJoules(m.kind)) put("k", m.joules.toString())
+        if (m.joules != ambientJoules(m.kind)) put("k", writeTileJoules(m.joules))
         return f.toString()
+    }
+
+    /**
+     * A machine's per-tile heat, comma-separated in footprint order. Version 12 and later.
+     *
+     * One field rather than one per tile because a machine's tiles are not addressable from the
+     * file: the footprint is derived from the kind and the centre, so the *order* is the address.
+     */
+    private fun writeTileJoules(j: TileJoules): String =
+        (0 until j.size).joinToString(",") { j[it].toString() }
+
+    /**
+     * Reads that back, and migrates a file that predates it.
+     *
+     * ⚠️ Up to version 11 the `k=` field was a single number: everything the machine held, because a
+     * machine had one temperature. Spreading it evenly is the only faithful reading — an isothermal
+     * machine *is* one whose tiles are all at the same temperature, so the old state is not being
+     * approximated, it is being written out in full. What the file cannot tell us is a gradient it
+     * was never able to express, and a saved smelter will now develop one as it runs.
+     *
+     * The remainder is not dropped: [TileJoules.plusSpread] hands it to the first tiles, so a
+     * reloaded machine holds exactly what it held before, to the joule. Anything else would make
+     * save/load a slow leak, and the energy ledger would eventually notice.
+     */
+    private fun readTileJoules(
+        field: String,
+        machine: Machine,
+        version: Int,
+        fail: (String) -> Nothing,
+    ): TileJoules {
+        val tiles = machine.kind.thermalTiles
+        if (version < 12) {
+            val total = field.toLongOrNull() ?: fail("bad joules '$field'")
+            return TileJoules.uniform(tiles, 0L).plusSpread(total)
+        }
+        val parts = field.split(',')
+        if (parts.size != tiles) fail("expected $tiles per-tile joules for ${machine.kind}, got ${parts.size}")
+        return TileJoules.of(LongArray(tiles) { parts[it].toLongOrNull() ?: fail("bad joules '$field'") })
     }
 
     private fun writeSegment(s: Segment): String {
@@ -627,9 +665,7 @@ object Save {
         // to running would come back from a hand-written save wide open.
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
         // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
-        val heated = f["k"]?.let { j ->
-            machine.withJoules(j.toLongOrNull() ?: fail("bad joules '$j'"))
-        } ?: machine
+        val heated = f["k"]?.let { j -> machine.withJoules(readTileJoules(j, machine, version, fail)) } ?: machine
         return heated.withWiring(wiring)
     }
 

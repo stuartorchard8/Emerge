@@ -497,7 +497,7 @@ produced, so nothing anybody could already represent moved. 426 tests, the stand
   that teaches the slag lesson, not a readout of what the world contains — but now says so, and the
   osmium change has already made the two diverge.
 
-### 6b. Store a machine's energy and mass per tile — **SCOPED 2026-08-12, not built**
+### 6b. Store a machine's energy and mass per tile — **DONE 2026-08-12**
 
 The last unscoped red row. `machine joules` is `capacityPerTile × thermalTiles × kelvin` held as one
 lump on `Machine.joules`; stored per tile instead, the `thermalTiles` factor leaves the expression
@@ -534,6 +534,27 @@ tiles, rather than a lump with a single temperature. So it carries work the earl
 
 Sequenced after step 5 and sized separately. It is the only remaining item that changes what the
 simulation *does* rather than how it computes it.
+
+#### What it turned out to be
+
+- **Measured: 281,000 → 7.02e6.** Green for the microgram target. The row is now
+  `machine joules: hottest single tile of the heaviest machine`, and `tile joules` is unchanged
+  beside it, which is the check that the two now mean the same kind of thing.
+- **The physics needed no new code.** `stepSolidHeat` already joins any two impermeable bodies
+  across a shared tile face. Emitting one `Body` per machine tile in `bodiesOf` — a single loop —
+  makes a machine conduct through itself, because its own tiles *are* adjacent impermeable bodies.
+  Everything else was storage and plumbing.
+- **The heat overlay came along for free.** `Vessel.fabricKelvin` already folded per body per tile
+  and took the max, so it now draws a machine's internal gradient without being asked.
+- `TileJoules` is a class rather than a `LongArray` because every machine is a `data class`: an
+  array field would have given them all reference equality and made `copy()` share one array
+  between original and copy, in a code base whose central promise is that a snapshot is a snapshot.
+- **Save v12.** A v11 `k=` field is one number for the whole machine; it spreads evenly, which is
+  exact rather than approximate — an isothermal machine *is* one whose tiles all match. The
+  remainder is handed to the first tiles rather than dropped, so a round trip is joule-for-joule.
+- ⚠️ **No thermal test moved**, which was not what I expected and is worth stating plainly: the
+  existing thermal tests assert contact rules and directions, not rates, so a machine acquiring an
+  inside did not disturb any of them. The gradient is pinned by a new test instead.
 
 ### 7. Save migration
 Species are already stored by name, so composition changes are free. Masses and energies are not:

@@ -112,9 +112,6 @@ class NumericLimitsTest {
 
     private val gridTiles: Long = OutofspaceConfig().initialGrid.size.toLong()
 
-    /** The most heat a single machine can hold — the bound on one `Machine.joules` field. */
-    private val heaviestMachineCapacity: Long =
-        MachineKind.ALL.maxOf { it.capacityPerTile * it.thermalTiles }
 
     /**
      * How many tiles of *floor* a machine consumes, as against how many tiles of material it is
@@ -336,9 +333,18 @@ class NumericLimitsTest {
         budget("ambientPressureOf: SHARE_ONE^2, the remainder half", 1_000_000_000L * 1_000_000_000L, 0)
 
         // ── Heat ──────────────────────────────────────────────────────────
-        // A single machine's `joules` field, which is what actually gets stored and is the row
-        // §2 shows governs the target: per-tile energy has three orders of headroom to spare.
-        budget("machine joules: heaviest machine at max kelvin", heaviestMachineCapacity * designMaxKelvin, 1)
+        // A single entry of a machine's `joules`, which since step 6b is **one tile of it** rather
+        // than all of it. That is the whole of the change as far as this file is concerned: the
+        // `thermalTiles` factor left the expression, and with it the 24.76x that made this the last
+        // arithmetic row standing between the game and a microgram.
+        //
+        // ⚠️ Still k^1. This divided a constant by twenty-five; it did not remove an exponent the
+        // way steps 4 and 4b did, so the row keeps its slope and goes red again a little past 1e7.
+        budget(
+            "machine joules: hottest single tile of the heaviest machine",
+            MachineKind.ALL.maxOf { it.capacityPerTile } * designMaxKelvin,
+            1,
+        )
         // The densest a tile can be, machine and air together — the true per-tile energy ceiling,
         // and the one a rescale has to keep representable no matter how big the map gets.
         budget(

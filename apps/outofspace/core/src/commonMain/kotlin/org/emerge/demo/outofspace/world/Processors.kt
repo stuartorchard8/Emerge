@@ -29,10 +29,10 @@ data class Processor(
     val gramsPerTick: Long = Capacity.PACKET_GRAMS,
     val efficiencyPermille: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: Long = ambientJoules(MachineKind.Processor),
+    override val joules: TileJoules = ambientJoules(MachineKind.Processor),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Processor
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 }

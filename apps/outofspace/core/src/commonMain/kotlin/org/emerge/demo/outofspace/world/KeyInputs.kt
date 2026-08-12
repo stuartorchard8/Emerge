@@ -46,9 +46,9 @@ enum class InputKey(val label: String) {
 data class KeyInput(
     val key: InputKey = InputKey.Up,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: Long = ambientJoules(MachineKind.KeyInput),
+    override val joules: TileJoules = ambientJoules(MachineKind.KeyInput),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.KeyInput
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: Long): Machine = copy(joules = joules)
+    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
 }
