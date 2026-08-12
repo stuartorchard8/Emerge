@@ -7,7 +7,9 @@ outofspace. **That draft's central choice was rejected** — see §2 for why. §
 
 ## 1. STATE OF PLAY — read this first
 
-### ✅ Steps 1, 2 and 3 are BUILT and green (2026-08-13). Step 1 is `3ea0a1fd`, step 2 is `0390bd6f`; step 3 is §3.
+### ✅ Steps 1, 2 and 3 are BUILT and green (2026-08-13). Step 1 is `3ea0a1fd`, step 2 is `0390bd6f`, step 3 is `fc8b2f18`.
+
+### ⛔ Step 4 is SUPERSEDED by `PLAN_rigid_bodies.md` — the collision system is being redone, not extended. Rotation through step 3 is a *rendering* change only; nothing in the sim reads the vessel's `ang`.
 
 ### Step 1
 
@@ -252,13 +254,25 @@ Drockets' `WorldRenderer.kt:494` was read but not copied: it counter-rotates a *
 hold a body's local frame still, which is the opposite sign and the opposite default from what this
 needed.
 
-### Step 4 — `RigidBody` orientation, and collisions imparting torque
-`RigidBody` currently has **no orientation at all**: a box plus a row-major solid mask, axis-aligned.
-This is where the polygon-vs-circle gap bites and it is the largest step.
+### ⛔ Step 4 — SUPERSEDED by `PLAN_rigid_bodies.md` (2026-08-13)
 
-⚠️ **Do not start here.** Memory records six standing failures already sitting in the free-body
-gravity/contact area (plus `ProcessorChainTest`), pre-dating the unit rescale. Clear or at least
-understand those before adding spin to that code, or you will be debugging two things at once.
+Step 4 was scoped as "`RigidBody` orientation, and collisions imparting torque". That scope was too
+small in one direction and wrong in another, per Stu on 2026-08-13:
+
+- **Rotation as built through step 3 is a rendering change.** The vessel's `ang` is read by the
+  renderer and by nothing else in the sim. It has to become physical.
+- **The collision system has to be redone, not extended.** Its contact normal is inferred from
+  axis re-tests, so it cannot express a rotated contact; it computes no contact point, so it cannot
+  produce torque even in principle; and it sweeps each body independently, so it cannot stack.
+- **Vessels and rocks must eventually unify** under one grid + collider rigid-body structure, and
+  the collider model must absorb per-cell discs, OBBs and triangular half-tiles **without any of
+  them requiring the others to be redone.**
+
+⚠️ **The "six standing free-body failures" warning that used to live here was wrong.** The suite is
+green; there is one `@Ignore`d free-body contact test (`RockContactTest.kt:137`) and the rest are
+unrelated. Do not let it set the order of work.
+
+Everything else moved to **`PLAN_rigid_bodies.md`**, which is where the work is.
 
 ### Explicitly parked
 - **Centrifugal force in the fluid sim.** Stu, 2026-08-13: the fluid sim was dramatically simplified
