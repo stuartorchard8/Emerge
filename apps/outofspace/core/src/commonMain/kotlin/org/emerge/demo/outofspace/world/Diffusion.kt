@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Grid
@@ -255,6 +256,19 @@ fun diffuseFluid(
             // and, when everything leaves, to exactly `joules`. Giving each face its own floored fraction
             // instead would leave a few joules behind every time, and behind in an empty cell they are
             // heat with nothing to hold it.
+            //
+            // The running total goes through [scaledRatio] for exactly the reason
+            // [org.emerge.demo.outofspace.chem.apportion] does, and this is the same construction:
+            // `energy × carried` multiplies an energy by a mass, so it is **quadratic in the mass
+            // unit** and reaches 2.9e22 for an ambient tile at one microgram per unit. The wrap does
+            // not merely lose precision — it hands a face more energy than the tile has, and the
+            // cell is left holding negative joules, a negative kelvin, and eventually a negative
+            // reduced temperature that indexes a saturation table at −1.
+            //
+            // Telescoping survives the reduction because it rests on [scaledRatio]'s two documented
+            // properties and on nothing else: monotonic in the numerator, so no face can be handed a
+            // negative share, and exact at the ends, so a tile that empties completely hands over
+            // precisely `energy` and keeps nothing back.
             if (joules != null && deltaJoules != null && outMass > 0L) {
                 val energy = joules[tile]
                 var carried = 0L
@@ -262,7 +276,7 @@ fun diffuseFluid(
                 for (f in 0 until FACES) {
                     if (faceOut[f] <= 0L) continue
                     carried += faceOut[f]
-                    val upTo = energy * carried / ownMass
+                    val upTo = scaledRatio(carried, ownMass, energy)
                     val out = upTo - assigned
                     assigned = upTo
                     if (out == 0L) continue

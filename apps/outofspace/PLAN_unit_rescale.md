@@ -651,6 +651,34 @@ Effect at 10⁶: 54 → **50**, and `PhaseEmergenceTest` 5 → 1.
 shape of the work ahead. The test sources need the same audit the main sources got, not a pass of
 re-baselining.
 
+#### The two k² sites behind every exception
+
+The `ArrayIndexOutOfBoundsException` cluster traced to **`Diffusion.diffuseFluid`**, in the
+telescoped energy split:
+
+```
+val upTo = energy * carried / ownMass          // an energy TIMES a mass
+```
+
+Quadratic in the mass unit, and 2.9e22 for an ambient tile at one microgram. The wrap does not
+merely lose precision — it hands a face more energy than the tile has, so the cell is left holding
+**negative joules**, which read back as a negative kelvin, then a negative reduced temperature, then
+an index of −1 into a saturation table. Six frames and two packages from the ratio that caused it,
+which is why it had to be bisected rather than reasoned out.
+
+`scaledRatio` again, and the telescoping survives untouched because it rests on exactly the two
+properties that function documents as a contract: monotonic in the numerator, so no face can be
+handed a negative share, and exact at the ends, so a tile that empties hands over precisely `energy`
+and keeps nothing back. This is the same construction as `chem.apportion`, arrived at independently.
+
+`Interlayer.Share.of` was `quantity * part / whole` with millimoles over a mass — k¹ with a
+five-digit multiplier, 2.9e19 for an ambient tile. Fixed in the same pass; it was not the cause of
+the exceptions, which is worth recording, because it looked exactly like one.
+
+Effect at 10⁶: 50 → **41, and all ten exceptions gone.** `ValveTest`, `PumpTest` and
+`EditorToolsTest` are clear. Two `HeatTest` failures appeared — newly *reached*, not a regression:
+the run now gets far enough to execute them.
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Temperature
 
@@ -80,9 +81,27 @@ fun exchangeLayers(
 /**
  * Fraction of a cell leaving, kept as a ratio. Multiplying then dividing keeps each quantity
  * (species grams, energy, momentum) at its own precision without rounding out trace species.
+ *
+ * ### Why [of] goes through [scaledRatio]
+ *
+ * [part] and [whole] are **millimoles** — invariant under the mass rescale, and a tile of air is
+ * about 34,500 of them — while [quantity] is a mass or an energy and so carries the mass unit in
+ * full. `quantity * part` is therefore linear in the unit with a five-digit multiplier on top of it,
+ * and a tile of ambient air at one microgram per unit holds 2.9e14 millijoules: the product reaches
+ * 2.9e19 and wraps.
+ *
+ * That wrap is how it presented, and the presentation is worth recording because it was nothing like
+ * the cause. A tile ended up holding **negative joules**, which read back as a negative kelvin, which
+ * became a negative reduced temperature, which indexed `Saturation.sample` at −1 — an
+ * `ArrayIndexOutOfBoundsException` inside the equation of state, six frames and two packages away
+ * from a ratio in the plumbing.
+ *
+ * Reducing the fraction first is exact wherever the old form did not overflow, and conservation does
+ * not rest on it either way: [handOver] subtracts from the donor and adds to the acceptor the same
+ * number, whatever that number is.
  */
 internal class Share(val part: Long, val whole: Long) {
-    fun of(quantity: Long): Long = quantity * part / whole
+    fun of(quantity: Long): Long = scaledRatio(part, whole, quantity)
 }
 
 internal class Moved(val grams: Long, val joules: Long)
