@@ -742,6 +742,40 @@ knob already turned they double-scale and overflow. They are correct tests of th
 today's unit, and running them with the knob flipped measures nothing. Do not chase them; the third
 row — the overflow budget itself — is the real one, and it needs re-measuring (item 2 below).
 
+#### 🛑 The measurement that decides the rest of step 8: **energy cannot go to 10⁶**
+
+A 21-tile uranium rock read **−184 K** at 10⁶. That is not an expression bug, and chasing it as one
+would have been wrong: it is the energy range running out. The audit found that **every energy row
+here is per tile or a ledger aggregate**, so a single physical object holding its own joules across
+twenty-one tiles of solid had nothing measuring it. `body joules` is that row, added now.
+
+Measured at today's unit, extrapolated to a mass scale of 10⁶ (safety factor 4):
+
+| dimension | tightest row | safe k |
+| --- | --- | --- |
+| **mass** | `cargo: Storage.CAP across the grid` | **8.0e7** |
+| energy | `machine joules` / `tile joules` | 7.0e6 |
+| energy | `atmosphere joules` *(ledger)* | 1.31e6 |
+| energy | **`body joules`** *(a real stored quantity)* | **1,870** |
+| energy | `ship joules` *(ledger)* | 1,220 |
+
+Every mass row clears 10⁶ comfortably. **Every row that fails is an energy row**, and the binding one
+is not a ledger — it is a rock, which the game spawns by default.
+
+The cause is structural, not arithmetic: [Budget] holds `MILLIJOULE == GRAM`, so the energy unit is
+*locked to* the mass unit and a millionfold finer mass makes a millionfold finer joule. At one
+microgram per unit an integer of energy is one **nanojoule**, and a rock's thermal energy does not
+fit in a `Long` at that granularity. No amount of `scaledRatio` helps — this is a stored quantity's
+range, not an intermediate's.
+
+The lever already exists and is documented as forced: `Budget.ENERGY_PER_MASS`. Setting it to **1**
+instead of 1000 decouples the two, leaving energy at roughly today's granularity while mass gains its
+six orders. The price is the divisor the [Budget] KDoc warns about — `gasCapacityAt` and its kin stop
+reading `grams * specificHeat` and gain a `/ 1000`. Worth noting that the floor the whole rescale
+exists for is a **mass** floor (diffusion stranding), so decoupling costs nothing where it matters.
+
+**Awaiting a decision from Stu before proceeding.**
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the

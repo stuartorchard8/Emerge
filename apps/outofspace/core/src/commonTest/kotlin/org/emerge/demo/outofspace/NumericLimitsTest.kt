@@ -110,6 +110,9 @@ class NumericLimitsTest {
     /** Hot enough for a smelter, cold enough to be a real state. The top of the thermal range. */
     private val designMaxKelvin = 3000L
 
+    /** Tiles in a default rock blob — `Edit.DEFAULT_ROCK_RADIUS` of 2 fills 21 of its 25 cells. */
+    private val ROCK_TILES = 21L
+
     private val gridTiles: Long = OutofspaceConfig().initialGrid.size.toLong()
 
 
@@ -351,6 +354,16 @@ class NumericLimitsTest {
             "tile joules: densest deck tile + its air at max kelvin",
             (densestTileCapacity + AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong()) *
                 designMaxKelvin,
+            1,
+        )
+        // A whole free body, which is NOT a ledger and is stored on the body itself — the gap the
+        // audit found when a 21-tile uranium rock read −184 K at 10⁶. Every other energy row here is
+        // per tile or a ledger aggregate, so a single physical object holding its own joules across
+        // twenty-one tiles of the densest solid there is had nothing measuring it.
+        budget(
+            "body joules: a rock of the densest solid at max kelvin",
+            densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() } *
+                ROCK_TILES * designMaxKelvin,
             1,
         )
         // Scales with grid AREA as well as with the mass unit — the one row where growing the map
