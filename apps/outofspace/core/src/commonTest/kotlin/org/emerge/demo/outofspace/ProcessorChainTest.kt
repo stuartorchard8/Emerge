@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -34,6 +35,15 @@ import kotlin.test.assertTrue
  * back onto the pipe feeding its own input.
  */
 class ProcessorChainTest {
+
+    /**
+     * Ticks to watch a primed chain for, to be sure of catching every stage holding a packet.
+     *
+     * A stage's cycle is short — it fills its product buffer and empties it into the belt within a
+     * few ticks — so this only has to be longer than one cycle, not tuned to it. Ten is comfortably
+     * that and still costs nothing.
+     */
+    private val HANDOVER_WINDOW = 10
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
@@ -115,20 +125,48 @@ class ProcessorChainTest {
         // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
         s = run(s, 1800)
 
-        // The **shape**, not the figures. This has read 75/100/100, then 66/88/100, and now wobbles
-        // between 66 and 64 on the first stage depending where in a bite it is sampled: the extractor
-        // apportions ore once per 3 kg cell where the miner apportioned it afresh every tick, so what
-        // is *standing in* a buffer moves about even though what is separated does not. (Sampled every
-        // hundred ticks out to 1600 it reads 66 but for three samples reading 64.)
-        //
-        // Every one of those figures was a constant that had to be re-pinned by whatever changed
-        // upstream of it, which makes the test a record of its own history rather than of the claim.
-        // The claim is that each stage is cleaner than the one before and the far end is pure metal.
-        val purities = stages.map { purity((s[grid.index(it, 3)] as Processor).product) }
+        // Sampled over a window, not on one tick. A stage's `product` buffer empties on whichever
+        // tick it hands its packet to the belt, so a single-instant reading of all three catches
+        // one of them mid-handover and reads 0 for it — which sorts wrong and fails a test about
+        // purity for a reason that has nothing to do with purity. What is *standing in* a buffer
+        // moves about every tick; what the stage separates does not, so take the buffer's purity
+        // whenever there is something in it and ignore the ticks when there isn't.
+        val purities = MutableList(stages.size) { 0 }
+        repeat(HANDOVER_WINDOW) {
+            s = run(s, 1)
+            for ((i, x) in stages.withIndex()) {
+                val p = purity((s[grid.index(x, 3)] as Processor).product)
+                if (p > 0) purities[i] = p
+            }
+        }
+
+        // The **shape**, and an endpoint derived rather than pinned. This has read 75/100/100 and
+        // then 66/88/100; every one of those figures was a constant that had to be re-pinned by
+        // whatever changed upstream of it, which makes the test a record of its own history rather
+        // than of the claim. The claim is that each stage is cleaner than the one before, and that
+        // the far end is as clean as three passes of [process] can make this ore — which the chemistry
+        // will tell us, so ask it instead of writing the answer down. (Note that it is *not* 100:
+        // `process` caps its effective efficiency at the input's own purity, so a stage takes p to
+        // 1-(1-p)² and a 900-permille machine converges on 99, never reaching pure.)
         assertEquals(purities.sorted(), purities, "each stage should be cleaner than the last: $purities")
         assertTrue(purities.first() > 41, "and the first should already beat the 41% ore body: $purities")
-        assertEquals(100, purities.last(), "with the last stage pure: $purities")
-        assertEquals(100, purity((s[grid.index(21, 3)] as Storage).contents), "and the far end is pure metal")
+        assertEquals(threeStagePurity(), purities.last(), "the last stage matches the chemistry: $purities")
+        assertEquals(
+            threeStagePurity(),
+            purity((s[grid.index(21, 3)] as Storage).contents),
+            "and the far end holds what the last stage made",
+        )
+    }
+
+    /**
+     * What three passes of the concentrator do to a packet of the standard ore body — the oracle for
+     * the end of a three-stage chain, computed from the same chemistry the machines use so that a
+     * change to [process] or to the ore moves the expectation with it instead of breaking the test.
+     */
+    private fun threeStagePurity(): Int {
+        var r = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS))
+        repeat(3) { r = process(r, Processor(Direction.Right).efficiencyPermille).product }
+        return purity(r)
     }
 
     /**
