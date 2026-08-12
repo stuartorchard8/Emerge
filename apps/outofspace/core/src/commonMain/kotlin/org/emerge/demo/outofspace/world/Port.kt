@@ -47,6 +47,12 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
+
+        // Propellant in at the back, which for a one-tile machine is its own tile — a rail is
+        // threaded underneath it exactly as it is under a smelter. The exhaust leaves out the front
+        // and is not a port: nothing on a belt is going to catch it.
+        is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
+
         is Vaporizer -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Input))
 
         // In at the back, concentrate out the front, tailings out of the floor.

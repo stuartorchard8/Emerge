@@ -21,6 +21,7 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Sensor("SENSOR"),
     KeyInput("BUTTON", isPermeable=true),
     Vent("VENT"),
+    Thruster("THRUSTER", isPermeable=true),
     Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
     Pump("PUMP", isPermeable=true),

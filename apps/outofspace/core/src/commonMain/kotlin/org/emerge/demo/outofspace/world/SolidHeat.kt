@@ -277,5 +277,8 @@ fun heatPerGram(machine: Machine?): Long = when (machine) {
     is Processor -> 40_000L    // crushing and grinding
     is Extractor -> 20_000L
     is Vaporizer -> 100_000L   // vaporising minerals
+    // A rocket's waste heat is what the bell does not throw away. The exhaust's own energy is not
+    // this: it leaves with the exhaust, or lands where the exhaust lands. See [Thruster].
+    is Thruster -> 50_000L
     else -> 0L
 }

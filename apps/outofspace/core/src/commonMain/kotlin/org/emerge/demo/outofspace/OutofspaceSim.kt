@@ -71,6 +71,8 @@ import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Vaporizer
+import org.emerge.demo.outofspace.world.Thruster
+import org.emerge.demo.outofspace.world.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.gasCapacityAt
 import org.emerge.demo.outofspace.world.MomentumField
@@ -157,6 +159,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Processor -> w.refine(cfg, m, activation, i)
                 is Smelter -> w.melt(cfg, m, activation, i)
                 is Vaporizer -> w.vaporize(m, activation, i)
+                is Thruster -> w.fire(cfg, m, activation, i, structure)
                 else -> m
             }
         }
@@ -318,8 +321,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Valves and pumps no longer push: they move mass between two cells at the same place, and a
         // transfer that goes nowhere has no direction to push in. What is left is what presses on the
         // hull, what the debug engine adds, and what the vessel handed the bodies around it.
-        val netImpulseX = pushed.vesselX + pipePushed.vesselX + thrustX - handedX
-        val netImpulseY = pushed.vesselY + pipePushed.vesselY + thrustY - handedY
+        // A thruster's exhaust took `+p` overboard with it, so the ship keeps `−p`. Nothing is
+        // minted: the two halves are written from one number in [fire].
+        val netImpulseX = pushed.vesselX + pipePushed.vesselX + thrustX - handedX - w.exhaustMomentumX
+        val netImpulseY = pushed.vesselY + pipePushed.vesselY + thrustY - handedY - w.exhaustMomentumY
 
         return state.copy(
             machines = machines,
@@ -342,9 +347,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             air = fluid.air,
             pipeAir = pipes.air,
             pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
-            airVentedMass = state.airVentedMass + fluid.ventedMass,
+            airVentedMass = state.airVentedMass + fluid.ventedMass + w.exhaustAirMass,
             // Separate from radiatedEnergy: cleaner ledger.
-            airVentedEnergy = state.airVentedEnergy + fluid.ventedEnergy,
+            airVentedEnergy = state.airVentedEnergy + fluid.ventedEnergy + w.exhaustAirEnergy,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirMass = w.injectedAirMass,
             injectedAirEnergy = w.injectedAirEnergy,
@@ -354,6 +359,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ Not a velocity field — the flow overlay measures [diffuseFluid] instead (see
             // [VesselState.flow]). See the extraction plan §3.
             momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
+            // Momentum that is genuinely somewhere else now: astern of the ship at 3 km/s.
+            exhaustMomentumX = state.exhaustMomentumX + w.exhaustMomentumX,
+            exhaustMomentumY = state.exhaustMomentumY + w.exhaustMomentumY,
             // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
             vesselImpulseY = state.vesselImpulseY + netImpulseY,
@@ -518,6 +526,96 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
     }
 
+    /**
+     * One tick of a [Thruster]: throw propellant out of the nozzle and take whatever was in the way
+     * with it.
+     *
+     * The three outcomes are [ExhaustPath]'s three cases and nothing else decides anything here.
+     * What is worth reading closely is the **bookkeeping**, because the exhaust crosses two ledgers
+     * at once and each half needs its own term:
+     *
+     *  - propellant is a solid off a belt, so spending it is [VesselState.ventedMass] — the same
+     *    store a [Vent] increments, and for the same reason: it has left the vessel's cargo.
+     *  - gas the jet scooped up is atmosphere. Overboard it is [VesselState.airVentedMass]; into the
+     *    destination tile it has not gone anywhere at all and is booked nowhere.
+     *  - propellant that lands in the destination tile has *become* atmosphere, so it is vented from
+     *    the solid ledger **and** injected into the air one. Both, or one of the two identities
+     *    silently stops being zero — see [VesselState.airBalance].
+     *
+     * ⚠️ A blocked motor produces no impulse here and that is not an omission. Its exhaust pushes
+     * the ship's own hull, so the pair cancels exactly; what the ship feels is whatever
+     * [applyPressureForce] makes of a tile that now holds a jet's worth of very hot gas, which is
+     * a real force arrived at honestly rather than a fraction of the thrust picked to look right.
+     */
+    private fun Work.fire(
+        cfg: OutofspaceConfig,
+        m: Thruster,
+        activation: Int,
+        at: Int,
+        structure: StructureMap,
+    ): Thruster {
+        val input = m.input ?: return m
+        val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
+        val chunkMass = minOf(allowance, input.mass)
+        if (chunkMass <= 0L) return m.copy(carry = carry)
+
+        val path = exhaustPath(grid, structure, at, m.facing)
+
+        heat(at, heatOfWorking(chunkMass, m))
+
+        // The propellant, as gas: whatever went into the chamber is what comes out of the bell.
+        val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        val parcel = LongArray(Species.COUNT)
+        for (s in Species.ALL) parcel[s.ordinal] = chunk.mixture[s]
+        val propellantEnergy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+
+        // Everything standing in the plume, taken with it. A jet does not thread between the gas in
+        // a corridor; it entrains it, which is why the whole path is walked and not just its ends.
+        var scoopedMass = 0L
+        var scoopedEnergy = 0L
+        for (tile in path.path) {
+            // The destination keeps what it has — the exhaust is about to be added to it.
+            if (!path.isClear && tile == path.destination) continue
+            val base = tile * Species.COUNT
+            for (s in Species.ALL) {
+                val held = airMass[base + s.ordinal]
+                if (held <= 0L) continue
+                parcel[s.ordinal] += held
+                scoopedMass += held
+                airMass[base + s.ordinal] = 0L
+            }
+            scoopedEnergy += airEnergy[tile]
+            airEnergy[tile] = 0L
+        }
+
+        val ejectedMass = chunkMass + scoopedMass
+        // Propellant has left the cargo either way: overboard, or by becoming gas.
+        ventedMass += chunkMass
+
+        if (path.isClear) {
+            // Out of the world at exhaust velocity, and the ship gets the other half.
+            airVentedByExhaust(scoopedMass, scoopedEnergy)
+            val impulse = ejectedMass * Thruster.tilesPerTick(cfg.ticksPerSecond)
+            exhaustMomentumX += impulse * m.facing.dx
+            exhaustMomentumY += impulse * m.facing.dy
+        } else {
+            val destination = path.destination
+            val base = destination * Species.COUNT
+            for (s in Species.ALL) airMass[base + s.ordinal] += parcel[s.ordinal]
+            // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
+            // your own bulkhead expensive rather than merely useless.
+            val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
+            airEnergy[destination] += landed + scoopedEnergy
+            injectedAirMass += chunkMass
+            injectedAirEnergy += landed
+        }
+
+        return m.copy(
+            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
+            carry = carry,
+        )
+    }
+
 /** Buffer merge: new contents, or null if forms cannot coexist. Null vs Merge(null) distinguishes "empty" from "cannot mix". */
     private class Merge(val buffer: Resource?)
 
@@ -594,6 +692,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Debug engine direction, summed + clamped (see [Edit.Thrust]).
         var thrustDx: Int = 0
         var thrustDy: Int = 0
+
+        /**
+         * What this tick's [Thruster]s threw overboard, and where it went.
+         *
+         * Four running totals rather than one, because the exhaust is two substances leaving two
+         * ledgers: the propellant is a solid off the belt ([VesselState.ventedMass], the same store
+         * a [Vent] uses) and the gas the jet scooped out of the corridor on its way past is
+         * atmosphere ([VesselState.airVentedMass]). Booking both to one term would close the sum and
+         * break both identities. The momentum is the pair's other half — `+p` here is exactly the
+         * `−p` handed to the ship below, so nothing is minted and the ledger needs no new store.
+         */
+        var exhaustAirMass: Long = 0L
+        var exhaustAirEnergy: Long = 0L
+        var exhaustMomentumX: Long = 0L
+        var exhaustMomentumY: Long = 0L
+
+        /** Atmosphere a thruster's plume carried off the grid — see [OutofspaceReducer.fire]. */
+        fun airVentedByExhaust(mass: Long, energy: Long) {
+            exhaustAirMass += mass
+            exhaustAirEnergy += energy
+        }
 
         var fitRequested: Boolean = false
 
@@ -1230,6 +1349,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Processor -> m.input == null
                 is Smelter -> m.input == null
                 is Storage -> m.contents == null || (m.contents?.mass ?: 0L) < Storage.CAP
+                is Thruster -> m.input == null
                 is Vent -> true
                 else -> false
             }
@@ -1265,6 +1385,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Smelter -> acceptInto(destination.input, packet)?.let { machines[target] =
                     destination.copy(input = it); true } ?: false
                 is Vaporizer -> acceptInto(destination.input, packet)?.let { machines[target] =
+                    destination.copy(input = it); true } ?: false
+                is Thruster -> acceptInto(destination.input, packet)?.let { machines[target] =
                     destination.copy(input = it); true } ?: false
                 is Storage -> {
                     if (packet !is SolidPacket) false
@@ -1318,6 +1440,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.KeyInput -> KeyInput()
             MachineKind.Vent -> Vent()
+            MachineKind.Thruster -> Thruster(facing)
             MachineKind.Pump -> Pump(facing)
             MachineKind.Hull -> Hull()
             MachineKind.Airlock -> Airlock()

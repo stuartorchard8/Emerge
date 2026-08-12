@@ -132,6 +132,7 @@ val MachineKind.material: Material
         MachineKind.Smelter -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
+        MachineKind.Thruster,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
@@ -175,6 +176,10 @@ val MachineKind.fillPermille: Int
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
         MachineKind.Pump,
         -> 150
+
+        // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
+        // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
+        MachineKind.Thruster -> 120
 
         // Instruments and fittings: mostly a housing.
         MachineKind.Sensor, MachineKind.Vent, MachineKind.KeyInput, MachineKind.Gauge -> 40

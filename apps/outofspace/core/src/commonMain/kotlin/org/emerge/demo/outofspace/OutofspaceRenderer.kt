@@ -30,6 +30,7 @@ import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Vaporizer
+import org.emerge.demo.outofspace.world.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
@@ -564,6 +565,12 @@ class OutofspaceRenderer {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Vent))
                 tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
             }
+            // The bell marks the exhaust face, so which way a motor pushes is readable without
+            // selecting it — the one thing about a thruster you cannot afford to get wrong.
+            is Thruster -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Thruster))
+                edgeMark(x, y, m.facing, Colors.VENT_CORE)
+            }
         }
         drawPorts(state, index, m)
     }
@@ -1089,6 +1096,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Airlock -> 0x6E7C90FFL
     MachineKind.Vent -> 0x3A3A44FFL
     MachineKind.Pump -> 0xB07840FFL
+    MachineKind.Thruster -> 0xC04A30FFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
 }

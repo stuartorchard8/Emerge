@@ -651,6 +651,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Vaporizer -> (machine.input?.mass ?: 0L)
+    is Thruster -> (machine.input?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
     is Sensor, is KeyInput -> 0L
@@ -672,6 +673,7 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Extractor -> (machine.buffer.mass * SignalField.FULL / Extractor.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Vaporizer -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Thruster -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Smelter -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is KeyInput -> 0
@@ -706,6 +708,9 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
     is Vaporizer -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
     )
+    is Thruster -> listOfNotNull(
+        machine.input?.let { "PROPELLANT" to it },
+    )
     is Smelter -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
         machine.refined?.let { "REFINED" to it },
@@ -723,6 +728,7 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
     is Vaporizer -> machine.input?.mixture ?: Mixture.EMPTY
+    is Thruster -> machine.input?.mixture ?: Mixture.EMPTY
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY

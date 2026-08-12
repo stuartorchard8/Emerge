@@ -20,6 +20,7 @@ val MachineKind.size: Int
         MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> 1
         MachineKind.Wire -> 1
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.Hull, MachineKind.Airlock -> 1
+        MachineKind.Thruster -> 1
         MachineKind.KeyInput -> 1
         MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage -> 3
         // A floor to land a rock on, and a rock is five tiles across.

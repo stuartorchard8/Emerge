@@ -203,6 +203,13 @@ object Save {
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
+            // Propellant and the fraction of a tick's worth left over. The exhaust path is derived
+            // from the hull every tick and so is not state — see [exhaustPath].
+            is Thruster -> {
+                put("in", m.input?.let { writeResource(it) })
+                put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+            }
             is Smelter -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("out", m.refined?.let { writeResource(it) })
@@ -775,6 +782,12 @@ object Save {
                 key = f["key"]?.let { name ->
                     InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
                 } ?: InputKey.Up,
+            )
+            MachineKind.Thruster -> Thruster(
+                facing = facing(),
+                input = res("in"),
+                carry = massNum("carry", 0L),
+                massPerTick = rate(Thruster(Direction.Right).massPerTick),
             )
             MachineKind.Vent -> Vent(ventedMass = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
