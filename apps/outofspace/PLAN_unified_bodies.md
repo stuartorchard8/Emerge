@@ -1,5 +1,19 @@
 # Unified rigid bodies
 
+> ## ✅ ~90% BUILT as of 2026-08-13 — see `PLAN_rigid_bodies.md` §9.1
+>
+> `RigidBody`, `BodyKind`, the single `bodies` list, `driftBodies`, `sweepBody`,
+> `overlapsHull(RigidBody)`, `BodyStep`, `bodyImpulseX/Y`, `rockBlob`, and `reachableCell`/`biteCell`
+> on a `RigidBody` all exist. This document describes the present, not a future.
+>
+> **Not built:** `RigidBody.fromMachine` (zero hits in the repo), and `BodyKind.FRAGMENT` is
+> **never constructed** — a dead arm of the enum reachable only from tests. Both carried into
+> `PLAN_rigid_bodies.md`.
+>
+> ⚠️ The code is **better** than this plan in one place: bodies carry per-cell `TileEnergy`, not a
+> single `joules`. Do not regress that — it is what the unit rescale bought.
+
+
 *Plan, 2026-08-07. Nothing built.*
 
 ---

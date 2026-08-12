@@ -179,39 +179,74 @@ each other, which is rock-on-rock — where it reads as rubble catching on rubbl
 
 ---
 
-## 5. The frame problem — this is what makes vessel rotation physical
+## 5. The frame — delete the vessel frame, do not patch it
 
-Independent of collision, and arguably the thing Stu is actually pointing at. Today:
+**This is step one, and the fix is not the one an earlier draft of this section proposed.**
+
+Today:
 
 - A body's **position** is in the vessel's grid frame. `RigidBody.kt:29`
 - A body's **impulse** is in the **world** frame, because the vessel's frame accelerates and is
   therefore not inertial. `RigidBody.kt:32`
 - `sweepBody` compares them directly: `relative(impulse, shipVelocity)`, `RockContact.kt:161`.
 
-That subtraction is only valid while the two frames share their axes. **The moment the vessel has a
-nonzero `ang`, they do not**, and the comparison is silently wrong — not approximately, but by the
-full rotation. This is the `ω × r` item left open at the end of step 2, and it is not a refinement:
-it is the difference between the vessel's angle being a number in a save file and being a fact about
-the world.
+That subtraction is only valid while the two frames share their axes. **A nonzero vessel `ang`
+silently invalidates it** — not approximately, by the full rotation.
 
-Correctly, a body's velocity *across the grid* is:
+The obvious repair is to patch the conversion with `R(−vesselAng)` and a `ω × r` term. **Do not do
+that.** It buys a rotating reference frame and all its fictitious forces — Coriolis, centrifugal,
+Euler — permanently, in exchange for a bug fix. And it cannot survive §3.3 anyway: **you cannot
+unify vessels and rocks while one of them defines the coordinate system.** A privileged "vessel grid
+frame" is exactly the divergence Stu ruled out, expressed as a coordinate choice.
+
+### 5.1 Everything is stored in world coordinates
+
+The vessel gets a pose like any other body. Bodies store position **and** impulse in the world
+frame. No conversion, no fictitious forces, no `ω × r` anywhere.
+
+The grid survives untouched in the role it is actually good at. `PLAN_grid_vs_continuous.md` §4
+already named the distinction and it is the right one:
+
+> The grid is being conflated with two separate abstractions: **the grid as an addressing scheme**,
+> and **the grid as a shape constraint.** These are independent.
+
+The grid stays the **addressing scheme** — fluids, heat, transport, occupancy, room detection,
+ledgers, all unchanged, all still indexed by tile. It stops being the **frame**. A collision query
+against the vessel transforms the query point into the vessel's local space *once*, then indexes
+tiles exactly as today:
 
 ```
-v_grid = R(−vesselAng) · v_world  −  v_shipLinear  −  ω × r
+local = R(−vessel.ang) · (pWorld − vessel.pos)      // once per body per substep, not per cell
+tile  = grid.index(floorTile(local.x), floorTile(local.y))
 ```
 
-where `r` is from the vessel's centre of mass to the body, and `ω × r = (−ω·r_y, ω·r_x)`.
+That is the standard "transform the query into the other body's local space" trick, it is one
+rotation per query rather than one per cell, and **it is the line where the vessel's `ang` stops
+being decorative.**
 
-That third term is what a rotating reference frame does, and it is why a rock hanging motionless in
-space drifts in an arc across the deck of a spinning ship. It enters at `OutofspaceSim.kt:307`, the
-call that hands `driftBodies` the ship velocity.
+### 5.2 Stu's precision point, quantified
 
-⚠️ **`ω × r` has the same division-order trap step 2 hit, and it bites harder.** `angVel` is `Coord`
-raw per tick and `Rotation.RAW_PER_RADIAN` is 6.8e8. A ship turning once a minute at four ticks a
-second is about **1.8e7 raw/tick**, so `angVel / RAW_PER_RADIAN` **truncates to zero** and the whole
-term vanishes — silently, reading as an absence rather than an error, which is this codebase's
-standing failure mode. It must be `scaledRatio(angVel, RAW_PER_RADIAN, r)` with the radius as the
-*scale*, never a division followed by a multiply.
+The reason for clinging to the vessel frame was float precision degrading away from the origin.
+`Long` removes it, and by a wide margin:
+
+| | Range | Spacing at 10⁶ tiles | Spacing at 10⁹ tiles |
+|---|---|---|---|
+| `Long` at `PER_TILE` = 1e9 | ±9.2 × 10⁹ tiles | **10⁻⁹ tile** | **10⁻⁹ tile** |
+| `Float` | — | 0.06 tile | 60 tiles |
+
+Uniform everywhere, which is the property that makes a world frame viable at all.
+
+### 5.3 ⚠️ The trap that replaces the one we are deleting
+
+Absolute world coordinates are large, and **a product of two of them overflows `Long` past 3.04
+tiles from the origin.** Not 3.04 million — three tiles. Every squared distance, every cross
+product, every SAT projection must be computed on **differences** reduced to a local origin (the
+contact pair's own frame) before any multiply. Absolute coordinates may be added and subtracted;
+they may never be multiplied.
+
+This is the same class of hazard as the rescale's, and it fails the same way — silently, as a
+wrapped value that reads like an absence. It wants an assertion in the prototype (§6) on every
+intermediate, and it is the single thing most likely to go wrong in this step.
 
 ---
 
@@ -223,7 +258,7 @@ transcribing.
 
 | Quantity | Where it can go wrong |
 |---|---|
-| `ω × r` | §5. Division order. **Silent zero.** |
+| **Absolute world coords** | §5.3. **A product of two overflows past 3.04 tiles from the origin.** Reduce to a difference first, always. |
 | Body `gyrationSq` | Reuse `Rotation.MassDistribution`. ⚠️ Never materialise `Σ m·r²` — step 2's lesson, and a rock at a microgram per unit is 83 tonnes. |
 | Contact point → torque | `torqueAbout` already works in millitiles and already exists. Body centres are at `Flight.PER_TILE` (1e9); the existing conversion is `/(PER_TILE / MILLI_TILE)` = 1e6. |
 | Disc-vs-box closest point | Clamp in millitiles. `d² ` at 1e5 millitiles squares to 1e10 — fine, but `r² ` comparisons must not be done in `PER_TILE` units, where they square to 1e18 and leave one multiply of headroom. |
@@ -264,16 +299,117 @@ Test targets worth naming now, because they are the ones that discriminate:
 
 ---
 
-## 8. Open questions for Stu
+## 8. Settled by Stu, 2026-08-13
 
-1. **Order.** Step 3 (the frame fix) is independent and small, and it is the one that makes the
-   existing vessel rotation mean something. Worth doing **first**, ahead of the collision work?
-2. **Restitution and friction as dials.** Restitution is currently a hard `1/2` "tuned for
-   legibility, not measured" (`RockContact.kt:14`). Friction is new and will want the same
-   treatment. Per-material, or one pair of constants to start?
-3. **Rock-on-rock scalloping.** §4 accepts it as rubble-on-rubble texture. If two large asteroids
-   grinding against each other should slide smoothly instead, that is the first place a `Box` cell
-   would earn its keep — but it is a feel call, not a correctness one.
-4. **Does the vessel keep its tile grid as its collider grid** (step 6), or does it get a derived
-   boundary-cell list? Interior cells can never be contacted, so a boundary list is a large constant
-   saving on a 96×60 grid — but it has to be rebuilt whenever the player places a tile.
+1. **The frame goes first.** "We've been clinging to it for too long." The reason for clinging was
+   float precision degrading away from the origin, and `Long` makes that concern evaporate (§5.2).
+2. **Restitution and friction become mixture- and form-dependent — later.** So they start as the
+   two constants that exist today, but **the narrow phase must look them up from the two contacting
+   cells from day one**, defaulting to those constants. A single global read baked into the solver
+   is a redo; a lookup that currently returns a constant is not. This is a one-line difference now
+   and the whole difference later.
+3. **Colliders for every tile on the grid.** No derived boundary-cell list. Optimise later — and
+   note the optimisation is invisible to everything above the broad phase, so it stays cheap to add.
+4. **Rock-on-rock scalloping** is accepted as rubble-on-rubble texture (§4). The first `Box` cells
+   go to the hull, where they are needed for correctness rather than feel.
+
+---
+
+## 9. The adjacent plans, assessed
+
+Read 2026-08-13 against the code as it actually is. Three of the four have been partly overtaken
+by work that was done without marking them.
+
+### 9.1 `PLAN_unified_bodies.md` — **~90% BUILT, never marked as such**
+
+Its whole §2 decision shipped. `RigidBody`, `BodyKind`, the single `bodies: List<RigidBody>`,
+`driftBodies`, `sweepBody`, `overlapsHull(… body: RigidBody …)`, `BodyStep`, `bodyImpulseX/Y`,
+`rockBlob`, and `reachableCell`/`biteCell` operating on a `RigidBody` all exist today. The plan is
+a description of the present, not of a future.
+
+Two things it specified are **not** built:
+
+- **`RigidBody.fromMachine(at, grid, machine)`** — does not exist anywhere. Grep finds zero hits.
+- **`BodyKind.FRAGMENT` is never constructed.** It is a live branch in `massPerTile`,
+  `capacityPerTile` and the `init` require, reachable only from tests. A dead arm of the enum.
+
+One thing the code does *better* than the plan asked: bodies carry **per-cell `TileEnergy`**, not
+the plan's single `joules`. That was the unit rescale's doing and it should not be regressed.
+
+**Verdict: mark it BUILT, carry `fromMachine` forward, delete nothing.**
+
+### 9.2 `PLAN_rigid_debris.md` — **premise obsolete; three ideas worth keeping**
+
+Its §7, the pivot of the plan, replaces this call:
+
+```kotlin
+debris.spill(origin, spoilsOf(machine))
+```
+
+**There is no `Debris` system in the codebase.** No `Debris.kt`, no references in `commonMain`, and
+`spoilsOf` (`Vessel.kt:687`) is **dead code with zero callers**. Everything the plan says about
+debris/fragment interaction, `TILE_CAP`, "contents become debris, casing becomes fragment", and the
+`DebrisTest` updates describes a system that no longer exists.
+
+Its §2 (machine as one body, not per-tile pieces) and §3 (the `BodyFragment` type) were correct and
+were absorbed into `RigidBody` — §9.1.
+
+Three things survive and should merge into this plan:
+
+1. **The tolerance rule.** 0.1 tile shaved from *exposed* edges only, connected edges kept at the
+   full boundary, to stop a sharp corner pinching against a hull tile. `RigidBody.TOLERANCE` exists
+   as a constant and **nothing reads it**. This is real, unbuilt, and it is a collision concern —
+   which is to say it belongs here rather than in a debris plan. It is also the plan's own
+   top-ranked risk, correctly.
+2. **`fromMachine`** — the missing factory from §9.1, which is where the tolerance rule is applied.
+3. **Its open questions 2 and 3 are now answered, oppositely to the plan.** It said "V1: no
+   rotation" and "V1: no fragment-fragment collision". Both are core requirements of this plan.
+
+Its §6 "V1 simplification: a fragment is eaten in one bite" is already obsolete — `biteCell`
+(`Extractors.kt:136`) already consumes a `RigidBody` cell by cell, which was the plan's V2.
+
+**Verdict: supersede it. Fold the tolerance rule and `fromMachine` in here; the rest is archaeology.**
+
+### 9.3 `PLAN_grid_vs_continuous.md` — **the central idea is load-bearing; the recommendation is overtaken**
+
+Its §4 is the best paragraph in any of these documents and §5.1 of this plan now rests on it:
+
+> The grid is being conflated with two separate abstractions: **the grid as an addressing scheme**,
+> and **the grid as a shape constraint.** These are independent.
+
+Keep that permanently. What is overtaken:
+
+- It recommends **Path C** (grid-rasterised bodies, rotation grafted on) short-term and **Path B**
+  (polygon bodies, SAT, tile-rasterised ledgers) medium-term. The per-cell collider design in §3.2
+  is neither: it gets Path B's benefits — genuine rotation, real contact geometry, arbitrary
+  silhouettes — at close to Path C's cost, because a per-cell convex shape needs **no polygon
+  decomposition** and no topology repair. Convex decomposition of concave rubble was the expensive
+  part of Path B, and per-cell shapes route around it entirely.
+- Its §3.2 says non-axis-aligned shapes are "not possible" and lists rotation as a *visual*
+  limitation. That was true of the representation it was describing and is what this plan changes.
+- Its **§7.5 execution-order table is stale in four ways**: `PLAN_unified_bodies` is marked "Not
+  built" (~90% built), `PLAN_trig_free_rotation` is marked "Not built" (steps 1–3 built), it
+  recommends the direction-vector rotation approach that was **rejected**, and it lists a
+  `PLAN_grid_vs_continuous` "Path C trajectory" as superseding the angle-centric approach when the
+  angle-centric approach is what actually shipped.
+
+**Verdict: keep §4 (quoted here), retire §7.5 outright, note that §5/§6 are overtaken by §3.2 here.**
+
+### 9.4 `PLAN_vessel_rotation.md` — already superseded
+
+By `PLAN_trig_free_rotation.md`, which itself is now built through step 3. No content to recover.
+
+### 9.5 What this plan absorbs
+
+| From | What |
+|---|---|
+| `PLAN_rigid_debris` | The tolerance rule (0.1 tile, exposed edges only) as a **collision** concern; `fromMachine`; machines dismantle into bodies |
+| `PLAN_unified_bodies` | Already built — this plan continues it by giving the unified body its angular half |
+| `PLAN_grid_vs_continuous` §4 | Grid as addressing scheme, not frame — now §5.1, the basis of the whole frame change |
+
+Added to §7 as a consequence, after the frame step and before the vessel-as-operand step:
+
+> **Step 4b — `fromMachine` + the tolerance rule.** Dismantling a machine spawns a
+> `BodyKind.FRAGMENT` body with exposed edges shaved by `RigidBody.TOLERANCE`, which finally makes
+> the enum arm reachable and gives the anti-pinch rule a user. Small, and it is the first thing that
+> produces rotating bodies in ordinary play rather than in a test.

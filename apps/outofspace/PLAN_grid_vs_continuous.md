@@ -1,5 +1,19 @@
 # Grid vs. non-grid: what we're building on top of
 
+> ## ⚠️ PARTLY OVERTAKEN 2026-08-13 — see `PLAN_rigid_bodies.md` §9.3
+>
+> **§4 is load-bearing and still exactly right:** the grid is two independent abstractions, an
+> *addressing scheme* and a *shape constraint*. `PLAN_rigid_bodies.md` §5.1 rests on it — the grid
+> stays the addressing scheme and stops being the frame.
+>
+> **Overtaken:** the Path B / Path C recommendation. Per-cell convex colliders get Path B's benefits
+> at Path C's cost, with no polygon decomposition. §3.2's claim that rotation is impossible describes
+> the old representation.
+>
+> ⛔ **§7.5's execution-order table is stale — do not follow it.** It marks two built plans as "not
+> built" and recommends the direction-vector rotation approach that was rejected.
+
+
 *Plan, 2026-08-07. Nothing built. Scoping document — not an implementation plan.*
 
 ---

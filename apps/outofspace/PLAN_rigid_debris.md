@@ -1,5 +1,18 @@
 # Rigid-machine debris
 
+> ## ⛔ SUPERSEDED 2026-08-13 by `PLAN_rigid_bodies.md` §9.2
+>
+> **Its premise no longer exists.** §7 pivots on replacing `debris.spill(origin, spoilsOf(machine))`
+> — there is no `Debris` system in the codebase, and `spoilsOf` is dead code with zero callers.
+> Its §2/§3 (`BodyFragment`) were absorbed into `RigidBody` by `PLAN_unified_bodies`, which is built.
+> Its §6 "V1: one bite" is obsolete: `biteCell` already eats a body cell by cell.
+> Its open questions 2 and 3 ("no rotation", "no fragment-fragment collision") are answered
+> **oppositely** — both are core requirements now.
+>
+> **What was carried forward:** the tolerance rule (0.1 tile, exposed edges only) and `fromMachine`.
+> Everything else is archaeology.
+
+
 *Plan, 2026-08-XX. Nothing built. Companion to `PLAN_dynamic_grid.md` — the dynamic grid
 remaps solid tiles between grids; this plan puts solid things **between** grids and gives them
 their own frame.*
