@@ -63,11 +63,66 @@ class ChemistryTest {
     }
 
     @Test
-    fun `apportion breaks ties by index so results never depend on iteration luck`() {
-        // Three equal weights sharing 4 units: each takes 1, and the leftover goes to the earliest
-        // index rather than to whichever the loop happened to visit last.
-        val out = apportion(longArrayOf(10, 10, 10, 0, 0, 0, 0, 0), 4)
-        assertEquals(longArrayOf(2, 1, 1, 0, 0, 0, 0, 0).toList(), out.toList())
+    fun `apportion splits a tie the same way every time`() {
+        // Three equal weights sharing 4 units: each takes 1, and the spare unit goes somewhere
+        // fixed. WHERE is a property of the rounding rule and not something callers may rely on —
+        // step 4b of PLAN_unit_rescale.md moved it from index 0 to index 2 when apportion stopped
+        // using largest-remainder. What callers rely on, and what this pins, is that the answer is
+        // the same on every machine and every run: never a function of iteration luck.
+        val weights = longArrayOf(10, 10, 10, 0, 0, 0, 0, 0)
+        val out = apportion(weights, 4)
+        assertEquals(4L, out.sum())
+        assertEquals(longArrayOf(1, 1, 2, 0, 0, 0, 0, 0).toList(), out.toList())
+        repeat(5) { assertEquals(out.toList(), apportion(weights, 4).toList()) }
+    }
+
+    @Test
+    fun `apportion conserves and never over-draws, across a wide spread of splits`() {
+        // The two properties the cumulative rule guarantees by construction, and the reason it was
+        // safe to give up largest-remainder: the total is exact because the running total
+        // telescopes, and no entry can be handed more than it had because the running total only
+        // ever grows. Swept rather than spot-checked, because both are structural claims.
+        val spreads = listOf(
+            longArrayOf(4100, 3000, 1800, 1100, 0, 0, 0, 7),
+            longArrayOf(1, 1, 1, 1, 1, 1, 1, 1),
+            longArrayOf(999_999_999, 1, 0, 0, 0, 0, 0, 1),
+            longArrayOf(0, 0, 0, 5, 0, 0, 0, 0),
+        )
+        for (weights in spreads) {
+            val sum = weights.sum()
+            for (target in longArrayOf(1, 2, 3, 7, 100, 4999, sum - 1, sum, sum + 1, sum * 3)) {
+                if (target <= 0L) continue
+                val out = apportion(weights, target)
+                assertEquals(target, out.sum(), "total for $target over ${weights.toList()}")
+                for (i in out.indices) {
+                    assertTrue(out[i] >= 0L, "negative share at $i for $target")
+                    if (target <= sum) {
+                        assertTrue(out[i] <= weights[i], "over-drew $i: ${out[i]} of ${weights[i]}")
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `apportion gives the same proportions whatever the mass unit is`() {
+        // The point of step 4b. Multiplying every weight AND the target by a million is a change of
+        // unit and nothing else, so the shares must come back multiplied by a million too — to
+        // within the rounding a unit that fine permits, which is a few units out of 10^13.
+        val weights = longArrayOf(4100, 3000, 1800, 1100, 0, 0, 0, 7)
+        val target = 9_999L
+        val coarse = apportion(weights, target)
+
+        val k = 1_000_000L
+        val fine = apportion(LongArray(weights.size) { weights[it] * k }, target * k)
+        assertEquals(target * k, fine.sum())
+        for (i in weights.indices) {
+            val drift = fine[i] - coarse[i] * k
+            assertTrue(
+                drift >= -k && drift <= k,
+                "species $i drifted by $drift when the unit changed (coarse ${coarse[i]}, fine ${fine[i]})",
+            )
+        }
     }
 
     @Test

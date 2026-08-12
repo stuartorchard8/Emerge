@@ -12,7 +12,7 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
-import org.emerge.demo.outofspace.world.scaledRatio
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.solidGramsPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
@@ -267,11 +267,13 @@ class NumericLimitsTest {
         budget("frameAcceleration: 1 tile/tick^2 * FRAC_ONE (scale-invariant)", Flight.FRAC_ONE, 0)
 
         // ── Cargo and mixtures ────────────────────────────────────────────
-        // apportion multiplies each weight by the target before dividing by the sum, and BOTH are
-        // masses — the tightest quadratic term there is. Reached through Mixture.scaledTo whenever a
-        // full Storage is rescaled.
-        budget("apportion: weight * target (full Storage)", Storage.CAP * Storage.CAP, 2)
-        budget("apportion: weight * target (machine buffer)", MACHINE_BUFFER_CAP * MACHINE_BUFFER_CAP, 2)
+        // apportion used to multiply each weight by the target before dividing by the sum, and BOTH
+        // are masses — the tightest quadratic term in the game, safe mass scale 152. Step 4b made it
+        // a running total rounded through [scaledRatio]: `cumulative / sum` is a ratio bounded by
+        // ONE, so the whole-part term can never exceed the target itself. What is left is linear,
+        // and what bounds it is the largest pile anyone can ask to have split — a full Storage.
+        budget("apportion: running total, bounded by the target (full Storage)", Storage.CAP, 1)
+        budget("apportion: running total, bounded by the target (machine buffer)", MACHINE_BUFFER_CAP, 1)
         // This row used to guard an UNSTATED INVARIANT rather than a margin: `total * VOLUME_UNIT`
         // was safe only because both call sites happen to pass per-mille compositions totalling
         // ~1000 (Material.composition; RockSpawner normalises), and handing that function a real
@@ -291,11 +293,22 @@ class NumericLimitsTest {
         // Measured against ordinary operating pressure rather than the pathological close-packed
         // one: a tile at the packing wall is in the broken regime of §6.1 anyway, so budgeting for
         // it would be budgeting to keep a bug survivable.
-        budget("potentialOf: pressure * SOUND_IMPULSE (10 atm)", AMBIENT_PRESSURE * 10L * soundImpulse, 2)
-        budget(
-            "ambientPressureOf: grams * species share",
-            densestPackedLiquid * AirField.AMBIENT_AIR[Species.Nitrogen], 2,
-        )
+        // Both of these were k² for the same reason and are linear for the same reason: what was
+        // written as `mass × mass / mass` is a ratio of two like quantities times a third, and step
+        // 4b takes the ratio first. See [scaledRatio].
+        //
+        // `pressure / AMBIENT_PRESSURE` is unitless, so what is left is the pressure ratio times
+        // SOUND_IMPULSE — measured at ordinary operating pressure, for the reason above.
+        budget("potentialOf: pressure ratio * SOUND_IMPULSE (10 atm)", 10L * soundImpulse, 1)
+        // The species share is now reduced ONCE against a constant, so the per-call term is bounded
+        // by the mass handed in rather than by mass times share.
+        budget("ambientPressureOf: grams, share reduced once", densestPackedLiquid, 1)
+        // ⚠️ The one term step 4b ADDED, and it is the tightest scale-invariant row in the table:
+        // the remainder half of that call is `(SHARE_ONE - 1) × AMBIENT_SHARE[s]`, and both are
+        // billionths, so it sits at 10^18 with a headroom of nine — forever, at any mass unit.
+        // Restated rather than imported because SHARE_ONE is private to Pressure.kt; if that
+        // constant is ever widened past a billion, this row is what fails.
+        budget("ambientPressureOf: SHARE_ONE^2, the remainder half", 1_000_000_000L * 1_000_000_000L, 0)
 
         // ── Heat ──────────────────────────────────────────────────────────
         // A single machine's `joules` field, which is what actually gets stored and is the row

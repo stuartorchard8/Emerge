@@ -19,7 +19,7 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 |---|---|
 | Physical anchors | §11 — what reality pins these ranges to, and why k=1000 falls out of specific heat |
 | Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); the heaviest buildable vessel fits today at 0.7× — see the correction in §5 |
-| Next | `apportion`: `weight * target` — **safe k ≈ 152** (k², at a full Storage) |
+| Next | ~~`apportion`: `weight * target`~~ — **fixed at step 4b**, now k¹ at 4.6e11 (§6.5) |
 | Next | ship-wide joules at 3000 K — **safe k ≈ 1.2e3** at the absolute worst packing |
 | Already broken at k=1 | `reducedPressure` at the packing wall (§6.1) |
 | Already broken at k=1 | diffusion strands anything under 5 units (§6.2) |
@@ -164,14 +164,14 @@ when they look roomy today.
 |---|---|---|---|---|
 | 1 | `velocityX`: now `scaledRatio` | **0** | top speed × PER_TILE | **ANY** — fixed at plan step 4 |
 | 2 | ship joules: densest deck across 5760 tiles | 1 | 7.57e15 | **1.2e3** |
-| 3 | `apportion`: `weight * target` | **2** | full Storage, 4.0e14 | **152** |
-| 4 | `apportion`: `weight * target` | **2** | machine buffer, 1.6e13 | 759 |
-| 5 | `potentialOf`: `pressure * SOUND_IMPULSE` | **2** | close-packed liquid | 648 |
+| 3 | `apportion`: running total | 1 | full Storage, 2.0e7 | **4.61e11** — fixed at plan step 4b |
+| 4 | `apportion`: running total | 1 | machine buffer, 4.0e6 | 2.31e12 — fixed at plan step 4b |
+| 5 | `potentialOf`: pressure *ratio* × `SOUND_IMPULSE` | 1 | see row 10 | fixed at plan step 4b |
 | 6 | `reducedPressure` at the packing wall | 1 | — | **already broken, see §6.1** |
 | 7 | `reducedDensity`: `grams * SCALE` | 1 | packed CO₂, 1.17e14 | 7.9e4 |
-| 8 | `ambientPressureOf`: `grams * share` | **2** | at close packing | 1.2e5 |
+| 8 | `ambientPressureOf`: share reduced once | 1 | at close packing, 1.33e6 | **6.91e12** — fixed at plan step 4b |
 | 9 | `frameAcceleration`: now `scaledRatio` | **0** | 1 tile/tick² × FRAC_ONE | **ANY** — ⚠️ was OVERFLOWING, see §6.4 |
-| 10 | `potentialOf` at 10 atm (ordinary play) | **2** | 8.6e7 | 3.3e5 |
+| 10 | `potentialOf` at 10 atm (ordinary play) | 1 | 2.5e3 | **3.69e15** — fixed at plan step 4b |
 | 11 | `millimolesOf`: `grams * 1e6/molarMass` | 1 | packed water | 2.1e8 |
 | 12 | body joules: heaviest machine at 3000 K | 1 | 3.29e13 | 2.8e5 |
 | 13 | solid mass: full ship of extractors | 1 | 3.23e9 | 2.9e9 |
@@ -294,6 +294,38 @@ scaling — see plan step 4. **The lesson is about measurement, not about flight
 only as good as the worst case handed to it, and a worst case sampled from the well-behaved half of
 an expression's inputs is not a bound. Rows whose worst case comes from a design intention rather
 than an adversarial input deserve re-deriving.
+
+### 6.5 Every k² row was the same expression wearing four hats — FIXED 2026-08-12
+
+Rows 3, 4, 5, 8 and 10 were the only quadratics left after step 4, and looking at them side by side
+is what solved them. Each is a **ratio of two quantities in the same unit, multiplied by a third**:
+
+| | ratio | times |
+|---|---|---|
+| `apportion` | `weight / sum` — two masses | `target`, a third mass |
+| `ambientPressureOf` | `AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS` — two masses | `grams` |
+| `potentialOf` | `pressure / AMBIENT_PRESSURE` — two pressures | `SOUND_IMPULSE` |
+
+Written left to right they are `a × c / b` and quadratic in the mass unit. Taken as a ratio *first*
+the unit cancels and what is left is linear — bounded by the third term alone. That is `scaledRatio`
+(`num/Fixed.kt`), and step 4b routed all three through it. **No 128-bit arithmetic was needed
+anywhere**, which was the open question at the end of step 4.
+
+Two things are worth keeping from how it was done, because neither is obvious:
+
+**Where you reduce matters more than whether you reduce.** `ambientPressureOf`'s ratio is a
+*constant*, so it is reduced once at startup into a billionths table. Reducing it at the call site
+instead — the obvious placement — leaves the denominator with ~16 bits, an absolute error of 10⁻⁵ in
+the fraction. Nitrogen would survive that. A trace species whose share is *below* 10⁻⁵ would come
+out wrong by a multiple of itself, and nothing in the mass ledger would notice.
+
+**`apportion` needed a different method, not a wider one.** Largest-remainder rests on the
+remainders being exact, so a reduced ratio ranks by noise: the shares would still sum to the target
+(the leftover loop guarantees that unconditionally) while the slop landed on an arbitrary species —
+conservation closing over a composition quietly going wrong. It now rounds the **running total** and
+takes differences, so the sum telescopes to the target by construction and conservation stops
+depending on the precision of the division at all. The cost is a different tie-break, one unit per
+entry; the leftover loop, which was O(n²), is gone.
 
 ### 6.3 Monotonic ledgers never reset
 

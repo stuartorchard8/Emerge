@@ -357,14 +357,72 @@ Run the tripwire with the knob at `1_000_000` to reproduce.
 
 | Row | safe k | Whose problem |
 |---|---|---|
-| `apportion` × 2 | 152 / 759 | **step 4, open** — needs `mulDiv` |
+| `apportion` × 2 | 152 / 759 | ~~step 4, open~~ → **closed at step 4b, without `mulDiv`** |
 | `reducedDensity: packed liquid * SCALE` | 69,100 | step 5 territory (the packing wall) |
-| `ambientPressureOf`, `potentialOf` | 95,700 / 327,000 | **unscoped** — no step owns these |
+| `ambientPressureOf`, `potentialOf` | 95,700 / 327,000 | ~~unscoped~~ → **closed at step 4b** |
 | `machine joules: heaviest machine at max kelvin` | 281,000 | **unscoped**, and it is a *stored* quantity, not a ledger — §2's exemption does not cover it |
 | `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | ledgers — out of scope by §2, parked at step 3 ✅ |
 
 **Verification**: 422 tests, **7** pre-existing failures — one fewer than the 8 this plan has been
 carrying, being the `RockContactTest` case above. `compileTestKotlinJs` green.
+
+### 4b. Clear the remaining quadratics without 128-bit arithmetic — **DONE 2026-08-12**
+
+Added after step 4 closed with "`apportion` needs an exact 128-bit `mulDiv`". Stu's direction was to
+avoid 128-bit **even at the cost of rewriting `apportion` for a similar-but-not-exact outcome**. In
+the event no precision was traded away that matters, and no `mulDiv` was written.
+
+**The finding that made it easy.** Step 4 looked at `apportion` alone and concluded the quadratic was
+irreducible. Listing all four remaining k² rows together showed they are one expression in four
+costumes — a ratio of two same-unit quantities, multiplied by a third. `scaledRatio` already existed
+for exactly that. Written up as `NUMERIC_LIMITS.md` §6.5.
+
+| Site | before | after |
+|---|---|---|
+| `apportion` (Storage / buffer) | k², safe k **152** / 759 | k¹, **4.61e11** / 2.31e12 |
+| `ambientPressureOf` | k², safe k 95,700 | k¹, **6.91e12** |
+| `potentialOf` | k², safe k 327,000 | k¹, **3.69e15** |
+
+**What was done**
+
+1. `scaledRatio` moved out of `world/Flight.kt` into a new leaf package, `num/Fixed.kt`. Three layers
+   need it now and `chem/` must not depend on `world/`. Its KDoc gained the two properties callers
+   now rely on — monotonicity, and exactness at the endpoints — stated as a contract, because
+   `apportion`'s conservation argument rests on both.
+2. **`apportion` rewritten from largest-remainder to a cumulative rule.** `out[i] = f(Σ≤i) - f(Σ<i)`.
+   The total telescopes to `f(sum) = target` by construction, so conservation no longer depends on
+   the precision of the division — which is what makes it safe to let the mass unit cancel. The
+   O(n²) leftover loop is gone. See §6.5 for why largest-remainder specifically could **not** be
+   saved by reducing the fraction: it ranks by remainders, and a reduced remainder is noise.
+3. `ambientPressureOf`'s species share is now a startup table of billionths, reduced once against a
+   constant. §6.5 records why reducing it at the call site instead would have silently destroyed
+   trace species.
+4. `potentialOf` takes the pressure ratio first. Telescoping is unaffected — it is still one function
+   applied per tile, differenced afterwards.
+
+**The behaviour change, stated plainly.** `apportion` splits a tie differently: three equal weights
+sharing four units gave `[2,1,1]` and now give `[1,1,2]`. The spare unit goes wherever the running
+total crosses an integer rather than to the largest fractional part. Both are legitimate
+apportionments. `ChemistryTest :: apportion breaks ties by index…` was the only test that pinned it
+and has been reformulated to assert what callers actually rely on — an exact total, no over-draw,
+and determinism — with two new property tests: a sweep over spreads and targets, and one asserting
+the shares are unchanged when the mass unit moves by 10⁶.
+
+**Verification**: `ChemistryTest` and `NumericLimitsTest` green; `compileTestKotlinJs` green. Full
+suite shows **7 pre-existing failures**, unchanged.
+
+⚠️ **Not a step-4b regression, but noted here because it cost an hour**: the working tree carried an
+uncommitted one-line change to the extractor in `OutofspaceSim.kt` (`input.mass <= m.gramsPerTick`
+in place of `<= 0L`), which discards a partial bite and loses that mass. It fails 15 conservation
+tests across `VesselSimTest`, `GaugeTest`, `WiringTest` and `FootprintTest`. Left in place, uncommitted.
+
+**Still red at Kₘ = 10⁶ after this step** — and now *only* the rows no step owns:
+
+| Row | safe k | Whose problem |
+|---|---|---|
+| `reducedDensity` | 69,100 | step 5 |
+| `machine joules` | 281,000 | **unscoped**, and *stored*, so §2 does not exempt it |
+| `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | ledgers — §2, parked at step 3 |
 
 ### 5. Fix `reducedPressure` at the packing wall
 Independent of the rescale but in the same arithmetic. Clamp density short of `CLOSE_PACKED` by a

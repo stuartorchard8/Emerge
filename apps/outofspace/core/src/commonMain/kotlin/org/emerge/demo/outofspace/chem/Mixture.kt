@@ -1,12 +1,13 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.speciesColor
 import org.emerge.render.torus.RgbColor
 
 /**
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
- * Immutable. Splits use apportion() (largest-remainder). Operations: +, -, take, scaledTo.
+ * Immutable. Splits use apportion() (cumulative). Operations: +, -, take, scaledTo.
  */
 class Mixture private constructor(private val grams: LongArray) {
 
@@ -141,8 +142,46 @@ class Mixture private constructor(private val grams: LongArray) {
 }
 
 /**
- * Distribute [target] across [weights] proportionally (largest-remainder/Hamilton method).
- * Sum = [target] exactly (floored share + leftover to largest fractional parts). target may exceed weight sum (scaling valid).
+ * Distribute [target] across [weights] proportionally. Sum = [target] exactly. [target] may exceed
+ * the weight sum (scaling up is valid — a recipe is a ratio, see [Mixture.scaledTo]).
+ *
+ * ### Why this is a running total and not the obvious loop
+ *
+ * The obvious form — and what this was until step 4b of `PLAN_unit_rescale.md` — gives each entry
+ * `weights[i] * target / sum` and then hands out what flooring discarded, largest fractional part
+ * first (largest-remainder, or Hamilton). It is the textbook method and it was correct. It also
+ * multiplied two masses together, which made it **the tightest expression in the game**: a safe mass
+ * scale of 152, against the million the rescale is aiming at.
+ *
+ * The quadratic cannot be divided away, because `weights[i] / sum` is a ratio of two masses and
+ * `target` is a third — three mass-carrying terms, and [scaledRatio] can only take the unit out of
+ * the ratio. Reducing that ratio per entry is what breaks Hamilton: the method's whole correctness
+ * argument rests on the *remainders* being exact, and a reduced remainder ranks entries by noise.
+ * The shares would still sum to [target] — the leftover loop guarantees that unconditionally — but
+ * the slop would land on an arbitrary species. Mass conservation would keep closing while the
+ * composition quietly went wrong, which is the worst failure shape available.
+ *
+ * So the method changes. Instead of rounding each share and repairing the total, this rounds the
+ * **running total** and takes differences:
+ *
+ * ```
+ * out[i] = f(w₀ + … + wᵢ) - f(w₀ + … + wᵢ₋₁)     where f(x) = x × target / sum
+ * ```
+ *
+ * The sum then telescopes to `f(sum) - f(0)`, which is exactly `target` — by construction, with no
+ * repair pass and no leftover to place. Conservation stops depending on the precision of `f` at all,
+ * which is what makes it safe to compute `f` with [scaledRatio] and let the mass unit cancel.
+ *
+ * ⚠️ **This is a different rounding rule, and it gives different answers** — by at most one unit per
+ * entry, but different. Where Hamilton gives the spare unit to the largest fractional part, this
+ * gives it to whichever entry the running total happens to cross an integer inside, which favours
+ * later indices very slightly. Both are legitimate apportionments; neither is "the" right one. What
+ * is kept is what callers actually rely on: an exact total, proportionality to within a unit,
+ * determinism, and index-order stability.
+ *
+ * The two properties this rests on are [scaledRatio]'s, and are documented there as a contract:
+ * `f` is monotonic non-decreasing (so no entry can come out negative, since the running total only
+ * grows), and `f(sum) == target` exactly.
  */
 internal fun apportion(weights: LongArray, target: Long): LongArray {
     val out = LongArray(weights.size)
@@ -152,35 +191,15 @@ internal fun apportion(weights: LongArray, target: Long): LongArray {
     for (w in weights) sum += w
     if (sum == 0L) return out
 
-    var assigned = 0L
-    // Remainder of the exact share, kept as an integer numerator over `sum` so no float is involved.
-    val remainders = LongArray(weights.size)
+    var cumulative = 0L
+    var placed = 0L
     for (i in weights.indices) {
-        val exact = weights[i] * target
-        out[i] = exact / sum
-        remainders[i] = exact % sum
-        assigned += out[i]
-    }
-
-    // Hand out what flooring discarded, largest fractional part first, index order breaking ties.
-    var leftover = target - assigned
-    while (leftover > 0L) {
-        var best = -1
-        var bestRemainder = -1L
-        for (i in weights.indices) {
-            if (remainders[i] > bestRemainder) { bestRemainder = remainders[i]; best = i }
-        }
-        if (best < 0 || bestRemainder <= 0L) {
-            // Every remainder is zero: the split was exact. Anything still unassigned would be a
-            // bug in the arithmetic above, so put it somewhere deterministic rather than lose it.
-            for (i in weights.indices) {
-                if (weights[i] > 0L) { out[i] += leftover; break }
-            }
-            break
-        }
-        out[best]++
-        remainders[best] = -1L
-        leftover--
+        cumulative += weights[i]
+        // The reduction inside scaledRatio depends only on `sum` and `target`, which are the same
+        // for every entry — so the whole series is reduced identically and stays ordered.
+        val upto = scaledRatio(cumulative, sum, target)
+        out[i] = upto - placed
+        placed = upto
     }
     return out
 }

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 
 /** What kind of rigid body this is. */

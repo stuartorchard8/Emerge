@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.CRITICAL
@@ -29,6 +30,28 @@ private const val MILLI = 1000L
  * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.
  */
 internal val AMBIENT_TILE_GRAMS: Long = AirField.AMBIENT_AIR.total
+
+/** Denominator of [AMBIENT_SHARE]: air's composition in billionths. */
+private const val SHARE_ONE: Long = 1_000_000_000L
+
+/**
+ * What fraction of ordinary air each species is, in billionths of [SHARE_ONE].
+ *
+ * `AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS` is a ratio of two masses, so it is a pure number that does
+ * not depend on what a mass unit means — and it is a **constant**, which is the useful part. Taken
+ * once here it is exact to a part in 10⁹; taken per call inside [ambientPressureOf] it was
+ * `grams × AMBIENT_AIR[s]`, a k² product with a safe mass scale of 95,700 (step 4b of
+ * PLAN_unit_rescale.md).
+ *
+ * ⚠️ Reducing the ratio *at the call site* instead would have been much worse than it looks, and
+ * this is the trap worth recording: with `grams` as the scale the reduction leaves the denominator
+ * with only ~16 bits, an absolute error of ~10⁻⁵ in the fraction. Nitrogen would survive that; a
+ * trace species whose share is below 10⁻⁵ would come out wrong by a multiple of itself. Reducing a
+ * constant against a constant has no such problem, because nothing is reduced at all.
+ */
+private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
+    scaledRatio(AirField.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_GRAMS, SHARE_ONE)
+}
 
 /**
  * The pressure field: millimoles of gas in each tile, scaled by how hot that gas is.
@@ -123,7 +146,7 @@ internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
     if (grams <= 0L) return 0L
     var sum = 0L
     for (s in Species.ALL) {
-        val share = grams * AirField.AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS
+        val share = scaledRatio(grams, SHARE_ONE, AMBIENT_SHARE[s.ordinal])
         sum += partialPressure(share, s, kelvin, volume, VolumeField.FULL)
             ?: idealPressure(share, s, kelvin, volume)
     }

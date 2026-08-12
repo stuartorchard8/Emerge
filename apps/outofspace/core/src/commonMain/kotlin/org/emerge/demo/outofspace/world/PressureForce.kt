@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /** The reaction the vessel takes from its own air pressing on its bulkheads, by axis. */
 class PressureForceResult(val vesselX: Long, val vesselY: Long)
 
@@ -60,9 +62,14 @@ private fun beyond(potential: LongArray, tile: Int): Long =
 /**
  * Pressure in impulse units, converted before differencing.
  * Pre-conversion enables exact telescoping (per-face conversion truncates separately → rounding bias accumulates).
+ *
+ * `pressure / AMBIENT_PRESSURE` is a ratio of two *pressures*, so the mass unit cancels out of it
+ * and only [SOUND_IMPULSE] carries one. Written the obvious way round it was the game's second
+ * tightest expression (k², safe mass scale 327,000); taken as a ratio first it is linear, and the
+ * headroom is whatever the pressure ratio is. See [scaledRatio], and step 4b of PLAN_unit_rescale.md.
  */
 private fun potentialOf(pressure: LongArray): LongArray =
-    LongArray(pressure.size) { pressure[it] * SOUND_IMPULSE / AMBIENT_PRESSURE }
+    LongArray(pressure.size) { scaledRatio(pressure[it], AMBIENT_PRESSURE, SOUND_IMPULSE) }
 
 /**
  * The momentum one whole atmosphere of difference puts on a face of ordinary air: a quarter of a

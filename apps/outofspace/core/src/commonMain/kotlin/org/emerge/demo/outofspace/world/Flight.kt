@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -18,53 +19,6 @@ object Flight {
     const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()
 }
 
-/**
- * `numerator × scale / denominator`, computed so that the **mass unit cannot overflow it**.
- *
- * Step 4 of `PLAN_unit_rescale.md`. Every velocity and acceleration in the game is a momentum over a
- * mass, put into fixed point — and written the obvious way, `impulse * PER_TILE / mass`, that product
- * is the tightest expression in the codebase. `NumericLimitsTest` measures it at a safe mass scale of
- * **16.7**, against the 10⁶ the rescale is aiming at.
- *
- * ### Why the usual fix does not work here
- *
- * The standard repair is to split whole part and remainder, as `gramsPerTileOf` does. It is worth
- * almost nothing at this site, and the reason is worth stating because it is not obvious: splitting
- * turns the worst intermediate from `impulse × scale` into `mass × scale`, and `impulse = mass ×
- * velocity`, so the whole gain is a factor of the top speed — **two**. Both terms scale with the mass
- * unit together, so no amount of rearranging a product of them buys an order of magnitude.
- *
- * ### What actually works: reduce the fraction first
- *
- * A velocity is a *ratio*, and a ratio does not care what unit its two halves are in as long as they
- * are in the same one. So this shifts both down together until the denominator is small enough that
- * the scaling cannot overflow, and only then does the arithmetic. The result is **scale-invariant**:
- * it costs nothing at one gram per unit, and it holds at a microgram, and at any unit after that,
- * without anybody having to come back and re-derive a bound.
- *
- * The precision given up is not real. The denominator keeps at least 33 bits after the reduction, so
- * the ratio is good to about one part in 10¹⁰ — two orders finer than the 10⁻⁹ of a tile
- * [Flight.PER_TILE] can express in the first place. Shifting rather than dividing by an arbitrary
- * factor keeps it exact for the (common) case where no reduction is needed at all.
- *
- * ⚠️ **The whole part is still a plain multiply.** `n / d * scale` overflows if the ratio itself is
- * enormous — a gram of hull carrying a ship's momentum. That was true of the old form too and is not
- * a regression, but it is the one case this does not cover: it bounds the *unit*, not the *physics*.
- */
-fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
-    if (denominator <= 0L || numerator == 0L) return 0L
-    var n = numerator
-    var d = denominator
-    // Below this, `remainder × scale` cannot overflow, because the remainder is smaller than `d`.
-    val ceiling = Long.MAX_VALUE / scale
-    while (d > ceiling) {
-        n = n shr 1
-        d = d shr 1
-    }
-    // Exact for the reduced pair, and for both signs: Kotlin truncates toward zero and `%` takes the
-    // dividend's sign, so the whole part and the remainder always agree about which way they lean.
-    return n / d * scale + n % d * scale / d
-}
 
 /**
  * Frame acceleration (Frac units): deck gravity minus vessel acceleration = what gas/rocks feel.
