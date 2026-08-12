@@ -162,7 +162,7 @@ when they look roomy today.
 
 | # | Expression | k^ | worst case | safe k |
 |---|---|---|---|---|
-| 1 | `velocityX`: `vesselImpulse * PER_TILE` | 1 | ship at 2 tiles/tick | **16.7** (reference ship) — see below |
+| 1 | `velocityX`: now `scaledRatio` | **0** | top speed × PER_TILE | **ANY** — fixed at plan step 4 |
 | 2 | ship joules: densest deck across 5760 tiles | 1 | 7.57e15 | **1.2e3** |
 | 3 | `apportion`: `weight * target` | **2** | full Storage, 4.0e14 | **152** |
 | 4 | `apportion`: `weight * target` | **2** | machine buffer, 1.6e13 | 759 |
@@ -170,13 +170,13 @@ when they look roomy today.
 | 6 | `reducedPressure` at the packing wall | 1 | — | **already broken, see §6.1** |
 | 7 | `reducedDensity`: `grams * SCALE` | 1 | packed CO₂, 1.17e14 | 7.9e4 |
 | 8 | `ambientPressureOf`: `grams * share` | **2** | at close packing | 1.2e5 |
-| 9 | `frameAcceleration`: `netImpulse * FRAC_ONE` | 1 | measured peak 927/tick | 4.6e6 |
+| 9 | `frameAcceleration`: now `scaledRatio` | **0** | 1 tile/tick² × FRAC_ONE | **ANY** — ⚠️ was OVERFLOWING, see §6.4 |
 | 10 | `potentialOf` at 10 atm (ordinary play) | **2** | 8.6e7 | 3.3e5 |
 | 11 | `millimolesOf`: `grams * 1e6/molarMass` | 1 | packed water | 2.1e8 |
 | 12 | body joules: heaviest machine at 3000 K | 1 | 3.29e13 | 2.8e5 |
 | 13 | solid mass: full ship of extractors | 1 | 3.23e9 | 2.9e9 |
 | 14 | cargo: `Storage.CAP` × 5760 tiles | 1 | 1.15e11 | 8.0e7 |
-| 15 | `gramsPerTileOf`: `total * VOLUME_UNIT` | 1 | composition totals ~1000 | 9.2e6 |
+| 15 | `gramsPerTileOf`: now `scaledRatio` | **0** | densest tile | **ANY** — unstated invariant gone |
 
 ### Notes on the ones that matter
 
@@ -233,6 +233,9 @@ Worth an explicit `require`, whatever else happens.
 
 ## 6. What is already wrong at k = 1
 
+⚠️ **§6.4 was found by fixing §5 row 9 and is the reason to distrust a green row.** Added 2026-08-12.
+
+
 ### 6.1 `reducedPressure` overflows at the packing wall
 
 `vanDerWaalsPressure` computes `8·Tr·ρr / (3 − ρr)`. `leastRoomFor` deliberately drives density to
@@ -271,6 +274,26 @@ overlays. That floor was set at 0.5% of ambient because that is where percentage
 the stranding floor is 5/1000 of ambient for unrelated reasons. **The overlay change is cosmetic
 cover for this quantisation artifact.** Rescaling is the real fix, and `Negligible` should stay
 defined as a fraction of ambient so it follows k down automatically.
+
+### 6.4 `frameAcceleration` was overflowing on rock contact — FIXED 2026-08-12
+
+**This section's own row 9 said `safe k = 4.6e6`, and the expression was wrapping at k = 1.**
+
+The row's worst case was "measured peak 927 per tick", taken from a breached hull — a *thrust*
+number, smooth and designed. But the same expression is fed by **collisions**. A rock landing on the
+deck delivers a per-tick impulse of at least **4.3e9**, known exactly because that is
+`Long.MAX / FRAC_ONE`, the point at which `netImpulse * FRAC_ONE` wraps. Six orders above what was
+measured, so the row read green over a live bug.
+
+It had a symptom the whole time, filed under the wrong cause: `RockContactTest :: a body that lands
+on the deck settles and stays put` was in the standing list of pre-existing failures that
+`PLAN_unit_rescale.md` measured every step against. It passes now.
+
+Fixed by routing the expression through `Flight.scaledRatio`, which reduces the fraction before
+scaling — see plan step 4. **The lesson is about measurement, not about flight**: a budget row is
+only as good as the worst case handed to it, and a worst case sampled from the well-behaved half of
+an expression's inputs is not a bound. Rows whose worst case comes from a design intention rather
+than an adversarial input deserve re-deriving.
 
 ### 6.3 Monotonic ledgers never reset
 

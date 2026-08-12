@@ -569,8 +569,8 @@ data class VesselState(
      * its mass, so there is no accumulated velocity to drift and nothing to be wrong about across a
      * save. See [Flight] for what counts as the ship and why the atmosphere does not.
      */
-    val velocityX: Long get() = massGrams.let { if (it <= 0L) 0L else vesselImpulseX * Flight.PER_TILE / it }
-    val velocityY: Long get() = massGrams.let { if (it <= 0L) 0L else vesselImpulseY * Flight.PER_TILE / it }
+    val velocityX: Long get() = scaledRatio(vesselImpulseX, massGrams, Flight.PER_TILE)
+    val velocityY: Long get() = scaledRatio(vesselImpulseY, massGrams, Flight.PER_TILE)
 
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.

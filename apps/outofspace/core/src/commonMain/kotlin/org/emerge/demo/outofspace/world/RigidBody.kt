@@ -72,8 +72,8 @@ class RigidBody(
     val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
 
     /** How fast it is going **through the world**, which is not how fast it crosses the grid. */
-    val velocityX: Long get() = massGrams.let { if (it <= 0L) 0L else impulseX * Flight.PER_TILE / it }
-    val velocityY: Long get() = massGrams.let { if (it <= 0L) 0L else impulseY * Flight.PER_TILE / it }
+    val velocityX: Long get() = scaledRatio(impulseX, massGrams, Flight.PER_TILE)
+    val velocityY: Long get() = scaledRatio(impulseY, massGrams, Flight.PER_TILE)
 
     /** Its centre in the vessel's frame, which is what "where is it" means for everything but drawing. */
     val centreX: Long get() = positionX + width * Flight.PER_TILE / 2L

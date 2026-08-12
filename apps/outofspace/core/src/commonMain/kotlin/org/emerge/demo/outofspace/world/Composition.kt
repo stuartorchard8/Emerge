@@ -55,7 +55,20 @@ fun gramsPerTileOf(mixture: Mixture): Long {
         val density = species.solidGramsPerTile
         volume += grams / density * VOLUME_UNIT + grams % density * VOLUME_UNIT / density
     }
-    return if (volume <= 0L) 0L else total * VOLUME_UNIT / volume
+    // `total * VOLUME_UNIT` breaks at 9.2e9 grams, and the only reason it never has is that both
+    // call sites happen to pass per-mille compositions summing to about 1000 (Material.composition;
+    // RockSpawner normalises). That is an *unstated invariant*: nothing declares it, nothing checks
+    // it, and handing this function a real pile of ore — which its signature plainly invites — would
+    // have wrapped it silently. Step 4 of PLAN_unit_rescale.md.
+    //
+    // ⚠️ Note this is [scaledRatio] and NOT the whole/remainder split the loop above uses, which was
+    // the first thing tried and is a no-op here. That split moves the bound from `total` to
+    // `volume` — but `volume` is itself proportional to `total`, and the ratio between them is a
+    // density over VOLUME_UNIT, i.e. far *below* one. So the whole part is zero, the remainder is
+    // the whole of `total`, and the expression is exactly what it was. The loop's split works
+    // because its divisor is a fixed density; a divisor that grows with the dividend needs the
+    // fraction reduced instead.
+    return if (volume <= 0L) 0L else scaledRatio(total, volume, VOLUME_UNIT)
 }
 
 /**

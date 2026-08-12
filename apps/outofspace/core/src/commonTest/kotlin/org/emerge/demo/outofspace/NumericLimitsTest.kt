@@ -12,10 +12,12 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
+import org.emerge.demo.outofspace.world.scaledRatio
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.solidGramsPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -84,6 +86,21 @@ class NumericLimitsTest {
      * bound is the physical one, "all of the momentum arrives in a single tick", and that is both
      * absurd (the measured peak on a breached hull is six orders below it) and so pessimistic that
      * the row would report a limit nothing can ever hit.
+     *
+     * ⚠️ **This assumption was FALSIFIED at step 4 of `PLAN_unit_rescale.md`, and it is left here
+     * only because nothing else uses it.** It bounds the per-tick impulse at about 2.2e6 — but a rock
+     * landing on the deck delivers a contact impulse of **at least 4.3e9**, which is known exactly
+     * because that is `Long.MAX / FRAC_ONE`, the value at which the old `netImpulse * FRAC_ONE`
+     * wrapped. It was wrapping: `RockContactTest :: a body that lands on the deck settles and stays
+     * put` was failing at one gram per unit for that reason and passes now that `frameAcceleration`
+     * goes through [scaledRatio].
+     *
+     * The lesson is about the shape of the file, not the number. A budget row is only as good as the
+     * worst case handed to it, and this one was derived from *thrust* — a smooth, designed
+     * acceleration — while the expression it guards is also fed by *collisions*, which are neither.
+     * Three orders of magnitude of understatement is why the row read green over a live overflow.
+     * Any row here whose worst case comes from a design intention rather than a measurement deserves
+     * the same suspicion.
      */
     private val minTicksToTopSpeed = 100L
 
@@ -167,6 +184,11 @@ class NumericLimitsTest {
      * @param exponent how the worst case grows with the mass unit — 1 for a lone mass, 2 where two
      *   masses are multiplied together. Quadratic rows are the dangerous ones: they look roomy at
      *   one gram per unit and are spent four times as fast.
+     *
+     *   **0 means the expression is scale-invariant**: its worst case is bounded by the *physics*
+     *   rather than by the unit, so raising the knob does not spend it at all. That is what step 4's
+     *   `scaledRatio` converts a row into, and it is a stronger result than merely widening one —
+     *   a `k^1` row has to be re-derived at every future rescale, and a `k^0` row never does.
      */
     /**
      * ⚠️ Formatting is done by hand because this file is in **commonTest**, and `String.format` is a
@@ -202,6 +224,7 @@ class NumericLimitsTest {
 
     private fun budget(name: String, worst: Long, exponent: Int) {
         val required = safetyFactor * when (exponent) {
+            0 -> 1.0
             2 -> targetMassScale.toDouble() * targetMassScale.toDouble()
             else -> targetMassScale.toDouble()
         }
@@ -212,8 +235,9 @@ class NumericLimitsTest {
         }
         val headroom = Long.MAX_VALUE.toDouble() / worst.toDouble()
         val safeK = if (exponent == 2) kotlin.math.sqrt(headroom) else headroom
+        val safe = if (exponent == 0) "safe k=ANY" else "safe k=${safeK.sig3()}"
         rows += "  ${name.pad(52)} worst=${worst.toString().pad(20)} k^$exponent  " +
-            "headroom=${headroom.sig3()}  safe k=${safeK.sig3()}"
+            "headroom=${headroom.sig3()}  $safe"
         if (headroom < required) {
             failures += "$name: headroom ${headroom.sig3()}, needs ${required.sig3()} for a mass " +
                 "scale of $targetMassScale — restructure it or lower the target " +
@@ -224,19 +248,23 @@ class NumericLimitsTest {
     @Test
     fun `every mass-carrying intermediate keeps its budgeted headroom`() {
         // ── Flight ────────────────────────────────────────────────────────
-        // The tightest constraint in the game, and a *velocity* ceiling rather than a mass one:
-        // momentum is mass x velocity, and multiplying by PER_TILE before dividing by mass caps the
-        // top speed at PER_TILE's headroom over the ship's momentum.
-        budget(
-            "velocityX: vesselImpulse * PER_TILE",
-            referenceShipGrams * designTopSpeed * Flight.PER_TILE, 1,
-        )
+        //
+        // These two used to be the tightest rows in the game — `velocityX` supported a mass scale of
+        // 16.7 against a target of a million. Step 4 of PLAN_unit_rescale.md routed both through
+        // [scaledRatio], which reduces the fraction before scaling it, and that takes the mass unit
+        // out of the expression **entirely**: what is left is bounded by how fast the ship goes, not
+        // by what a gram is worth. Hence `k^0`.
+        //
+        // ⚠️ Note what these rows now measure: the surviving `n / d * scale` whole-part term. The
+        // remainder term cannot overflow by construction (the reduction guarantees it), so budgeting
+        // it would be budgeting an identity. What CAN still overflow is a ratio that is physically
+        // enormous — a gram of hull carrying a ship's momentum — and that is what the design speed
+        // below stands in for.
+        budget("velocityX: top speed * PER_TILE (scale-invariant)", designTopSpeed * Flight.PER_TILE, 0)
         // Bounded by a spin-up time rather than by the whole momentum landing at once — see
-        // [minTicksToTopSpeed].
-        budget(
-            "frameAcceleration: netImpulse * FRAC_ONE",
-            referenceShipGrams * designTopSpeed / minTicksToTopSpeed * Flight.FRAC_ONE, 1,
-        )
+        // [minTicksToTopSpeed]. Rounded up to a whole tile/tick^2, since the honest figure is below
+        // one and a budget of "less than one Frac" is not a budget.
+        budget("frameAcceleration: 1 tile/tick^2 * FRAC_ONE (scale-invariant)", Flight.FRAC_ONE, 0)
 
         // ── Cargo and mixtures ────────────────────────────────────────────
         // apportion multiplies each weight by the target before dividing by the sum, and BOTH are
@@ -244,12 +272,15 @@ class NumericLimitsTest {
         // full Storage is rescaled.
         budget("apportion: weight * target (full Storage)", Storage.CAP * Storage.CAP, 2)
         budget("apportion: weight * target (machine buffer)", MACHINE_BUFFER_CAP * MACHINE_BUFFER_CAP, 2)
-        // ⚠️ This row guards an UNSTATED INVARIANT, not a margin. gramsPerTileOf computes
-        // `total * VOLUME_UNIT`, which is safe only because both call sites pass per-mille
-        // compositions totalling ~1000 (Material.composition; RockSpawner normalises to 1000). Hand
-        // it a real pile and it breaks at 9.2e9 g, so this row going red means somebody has widened
-        // what reaches that function.
-        budget("gramsPerTileOf: total * VOLUME_UNIT", 1_000L * volumeUnit, 1)
+        // This row used to guard an UNSTATED INVARIANT rather than a margin: `total * VOLUME_UNIT`
+        // was safe only because both call sites happen to pass per-mille compositions totalling
+        // ~1000 (Material.composition; RockSpawner normalises), and handing that function a real
+        // pile of ore — which its signature invites — broke it at 9.2e9 g.
+        //
+        // Step 4 routed it through [scaledRatio] too, so the invariant is gone: the function is now
+        // correct for any pile at any mass unit, and what bounds it is the answer it returns, which
+        // is a density. Hence `k^0` against the densest tile there is.
+        budget("gramsPerTileOf: densest tile (scale-invariant)", densestSolidTile, 0)
 
         // ── Gas and pressure ──────────────────────────────────────────────
         budget("reducedDensity: packed liquid * SCALE", densestPackedLiquid * SCALE, 1)
@@ -315,43 +346,80 @@ class NumericLimitsTest {
     }
 
     /**
-     * The ship the flight model can actually fly, stated as a mass.
+     * The flight model gives the **same velocity** whatever the mass unit is.
      *
-     * Separate from the budget table because it is not a margin that might one day be spent — it is
-     * a limit that **already binds today**, and the survey originally got it wrong by a factor of a
-     * hundred. `velocityX` multiplies momentum by `PER_TILE` before dividing by mass, so any ship
-     * heavier than this simply cannot reach [designTopSpeed]: the product wraps and the vessel's
-     * velocity flips sign.
+     * ### Why this replaced a budget assertion
      *
-     * ⚠️ **Corrected at step 1 of `PLAN_unit_rescale.md`.** This doc used to say a grid packed solid
-     * with the heaviest machine was *already past* the limit at one gram per unit, on a `17.5x`
-     * figure. That figure came from the 25x footprint error described at [densestTileCapacity]: it
-     * charged a whole smelter's mass to every tile. Corrected, the worst buildable ship is
-     * **3.23e9 g against a 4.61e9 g budget — 0.7x, inside it.**
+     * There used to be a case here called `the flight model can fly the reference ship at design
+     * speed`, which computed `Long.MAX / (PER_TILE × topSpeed)` and asserted the ship came in under
+     * it. That number was real: `velocityX` multiplied momentum by `PER_TILE` before dividing by
+     * mass, so there genuinely was a mass above which a ship's velocity wrapped and flipped sign.
      *
-     * So the heaviest-ship velocity wrap **is not a live bug at one gram per unit**, and the survey
-     * was wrong to list it as one. What remains true, and is why this test exists, is that flight is
-     * still the tightest row in the whole budget: `velocityX` supports a mass scale of only ~17, so
-     * it is the first thing a rescale spends and the reason step 4 exists.
+     * Step 4 removed the ceiling rather than raising it — `scaledRatio` reduces the fraction before
+     * scaling, so there is no longer a mass at which flight breaks, and an assertion about where
+     * that mass falls has nothing left to describe. Replacing it with a *bigger* number would have
+     * been the worse outcome: it would still be a paper budget, still need re-deriving at the next
+     * rescale, and still say nothing about whether the code does the right arithmetic.
      *
-     * This asserts the reference ship rather than the worst buildable one, and prints how much of
-     * the range each needs. Anybody raising [targetMassScale] should read the printed ratio.
+     * So this asserts the property the fix actually claims. Velocity is a ratio, and a ratio is
+     * unitless: multiply both the momentum and the mass by the mass scale and the answer must not
+     * move. That is the whole content of "scale-invariant", it is checkable directly, and it goes red
+     * for the real failure mode — an intermediate wrapping — rather than for a bound being redrawn.
+     *
+     * ⚠️ Deliberately run at 10⁶ and not at [targetMassScale]. This case is not a progress meter for
+     * the rescale; it is a unit test of the expression, and it should hold at the target unit whether
+     * or not the knob has been turned yet.
      */
     @Test
-    fun `the flight model can fly the reference ship at design speed`() {
-        val flyableGrams = Long.MAX_VALUE / (Flight.PER_TILE * designTopSpeed)
-        val heaviestBuildable = densestTileGrams * gridTiles
-        println(
-            "flyable ship mass ${flyableGrams.commas()} g; " +
-                "reference ship ${referenceShipGrams.commas()} g " +
-                "(${(100.0 * referenceShipGrams / flyableGrams).sig3()}% of budget); " +
-                "heaviest buildable ${heaviestBuildable.commas()} g would need " +
-                "${(heaviestBuildable.toDouble() / flyableGrams).sig3()}x the budget",
-        )
+    fun `a velocity does not change when the mass unit does`() {
+        val scale = 1_000_000L
+        // A spread rather than one pair: a bare fitting, a reference ship, and the heaviest grid
+        // that can be built — and both signs, since the reduction shifts negatives too.
+        val masses = listOf(1_000L, referenceShipGrams, densestTileGrams * gridTiles)
+        val speeds = listOf(-designTopSpeed, -1L, 0L, 1L, designTopSpeed)
+
+        for (mass in masses) for (speed in speeds) {
+            val atOne = scaledRatio(mass * speed, mass, Flight.PER_TILE)
+            assertEquals(
+                speed * Flight.PER_TILE,
+                atOne,
+                "at one gram per unit, $mass g at $speed tiles/tick did not read back as $speed",
+            )
+            // The same physical ship and the same physical speed, in microgram units.
+            val atTarget = scaledRatio(mass * scale * speed, mass * scale, Flight.PER_TILE)
+            assertEquals(
+                atOne,
+                atTarget,
+                "a ${mass.commas()} g ship at $speed tiles/tick reads $atOne at one gram per unit " +
+                    "but $atTarget at a microgram — the rescale moved a velocity",
+            )
+        }
+    }
+
+    /**
+     * The reduction does not cost precision worth having.
+     *
+     * `scaledRatio` shifts both halves of the fraction down until the scaling cannot overflow, which
+     * is a real approximation and deserves a real bound rather than an assurance. The claim in its
+     * KDoc is "about one part in 10¹⁰, two orders finer than [Flight.PER_TILE] can express", and this
+     * is that claim, measured against the exact answer computed in `Double`.
+     */
+    @Test
+    fun `reducing the fraction stays within a millionth of a tile per tick`() {
+        val mass = referenceShipGrams * 1_000_000L
+        var worst = 0.0
+        // Awkward ratios on purpose: a momentum that divides evenly cannot expose a rounding.
+        for (numerator in listOf(1L, 3L, 7L, 999L, 1_000_003L)) {
+            val impulse = mass / numerator * 2L + numerator
+            val got = scaledRatio(impulse, mass, Flight.PER_TILE).toDouble()
+            val exact = impulse.toDouble() / mass.toDouble() * Flight.PER_TILE
+            worst = kotlin.math.max(worst, kotlin.math.abs(got - exact))
+        }
+        println("scaledRatio worst error at a microgram: ${worst.sig3()} of ${Flight.PER_TILE} per tile")
         assertTrue(
-            referenceShipGrams * safetyFactor * targetMassScale < flyableGrams,
-            "a reference ship of $referenceShipGrams g cannot reach $designTopSpeed tiles/tick at " +
-                "mass scale $targetMassScale: the flight model tops out at $flyableGrams g",
+            worst < 1_000.0,
+            "the reduction lost ${worst.sig3()} units of ${Flight.PER_TILE}, which is more than a " +
+                "millionth of a tile per tick — too coarse to call the ratio scale-invariant",
         )
     }
 }

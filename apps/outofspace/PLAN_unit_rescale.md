@@ -271,7 +271,7 @@ on them, since a LEAK lamp lit by the plan rather than by a bug is a lamp nobody
 **Verification**: 421 tests, the same 8 pre-existing failures as before this step and no others; 4
 new skips, exactly the four `@Ignore`s above. `compileTestKotlinJs` green.
 
-### 4. Fix the five multiply-before-divide sites
+### 4. Fix the five multiply-before-divide sites — **DONE 2026-08-12, with two corrections**
 - `velocityX`: `vesselImpulse * PER_TILE / mass` — divide first, or lower `PER_TILE`. Fixes the
   heaviest-ship wrap (§5 correction) at the same time.
 - `frameAcceleration`: `netImpulse * FRAC_ONE / mass` — same shape.
@@ -282,6 +282,89 @@ new skips, exactly the four `@Ignore`s above. `compileTestKotlinJs` green.
   single mass unit of uranium has a capacity below 1 and a pre-rounded capacity makes the coldest,
   lightest traces undefined.
 **Test**: the tripwire, with `targetMassScale` raised locally per fix.
+
+#### What was done, and where this section was wrong
+
+Three of the five are fixed and are now **scale-invariant** — not merely widened. The other two were
+mis-prescribed here, and one of them turned out to be a live bug rather than a margin.
+
+**The prescribed fix does not work for a ratio of two masses.** "Split whole part and remainder, as
+`gramsPerTileOf` does" was written for all of them, and it is worth stating why it fails, because the
+reasoning is reusable. Splitting moves the worst intermediate from `numerator × scale` to
+`denominator × scale`. That is a real gain when the denominator is a *constant* — a density, as in
+`gramsPerTileOf`'s loop. It is worth almost nothing when the denominator also carries the mass unit,
+because both ends move together: for `velocityX` the entire gain is a factor of the top speed, **two**,
+against the 2.4e5 needed.
+
+What works instead is to **reduce the fraction before scaling it** — shift both halves down together
+until the scaling cannot overflow. A velocity is a ratio and a ratio is unitless, so this costs
+nothing at one gram per unit and holds at any unit thereafter. That is `Flight.scaledRatio`, and it
+takes the mass scale out of the expression entirely rather than buying another few orders:
+
+| Site | Before | After |
+|---|---|---|
+| `velocityX` / `velocityY` (vessel and body) | safe k = **16.7** | scale-invariant |
+| `frameAcceleration` | safe k = **780** | scale-invariant |
+| `gramsPerTileOf` return | guarded an unstated invariant | scale-invariant, invariant gone |
+
+The precision given up is not real: the denominator keeps ≥33 bits, so the ratio is good to about one
+part in 10¹⁰, two orders finer than `PER_TILE` can express. `NumericLimitsTest` measures that rather
+than asserting it.
+
+#### ⚠️ Correction 1: `frameAcceleration` was overflowing **today**, at one gram per unit
+
+Not a margin for a future unit — a live bug, and it had a failing test attributed to something else.
+`RockContactTest :: a body that lands on the deck settles and stays put` was in the standing list of
+"pre-existing failures" this whole plan has been measuring against. It passes now, and bisecting the
+three fixes one at a time attributes it to `frameAcceleration` alone.
+
+**Why the tripwire read green over it.** The row bounded the per-tick impulse using
+`minTicksToTopSpeed` — a *design* assumption about thrust, giving ~2.2e6. But the same expression is
+fed by **collisions**, and a rock landing on the deck delivers at least 4.3e9, which is known exactly
+because that is `Long.MAX / FRAC_ONE`, the threshold at which the old form wrapped. The worst case was
+understated by three orders of magnitude, so a real overflow sat inside a green row.
+
+The transferable lesson, recorded on `minTicksToTopSpeed`: **a budget row is only as good as the worst
+case handed to it**, and any row here whose worst case comes from a design intention rather than a
+measurement deserves the same suspicion.
+
+#### ⚠️ Correction 2: the temperature item is already satisfied, and the other one needs machinery
+
+- **Temperature — no change needed.** This section asks for `joules / capacity` to become
+  `joules × 1000 / (mass × c)`, on the grounds that at `Kₘ = 10⁶` a single mass unit of uranium has a
+  capacity below 1. That was true when this plan was written and **step 2 removed it**: holding
+  `Kₑ = 1000·Kₘ` (`Budget.ENERGY_PER_MASS`, guarded by `BudgetParityTest`) makes `capacity =
+  mass_units × specificHeat` exact at every scale, with no truncation and no sub-unit capacity.
+  Verified that every capacity in the game is extensive — `gasCapacityAt`, `RigidBody.capacity`,
+  `Body.capacity` all multiply and never pre-divide; `specificHeatOf`, the one intensive form, has no
+  callers. Rewriting these would add a divide and buy nothing.
+
+- **`apportion` is NOT fixed, and cannot be by the method named here.** Both its rows are still red
+  (safe k = 152 for a full storage). Splitting is provably a no-op: with `w ≤ sum`, the split on
+  `target` leaves `w × (target % sum)`, and in the constrained case `target ≤ sum` that *is*
+  `w × target`. Reducing the fraction — the trick that fixed flight — is also wrong here, because
+  `apportion` must distribute mass **exactly**: at the target unit a 25-bit reduction leaves each
+  share out by tens of grams, and the largest-remainder correction would dump the slop into one
+  arbitrary species. Mass conservation would still close while the composition quietly went wrong.
+
+  **So it needs an exact 128-bit `mulDiv`**, which this plan did not anticipate and which is a
+  hot-path performance decision (`apportion` runs per species per transfer). Left undone deliberately
+  rather than solved by inventing machinery mid-step. **This is the open item for step 4.**
+
+#### Rows still red at `Kₘ = 10⁶` after this step
+
+Run the tripwire with the knob at `1_000_000` to reproduce.
+
+| Row | safe k | Whose problem |
+|---|---|---|
+| `apportion` × 2 | 152 / 759 | **step 4, open** — needs `mulDiv` |
+| `reducedDensity: packed liquid * SCALE` | 69,100 | step 5 territory (the packing wall) |
+| `ambientPressureOf`, `potentialOf` | 95,700 / 327,000 | **unscoped** — no step owns these |
+| `machine joules: heaviest machine at max kelvin` | 281,000 | **unscoped**, and it is a *stored* quantity, not a ledger — §2's exemption does not cover it |
+| `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | ledgers — out of scope by §2, parked at step 3 ✅ |
+
+**Verification**: 422 tests, **7** pre-existing failures — one fewer than the 8 this plan has been
+carrying, being the `RockContactTest` case above. `compileTestKotlinJs` green.
 
 ### 5. Fix `reducedPressure` at the packing wall
 Independent of the rescale but in the same arithmetic. Clamp density short of `CLOSE_PACKED` by a
