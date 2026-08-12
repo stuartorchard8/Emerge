@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
@@ -26,6 +27,18 @@ import kotlin.test.assertTrue
  * make one leak able to hide inside another's noise.
  */
 class AtmosphereTest {
+
+    /**
+     * Every seeded mass below is a number of *grams*, said out loud.
+     *
+     * A tile of air at one atmosphere is about a kilogram, so "6,000" here means a room six times
+     * over-pressured — a fixture you can reason about. Written as a bare `6_000L` it meant six
+     * milligrams the moment the mass unit moved, which does not read as zero anywhere a gram is
+     * compared to a gram, but rounds to zero the instant it becomes a pressure: `pressureAt` is in
+     * millimoles, and six milligrams of oxygen is not one. Both flow tests then compared a spread of
+     * 0 against a spread of 0 and failed with nothing visibly wrong in them.
+     */
+    private val gram = Budget.GRAM
 
     private fun cfgFor(grid: Grid) = OutofspaceConfig(initialGrid = grid)
 
@@ -86,8 +99,8 @@ class AtmosphereTest {
         var s = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
 
         val grams = LongArray(grid.size * Species.COUNT)
-        for (x in 2..3) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L
-        for (x in 5..6) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 500L
+        for (x in 2..3) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L * gram
+        for (x in 5..6) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 500L * gram
         val field = AirField.of(grams)
         s = s.copy(air = field, baselineAirGrams = field.totalGrams)
 
@@ -101,8 +114,8 @@ class AtmosphereTest {
         //
         // Pressure reads in millimoles now, not grams -- see [AirField.pressureAt].
         fun roomGrams(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.index(it, 2)) }
-        assertEquals(4_000L, roomGrams(2..3), "the high side stayed high")
-        assertEquals(1_000L, roomGrams(5..6), "and the low side stayed low")
+        assertEquals(4_000L * gram, roomGrams(2..3), "the high side stayed high")
+        assertEquals(1_000L * gram, roomGrams(5..6), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
     }
 
@@ -113,7 +126,7 @@ class AtmosphereTest {
         val room = sealedRoom(8, 4)
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 6_000L
+        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 6_000L * gram
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
@@ -161,7 +174,7 @@ class AtmosphereTest {
         val room = sealedRoom(6, 3)
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 10_000L
+        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 10_000L * gram
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
@@ -186,8 +199,8 @@ class AtmosphereTest {
         val g = room.grid
         val grams = LongArray(g.size * Species.COUNT)
         val source = g.index(2, 2) * Species.COUNT
-        grams[source + Species.Oxygen.ordinal] = 2_000L
-        grams[source + Species.Nitrogen.ordinal] = 6_000L
+        grams[source + Species.Oxygen.ordinal] = 2_000L * gram
+        grams[source + Species.Nitrogen.ordinal] = 6_000L * gram
         val field = AirField.of(grams)
         var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
 
@@ -272,14 +285,14 @@ class AtmosphereTest {
         val strip = (2..6).map { g.index(it, 1) }
         val exits = setOf(g.index(1, 1), g.index(7, 1))
         val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L
+        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
 
         assertTrue(tryDisplaceAir(g, grams, strip) { it in exits }, "both ends are open")
         for (tile in strip) {
             assertEquals(0L, grams[tile * Species.COUNT + Species.Oxygen.ordinal], "the strip is empty")
         }
-        assertEquals(2_000L, grams[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
-        assertEquals(1_000L, grams[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
+        assertEquals(2_000L * gram, grams[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
+        assertEquals(1_000L * gram, grams[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
     }
 
     @Test
@@ -287,7 +300,7 @@ class AtmosphereTest {
         val g = Grid(9, 3)
         val strip = (2..6).map { g.index(it, 1) }
         val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L
+        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
         val before = grams.copyOf()
 
         assertTrue(!tryDisplaceAir(g, grams, strip) { false }, "there is no way out")

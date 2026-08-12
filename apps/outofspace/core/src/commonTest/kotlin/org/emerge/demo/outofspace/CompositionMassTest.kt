@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
@@ -188,7 +189,11 @@ class CompositionMassTest {
     @Test
     fun `a tile of ore weighs what that much ore weighs`() {
         val perTile = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        val kgPerCubicMetre = perTile / TILE_LITRES
+        // Out of Budget's unit and into grams first. A gram per litre *is* a kilogram per cubic
+        // metre, so once the mass is in grams the rest is the identity the KDoc describes — but
+        // while one integer was one gram that division was invisible, and the assay read in
+        // millions of tonnes the moment the unit moved.
+        val kgPerCubicMetre = perTile / Budget.GRAM / TILE_LITRES
         assertTrue(
             kgPerCubicMetre in 4_600L..4_900L,
             "the ore field assays at $kgPerCubicMetre kg/m3, which is not a rock",

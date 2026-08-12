@@ -70,7 +70,7 @@ import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMassGrams
 import org.emerge.demo.outofspace.world.spoilsOf
-import org.emerge.demo.outofspace.world.heatPerGram
+import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Vaporizer
@@ -462,7 +462,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, chunkMass * heatPerGram(m))
+        heat(at, heatOfWorking(chunkMass, m))
         val r = process(chunk, m.efficiencyPermille)
         val product = m.product.merged(r.product) ?: return m.copy(carry = carry)
         val tailings = m.tailings.merged(r.tailings) ?: return m.copy(carry = carry)
@@ -483,7 +483,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, chunkMass * heatPerGram(m))
+        heat(at, heatOfWorking(chunkMass, m))
         val r = smelt(chunk)
         // Smelter stalls if dominant species differs (stopped machine signals ore change).
         val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
@@ -504,7 +504,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, chunkMass * heatPerGram(m))
+        heat(at, heatOfWorking(chunkMass, m))
         val gas = vaporizeToGas(chunk.mixture)
         val base = at * Species.COUNT
         val parcel = LongArray(Species.COUNT)
@@ -1027,7 +1027,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The same shape as a processor working a lump: take a chunk off the input buffer.
             val chunk = input.mixture.take(minOf(grams, input.mass))
             if (chunk.total <= 0L) return m.copy(input = input, carry = carry)
-            heat(at, chunk.total * heatPerGram(m))
+            heat(at, heatOfWorking(chunk.total, m))
             return m.copy(
                 input = Resource(input.form, input.mixture - chunk).orNull(),
                 buffer = Resource(Form.Ore, m.buffer.mixture + chunk),

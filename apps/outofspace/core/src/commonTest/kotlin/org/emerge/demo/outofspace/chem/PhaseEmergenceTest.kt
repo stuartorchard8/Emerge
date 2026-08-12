@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
@@ -127,8 +128,12 @@ class PhaseEmergenceTest {
         val water = liquidWater
         val hot = 450
 
-        val thin = totalPressure(mapOf(Species.Water to water, Species.Nitrogen to 200L), hot)
-        val thick = totalPressure(mapOf(Species.Water to water, Species.Nitrogen to 20_000L), hot)
+        // Grams, said out loud — a tile of air is about a kilogram, so this is a wisp against a room
+        // packed twenty times over. As bare integers the pair became 200 ng and 20 µg when the mass
+        // unit moved: both round to no millimoles at all, both give the same pressure, and the test
+        // fails claiming nitrogen does not push, which is not what went wrong.
+        val thin = totalPressure(mapOf(Species.Water to water, Species.Nitrogen to 200L * Budget.GRAM), hot)
+        val thick = totalPressure(mapOf(Species.Water to water, Species.Nitrogen to 20_000L * Budget.GRAM), hot)
 
         assertTrue(thick > thin, "more nitrogen must mean more pressure to expand against; $thin then $thick")
     }

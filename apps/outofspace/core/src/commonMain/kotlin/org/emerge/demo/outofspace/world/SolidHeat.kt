@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /** Result of one solid conduction tick. [joules]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
@@ -244,6 +245,30 @@ private class Transfers(capacity: Int, nodeCount: Int) {
         return escaped
     }
 }
+
+/**
+ * The waste heat a machine sheds for working [grams] of material, in [Budget]'s energy unit.
+ *
+ * ### Why this is a function and not a multiplication
+ *
+ * [heatPerGram] is millijoules per **gram**, so turning it into an energy means crossing from the
+ * mass unit into the energy unit — and every call site wrote it as a bare `grams * heatPerGram(m)`,
+ * which is that conversion performed with the factor left out. It read correctly for as long as one
+ * integer was one gram *and* one integer was one millijoule, which is to say for as long as the two
+ * knobs were the same knob.
+ *
+ * Uncorrected it is the loudest failure in the rescale: mass units get a million times smaller, the
+ * product does not, and a smelter pours a million times its own waste heat into the room. `HeatTest`
+ * read the air two tiles from the furnace at **six million kelvin** — and still failed on the
+ * monotonic-with-distance assertion rather than on the temperature, because both tiles were absurd
+ * and the far one happened to be more absurd. Nothing in the message pointed here.
+ *
+ * The factor is [Budget.CAPACITY_DIVISOR], the same one a heat capacity needs, and for the same
+ * reason: both constants are quoted per gram against a thousandth of a joule. Through [scaledRatio]
+ * so that a whole rock cell's worth of grams times 400,000 does not wrap on the way.
+ */
+fun heatOfWorking(grams: Long, machine: Machine?): Long =
+    scaledRatio(grams, Budget.CAPACITY_DIVISOR, heatPerGram(machine))
 
 /** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
 fun heatPerGram(machine: Machine?): Long = when (machine) {
