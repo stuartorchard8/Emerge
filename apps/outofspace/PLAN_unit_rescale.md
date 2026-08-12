@@ -29,6 +29,9 @@ Not in scope: gameplay, balance, shipping. This is the physics vehicle.
 
 ### The target
 
+Reduced to five reorderings by the scope decision in §2 — with the ledgers out, nothing here needs
+restructuring.
+
 | | |
 |---|---|
 | Mass | **1 unit = 1 µg** (`Kₘ = 10⁶`) |
@@ -66,12 +69,38 @@ Their ratio is `6.5e13 × Kₘ`, against a `Long`'s 9.2e18:
 **So `Kₘ = 10⁶` is reachable if and only if the ledger accumulators stop being single `Long`s.**
 Per-tile energy has three orders of headroom to spare; the grand totals are the only obstruction.
 
-That is a comfortable thing to change, because **the ledgers are diagnostics, not simulation state**.
-`extractedGrams`, `ventedGrams`, `storedJoules`, `generatedJoules` and their siblings exist so
-conservation can be checked across the world; nothing reads them back into the physics. They can
-therefore be held in a **coarser unit than the per-tile fields** — tiles in nanojoules, totals in
-millijoules — which costs nothing real and buys the entire gap. It also retires §6.3, the monotonic
-accumulators that grow with playtime rather than with world state.
+### The decision: the ledgers are out of scope, and may rot
+
+Deliberate, and taken 2026-08-12 to hold the scope down. The energy ledgers **will overflow** at the
+target unit and that is accepted for the duration of the rescale. What this buys is large: the
+accumulators were the only thing here needing *restructuring* rather than *reordering*, so removing
+them from scope reduces the whole job to the five multiply-before-divide fixes.
+
+Two refinements worth having on the record before anyone panics at a red conservation test:
+
+- **The mass ledgers survive the target; only the energy ones do not.** Cargo across the grid is
+  1.15e11 units, safe to `Kₘ = 8e7`. It is `storedJoules`, `generatedJoules`, `radiatedJoules` and
+  `baselineJoules` that break — by ~820× at `Kₑ = 10⁹`, since the clean `Kₑ = 1000·Kₘ` relation
+  spends two orders more precision at the bottom than the physics needs.
+- **So mass conservation stays as the safety net**, which is the right one to keep: it is the check
+  most likely to catch a mistake made while rescaling masses. See step 3 for how the energy checks
+  get parked rather than deleted.
+
+### The eventual answer: store divergence, not totals
+
+Stu's design, 2026-08-12, and it is better than the coarse-unit split this plan originally proposed.
+
+A ledger exists to answer "does it balance", never "how much has ever moved". So store the
+**divergence** — `extracted − (aboard + vented)`, and its energy equivalent — which sits at zero for
+a correct simulation and is bounded by the *error* rather than by playtime or world size. That
+retires §6.3 outright instead of deferring it, and makes the ledger's range independent of `Kₘ`
+altogether.
+
+The cost is that a divergence does not say *when* it set in. That is a smaller loss than it sounds:
+a total only reveals when it diverged if you kept a previous reading to diff against, whereas a
+divergence leaving zero is detectable on the tick it happens.
+
+Not in this plan, by decision. It is the natural first follow-on.
 
 ⚠️ **`NumericLimitsTest`'s `ship joules` row is 25× pessimistic** — it multiplies a whole machine's
 capacity by every tile in the grid, when a grid holds 230 smelters rather than 5760. Correcting it is
@@ -124,16 +153,22 @@ should be, rather than rescaled.
 **Test**: a test asserting no surviving literal is silently mass-dimensioned is not really
 expressible; instead each constant gets its derivation in a comment, and step 8 is the check.
 
-### 3. Move the ledgers to a coarser unit
-The unblocking step. Per-tile fields go to the fine unit; `extractedGrams`, `ventedGrams`,
-`airVentedGrams`, `injectedAirGrams`, `storedJoules`, `generatedJoules`, `radiatedJoules`,
-`solidToAirJoules`, `baselineJoules` and their air counterparts hold coarse units. The conversion
-happens at exactly one place per ledger, on the way in.
-⚠️ The balance identities must be re-derived, not merely re-scaled: a sum of coarse units compared
-against a sum of fine ones is the exact failure mode these ledgers exist to catch. Every `balanced`
-check in the HUD and every conservation test is a consumer.
-**Test**: existing conservation tests, plus one that runs a world long enough for a ledger to exceed
-what the fine unit could have held.
+### 3. Park the energy conservation checks, and let those ledgers rot
+Not a fix — an explicit, temporary surrender, so that a known-overflowing ledger cannot be mistaken
+for a real regression while the units move underneath it (§2).
+
+- **Mass conservation stays live throughout.** It is the check most likely to catch a rescaling
+  mistake, and it survives the target unit with room to spare.
+- **Energy conservation gets parked**, not deleted: `@Ignore` on the tests that assert the joule
+  identities, each naming this plan and this step, so the reason is on the test rather than in
+  somebody's memory. The HUD's air-heat and heat `balanced` rows go with them.
+- Nothing else changes. `storedJoules` and friends keep their current shape and are allowed to
+  overflow.
+
+⚠️ This is the step that most needs undoing afterwards. The follow-on that stores divergence (§2)
+un-parks all of it; until then the energy ledgers say nothing, and the plan should not pretend
+otherwise.
+**Test**: the parked list is written down here and checked off by the follow-on.
 
 ### 4. Fix the five multiply-before-divide sites
 - `velocityX`: `vesselImpulse * PER_TILE / mass` — divide first, or lower `PER_TILE`. Fixes the
@@ -185,7 +220,7 @@ change at all, which is the test of whether it was defined correctly.
 
 ---
 
-## 5. The option not taken, and why it stays on the table
+## 5. Options not taken, and why they stay on the table
 
 **Carrying the diffusion remainder** instead of flooring it. The stranding floor is 5 units because
 `count × FACE_SHARE / SLOTS` floors to zero below `SLOTS/FACE_SHARE`; the largest-remainder
@@ -198,13 +233,17 @@ the rescale fixes what a *unit* means, remainder-carrying fixes what *flooring* 
 
 Worth doing straight after, and worth remembering if step 8 turns out harder than it looks.
 
+**Divergence ledgers** (§2) are the other one, and they are the higher priority of the two, since
+step 3 deliberately blinds half the conservation checking until they land.
+
 ---
 
 ## 6. Risks
 
-- **The ledger unit split (step 3) is the one that can silently corrupt.** A coarse total compared
-  against a fine sum reads as a leak, or worse, reads as balanced when it is not. It gets the most
-  test attention.
+- **The parked energy checks (step 3) are a real loss of cover, for the duration.** Half the
+  conservation net is off while the units move. Mass conservation carries the load; anything the
+  energy identities would have caught has to be caught by the per-step tests instead, and the
+  divergence follow-on should be done sooner rather than later for exactly this reason.
 - **Rate constants are the quiet ones.** `Plumbing.MILLIMOLES_PER_TICK` and friends are stated in
   absolute units, so a rescale changes what they *mean* without changing what they *say*. Step 2 is
   the whole defence.
