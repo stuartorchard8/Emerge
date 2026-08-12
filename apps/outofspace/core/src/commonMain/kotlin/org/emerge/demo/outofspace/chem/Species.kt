@@ -39,12 +39,20 @@ enum class Species(
      * physical fact** rather than a side-effect of uranium happening to be the heaviest thing on the
      * list. See `NUMERIC_LIMITS.md` §3: a tile of it is 18,749,700 g, and nothing can ever be denser.
      *
-     * ⚠️ [relativeAbundance] is zero, so **rocks never contain it and there is no way to obtain it**.
-     * That is deliberate — it is an anchor, not a resource — and it is also a decision worth
-     * revisiting: osmium is genuinely one of the rarest things in the crust, so a very small
-     * abundance would be truer than none, and would make the anchor reachable.
+     * [relativeAbundance] is **1**, the smallest number this table can say — the anchor is reachable,
+     * but only just. Against iron's 410 that makes it roughly a quarter of a per cent of a rock,
+     * which is nothing like the truth: osmium is about a part per billion of the crust, and no
+     * integer weighting against iron can express that without giving iron a nine-digit weight. So
+     * this is the rarest thing the scale can represent rather than the rarity osmium actually has,
+     * and the gap is a property of the weighting scheme, not a tuning choice.
+     *
+     * ⚠️ Which is a hint about that scheme. Real ores are not element piles: they are compounds, and
+     * abundance is a fact about the *mineral*, with smelting the step that decomposes it — iron(II)
+     * oxide into iron and oxygen by molar mass. Under that model osmium is rare because osmium-
+     * bearing minerals are rare, and a whole-number weighting stops having to carry nine orders of
+     * magnitude. Not a problem now, but it is the reason this number reads wrong.
      */
-    Osmium(190, 130, solidKgPerCubicMetre = 22590),
+    Osmium(190, 130, solidKgPerCubicMetre = 22590, relativeAbundance = 1),
 
     /**
      * The third gas in air, and the one whose absence was quietly distorting the atmosphere.

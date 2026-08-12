@@ -84,7 +84,24 @@ fun capacityPerTileOf(mixture: Mixture): Long {
     if (total <= 0L) return 0L
     // Divided last. Rounding the specific heat down to a whole millijoule per gram first is worth
     // 0.04% on a wet rock, which is small until it is the difference between two ledgers.
-    return gramsPerTileOf(mixture) * weightedSpecificHeat(mixture) / total
+    //
+    // ⚠️ This is where [gramsPerTileOf]'s old unstated invariant actually went. Step 4 of
+    // PLAN_unit_rescale.md made that function scale-invariant, so the "per-mille compositions only"
+    // rule no longer holds it up — but the same multiply-before-divide walked next door, and here
+    // it is *tighter*, because `weighted` carries a specific heat of up to 4182 into a product that
+    // already holds a whole tile of solid.
+    //
+    // Searched rather than guessed, over every pair of species and every blend of them: the worst
+    // case is **pure water at 2,900 tonnes**, where density and specific heat are least willing to
+    // trade off against each other. Nothing passes anything like that today — the call sites hand
+    // over per-mille compositions — so this is a latent bound and not a live wrap. It is worth
+    // closing anyway, because the bound is in *units* and so it divides by the mass scale: at a
+    // microgram per unit the same wrap arrives at 2.9 kg, which is an ordinary rock.
+    //
+    // `weighted / total` is the mass-averaged specific heat, an O(1000) intensive quantity, so
+    // reducing that fraction first is the same repair step 4b applied everywhere else — and it
+    // keeps the divide last exactly as the note above requires.
+    return scaledRatio(weightedSpecificHeat(mixture), total, gramsPerTileOf(mixture))
 }
 
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */

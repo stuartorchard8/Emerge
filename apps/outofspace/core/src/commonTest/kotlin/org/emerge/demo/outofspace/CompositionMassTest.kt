@@ -94,6 +94,35 @@ class CompositionMassTest {
         )
     }
 
+    /**
+     * Step 6 of PLAN_unit_rescale.md. `capacityPerTileOf` is an *intensive* quantity: it is what one
+     * tile of a composition costs to warm, and doubling the sample cannot change it. That makes it
+     * its own oracle — no literal to pin, just the same mixture stated at wildly different totals.
+     *
+     * It used to fail. `gramsPerTile × Σ(grams × specificHeat)` wrapped a Long, and the symptom was a
+     * *negative* heat capacity rather than an exception. Water is the species that gets there first —
+     * searched over every pair and blend, it is the worst case at 2,900 tonnes — so this sweeps
+     * water specifically rather than a mixture that reads more typical but never reaches the wrap.
+     *
+     * The number that matters is not 2,900 tonnes, which nothing passes. It is that the bound is in
+     * *units*, so it divides by the mass scale: at a microgram per unit it is 2.9 kg.
+     */
+    @Test
+    fun `what a tile costs to warm does not depend on how much of it you were handed`() {
+        val recipe = listOf(Species.Water to 1_000L)
+        // 1 kg to 10,000 tonnes — comfortably past the 2,900 tonnes where the old product wrapped.
+        val reference = capacityPerTileOf(Mixture.of(*recipe.toTypedArray()))
+        assertTrue(reference > 0L, "the reference capacity itself must be positive, got $reference")
+        for (scale in listOf(1L, 1_000L, 1_000_000L, 10_000_000L)) {
+            val scaled = Mixture.of(*recipe.map { (s, g) -> s to g * scale }.toTypedArray())
+            val actual = capacityPerTileOf(scaled)
+            assertTrue(
+                close(reference, actual),
+                "the same water at ${scale}x: a tile of it must still cost about $reference, got $actual",
+            )
+        }
+    }
+
     @Test
     fun `a rock starts at ambient whatever it is made of`() {
         for (species in listOf(Species.Uranium, Species.Silica, Species.Water)) {

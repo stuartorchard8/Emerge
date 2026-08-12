@@ -553,6 +553,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * straight — 410g of iron against 590g of everything else — so a line that runs ore directly into
      * a smelter yields nothing but slag. Learning to put a processor in front is the first thing this
      * world teaches, and it teaches it without a tutorial.
+     *
+     * ⚠️ These four numbers are the same as those species' [Species.relativeAbundance], and they are
+     * a **copy, not a derivation**. Deliberately: this is the one orebody every new extractor gets,
+     * authored so that the slag lesson lands, whereas abundance is what the rock field scatters. The
+     * two agreeing today is a coincidence of authoring and the step 6 audit found them already
+     * drifting — osmium has an abundance now and does not appear here, so the extractor cannot
+     * produce it and only mined rocks can. That is the intended behaviour and not the bug; the bug
+     * would be reading this list as though it told you what the world contains.
      */
     val DEFAULT_ORE_BODY: Mixture = Mixture.of(
         Species.Iron to 410L,

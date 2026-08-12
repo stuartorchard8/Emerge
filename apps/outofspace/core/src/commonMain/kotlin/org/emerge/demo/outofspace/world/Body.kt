@@ -56,7 +56,16 @@ class Body(
      */
     val links: Int = 0,
 ) {
-    val kelvin: Int get() = (joules / capacity).toInt()
+    /**
+     * Guarded the same way [RigidBody.kelvin] is, and for the same reason.
+     *
+     * A zero capacity is not hypothetical: it is what a body of nothing has, and [capacity] is a
+     * constructor argument rather than something this class derives, so nothing here can promise it
+     * is positive. Space is the honest answer for a thing with no heat to hold — it is what the
+     * temperature of an empty tile already is — and it is a great deal more honest than the divide
+     * by zero this used to be.
+     */
+    val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
 
     /** Whether this fitting is joined to its neighbour in [dir] — see [Segment.links]. */
     fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0

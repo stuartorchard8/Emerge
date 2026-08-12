@@ -549,8 +549,12 @@ and the 3000 K design ceiling sits just under it. An `Int` is generous.
 **Velocity** has an anchor the sim knowingly violates. If a tile is ~1 m and a tick ~1/60 s, then
 1 tile/tick ≈ 60 m/s and the speed of sound in air (340 m/s) is ~5.7 tiles/tick. `SOUND_IMPULSE` is
 pinned by CFL at 0.25 tiles/tick — some 23× slower than real, and `PressureForce.kt` says so at
-length. Meanwhile the design top speed of 2 tiles/tick is ~120 m/s, **faster than the sim's own speed
-of sound**. Not wrong, but an inconsistency a rebaseline should either fix or state on purpose.
+length.
+
+> ⚠️ **Corrected at step 6.** This section used to add that "the design top speed of 2 tiles/tick" is
+> faster than the sim's own speed of sound. **There is no design top speed.** That 2 was
+> `OutofspaceHud.NAV_FULL_SCALE_SPEED`, the point at which the nav needle pegs; nothing caps how fast
+> a ship goes. A HUD constant was being read as a physical bound.
 
 ### 11.6 Reduced quantities are dimensionless, so k cancels
 

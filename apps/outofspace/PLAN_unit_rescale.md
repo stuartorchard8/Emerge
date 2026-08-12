@@ -460,19 +460,37 @@ produced, so nothing anybody could already represent moved. 426 tests, the stand
 | `machine joules` | 281,000 | step 6b — store per tile |
 | `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | parked ledgers (§2) |
 
-### 6. Small loose ends, while we are in the files
+### 6. Small loose ends, while we are in the files — **DONE 2026-08-12**
 - ~~The heaviest buildable ship's velocity wraps.~~ **Struck at step 1 — it does not.** It was the
   25× footprint error, not a real edge.
-- `Body.kelvin` divides by a capacity it does not guard; `RigidBody.kelvin` does. Match them.
-- `gramsPerTileOf` needs a `require` stating the invariant that keeps it safe (per-mille
-  compositions only) — it currently holds by convention across two call sites and nothing says so.
-- Osmium's `relativeAbundance` is 0, so nothing can obtain it. Decide: anchor-only, or a very small
-  abundance, which would be truer to a metal that is genuinely among the rarest in the crust.
-- The design top speed (2 tiles/tick) is faster than the sim's own speed of sound (0.25 tiles/tick,
-  CFL-pinned). Not wrong, but state it on purpose or fix it.
-- Audit for more of the **"caller enumerates the species it believes a field holds"** family. Argon
-  found one in the injector; `AirField.mixtureAt` documents an earlier one. There will be others,
-  and they are invisible until a species is added.
+- ~~`Body.kelvin` divides by a capacity it does not guard.~~ **Done.** Now matches `RigidBody.kelvin`:
+  falls back to `Temperature.SPACE_KELVIN`, which is what an empty tile already reads.
+- ~~`gramsPerTileOf` needs a `require` stating the invariant that keeps it safe.~~ **The invariant was
+  gone, and had moved.** Step 4's `scaledRatio` already made that function scale-invariant, so a
+  `require` would have pinned a constraint nothing needs. But the same multiply-before-divide had
+  walked next door into `capacityPerTileOf`, where a specific heat of up to 4182 rides into a
+  product already holding a tile of solid. Fixed with the same reduction. The bound was **searched,
+  not guessed** — over every pair of species and every blend, the worst case is pure water, and the
+  answer is **2,900 tonnes**, not the 120 kg first written down here.
+  - Latent, not live: the call sites pass per-mille compositions. But the bound is in *units*, so it
+    divides by k — at a microgram per unit it lands at 2.9 kg, an ordinary rock.
+  - Pinned by `what a tile costs to warm does not depend on how much of it you were handed`, which
+    was **verified to fail against the old expression** (returned a capacity of −506,386,794). The
+    first version of that test passed against the bug and proved nothing.
+- ~~Osmium's `relativeAbundance` is 0.~~ **Now 1** — the smallest the table can say, so the anchor is
+  reachable via mined rocks. Honestly documented as *the rarest the scale can express*, not osmium's
+  real rarity (a part per billion, which no integer weighting against iron can hold).
+  - ⏭️ **The real answer is minerals, not elements.** Ores should be compounds that smelting
+    decomposes — iron(II) oxide into iron and oxygen by molar mass — at which point abundance
+    becomes a fact about the mineral and stops needing nine orders of magnitude. Not now.
+- ~~The design top speed is faster than the sim's speed of sound.~~ **Struck.** There is no design
+  top speed. The 2 tiles/tick was `OutofspaceHud.NAV_FULL_SCALE_SPEED`, a HUD constant deciding
+  where the nav needle pegs; nothing caps ship speed. The item was mis-framed.
+- ~~Audit for more of the "caller enumerates the species it believes a field holds" family.~~ **One
+  found**, and it is a copy rather than an enumeration: `OutofspaceSim.DEFAULT_ORE_BODY` restates
+  four `relativeAbundance` values by hand. Left as a copy on purpose — it is an *authored* orebody
+  that teaches the slag lesson, not a readout of what the world contains — but now says so, and the
+  osmium change has already made the two diverge.
 
 ### 6b. Store a machine's energy and mass per tile — **SCOPED 2026-08-12, not built**
 
