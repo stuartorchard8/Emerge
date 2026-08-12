@@ -705,7 +705,7 @@ class OutofspaceRenderer {
     private fun mixtureColor(state: VesselState, index: Int): Long {
         val pressure = state.air.pressureAt(index)
         if (Negligible.pressure(pressure)) return Colors.OVERLAY_EMPTY
-        val f = (pressure.toFloat() / AirField.AMBIENT_AIR.total).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
+        val f = (pressure.toFloat() / AMBIENT_PRESSURE).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
         val base = state.air.mixtureAt(index).color
         val scale = (f / Visual.PRESSURE_MAX_F).coerceIn(Visual.PRESSURE_MIN_SCALE, Visual.PRESSURE_MAX_SCALE)
         return rgba(
