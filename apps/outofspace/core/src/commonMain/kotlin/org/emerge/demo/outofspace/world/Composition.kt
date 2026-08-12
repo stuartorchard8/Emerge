@@ -81,17 +81,33 @@ fun gramsPerTileOf(mixture: Mixture): Long {
  */
 fun capacityPerTileOf(mixture: Mixture): Long {
     if (mixture.total <= 0L) return 0L
-    // Both factors are now bounded by construction: a tile of the densest solid there is (osmium,
-    // 1.9e7 g) times the thirstiest conceivable average (water, 4.2e6 in milli-units). Their product
-    // is 7.8e13 — five orders inside a Long, for *any* mixture, with no invariant to uphold.
-    return gramsPerTileOf(mixture) * meanSpecificHeatMilli(mixture) / SPECIFIC_HEAT_SCALE
+    // Split rather than multiplied-then-divided, which is what makes [SPECIFIC_HEAT_SCALE] free.
+    //
+    // Written the obvious way, `tile × mean / SCALE` peaks at the scaled average — so every digit of
+    // precision kept in that average costs an order of headroom, and unlike most products here only
+    // ONE side is a mass, so the whole thing is k¹. At a scale of 1000 that measured out at a safe
+    // mass unit of 118,000: already too tight for the microgram rebaseline, and a thousand times
+    // worse for every further digit.
+    //
+    // Splitting the average into whole units and remainder bounds the first term by the *unscaled*
+    // specific heat (4182, a physical constant) and the second by the tile mass itself. Neither
+    // mentions the scale, so the precision of the average and the headroom of the product stop
+    // trading against each other and the row goes to a safe unit of 1.2e8 at any scale.
+    return scaledRatio(meanSpecificHeatMilli(mixture), SPECIFIC_HEAT_SCALE, gramsPerTileOf(mixture))
 }
 
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */
 fun specificHeatOf(mixture: Mixture): Long = meanSpecificHeatMilli(mixture) / SPECIFIC_HEAT_SCALE
 
-/** Fixed-point unit for [meanSpecificHeatMilli]: keeps three digits the truncation would else lose. */
-private const val SPECIFIC_HEAT_SCALE: Long = 1_000L
+/**
+ * Fixed-point unit for [meanSpecificHeatMilli].
+ *
+ * A millionth, and it costs nothing: [capacityPerTileOf] splits rather than divides, so this does
+ * not appear in any overflow bound. It buys the averaging step a truncation of a few parts per
+ * billion instead of a few parts per million — which matters only where a rounding accumulates,
+ * which is exactly where the energy ledgers live.
+ */
+internal const val SPECIFIC_HEAT_SCALE: Long = 1_000_000L
 
 /**
  * The mass-averaged specific heat of [mixture], in thousandths of a J/kg/K.

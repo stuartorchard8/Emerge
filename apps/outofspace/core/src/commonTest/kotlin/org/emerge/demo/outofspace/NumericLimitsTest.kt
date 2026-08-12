@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.SPECIFIC_HEAT_SCALE
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -285,6 +286,21 @@ class NumericLimitsTest {
         // correct for any pile at any mass unit, and what bounds it is the answer it returns, which
         // is a density. Hence `k^0` against the densest tile there is.
         budget("gramsPerTileOf: densest tile (scale-invariant)", densestSolidTile, 0)
+
+        // `capacityPerTileOf` multiplies that tile by the mass-averaged specific heat — and unlike
+        // most products here, only ONE side is a mass. The tile scales with k; a specific heat is a
+        // property of the material and never moves. So this is k¹.
+        //
+        // ⚠️ Note what is *absent*: [SPECIFIC_HEAT_SCALE]. Written as `tile × mean / SCALE` it would
+        // be here, and it measured a safe unit of 118,000 — a row that was already red for the
+        // microgram target. Splitting the average instead bounds this by the bare specific heat, so
+        // the precision of the average and the headroom of the product no longer trade against each
+        // other. If that split is ever undone, this row has to grow the factor back.
+        budget(
+            "capacityPerTileOf: densest tile * mean specific heat",
+            densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() },
+            1,
+        )
 
         // ── Gas and pressure ──────────────────────────────────────────────
         // `grams / criticalDensity` is a ratio of two masses; step 5 takes it first, so what bounds
