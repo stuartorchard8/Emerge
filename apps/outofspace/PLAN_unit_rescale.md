@@ -465,18 +465,23 @@ produced, so nothing anybody could already represent moved. 426 tests, the stand
   25× footprint error, not a real edge.
 - ~~`Body.kelvin` divides by a capacity it does not guard.~~ **Done.** Now matches `RigidBody.kelvin`:
   falls back to `Temperature.SPACE_KELVIN`, which is what an empty tile already reads.
-- ~~`gramsPerTileOf` needs a `require` stating the invariant that keeps it safe.~~ **The invariant was
-  gone, and had moved.** Step 4's `scaledRatio` already made that function scale-invariant, so a
-  `require` would have pinned a constraint nothing needs. But the same multiply-before-divide had
-  walked next door into `capacityPerTileOf`, where a specific heat of up to 4182 rides into a
-  product already holding a tile of solid. Fixed with the same reduction. The bound was **searched,
-  not guessed** — over every pair of species and every blend, the worst case is pure water, and the
-  answer is **2,900 tonnes**, not the 120 kg first written down here.
-  - Latent, not live: the call sites pass per-mille compositions. But the bound is in *units*, so it
-    divides by k — at a microgram per unit it lands at 2.9 kg, an ordinary rock.
-  - Pinned by `what a tile costs to warm does not depend on how much of it you were handed`, which
-    was **verified to fail against the old expression** (returned a capacity of −506,386,794). The
-    first version of that test passed against the bug and proved nothing.
+- ~~`gramsPerTileOf` needs a `require` stating the invariant that keeps it safe.~~ **Neither a
+  `require` nor a rescale concern — the normalisation is now built into the function.**
+  - The bug was real: `capacityPerTileOf` wrapped, worst case pure water, returning a *negative*
+    heat capacity. Pinned by `what a tile costs to warm does not depend on how much of it you were
+    handed`, verified to fail against the old expression at −506,386,794.
+  - ⚠️ **The first two rationales for it were both wrong**, and the corrections matter more than the
+    fix. (1) "The bound is in units, so it divides by k" — **false.** Every caller passes
+    *proportions* (`Material.composition`, `RigidBody.oreComposition`, `DEFAULT_ORE_BODY`, all
+    summing to ~1000); proportions are not masses and the mass-unit rescale does not touch them.
+    This never belonged to this plan. (2) An outer `scaledRatio` was not sufficient either —
+    `Σ grams × specificHeat` overflows on its own, before any division can cancel the scale.
+  - The fix is to average the specific heat **per species as it accumulates**, in thousandths, so
+    nothing in the function grows with the total. Both factors are then bounded by construction
+    (1.9e7 × 4.2e6 = 7.8e13) for any mixture, with no invariant left for a caller to uphold.
+  - The lesson, which is the general one: *scale-invariant arithmetic is not the same as a stated
+    contract.* Making `gramsPerTileOf` scale-invariant at step 4 was read as evidence the "proportions
+    only" rule had evaporated. It had not — it was never arithmetic, it was meaning.
 - ~~Osmium's `relativeAbundance` is 0.~~ **Now 1** — the smallest the table can say, so the anchor is
   reachable via mined rocks. Honestly documented as *the rarest the scale can express*, not osmium's
   real rarity (a part per billion, which no integer weighting against iron can hold).

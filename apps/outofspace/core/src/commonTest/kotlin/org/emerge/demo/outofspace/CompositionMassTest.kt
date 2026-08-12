@@ -99,13 +99,18 @@ class CompositionMassTest {
      * tile of a composition costs to warm, and doubling the sample cannot change it. That makes it
      * its own oracle — no literal to pin, just the same mixture stated at wildly different totals.
      *
-     * It used to fail. `gramsPerTile × Σ(grams × specificHeat)` wrapped a Long, and the symptom was a
-     * *negative* heat capacity rather than an exception. Water is the species that gets there first —
-     * searched over every pair and blend, it is the worst case at 2,900 tonnes — so this sweeps
-     * water specifically rather than a mixture that reads more typical but never reaches the wrap.
+     * It used to fail, at a total the old code could reach two different ways — `Σ grams ×
+     * specificHeat` overflows on its own at ~2.2e15, and the product with a tile of solid goes
+     * earlier still, worst case pure water. The symptom was a *negative* heat capacity rather than
+     * an exception, so this sweeps water specifically rather than a mixture that reads more typical
+     * but never gets there.
      *
-     * The number that matters is not 2,900 tonnes, which nothing passes. It is that the bound is in
-     * *units*, so it divides by the mass scale: at a microgram per unit it is 2.9 kg.
+     * ⚠️ This is a **contract** test, not an overflow-headroom test, and the difference matters
+     * because the first version of it was the latter and was wrong. Nothing passes tonnages like
+     * these, and — corrected — nothing ever will: proportions are not masses, so the mass-unit
+     * rescale does not move this number. What the sweep pins is that the function depends on the
+     * ratios in a composition and not on the units they were stated in, which is the only reading
+     * under which "a tile of water" is a well-posed question at all.
      */
     @Test
     fun `what a tile costs to warm does not depend on how much of it you were handed`() {

@@ -80,42 +80,42 @@ fun gramsPerTileOf(mixture: Mixture): Long {
  * being different is the whole reason they are written out separately here.
  */
 fun capacityPerTileOf(mixture: Mixture): Long {
-    val total = mixture.total
-    if (total <= 0L) return 0L
-    // Divided last. Rounding the specific heat down to a whole millijoule per gram first is worth
-    // 0.04% on a wet rock, which is small until it is the difference between two ledgers.
-    //
-    // ⚠️ This is where [gramsPerTileOf]'s old unstated invariant actually went. Step 4 of
-    // PLAN_unit_rescale.md made that function scale-invariant, so the "per-mille compositions only"
-    // rule no longer holds it up — but the same multiply-before-divide walked next door, and here
-    // it is *tighter*, because `weighted` carries a specific heat of up to 4182 into a product that
-    // already holds a whole tile of solid.
-    //
-    // Searched rather than guessed, over every pair of species and every blend of them: the worst
-    // case is **pure water at 2,900 tonnes**, where density and specific heat are least willing to
-    // trade off against each other. Nothing passes anything like that today — the call sites hand
-    // over per-mille compositions — so this is a latent bound and not a live wrap. It is worth
-    // closing anyway, because the bound is in *units* and so it divides by the mass scale: at a
-    // microgram per unit the same wrap arrives at 2.9 kg, which is an ordinary rock.
-    //
-    // `weighted / total` is the mass-averaged specific heat, an O(1000) intensive quantity, so
-    // reducing that fraction first is the same repair step 4b applied everywhere else — and it
-    // keeps the divide last exactly as the note above requires.
-    return scaledRatio(weightedSpecificHeat(mixture), total, gramsPerTileOf(mixture))
+    if (mixture.total <= 0L) return 0L
+    // Both factors are now bounded by construction: a tile of the densest solid there is (osmium,
+    // 1.9e7 g) times the thirstiest conceivable average (water, 4.2e6 in milli-units). Their product
+    // is 7.8e13 — five orders inside a Long, for *any* mixture, with no invariant to uphold.
+    return gramsPerTileOf(mixture) * meanSpecificHeatMilli(mixture) / SPECIFIC_HEAT_SCALE
 }
 
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */
-fun specificHeatOf(mixture: Mixture): Long {
-    val total = mixture.total
-    return if (total <= 0L) 0L else weightedSpecificHeat(mixture) / total
-}
+fun specificHeatOf(mixture: Mixture): Long = meanSpecificHeatMilli(mixture) / SPECIFIC_HEAT_SCALE
 
-/** The sum before the divide, so [capacityPerTileOf] can put the divide last. */
-private fun weightedSpecificHeat(mixture: Mixture): Long {
-    var weighted = 0L
+/** Fixed-point unit for [meanSpecificHeatMilli]: keeps three digits the truncation would else lose. */
+private const val SPECIFIC_HEAT_SCALE: Long = 1_000L
+
+/**
+ * The mass-averaged specific heat of [mixture], in thousandths of a J/kg/K.
+ *
+ * **Normalised per species rather than summed and then divided**, which is what makes every caller
+ * above total-agnostic. A composition is a set of *proportions* — `Water to 1000` and `Water to 1`
+ * are the same recipe and must give the same answer — so this function is only meaningful if it
+ * depends on the ratios and not on the units they were stated in. Dividing at the end looks like it
+ * achieves that and does not: `Σ grams × specificHeat` overflows on its own at about 2.2e15,
+ * before any division gets the chance to cancel the scale. Reducing each term against `total` as it
+ * is accumulated means nothing here ever grows with the total at all, and the sum is bounded by the
+ * largest specific heat in the table whatever it is handed.
+ *
+ * The [SPECIFIC_HEAT_SCALE] is why this is not the rounding the old code was right to avoid: an
+ * average taken in whole J/kg/K costs 0.04% on a wet rock, which is small until it is the difference
+ * between two ledgers. In thousandths the per-species truncation is under 3 parts per million total.
+ */
+private fun meanSpecificHeatMilli(mixture: Mixture): Long {
+    val total = mixture.total
+    if (total <= 0L) return 0L
+    var mean = 0L
     for (species in Species.ALL) {
         val grams = mixture[species]
-        if (grams > 0L) weighted += grams * species.specificHeat
+        if (grams > 0L) mean += scaledRatio(grams, total, species.specificHeat * SPECIFIC_HEAT_SCALE)
     }
-    return weighted
+    return mean
 }
