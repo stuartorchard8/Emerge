@@ -177,6 +177,34 @@ is easiest to get right.
 scallop is *internal* to the rock's own outline and only matters where two bodies of discs touch
 each other, which is rock-on-rock — where it reads as rubble catching on rubble, correctly.
 
+### 4.1 The 0.1-tile tolerance on unconnected edges — kept, and generalised
+
+Stu, 2026-08-13: keep it. Carried over from `PLAN_rigid_debris` §3, where it existed to stop a sharp
+corner pinching against a hull tile. `RigidBody.TOLERANCE = Flight.PER_TILE / 10L` already exists as
+a constant and **nothing reads it**; this is what finally reads it.
+
+**The rule, stated per shape rather than per body:**
+
+> A cell's collider is inset by `TOLERANCE` on each of its **unconnected** faces — a face with no
+> solid cell of the same body beyond it. **Connected faces are kept at the full tile boundary.**
+
+The "connected faces stay full" half is not a detail, it is what makes the rule safe. Inset *every*
+face and a hull wall stops being a wall: it becomes a row of separated boxes with a notch between
+each pair, which is §4's scalloping problem arriving by a different route. Only the outside of a
+body is shaved; its internal seams stay welded.
+
+Per shape:
+
+| Cell shape | What the inset means |
+|---|---|
+| **Box** (hull, machine casings) | A genuine per-face inset. **This is where the rule does its work**, because a box is the only cell that has a corner to pinch with. |
+| **Disc** (rubble) | **Satisfied intrinsically — do not shrink the radius.** A disc of radius half a tile already stands 0.207 tile clear of the tile corner, twice the tolerance asked for, and a corner that does not exist cannot pinch. ⚠️ Shaving a disc to r = 0.4 would take two adjacent cells from *touching* to a **0.2 tile gap**, turning the body into a bag of loose circles with notches an external disc could nestle into. The tolerance is a maximum on how sharp a cell may be, and a disc already satisfies it. |
+| **Triangle** (later) | A per-face inset like the box, including the hypotenuse. |
+
+So the rule reads uniformly as *"no cell may present a corner sharper or more exposed than
+`TOLERANCE` allows"*, and each shape satisfies it in its own way — which is the form it has to take
+to survive §3.2's requirement that a new shape costs one function.
+
 ---
 
 ## 5. The frame — delete the vessel frame, do not patch it
