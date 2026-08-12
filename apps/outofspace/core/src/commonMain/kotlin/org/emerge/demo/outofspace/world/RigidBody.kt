@@ -214,7 +214,6 @@ class BodyStep(val bodies: List<RigidBody>, val handedX: Long, val handedY: Long
 /**
  * Body drift: grid moves by ship velocity, body advances by (body - ship) velocity.
  * Sweep (not jump) prevents bulkhead stepping. Plating applied after sweep (tick ordering).
- * ⚠️ shipAcceleration only for restingSpeed threshold (not a force on world-frame momentum).
  * ⚠️ Plating costs the ship (prevents momentum pump from gravity).
  */
 fun driftBodies(
@@ -225,16 +224,42 @@ fun driftBodies(
     shipVelocityX: Long,
     shipVelocityY: Long,
     shipMassGrams: Long,
-    shipAcceleration: org.emerge.sim.core.physics.primitives.Frac2,
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
-    // What presses a body against a surface in the grid's frame: the plating, less the ship's own
-    // acceleration. Exactly [experiencedGravity]'s quantity, and for exactly its reason.
-    val restX = RockContact.restingSpeed(platingGravity.x.raw - shipAcceleration.x.raw)
-    val restY = RockContact.restingSpeed(platingGravity.y.raw - shipAcceleration.y.raw)
+    /**
+     * ⚠️ The resting threshold is about a **closing** speed, so it is built from the acceleration
+     * that closes the gap — and that depends on the body, which is why it is computed per body
+     * rather than once for the tick.
+     *
+     * Two changes from the version this replaces, and they pull the same way.
+     *
+     * **It is the relative acceleration.** The plating pushes the body toward the deck and the
+     * deck's reaction pushes the ship the other way, so one tick of free flight opens the gap by
+     * `a(1 + m/M)`, not by `a`. Against a hull that dwarfed every rock those were the same number.
+     * Against a 40-tonne box and an 83-tonne rock they differ by a factor of three.
+     *
+     * **[shipAcceleration] is gone from it**, and its being there is what actually did the damage.
+     * It is the ship's *net* acceleration, which includes the ship's reaction to this very body's
+     * plating — the one term the deck cancels the instant the body is resting. So the threshold was
+     * circular: the harder the body pressed, the lower the bar for calling it asleep went, and in
+     * the steady state the two terms cancelled outright and left nothing but [RockContact.REST_FLOOR].
+     * A rock that should have been lying on the floor bounced 1.4 tiles for ever in a perfectly
+     * stable limit cycle, with every quantity conserved and nothing to see in the ledger.
+     *
+     * Thrust does not belong here for the same reason: a ship under burn drags a resting body along
+     * *through the deck*, and a force transmitted by the contact cannot also be a force opening it.
+     */
+    fun restingSpeed(felt: Long, mass: Long): Long =
+        if (shipMassGrams <= 0L) RockContact.restingSpeed(felt)
+        else RockContact.restingSpeed(felt + scaledRatio(felt, shipMassGrams, mass))
 
     var handedX = 0L
     var handedY = 0L
+    // The ship's velocity moves as it hands momentum out, and the *next* body has to sweep against
+    // where the hull is going rather than where it started. Same defect as the stale wall inside
+    // [sweepBody] and the same fix, one level up; it only shows with two heavy bodies aboard.
+    var shipVx = shipVelocityX
+    var shipVy = shipVelocityY
     val moved = bodies.map { body ->
         val mass = body.massGrams
         if (mass <= 0L) return@map body
@@ -248,11 +273,15 @@ fun driftBodies(
         val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
         val swept = sweepBody(
             grid, structure, body,
-            shipVelocityX, shipVelocityY, shipMassGrams,
-            restX, restY,
+            shipVx, shipVy, shipMassGrams,
+            restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
         )
         handedX += swept.impulseX + platingX
         handedY += swept.impulseY + platingY
+        if (shipMassGrams > 0L) {
+            shipVx += scaledRatio(-(swept.impulseX + platingX), shipMassGrams, Flight.PER_TILE)
+            shipVy += scaledRatio(-(swept.impulseY + platingY), shipMassGrams, Flight.PER_TILE)
+        }
         swept.body.copy(
             impulseX = swept.body.impulseX + platingX,
             impulseY = swept.body.impulseY + platingY,

@@ -103,6 +103,25 @@ fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, atX: Long
 /**
  * Sweep one body: relative velocity (body world-frame, ship grid-frame), bounce off hull.
  * Normal: ask x-only and y-only overlap separately (exact corner case, no preference).
+ *
+ * ### ⚠️ The ship recoils *inside* this loop, and it has to
+ *
+ * [shipVelocityX] is where the ship started the tick, and for most of this file's life that was the
+ * same as where it is: a rock was a pebble against a hull, so the recoil rounded away and a wall
+ * that never moved was a wall that never moved. It is not true any more. A default ore body is
+ * **83 tonnes** and the box the tests fly is **40**, so a bounce moves the ship more than it moves
+ * the rock, and a restitution computed against a stale wall is computed against the wrong closing
+ * speed.
+ *
+ * Left stale it is an energy source rather than merely an inaccuracy. A rock dropped under one g
+ * doubled its speed on every bounce — 5, 21, 95, 1821 tiles a tick — because each sub-step's
+ * impulse was sized from a closing speed that the previous sub-step's impulse had already spent.
+ * Nothing in the ledger noticed: momentum conserved perfectly the whole way up. Conservation of
+ * momentum is not conservation of energy, and this is the shape of the difference.
+ *
+ * With the recoil fed back the arithmetic collapses to the law it was always supposed to be:
+ * `rv' = rv + J/μ` and `J = −(1+e)·rv·μ` give `rv' = −e·rv` exactly, for any mass ratio, which is
+ * what makes the bounce terminate rather than merely shrink.
  */
 fun sweepBody(
     grid: Grid,
@@ -130,20 +149,28 @@ fun sweepBody(
     // physics wants and the ratio has no unit.
     val mu = if (shipMassGrams <= 0L) mass else scaledRatio(mass, mass + shipMassGrams, shipMassGrams)
 
+    // Where the wall is going, updated as the body shoves it. See the note on this function.
+    var svx = shipVelocityX
+    var svy = shipVelocityY
+
+    /** What the ship's velocity moves by when the body is handed [j] — the equal and opposite half. */
+    fun recoil(j: Long): Long =
+        if (shipMassGrams <= 0L) 0L else scaledRatio(-j, shipMassGrams, Flight.PER_TILE)
+
     // [RigidBody.velocityX]'s expression, on an impulse that is being carried through the sweep.
     fun relative(impulse: Long, shipVelocity: Long): Long =
         scaledRatio(impulse, mass, Flight.PER_TILE) - shipVelocity
 
-    val startRvx = relative(ix, shipVelocityX)
-    val startRvy = relative(iy, shipVelocityY)
+    val startRvx = relative(ix, svx)
+    val startRvy = relative(iy, svy)
     val reach = maxOf(abs(startRvx), abs(startRvy))
     val steps = (reach / RockContact.MAX_SUBSTEP + 1L).toInt()
 
     val wedged = overlapsHull(grid, structure, body, px, py)
 
     for (k in 0 until steps) {
-        val rvx = relative(ix, shipVelocityX)
-        val rvy = relative(iy, shipVelocityY)
+        val rvx = relative(ix, svx)
+        val rvy = relative(iy, svy)
         val dx = rvx * (k + 1) / steps - rvx * k / steps
         val dy = rvy * (k + 1) / steps - rvy * k / steps
         val nx = px + dx
@@ -168,11 +195,13 @@ fun sweepBody(
             val j = normalImpulse(rvx, mu, restingSpeedX)
             ix += j
             gotX += j
+            svx += recoil(j)
         }
         if (hitY) {
             val j = normalImpulse(rvy, mu, restingSpeedY)
             iy += j
             gotY += j
+            svy += recoil(j)
         }
     }
 

@@ -303,7 +303,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         // It is also where a body can hit something, because a contact is an exchange and the ship's
         // half of it has to join `netImpulse` below in the same tick the body's half is booked. The
-        // acceleration is passed for the resting threshold and is not a force — see [driftBodies].
         val bodiesDrifted = driftBodies(
             state.grid,
             structure,
@@ -312,7 +311,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             state.velocityX,
             state.velocityY,
             mass,
-            state.frameAcceleration,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
