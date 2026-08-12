@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.VolumeField
@@ -161,8 +162,16 @@ class PhaseEmergenceTest {
         val tr = reducedTemperature(kelvin, species)!!
         val branch = saturatedLiquidDensity(tr) ?: error("$species is supercritical at $kelvin K")
         // A tenth of a percent past the branch, so that integer rounding on the way back through
-        // reducedDensity cannot land it on the boundary and read as Separating again.
-        return branch * CRITICAL.getValue(species).gramsPerTile / SCALE * 1001 / 1000
+        // reducedDensity cannot land it on the boundary and read as Separating again. Applied to the
+        // reduced density rather than to the mass, so the whole conversion is the simulation's own.
+        //
+        // ⚠️ It used to be `branch * gramsPerTile / SCALE` written out here, which is the multiply
+        // [gramsAtReducedDensity] exists to own — and this copy carried the overflow four months
+        // after the production copies were found, because a test that recomputes what it is testing
+        // against inherits its bugs and reports them as failures of the thing under test. At one
+        // microgram per unit it wrapped to a negative mass, which became a negative temperature and
+        // surfaced as an ArrayIndexOutOfBoundsException in ValveTest.
+        return gramsAtReducedDensity(branch * 1001 / 1000, species, full, full)!!
     }
 
     private val liquidWater: Long = saturatedLiquid(Species.Water, room)

@@ -235,17 +235,16 @@ fun vapourGrams(grams: Long, species: Species, volume: Int, full: Int, kelvin: I
     val vapourR = saturatedVapourDensity(temperatureR) ?: return grams
     val liquidShare = liquidVolumeFraction(grams, species, volume, full, kelvin)
     if (liquidShare <= 0L) return grams
-    val critical = CRITICAL[species] ?: return grams
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
-    // its way to nothing before the density has been divided down.
+    // its way to nothing before the density has been divided down — hence the full tile asked for
+    // here and the `volume / full` at the end rather than letting the helper do it.
     //
-    // Both reduced fractions go through [scaledRatio] rather than being multiplied into the mass:
-    // each is a ratio of two [SCALE] quantities, so the mass unit belongs entirely to the third
-    // term and the product is linear in it rather than carrying it twice. Written the obvious way
-    // this was `1e8 × gramsPerTile`, which is 3.9e19 for critical carbon dioxide at one microgram
-    // per unit — a wrap, and a silent one. Exact at today's unit, where no reduction is needed.
-    val vapourMass = scaledRatio(vapourR, SCALE, critical.gramsPerTile)
-    val mass = scaledRatio(SCALE - liquidShare, SCALE, vapourMass) * volume / full
+    // The multiply itself lives in [gramsAtReducedDensity] now; it was one of four independent
+    // copies of it, all carrying the same overflow. The remaining fraction goes through
+    // [scaledRatio] for the same reason: a ratio of two [SCALE] quantities must not be multiplied
+    // into a mass.
+    val fullTile = gramsAtReducedDensity(vapourR, species, full, full) ?: return grams
+    val mass = scaledRatio(SCALE - liquidShare, SCALE, fullTile) * volume / full
     return minOf(mass, grams)
 }
 

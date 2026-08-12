@@ -6,6 +6,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.SCALE
+import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
+import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.chem.liquidVolumeFraction
 import org.emerge.demo.outofspace.chem.partialPressure
 import org.emerge.demo.outofspace.world.AirField
@@ -145,9 +147,13 @@ fun tilePressure(
 private fun leastRoomFor(grams: Long, species: Species): Int {
     if (grams <= 0L) return 0
     val critical = CRITICAL[species] ?: return 0
-    // volume such that grams x SCALE / gramsPerTile x FULL / volume < CLOSE_PACKED, rounded up so
-    // the strict inequality holds rather than merely being approached.
-    val room = grams * SCALE / critical.gramsPerTile * VolumeField.FULL / (CLOSE_PACKED - 1) + 1
+    // Asked of [reducedDensity] rather than recomputed, since "how packed would this be in a full
+    // tile" is exactly what that function answers, and its own `grams * SCALE` was the same k1
+    // overflow being repaired everywhere else here — 7.6e19 for a packed tile of water at one
+    // microgram per unit. Rounded up so the strict inequality holds rather than merely being
+    // approached.
+    val room = reducedDensity(grams, species, VolumeField.FULL, VolumeField.FULL)!! *
+        VolumeField.FULL / (CLOSE_PACKED - 1) + 1
     return room.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
@@ -223,11 +229,16 @@ private fun closePackedAirGrams(volume: Int): Long {
     for (s in Species.ALL) {
         val share = AirField.AMBIENT_AIR[s]
         if (share <= 0L) continue
-        val critical = CRITICAL[s] ?: continue
         // Invert reducedDensity: the total air mass whose share of species s just reaches close
         // packing in this volume.
-        val atLimit = (CLOSE_PACKED - 1) / SCALE * critical.gramsPerTile *
-            volume / VolumeField.FULL * AMBIENT_TILE_GRAMS / share
+        //
+        // ⚠️ This was `(CLOSE_PACKED - 1) / SCALE * critical.gramsPerTile`, which divides FIRST and
+        // so evaluates to **2**, not 2.99999999 — a clamp a third tighter than the one it claims to
+        // be. [gramsAtReducedDensity] keeps the fraction, which loosens the ceiling by 50%. It is a
+        // ceiling on a Newton search that only bites in a cell that is nearly all liquid, and
+        // loosening it moves the search closer to the answer rather than further from it.
+        val atLimit = gramsAtReducedDensity(CLOSE_PACKED - 1, s, volume, VolumeField.FULL)!! *
+            AMBIENT_TILE_GRAMS / share
         limit = minOf(limit, atLimit)
     }
     return if (limit == Long.MAX_VALUE) Long.MAX_VALUE else limit

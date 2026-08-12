@@ -444,6 +444,33 @@ fun reducedDensity(grams: Long, species: Species, volume: Int, full: Int): Long?
     return scaledRatio(grams, c.gramsPerTile, SCALE) * full / volume
 }
 
+/**
+ * The inverse of [reducedDensity]: how many grams of [species] a cell of [volume] out of [full]
+ * holds when it sits at reduced density [densityR].
+ *
+ * ### Why this is a function and not four expressions
+ *
+ * It was four expressions, and every one of them was `densityR * c.gramsPerTile / SCALE` — the same
+ * multiply, arrived at independently in `Edit.WATER_INJECT_GRAMS`, `vapourGrams`,
+ * `closePackedAirGrams` and a `PhaseEmergenceTest` helper. That product is a reduced fraction (up to
+ * 1e8) times a mass, so it is linear in the mass unit and reaches 3.9e19 for critical carbon dioxide
+ * at one microgram per unit. Four sites, one defect, and step 8's audit found them one at a time
+ * over two passes — the test copy last, by way of an `ArrayIndexOutOfBoundsException` in `ValveTest`
+ * that had nothing visibly to do with density.
+ *
+ * So the arithmetic lives here, [scaledRatio] takes the mass unit out of the fraction, and the tests
+ * call the same function the simulation does. **A test that recomputes what it is testing against
+ * inherits its bugs**, and this one inherited a wrap that turned a mass negative and sent a negative
+ * temperature into `Saturation.sample`.
+ *
+ * Returns null for a species with no critical point on file, matching [reducedDensity].
+ */
+fun gramsAtReducedDensity(densityR: Long, species: Species, volume: Int, full: Int): Long? {
+    val c = CRITICAL[species] ?: return null
+    if (densityR <= 0L) return 0L
+    return scaledRatio(densityR, SCALE, c.gramsPerTile) * volume / full
+}
+
 /** Reduced temperature — [kelvin] as a multiple of the species' critical temperature. */
 fun reducedTemperature(kelvin: Int, species: Species): Long? {
     val c = CRITICAL[species] ?: return null

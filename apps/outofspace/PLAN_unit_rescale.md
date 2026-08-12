@@ -623,14 +623,43 @@ up as often as down and that is not a regression: each correction lets the next 
 to fail, so the count measures reach rather than damage. `BudgetParityTest` and the overflow budget
 are both green there — the only red tripwire row is `atmosphere joules`, a parked ledger.
 
-⚠️ **The remaining failures are not all literals**, which is the one thing this audit changed about
-the shape of the work. `PhaseEmergenceTest` line 165 computes `branch * gramsPerTile / SCALE` — the
-*same* k¹ defect just fixed in `vapourGrams`, living in a test helper, wrapping to a negative mass
-and sending a negative temperature into `Saturation.sample`, which is where the
-`ArrayIndexOutOfBoundsException: Index -199 out of bounds for length 65` in `ValveTest` and
-`PumpTest` comes from. So the test sources need the same audit the main sources got, not just a pass
-of re-baselining, and a single wrapped helper accounts for a whole cluster of unrelated-looking
-red.
+#### `gramsAtReducedDensity` — the shared helper
+
+`densityR * c.gramsPerTile / SCALE` had been arrived at independently **five times**: in
+`Edit.WATER_INJECT_GRAMS`, `Saturation.vapourGrams`, `Pressure.closePackedAirGrams`, its inverse in
+`Pressure.leastRoomFor`, and a `PhaseEmergenceTest` helper. Four of the five in production code, all
+five with the same k¹ overflow — a reduced fraction up to 1e8 times a mass, reaching 3.9e19 for
+critical CO₂ at one microgram per unit. The audit found them one at a time over two passes.
+
+They now all call `chem.gramsAtReducedDensity`, the declared inverse of `reducedDensity`, which puts
+the fraction through `scaledRatio`. **The test calls the same function the simulation does** rather
+than restating it: a test that recomputes what it is testing against inherits its bugs and then
+reports them as failures of the thing under test, which is exactly how this one presented.
+
+Two things fell out of the consolidation that were not overflow:
+
+- `leastRoomFor` was recomputing `reducedDensity` by hand; it now asks it.
+- `closePackedAirGrams` read `(CLOSE_PACKED - 1) / SCALE * gramsPerTile`, which **divides first and
+  so evaluates to 2**, not 2.99999999 — a clamp a third tighter than the one it claimed to be, at
+  today's unit and every other. Keeping the fraction loosens it by 50%. It bounds a Newton search
+  that only bites in a cell that is nearly all liquid, and the looser bound is nearer the answer.
+  No test moved.
+
+Effect at 10⁶: 54 → **50**, and `PhaseEmergenceTest` 5 → 1.
+
+⚠️ **The remaining failures are not all literals**, which is the thing this audit changed about the
+shape of the work ahead. The test sources need the same audit the main sources got, not a pass of
+re-baselining.
+
+⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
+`ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
+they are separate test classes and cannot share state. The helper carried the same defect, but the
+ten exceptions have their own cause and survive its repair. The stack is
+`tilePressure → liquidVolumeFraction → liquidFraction → saturatedVapourDensity → sample`, with a
+**negative reduced temperature**, so a pipe tile is holding negative joules at the new unit. That is
+a thermal-bookkeeping miss and the next thread to pull. (`sample` is also unguarded against a
+negative index while it does clamp the top — worth noting, but clamping it would hide the input
+rather than fix it.)
 
 **Fixed in passing**: `scaledRatio` divided by zero when handed a zero `scale`. Not hypothetical —
 `vanDerWaalsPressure` passes `8 × temperatureR`, which rounds to zero for a cold enough gas, and

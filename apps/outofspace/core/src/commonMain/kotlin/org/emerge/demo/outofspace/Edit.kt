@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.CRITICAL
-import org.emerge.demo.outofspace.chem.SCALE
+import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
@@ -13,6 +12,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.InputKey
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
+import org.emerge.demo.outofspace.world.VolumeField
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
@@ -95,9 +95,12 @@ sealed interface Edit {
          * read as a broken tool. The number is whatever `Saturation.kt` says a full tile weighs at
          * [WATER_INJECT_KELVIN], divided by 64.
          */
-        val WATER_INJECT_GRAMS: Long =
-            (saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!)!! *
-                CRITICAL.getValue(Species.Water).gramsPerTile / SCALE) / 64
+        val WATER_INJECT_GRAMS: Long = gramsAtReducedDensity(
+            saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!)!!,
+            Species.Water,
+            VolumeField.FULL,
+            VolumeField.FULL,
+        )!! / 64
 
         /**
          * The temperature water arrives at: **−43 °C**, and it is cold on purpose.
