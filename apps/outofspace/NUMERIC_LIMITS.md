@@ -1,6 +1,7 @@
 # Numeric limits and dynamic ranges
 
-Status: **survey, nothing changed** — 2026-08-12.
+Status: **survey + physical baselines** — 2026-08-12. §11 added after the species rebase (osmium,
+argon); everything else is unchanged from the original survey except the §5 correction.
 
 Every number below was measured against the code as it stands, either by evaluating the real
 functions or by running a real scenario. Nothing here is an estimate unless it says so. The probes
@@ -16,6 +17,7 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 
 | | |
 |---|---|
+| Physical anchors | §11 — what reality pins these ranges to, and why k=1000 falls out of specific heat |
 | Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); already impossible for the heaviest buildable vessel, see §5 |
 | Next | `apportion`: `weight * target` — **safe k ≈ 152** (k², at a full Storage) |
 | Next | ship-wide joules at 3000 K — **safe k ≈ 49** at the absolute worst packing |
@@ -51,6 +53,7 @@ rebase, gas and solids are stated at the same real scale.
 
 | What | grams/tile |
 |---|---|
+| **Osmium, solid** | **18,749,700** |
 | Uranium, solid | 15,853,000 |
 | Copper, solid | 7,436,800 |
 | Iron, solid | 6,532,100 |
@@ -65,9 +68,11 @@ rebase, gas and solids are stated at the same real scale.
 | Nitrogen, close-packed liquid | 779,370 |
 | **Air at 1 atm** | **1,000** |
 | Diffusion stranding floor | 5 |
+| CO₂ in that tile of air | 1 |
 
-Useful span: **1.59e7 : 1**, or **3.2e6 : 1** if you exclude solids and ask only what the gas field
-carries. The liquid figures are `3 × critical density` — the close-packing limit, beyond which van
+Useful span: **1.87e7 : 1**, or **3.2e6 : 1** if you exclude solids and ask only what the gas field
+carries. The top of that span is now fixed for good: osmium is the densest solid there is (§11.1), so
+nothing added later can raise it. The liquid figures are `3 × critical density` — the close-packing limit, beyond which van
 der Waals has no answer at all (see §6.1).
 
 ### 3.2 Material tiles, as built
@@ -350,3 +355,123 @@ The measured peaks came from a bare hull with **no logistics running**, so the c
 §9 is that analytic probe, made permanent. What remains unpinned is the scenario side: a loaded
 vessel with logistics running would confirm the cargo-path figures, which are currently the enforced
 caps rather than observations.
+
+---
+
+## 11. Physical baselines
+
+Where reality pins these ranges, so that the scales are chosen against measured facts rather than
+against round numbers. Added 2026-08-12, after the survey, because several of the choices in §8 turn
+out to have physical answers rather than merely convenient ones.
+
+### 11.1 The density ceiling is fixed for good
+
+**Osmium, 22,590 kg/m³** — the densest solid there is. Iridium is a whisker behind at 22,562, the two
+swapped places in the literature for decades, and modern X-ray crystallography from lattice
+parameters settled it narrowly on osmium. No compound or alloy beats either, because a compound
+necessarily dilutes with something lighter. (Hassium is predicted near 41,000 kg/m³, but only a
+handful of atoms have ever existed, so it is not a material.)
+
+It is now `Species.Osmium`, for exactly this reason: **the top of the world's mass range should be a
+named physical fact, not a side-effect of uranium happening to be the heaviest thing on the list.**
+A tile of it is 18,749,700 g and nothing can ever be denser.
+
+The consequence for everything else in this document: **the top of every mass range is now stable.**
+Adding species can no longer raise it. Every remaining decision is about how far *down* the bottom
+goes — which is the same thing as asking how negligible "negligible" gets.
+
+⚠️ Osmium has `relativeAbundance = 0`, so no rock contains it and there is no way to obtain one. That
+is deliberate — it is an anchor, not a resource — but it is a decision worth revisiting, since osmium
+is genuinely among the rarest things in the crust and a very small abundance would be truer than
+none, as well as making the anchor reachable.
+
+### 11.2 Energy in 830 litres: a ladder, not a number
+
+The question "how much energy fits in a tile" is well-posed only once you say which physical regime
+is allowed. For 830 L:
+
+| Mechanism | Energy | |
+|---|---|---|
+| Thermal — firebrick tile at 3000 K | 5.3e9 J | **what this sim models** |
+| Chemical — liquid hydrogen | 8.4e9 J | 59 kg at 142 MJ/kg; superb per kg, poor per litre |
+| Chemical — gasoline | 2.8e10 J | ~34 MJ/L, the best ordinary fuel by volume |
+| Nuclear — 830 L of U-235, fully fissioned | 1.3e18 J | 15,853 kg at ~8.2e13 J/kg |
+| Total mass-energy — osmium, `E=mc²` | 1.7e21 J | the ceiling for *matter* |
+| **Schwarzschild limit** | **3.5e43 J** | the ceiling for *anything* |
+
+The last row is the real answer: pack more than that into a sphere of radius 0.583 m — which is what
+830 L is — and it becomes a black hole. It works out to 3.9e26 kg, about 66 Earth masses.
+
+Thirty-four orders of magnitude between the top and the bottom. **The bracket this simulation lives
+in is narrow, though:** thermal and chemical sit within a factor of six of each other, 5e9 to 3e10 J
+per tile. Stored as millijoules that is 5e12–3e13, which is exactly where the tripwire measures the
+`tile joules` row (3.29e13). So the energy scale is physically well-founded and has ~10⁵ of headroom
+*per tile*; only the whole-grid sum (§5, #2) is tight.
+
+### 11.3 Mass and energy are coupled by specific heat — and this picks k
+
+The strongest argument for a particular mass unit, and it is not a round-number argument.
+
+The natural consistency condition between a mass unit and an energy unit is that **one mass unit
+warmed by one kelvin should come to about one energy unit.** Below that ratio the energy field is
+carrying digits the mass field cannot justify; above it, temperature quantises before mass does.
+Against water's 4182 J/kg/K and the existing millijoule energy unit:
+
+| k | one mass unit of water, +1 K | in millijoules | verdict |
+|---|---|---|---|
+| 1 (gram) | 4.182 J | 4182 units | energy scale ~4000× finer than the mass scale |
+| **1000 (milligram)** | **4.182 mJ** | **4.2 units** | **matched** |
+| 10⁶ (microgram) | 4.182 µJ | 0.004 units | energy scale now too coarse — thermal quantisation |
+
+**k = 1000 is the value at which the existing millijoule energy unit and the mass unit are physically
+consistent with each other.** That is a much better reason to land on milligrams than tidiness, and
+it carries a warning: going to 10⁶ *requires* taking the energy unit to microjoules in the same step,
+or thermal quantisation becomes the new stranding floor.
+
+### 11.4 Trace gases set the floor, and they ask for micrograms
+
+Real atmospheric chemistry is quoted in ppm and ppb — methane at 1.9 ppm, ozone at ~0.03 ppm. To
+represent a trace species the way atmospheric science actually states one needs roughly **ppb of a
+tile-load**, which for a 1 kg tile is 1 µg: **k = 10⁶**.
+
+That sits just above the ~10⁵ practical ceiling of §7, so it is reachable in principle and not in one
+step. It is the honest target if trace-gas chemistry is ever wanted; §11.3 says the energy unit has
+to move with it.
+
+The immediate evidence is in the game already. Real dry air by mass is N₂ 75.5%, O₂ 23.1%, **argon
+1.29%**, CO₂ 0.064% — so a kilogram tile holds **1 g of CO₂**, and 1 g is below the five-unit
+stranding floor. **Ambient carbon dioxide cannot move at the current mass scale.** It is not a defect
+introduced by stating it correctly; it is the existing quantisation, finally visible because the
+number is finally honest.
+
+### 11.5 Temperature and velocity are already anchored
+
+**Temperature** needs no fixed point at all: 3 K (deep space, already `Temperature.SPACE_KELVIN`) to
+~3700 K (tungsten's melting point, the most refractory metal there is) is the whole meaningful range,
+and the 3000 K design ceiling sits just under it. An `Int` is generous.
+
+**Velocity** has an anchor the sim knowingly violates. If a tile is ~1 m and a tick ~1/60 s, then
+1 tile/tick ≈ 60 m/s and the speed of sound in air (340 m/s) is ~5.7 tiles/tick. `SOUND_IMPULSE` is
+pinned by CFL at 0.25 tiles/tick — some 23× slower than real, and `PressureForce.kt` says so at
+length. Meanwhile the design top speed of 2 tiles/tick is ~120 m/s, **faster than the sim's own speed
+of sound**. Not wrong, but an inconsistency a rebaseline should either fix or state on purpose.
+
+### 11.6 Reduced quantities are dimensionless, so k cancels
+
+`reducedDensity` is `grams / criticalGramsPerTile` — a ratio of two masses. Both scale with k, so the
+**result is unchanged** and only the intermediate `grams * SCALE` grows.
+
+That means row #7 of §5 should never influence the choice of k. It is purely a multiply-before-divide
+artifact with no precision consequence either way, and the cheapest of the five blockers to clear.
+Worth knowing before spending effort on it.
+
+### 11.7 Settled by this section
+
+- **The 13 g of "CO₂" in ambient air was argon**, matching argon's 1.29% mass fraction almost exactly
+  and CO₂'s 0.064% not at all. A broad brush chosen because the scale could not represent the real
+  thing. `Species.Argon` now exists and both gases are stated at their measured values.
+- Adding argon immediately exposed a latent bug: the debug injector enumerated
+  `[Nitrogen, Oxygen, CarbonDioxide]` by hand and so injected 987 g of every requested kilogram. It
+  now walks `Species.ALL`. This is the second instance of the mistake `AirField.mixtureAt` documents —
+  **a caller that enumerates the species it believes a field holds goes wrong the moment the field
+  holds one more** — and it will not be the last.

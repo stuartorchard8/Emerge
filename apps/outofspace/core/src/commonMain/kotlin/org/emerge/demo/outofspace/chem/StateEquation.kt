@@ -257,6 +257,9 @@ val CRITICAL: Map<Species, Critical> = mapOf(
     Species.Nitrogen to critical(kelvin = 126, kgPerCubicMetre = 313, species = Species.Nitrogen),
     Species.Oxygen to critical(kelvin = 155, kgPerCubicMetre = 436, species = Species.Oxygen),
     Species.CarbonDioxide to critical(kelvin = 304, kgPerCubicMetre = 468, species = Species.CarbonDioxide),
+    // Argon condenses at 151 K, between nitrogen and oxygen, which is where a noble gas belongs on
+    // this curve: the law of corresponding states does not care that it is monatomic.
+    Species.Argon to critical(kelvin = 151, kgPerCubicMetre = 536, species = Species.Argon),
 )
 
 /**

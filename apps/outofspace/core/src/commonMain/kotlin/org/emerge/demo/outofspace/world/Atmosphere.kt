@@ -85,11 +85,30 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
     override fun hashCode(): Int = 31 * grams.contentHashCode() + joules.contentHashCode()
 
     companion object {
-        /** 1-tile at 1 atm: ~1kg ordinary air (N₂:O₂:CO₂ ≈ 755:232:13 by mass). */
+        /**
+         * A tile at 1 atm: one kilogram of **real dry air**, stated to the gram.
+         *
+         * Measured composition by mass, which is what this field holds — the volume percentages
+         * everyone quotes are a different set of numbers, and converting them is what the molar
+         * masses are for: N₂ 75.5%, O₂ 23.1%, argon 1.29%, CO₂ 0.064%.
+         *
+         * ⚠️ **CO₂ is 1 g here and that is not a typo.** It used to be 13 g, which is argon's share
+         * wearing the wrong name because there was no noble gas species to give it to — an
+         * atmosphere twenty times too rich in carbon dioxide. Now that [Species.Argon] exists, both
+         * are stated at their real values.
+         *
+         * ⚠️ **One gram is below the diffusion stranding floor**, which is five (`SLOTS/FACE_SHARE`),
+         * so ambient CO₂ **cannot move** at the current mass scale — it sits in whatever tile it
+         * starts in. That is not a defect introduced here; it is the existing quantisation, finally
+         * visible because the value is finally honest. It is the clearest single argument for the
+         * mass-unit rebaseline: a trace gas is not representable as a *moving* thing until a unit is
+         * smaller than a gram. See `NUMERIC_LIMITS.md` §6.2.
+         */
         val AMBIENT_AIR: Mixture = Mixture.of(
             Species.Nitrogen to 755L,
-            Species.Oxygen to 232L,
-            Species.CarbonDioxide to 13L,
+            Species.Oxygen to 231L,
+            Species.Argon to 13L,
+            Species.CarbonDioxide to 1L,
         )
 
         /**

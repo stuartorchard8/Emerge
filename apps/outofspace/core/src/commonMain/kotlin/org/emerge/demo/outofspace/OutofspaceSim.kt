@@ -857,7 +857,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // than from the tile it is arriving in — that gas is already at its own temperature.
             val parcel = LongArray(Species.COUNT)
             var added = 0L
-            for (s in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
+            // Every species, because the parcel is [AirField.AMBIENT_AIR] scaled and so already
+            // contains exactly what air contains — anything else contributes zero. A hardcoded list
+            // here said "air is nitrogen, oxygen and carbon dioxide", which was true until argon
+            // arrived and then silently injected 987 g of every requested kilogram. This is the same
+            // mistake [AirField.mixtureAt] documents: a caller that enumerates the species it thinks
+            // a field holds goes quietly wrong the moment the field holds one more.
+            for (s in Species.ALL) {
                 val g = shares[s]
                 parcel[s.ordinal] = g
                 airGrams[base + s.ordinal] += g

@@ -971,6 +971,10 @@ class OutofspaceRenderer {
         const val NITROGEN   = 0x9A9AD0FFL
         const val CARBON_DIOXIDE = 0x8A8A8AFFL
         const val WATER      = 0x4A8AD0FFL
+        /** Osmium really is faintly blue — the only metal that is, and the reason it is recognisable. */
+        const val OSMIUM     = 0x8898B8FFL
+        /** The lilac of an argon discharge tube, which is the only way anyone has ever seen argon. */
+        const val ARGON      = 0xB88AD8FFL
         const val EMPTY      = 0x707070FFL
     }
 
@@ -1106,5 +1110,7 @@ fun speciesColor(dominant: Species?): Long = when (dominant) {
     Species.Nitrogen -> OutofspaceRenderer.Colors.NITROGEN
     Species.CarbonDioxide -> OutofspaceRenderer.Colors.CARBON_DIOXIDE
     Species.Water -> OutofspaceRenderer.Colors.WATER
+    Species.Osmium -> OutofspaceRenderer.Colors.OSMIUM
+    Species.Argon -> OutofspaceRenderer.Colors.ARGON
     null -> OutofspaceRenderer.Colors.EMPTY
 }

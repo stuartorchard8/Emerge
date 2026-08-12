@@ -29,6 +29,36 @@ enum class Species(
     Nitrogen(28, 1040, solidKgPerCubicMetre = 1030),
     CarbonDioxide(44, 844, solidKgPerCubicMetre = 1560),
     Water(18, 4182, solidKgPerCubicMetre = 917),
+
+    /**
+     * The densest solid there is, and here for exactly that reason.
+     *
+     * Osmium is 22,590 kg/m³ — the top of the periodic table by density, with iridium a whisker
+     * behind and no compound or alloy above either, since a compound necessarily dilutes with
+     * something lighter. It is here so that the ceiling of the world's mass range is a **named
+     * physical fact** rather than a side-effect of uranium happening to be the heaviest thing on the
+     * list. See `NUMERIC_LIMITS.md` §3: a tile of it is 18,749,700 g, and nothing can ever be denser.
+     *
+     * ⚠️ [relativeAbundance] is zero, so **rocks never contain it and there is no way to obtain it**.
+     * That is deliberate — it is an anchor, not a resource — and it is also a decision worth
+     * revisiting: osmium is genuinely one of the rarest things in the crust, so a very small
+     * abundance would be truer than none, and would make the anchor reachable.
+     */
+    Osmium(190, 130, solidKgPerCubicMetre = 22590),
+
+    /**
+     * The third gas in air, and the one whose absence was quietly distorting the atmosphere.
+     *
+     * Dry air is 1.29% argon by mass and 0.064% CO₂. Before this species existed, ambient air put
+     * **13 g of CO₂** in a kilogram tile — which is argon's share, wearing carbon dioxide's name,
+     * because there was no noble gas to give it to. The consequence was an atmosphere twenty times
+     * too rich in CO₂, and a broad brush of exactly the kind the rebaseline exists to remove.
+     *
+     * Monatomic, so its specific heat is the lowest of the gases (520 J/kg/K against nitrogen's
+     * 1040): there are no rotational modes to store energy in. That is a real behavioural difference
+     * and not a rounding — argon warms twice as fast as the air around it.
+     */
+    Argon(40, 520, solidKgPerCubicMetre = 1616),
     ;
 
     companion object {
