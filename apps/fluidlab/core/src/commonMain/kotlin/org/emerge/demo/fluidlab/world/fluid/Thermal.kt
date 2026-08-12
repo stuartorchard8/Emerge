@@ -7,7 +7,7 @@ import org.emerge.demo.fluidlab.world.Temperature
 
 /**
  * Gas thermal energy: belongs to atmosphere, travels with it, sets pressure.
- * Not in tile-field (copy(air=...) would leave joules stale — temperature derived from capacity).
+ * Not in tile-field (copy(air=...) would leave energy stale — temperature derived from capacity).
  * Coupled to fabric via stepSolidHeat conduction.
  * Joules move (not temperature): advected as fraction of donor's gas (prevents energy creation/destruction).
  */
@@ -15,16 +15,16 @@ import org.emerge.demo.fluidlab.world.Temperature
 /**
  * Gas heat capacity per tile: millijoules/kelvin (zero if no gas).
  * Millijoule scale matches Species.specificHeat (per kg). Avoids joule-scale quantization cliff (<1g→0, 2g→1).
- * joules/capacity exact at ambient (stepFluid: room-temp vessel = isothermal).
+ * energy/capacity exact at ambient (stepFluid: room-temp vessel = isothermal).
  */
-fun gasCapacity(tileCount: Int, grams: LongArray): LongArray =
-    LongArray(tileCount) { gasCapacityAt(grams, it) }
+fun gasCapacity(tileCount: Int, mass: LongArray): LongArray =
+    LongArray(tileCount) { gasCapacityAt(mass, it) }
 
 /** Millijoules per kelvin held by the gas in one tile — see [gasCapacity] for the units. */
-fun gasCapacityAt(grams: LongArray, tile: Int): Long {
+fun gasCapacityAt(mass: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
-    for (s in Species.ALL) sum += grams[base + s.ordinal] * s.specificHeat
+    for (s in Species.ALL) sum += mass[base + s.ordinal] * s.specificHeat
     return sum
 }
 
@@ -41,12 +41,12 @@ const val CAPACITY_SCALE = 1000L
  * what keeps [advectHeat] correct without modification — thermal energy is linear in mass and so
  * rides a mass flux honestly, whereas cohesion goes as the square of density and would not.
  */
-fun cohesionField(tileCount: Int, grams: LongArray, volumes: VolumeField?): LongArray =
+fun cohesionField(tileCount: Int, mass: LongArray, volumes: VolumeField?): LongArray =
     LongArray(tileCount) { tile ->
         val room = volumes?.at(tile) ?: VolumeField.FULL
         var sum = 0L
         for (s in Species.ALL) {
-            val g = grams[tile * Species.COUNT + s.ordinal]
+            val g = mass[tile * Species.COUNT + s.ordinal]
             if (g <= 0L) continue
             val dr = reducedDensity(g, s, room, VolumeField.FULL) ?: continue
             sum += cohesionJoules(dr, s, room, VolumeField.FULL)
@@ -90,20 +90,20 @@ fun gasKelvin(gasJoules: LongArray, capacity: LongArray): IntArray =
  * The energy a tile's gas holds at room temperature, in millijoules — what a filled vessel starts
  * with, and exactly divisible by its capacity so the temperature reads as ambient on the nose.
  */
-fun ambientGasJoules(tileCount: Int, grams: LongArray): LongArray {
-    val capacity = gasCapacity(tileCount, grams)
+fun ambientGasJoules(tileCount: Int, mass: LongArray): LongArray {
+    val capacity = gasCapacity(tileCount, mass)
     return LongArray(tileCount) { capacity[it] * Temperature.AMBIENT_KELVIN }
 }
 
 /**
- * Moves the gas's heat along with the gas, conserving joules exactly.
+ * Moves the gas's heat along with the gas, conserving energy exactly.
  *
  * ### Boundaries
  *
  * Energy leaving on the rim leaves the world, and is returned so the vessel's energy ledger still
  * closes. Venting hot gas is a genuine way for a ship to lose energy — it is what a rocket does —
  * and it must be counted on its way out rather than quietly vanishing, for exactly the reasons
- * [advectMass] counts grams.
+ * [advectMass] counts mass.
  *
  * Nothing arrives from outside: space is empty, and empty is not cold, it is *absent*.
  *
@@ -111,7 +111,7 @@ fun ambientGasJoules(tileCount: Int, grams: LongArray): LongArray {
  * other and as the [advectMass] pass that produced them — the mass field as it was *before* it moved
  * anything, which is why [tileGrams] is passed rather than recomputed.
  *
- * @return the joules that left the grid entirely.
+ * @return the energy that left the grid entirely.
  */
 fun advectHeat(
     edges: EdgeGrid,

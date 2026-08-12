@@ -13,7 +13,7 @@ package org.emerge.demo.outofspace.num
  * A constant that means a quantity of stuff is written as a multiple of [GRAM], [KILOGRAM] or
  * [TONNE] — never as a bare literal. If it can instead be expressed as a **fraction of something
  * physical**, that is better still, and it should be: `Negligible` is a per-mille of ambient
- * pressure, `Material.RADIANCE` is a fraction of a hull plate's capacity, `Edit.WATER_INJECT_GRAMS`
+ * pressure, `Material.RADIANCE` is a fraction of a hull plate's capacity, `Edit.WATER_INJECT_MASS`
  * is a 64th of what a tile of saturated liquid weighs. Those three need no rescaling at all, because
  * they are ratios and a ratio has no unit. Everything derived that way is one less thing that can
  * silently go wrong at step 8.
@@ -23,7 +23,7 @@ package org.emerge.demo.outofspace.num
  * It was in `world` until step 8's audit of `chem`, and being there is what let that audit's misses
  * happen. `chem` deliberately does not depend on `world` — `StateEquation` restates
  * `Temperature.AMBIENT_KELVIN` rather than import it — so a mass constant in `chem` **could not**
- * have been written against [GRAM] even if somebody had thought to. `Critical.gramsPerTile` was
+ * have been written against [GRAM] even if somebody had thought to. `Critical.massPerTile` was
  * therefore a bare literal not because it was overlooked but because the layering forbade the
  * alternative. A statement of what one integer means has to sit below everything that counts in
  * integers, which is both packages.
@@ -34,7 +34,7 @@ package org.emerge.demo.outofspace.num
  * - `VolumeField.FULL` and `ApertureField.OPEN` (1024) — fractions of a tile.
  * - `SignalField.FULL` (1000) — a percentage.
  * - `Material.fillPermille` and every `Mixture` composition — parts per thousand.
- * - `Plumbing.MILLIMOLES_PER_TICK` — **molar**, a particle count. Moles are not grams and do not
+ * - `Plumbing.MILLIMOLES_PER_TICK` — **molar**, a particle count. Moles are not mass and do not
  *   move with [GRAM]. Worth stating because it is the one quantity in the game that looks
  *   mass-dimensioned in the source and is not.
  * - `Frac` — belongs to the engine, and bounds accelerations rather than masses.
@@ -43,7 +43,7 @@ package org.emerge.demo.outofspace.num
  *
  * Specific heat is quoted per **kilogram**, so a heat capacity is `mass × specificHeat × Kₑ/(1000·Kₘ)`.
  * That factor used to be pinned at exactly **1** by holding the energy unit equal to the mass unit,
- * which is why `gasCapacityAt` could read `grams * specificHeat` with no conversion constant.
+ * which is why `gasCapacityAt` could read `mass * specificHeat` with no conversion constant.
  *
  * ⚠️ **That lock is what stopped the rescale at step 8, and it is gone.** Locked together, a
  * millionfold finer gram made a millionfold finer joule — one integer of energy became a
@@ -65,7 +65,7 @@ object Budget {
      *
      * The six orders bought at the bottom of the range are what turn "negligible" into something
      * genuinely negligible. Diffusion cannot move fewer than `SLOTS` integers of a species, so the
-     * stranding floor is five *integers* no matter what an integer means; at a gram it was five grams,
+     * stranding floor is five *integers* no matter what an integer means; at a gram it was five mass,
      * which is the same size as the floor below which the readouts stop drawing anything at all. The
      * two coincided, and `Negligible` was therefore hiding a quantisation artefact rather than
      * describing a physical threshold — see `NUMERIC_LIMITS.md` §6.2 and
@@ -88,13 +88,13 @@ object Budget {
      * The floor the rescale exists for is a **mass** floor — diffusion stranding, `Negligible`, a
      * trace of gas in a tile. Nothing wants a finer joule; the millijoule has never been the limiting
      * quantity in anything. What energy needs is *range*, and it is short of it: with bodies storing
-     * their joules per tile, a rock tile supports a mass scale of 966,000 against a target of 10⁶.
-     * Ten times coarser turns that into 9.66e6 and takes `atmosphere joules` out of the red with it.
+     * their energy per tile, a rock tile supports a mass scale of 966,000 against a target of 10⁶.
+     * Ten times coarser turns that into 9.66e6 and takes `atmosphere energy` out of the red with it.
      *
      * ⚠️ Coarser was **margin, not the fix**. The wall it was chosen to clear was measured with a
      * `NumericLimitsTest` that extrapolated every row by the *mass* scale — correct only while the
      * two units were locked, which is precisely what this change undoes. An energy quantity is a
-     * number of joules divided by the energy unit, so its integer count does not depend on the mass
+     * number of energy divided by the energy unit, so its integer count does not depend on the mass
      * unit at all, and simply decoupling the two knobs cleared every energy row on its own. The
      * centijoule is kept because nothing wants a finer joule and the headroom is worth having, but
      * it was not required, and the table that said otherwise was wrong.
@@ -106,7 +106,7 @@ object Budget {
     /** One gram, in whatever the current unit is. The base every mass constant is written against. */
     const val GRAM: Long = 1_000_000L / MICROGRAMS_PER_UNIT
 
-    /** A thousand grams — a tile of air at one atmosphere, near enough. */
+    /** A thousand mass — a tile of air at one atmosphere, near enough. */
     const val KILOGRAM: Long = 1_000L * GRAM
 
     /** A thousand kilograms. The natural unit for solids: a tile of steel is six and a half of them. */
@@ -118,7 +118,7 @@ object Budget {
      *
      * The joule rather than the millijoule, because the millijoule stops being representable the
      * moment the energy unit is coarser than one — which step 8 makes it. An energy constant that
-     * cannot be stated in whole joules is below the resolution of the field it would be stored in,
+     * cannot be stated in whole energy is below the resolution of the field it would be stored in,
      * so this is the right place for the floor to sit.
      */
     const val JOULE: Long = 1_000_000_000L / NANOJOULES_PER_UNIT
@@ -131,7 +131,7 @@ object Budget {
      * `capacity = mass_units × c × u_mass / (1000 × u_energy)`, and with the units expressed in
      * micrograms and nanojoules the 1000s and the 1e-6s cancel to exactly this ratio.
      *
-     * **It is 1 today**, which is why `grams * specificHeat` has always read correctly with no
+     * **It is 1 today**, which is why `mass * specificHeat` has always read correctly with no
      * conversion constant anywhere, and why introducing it changes nothing until a knob moves.
      */
     const val CAPACITY_DIVISOR: Long = NANOJOULES_PER_UNIT / MICROGRAMS_PER_UNIT

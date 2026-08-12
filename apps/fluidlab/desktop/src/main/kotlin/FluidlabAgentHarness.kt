@@ -37,9 +37,9 @@ import kotlin.system.exitProcess
  * wall 5 5 on             # place/remove one wall tile
  * box 4 4 12 10           # wall rectangle outline (the cheap way to make a room)
  * breach 12 4             # remove a wall — the hole everything interesting starts with
- * inject 8 8 Water 5000 400    # grams of a species at a temperature
+ * inject 8 8 Water 5000 400    # mass of a species at a temperature
  * evacuate 8 8            # instant local vacuum
- * heat 8 8 100000         # joules into the air, no mass
+ * heat 8 8 100000         # energy into the air, no mass
  *
  * run 200                 # advance the sim
  *
@@ -49,7 +49,7 @@ import kotlin.system.exitProcess
  * expect mass == 1234     # assert; a failure exits non-zero so CI notices
  * ```
  *
- * `expect` is what turns a script into an acceptance test. Supported subjects: `mass`, `joules`,
+ * `expect` is what turns a script into an acceptance test. Supported subjects: `mass`, `energy`,
  * `vented`, `substeps`, `undelivered`, `tick`, `cohesionunpaid`. Operators: `==`, `!=`, `<`, `<=`,
  * `>`, `>=`, and `~` for "within 1%" — the last is the one to reach for when asserting on a solver,
  * because pinning an exact literal to a discretisation is how a test becomes a tuning fight.
@@ -221,7 +221,7 @@ private class Harness {
         val r = state.report
         println("tick        ${state.tick}")
         println("mass        ${state.totalGrams()} g")
-        println("joules      ${state.totalJoules()}")
+        println("energy      ${state.totalJoules()}")
         println("vented      ${state.totalVentedGrams} g / ${state.totalVentedJoules} J")
         println("hull        ${r.vesselX}, ${r.vesselY}")
         println("escaped     ${r.escapedX}, ${r.escapedY}")
@@ -234,7 +234,7 @@ private class Harness {
         val r = state.report
         val got = when (subject) {
             "mass" -> state.totalGrams()
-            "joules" -> state.totalJoules()
+            "energy" -> state.totalJoules()
             "vented" -> state.totalVentedGrams
             "substeps" -> r.subSteps.toLong()
             "undelivered" -> abs(r.undeliveredX) + abs(r.undeliveredY)

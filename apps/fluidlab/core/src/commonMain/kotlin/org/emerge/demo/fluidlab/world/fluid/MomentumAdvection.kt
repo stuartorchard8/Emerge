@@ -139,7 +139,7 @@ private class Transfers(capacity: Int, faceCount: Int) {
     private val donatedBy = IntArray(faceCount * SLOTS) { -1 }
     private val donations = IntArray(faceCount)
 
-    /** Records momentum that [crossing] grams of mass carries from one face to the other.
+    /** Records momentum that [crossing] mass of mass carries from one face to the other.
      * Donor = upwind face. Momentum follows mass direction regardless of its own direction. */
     fun request(crossing: Long, before: Int, after: Int, momentum: LongArray, gramsBefore: Long, gramsAfter: Long) {
         if (crossing == 0L) return

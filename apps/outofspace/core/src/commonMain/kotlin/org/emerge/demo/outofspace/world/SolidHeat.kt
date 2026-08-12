@@ -3,8 +3,8 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
-/** Result of one solid conduction tick. [joules]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
-class SolidHeatStep(val joules: LongArray, val radiated: Long, val toAir: Long)
+/** Result of one solid conduction tick. [energy]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
+class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)
 
 /**
  * Advances every solid body's temperature one tick: conduction between touching bodies, exchange with air,
@@ -20,7 +20,7 @@ fun stepSolidHeat(
     grid: Grid,
     bodies: List<Body>,
     structure: StructureMap,
-    airJoules: LongArray,
+    airEnergy: LongArray,
     airCapacity: LongArray,
 ): SolidHeatStep {
     val bodyCount = bodies.size
@@ -39,7 +39,7 @@ fun stepSolidHeat(
         val c = airCapacity[t]
         capacity[bodyCount + t] = c
         kelvin[bodyCount + t] =
-            if (c <= 0L) Temperature.AMBIENT_KELVIN else (airJoules[t] / c).toInt()
+            if (c <= 0L) Temperature.AMBIENT_KELVIN else (airEnergy[t] / c).toInt()
     }
 
     val tiles = TileBodies(grid.size, bodies)
@@ -151,11 +151,11 @@ fun stepSolidHeat(
     for (t in 0 until tileCount) {
         val d = delta[bodyCount + t]
         if (d == 0L) continue
-        airJoules[t] += d
+        airEnergy[t] += d
         toAir += d
     }
-    val joules = LongArray(bodyCount) { bodies[it].joules + delta[it] }
-    return SolidHeatStep(joules, radiated, toAir)
+    val energy = LongArray(bodyCount) { bodies[it].energy + delta[it] }
+    return SolidHeatStep(energy, radiated, toAir)
 }
 
 /** The acceptor id meaning "out of the world" — see the radiation block. */
@@ -221,16 +221,16 @@ private class Transfers(capacity: Int, nodeCount: Int) {
     val available = LongArray(nodeCount)
     private val requested = LongArray(nodeCount)
 
-    fun add(donor: Int, acceptor: Int, joules: Long) {
-        if (joules <= 0L) return
-        amount[count] = joules
+    fun add(donor: Int, acceptor: Int, energy: Long) {
+        if (energy <= 0L) return
+        amount[count] = energy
         from[count] = donor
         to[count] = acceptor
         count++
-        requested[donor] += joules
+        requested[donor] += energy
     }
 
-    /** @return the joules that left the world entirely. */
+    /** @return the energy that left the world entirely. */
     fun settle(delta: LongArray): Long {
         var escaped = 0L
         for (i in 0 until count) {
@@ -247,12 +247,12 @@ private class Transfers(capacity: Int, nodeCount: Int) {
 }
 
 /**
- * The waste heat a machine sheds for working [grams] of material, in [Budget]'s energy unit.
+ * The waste heat a machine sheds for working [mass] of material, in [Budget]'s energy unit.
  *
  * ### Why this is a function and not a multiplication
  *
  * [heatPerGram] is millijoules per **gram**, so turning it into an energy means crossing from the
- * mass unit into the energy unit — and every call site wrote it as a bare `grams * heatPerGram(m)`,
+ * mass unit into the energy unit — and every call site wrote it as a bare `mass * heatPerGram(m)`,
  * which is that conversion performed with the factor left out. It read correctly for as long as one
  * integer was one gram *and* one integer was one millijoule, which is to say for as long as the two
  * knobs were the same knob.
@@ -265,10 +265,10 @@ private class Transfers(capacity: Int, nodeCount: Int) {
  *
  * The factor is [Budget.CAPACITY_DIVISOR], the same one a heat capacity needs, and for the same
  * reason: both constants are quoted per gram against a thousandth of a joule. Through [scaledRatio]
- * so that a whole rock cell's worth of grams times 400,000 does not wrap on the way.
+ * so that a whole rock cell's worth of mass times 400,000 does not wrap on the way.
  */
-fun heatOfWorking(grams: Long, machine: Machine?): Long =
-    scaledRatio(grams, Budget.CAPACITY_DIVISOR, heatPerGram(machine))
+fun heatOfWorking(mass: Long, machine: Machine?): Long =
+    scaledRatio(mass, Budget.CAPACITY_DIVISOR, heatPerGram(machine))
 
 /** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
 fun heatPerGram(machine: Machine?): Long = when (machine) {

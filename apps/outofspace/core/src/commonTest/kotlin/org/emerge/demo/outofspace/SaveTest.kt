@@ -89,7 +89,7 @@ class SaveTest {
      * ⚠️ Done **once per dimension** since v14 split the mass and energy units apart. That is
      * strictly stronger than the single pass it replaces: a field assigned to the *wrong* dimension
      * now fails, where before the two factors were the same number and nothing could tell them
-     * apart. It is also what caught the split being incomplete — `radiated` is joules and was still
+     * apart. It is also what caught the split being incomplete — `radiated` is energy and was still
      * riding the mass factor.
      */
     @Test
@@ -114,7 +114,7 @@ class SaveTest {
         for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
             "extracted" to { it.extractedMass },
             "vented" to { it.ventedMass },
-            "baseline air" to { it.baselineAirGrams },
+            "baseline air" to { it.baselineAirMass },
         )) {
             assertEquals(read(here) * factor, read(heavier), "$what under a coarser mass unit")
             assertEquals(read(here), read(hotter), "$what is not an energy")
@@ -124,14 +124,14 @@ class SaveTest {
         for ((what, read) in listOf<Pair<String, (VesselState) -> Long>>(
             "generated" to { it.generatedEnergy },
             "radiated" to { it.radiatedEnergy },
-            "baseline joules" to { it.baselineJoules },
-            "inserted" to { it.insertedJoules },
+            "baseline energy" to { it.baselineEnergy },
+            "inserted" to { it.insertedEnergy },
             "solid to air" to { it.solidToAirEnergy },
         )) {
             assertEquals(read(here) * factor, read(hotter), "$what under a coarser energy unit")
             assertEquals(read(here), read(heavier), "$what is not a mass")
         }
-        // ⚠️ NOT `massGrams` or `storedJoules`, and finding that out is what this test was for.
+        // ⚠️ NOT `mass` or `storedEnergy`, and finding that out is what this test was for.
         // A vessel's mass is *derived* from `Material.composition` and the species densities — it is
         // never written to the file at all — so it is already in this build's units and must not
         // move. Solid heat is the subtler case: `k=` is omitted for any machine sitting at ambient,
@@ -140,7 +140,7 @@ class SaveTest {
         // "every mass in the world scales" without asking where each number came from.
 
         // Guards the guard: if the world were empty these would all be 0 == 0.
-        assertTrue(here.extractedMass > 0 || here.baselineAirGrams > 0, "the fixture must have mass in it")
+        assertTrue(here.extractedMass > 0 || here.baselineAirMass > 0, "the fixture must have mass in it")
 
         // Air, tile by tile, is the biggest mass field in the game and goes through readMixture.
         var airTiles = 0
@@ -163,7 +163,7 @@ class SaveTest {
             assertEquals(
                 here.bodies[i].oreComposition,
                 heavier.bodies[i].oreComposition,
-                "a rock's composition is proportions, not grams",
+                "a rock's composition is proportions, not mass",
             )
         }
     }
@@ -197,7 +197,7 @@ class SaveTest {
         )
         val energy = listOf<Pair<String, (VesselState) -> Long>>(
             "radiated" to { it.radiatedEnergy },
-            "baseline joules" to { it.baselineJoules },
+            "baseline energy" to { it.baselineEnergy },
         )
 
         for ((slot, dimension) in listOf(2 to ("mass" to mass), 3 to ("energy" to energy))) {
@@ -242,10 +242,10 @@ class SaveTest {
     @Test
     fun `air temperature survives a save`() {
         val start = starterVessel(cfg.initialGrid)
-        val joules = start.air.copyJoules()
+        val energy = start.air.copyEnergy()
         val hot = cfg.initialGrid.index(cfg.initialGrid.width / 2, cfg.initialGrid.height / 2)
-        joules[hot] *= 3
-        val played = run(start.copy(air = AirField.of(start.air.copyGrams(), joules)), 60)
+        energy[hot] *= 3
+        val played = run(start.copy(air = AirField.of(start.air.copyMass(), energy)), 60)
 
         val reloaded = Save.read(Save.write(played))
         assertEquals(played.air.kelvinAt(hot), reloaded.air.kelvinAt(hot), "the air reloaded at a different temperature")
@@ -266,8 +266,8 @@ class SaveTest {
         assertEquals(played.extractedMass, reloaded.extractedMass)
         assertEquals(played.ventedMass, reloaded.ventedMass)
         assertEquals(played.inTransitMass, reloaded.inTransitMass)
-        assertEquals(played.baselineJoules, reloaded.baselineJoules)
-        assertEquals(played.baselineAirGrams, reloaded.baselineAirGrams)
+        assertEquals(played.baselineEnergy, reloaded.baselineEnergy)
+        assertEquals(played.baselineAirMass, reloaded.baselineAirMass)
         assertEquals(
             reloaded.extractedMass,
             reloaded.inTransitMass + reloaded.ventedMass,
@@ -410,8 +410,8 @@ class SaveTest {
         // Body by body rather than tile by tile: solid heat lives on the machine and the segment
         // now, so the thing that has to survive a round trip is each object's own energy.
         for (tile in 0 until played.grid.size) {
-            assertEquals(played.machines[tile]?.joules, back.machines[tile]?.joules, "machine joules differ at tile $tile")
-            assertEquals(played.rails[tile]?.joules, back.rails[tile]?.joules, "segment joules differ at tile $tile")
+            assertEquals(played.machines[tile]?.energy, back.machines[tile]?.energy, "machine energy differ at tile $tile")
+            assertEquals(played.rails[tile]?.energy, back.rails[tile]?.energy, "segment energy differ at tile $tile")
             assertEquals(played.air.mixtureAt(tile), back.air.mixtureAt(tile), "air differs at tile $tile")
         }
     }
@@ -432,7 +432,7 @@ class SaveTest {
         )
         assertEquals(Grid(6, 4), state.grid)
         assertEquals(Direction.Up, (state[8] as Sensor).facing)
-        // The save says 250 and 250, and a version-1 save is written in grams — so what comes back is
+        // The save says 250 and 250, and a version-1 save is written in mass — so what comes back is
         // half a kilogram in whatever this build's unit is, not the digits on the page.
         assertEquals(500L * Budget.GRAM, state.rails[10]?.held?.mass)
         assertTrue(state.rails[9]!!.linkedTo(Direction.Right))
@@ -447,7 +447,7 @@ class SaveTest {
 
     @Test
     fun `a version 1 save keeps the throughput it was built with`() {
-        // Version 1 wrote grams per *second* at four ticks a second. Read as per-tick it would run
+        // Version 1 wrote mass per *second* at four ticks a second. Read as per-tick it would run
         // the whole factory four times too fast, which is a save that loads and is still wrong.
         val v1 = """
             outofspace 1
@@ -455,14 +455,14 @@ class SaveTest {
             machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
         """.trimIndent() + "\n"
         val extractor = assertNotNull(Save.read(v1).machines[20] as? Extractor)
-        assertEquals(250L * Budget.GRAM, extractor.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
+        assertEquals(250L * Budget.GRAM, extractor.massPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
     }
 
     @Test
     fun `a version 1 save with no rate at all gets the current default`() {
         val v1 = "outofspace 1\ngrid 8 6\nmachine 20 Miner facing=Right ore=Iron=1000\n"
         val extractor = assertNotNull(Save.read(v1).machines[20] as? Extractor)
-        assertEquals(Extractor(Direction.Right).gramsPerTick, extractor.gramsPerTick)
+        assertEquals(Extractor(Direction.Right).massPerTick, extractor.massPerTick)
     }
 
     @Test

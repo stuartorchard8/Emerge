@@ -22,7 +22,7 @@ object Temperature {
  * physical property — steel is iron with a little carbon in it, firebrick is silica and alumina —
  * so it is simultaneously what a thing weighs, what it costs to warm, what it costs to build and
  * what it yields when broken up. Density and specific heat are **derived** from it and are not
- * declared anywhere: see [gramsPerTileOf] and [specificHeatOf]. The species table reproduces every
+ * declared anywhere: see [massPerTileOf] and [specificHeatOf]. The species table reproduces every
  * one of the specific heats this enum used to state by hand, to within a few per cent, which is the
  * evidence that the decomposition is the real one and not a fit.
  *
@@ -60,7 +60,7 @@ enum class Material(
     ;
 
     /** What a full tile of this stuff weighs, at its real density. */
-    val gramsPerTile: Long get() = gramsPerTileOf(composition)
+    val massPerTile: Long get() = massPerTileOf(composition)
 
     /** Millijoules per kelvin for a full tile of it. */
     val capacityPerTile: Long get() = capacityPerTileOf(composition)
@@ -115,7 +115,7 @@ enum class Material(
  */
 fun seriesConductance(a: Long, b: Long): Long {
     val sum = a + b
-    // `2ab/(a+b)` multiplies two conductances together, and a conductance is joules per kelvin per
+    // `2ab/(a+b)` multiplies two conductances together, and a conductance is energy per kelvin per
     // tick — mass-dimensioned, so the product is **quadratic in the mass unit**. A steel hull plate
     // conducts about 1.2e11 at one microgram per unit and the product reaches 2.9e22, which wraps and
     // takes the whole solid-heat solver with it: every contact in the vessel reads a nonsense
@@ -155,7 +155,7 @@ val Conduit.material: Material
  * This is that fraction, stated where it belongs: on the machine, because it is a fact about how
  * the machine is built and not about the steel it is built from.
  *
- * It replaces the old deflated `gramsPerTile`, which was the same idea kept implicitly and in the
+ * It replaces the old deflated `massPerTile`, which was the same idea kept implicitly and in the
  * wrong place — a density that quietly meant "and it is mostly empty", which is why an iron rail
  * used to be five times lighter *per unit of material* than a steel plate.
  *
@@ -196,7 +196,7 @@ val Conduit.fillPermille: Int
     }
 
 /** What one tile of this kind weighs: its material's real density, at the fraction it fills. */
-val MachineKind.gramsPerTile: Long get() = material.gramsPerTile * fillPermille / 1_000L
+val MachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
 
 /** Millijoules per kelvin for one tile of it — the same fill, the same fact. */
 val MachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
@@ -205,7 +205,7 @@ val MachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPer
 val MachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
 
 /** What one tile of bare conduit weighs. */
-val Conduit.gramsPerTile: Long get() = material.gramsPerTile * fillPermille / 1_000L
+val Conduit.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
 
 /** Millijoules per kelvin for one tile of bare conduit. */
 val Conduit.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
@@ -236,4 +236,4 @@ val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_K
  * the number those will read when they land; it is derived, so there is no second table to forget.
  */
 fun billOfMaterials(kind: MachineKind): Mixture =
-    kind.material.composition.scaledTo(kind.gramsPerTile * kind.thermalTiles)
+    kind.material.composition.scaledTo(kind.massPerTile * kind.thermalTiles)

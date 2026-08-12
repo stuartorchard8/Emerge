@@ -71,7 +71,7 @@ class GaugeTest {
 
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         val s = run(line(ore), 20)
         val gauge = gaugeOf(s)
         assertEquals(Species.Iron, gauge.lastDominant, "iron is the largest single component")
@@ -81,25 +81,25 @@ class GaugeTest {
 
     @Test
     fun `the reading persists after the packet has gone, so an idle line still reads`() {
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         val s = run(line(ore), 120)
         val gauge = gaugeOf(s)
         assertEquals(null, gauge.held, "the packet moved on")
         assertEquals(410, gauge.lastPurity, "but the reading stayed")
-        assertEquals(Capacity.PACKET_GRAMS, s.stockpile.totalMass, "and it was passed through, not consumed")
+        assertEquals(Capacity.PACKET_MASS, s.stockpile.totalMass, "and it was passed through, not consumed")
     }
 
     @Test
     fun `a gauge measures without taking, so it costs the line nothing`() {
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4 * Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4 * Capacity.PACKET_MASS))
         val s = run(line(ore), 120)
-        assertEquals(4 * Capacity.PACKET_GRAMS, s.stockpile.totalMass, "every gram arrived at the far end")
-        assertEquals(s.extractedMass + 4 * Capacity.PACKET_GRAMS, s.inTransitMass + s.ventedMass, "and none went missing")
+        assertEquals(4 * Capacity.PACKET_MASS, s.stockpile.totalMass, "every gram arrived at the far end")
+        assertEquals(s.extractedMass + 4 * Capacity.PACKET_MASS, s.inTransitMass + s.ventedMass, "and none went missing")
     }
 
     @Test
     fun `a gauge puts its purity on the wire beneath it`() {
-        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_GRAMS))
+        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS))
         val s = run(line(pure), 20)
         assertEquals(1000, s.signals.at(s.grid.index(GAUGE_TILE_X, 2)), "pure metal reads 100%")
     }
@@ -110,7 +110,7 @@ class GaugeTest {
      */
     @Test
     fun `a gauge with no wire under it drives nothing`() {
-        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_GRAMS))
+        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS))
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
@@ -161,13 +161,13 @@ class GaugeTest {
     fun `a processor names each of its buffers separately`() {
         val p = Processor(
             Direction.Right,
-            input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_GRAMS)),
-            product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_GRAMS / 2)),
-            tailings = Resource(Form.Ore, Mixture.of(Species.Silica to Capacity.PACKET_GRAMS * 3 / 10)),
+            input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS)),
+            product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2)),
+            tailings = Resource(Form.Ore, Mixture.of(Species.Silica to Capacity.PACKET_MASS * 3 / 10)),
         )
         val rows = contentsBreakdown(p)
         assertEquals(listOf("INPUT", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
-        assertEquals(Capacity.PACKET_GRAMS * 3 / 10, rows[2].second.mass, "knowing which buffer is stuck is the whole point")
+        assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[2].second.mass, "knowing which buffer is stuck is the whole point")
     }
 
     @Test
@@ -178,7 +178,7 @@ class GaugeTest {
 
     @Test
     fun `a packet on the track is readable, which is what the gauge was invented for`() {
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         // Conduit steps, not seconds: the line is one packet long and six tiles end to end, so the
         // window where anything is on it at all is a handful of advances wide. `12` used to be two
         // advances and is now twelve, by which time the lone packet is in the far tank.

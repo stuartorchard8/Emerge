@@ -132,7 +132,7 @@ fun merge(a: Resource, b: Resource): Resource? =
     if (a.form != b.form) null else Resource(a.form, a.mixture + b.mixture)
 
 /**
- * Splits [amount] grams off [input], proportionally across its species — what a belt, a grabber or
+ * Splits [amount] mass off [input], proportionally across its species — what a belt, a grabber or
  * a machine input buffer does. Returns `(taken, left)`, which always sum back to [input].
  */
 fun takeFrom(input: Resource, amount: Long): Pair<Resource, Resource> {

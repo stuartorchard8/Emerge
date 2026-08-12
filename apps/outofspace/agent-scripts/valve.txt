@@ -28,12 +28,12 @@ camera zoom 28
 shot valve
 
 echo --- the pipes start empty and the valve is the only way in
-expect pipeGrams > 0
+expect pipeMass > 0
 expect airBalance = 0
 
 echo --- gas crosses, runs along the plumbing, and the shared ledger still closes
 run 300
-expect pipeGrams > 400
+expect pipeMass > 400
 expect airVented = 0
 expect airBalance = 0
 expect airHeatBalance = 0

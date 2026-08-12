@@ -82,14 +82,14 @@ sealed interface FluidlabEdit {
     /** Put a wall at [tile], or take one away. */
     data class SetWall(val tile: Int, val present: Boolean) : FluidlabEdit
 
-    /** Add [grams] of [species] at [tile], carrying enough energy to sit at [kelvin]. */
-    data class Inject(val tile: Int, val species: Species, val grams: Long, val kelvin: Int) : FluidlabEdit
+    /** Add [mass] of [species] at [tile], carrying enough energy to sit at [kelvin]. */
+    data class Inject(val tile: Int, val species: Species, val mass: Long, val kelvin: Int) : FluidlabEdit
 
     /** Take all the air out of [tile] — an instant local vacuum. */
     data class Evacuate(val tile: Int) : FluidlabEdit
 
-    /** Add [joules] to [tile]'s air without adding any mass. Negative cools it. */
-    data class Heat(val tile: Int, val joules: Long) : FluidlabEdit
+    /** Add [energy] to [tile]'s air without adding any mass. Negative cools it. */
+    data class Heat(val tile: Int, val energy: Long) : FluidlabEdit
 }
 
 data class FluidlabInput(
@@ -122,16 +122,16 @@ data class FluidlabState(
 ) {
     /** Total gas mass in the world. With no venting this must not change — the first thing to check. */
     fun totalGrams(): Long {
-        val grams = air.copyGrams()
+        val mass = air.copyGrams()
         var sum = 0L
-        for (g in grams) sum += g
+        for (g in mass) sum += g
         return sum
     }
 
     fun totalJoules(): Long {
-        val joules = air.copyJoules()
+        val energy = air.copyJoules()
         var sum = 0L
-        for (j in joules) sum += j
+        for (j in energy) sum += j
         return sum
     }
 
@@ -195,8 +195,8 @@ object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput
         inputs: Map<PlayerId, FluidlabInput>,
     ): FluidlabState {
         val grid = state.grid
-        val grams = state.air.copyGrams()
-        val joules = state.air.copyJoules()
+        val mass = state.air.copyGrams()
+        val energy = state.air.copyJoules()
         val mx = state.momentumX.copyOf()
         val my = state.momentumY.copyOf()
         var walls = state.walls
@@ -213,24 +213,24 @@ object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput
                     }
 
                     is FluidlabEdit.Inject -> {
-                        if (edit.tile !in 0 until grid.size || edit.grams <= 0L) continue
-                        grams[edit.tile * Species.COUNT + edit.species.ordinal] += edit.grams
+                        if (edit.tile !in 0 until grid.size || edit.mass <= 0L) continue
+                        mass[edit.tile * Species.COUNT + edit.species.ordinal] += edit.mass
                         // Energy derived from the mass so the gas arrives at the stated temperature
-                        // rather than at whatever the tile's existing joules imply. Capacity is read
+                        // rather than at whatever the tile's existing energy imply. Capacity is read
                         // *after* the mass lands, which is what makes the two agree.
-                        joules[edit.tile] = gasCapacityAt(grams, edit.tile) * edit.kelvin
+                        energy[edit.tile] = gasCapacityAt(mass, edit.tile) * edit.kelvin
                     }
 
                     is FluidlabEdit.Evacuate -> {
                         if (edit.tile !in 0 until grid.size) continue
                         val base = edit.tile * Species.COUNT
-                        for (s in Species.ALL) grams[base + s.ordinal] = 0L
-                        joules[edit.tile] = 0L
+                        for (s in Species.ALL) mass[base + s.ordinal] = 0L
+                        energy[edit.tile] = 0L
                     }
 
                     is FluidlabEdit.Heat -> {
                         if (edit.tile !in 0 until grid.size) continue
-                        joules[edit.tile] = (joules[edit.tile] + edit.joules).coerceAtLeast(0L)
+                        energy[edit.tile] = (energy[edit.tile] + edit.energy).coerceAtLeast(0L)
                     }
                 }
             }
@@ -241,11 +241,11 @@ object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput
         val step = stepFluid(
             edges = edges,
             apertures = ApertureField.derive(edges, structure),
-            grams = grams,
+            mass = mass,
             mx = mx,
             my = my,
             gravity = cfg.gravity,
-            gasJoules = joules,
+            gasJoules = energy,
             volumes = null,
             latentHeat = cfg.latentHeat,
         )

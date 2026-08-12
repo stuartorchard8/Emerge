@@ -59,20 +59,20 @@ class PumpTest {
 
     private fun pipeMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.ALL) sum += s.pipeAir.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
     }
 
     private fun roomMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.ALL) sum += s.air.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.air.massOf(tile, sp)
         return sum
     }
 
     /** ⚠️ The energy half is **PARKED** for the unit rescale — see [EnergyLedgers]. Mass is not. */
     private fun assertBalanced(s: VesselState, what: String) {
         assertEquals(
-            s.baselineAirGrams,
+            s.baselineAirMass,
             s.atmosphereMass + s.airVentedMass,
             "$what: rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
@@ -91,7 +91,7 @@ class PumpTest {
         val start = pumped()
         val after = run(start, 200)
 
-        assertTrue(after.pipeAir.totalGrams > 0L, "the pump moved nothing")
+        assertTrue(after.pipeAir.totalMass > 0L, "the pump moved nothing")
         assertTrue(pipeMass(after, grid.index(13, 6)) > 0L, "gas was pumped in but never ran along the pipe")
         assertBalanced(after, "a pump filling a pipe")
     }
@@ -159,12 +159,12 @@ class PumpTest {
     fun `a pump with no pipe beneath it has nowhere to push`() {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
         s = edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pump, Direction.Up))
-        val roomBefore = s.air.totalGrams
+        val roomBefore = s.air.totalMass
 
         val after = run(s, 200)
 
-        assertEquals(0L, after.pipeAir.totalGrams, "gas was pumped into plumbing that is not there")
-        assertEquals(roomBefore, after.air.totalGrams, "the room lost gas to nowhere")
+        assertEquals(0L, after.pipeAir.totalMass, "gas was pumped into plumbing that is not there")
+        assertEquals(roomBefore, after.air.totalMass, "the room lost gas to nowhere")
         assertBalanced(after, "a pump with no pipe")
     }
 

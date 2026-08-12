@@ -24,7 +24,7 @@ data class GrowResult(val state: VesselState, val dx: Int, val dy: Int, val from
  *
  * The counterpart of [fitToFrame]: that one states the grid exactly and is only safe at moments where
  * nothing holds a coordinate; this one is safe during play, because it only ever adds vacuum tiles,
- * which carry no grams, no joules and no momentum, so no ledger and no baseline moves.
+ * which carry no mass, no energy and no momentum, so no ledger and no baseline moves.
  *
  * **Any of the four edges.** An earlier draft grew only on `+x`/`+y`, on the grounds that leaving
  * the origin alone left written down coordinates valid. It does not: `index = y * width + x`, so a

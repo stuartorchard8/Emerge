@@ -58,8 +58,8 @@ fun applyPumps(
         val share = Share(taken, roomMoles)
 
         val moved = handOver(share, demand.from, demand.into, roomGrams, roomJoules, pipeGrams, pipeJoules)
-        movedGrams += moved.grams
-        movedJoules += moved.joules
+        movedGrams += moved.mass
+        movedJoules += moved.energy
 
         vesselX += absorb(share, roomMx, edges.leftEdgeOf(demand.from), edges.rightEdgeOf(demand.from))
         vesselY += absorb(share, roomMy, edges.upEdgeOf(demand.from), edges.downEdgeOf(demand.from))

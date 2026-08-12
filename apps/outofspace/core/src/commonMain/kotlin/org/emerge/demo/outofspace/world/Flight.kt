@@ -5,9 +5,9 @@ import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
- * Vessel flight: hull + structures (not gas). Momentum = vesselImpulse, mass = vesselMassGrams, v = p/m.
+ * Vessel flight: hull + structures (not gas). Momentum = vesselImpulse, mass = vesselMass, v = p/m.
  * Two systems (ship + gas), two momenta, one ledger (ThrustBalanceTest). Position = only true new state.
- * ⚠️ Spending propellant doesn't lighten ship (gas not in vesselMassGrams; fuel tank arrival = I).
+ * ⚠️ Spending propellant doesn't lighten ship (gas not in vesselMass; fuel tank arrival = I).
  * Thrust felt before travel: sloshing air → hull recoil (bounded, sealed ship jitters not departs).
  */
 object Flight {
@@ -24,17 +24,17 @@ object Flight {
  * Frame acceleration (Frac units): deck gravity minus vessel acceleration = what gas/rocks feel.
  * Two consumers: experiencedGravity (subtracts from plating), feltBy (hands to rock without plating).
  */
-fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, massGrams: Long): Frac2 =
-    if (massGrams <= 0L) Frac2(Frac(0L), Frac(0L))
+fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
+    if (mass <= 0L) Frac2(Frac(0L), Frac(0L))
     else Frac2(
-        Frac(scaledRatio(netImpulseX, massGrams, Flight.FRAC_ONE)),
-        Frac(scaledRatio(netImpulseY, massGrams, Flight.FRAC_ONE)),
+        Frac(scaledRatio(netImpulseX, mass, Flight.FRAC_ONE)),
+        Frac(scaledRatio(netImpulseY, mass, Flight.FRAC_ONE)),
     )
 
 /**
- * Everything the hull is made of, in grams.
+ * Everything the hull is made of, in mass.
  *
- * From [Material.gramsPerTile] and [MachineKind.thermalTiles] — the same two numbers the heat model
+ * From [Material.massPerTile] and [MachineKind.thermalTiles] — the same two numbers the heat model
  * already uses to work out what a thing costs to warm, because they are the same fact about the same
  * object. A furnace is twenty-five tiles of firebrick whether you are asking what it weighs or what
  * it holds, and deriving both from one place is what stops a vessel that is heavy for heat and light
@@ -45,16 +45,16 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, massGrams: Long): Fr
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */
-fun structureMassGrams(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
+fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
     var sum = 0L
     for (m in machines) {
         if (m == null) continue
-        sum += m.kind.gramsPerTile * m.kind.thermalTiles
+        sum += m.kind.massPerTile * m.kind.thermalTiles
     }
-    conduits.all { conduit, _, _ -> sum += conduit.gramsPerTile }
+    conduits.all { conduit, _, _ -> sum += conduit.massPerTile }
     for (b in bridges) {
         if (b == null) continue
-        sum += b.kind.gramsPerTile * MachineKind.Bridge.thermalTiles
+        sum += b.kind.massPerTile * MachineKind.Bridge.thermalTiles
     }
     return sum
 }
@@ -68,7 +68,7 @@ fun structureMassGrams(machines: List<Machine?>, conduits: Conduits, bridges: Li
  * is aboard" would disagree the first time a buffer was added to one of them, and the disagreement
  * would look like the ship getting heavier for no reason.
  */
-fun cargoGrams(
+fun cargoMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
@@ -81,11 +81,11 @@ fun cargoGrams(
 }
 
 /** What a thrust is divided by: the fabric plus what it carries. See [Flight] for why not the gas. */
-fun vesselMassGrams(
+fun vesselMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-): Long = structureMassGrams(machines, conduits, bridges) + cargoGrams(machines, conduits, bridges)
+): Long = structureMass(machines, conduits, bridges) + cargoMass(machines, conduits, bridges)
 
 /**
  * What the inside of an accelerating vessel feels: the plating's own gravity, less the acceleration.
@@ -114,8 +114,8 @@ fun vesselMassGrams(
   * [downDirection] rounds off-axis gravity to lean axis (prevents frozen piles under diagonal plating).
   * ⚠️ Thrust→gravity→pressure→thrust loop: self-limiting (gas runs out), converges (undelivered flat at −163).
   */
-fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long, massGrams: Long): Frac2 {
-    if (massGrams <= 0L) return deckGravity
-    val a = frameAcceleration(netImpulseX, netImpulseY, massGrams)
+fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 {
+    if (mass <= 0L) return deckGravity
+    val a = frameAcceleration(netImpulseX, netImpulseY, mass)
     return Frac2(Frac(deckGravity.x.raw - a.x.raw), Frac(deckGravity.y.raw - a.y.raw))
 }

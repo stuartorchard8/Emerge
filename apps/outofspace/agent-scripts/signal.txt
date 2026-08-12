@@ -59,7 +59,7 @@ echo --- and the ship is under way, because gas left through the starboard wall
 #
 # Two readings that look like misses and are not. `airVented` stays 0: it counts gas leaving the
 # *grid*, and 40 ticks of plume is still crossing the void outside the hull — breach.txt learned the
-# same thing. `airGrams` barely moves for the same reason: the gas has left the room but not the
+# same thing. `airMass` barely moves for the same reason: the gas has left the room but not the
 # world, and this counts both.
 # `impulseX` is the reaction, so venting to starboard drives the ship to port and this goes negative.
 # That single number is the flight loop: a finger on a key ends up as momentum in the hull.

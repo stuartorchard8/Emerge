@@ -35,7 +35,7 @@ class PressureForceTest {
         val grid = Grid(w + 2, h + 2)
         val edges = EdgeGrid(grid)
         val apertures: ApertureField
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
 
@@ -48,17 +48,17 @@ class PressureForceTest {
         }
 
         fun air(tile: Int, share: Long = 1L) {
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
         }
 
         fun empty(tile: Int) {
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = 0L
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = 0L
         }
 
         fun run() = applyPressureForce(
             edges, apertures, mx, my,
-            tileMass(grid.size, grams),
-            tilePressure(grid.size, grams),
+            tileMass(grid.size, mass),
+            tilePressure(grid.size, mass),
         )
 
         fun totalX(): Long = mx.sum()
@@ -122,8 +122,8 @@ class PressureForceTest {
 
         val result = applyPressureForce(
             room.edges, breached, room.mx, room.my,
-            tileMass(room.grid.size, room.grams),
-            tilePressure(room.grid.size, room.grams),
+            tileMass(room.grid.size, room.mass),
+            tilePressure(room.grid.size, room.mass),
         )
 
         // Gas heads for the hole, which is toward -x.

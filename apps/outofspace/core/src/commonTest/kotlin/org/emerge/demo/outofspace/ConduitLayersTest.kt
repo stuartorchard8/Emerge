@@ -140,13 +140,13 @@ class ConduitLayersTest {
                 conduits = s.conduits.with(
                     Conduit.Rail,
                     s.conduits[Conduit.Rail].toMutableList()
-                        .also { it[hotEnd] = hot.copy(joules = hot.joules * 3) },
+                        .also { it[hotEnd] = hot.copy(energy = hot.energy * 3) },
                 ),
             )
             repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
             val probe = s.conduits.at(Conduit.Pipe, grid.index(5, pipeFromY))!!
-            return (probe.joules / Conduit.Pipe.capacityPerTile).toInt()
+            return (probe.energy / Conduit.Pipe.capacityPerTile).toInt()
         }
 
         // Crossing the rail at (5,3): the two share that tile, so heat gets across.
@@ -172,13 +172,13 @@ class ConduitLayersTest {
         s = s.copy(
             conduits = s.conduits.with(
                 Conduit.Rail,
-                s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd] = hot.copy(joules = hot.joules * 3) },
+                s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd] = hot.copy(energy = hot.energy * 3) },
             ),
         )
         repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         val far = s.conduits.at(Conduit.Rail, grid.index(7, 3))!!
-        val kelvin = (far.joules / Conduit.Rail.capacityPerTile).toInt()
+        val kelvin = (far.energy / Conduit.Rail.capacityPerTile).toInt()
         assertTrue(kelvin > Temperature.AMBIENT_KELVIN, "heat did not travel along the run (${kelvin}K)")
     }
 }

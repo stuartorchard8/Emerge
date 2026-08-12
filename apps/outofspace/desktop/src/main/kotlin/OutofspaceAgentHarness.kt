@@ -211,7 +211,7 @@ object OutofspaceAgentHarness {
                     }
                     controller.injectTile = -1
                     println("[agent] injected ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
-                        "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
+                        "${state.injectedAirMass}g admitted, airBalance ${state.airBalance}")
                 }
                 // The water injector, same shape as `inject` but a liquid — the only way to get one
                 // into the world. Arrives cold on purpose; see Edit.WATER_INJECT_KELVIN.
@@ -227,7 +227,7 @@ object OutofspaceAgentHarness {
                     controller.injectTile = -1
                     controller.tool = was
                     println("[agent] watered ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
-                        "${state.injectedAirGrams}g admitted, airBalance ${state.airBalance}")
+                        "${state.injectedAirMass}g admitted, airBalance ${state.airBalance}")
                 }
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
                 // `wire <x> <y> <ALWAYS|WIRE> <permille>` — appends one RUN term, which is the whole
@@ -511,7 +511,7 @@ object OutofspaceAgentHarness {
                     val name = what.substringAfter(':')
                     val sp = Species.ALL.firstOrNull { it.name.equals(name, true) }
                         ?: error("unknown species '$name' (have ${Species.ALL.map { it.name }})")
-                    ({ tile: Int -> state.air.gramsOf(tile, sp).toDouble() })
+                    ({ tile: Int -> state.air.massOf(tile, sp).toDouble() })
                 } else error(
                     "field pressure|density|speed|heat|airtemp|air|pipe|pipetemp|pipepressure|" +
                         "species:<Name>|flow|build"
@@ -641,7 +641,7 @@ object OutofspaceAgentHarness {
          */
         private fun trend(samples: Int, ticksEach: Int) {
             println("[agent] trend: %8s %12s %10s %12s %10s %10s".format(
-                "tick", "airGrams", "dAir", "storedJ", "peakSpd"))
+                "tick", "airMass", "dAir", "storedJ", "peakSpd"))
             var lastAir = state.atmosphereMass
             repeat(samples) {
                 repeat(ticksEach) { controller.stepOnce() }
@@ -650,7 +650,7 @@ object OutofspaceAgentHarness {
                     controller.tick, air, air - lastAir, state.storedEnergy, state.flow.peakSpeed()))
                 lastAir = air
             }
-            println("[agent]   baseline air ${state.baselineAirGrams}g, vented ${state.airVentedMass}g " +
+            println("[agent]   baseline air ${state.baselineAirMass}g, vented ${state.airVentedMass}g " +
                 "(balance ${state.airBalance}g)")
         }
 
@@ -663,33 +663,33 @@ object OutofspaceAgentHarness {
             "originX" -> state.positionX.toDouble() / Flight.PER_TILE
             "originY" -> state.positionY.toDouble() / Flight.PER_TILE
             // Rooms and pipes together, because they share one ledger and `airBalance` below is
-            // that ledger. `pipeGrams` separates them for a script that cares which side gas is on.
-            "airGrams" -> state.atmosphereMass.toDouble()
-            "pipeGrams" -> state.pipeAir.totalGrams.toDouble()
+            // that ledger. `pipeMass` separates them for a script that cares which side gas is on.
+            "airMass" -> state.atmosphereMass.toDouble()
+            "pipeMass" -> state.pipeAir.totalMass.toDouble()
             "airVented" -> state.airVentedMass.toDouble()
             // The flight loop's own number: what the gas leaving has pushed the ship by. Note it
             // counts the *reaction*, so venting to starboard makes this negative.
             "impulseX" -> state.vesselImpulseX.toDouble()
             "impulseY" -> state.vesselImpulseY.toDouble()
-            "injectedAir" -> state.injectedAirGrams.toDouble()
+            "injectedAir" -> state.injectedAirMass.toDouble()
             "airBalance" -> state.airBalance.toDouble()
-            "extractedGrams" -> state.extractedMass.toDouble()
-            "ventedGrams" -> state.ventedMass.toDouble()
-            "inTransitGrams" -> state.inTransitMass.toDouble()
-            "stockpileGrams" -> state.stockpile.totalMass.toDouble()
-            "storedJoules" -> state.storedEnergy.toDouble()
-            "generatedJoules" -> state.generatedEnergy.toDouble()
-            "radiatedJoules" -> state.radiatedEnergy.toDouble()
-            "solidToAirJoules" -> state.solidToAirEnergy.toDouble()
+            "extractedMass" -> state.extractedMass.toDouble()
+            "ventedMass" -> state.ventedMass.toDouble()
+            "inTransitMass" -> state.inTransitMass.toDouble()
+            "stockpileMass" -> state.stockpile.totalMass.toDouble()
+            "storedEnergy" -> state.storedEnergy.toDouble()
+            "generatedEnergy" -> state.generatedEnergy.toDouble()
+            "radiatedEnergy" -> state.radiatedEnergy.toDouble()
+            "solidToAirEnergy" -> state.solidToAirEnergy.toDouble()
             // The whole solid balance as one number, so a script can `expect heatBalance == 0`
-            // rather than reassembling five terms. Zero, always — see [VesselState.baselineJoules].
+            // rather than reassembling five terms. Zero, always — see [VesselState.baselineEnergy].
             "heatBalance" -> (
                 state.storedEnergy + state.radiatedEnergy + state.solidToAirEnergy -
-                    state.generatedEnergy - state.acquiredJoules - state.insertedJoules - state.baselineJoules
+                    state.generatedEnergy - state.acquiredEnergy - state.insertedEnergy - state.baselineEnergy
                 ).toDouble()
-            "airHeatBalance" -> state.airJouleBalance.toDouble()
+            "airHeatBalance" -> state.airEnergyBalance.toDouble()
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
-            // -- and the right thing for a script to assert, since `extractedGrams` on its own is a fact
+            // -- and the right thing for a script to assert, since `extractedMass` on its own is a fact
             // about how long the starter vessel's extractor has been running.
             "massBalance" -> (state.inTransitMass + state.ventedMass - state.extractedMass).toDouble()
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
@@ -735,7 +735,7 @@ object OutofspaceAgentHarness {
                     state.bodyImpulseY
                 ).toDouble()
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
-            "massGrams" -> state.mass.toDouble()
+            "mass" -> state.mass.toDouble()
             "thrustX" -> state.netImpulseX.toDouble()
             "thrustY" -> state.netImpulseY.toDouble()
             "velocityX" -> state.velocityX.toDouble() / Flight.PER_TILE
@@ -750,15 +750,15 @@ object OutofspaceAgentHarness {
 
         private val FIELDS = listOf(
             "tick", "machines", "gridWidth", "gridHeight", "originX", "originY",
-            "airGrams", "pipeGrams", "airVented", "airBalance", "extractedGrams",
-            "ventedGrams", "inTransitGrams", "stockpileGrams", "storedJoules", "generatedJoules",
-            "radiatedJoules", "solidToAirJoules", "heatBalance", "airHeatBalance",
-            "massBalance", "rockCount", "rockGrams",
+            "airMass", "pipeMass", "airVented", "airBalance", "extractedMass",
+            "ventedMass", "inTransitMass", "stockpileMass", "storedEnergy", "generatedEnergy",
+            "radiatedEnergy", "solidToAirEnergy", "heatBalance", "airHeatBalance",
+            "massBalance", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",
             "rockImpulseX", "rockImpulseY", "momentumBalance",
-            "massGrams", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
+            "mass", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
             "gravityX", "gravityY",
         )
 

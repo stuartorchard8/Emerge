@@ -6,7 +6,7 @@ package org.emerge.demo.outofspace.world
  * Diffusion spreads a trace of gas into every tile it can reach, and integers mean that trace never
  * quite reaches zero. Every readout that tested `> 0` therefore reported it: a vacuum tile tinted as
  * air because it held a gram, a "0% atm" pressure row, a composition line reading `OXYG 0%`, and —
- * loudest of all — a full-length flow arrow, because [FlowField.speedAt] is grams moved over grams
+ * loudest of all — a full-length flow arrow, because [FlowField.speedAt] is mass moved over mass
  * held, so half a gram leaving a one-gram tile is half a tile per tick.
  *
  * None of that is wrong; all of it is noise, and it drowns the quantities that matter. So the
@@ -29,21 +29,21 @@ object Negligible {
     const val PER_MILLE: Long = 5L
 
     /** Gas mass in a tile below which the tile reads as empty. */
-    val GRAMS: Long = AMBIENT_TILE_GRAMS * PER_MILLE / 1000L
+    val MASS: Long = AMBIENT_TILE_MASS * PER_MILLE / 1000L
 
     /** Pressure (millimoles) below which the tile reads as vacuum. */
     val MILLIMOLES: Long = AMBIENT_PRESSURE * PER_MILLE / 1000L
 
     /**
-     * Net grams per tick across a tile below which the flow reads as still.
+     * Net mass per tick across a tile below which the flow reads as still.
      *
      * Held to the same fraction as everything else rather than a smaller one: a flow worth drawing an
      * arrow for is a flow that would move a visible share of a tile's air within a few hundred ticks.
      */
-    val FLUX_GRAMS: Long = GRAMS
+    val FLUX_MASS: Long = MASS
 
     /** Is there so little gas here that the tile should read as empty? */
-    fun gas(grams: Long): Boolean = grams < GRAMS
+    fun gas(mass: Long): Boolean = mass < MASS
 
     /** Is the pressure here low enough that the tile should read as vacuum? */
     fun pressure(millimoles: Long): Boolean = millimoles < MILLIMOLES
@@ -53,11 +53,11 @@ object Negligible {
      * the gas being moved is a trace? Both are needed: the speed is a ratio, so a trace tile can
      * report any speed at all.
      */
-    fun flow(fluxX: Long, fluxY: Long, tileGrams: Long): Boolean {
-        if (gas(tileGrams)) return true
+    fun flow(fluxX: Long, fluxY: Long, tileMass: Long): Boolean {
+        if (gas(tileMass)) return true
         val ax = if (fluxX < 0L) -fluxX else fluxX
         val ay = if (fluxY < 0L) -fluxY else fluxY
-        return ax + ay < FLUX_GRAMS
+        return ax + ay < FLUX_MASS
     }
 
     /**

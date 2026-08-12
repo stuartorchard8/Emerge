@@ -35,14 +35,14 @@ class AdvectionResult(val flux: MassFlux, val ventedGrams: Long)
  * Asks first (computes all fluxes against one snapshot), pays after (applies in a single pass).
  * Over-subscribed cells are apportioned fairly. Space is a sink; vented mass is reported.
  *
- * [subSteps] cuts each flux proportionally for CFL safety. [grams] edited in place.
+ * [subSteps] cuts each flux proportionally for CFL safety. [mass] edited in place.
  */
 fun advectMass(
     edges: EdgeGrid,
     apertures: ApertureField,
     momentum: MomentumField,
-    grams: LongArray,
-    tileGrams: LongArray = tileMass(edges.grid.size, grams),
+    mass: LongArray,
+    tileGrams: LongArray = tileMass(edges.grid.size, mass),
     subSteps: Int = 1,
 ): AdvectionResult {
     val grid = edges.grid
@@ -80,14 +80,14 @@ fun advectMass(
         if (amount == 0L) continue
         val donor = if (amount > 0L) edges.xEdgeBefore(e) else edges.xEdgeAfter(e)
         val acceptor = if (amount > 0L) edges.xEdgeAfter(e) else edges.xEdgeBefore(e)
-        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount)
+        vented += moveGas(mass, donor, acceptor, if (amount > 0L) amount else -amount)
     }
     for (e in 0 until edges.yEdgeCount) {
         val amount = fy[e]
         if (amount == 0L) continue
         val donor = if (amount > 0L) edges.yEdgeBefore(e) else edges.yEdgeAfter(e)
         val acceptor = if (amount > 0L) edges.yEdgeAfter(e) else edges.yEdgeBefore(e)
-        vented += moveGas(grams, donor, acceptor, if (amount > 0L) amount else -amount)
+        vented += moveGas(mass, donor, acceptor, if (amount > 0L) amount else -amount)
     }
 
     return AdvectionResult(MassFlux(fx, fy), vented)
@@ -95,7 +95,7 @@ fun advectMass(
 
 /**
  * Grams across a face: density × speed × aperture / subSteps. Speed in Frac raw units.
- * Intermediate bounded by grams × 2^31 (tile holds ~kilogram, far from overflow).
+ * Intermediate bounded by mass × 2^31 (tile holds ~kilogram, far from overflow).
  */
 private fun fluxAcross(donorGrams: Long, speedRaw: Long, aperture: Int, subSteps: Int): Long {
     if (donorGrams <= 0L) return 0L
@@ -158,25 +158,25 @@ private fun limitToWhatIsThere(
 }
 
 /**
- * Moves [amount] grams as a proportional sample of the donor's mix. Acceptor -1 = space (vented).
+ * Moves [amount] mass as a proportional sample of the donor's mix. Acceptor -1 = space (vented).
  */
 private fun moveGas(
-    grams: LongArray,
+    mass: LongArray,
     donor: Int,
     acceptor: Int,
     amount: Long,
 ): Long {
     val donorBase = donor * Species.COUNT
     val weights = LongArray(Species.COUNT)
-    for (s in Species.ALL) weights[s.ordinal] = grams[donorBase + s.ordinal]
+    for (s in Species.ALL) weights[s.ordinal] = mass[donorBase + s.ordinal]
 
     val share = apportion(weights, amount)
     var vented = 0L
     for (s in Species.ALL) {
-        val moved = minOf(share[s.ordinal], grams[donorBase + s.ordinal])
+        val moved = minOf(share[s.ordinal], mass[donorBase + s.ordinal])
         if (moved <= 0L) continue
-        grams[donorBase + s.ordinal] -= moved
-        if (acceptor < 0) vented += moved else grams[acceptor * Species.COUNT + s.ordinal] += moved
+        mass[donorBase + s.ordinal] -= moved
+        if (acceptor < 0) vented += moved else mass[acceptor * Species.COUNT + s.ordinal] += moved
     }
     return vented
 }

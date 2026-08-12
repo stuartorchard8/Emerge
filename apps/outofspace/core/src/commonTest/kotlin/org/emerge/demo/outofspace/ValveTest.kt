@@ -65,13 +65,13 @@ class ValveTest {
 
     private fun pipeMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.ALL) sum += s.pipeAir.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
     }
 
     private fun roomMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.ALL) sum += s.air.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.air.massOf(tile, sp)
         return sum
     }
 
@@ -88,7 +88,7 @@ class ValveTest {
      */
     private fun assertBalanced(s: VesselState, what: String) {
         assertEquals(
-            s.baselineAirGrams,
+            s.baselineAirMass,
             s.atmosphereMass + s.airVentedMass,
             "$what: rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
@@ -107,14 +107,14 @@ class ValveTest {
         val start = plumbed()
         // Not zero: placing the valve is an edit, and an edit runs a tick, so one tick's worth has
         // already crossed by the time the fixture hands the world back. That is the valve working.
-        val first = start.pipeAir.totalGrams
+        val first = start.pipeAir.totalMass
         assertTrue(first > 0L, "nothing crossed the valve on the tick it was opened")
 
         val after = run(start, 200)
 
         assertTrue(
-            after.pipeAir.totalGrams > first * 4,
-            "the pipe took ${first}g on the first tick and held ${after.pipeAir.totalGrams}g after " +
+            after.pipeAir.totalMass > first * 4,
+            "the pipe took ${first}g on the first tick and held ${after.pipeAir.totalMass}g after " +
                 "two hundred more — gas crossed once and then stopped",
         )
         assertTrue(pipeMass(after, grid.index(13, 6)) > 0L, "gas crossed but never ran along the pipe")
@@ -127,7 +127,7 @@ class ValveTest {
      *
      * This is the assertion that would catch the whole exchange being written as a mass relaxation,
      * which is the obvious wrong version: it would keep moving gas until the two cells held the same
-     * grams, emptying a room into a network of far smaller cells. Checked as a ratio against
+     * mass, emptying a room into a network of far smaller cells. Checked as a ratio against
      * [PIPE_VOLUME] rather than against a measured number, so the tuning dial can move without
      * re-baselining the physics.
      */
@@ -195,7 +195,7 @@ class ValveTest {
         val s = pipeRun(VesselState(grid, hulled()), 6, 4, 15)
         val after = run(s, 200)
 
-        assertEquals(0L, after.pipeAir.totalGrams, "gas got into a pipe with no way in")
+        assertEquals(0L, after.pipeAir.totalMass, "gas got into a pipe with no way in")
         assertBalanced(after, "a pipe with no valve")
     }
 
@@ -214,8 +214,8 @@ class ValveTest {
         val roomTile = grid.index(6, 5)
         val pipeTile = grid.index(6, 6)
         for (sp in Species.ALL) {
-            val room = after.air.gramsOf(roomTile, sp)
-            val pipe = after.pipeAir.gramsOf(pipeTile, sp)
+            val room = after.air.massOf(roomTile, sp)
+            val pipe = after.pipeAir.massOf(pipeTile, sp)
             if (room == 0L) {
                 assertEquals(0L, pipe, "$sp appeared in the pipe having never been in the room")
                 continue
@@ -236,28 +236,28 @@ class ValveTest {
         var s = plumbed()
         // Heat the whole room's air by half again. Done to the field rather than with a furnace, so
         // the test measures the valve and not the smelter.
-        val joules = s.air.copyJoules()
-        for (i in joules.indices) joules[i] = joules[i] * 3 / 2
-        val warmed = AirField.of(s.air.copyGrams(), joules)
+        val energy = s.air.copyEnergy()
+        for (i in energy.indices) energy[i] = energy[i] * 3 / 2
+        val warmed = AirField.of(s.air.copyMass(), energy)
         // The baseline moves by what the fixture ADDED, rather than being restated from the room
-        // field. Restating it is the obvious version and it is wrong twice over: it drops the joules
-        // already in the pipes, and it discards the `solidToAirJoules` the world has booked so far.
+        // field. Restating it is the obvious version and it is wrong twice over: it drops the energy
+        // already in the pipes, and it discards the `solidToAirEnergy` the world has booked so far.
         // Writing it as a delta cannot make either mistake.
         s = s.copy(
             air = warmed,
-            baselineAirJoules = s.baselineAirJoules + (warmed.totalJoules - s.air.totalJoules),
+            baselineAirEnergy = s.baselineAirEnergy + (warmed.totalEnergy - s.air.totalEnergy),
         )
 
         val after = run(s, 200)
         val pipeTile = grid.index(6, 6)
-        val capacity = gasCapacityAt(after.pipeAir.copyGrams(), pipeTile)
+        val capacity = gasCapacityAt(after.pipeAir.copyMass(), pipeTile)
         assertTrue(capacity > 0L, "no gas reached the pipe, so there is no temperature to read")
 
-        val kelvin = (after.pipeAir.copyJoules()[pipeTile] / capacity).toInt()
+        val kelvin = (after.pipeAir.copyEnergy()[pipeTile] / capacity).toInt()
         assertTrue(
             kelvin > Temperature.AMBIENT_KELVIN + 10,
             "the pipe filled from a hot room and came out at ${kelvin}K — the gas crossed without " +
-                "its energy, which mints cold gas and destroys joules",
+                "its energy, which mints cold gas and destroys energy",
         )
         assertBalanced(after, "a hot room filling a pipe")
     }

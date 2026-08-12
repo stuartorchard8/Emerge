@@ -20,25 +20,25 @@ import org.emerge.demo.outofspace.chem.Species
  * appearing at the boundary, which is the one failure the whole scheme is arranged to make
  * impossible.
  */
-internal fun xFaceGrams(edges: EdgeGrid, tileGrams: LongArray, edge: Int): Long =
-    meanOf(tileGrams, edges.xEdgeBefore(edge), edges.xEdgeAfter(edge))
+internal fun xFaceMass(edges: EdgeGrid, tileMasses: LongArray, edge: Int): Long =
+    meanOf(tileMasses, edges.xEdgeBefore(edge), edges.xEdgeAfter(edge))
 
-internal fun yFaceGrams(edges: EdgeGrid, tileGrams: LongArray, edge: Int): Long =
-    meanOf(tileGrams, edges.yEdgeBefore(edge), edges.yEdgeAfter(edge))
+internal fun yFaceMass(edges: EdgeGrid, tileMasses: LongArray, edge: Int): Long =
+    meanOf(tileMasses, edges.yEdgeBefore(edge), edges.yEdgeAfter(edge))
 
-private fun meanOf(tileGrams: LongArray, before: Int, after: Int): Long {
+private fun meanOf(tileMasses: LongArray, before: Int, after: Int): Long {
     var sum = 0L
     var count = 0
-    if (before >= 0) { sum += tileGrams[before]; count++ }
-    if (after >= 0) { sum += tileGrams[after]; count++ }
+    if (before >= 0) { sum += tileMasses[before]; count++ }
+    if (after >= 0) { sum += tileMasses[after]; count++ }
     return if (count == 0) 0L else sum / count
 }
 
 /** Total mass of the given all species in each tile — the density field everything else reads. */
-fun tileMass(tileCount: Int, grams: LongArray): LongArray =
+fun tileMass(tileCount: Int, mass: LongArray): LongArray =
     LongArray(tileCount) { tile ->
         var sum = 0L
         val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += grams[base + s.ordinal]
+        for (s in Species.ALL) sum += mass[base + s.ordinal]
         sum
     }

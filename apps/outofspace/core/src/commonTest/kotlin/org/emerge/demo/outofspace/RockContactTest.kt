@@ -199,7 +199,7 @@ class RockContactTest {
         // Within one tick's worth of the body's own weight, which is the size of the sawtooth: the
         // plating charges the ship at the end of a tick and the deck refunds it at the start of the
         // next, so the two are never in the same sample. A pump would be forty of these and growing.
-        val weight = s.bodies.single().massGrams
+        val weight = s.bodies.single().mass
         assertTrue(
             abs(s.vesselImpulseY - settled) <= weight,
             "the ship is being flown by a body lying on the floor: $settled then ${s.vesselImpulseY}",
@@ -236,8 +236,8 @@ class RockContactTest {
             // 8.3e13 units, and a quarter-tile-a-tick velocity is 2.5e8, so the plain product is 2e22
             // and the fixture handed the body a wrapped impulse. It then sat exactly where it was put
             // and the test said "the body never touched the wall".
-            impulseX = scaledRatio(velocityX, Flight.PER_TILE, blank.massGrams),
-            impulseY = scaledRatio(velocityY, Flight.PER_TILE, blank.massGrams),
+            impulseX = scaledRatio(velocityX, Flight.PER_TILE, blank.mass),
+            impulseY = scaledRatio(velocityY, Flight.PER_TILE, blank.mass),
         )
     }
 

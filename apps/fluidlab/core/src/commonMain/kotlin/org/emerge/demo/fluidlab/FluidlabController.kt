@@ -40,13 +40,13 @@ class FluidlabController(
 
     fun setWall(tile: Int, present: Boolean) { pending.add(FluidlabEdit.SetWall(tile, present)) }
 
-    fun inject(tile: Int, species: Species, grams: Long, kelvin: Int = AMBIENT_KELVIN) {
-        pending.add(FluidlabEdit.Inject(tile, species, grams, kelvin))
+    fun inject(tile: Int, species: Species, mass: Long, kelvin: Int = AMBIENT_KELVIN) {
+        pending.add(FluidlabEdit.Inject(tile, species, mass, kelvin))
     }
 
     fun evacuate(tile: Int) { pending.add(FluidlabEdit.Evacuate(tile)) }
 
-    fun heat(tile: Int, joules: Long) { pending.add(FluidlabEdit.Heat(tile, joules)) }
+    fun heat(tile: Int, energy: Long) { pending.add(FluidlabEdit.Heat(tile, energy)) }
 
     /**
      * Advances the sim by [deltaSeconds] of real time and returns the state to draw.

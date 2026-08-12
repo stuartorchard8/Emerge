@@ -7,7 +7,7 @@
 # `rockVX` is through the world; `rockX` is which tile it is over.
 #
 # `rockBalance` must stay 0. A rock is new mass in a closed world and the only thing keeping that
-# honest is that `capturedGrams` admits every gram of it.
+# honest is that `capturedMass` admits every gram of it.
 # `new 0`: an empty sky. A starting world scatters a field of rocks (H4), and this script
 # plants and counts its own, so it asks for none.
 new 0
@@ -20,12 +20,12 @@ gravity 0 1
 echo --- one rock, dropped amidships
 rock smelter smelter+8
 expect rockCount = 1
-expect rockGrams > 0
+expect rockMass > 0
 expect rockBalance = 0
 # The ore ledger must not have noticed. A rock does NOT go through the miner -- the extractor exists
 # to delete the miner, and hanging it off that ledger would weld the two together. See plan §5f.
 #
-# `massBalance` is the statement, not `extractedGrams`. Since H3 the two ledgers are hinged -- a rock
+# `massBalance` is the statement, not `extractedMass`. Since H3 the two ledgers are hinged -- a rock
 # is where ore comes from -- so what has to be true is that the ore balance still closes with
 # sixty-three kilos of rock in the room, i.e. that a rock nobody has eaten yet is in neither of the
 # terms. The rock's own ledger says the rest, and it is checked on its own line.

@@ -26,8 +26,8 @@ import kotlin.test.assertTrue
  * exactly that much. Growth was safe because it only ever adds vacuum; this is the first thing that
  * subtracts, and it is the reason §5 exists.
  *
- * **The rule, and the asymmetry inside it.** Gas is vented: it goes to `airVentedGrams`,
- * `airVentedJoules` and `exhaustMomentumX/Y`, which is physically the right story — the tile left
+ * **The rule, and the asymmetry inside it.** Gas is vented: it goes to `airVentedMass`,
+ * `airVentedEnergy` and `exhaustMomentumX/Y`, which is physically the right story — the tile left
  * the world, and the only way out of this world is overboard. Solids are **not**: the box is drawn
  * around them by construction, so a resize that ate a machine has got its bounds wrong, and that is
  * a `require` rather than a booking. Gas is diffuse and legitimately present in a padding tile; a
@@ -54,7 +54,7 @@ class GridVentTest {
      * venting case into that exception instead of testing the vent. A first draft ran the hull
      * along the borders and did exactly that.
      *
-     * Asymmetric on purpose: the grams vary by tile and the two momentum axes carry different
+     * Asymmetric on purpose: the mass vary by tile and the two momentum axes carry different
      * magnitudes, so a transposed index or an off-by-one cannot pass by symmetry.
      */
     private fun gassyWorld(w: Int = 20, h: Int = 14): VesselState {
@@ -71,24 +71,24 @@ class GridVentTest {
 
         // Air everywhere, different in every tile, and in two species so a per-species stride bug
         // shows up as a mass change rather than cancelling out.
-        val airGrams = LongArray(grid.size * Species.COUNT)
-        val airJoules = LongArray(grid.size)
+        val airMass = LongArray(grid.size * Species.COUNT)
+        val airEnergy = LongArray(grid.size)
         for (t in 0 until grid.size) {
-            airGrams[t * Species.COUNT + Species.Oxygen.ordinal] = 100L + t
-            airGrams[t * Species.COUNT + Species.Nitrogen.ordinal] = 7L * t
-            airJoules[t] = 5_000L + 3L * t
+            airMass[t * Species.COUNT + Species.Oxygen.ordinal] = 100L + t
+            airMass[t * Species.COUNT + Species.Nitrogen.ordinal] = 7L * t
+            airEnergy[t] = 5_000L + 3L * t
         }
-        val air = AirField.of(airGrams, airJoules)
+        val air = AirField.of(airMass, airEnergy)
 
-        // Pipe air too: it is inside `atmosphereGrams`, so a vent that forgets it breaks the ledger
+        // Pipe air too: it is inside `atmosphereMass`, so a vent that forgets it breaks the ledger
         // in exactly the way §5 says the air ledger breaks. Deliberately a different profile.
-        val pipeGrams = LongArray(grid.size * Species.COUNT)
-        val pipeJoules = LongArray(grid.size)
+        val pipeMass = LongArray(grid.size * Species.COUNT)
+        val pipeEnergy = LongArray(grid.size)
         for (t in 0 until grid.size) {
-            pipeGrams[t * Species.COUNT + Species.Oxygen.ordinal] = 11L * t
-            pipeJoules[t] = 900L + t
+            pipeMass[t * Species.COUNT + Species.Oxygen.ordinal] = 11L * t
+            pipeEnergy[t] = 900L + t
         }
-        val pipeAir = AirField.of(pipeGrams, pipeJoules)
+        val pipeAir = AirField.of(pipeMass, pipeEnergy)
 
         val edges = EdgeGrid(grid)
         // Signed, and asymmetric between the axes: the identity is a signed sum, so a field of
@@ -129,7 +129,7 @@ class GridVentTest {
     @Test
     fun `a shrink vents the air it discards`() {
         val before = gassyWorld()
-        // The fixture is balanced to start with: `baselineAirGrams` is a constructor default taken
+        // The fixture is balanced to start with: `baselineAirMass` is a constructor default taken
         // from the air handed in, so this is a statement about the fixture, not an assumption.
         assertEquals(0L, before.airBalance, "the fixture is out before anything shrinks")
 
@@ -144,7 +144,7 @@ class GridVentTest {
         assertEquals(
             before.atmosphereMass,
             after.atmosphereMass + (after.airVentedMass - before.airVentedMass),
-            "grams discarded by the shrink were not booked to airVentedGrams",
+            "mass discarded by the shrink were not booked to airVentedMass",
         )
         assertEquals(0L, after.airBalance, "airBalance after a shrink")
     }
@@ -156,38 +156,38 @@ class GridVentTest {
      */
     @Ignore
     @Test
-    fun `a shrink vents the joules it discards`() {
+    fun `a shrink vents the energy it discards`() {
         val before = gassyWorld()
         EnergyLedgers.assertAirBalanced(before, "the fixture is out before anything shrinks")
 
         val after = before.remapped(Grid(12, 14), 0, 0)
 
         assertTrue(
-            after.atmosphereJoules < before.atmosphereJoules,
+            after.atmosphereEnergy < before.atmosphereEnergy,
             "the fixture discarded no heat, so this case proves nothing",
         )
         assertEquals(
-            before.atmosphereJoules,
-            after.atmosphereJoules + (after.airVentedEnergy - before.airVentedEnergy),
-            "joules discarded by the shrink were not booked to airVentedJoules",
+            before.atmosphereEnergy,
+            after.atmosphereEnergy + (after.airVentedEnergy - before.airVentedEnergy),
+            "energy discarded by the shrink were not booked to airVentedEnergy",
         )
-        EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a shrink")
+        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance after a shrink")
     }
 
     @Test
     fun `the pipes are vented too, not just the rooms`() {
-        // `atmosphereGrams` is rooms **plus** pipes, and the two were once summed at separate call
+        // `atmosphereMass` is rooms **plus** pipes, and the two were once summed at separate call
         // sites with only one of them knowing about the pipes — see [VesselState.airBalance], which
         // exists because of that. A vent that reads only `air` passes test 1 on a world with empty
         // pipes and breaks the ledger on a real one.
         val before = gassyWorld()
-        assertTrue(before.pipeAir.totalGrams > 0L, "the fixture has no pipe gas to lose")
+        assertTrue(before.pipeAir.totalMass > 0L, "the fixture has no pipe gas to lose")
 
         val after = before.remapped(Grid(12, 14), 0, 0)
 
-        assertTrue(after.pipeAir.totalGrams < before.pipeAir.totalGrams, "no pipe gas was discarded")
+        assertTrue(after.pipeAir.totalMass < before.pipeAir.totalMass, "no pipe gas was discarded")
         assertEquals(0L, after.airBalance, "airBalance with pipe gas discarded")
-        EnergyLedgers.assertAirBalanced(after, "airJouleBalance with pipe gas discarded")
+        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance with pipe gas discarded")
     }
 
     @Test
@@ -215,7 +215,7 @@ class GridVentTest {
         val after = before.remapped(Grid(12, 9), 0, 0)
 
         assertEquals(0L, after.airBalance, "airBalance")
-        EnergyLedgers.assertAirBalanced(after, "airJouleBalance")
+        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance")
         assertEquals(0L, momentumX(after), "momentum identity on x")
         assertEquals(0L, momentumY(after), "momentum identity on y")
     }
@@ -231,7 +231,7 @@ class GridVentTest {
 
         assertTrue(after.atmosphereMass < before.atmosphereMass, "nothing was discarded")
         assertEquals(0L, after.airBalance, "airBalance after a near-side shrink")
-        EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a near-side shrink")
+        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance after a near-side shrink")
         assertEquals(0L, momentumX(after), "momentum identity on x")
         assertEquals(0L, momentumY(after), "momentum identity on y")
     }
@@ -245,8 +245,8 @@ class GridVentTest {
         val before = gassyWorld()
         val after = before.remapped(Grid(28, 20), 4, 3)
 
-        assertEquals(before.airVentedMass, after.airVentedMass, "growth vented grams")
-        assertEquals(before.airVentedEnergy, after.airVentedEnergy, "growth vented joules")
+        assertEquals(before.airVentedMass, after.airVentedMass, "growth vented mass")
+        assertEquals(before.airVentedEnergy, after.airVentedEnergy, "growth vented energy")
         assertEquals(before.exhaustMomentumX, after.exhaustMomentumX, "growth vented x momentum")
         assertEquals(before.exhaustMomentumY, after.exhaustMomentumY, "growth vented y momentum")
         assertEquals(before.atmosphereMass, after.atmosphereMass, "growth changed the air mass")

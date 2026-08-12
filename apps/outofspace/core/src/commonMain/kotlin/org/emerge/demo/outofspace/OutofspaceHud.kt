@@ -53,7 +53,7 @@ class OutofspaceHud {
                 keyValue("Speed", "${controller.speed}x")
                 gap()
                 title("FLIGHT")
-                keyValue("Mass", grams(s.mass))
+                keyValue("Mass", mass(s.mass))
                 keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
                 keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
                 keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
@@ -65,29 +65,29 @@ class OutofspaceHud {
                 }
                 gap()
                 title("MASS BALANCE")
-                keyValue("Extracted", grams(s.extractedMass))
-                keyValue("Aboard", grams(s.inTransitMass))
-                keyValue("- in storage", grams(s.stockpile.totalMass))
-                keyValue("Vented", grams(s.ventedMass))
+                keyValue("Extracted", mass(s.extractedMass))
+                keyValue("Aboard", mass(s.inTransitMass))
+                keyValue("- in storage", mass(s.stockpile.totalMass))
+                keyValue("Vented", mass(s.ventedMass))
                 // Storage is a view over storages (part of "aboard").
                 val balanced = s.extractedMass == s.inTransitMass + s.ventedMass
                 row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ATMOSPHERE")
-                keyValue("Aboard", grams(s.atmosphereMass))
-                keyValue("Lost", grams(s.airVentedMass))
+                keyValue("Aboard", mass(s.atmosphereMass))
+                keyValue("Lost", mass(s.airVentedMass))
                 // Only shown once it is non-zero: the bellows is a debug tool, and a row reading
                 // "injected 0g" on every world that never touched it is a row nobody reads.
-                if (s.injectedAirGrams != 0L) keyValue("Injected", grams(s.injectedAirGrams))
+                if (s.injectedAirMass != 0L) keyValue("Injected", mass(s.injectedAirMass))
                 val airBalanced = s.airBalance == 0L
                 row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ENERGY")
-                keyValue("Generated", joules(s.generatedEnergy))
-                keyValue("Radiated", joules(s.radiatedEnergy))
-                keyValue("Stored", joules(s.storedEnergy))
-                keyValue("To air", joules(s.solidToAirEnergy / 1000L))
-                keyValue("Air heat vented", joules(s.airVentedEnergy / 1000L))
+                keyValue("Generated", energy(s.generatedEnergy))
+                keyValue("Radiated", energy(s.radiatedEnergy))
+                keyValue("Stored", energy(s.storedEnergy))
+                keyValue("To air", energy(s.solidToAirEnergy / 1000L))
+                keyValue("Air heat vented", energy(s.airVentedEnergy / 1000L))
                 // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
                 // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
                 // overflow at the target mass unit and that is accepted for the duration, so a LEAK
@@ -119,7 +119,7 @@ class OutofspaceHud {
                     row("(no storage holding anything)", 0x9A9A9AFFL)
                 } else {
                     for ((form, mixture) in entries) {
-                        keyValue(form.name, grams(mixture.total))
+                        keyValue(form.name, mass(mixture.total))
                         val dominant = mixture.dominant
                         if (dominant != null && mixture[dominant] < mixture.total) {
                             // Purity is the interesting number, so say it rather than hide it.
@@ -188,13 +188,13 @@ class OutofspaceHud {
                     row("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
                     row("TOP takes one layer at a time", 0x9A9A9AFFL)
                 } else if (controller.tool == Tool.Inject) {
-                    title("INJECT  ·  ${Edit.INJECT_GRAMS}G / TICK")
+                    title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
                     row("hold over a permeable tile", 0x9A9A9AFFL)
                     // Named as debug in the same yellow the engine row uses, because it is the same
                     // kind of lie: it makes matter, and says so in the atmosphere panel.
                     row("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
                 } else if (controller.tool == Tool.InjectWater) {
-                    title("WATER  ·  ${Edit.WATER_INJECT_GRAMS}G / TICK")
+                    title("WATER  ·  ${Edit.WATER_INJECT_MASS}G / TICK")
                     row("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
                     row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
                     // Said on the tool itself rather than left in a plan file, because the number is
@@ -347,13 +347,13 @@ class OutofspaceHud {
                             0x9A9A9AFFL,
                             speciesColor(segment.lastDominant),
                         )
-                        keyValue("of", grams(segment.lastMass))
+                        keyValue("of", mass(segment.lastMass))
                     }
                     if (segment.isGauge) keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
                 }
                 val riding = segment.held
                 if (riding == null) row("(nothing on it)", 0x9A9A9AFFL)
-                else keyValue("carrying", grams(riding.mass))
+                else keyValue("carrying", mass(riding.mass))
                 gap()
             }
 
@@ -364,7 +364,7 @@ class OutofspaceHud {
                 row("(empty)", 0x9A9A9AFFL)
             } else {
                 for ((label, resource) in buffers) {
-                    keyValue(label, "${grams(resource.mass)}  ${resource.form.name}")
+                    keyValue(label, "${mass(resource.mass)}  ${resource.form.name}")
                     row("   " + composition(resource.mixture), 0x9AA4B4FFL)
                 }
             }
@@ -419,7 +419,7 @@ class OutofspaceHud {
             )
             // Below the floor there is nothing to describe: no density worth a percentage, no
             // temperature of a gas that isn't there, no flow (its speed is a ratio, so a trace tile
-            // can report any speed), and no composition of five grams.
+            // can report any speed), and no composition of five mass.
             if (trace) {
                 row("   (no gas to speak of)", 0x7A8A9AFFL)
                 return
@@ -567,14 +567,14 @@ class OutofspaceHud {
     private fun signed(percent: Int): String = if (percent >= 0) "+$percent%" else "$percent%"
 
     /** Joules get large fast; kJ and MJ keep the panel narrow. */
-    private fun joules(j: Long): String = when {
+    private fun energy(j: Long): String = when {
         j < 10_000L -> "${j}J"
         j < 10_000_000L -> "${j / 1000}kJ"
         else -> "${j / 1_000_000}MJ"
     }
 
     /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
-    private fun grams(g: Long): String =
+    private fun mass(g: Long): String =
         if (g < 10_000L) "${g}g" else "${g / 1000}.${(g % 1000) / 100}kg"
 
     /** Distance/speed in PER_TILE billionths, to 6 decimals (breach sensitivity). */

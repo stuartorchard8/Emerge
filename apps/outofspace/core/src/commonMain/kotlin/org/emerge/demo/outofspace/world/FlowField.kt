@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.world
 import kotlin.math.sqrt
 
 /**
- * Where the air is going, tile by tile — the net grams crossing each tile per tick, reconstructed
+ * Where the air is going, tile by tile — the net mass crossing each tile per tick, reconstructed
  * from the face fluxes of one diffusion pass (opposing faces averaged).
  *
  * This is measured, not modelled: it reports what [diffuseFluid] actually moved, so it cannot drift
@@ -20,15 +20,15 @@ class FlowField(
     private val speed: FloatArray,
 ) {
 
-    /** Net grams per tick crossing the tile along +x. */
+    /** Net mass per tick crossing the tile along +x. */
     fun xAt(tile: Int): Long = x[tile]
 
-    /** Net grams per tick along +y — **downward**, since the world is side-on and screen-down is gravity-down. */
+    /** Net mass per tick along +y — **downward**, since the world is side-on and screen-down is gravity-down. */
     fun yAt(tile: Int): Long = y[tile]
 
     /**
-     * How fast the tile's contents are moving, in tiles per tick: the net grams crossing it over the
-     * grams it held. One means a tile-load of gas moved a tile in a tick, which is the fastest
+     * How fast the tile's contents are moving, in tiles per tick: the net mass crossing it over the
+     * mass it held. One means a tile-load of gas moved a tile in a tick, which is the fastest
      * anything can honestly be said to travel on this lattice — though diffusion cannot reach it,
      * since a cell keeps a share (see [SLOTS]).
      */

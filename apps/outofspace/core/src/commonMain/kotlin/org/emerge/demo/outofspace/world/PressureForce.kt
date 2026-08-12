@@ -15,7 +15,7 @@ fun applyPressureForce(
     apertures: ApertureField,
     mx: LongArray,
     my: LongArray,
-    tileGrams: LongArray,
+    tileMasses: LongArray,
     pressure: LongArray,
 ): PressureForceResult {
     var vesselX = 0L
@@ -28,8 +28,8 @@ fun applyPressureForce(
         val drop = beyond(potential, edges.xEdgeBefore(e)) - beyond(potential, edges.xEdgeAfter(e))
         if (drop == 0L) continue
         if (apertures.isXOpen(e)) {
-            val faceGrams = xFaceGrams(edges, tileGrams, e)
-            if (faceGrams <= 0L) continue
+            val faceMass = xFaceMass(edges, tileMasses, e)
+            if (faceMass <= 0L) continue
             val toGas = drop * apertures.xAt(e) / ApertureField.OPEN
             mx[e] += toGas
             // What the solid part of a restriction took. Zero for a fully open face.
@@ -42,8 +42,8 @@ fun applyPressureForce(
         val drop = beyond(potential, edges.yEdgeBefore(e)) - beyond(potential, edges.yEdgeAfter(e))
         if (drop == 0L) continue
         if (apertures.isYOpen(e)) {
-            val faceGrams = yFaceGrams(edges, tileGrams, e)
-            if (faceGrams <= 0L) continue
+            val faceMass = yFaceMass(edges, tileMasses, e)
+            if (faceMass <= 0L) continue
             val toGas = drop * apertures.yAt(e) / ApertureField.OPEN
             my[e] += toGas
             vesselY += drop - toGas
@@ -87,4 +87,4 @@ private fun potentialOf(pressure: LongArray): LongArray =
  * points at for a fast exhaust. Until then the gas is slow and the ordering of events is right,
  * which is the trade every explicit fluid sim makes.
  */
-private val SOUND_IMPULSE: Long = AMBIENT_TILE_GRAMS / 4
+private val SOUND_IMPULSE: Long = AMBIENT_TILE_MASS / 4

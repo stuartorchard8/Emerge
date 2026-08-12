@@ -35,10 +35,10 @@ private fun meanOf(tileGrams: LongArray, before: Int, after: Int): Long {
 }
 
 /** Total mass of the given all species in each tile — the density field everything else reads. */
-fun tileMass(tileCount: Int, grams: LongArray): LongArray =
+fun tileMass(tileCount: Int, mass: LongArray): LongArray =
     LongArray(tileCount) { tile ->
         var sum = 0L
         val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += grams[base + s.ordinal]
+        for (s in Species.ALL) sum += mass[base + s.ordinal]
         sum
     }

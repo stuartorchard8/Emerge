@@ -60,7 +60,7 @@ class ProcessorChainTest {
     @Test
     fun `the concentrate leaves forward and the tailings leave downward`() {
         val grid = Grid(12, 10)
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)   // covers x 2..4
@@ -86,7 +86,7 @@ class ProcessorChainTest {
         // with the tick rate (65% at 1Hz, 79% at 120Hz) because `process` floors its impurity split
         // once per chunk and the chunk was a chunk-per-second-divided-by-the-rate. Rates are per
         // tick now, so the chunk is a constant and so is the result.
-        val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS)))
+        val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS)))
         assertTrue(
             purity(forward) > fed + 20,
             "forward should be well above the ${fed}% it was fed, was ${purity(forward)}%",
@@ -162,7 +162,7 @@ class ProcessorChainTest {
      * change to [process] or to the ore moves the expectation with it instead of breaking the test.
      */
     private fun threeStagePurity(): Int {
-        var r = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_GRAMS))
+        var r = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         repeat(3) { r = process(r, Processor(Direction.Right).efficiencyPermille).product }
         return purity(r)
     }
@@ -193,7 +193,7 @@ class ProcessorChainTest {
         for (x in stages) {
             val held = (s[grid.index(x, 3)] as Processor).tailings?.mass ?: 0L
             assertTrue(
-                held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_GRAMS,
+                held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",
             )
         }

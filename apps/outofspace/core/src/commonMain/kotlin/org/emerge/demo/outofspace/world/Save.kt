@@ -30,7 +30,7 @@ object Save {
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
-     * `rate` field from grams per second into the grams per tick version 2 stores.
+     * `rate` field from mass per second into the mass per tick version 2 stores.
      *
      * Frozen here as a literal rather than read from the config, because it is a fact about old
      * files and must not move when the config's tick rate does. Applied in [readMachine].
@@ -59,11 +59,11 @@ object Save {
         out.append("generated ").append(state.generatedEnergy).append('\n')
         out.append("radiated ").append(state.radiatedEnergy).append('\n')
         out.append("airvented ").append(state.airVentedMass).append('\n')
-        out.append("baselinejoules ").append(state.baselineJoules).append('\n')
-        out.append("inserted ").append(state.insertedJoules).append('\n')
-        out.append("acquired ").append(state.acquiredJoules).append('\n')
+        out.append("baselinejoules ").append(state.baselineEnergy).append('\n')
+        out.append("inserted ").append(state.insertedEnergy).append('\n')
+        out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
-        out.append("baselineair ").append(state.baselineAirGrams).append('\n')
+        out.append("baselineair ").append(state.baselineAirMass).append('\n')
         // Bodies: free mass, no tracking beyond the list itself.
 
         // Body momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
@@ -71,11 +71,11 @@ object Save {
             out.append("body ").append(b.width).append(' ').append(b.height)
                 .append(' ').append(b.positionX).append(' ').append(b.positionY)
                 .append(' ').append(b.impulseX).append(' ').append(b.impulseY)
-                .append(' ').append(writeTileJoules(b.joules))
+                .append(' ').append(writeTileEnergy(b.energy))
                 .append(' ').append(writeMixture(b.oreComposition!!))
                 .append(' ')
             for (c in b.cells) out.append(if (c) '1' else '0')
-            out.append("   # ").append(b.filled).append(" cells, ").append(b.massGrams).append("g\n")
+            out.append("   # ").append(b.filled).append(" cells, ").append(b.mass).append("g\n")
         }
 
         // Tiles are written as indices because that is what the world is indexed by, but an index is
@@ -119,13 +119,13 @@ object Save {
         }
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
-        writeSparse(out, "airheat", state.air.copyJoules())
+        writeSparse(out, "airheat", state.air.copyEnergy())
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
-        out.append("airinjected ").append(state.injectedAirGrams)
-            .append(' ').append(state.injectedAirJoules).append('\n')
-        out.append("baselineairheat ").append(state.baselineAirJoules).append('\n')
+        out.append("airinjected ").append(state.injectedAirMass)
+            .append(' ').append(state.injectedAirEnergy).append('\n')
+        out.append("baselineairheat ").append(state.baselineAirEnergy).append('\n')
 
         // Packed like heat. Momentum saved because reloading without it resumes becalmed.
         // Pipes: same format, empty network = zero cost.
@@ -134,7 +134,7 @@ object Save {
             if (mix.isEmpty) continue
             out.append("pipeair ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
-        writeSparse(out, "pipeairheat", state.pipeAir.copyJoules())
+        writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy())
         writeSparse(out, "pipemomx", state.pipeMomentum.copyX())
         writeSparse(out, "pipemomy", state.pipeMomentum.copyY())
 
@@ -188,27 +188,27 @@ object Save {
                 put("buffer", writeResource(m.buffer))
                 put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerTick.toString())
+                put("rate", m.massPerTick.toString())
             }
             is Processor -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("out", m.product?.let { writeResource(it) })
                 put("waste", m.tailings?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerTick.toString())
+                put("rate", m.massPerTick.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
             is Vaporizer -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerTick.toString())
+                put("rate", m.massPerTick.toString())
             }
             is Smelter -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("out", m.refined?.let { writeResource(it) })
                 put("waste", m.slag?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.gramsPerTick.toString())
+                put("rate", m.massPerTick.toString())
             }
             is Storage -> put("stored", m.contents?.let { writeResource(it) })
             // A sensor is its facing and its wiring, both written by the common code around this.
@@ -218,7 +218,7 @@ object Save {
             // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
             // heat are all written by the common code around this.
             is Pump -> {}
-            is Vent -> put("vented", m.ventedGrams.toString())
+            is Vent -> put("vented", m.ventedMass.toString())
             // An airlock is its wiring, and the common code around this writes that.
             is Hull, is Airlock -> {}
         }
@@ -228,7 +228,7 @@ object Save {
         // And omitted at room temperature, for the same reason: a file full of identical `k=`
         // fields hides the one machine that is actually hot. Version 5 and later; a version 4 file
         // has no per-body heat at all and every body loads at ambient.
-        if (m.joules != ambientJoules(m.kind)) put("k", writeTileJoules(m.joules))
+        if (m.energy != ambientEnergy(m.kind)) put("k", writeTileEnergy(m.energy))
         return f.toString()
     }
 
@@ -238,7 +238,7 @@ object Save {
      * One field rather than one per tile because a machine's tiles are not addressable from the
      * file: the footprint is derived from the kind and the centre, so the *order* is the address.
      */
-    private fun writeTileJoules(j: TileJoules): String =
+    private fun writeTileEnergy(j: TileEnergy): String =
         (0 until j.size).joinToString(",") { j[it].toString() }
 
     /**
@@ -250,7 +250,7 @@ object Save {
      * approximated, it is being written out in full. What the file cannot tell us is a gradient it
      * was never able to express, and a saved smelter will now develop one as it runs.
      *
-     * The remainder is not dropped: [TileJoules.plusSpread] hands it to the first tiles, so a
+     * The remainder is not dropped: [TileEnergy.plusSpread] hands it to the first tiles, so a
      * reloaded machine holds exactly what it held before, to the joule. Anything else would make
      * save/load a slow leak, and the energy ledger would eventually notice.
      */
@@ -261,36 +261,36 @@ object Save {
      * never conducted with anything, including itself, so its energy was always uniform and the only
      * question is how many numbers it took to say so.
      */
-    private fun bodyJoules(
+    private fun bodyEnergy(
         field: String,
         cells: Int,
         scale: Rescale,
         fail: (String) -> Nothing,
-    ): TileJoules {
+    ): TileEnergy {
         if (',' !in field) {
-            val total = scale.of(field.toLongOrNull() ?: fail("bad body joules '$field'"))
-            return TileJoules.uniform(cells, 0L).plusSpread(total)
+            val total = scale.of(field.toLongOrNull() ?: fail("bad body energy '$field'"))
+            return TileEnergy.uniform(cells, 0L).plusSpread(total)
         }
         val parts = field.split(',')
-        if (parts.size != cells) fail("a $cells-cell body has ${parts.size} per-cell joules")
-        return TileJoules.of(LongArray(cells) { scale.of(parts[it].toLongOrNull() ?: fail("bad body joules '$field'")) })
+        if (parts.size != cells) fail("a $cells-cell body has ${parts.size} per-cell energy")
+        return TileEnergy.of(LongArray(cells) { scale.of(parts[it].toLongOrNull() ?: fail("bad body energy '$field'")) })
     }
 
-    private fun readTileJoules(
+    private fun readTileEnergy(
         field: String,
         machine: Machine,
         version: Int,
         scale: Rescale,
         fail: (String) -> Nothing,
-    ): TileJoules {
+    ): TileEnergy {
         val tiles = machine.kind.thermalTiles
         if (version < 12) {
-            val total = scale.of(field.toLongOrNull() ?: fail("bad joules '$field'"))
-            return TileJoules.uniform(tiles, 0L).plusSpread(total)
+            val total = scale.of(field.toLongOrNull() ?: fail("bad energy '$field'"))
+            return TileEnergy.uniform(tiles, 0L).plusSpread(total)
         }
         val parts = field.split(',')
-        if (parts.size != tiles) fail("expected $tiles per-tile joules for ${machine.kind}, got ${parts.size}")
-        return TileJoules.of(LongArray(tiles) { scale.of(parts[it].toLongOrNull() ?: fail("bad joules '$field'")) })
+        if (parts.size != tiles) fail("expected $tiles per-tile energy for ${machine.kind}, got ${parts.size}")
+        return TileEnergy.of(LongArray(tiles) { scale.of(parts[it].toLongOrNull() ?: fail("bad energy '$field'")) })
     }
 
     private fun writeSegment(s: Segment): String {
@@ -306,7 +306,7 @@ object Save {
         s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
         if (s.lastPurity != 0) f.append(" lastpurity=").append(s.lastPurity)
         if (s.lastMass != 0L) f.append(" lastmass=").append(s.lastMass)
-        if (s.joules != s.conduit.ambientPerTile) f.append(" k=").append(s.joules)
+        if (s.energy != s.conduit.ambientPerTile) f.append(" k=").append(s.energy)
         return f.toString()
     }
 
@@ -429,13 +429,13 @@ object Save {
         val diverters = HashMap<Int, Int>()
         val merges = HashMap<Int, Int>()
         val piles = HashMap<Int, MutableList<Resource>>()
-        val airGrams = LongArray(grid.size * Species.COUNT)
-        val airJoules = LongArray(grid.size)
+        val airMass = LongArray(grid.size * Species.COUNT)
+        val airEnergy = LongArray(grid.size)
         val edges = EdgeGrid(grid)
         val momentumX = LongArray(edges.xEdgeCount)
         val momentumY = LongArray(edges.yEdgeCount)
-        val pipeGrams = LongArray(grid.size * Species.COUNT)
-        val pipeJoules = LongArray(grid.size)
+        val pipeMass = LongArray(grid.size * Species.COUNT)
+        val pipeEnergy = LongArray(grid.size)
         val pipeMomentumX = LongArray(edges.xEdgeCount)
         val pipeMomentumY = LongArray(edges.yEdgeCount)
         var impulseX = 0L
@@ -462,11 +462,11 @@ object Save {
         var generated = 0L
         var radiated = 0L
         var airVented = 0L
-        var airVentedJoules = 0L
-        var injectedAirGrams = 0L
-        var injectedAirJoules = 0L
-        var baselineAirJoules: Long? = null
-        var baselineJoules: Long? = null
+        var airVentedEnergy = 0L
+        var injectedAirMass = 0L
+        var injectedAirEnergy = 0L
+        var baselineAirEnergy: Long? = null
+        var baselineEnergy: Long? = null
         var inserted = 0L
         var acquired = 0L
         var solidToAir = 0L
@@ -505,13 +505,13 @@ object Save {
                 "generated" -> generated = energy(1)
                 "radiated" -> radiated = energy(1)
                 "airvented" -> airVented = scaled(1)
-                "airventedheat" -> airVentedJoules = energy(1)
-                "airinjected" -> { injectedAirGrams = scaled(1); injectedAirJoules = energy(2) }
-                "baselineairheat" -> baselineAirJoules = energy(1)
-                "baselinejoules" -> baselineJoules = energy(1)
+                "airventedheat" -> airVentedEnergy = energy(1)
+                "airinjected" -> { injectedAirMass = scaled(1); injectedAirEnergy = energy(2) }
+                "baselineairheat" -> baselineAirEnergy = energy(1)
+                "baselinejoules" -> baselineEnergy = energy(1)
                 "inserted" -> inserted = energy(1)
                 "acquired" -> acquired = energy(1)
-                // Old spelling: the energy the player inserted, now [insertedJoules].
+                // Old spelling: the energy the player inserted, now [insertedEnergy].
                 "construction" -> inserted = energy(1)
                 "solidtoair" -> solidToAir = energy(1)
                 "baselineair" -> baselineAir = scaled(1)
@@ -541,18 +541,18 @@ object Save {
                 // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
-                    if (eq < 0) fail("expected tile=joules, got '${tokens[i]}'")
+                    if (eq < 0) fail("expected tile=energy, got '${tokens[i]}'")
                     val t = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad tile in '${tokens[i]}'")
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
-                    tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
+                    tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
-                "airheat" -> readSparse(tokens, airJoules, energyScale, ::fail)
+                "airheat" -> readSparse(tokens, airEnergy, energyScale, ::fail)
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) pipeGrams[t * Species.COUNT + s.ordinal] = mix[s]
+                    for (s in Species.ALL) pipeMass[t * Species.COUNT + s.ordinal] = mix[s]
                 }
-                "pipeairheat" -> readSparse(tokens, pipeJoules, energyScale, ::fail)
+                "pipeairheat" -> readSparse(tokens, pipeEnergy, energyScale, ::fail)
                 "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
                 "pipemomy" -> readSparse(tokens, pipeMomentumY, scale, ::fail)
                 "momx" -> readSparse(tokens, momentumX, scale, ::fail)
@@ -575,7 +575,7 @@ object Save {
                             // Per filled cell since v14; one figure before that, spread evenly —
                             // which is exactly what it meant, since a body has never been anything
                             // but isothermal.
-                            joules = bodyJoules(tokens[7], bits.count { it == '1' }, energyScale, ::fail),
+                            energy = bodyEnergy(tokens[7], bits.count { it == '1' }, energyScale, ::fail),
                             // ⚠️ NOT scaled. A rock's composition is *proportions*, the same shape
                             // of value as `Material.composition`, and multiplying it would be
                             // meaningless rather than merely wrong — see `capacityPerTileOf`.
@@ -594,7 +594,7 @@ object Save {
                 "air" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) airGrams[t * Species.COUNT + s.ordinal] = mix[s]
+                    for (s in Species.ALL) airMass[t * Species.COUNT + s.ordinal] = mix[s]
                 }
                 else -> fail("unknown entry '${tokens[0]}'")
             }
@@ -607,19 +607,19 @@ object Save {
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
         )
         // Built from both arrays together: save with temp keeps it, older gets ambient (not absolute zero).
-        val air = if (airJoules.any { it != 0L }) AirField.of(airGrams, airJoules) else AirField.of(airGrams)
+        val air = if (airEnergy.any { it != 0L }) AirField.of(airMass, airEnergy) else AirField.of(airMass)
         // Same rule as the room air, and it matters more here: a version 6 file has no pipe lines at
         // all, so the network loads empty rather than at some temperature nothing was ever at.
         val pipeAir =
-            if (pipeJoules.any { it != 0L }) AirField.of(pipeGrams, pipeJoules) else AirField.of(pipeGrams)
+            if (pipeEnergy.any { it != 0L }) AirField.of(pipeMass, pipeEnergy) else AirField.of(pipeMass)
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val loaded = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMassGrams(machines.toList(), conduits, bridges.toList())
+            val shipMass = vesselMass(machines.toList(), conduits, bridges.toList())
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
-                    impulseX = it.impulseX + it.massGrams * impulseX / shipMass,
-                    impulseY = it.impulseY + it.massGrams * impulseY / shipMass,
+                    impulseX = it.impulseX + it.mass * impulseX / shipMass,
+                    impulseY = it.impulseY + it.mass * impulseY / shipMass,
                 )
             }
         }
@@ -643,25 +643,25 @@ object Save {
             airVentedMass = airVented,
             structure = structure,
             occupancy = occupancy,
-            insertedJoules = inserted,
-            acquiredJoules = acquired,
+            insertedEnergy = inserted,
+            acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,
             // A missing baseline means the world's own totals, which is right for a handwritten
             // world and harmless for a saved one, where the line is always present. A version 4
             // file's baseline described the per-tile field, so it is not carried across: the
             // ledger is re-anchored to what the bodies actually hold.
-            baselineJoules = if (version >= 5) baselineJoules ?: solidJoules(
+            baselineEnergy = if (version >= 5) baselineEnergy ?: solidEnergy(
                 machines.toList(), conduits, bridges.toList()
-            ) else solidJoules(machines.toList(), conduits, bridges.toList()),
+            ) else solidEnergy(machines.toList(), conduits, bridges.toList()),
             air = air,
             pipeAir = pipeAir,
             pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
-            // Both fields, because they share one ledger — see VesselState.baselineAirGrams.
-            baselineAirGrams = baselineAir ?: (air.totalGrams + pipeAir.totalGrams),
-            airVentedEnergy = airVentedJoules,
-            injectedAirGrams = injectedAirGrams,
-            injectedAirJoules = injectedAirJoules,
-            baselineAirJoules = baselineAirJoules ?: (air.totalJoules + pipeAir.totalJoules),
+            // Both fields, because they share one ledger — see VesselState.baselineAirMass.
+            baselineAirMass = baselineAir ?: (air.totalMass + pipeAir.totalMass),
+            airVentedEnergy = airVentedEnergy,
+            injectedAirMass = injectedAirMass,
+            injectedAirEnergy = injectedAirEnergy,
+            baselineAirEnergy = baselineAirEnergy ?: (air.totalEnergy + pipeAir.totalEnergy),
             momentum = MomentumField.of(edges, momentumX, momentumY),
             vesselImpulseX = impulseX,
             vesselImpulseY = impulseY,
@@ -746,26 +746,26 @@ object Save {
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
                 input = res("in"),
                 carry = massNum("carry", 0L),
-                gramsPerTick = rate(Extractor(Direction.Right).gramsPerTick),
+                massPerTick = rate(Extractor(Direction.Right).massPerTick),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
                 input = res("in"), product = res("out"), tailings = res("waste"),
                 carry = massNum("carry", 0L),
-                gramsPerTick = rate(Processor(Direction.Right).gramsPerTick),
+                massPerTick = rate(Processor(Direction.Right).massPerTick),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
                 input = res("in"),
                 carry = massNum("carry", 0L),
-                gramsPerTick = rate(Vaporizer(Direction.Right).gramsPerTick),
+                massPerTick = rate(Vaporizer(Direction.Right).massPerTick),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 input = res("in"), refined = res("out"), slag = res("waste"),
                 carry = massNum("carry", 0L),
-                gramsPerTick = rate(Smelter(Direction.Right).gramsPerTick),
+                massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
@@ -776,7 +776,7 @@ object Save {
                     InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
                 } ?: InputKey.Up,
             )
-            MachineKind.Vent -> Vent(ventedGrams = massNum("vented", 0L))
+            MachineKind.Vent -> Vent(ventedMass = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
             MachineKind.Hull -> Hull()
             MachineKind.Airlock -> Airlock()
@@ -792,7 +792,7 @@ object Save {
         // ⚠️ `k` is the machine's stored heat, so it takes the ENERGY factor. It rode the mass
         // factor until v14, which was correct only while the two units were locked together.
         val heated = f["k"]?.let { j ->
-            machine.withJoules(readTileJoules(j, machine, version, energyScale, fail))
+            machine.withEnergy(readTileEnergy(j, machine, version, energyScale, fail))
         } ?: machine
         return heated.withWiring(wiring)
     }
@@ -826,7 +826,7 @@ object Save {
             // Same rule as massNum: the stored figure scales, the ambient fallback does not. And the
             // ENERGY factor, not the mass one — a conduit's stored heat rode the mass factor until
             // v14 split them, which was correct only while the two units were locked together.
-            joules = f["k"]?.let { energyScale.of(it.toLongOrNull() ?: fail("bad joules '$it'")) }
+            energy = f["k"]?.let { energyScale.of(it.toLongOrNull() ?: fail("bad energy '$it'")) }
                 ?: conduit.ambientPerTile,
         )
     }
@@ -876,22 +876,22 @@ object Save {
 
     /**
      * ⚠️ [scale] is **1** for a mixture that states proportions and the file's factor for one that
-     * states a mass. The same syntax carries both — air in a tile is grams, a rock's `oreComposition`
+     * states a mass. The same syntax carries both — air in a tile is mass, a rock's `oreComposition`
      * is parts — so the distinction cannot be made here and every caller has to declare it.
      */
     private fun readMixture(text: String, scale: Rescale, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY
-        val grams = LongArray(Species.COUNT)
+        val masses = LongArray(Species.COUNT)
         for (part in text.split(',')) {
             val eq = part.indexOf('=')
-            if (eq < 0) fail("expected SPECIES=grams, got '$part'")
+            if (eq < 0) fail("expected SPECIES=mass, got '$part'")
             val name = part.substring(0, eq)
             val species = Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
             val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
             if (mass < 0L) fail("negative mass in '$part'")
-            grams[species.ordinal] += scale.of(mass)
+            masses[species.ordinal] += scale.of(mass)
         }
-        return Mixture.ofGrams(grams)
+        return Mixture.ofMass(masses)
     }
 
     private fun readResource(text: String, scale: Rescale, fail: (String) -> Nothing): Resource {

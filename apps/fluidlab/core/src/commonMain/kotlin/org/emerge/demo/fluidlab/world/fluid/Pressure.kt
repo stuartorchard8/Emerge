@@ -42,7 +42,7 @@ private const val MILLI = 1000L
  */
 fun tilePressure(
     tileCount: Int,
-    grams: LongArray,
+    mass: LongArray,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
 ): LongArray =
@@ -56,7 +56,7 @@ fun tilePressure(
         // at all.
         var liquidShare = 0L
         for (s in Species.ALL) {
-            val g = grams[tile * Species.COUNT + s.ordinal]
+            val g = mass[tile * Species.COUNT + s.ordinal]
             if (g <= 0L) continue
             liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
         }
@@ -68,7 +68,7 @@ fun tilePressure(
 
         var sum = 0L
         for (s in Species.ALL) {
-            val g = grams[tile * Species.COUNT + s.ordinal]
+            val g = mass[tile * Species.COUNT + s.ordinal]
             // A condensing species is measured against the whole cell, because the lever rule has
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
@@ -78,7 +78,7 @@ fun tilePressure(
             // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
             // above says "a very large pressure"; without this it says "a crash", and a cell can now
             // genuinely reach that state — gas advected into a tile that is nearly solid with liquid
-            // has almost no room to be in, and a handful of grams in a thousandth of a tile is past
+            // has almost no room to be in, and a handful of mass in a thousandth of a tile is past
             // the limit. Clamped to the densest that species can physically be, the pressure comes
             // out enormous and finite, which is what the comment above always intended and what the
             // solver needs in order to push the gas back out.
@@ -89,18 +89,18 @@ fun tilePressure(
     }
 
 /**
- * The smallest volume [grams] of [species] can be squeezed into and still have a pressure: the
+ * The smallest volume [mass] of [species] can be squeezed into and still have a pressure: the
  * volume at which it reaches [CLOSE_PACKED].
  *
  * Inverts [org.emerge.demo.fluidlab.chem.reducedDensity]. Zero for a species with no critical
  * point on file, which has no packing limit to reach.
  */
-private fun leastRoomFor(grams: Long, species: Species): Int {
-    if (grams <= 0L) return 0
+private fun leastRoomFor(mass: Long, species: Species): Int {
+    if (mass <= 0L) return 0
     val critical = CRITICAL[species] ?: return 0
-    // volume such that grams x SCALE / gramsPerTile x FULL / volume < CLOSE_PACKED, rounded up so
+    // volume such that mass x SCALE / gramsPerTile x FULL / volume < CLOSE_PACKED, rounded up so
     // the strict inequality holds rather than merely being approached.
-    val room = grams * SCALE / critical.gramsPerTile * VolumeField.FULL / (CLOSE_PACKED - 1) + 1
+    val room = mass * SCALE / critical.gramsPerTile * VolumeField.FULL / (CLOSE_PACKED - 1) + 1
     return room.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
 
@@ -111,11 +111,11 @@ private fun leastRoomFor(grams: Long, species: Species): Int {
  * The mass is split across the species in [AirField.AMBIENT_AIR]'s proportions, because the question
  * being asked of it is always "what would *air* do here", never "what would this particular gas do".
  */
-internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
-    if (grams <= 0L) return 0L
+internal fun ambientPressureOf(mass: Long, kelvin: Int, volume: Int): Long {
+    if (mass <= 0L) return 0L
     var sum = 0L
     for (s in Species.ALL) {
-        val share = grams * AirField.AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS
+        val share = mass * AirField.AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS
         sum += partialPressure(share, s, kelvin, volume, VolumeField.FULL)
             ?: idealPressure(share, s, kelvin, volume)
     }
@@ -140,20 +140,20 @@ internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
 internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long {
     if (target <= 0L) return 0L
     val ceiling = closePackedAirGrams(volume)
-    var grams = (target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL)
+    var mass = (target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL)
         .coerceAtMost(ceiling)
     repeat(NEWTON_STEPS) {
-        val here = ambientPressureOf(grams, kelvin, volume)
-        if (here == target) return grams
+        val here = ambientPressureOf(mass, kelvin, volume)
+        if (here == target) return mass
         // A thousandth of the current guess is small enough to be a local slope and large enough
         // that the pressure difference across it does not vanish into integer rounding.
-        val nudge = (grams / 1000L).coerceAtLeast(1L)
-        val slope = ambientPressureOf((grams + nudge).coerceAtMost(ceiling), kelvin, volume) - here
-        if (slope <= 0L) return grams
-        grams = (grams - (here - target) * nudge / slope).coerceAtMost(ceiling)
-        if (grams <= 0L) return 0L
+        val nudge = (mass / 1000L).coerceAtLeast(1L)
+        val slope = ambientPressureOf((mass + nudge).coerceAtMost(ceiling), kelvin, volume) - here
+        if (slope <= 0L) return mass
+        mass = (mass - (here - target) * nudge / slope).coerceAtMost(ceiling)
+        if (mass <= 0L) return 0L
     }
-    return grams
+    return mass
 }
 
 /**
@@ -201,8 +201,8 @@ private const val NEWTON_STEPS = 2
  * what [partialPressure] converges to as a cell empties out, which is why swapping one for the other
  * moved no existing pressure by more than a tenth of a percent.
  */
-private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: Int): Long {
-    val moles = grams * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MILLI
+private fun idealPressure(mass: Long, species: Species, kelvin: Int, volume: Int): Long {
+    val moles = mass * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MILLI
     return moles * kelvin / AMBIENT_KELVIN * VolumeField.FULL / volume
 }
 
@@ -210,10 +210,10 @@ private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: In
 private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
-fun millimolesOf(grams: LongArray, tile: Int): Long {
+fun millimolesOf(mass: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
-    for (s in Species.ALL) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
+    for (s in Species.ALL) sum += mass[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
     return sum
 }
 
@@ -228,9 +228,9 @@ fun millimolesOf(grams: LongArray, tile: Int): Long {
 val AMBIENT_PRESSURE: Long = run {
     var sum = 0L
     for (s in Species.ALL) {
-        val grams = AirField.AMBIENT_AIR[s]
-        sum += partialPressure(grams, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
-            ?: (grams * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
+        val mass = AirField.AMBIENT_AIR[s]
+        sum += partialPressure(mass, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
+            ?: (mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
     }
     sum
 }

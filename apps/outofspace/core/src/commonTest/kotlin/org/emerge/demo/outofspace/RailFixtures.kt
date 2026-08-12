@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.gramsPerTileOf
+import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.STARTER_DEMO_PLATE_Y
@@ -119,7 +119,7 @@ private fun linkPair(grid: Grid, rails: Array<Segment?>, a: Int, dir: Direction)
  * An extractor at [x],[y] with a body lying on its plate — what "a source of ore" means since H3.
  *
  * The body is exactly the plate's size, so every one of its cells is reachable and the whole thing
- * can be eaten. It is also **finite**, at [FEEDSTOCK_GRAMS] each, which is the difference a test has
+ * can be eaten. It is also **finite**, at [FEEDSTOCK_MASS] each, which is the difference a test has
  * to live with now: a line left running long enough stops, because the body ran out.
  *
  * [bodies] above one stacks that many in the same place, which is not something the game can hand a
@@ -165,14 +165,14 @@ const val FEEDSTOCK_RADIUS = 2
  * Derived from the composition the fixture actually spawns, not from a material constant: a rock's
  * mass is its ore now, so pinning this to anything else would let the two drift apart silently.
  */
-val FEEDSTOCK_GRAMS: Long get() = 21L * gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+val FEEDSTOCK_MASS: Long get() = 21L * massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
 
 /**
- * How many ticks it takes to shift [grams] along a belt, plus a little slack.
+ * How many ticks it takes to shift [mass] along a belt, plus a little slack.
  *
  * ⚠️ **Use this instead of a hard-coded tick count** in any test that waits for material to arrive.
  * A belt tile holds one packet and a machine hands over one per tick, so the whole logistics layer
- * runs at exactly `Capacity.PACKET_GRAMS` per tick — and that is a **tuning dial**. When it went
+ * runs at exactly `Capacity.PACKET_MASS` per tick — and that is a **tuning dial**. When it went
  * from a tonne to 100 kg, every test with a literal budget in it started failing for a reason that
  * had nothing to do with what it was testing, and a reader looking at `run(s, 240)` has no way to
  * tell whether 240 is a deadline, a measurement or a guess.
@@ -180,7 +180,7 @@ val FEEDSTOCK_GRAMS: Long get() = 21L * gramsPerTileOf(OutofspaceReducer.DEFAULT
  * The slack is a quarter on top, because a line has to fill before it can deliver and the first few
  * packets are in transit rather than arriving.
  */
-fun ticksToMove(grams: Long): Int = ((grams / Capacity.PACKET_GRAMS) * 5L / 4L).toInt() + 20
+fun ticksToMove(mass: Long): Int = ((mass / Capacity.PACKET_MASS) * 5L / 4L).toInt() + 20
 
 /**
  * The starter vessel **with feedstock on both plates** — what most of these tests mean when they
@@ -205,7 +205,7 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
     val bodies = rockOnPlate(STARTER_PLATE_X, STARTER_PLATE_Y, rocksPerPlate) +
         rockOnPlate(STARTER_PLATE_X, STARTER_DEMO_PLATE_Y, rocksPerPlate)
     // Bodies are not part of the energy ledger — their thermal energy enters only via extractor
-    // bites (recorded in [acquiredJoules]). So the baseline stays as-is.
+    // bites (recorded in [acquiredEnergy]). So the baseline stays as-is.
     return base.copy(
         bodies = bodies,
     )

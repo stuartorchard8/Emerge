@@ -24,11 +24,11 @@ import org.emerge.demo.outofspace.logistics.Capacity
  *    [overlapsHull]. A solid deck machine would be a wall a rock could never get on top of, so an
  *    impermeable extractor could not do the one thing it exists to do.
  *
- * [input] is how a rate in grams meets a rock measured in whole cells, and it makes the extractor
+ * [input] is how a rate in mass meets a rock measured in whole cells, and it makes the extractor
  * read like every other machine in the game: an input buffer, a rate, an output buffer. Mass leaves
  * a rock one **cell** at a time — a few kilograms of whatever that rock assays at, see
- * [RigidBody.gramsPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
- * buffer at [gramsPerTick] like a processor working a lump. A dense body is worth more ore per bite
+ * [RigidBody.massPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
+ * buffer at [massPerTick] like a processor working a lump. A dense body is worth more ore per bite
  * as well as taking more to shift. The rock is never half-eaten, which is what keeps the two ledgers
  * exact against each other, and the ore still comes out in a steady trickle rather than in lurches.
  *
@@ -45,7 +45,7 @@ data class Extractor(
      * Grams per tick at full activation: **one belt-load**.
      *
      * ⚠️ **A producer must never out-produce the belt it feeds.** A belt tile holds one packet and a
-     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_GRAMS]
+     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_MASS]
      * per tick — which makes that the ceiling for every machine in the game. Deriving the rate from
      * the packet states the invariant instead of leaving it to two literals that happen to agree:
      * when the belt-load went from a tonne to 100 kg, the old hard-coded rates were suddenly 2.5x
@@ -54,14 +54,14 @@ data class Extractor(
      * Tunable per machine later — a slow smelter and a fast one are a reasonable thing to want — but
      * the cap is structural and anything above it is a machine that starves its own output.
      */
-    val gramsPerTick: Long = Capacity.PACKET_GRAMS,
+    val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: TileJoules = ambientJoules(MachineKind.Extractor),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Extractor),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Extractor
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 
     companion object {
         /**
@@ -69,7 +69,7 @@ data class Extractor(
          *
          * **Derivation**: five tonnes — **20 ticks** at its own 250 kg/tick, so the machine keeps
          * grinding for a while when the belt pauses. A bite is a whole cell and weighs more than
-         * this, but a bite lands in [input] and is ground into the buffer at [gramsPerTick], so what
+         * this, but a bite lands in [input] and is ground into the buffer at [massPerTick], so what
          * this sizes is the gap between grinding and collection rather than the bite. In ticks and
          * not in belt-loads, for the reason on [MACHINE_BUFFER_CAP].
          */
@@ -85,7 +85,7 @@ data class Extractor(
  * for itself: the ore lands in a buffer, the heat lands in the casing and the momentum lands on the
  * ship, and each of the three has to be booked by the caller in the same breath.
  */
-class Bite(val body: RigidBody?, val grams: Long, val joules: Long, val impulseX: Long, val impulseY: Long)
+class Bite(val body: RigidBody?, val mass: Long, val energy: Long, val impulseX: Long, val impulseY: Long)
 
 /**
  * Which of [body]'s cells a machine covering tiles `[x0,x1] × [y0,y1]` can reach, or `-1`.
@@ -136,17 +136,17 @@ fun reachableCell(body: RigidBody, x0: Int, y0: Int, x1: Int, y1: Int): Int {
 fun biteCell(body: RigidBody, index: Int): Bite {
     require(body.cells[index]) { "cell $index of $body is not there to be taken" }
     val filled = body.filled
-    if (filled <= 1) return Bite(null, body.massGrams, body.joules.total, body.impulseX, body.impulseY)
+    if (filled <= 1) return Bite(null, body.mass, body.energy.total, body.impulseX, body.impulseY)
 
     val cells = body.cells.copyOf()
     cells[index] = false
-    // [RigidBody.joules] is indexed by a cell's ordinal among the filled ones, so the cell being
+    // [RigidBody.energy] is indexed by a cell's ordinal among the filled ones, so the cell being
     // taken has to be counted to, not indexed to. Heat now leaves as **the cell's own energy** and
     // not as a share of the whole: the same number while a body is isothermal, which it always is
     // today, and the right one the moment anything makes it otherwise.
     var ordinal = 0
     for (i in 0 until index) if (body.cells[i]) ordinal++
-    val takenJoules = body.joules[ordinal]
+    val takenEnergy = body.energy[ordinal]
 
     val keptX = body.impulseX * (filled - 1) / filled
     val keptY = body.impulseY * (filled - 1) / filled
@@ -154,12 +154,12 @@ fun biteCell(body: RigidBody, index: Int): Bite {
         width = body.width, height = body.height, cells = cells,
         positionX = body.positionX, positionY = body.positionY,
         impulseX = keptX, impulseY = keptY,
-        joules = body.joules.dropping(ordinal),
+        energy = body.energy.dropping(ordinal),
     )
     return Bite(
         body = left,
-        grams = body.gramsPerTile,
-        joules = takenJoules,
+        mass = body.massPerTile,
+        energy = takenEnergy,
         impulseX = body.impulseX - keptX,
         impulseY = body.impulseY - keptY,
     )

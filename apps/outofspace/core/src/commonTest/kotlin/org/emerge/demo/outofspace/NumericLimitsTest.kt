@@ -15,12 +15,12 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.SPECIFIC_HEAT_SCALE
 import org.emerge.demo.outofspace.world.capacityPerTile
-import org.emerge.demo.outofspace.world.gramsPerTile
+import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.size
-import org.emerge.demo.outofspace.world.solidGramsPerTile
+import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -84,7 +84,7 @@ class NumericLimitsTest {
      *
      * It used to be a literal `1_000_000`, and that was right for as long as the knob had not moved.
      * Every worst case in this file is measured by *running the game's own constants* — a hull's
-     * `gramsPerTile`, a `Storage.CAP` — which are integer counts in whatever unit `Budget` is set to
+     * `massPerTile`, a `Storage.CAP` — which are integer counts in whatever unit `Budget` is set to
      * right now. Multiply those by a fixed million and the answer is only the target while the build
      * is still at one gram per integer. Turn the knob and the file asks for the rescale **twice**:
      * every row failed, including rows with nothing wrong with them, and the whole file had to be
@@ -168,7 +168,7 @@ class NumericLimitsTest {
      * ⚠️ This is the correction that step 1 of `PLAN_unit_rescale.md` exists to make, and it is worth
      * stating plainly because the wrong version was load-bearing for a conclusion in the survey.
      *
-     * The bulk rows used to read `heaviestMachineGrams * gridTiles`: a whole smelter's mass charged
+     * The bulk rows used to read `heaviestMachineMass * gridTiles`: a whole smelter's mass charged
      * to **every tile in the grid**. But a smelter is five tiles across, so a grid packed solid with
      * smelters holds `gridTiles / 25` of them, not `gridTiles`. Multiplying the whole-machine figure
      * by the tile count double-counts the footprint and overstates the bound by exactly `thermalTiles`
@@ -179,8 +179,8 @@ class NumericLimitsTest {
      * everything but a bridge that reduces to `capacityPerTile` exactly, since `thermalTiles` and the
      * footprint are the same number — which is the sanity check that this is the right divisor.
      */
-    private val densestTileGrams: Long =
-        MachineKind.ALL.maxOf { it.gramsPerTile * it.thermalTiles / it.footprintTiles() }
+    private val densestTileMass: Long =
+        MachineKind.ALL.maxOf { it.massPerTile * it.thermalTiles / it.footprintTiles() }
     private val densestTileCapacity: Long =
         MachineKind.ALL.maxOf { it.capacityPerTile * it.thermalTiles / it.footprintTiles() }
 
@@ -190,7 +190,7 @@ class NumericLimitsTest {
      * An eighth of the grid in hull, which is roughly what a hull enclosing a usable interior comes
      * to and is within a factor of three of the 110 tonnes measured on the standard bare hull.
      */
-    private val referenceShipGrams: Long = MachineKind.Hull.gramsPerTile * gridTiles / 8L
+    private val referenceShipMass: Long = MachineKind.Hull.massPerTile * gridTiles / 8L
 
     /**
      * An integer count out of [Budget]'s current mass unit and into plain grams.
@@ -226,15 +226,15 @@ class NumericLimitsTest {
 
     /** The densest a tile of gas can legitimately get: close packing, three times critical. */
     private val densestPackedLiquid: Long =
-        Species.ALL.mapNotNull { CRITICAL[it] }.maxOf { it.gramsPerTile * 3 }
+        Species.ALL.mapNotNull { CRITICAL[it] }.maxOf { it.massPerTile * 3 }
 
     /** The densest a tile of anything can get. Not in any intermediate — kept as a stated bound. */
-    private val densestSolidTile: Long = Species.ALL.maxOf { it.solidGramsPerTile }
+    private val densestSolidTile: Long = Species.ALL.maxOf { it.solidMassPerTile }
 
     /**
      * `Composition.VOLUME_UNIT`, restated because it is private.
      *
-     * ⚠️ If that constant moves and this does not, the `gramsPerTileOf` row goes quietly wrong. It is
+     * ⚠️ If that constant moves and this does not, the `massPerTileOf` row goes quietly wrong. It is
      * restated rather than the constant made internal because the row it guards is about an
      * *unstated invariant* (see the row itself), and widening a constant's visibility would be the
      * wrong repair for that.
@@ -394,7 +394,7 @@ class NumericLimitsTest {
         // Step 4 routed it through [scaledRatio] too, so the invariant is gone: the function is now
         // correct for any pile at any mass unit, and what bounds it is the answer it returns, which
         // is a density. Hence `k^0` against the densest tile there is.
-        budget("gramsPerTileOf: densest tile (scale-invariant)", densestSolidTile, 0)
+        budget("massPerTileOf: densest tile (scale-invariant)", densestSolidTile, 0)
 
         // `capacityPerTileOf` multiplies that tile by the mass-averaged specific heat — and unlike
         // most products here, only ONE side is a mass. The tile scales with k; a specific heat is a
@@ -476,7 +476,7 @@ class NumericLimitsTest {
         //   - the fictional pairing the [capacityPerTileOf] row uses, densest x hottest.
         budget(
             "solid tile joules: the heaviest real material at max kelvin",
-            Species.ALL.maxOf { capacityOf(it.solidGramsPerTile, it.specificHeat.toLong()) } * designMaxKelvin,
+            Species.ALL.maxOf { capacityOf(it.solidMassPerTile, it.specificHeat.toLong()) } * designMaxKelvin,
             1, Dim.ENERGY,
         )
         budget(
@@ -486,12 +486,12 @@ class NumericLimitsTest {
         )
         budget(
             "solid tile joules: the heaviest real material at AMBIENT",
-            Species.ALL.maxOf { capacityOf(it.solidGramsPerTile, it.specificHeat.toLong()) } *
+            Species.ALL.maxOf { capacityOf(it.solidMassPerTile, it.specificHeat.toLong()) } *
                 Temperature.AMBIENT_KELVIN.toLong(),
             1, Dim.ENERGY,
         )
         // ⚠️ A whole free body was the tightest quantity in the game — twenty-one tiles of solid
-        // rock in one `Long` — and it is now [TileJoules], one figure per cell. The row is kept
+        // rock in one `Long` — and it is now [TileEnergy], one figure per cell. The row is kept
         // pointed at a single cell, and it is the *real*-material bound that it holds to: a body's
         // composition is a mixture of real species, so `densest x hottest` describes a rock that
         // cannot exist. The fictional pairing above is retained beside it precisely so the distance
@@ -500,7 +500,7 @@ class NumericLimitsTest {
         // Scales with grid AREA as well as with the mass unit — the one row where growing the map
         // spends overflow headroom. Uses the per-tile density, not the per-machine capacity: see
         // [densestTileCapacity] for why the old form overstated this by 25x.
-        // ⚠️ This is a LEDGER aggregate (`storedJoules`), not a stored simulation quantity, and
+        // ⚠️ This is a LEDGER aggregate (`storedEnergy`), not a stored simulation quantity, and
         // PLAN_unit_rescale.md §2 puts those out of scope — it is expected to be the last row red
         // when the knob moves, and step 3 decides what to do about it. Corrected, it now agrees with
         // the 7.56e12 J the plan quotes, which the old 25x form did not.
@@ -515,7 +515,7 @@ class NumericLimitsTest {
         )
 
         // ── Bulk mass ─────────────────────────────────────────────────────
-        budget("solid mass: densest deck across the whole grid", densestTileGrams * gridTiles, 1)
+        budget("solid mass: densest deck across the whole grid", densestTileMass * gridTiles, 1)
         budget("cargo: Storage.CAP across the grid", Storage.CAP * gridTiles, 1)
         budget("densest single tile (bound, not an intermediate)", densestSolidTile, 1)
 
@@ -583,7 +583,7 @@ class NumericLimitsTest {
         val scale = 1_000_000L
         // A spread rather than one pair: a bare fitting, a reference ship, and the heaviest grid
         // that can be built — and both signs, since the reduction shifts negatives too.
-        val masses = listOf(1_000L, inGrams(referenceShipGrams), inGrams(densestTileGrams * gridTiles))
+        val masses = listOf(1_000L, inGrams(referenceShipMass), inGrams(densestTileMass * gridTiles))
         val speeds = listOf(-designTopSpeed, -1L, 0L, 1L, designTopSpeed)
 
         for (mass in masses) for (speed in speeds) {
@@ -615,7 +615,7 @@ class NumericLimitsTest {
     @Test
     fun `reducing the fraction stays within a millionth of a tile per tick`() {
         // In grams, then scaled to micrograms by hand — see [inGrams] and the note on the case above.
-        val mass = inGrams(referenceShipGrams) * 1_000_000L
+        val mass = inGrams(referenceShipMass) * 1_000_000L
         var worst = 0.0
         // Awkward ratios on purpose: a momentum that divides evenly cannot expose a rounding.
         for (numerator in listOf(1L, 3L, 7L, 999L, 1_000_003L)) {
@@ -663,7 +663,7 @@ class NumericLimitsTest {
      */
     @Test
     fun `the stranding floor falls away from the floor a player can see`() {
-        val visibleGrams = Negligible.GRAMS / Budget.GRAM
+        val visibleGrams = Negligible.MASS / Budget.GRAM
         assertTrue(
             visibleGrams in 4L..8L,
             "the visible floor should be about six grams of gas whatever the unit is, got " +
@@ -671,14 +671,14 @@ class NumericLimitsTest {
         )
 
         // Both floors as a count of integers, which is the only footing they share.
-        val gap = Negligible.GRAMS / SLOTS.toLong()
+        val gap = Negligible.MASS / SLOTS.toLong()
         assertEquals(
             Budget.GRAM * visibleGrams / SLOTS.toLong(), gap,
             "the gap between the two floors is the mass unit and nothing else",
         )
         println(
             "stranding floor $SLOTS units = ${SLOTS * Budget.MICROGRAMS_PER_UNIT} µg; " +
-                "visible floor ${Negligible.GRAMS} units = $visibleGrams g; gap x${gap.commas()}",
+                "visible floor ${Negligible.MASS} units = $visibleGrams g; gap x${gap.commas()}",
         )
         // At one gram per integer this ratio is about 1 and the cover story of §6.2 applies. The
         // knob is what moves it.

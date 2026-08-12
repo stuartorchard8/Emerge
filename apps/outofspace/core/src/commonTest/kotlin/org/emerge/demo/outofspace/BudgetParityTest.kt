@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
  * **survives step 8**: each assertion divides the constant by its unit, so it states a fact in grams
  * and joules rather than in whatever integer those currently come to.
  *
- * That is the difference between a pin and a guard. Asserting `PACKET_GRAMS == 1_000_000` would go
+ * That is the difference between a pin and a guard. Asserting `PACKET_MASS == 1_000_000` would go
  * red the moment the knob moves and would have to be re-baselined by hand — which is precisely the
  * kind of "moved expected value" that teaches people to edit tests instead of reading them. Asserting
  * that a packet is **one tonne of material** stays true at every mass scale, and goes red only if a
@@ -46,7 +46,7 @@ class BudgetParityTest {
     @Test
     fun `every derived constant still means the quantity it meant before the audit`() {
         // ── Logistics: the packet is the quantum, everything else is a count of them ──
-        assertEquals(100_000L, Capacity.PACKET_GRAMS.grams, "a packet is 100 kg")
+        assertEquals(100_000L, Capacity.PACKET_MASS.grams, "a packet is 100 kg")
         // Buffers are sized in TICKS OF THROUGHPUT, not in belt-loads — see MACHINE_BUFFER_CAP for
         // the bug that taught the difference. So they are asserted as masses, independent of packets.
         assertEquals(4_000_000L, MACHINE_BUFFER_CAP.grams, "input buffer is four tonnes")
@@ -55,8 +55,8 @@ class BudgetParityTest {
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.
-        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(Direction.Right).gramsPerTick, "40 ticks of buffer")
-        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(Direction.Right).gramsPerTick, "50 ticks of buffer")
+        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(Direction.Right).massPerTick, "40 ticks of buffer")
+        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(Direction.Right).massPerTick, "50 ticks of buffer")
 
         // ── Machine throughput ──
         //
@@ -65,16 +65,16 @@ class BudgetParityTest {
         // or it starves its own output. Asserted for every producer rather than for one, because
         // this is the property that broke when the belt-load shrank and it broke silently.
         for ((what, rate) in listOf(
-            "extractor" to Extractor(Direction.Right).gramsPerTick,
-            "smelter" to Smelter(Direction.Right).gramsPerTick,
-            "processor" to Processor(Direction.Right).gramsPerTick,
-            "vaporizer" to Vaporizer(Direction.Right).gramsPerTick,
+            "extractor" to Extractor(Direction.Right).massPerTick,
+            "smelter" to Smelter(Direction.Right).massPerTick,
+            "processor" to Processor(Direction.Right).massPerTick,
+            "vaporizer" to Vaporizer(Direction.Right).massPerTick,
         )) {
-            assertEquals(Capacity.PACKET_GRAMS, rate, "$what must produce exactly one belt-load a tick")
+            assertEquals(Capacity.PACKET_MASS, rate, "$what must produce exactly one belt-load a tick")
         }
 
         // ── Debug tools ──
-        assertEquals(1_000L, Edit.INJECT_GRAMS.grams, "the injector delivers a kilogram a tick")
+        assertEquals(1_000L, Edit.INJECT_MASS.grams, "the injector delivers a kilogram a tick")
 
         // ── Energy-dimensioned, so measured against the energy unit and not the mass one ──
         assertEquals(20L, Material.AIR_FILM.joules, "the air film is 20 J/K/tick")
@@ -93,7 +93,7 @@ class BudgetParityTest {
                 Species.Argon -> 536
                 else -> error("no critical density stated for $species")
             }
-            assertEquals(kgPerCubicMetre * TILE_LITRES, c.gramsPerTile.grams, "critical $species")
+            assertEquals(kgPerCubicMetre * TILE_LITRES, c.massPerTile.grams, "critical $species")
         }
     }
 

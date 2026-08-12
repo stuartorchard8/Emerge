@@ -22,7 +22,7 @@ import kotlin.test.assertEquals
  *
  * **Mass conservation, and it is deliberately the survivor.** It is the check most likely to catch a
  * rescaling mistake, and it survives the target unit comfortably. Every `airBalance`, `massBalance`
- * and `atmosphereGrams` assertion in the suite stays live and stays strict. If you are about to
+ * and `atmosphereMass` assertion in the suite stays live and stays strict. If you are about to
  * silence one of those to make a rescale step go green, you have found a real bug.
  *
  * ### The shape of the parking
@@ -68,13 +68,13 @@ object EnergyLedgers {
     fun assertBalanced(s: VesselState, what: String) {
         if (PARKED) return
         assertEquals(0L, s.heatBalance, "$what: the solid energy ledger is out by ${s.heatBalance}")
-        assertEquals(0L, s.airJouleBalance, "$what: the air energy ledger is out by ${s.airJouleBalance}")
+        assertEquals(0L, s.airEnergyBalance, "$what: the air energy ledger is out by ${s.airEnergyBalance}")
     }
 
     /** The air half alone, for the fixtures that have no fabric worth speaking of. */
     fun assertAirBalanced(s: VesselState, what: String) {
         if (PARKED) return
-        assertEquals(0L, s.airJouleBalance, "$what: the air energy ledger is out by ${s.airJouleBalance}")
+        assertEquals(0L, s.airEnergyBalance, "$what: the air energy ledger is out by ${s.airEnergyBalance}")
     }
 
     /**
@@ -86,6 +86,6 @@ object EnergyLedgers {
     fun assertPreserved(before: VesselState, after: VesselState, what: String) {
         if (PARKED) return
         assertEquals(before.heatBalance, after.heatBalance, "$what: heatBalance moved")
-        assertEquals(before.airJouleBalance, after.airJouleBalance, "$what: airJouleBalance moved")
+        assertEquals(before.airEnergyBalance, after.airEnergyBalance, "$what: airEnergyBalance moved")
     }
 }

@@ -88,12 +88,12 @@ class FluidlabSimTest {
         val controller = FluidlabController(cfg, start)
         val tile = start.grid.index(8, 6)
 
-        controller.inject(tile, Species.Water, grams = 4_000, kelvin = 500)
+        controller.inject(tile, Species.Water, mass = 4_000, kelvin = 500)
         val end = controller.stepTicks(1)
 
         assertTrue(end.air.gramsOf(tile, Species.Water) > 0L, "the water never arrived")
         // One tick of transport moves heat around, so this is a neighbourhood, not an equality: the
-        // point is that it landed hot rather than at whatever the tile's prior joules implied.
+        // point is that it landed hot rather than at whatever the tile's prior energy implied.
         assertTrue(end.air.kelvinAt(tile) > AMBIENT_KELVIN, "injected gas arrived cold")
     }
 

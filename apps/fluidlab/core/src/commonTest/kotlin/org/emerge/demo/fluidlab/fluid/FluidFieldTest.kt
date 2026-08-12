@@ -159,10 +159,10 @@ class FluidFieldTest {
         val interior = edges.xEdge(2, 1)
         mx[interior] = 500L
         val field = MomentumField.of(edges, mx, LongArray(edges.yEdgeCount))
-        val grams = LongArray(grid.size) { 1000L }
+        val mass = LongArray(grid.size) { 1000L }
 
         // 500 g·tiles/tick carried by 1000 g is half a tile per tick.
-        assertEquals(MomentumField.SPEED_LIMIT_RAW / 2, field.velocityX(interior, grams).raw)
+        assertEquals(MomentumField.SPEED_LIMIT_RAW / 2, field.velocityX(interior, mass).raw)
         assertEquals(500L, field.totalX)
     }
 
@@ -172,11 +172,11 @@ class FluidFieldTest {
         val rim = edges.xEdge(0, 2)
         mx[rim] = 500L
         val field = MomentumField.of(edges, mx, LongArray(edges.yEdgeCount))
-        val grams = LongArray(grid.size) { 1000L }
+        val mass = LongArray(grid.size) { 1000L }
 
         // Half a tile per tick, not a whole one: the vacuum beyond is not half a cell of nothing
         // dragging the average down.
-        assertEquals(MomentumField.SPEED_LIMIT_RAW / 2, field.velocityX(rim, grams).raw)
+        assertEquals(MomentumField.SPEED_LIMIT_RAW / 2, field.velocityX(rim, mass).raw)
     }
 
     @Test
@@ -188,11 +188,11 @@ class FluidFieldTest {
 
     @Test
     fun `the CFL limit is a tile per tick, and it can be seen being crossed`() {
-        val grams = LongArray(grid.size) { 1000L }
+        val mass = LongArray(grid.size) { 1000L }
         val slow = LongArray(edges.xEdgeCount).also { it[edges.xEdge(2, 1)] = 900L }
-        assertTrue(MomentumField.of(edges, slow, LongArray(edges.yEdgeCount)).isCflSafe(grams))
+        assertTrue(MomentumField.of(edges, slow, LongArray(edges.yEdgeCount)).isCflSafe(mass))
 
         val fast = LongArray(edges.xEdgeCount).also { it[edges.xEdge(2, 1)] = 1100L }
-        assertFalse(MomentumField.of(edges, fast, LongArray(edges.yEdgeCount)).isCflSafe(grams))
+        assertFalse(MomentumField.of(edges, fast, LongArray(edges.yEdgeCount)).isCflSafe(mass))
     }
 }

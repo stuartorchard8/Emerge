@@ -129,11 +129,11 @@ fun sweepBody(
     body: RigidBody,
     shipVelocityX: Long,
     shipVelocityY: Long,
-    shipMassGrams: Long,
+    shipMass: Long,
     restingSpeedX: Long,
     restingSpeedY: Long,
 ): SweptBody {
-    val mass = body.massGrams
+    val mass = body.mass
     if (mass <= 0L) return SweptBody(body, 0L, 0L)
 
     var px = body.positionX
@@ -144,10 +144,10 @@ fun sweepBody(
     var gotY = 0L
 
     // The reduced mass, and the one expression here that is *quadratic* in the mass unit: a product
-    // of two masses over their sum. Written plainly it wraps for any pair heavier than a few grams
+    // of two masses over their sum. Written plainly it wraps for any pair heavier than a few units
     // once a unit is a microgram, so it is a reduced fraction — the ratio it computes is what the
     // physics wants and the ratio has no unit.
-    val mu = if (shipMassGrams <= 0L) mass else scaledRatio(mass, mass + shipMassGrams, shipMassGrams)
+    val mu = if (shipMass <= 0L) mass else scaledRatio(mass, mass + shipMass, shipMass)
 
     // Where the wall is going, updated as the body shoves it. See the note on this function.
     var svx = shipVelocityX
@@ -155,7 +155,7 @@ fun sweepBody(
 
     /** What the ship's velocity moves by when the body is handed [j] — the equal and opposite half. */
     fun recoil(j: Long): Long =
-        if (shipMassGrams <= 0L) 0L else scaledRatio(-j, shipMassGrams, Flight.PER_TILE)
+        if (shipMass <= 0L) 0L else scaledRatio(-j, shipMass, Flight.PER_TILE)
 
     // [RigidBody.velocityX]'s expression, on an impulse that is being carried through the sweep.
     fun relative(impulse: Long, shipVelocity: Long): Long =

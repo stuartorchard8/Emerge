@@ -13,7 +13,7 @@ sealed interface Packet {
     /** What is in it, species by species. */
     val contents: Mixture
 
-    /** Total mass in grams. Also the quantity capacity is measured in today — see [Capacity]. */
+    /** Total mass in mass. Also the quantity capacity is measured in today — see [Capacity]. */
     val mass: Long get() = contents.total
 
     val isEmpty: Boolean get() = contents.isEmpty
@@ -33,11 +33,11 @@ data class FluidPacket(override val contents: Mixture) : Packet {
 }
 
 /**
- * Capacity: max grams per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
+ * Capacity: max mass per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
  */
 object Capacity {
     /**
-     * Max grams per packet: **100 kg**, a lump one person could not lift. Separate from [Rate],
+     * Max mass per packet: **100 kg**, a lump one person could not lift. Separate from [Rate],
      * which is throughput.
      *
      * Solids are at their real densities, so a tile of ore is about four tonnes — roughly forty of
@@ -48,13 +48,13 @@ object Capacity {
      * every buffer is a small whole number of these — so it is stated in [Budget]'s units and
      * everything else refers back to it rather than restating a mass of its own.
      */
-    const val PACKET_GRAMS: Long = 100L * Budget.KILOGRAM
+    const val PACKET_MASS: Long = 100L * Budget.KILOGRAM
 
     /** The measure capacity is expressed in. Mass today; see the class note for why it is a function. */
     fun quantityOf(packet: Packet): Long = packet.mass
 
     /** Room left in a packet of the given capacity. */
-    fun headroom(packet: Packet, capacity: Long = PACKET_GRAMS): Long = (capacity - quantityOf(packet)).coerceAtLeast(0L)
+    fun headroom(packet: Packet, capacity: Long = PACKET_MASS): Long = (capacity - quantityOf(packet)).coerceAtLeast(0L)
 }
 
 /**
@@ -65,7 +65,7 @@ object Capacity {
  * processor run at 45% of 125 kg/tick owes 56.25 kg, and there is no honest integer for that. Rounding it away every
  * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is
  * a lot. So the fraction is carried in state: each tick adds the scaled numerator to a carry, takes
- * out whole grams, and keeps the remainder for next time. Over any run of ticks the delivered total
+ * out whole mass, and keeps the remainder for next time. Over any run of ticks the delivered total
  * is exact to within a gram.
  *
  * The carry is a plain `Long` living in whatever machine owns the rate, so it serialises with the
@@ -74,10 +74,10 @@ object Capacity {
  */
 object Rate {
     /**
-     * Given `numerator / denominator` grams and the accumulated fractional [carry], returns
-     * `(gramsThisTick, newCarry)`.
+     * Given `numerator / denominator` mass and the accumulated fractional [carry], returns
+     * `(massThisTick, newCarry)`.
      *
-     * @param numerator grams-per-tick already multiplied by the throttle, e.g. `125 * activation`
+     * @param numerator mass-per-tick already multiplied by the throttle, e.g. `125 * activation`
      * @param denominator what that multiplier is out of, e.g. [org.emerge.demo.outofspace.world.SignalField.FULL]
      * @param carry leftover from the previous tick; start at 0
      */
@@ -96,14 +96,14 @@ object Rate {
  * the pile rather than the good bits skimmed off the top. That is what stops a belt from acting as
  * an accidental free refinery.
  */
-fun packSolid(source: Resource, capacity: Long = Capacity.PACKET_GRAMS): Pair<SolidPacket?, Resource> {
+fun packSolid(source: Resource, capacity: Long = Capacity.PACKET_MASS): Pair<SolidPacket?, Resource> {
     if (source.isEmpty || capacity <= 0L) return null to source
     val taken = source.mixture.take(capacity)
     return SolidPacket(Resource(source.form, taken)) to Resource(source.form, source.mixture - taken)
 }
 
 /** As [packSolid], for a fluid reservoir. */
-fun packFluid(source: Mixture, capacity: Long = Capacity.PACKET_GRAMS): Pair<FluidPacket?, Mixture> {
+fun packFluid(source: Mixture, capacity: Long = Capacity.PACKET_MASS): Pair<FluidPacket?, Mixture> {
     if (source.isEmpty || capacity <= 0L) return null to source
     val taken = source.take(capacity)
     return FluidPacket(taken) to (source - taken)
@@ -117,7 +117,7 @@ fun packFluid(source: Mixture, capacity: Long = Capacity.PACKET_GRAMS): Pair<Flu
  * Returns null when the two cannot combine at all, leaving the caller to decide (usually: the belt
  * backs up).
  */
-fun mergeInto(existing: Packet, incoming: Packet, capacity: Long = Capacity.PACKET_GRAMS): MergeResult? {
+fun mergeInto(existing: Packet, incoming: Packet, capacity: Long = Capacity.PACKET_MASS): MergeResult? {
     val room = Capacity.headroom(existing, capacity)
     return when {
         existing is SolidPacket && incoming is SolidPacket -> {

@@ -11,7 +11,7 @@ package org.emerge.demo.outofspace.num
  *
  * ### Why the usual fix does not work at these sites
  *
- * The standard repair is to split whole part and remainder, as `gramsPerTileOf` used to. It is
+ * The standard repair is to split whole part and remainder, as `massPerTileOf` used to. It is
  * worth almost nothing here, and the reason is worth stating because it is not obvious: splitting
  * turns the worst intermediate from `a × scale` into `b × scale`, and at every one of these sites
  * `a` and `b` carry the mass unit *together*. The whole gain is whatever their ratio is — a factor

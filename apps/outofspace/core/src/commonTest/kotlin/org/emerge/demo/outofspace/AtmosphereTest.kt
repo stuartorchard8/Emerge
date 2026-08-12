@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 class AtmosphereTest {
 
     /**
-     * Every seeded mass below is a number of *grams*, said out loud.
+     * Every seeded mass below is a number of *mass*, said out loud.
      *
      * A tile of air at one atmosphere is about a kilogram, so "6,000" here means a room six times
      * over-pressured — a fixture you can reason about. Written as a bare `6_000L` it meant six
@@ -50,7 +50,7 @@ class AtmosphereTest {
 
     private fun assertAirBalanced(s: VesselState, what: String) {
         assertEquals(
-            s.baselineAirGrams,
+            s.baselineAirMass,
             s.atmosphereMass + s.airVentedMass,
             "$what: aboard ${s.atmosphereMass} + vented ${s.airVentedMass}",
         )
@@ -96,11 +96,11 @@ class AtmosphereTest {
         machines[grid.index(4, 2)] = Hull()   // the dividing wall
         var s = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
 
-        val grams = LongArray(grid.size * Species.COUNT)
-        for (x in 2..3) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L * gram
-        for (x in 5..6) grams[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 500L * gram
-        val field = AirField.of(grams)
-        s = s.copy(air = field, baselineAirGrams = field.totalGrams)
+        val mass = LongArray(grid.size * Species.COUNT)
+        for (x in 2..3) mass[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L * gram
+        for (x in 5..6) mass[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 500L * gram
+        val field = AirField.of(mass)
+        s = s.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 40)
         // Per *room*, not per tile. What this test is about is the wall: a room at four times the
@@ -110,10 +110,10 @@ class AtmosphereTest {
         // Asserting per-tile made this a test of "the air does not move at all", which is a
         // different and much stronger claim than the one in its name, and a false one.
         //
-        // Pressure reads in millimoles now, not grams -- see [AirField.pressureAt].
-        fun roomGrams(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.index(it, 2)) }
-        assertEquals(4_000L * gram, roomGrams(2..3), "the high side stayed high")
-        assertEquals(1_000L * gram, roomGrams(5..6), "and the low side stayed low")
+        // Pressure reads in millimoles now, not mass -- see [AirField.pressureAt].
+        fun roomMass(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.index(it, 2)) }
+        assertEquals(4_000L * gram, roomMass(2..3), "the high side stayed high")
+        assertEquals(1_000L * gram, roomMass(5..6), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
     }
 
@@ -123,10 +123,10 @@ class AtmosphereTest {
     fun `pressure equalises across a connected room`() {
         val room = sealedRoom(8, 4)
         val g = room.grid
-        val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 6_000L * gram
-        val field = AirField.of(grams)
-        var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
+        val mass = LongArray(g.size * Species.COUNT)
+        mass[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 6_000L * gram
+        val field = AirField.of(mass)
+        var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         fun interior() = (0 until g.size).filter {
             s.structure.isContained(it) && !s.structure.isImpermeable(it)
@@ -171,10 +171,10 @@ class AtmosphereTest {
     fun `flow settles rather than running away`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
-        val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 10_000L * gram
-        val field = AirField.of(grams)
-        var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
+        val mass = LongArray(g.size * Species.COUNT)
+        mass[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 10_000L * gram
+        val field = AirField.of(mass)
+        var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         // The old assertion was that the peak never rises, which is true of diffusion and false of
         // any solver that carries momentum: gas that has been accelerated has to arrive somewhere,
@@ -195,17 +195,17 @@ class AtmosphereTest {
     fun `a draught carries the room's mix rather than skimming one gas`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
-        val grams = LongArray(g.size * Species.COUNT)
+        val mass = LongArray(g.size * Species.COUNT)
         val source = g.index(2, 2) * Species.COUNT
-        grams[source + Species.Oxygen.ordinal] = 2_000L * gram
-        grams[source + Species.Nitrogen.ordinal] = 6_000L * gram
-        val field = AirField.of(grams)
-        var s = room.copy(air = field, baselineAirGrams = field.totalGrams)
+        mass[source + Species.Oxygen.ordinal] = 2_000L * gram
+        mass[source + Species.Nitrogen.ordinal] = 6_000L * gram
+        val field = AirField.of(mass)
+        var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 30)   // part-way through equalising
         val neighbour = g.index(3, 2)
-        val o2 = s.air.gramsOf(neighbour, Species.Oxygen)
-        val n2 = s.air.gramsOf(neighbour, Species.Nitrogen)
+        val o2 = s.air.massOf(neighbour, Species.Oxygen)
+        val n2 = s.air.massOf(neighbour, Species.Nitrogen)
         assertTrue(o2 > 0L && n2 > 0L, "both gases should have moved: O2=$o2 N2=$n2")
         assertTrue(n2 > o2 * 2, "and roughly in the source's 1:3 ratio: O2=$o2 N2=$n2")
     }
@@ -218,7 +218,7 @@ class AtmosphereTest {
         val g = room.grid
         val emptied = room.copy(
             air = AirField.of(LongArray(g.size * Species.COUNT)),
-            baselineAirGrams = 0L,
+            baselineAirMass = 0L,
         )
         val s = run(emptied, 4)
         assertEquals(Structure.Interior, s.structure[g.index(2, 2)], "it is still a room")
@@ -282,27 +282,27 @@ class AtmosphereTest {
         val g = Grid(9, 3)
         val strip = (2..6).map { g.index(it, 1) }
         val exits = setOf(g.index(1, 1), g.index(7, 1))
-        val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
+        val mass = LongArray(g.size * Species.COUNT)
+        mass[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
 
-        assertTrue(tryDisplaceAir(g, grams, strip) { it in exits }, "both ends are open")
+        assertTrue(tryDisplaceAir(g, mass, strip) { it in exits }, "both ends are open")
         for (tile in strip) {
-            assertEquals(0L, grams[tile * Species.COUNT + Species.Oxygen.ordinal], "the strip is empty")
+            assertEquals(0L, mass[tile * Species.COUNT + Species.Oxygen.ordinal], "the strip is empty")
         }
-        assertEquals(2_000L * gram, grams[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
-        assertEquals(1_000L * gram, grams[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
+        assertEquals(2_000L * gram, mass[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
+        assertEquals(1_000L * gram, mass[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
     }
 
     @Test
     fun `a sealed area displaces nothing and reports failure`() {
         val g = Grid(9, 3)
         val strip = (2..6).map { g.index(it, 1) }
-        val grams = LongArray(g.size * Species.COUNT)
-        grams[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
-        val before = grams.copyOf()
+        val mass = LongArray(g.size * Species.COUNT)
+        mass[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
+        val before = mass.copyOf()
 
-        assertTrue(!tryDisplaceAir(g, grams, strip) { false }, "there is no way out")
-        assertTrue(grams.contentEquals(before), "a refusal leaves the field exactly as it found it")
+        assertTrue(!tryDisplaceAir(g, mass, strip) { false }, "there is no way out")
+        assertTrue(mass.contentEquals(before), "a refusal leaves the field exactly as it found it")
     }
 
     @Test

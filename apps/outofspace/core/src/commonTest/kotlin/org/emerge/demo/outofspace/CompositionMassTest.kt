@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.capacityPerTile
-import org.emerge.demo.outofspace.world.gramsPerTile
+import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BodyKind
@@ -12,10 +12,10 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.biteCell
 import org.emerge.demo.outofspace.world.capacityPerTileOf
-import org.emerge.demo.outofspace.world.TileJoules
-import org.emerge.demo.outofspace.world.gramsPerTileOf
+import org.emerge.demo.outofspace.world.TileEnergy
+import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.solidGramsPerTile
+import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.billOfMaterials
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import kotlin.test.Test
@@ -42,7 +42,7 @@ class CompositionMassTest {
         for (species in Species.ALL) {
             val body = rock(pure(species))
             assertEquals(
-                species.solidGramsPerTile * body.filled, body.massGrams,
+                species.solidMassPerTile * body.filled, body.mass,
                 "a rock of pure $species",
             )
         }
@@ -50,10 +50,10 @@ class CompositionMassTest {
 
     @Test
     fun `density orders bodies the way the real materials do`() {
-        val uranium = rock(pure(Species.Uranium)).massGrams
-        val iron = rock(pure(Species.Iron)).massGrams
-        val silica = rock(pure(Species.Silica)).massGrams
-        val ice = rock(pure(Species.Water)).massGrams
+        val uranium = rock(pure(Species.Uranium)).mass
+        val iron = rock(pure(Species.Iron)).mass
+        val silica = rock(pure(Species.Silica)).mass
+        val ice = rock(pure(Species.Water)).mass
         assertTrue(uranium > iron, "uranium ($uranium g) should outweigh iron ($iron g)")
         assertTrue(iron > silica, "iron ($iron g) should outweigh silica ($silica g)")
         assertTrue(silica > ice, "silica ($silica g) should outweigh ice ($ice g)")
@@ -67,8 +67,8 @@ class CompositionMassTest {
     @Test
     fun `a mixture's density is the harmonic mean, not the arithmetic one`() {
         val half = Mixture.of(Species.Iron to 500L, Species.Silica to 500L)
-        val ironDensity = Species.Iron.solidGramsPerTile
-        val silicaDensity = Species.Silica.solidGramsPerTile
+        val ironDensity = Species.Iron.solidMassPerTile
+        val silicaDensity = Species.Silica.solidMassPerTile
 
         val harmonic = 2L * ironDensity * silicaDensity / (ironDensity + silicaDensity)
         val arithmetic = (ironDensity + silicaDensity) / 2L
@@ -76,8 +76,8 @@ class CompositionMassTest {
         // Within a few parts per million: both sides are integer arithmetic over tonne-scale
         // densities, rounding in different orders. The claim is the formula, not the last digit.
         assertTrue(
-            close(harmonic, gramsPerTileOf(half)),
-            "half iron half silica by mass: expected about $harmonic, got ${gramsPerTileOf(half)}",
+            close(harmonic, massPerTileOf(half)),
+            "half iron half silica by mass: expected about $harmonic, got ${massPerTileOf(half)}",
         )
         assertTrue(harmonic < arithmetic, "the two formulas have to differ or this test proves nothing")
     }
@@ -88,8 +88,8 @@ class CompositionMassTest {
         val mix = Mixture.of(Species.Iron to 700L, Species.Water to 300L)
         val perGram = 700L * Species.Iron.specificHeat + 300L * Species.Water.specificHeat
         // Divided last, as the implementation does — dividing the specific heat down to a per-gram
-        // integer first throws away a fraction that a whole tile's worth of grams makes visible.
-        val expected = gramsPerTileOf(mix) * perGram / 1000L
+        // integer first throws away a fraction that a whole tile's worth of mass makes visible.
+        val expected = massPerTileOf(mix) * perGram / 1000L
         assertTrue(
             close(expected, capacityPerTileOf(mix)),
             "capacity of a wet iron rock: expected about $expected, got ${capacityPerTileOf(mix)}",
@@ -101,7 +101,7 @@ class CompositionMassTest {
      * tile of a composition costs to warm, and doubling the sample cannot change it. That makes it
      * its own oracle — no literal to pin, just the same mixture stated at wildly different totals.
      *
-     * It used to fail, at a total the old code could reach two different ways — `Σ grams ×
+     * It used to fail, at a total the old code could reach two different ways — `Σ mass ×
      * specificHeat` overflows on its own at ~2.2e15, and the product with a tile of solid goes
      * earlier still, worst case pure water. The symptom was a *negative* heat capacity rather than
      * an exception, so this sweeps water specifically rather than a mixture that reads more typical
@@ -142,10 +142,10 @@ class CompositionMassTest {
     fun `a bite takes what a tile of that rock weighs`() {
         val heavy = rock(pure(Species.Uranium))
         val light = rock(pure(Species.Water))
-        assertEquals(heavy.gramsPerTile, biteCell(heavy, heavy.cells.indexOfFirst { it }).grams)
+        assertEquals(heavy.massPerTile, biteCell(heavy, heavy.cells.indexOfFirst { it }).mass)
         assertTrue(
-            biteCell(heavy, heavy.cells.indexOfFirst { it }).grams >
-                biteCell(light, light.cells.indexOfFirst { it }).grams,
+            biteCell(heavy, heavy.cells.indexOfFirst { it }).mass >
+                biteCell(light, light.cells.indexOfFirst { it }).mass,
             "a bite of uranium should outweigh a bite of ice",
         )
     }
@@ -154,11 +154,11 @@ class CompositionMassTest {
     @Test
     fun `biting a rock to nothing yields exactly its mass`() {
         var body: RigidBody? = rock(Mixture.of(Species.Iron to 410L, Species.Silica to 300L))
-        val whole = body!!.massGrams
+        val whole = body!!.mass
         var taken = 0L
         while (body != null) {
             val bite = biteCell(body, body.cells.indexOfFirst { it })
-            taken += bite.grams
+            taken += bite.mass
             body = bite.body
         }
         assertEquals(whole, taken, "the rock and the ore ledger disagree")
@@ -172,9 +172,9 @@ class CompositionMassTest {
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
             machineKind = MachineKind.Smelter,
-            joules = TileJoules.uniform(1, 0L),
+            energy = TileEnergy.uniform(1, 0L),
         )
-        assertEquals(MachineKind.Smelter.gramsPerTile, fragment.massGrams)
+        assertEquals(MachineKind.Smelter.massPerTile, fragment.mass)
         assertEquals(MachineKind.Smelter.capacityPerTile, fragment.capacity)
     }
 
@@ -188,9 +188,9 @@ class CompositionMassTest {
      */
     @Test
     fun `a tile of ore weighs what that much ore weighs`() {
-        val perTile = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        // Out of Budget's unit and into grams first. A gram per litre *is* a kilogram per cubic
-        // metre, so once the mass is in grams the rest is the identity the KDoc describes — but
+        val perTile = massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+        // Out of Budget's unit and into mass first. A gram per litre *is* a kilogram per cubic
+        // metre, so once the mass is in mass the rest is the identity the KDoc describes — but
         // while one integer was one gram that division was invisible, and the assay read in
         // millions of tonnes the moment the unit moved.
         val kgPerCubicMetre = perTile / Budget.GRAM / TILE_LITRES
@@ -203,11 +203,11 @@ class CompositionMassTest {
     /** A rock is solid; a machine is a shell with air in it. The one must outweigh the other. */
     @Test
     fun `a boulder outweighs the ship's own fabric, tile for tile`() {
-        val oreTile = gramsPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
+        val oreTile = massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
         for (kind in listOf(MachineKind.Hull, MachineKind.Smelter, MachineKind.Rail)) {
             assertTrue(
-                oreTile > kind.gramsPerTile * 4,
-                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.gramsPerTile} g)",
+                oreTile > kind.massPerTile * 4,
+                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.massPerTile} g)",
             )
         }
     }
@@ -217,7 +217,7 @@ class CompositionMassTest {
     fun `a machine's bill of materials weighs the machine`() {
         for (kind in MachineKind.ALL) {
             val bom = billOfMaterials(kind)
-            assertEquals(kind.gramsPerTile * kind.thermalTiles, bom.total, "${kind.label} bill of materials")
+            assertEquals(kind.massPerTile * kind.thermalTiles, bom.total, "${kind.label} bill of materials")
             for (species in Species.ALL) {
                 if (kind.material.composition[species] == 0L) {
                     assertEquals(0L, bom[species], "${kind.label} should contain no $species")

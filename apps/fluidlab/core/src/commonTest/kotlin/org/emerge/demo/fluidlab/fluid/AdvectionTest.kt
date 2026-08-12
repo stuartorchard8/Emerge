@@ -28,19 +28,19 @@ class AdvectionTest {
 
     private fun emptyAir() = LongArray(grid.size * Species.COUNT)
 
-    private fun put(grams: LongArray, tile: Int, vararg parts: Pair<Species, Long>) {
-        for ((s, mass) in parts) grams[tile * Species.COUNT + s.ordinal] += mass
+    private fun put(mass: LongArray, tile: Int, vararg parts: Pair<Species, Long>) {
+        for ((s, mass) in parts) mass[tile * Species.COUNT + s.ordinal] += mass
     }
 
-    private fun massAt(grams: LongArray, tile: Int): Long {
+    private fun massAt(mass: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += grams[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += mass[tile * Species.COUNT + s.ordinal]
         return sum
     }
 
-    private fun totalMass(grams: LongArray): Long {
+    private fun totalMass(mass: LongArray): Long {
         var sum = 0L
-        for (g in grams) sum += g
+        for (g in mass) sum += g
         return sum
     }
 
@@ -53,24 +53,24 @@ class AdvectionTest {
 
     @Test
     fun `gas moves the way the field points`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val start = grid.index(1, 2)
-        put(grams, start, Species.Nitrogen to 1000L)
+        put(mass, start, Species.Nitrogen to 1000L)
 
-        advectMass(edges, open, blowingRight(500L), grams)
+        advectMass(edges, open, blowingRight(500L), mass)
 
-        assertTrue(massAt(grams, start) < 1000L, "the source should have given something up")
-        assertTrue(massAt(grams, grid.index(2, 2)) > 0L, "the tile downwind should have received it")
-        assertEquals(0L, massAt(grams, grid.index(0, 2)), "nothing should go upwind")
+        assertTrue(massAt(mass, start) < 1000L, "the source should have given something up")
+        assertTrue(massAt(mass, grid.index(2, 2)) > 0L, "the tile downwind should have received it")
+        assertEquals(0L, massAt(mass, grid.index(0, 2)), "nothing should go upwind")
     }
 
     @Test
     fun `every gram that leaves a tile arrives somewhere or is vented`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         for (x in 1 until grid.width - 1) {
             for (y in 1 until grid.height - 1) {
                 put(
-                    grams,
+                    mass,
                     grid.index(x, y),
                     Species.Nitrogen to 755L,
                     Species.Oxygen to 232L,
@@ -78,7 +78,7 @@ class AdvectionTest {
                 )
             }
         }
-        val baseline = totalMass(grams)
+        val baseline = totalMass(mass)
 
         // A field with a shear in it, so the pass is doing something less trivial than a uniform drift.
         val mx = LongArray(edges.xEdgeCount) { 300L }
@@ -87,38 +87,38 @@ class AdvectionTest {
 
         var vented = 0L
         repeat(40) {
-            vented += advectMass(edges, open, field, grams).ventedGrams
-            assertEquals(baseline, totalMass(grams) + vented, "air ledger after this tick")
+            vented += advectMass(edges, open, field, mass).ventedGrams
+            assertEquals(baseline, totalMass(mass) + vented, "air ledger after this tick")
         }
         assertTrue(vented > 0L, "a field pointing off the grid should eventually vent something")
     }
 
     @Test
     fun `a shut face carries nothing`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val start = grid.index(1, 2)
-        put(grams, start, Species.Nitrogen to 1000L)
+        put(mass, start, Species.Nitrogen to 1000L)
 
         val apertureX = IntArray(edges.xEdgeCount) { ApertureField.OPEN }
         apertureX[edges.rightEdgeOf(start)] = ApertureField.CLOSED
         val walled = ApertureField(edges, apertureX, IntArray(edges.yEdgeCount) { ApertureField.OPEN })
 
-        advectMass(edges, walled, blowingRight(500L), grams)
+        advectMass(edges, walled, blowingRight(500L), mass)
 
-        assertEquals(1000L, massAt(grams, start), "with its only outlet shut, nothing should leave")
+        assertEquals(1000L, massAt(mass, start), "with its only outlet shut, nothing should leave")
     }
 
     @Test
     fun `a half-open face carries half as much`() {
         fun carriedThrough(aperture: Int): Long {
-            val grams = emptyAir()
+            val mass = emptyAir()
             val start = grid.index(1, 2)
-            put(grams, start, Species.Nitrogen to 1000L)
+            put(mass, start, Species.Nitrogen to 1000L)
             val apertureX = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
             apertureX[edges.rightEdgeOf(start)] = aperture
             val field = ApertureField(edges, apertureX, IntArray(edges.yEdgeCount) { ApertureField.CLOSED })
-            advectMass(edges, field, blowingRight(500L), grams)
-            return massAt(grams, grid.index(2, 2))
+            advectMass(edges, field, blowingRight(500L), mass)
+            return massAt(mass, grid.index(2, 2))
         }
 
         assertEquals(carriedThrough(ApertureField.OPEN) / 2, carriedThrough(ApertureField.OPEN / 2))
@@ -126,9 +126,9 @@ class AdvectionTest {
 
     @Test
     fun `a tile drained from all four sides at once empties and no more`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val tile = grid.index(3, 2)
-        put(grams, tile, Species.Nitrogen to 100L)
+        put(mass, tile, Species.Nitrogen to 100L)
 
         // Every face pointing away from the tile, fast enough that each alone would take most of it.
         val mx = LongArray(edges.xEdgeCount)
@@ -138,25 +138,25 @@ class AdvectionTest {
         my[edges.upEdgeOf(tile)] = -45L
         my[edges.downEdgeOf(tile)] = 45L
 
-        val result = advectMass(edges, open, MomentumField.of(edges, mx, my), grams)
+        val result = advectMass(edges, open, MomentumField.of(edges, mx, my), mass)
 
-        assertEquals(0L, massAt(grams, tile), "an over-subscribed tile empties")
-        assertEquals(100L, totalMass(grams) + result.ventedGrams, "and gives away exactly what it had")
-        for (g in grams) assertTrue(g >= 0L, "no tile may go negative")
+        assertEquals(0L, massAt(mass, tile), "an over-subscribed tile empties")
+        assertEquals(100L, totalMass(mass) + result.ventedGrams, "and gives away exactly what it had")
+        for (g in mass) assertTrue(g >= 0L, "no tile may go negative")
     }
 
     @Test
     fun `a draught carries the room's mix, not the good bits off the top`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val start = grid.index(1, 2)
-        put(grams, start, Species.Nitrogen to 800L, Species.Oxygen to 200L)
+        put(mass, start, Species.Nitrogen to 800L, Species.Oxygen to 200L)
 
         // Half speed, so only half the tile moves and the split is actually being tested.
-        advectMass(edges, open, blowingRight(250L), grams)
+        advectMass(edges, open, blowingRight(250L), mass)
 
         val downwind = grid.index(2, 2)
-        val n = grams[downwind * Species.COUNT + Species.Nitrogen.ordinal]
-        val o = grams[downwind * Species.COUNT + Species.Oxygen.ordinal]
+        val n = mass[downwind * Species.COUNT + Species.Nitrogen.ordinal]
+        val o = mass[downwind * Species.COUNT + Species.Oxygen.ordinal]
         assertTrue(n > 0L && o > 0L, "both species should have travelled")
         // 4:1 in the source, so 4:1 in what moved -- give or take the one gram integers cost.
         assertTrue(n in (4 * o - 2)..(4 * o + 2), "moved $n N to $o O, expected about 4:1")
@@ -164,37 +164,37 @@ class AdvectionTest {
 
     @Test
     fun `nothing blows in from space`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         // A field pointing inward everywhere, and a completely empty grid.
-        val result = advectMass(edges, open, blowingRight(500L), grams)
+        val result = advectMass(edges, open, blowingRight(500L), mass)
 
-        assertEquals(0L, totalMass(grams))
+        assertEquals(0L, totalMass(mass))
         assertEquals(0L, result.ventedGrams)
     }
 
     @Test
     fun `gas driven off the edge is vented rather than lost`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val lastColumn = grid.index(grid.width - 1, 2)
-        put(grams, lastColumn, Species.Nitrogen to 1000L)
+        put(mass, lastColumn, Species.Nitrogen to 1000L)
 
-        val result = advectMass(edges, open, blowingRight(500L), grams)
+        val result = advectMass(edges, open, blowingRight(500L), mass)
 
         assertTrue(result.ventedGrams > 0L, "the rim face should have carried gas out of the world")
-        assertEquals(1000L, totalMass(grams) + result.ventedGrams)
+        assertEquals(1000L, totalMass(mass) + result.ventedGrams)
     }
 
     @Test
     fun `the recorded flux is what actually moved`() {
-        val grams = emptyAir()
+        val mass = emptyAir()
         val start = grid.index(1, 2)
-        put(grams, start, Species.Nitrogen to 1000L)
+        put(mass, start, Species.Nitrogen to 1000L)
 
-        val before = massAt(grams, start)
-        val result = advectMass(edges, open, blowingRight(500L), grams)
+        val before = massAt(mass, start)
+        val result = advectMass(edges, open, blowingRight(500L), mass)
 
         // Downwind is the only open outlet in a still-in-y field, so the flux across that one face
         // must account for the whole change.
-        assertEquals(before - massAt(grams, start), result.flux.xAt(edges.rightEdgeOf(start)))
+        assertEquals(before - massAt(mass, start), result.flux.xAt(edges.rightEdgeOf(start)))
     }
 }

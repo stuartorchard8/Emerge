@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 
 /**
- * Pipe network for fluid solver: own grams/momentum/energy, same lattice as room (not separate solver).
+ * Pipe network for fluid solver: own mass/momentum/energy, same lattice as room (not separate solver).
  * Connectivity: from Segment.links (drawn), not derived from StructureMap (two pipes can touch and be separate).
  * Volume: 1/8 tile per cell (tuned; narrowness = behaviour).
  * No pipe bridges (fluid is continuum; rail bridge = discrete packet crossing).

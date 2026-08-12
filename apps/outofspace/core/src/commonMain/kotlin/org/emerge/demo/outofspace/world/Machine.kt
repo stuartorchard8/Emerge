@@ -15,7 +15,7 @@ import org.emerge.demo.outofspace.num.Budget
  * fast — it runs. New machines default to "wired to ALWAYS at full", so placing one just works and
  * wiring is something you add rather than something you must do.
  *
- * Rates are grams per second, turned into whole grams per tick by
+ * Rates are mass per second, turned into whole mass per tick by
  * [org.emerge.demo.outofspace.logistics.Rate] with the fraction kept in each machine's own `carry`.
  * Carry is machine state and not a global precisely so it survives a save.
  */
@@ -38,11 +38,11 @@ sealed interface Machine {
      * Defaults to room temperature for the machine's own footprint and material, so placing one
      * needs no separate act of initialisation.
      */
-    val joules: TileJoules
+    val energy: TileEnergy
 
     fun withWiring(wiring: Wiring): Machine
 
-    fun withJoules(joules: TileJoules): Machine
+    fun withEnergy(energy: TileEnergy): Machine
 }
 
 /**
@@ -71,7 +71,7 @@ sealed interface Machine {
  * base whose central promise is that a snapshot of the world is a snapshot of the world. This wraps
  * the array so that equality is by content and the contents are never handed out mutable.
  */
-class TileJoules private constructor(private val perTile: LongArray) {
+class TileEnergy private constructor(private val perTile: LongArray) {
 
     val size: Int get() = perTile.size
 
@@ -85,21 +85,21 @@ class TileJoules private constructor(private val perTile: LongArray) {
     }
 
     /** The same energy with [index] replaced. Returns a new value; nothing here mutates. */
-    fun with(index: Int, joules: Long): TileJoules {
+    fun with(index: Int, energy: Long): TileEnergy {
         val next = perTile.copyOf()
-        next[index] = joules
-        return TileJoules(next)
+        next[index] = energy
+        return TileEnergy(next)
     }
 
     /**
-     * [added] joules spread evenly across every tile.
+     * [added] energy spread evenly across every tile.
      *
      * Even, because waste heat is made by the *work* a machine does and the work happens throughout
      * it — there is no more reason for a smelter's furnace losses to appear in one corner than
      * another. The remainder goes to the first tiles rather than being dropped, so that repeatedly
      * adding less than one joule per tile still warms the machine instead of vanishing.
      */
-    fun plusSpread(added: Long): TileJoules {
+    fun plusSpread(added: Long): TileEnergy {
         if (perTile.isEmpty()) return this
         val next = perTile.copyOf()
         val each = added / perTile.size
@@ -109,7 +109,7 @@ class TileJoules private constructor(private val perTile: LongArray) {
             if (remainder > 0) { share++; remainder-- } else if (remainder < 0) { share--; remainder++ }
             next[i] += share
         }
-        return TileJoules(next)
+        return TileEnergy(next)
     }
 
     /**
@@ -121,25 +121,25 @@ class TileJoules private constructor(private val perTile: LongArray) {
      * all. The share-of-the-whole arithmetic this replaces had to be written as a remainder of a
      * single truncating divide to achieve the same thing.
      */
-    fun dropping(index: Int): TileJoules {
+    fun dropping(index: Int): TileEnergy {
         val next = LongArray(perTile.size - 1)
         for (i in next.indices) next[i] = if (i < index) perTile[i] else perTile[i + 1]
-        return TileJoules(next)
+        return TileEnergy(next)
     }
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is TileJoules && perTile.contentEquals(other.perTile))
+        this === other || (other is TileEnergy && perTile.contentEquals(other.perTile))
 
     override fun hashCode(): Int = perTile.contentHashCode()
 
-    override fun toString(): String = perTile.joinToString(prefix = "TileJoules[", postfix = "]")
+    override fun toString(): String = perTile.joinToString(prefix = "TileEnergy[", postfix = "]")
 
     companion object {
         /** [count] tiles all holding [each]. */
-        fun uniform(count: Int, each: Long): TileJoules = TileJoules(LongArray(count) { each })
+        fun uniform(count: Int, each: Long): TileEnergy = TileEnergy(LongArray(count) { each })
 
         /** Takes ownership of [values] — callers must not keep a reference to it. */
-        fun of(values: LongArray): TileJoules = TileJoules(values)
+        fun of(values: LongArray): TileEnergy = TileEnergy(values)
     }
 }
 
@@ -161,21 +161,21 @@ val MachineKind.thermalTiles: Int
  * ⚠️ A machine no longer *has* a temperature — it has one per tile, and that is the point of storing
  * them separately. This is the mean, which is the right answer for a readout, a ledger or a test that
  * cares how much heat is in the thing, and the wrong one for anything that cares where the heat is.
- * Reach for [Machine.joules] directly when the gradient is the subject.
+ * Reach for [Machine.energy] directly when the gradient is the subject.
  */
 val Machine.kelvin: Int
     get() {
         val capacity = kind.capacityPerTile * kind.thermalTiles
-        return if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules.total / capacity).toInt()
+        return if (capacity <= 0L) Temperature.SPACE_KELVIN else (energy.total / capacity).toInt()
     }
 
 /** The same machine with every one of its tiles at [kelvin] — how a uniform body is stated. */
 fun Machine.atKelvin(kelvin: Int): Machine =
-    withJoules(TileJoules.uniform(kind.thermalTiles, kind.capacityPerTile * kelvin))
+    withEnergy(TileEnergy.uniform(kind.thermalTiles, kind.capacityPerTile * kelvin))
 
 /** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
-fun ambientJoules(kind: MachineKind): TileJoules =
-    TileJoules.uniform(kind.thermalTiles, kind.capacityPerTile * Temperature.AMBIENT_KELVIN)
+fun ambientEnergy(kind: MachineKind): TileEnergy =
+    TileEnergy.uniform(kind.thermalTiles, kind.capacityPerTile * Temperature.AMBIENT_KELVIN)
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {
@@ -190,7 +190,7 @@ sealed interface Directed : Machine {
  * run for a good few seconds on a full buffer while its feed is interrupted.
  *
  * ⚠️ Sized in *ticks of throughput*, not in belt-loads, and that distinction has already bitten
- * once. Written as `4 × PACKET_GRAMS` it silently shrank tenfold when the belt-load went from a
+ * once. Written as `4 × PACKET_MASS` it silently shrank tenfold when the belt-load went from a
  * tonne to 100 kg, leaving every machine with two ticks of buffer — enough that an extractor
  * stalled before its throttle could make any difference, which is a behaviour change nobody asked
  * for. A buffer's job is to decouple a machine from its supply *for a while*; the unit of "a while"

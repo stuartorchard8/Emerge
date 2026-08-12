@@ -37,7 +37,7 @@ class PressureForceTest {
         val grid = Grid(w + 2, h + 2)
         val edges = EdgeGrid(grid)
         val apertures: ApertureField
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
 
@@ -50,17 +50,17 @@ class PressureForceTest {
         }
 
         fun air(tile: Int, share: Long = 1L) {
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
         }
 
         fun empty(tile: Int) {
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = 0L
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = 0L
         }
 
         fun run() = applyPressureForce(
             edges, apertures, mx, my,
-            tileMass(grid.size, grams),
-            tilePressure(grid.size, grams),
+            tileMass(grid.size, mass),
+            tilePressure(grid.size, mass),
         )
 
         fun totalX(): Long = mx.sum()
@@ -124,8 +124,8 @@ class PressureForceTest {
 
         val result = applyPressureForce(
             room.edges, breached, room.mx, room.my,
-            tileMass(room.grid.size, room.grams),
-            tilePressure(room.grid.size, room.grams),
+            tileMass(room.grid.size, room.mass),
+            tilePressure(room.grid.size, room.mass),
         )
 
         // Gas heads for the hole, which is toward -x.
@@ -160,7 +160,7 @@ class PressureForceTest {
         // measure eleven tiles per tick before anything bounded it at all.
         for (y in 2 until 8) for (x in 5 until 8) {
             for (s in Species.ALL) {
-                room.grams[room.grid.index(x, y) * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] / 500L
+                room.mass[room.grid.index(x, y) * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] / 500L
             }
         }
 
@@ -169,11 +169,11 @@ class PressureForceTest {
         var worst = 0
         repeat(50) {
             val step = stepFluid(
-                room.edges, room.apertures, room.grams, room.mx, room.my, Frac2.zero,
+                room.edges, room.apertures, room.mass, room.mx, room.my, Frac2.zero,
             )
             if (step.subSteps > worst) worst = step.subSteps
 
-            val tileGrams = tileMass(room.grid.size, room.grams)
+            val tileGrams = tileMass(room.grid.size, room.mass)
             val field = MomentumField.of(room.edges, room.mx, room.my)
             for (e in 0 until room.edges.xEdgeCount) {
                 val perStep = abs(field.velocityX(e, tileGrams).raw) / step.subSteps

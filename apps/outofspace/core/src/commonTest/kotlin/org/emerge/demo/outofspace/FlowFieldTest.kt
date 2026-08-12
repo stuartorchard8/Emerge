@@ -39,9 +39,9 @@ class FlowFieldTest {
      * the opposite of what they are for.
      */
     private fun flowFrom(vararg loaded: Pair<Int, Long>): FlowField {
-        val grams = LongArray(grid.size * Species.COUNT)
-        for ((tile, count) in loaded) grams[tile * Species.COUNT + Species.Nitrogen.ordinal] = count
-        return diffuseFluid(edges, apertures, grams, joules = null, subSteps = 1).flow
+        val mass = LongArray(grid.size * Species.COUNT)
+        for ((tile, count) in loaded) mass[tile * Species.COUNT + Species.Nitrogen.ordinal] = count
+        return diffuseFluid(edges, apertures, mass, energies = null, subSteps = 1).flow
     }
 
     /**
@@ -128,13 +128,13 @@ class FlowFieldTest {
         val flow = flowFrom(grid.index(2, 2) to held)
 
         val next = grid.index(3, 2)
-        assertEquals(share / 2, flow.xAt(next), "net grams across the filling tile")
+        assertEquals(share / 2, flow.xAt(next), "net mass across the filling tile")
         assertEquals(share.toFloat() / 2 / share, flow.speedAt(next), 0.0001f)
     }
 
     /**
      * The case that made [FlowField.derive] measure against the larger of the tile's two masses. A
-     * tile filling from vacuum starts at zero grams, and dividing by where it started would rate air
+     * tile filling from vacuum starts at zero mass, and dividing by where it started would rate air
      * rushing into an empty room — the most visible flow in the game — as no flow at all, because the
      * overlay decides what to draw by [FlowField.speedAt].
      */

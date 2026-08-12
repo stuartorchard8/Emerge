@@ -28,13 +28,13 @@ shot pump
 
 echo --- early on a pump is SLOWER than a valve: it adds a fixed trickle, a hole equalises at once
 run 300
-expect pipeGrams > 1000
-expect pipeGrams < 1700
+expect pipeMass > 1000
+expect pipeMass < 1700
 
 echo --- but it does not stop where a valve does. This same run through a valve settles at ~3050g,
 echo --- and a pump takes it far past that: the ceiling is the machine, not the pressure it meets.
 run 1700
-expect pipeGrams > 5500
+expect pipeMass > 5500
 expect airVented = 0
 expect airBalance = 0
 expect airHeatBalance = 0

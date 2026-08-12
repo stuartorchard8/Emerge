@@ -147,7 +147,7 @@ class EditorToolsTest {
         c.stepOnce()
 
         val s = c.state
-        assertEquals(10L * Edit.INJECT_GRAMS, s.injectedAirGrams, "ten ticks is ten kilograms")
+        assertEquals(10L * Edit.INJECT_MASS, s.injectedAirMass, "ten ticks is ten kilograms")
         assertTrue(s.atmosphereMass > before, "the room did not actually get any heavier")
         assertEquals(0L, s.airBalance, "the air ledger broke")
         EnergyLedgers.assertAirBalanced(s, "the air's energy ledger broke")
@@ -157,7 +157,7 @@ class EditorToolsTest {
      * The gas arrives at room temperature, not at absolute zero.
      *
      * [org.emerge.demo.outofspace.world.AirField.of]'s rule, and the one mistake this is most likely
-     * to make: energy derived from the grams rather than defaulted, or the room chills every time
+     * to make: energy derived from the mass rather than defaulted, or the room chills every time
      * somebody uses the tool.
      */
     @Test
@@ -189,7 +189,7 @@ class EditorToolsTest {
         c.stepOnce()
 
         val s = c.state
-        assertEquals(0L, s.injectedAirGrams, "a refused breath was booked anyway")
+        assertEquals(0L, s.injectedAirMass, "a refused breath was booked anyway")
         assertEquals(before, s.atmosphereMass, "gas got into a solid tank")
         assertEquals(0L, s.airBalance)
     }
@@ -206,7 +206,7 @@ class EditorToolsTest {
         val c = layered()
         c.injectTile = OPEN_TILE
         repeat(3) { c.stepOnce() }
-        assertEquals(3L * Edit.INJECT_GRAMS, c.state.injectedAirGrams)
+        assertEquals(3L * Edit.INJECT_MASS, c.state.injectedAirMass)
     }
 
     /** The admission has to survive a save, or a reloaded world reads its own history as a leak. */
@@ -220,8 +220,8 @@ class EditorToolsTest {
         val written = Save.write(c.state)
         val back = Save.read(written)
 
-        assertEquals(c.state.injectedAirGrams, back.injectedAirGrams)
-        assertEquals(c.state.injectedAirJoules, back.injectedAirJoules)
+        assertEquals(c.state.injectedAirMass, back.injectedAirMass)
+        assertEquals(c.state.injectedAirEnergy, back.injectedAirEnergy)
         assertEquals(0L, back.airBalance, "the reloaded world reads its own past as a leak")
     }
 }

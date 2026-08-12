@@ -20,15 +20,15 @@ import org.emerge.demo.outofspace.world.StructureMap
  * divide is simply left where it is.
  *
  * It was briefly handed round the faces instead, in a rotation that turned with the tick, so that a
- * cell holding fewer than [SLOTS] grams of a species could still shed them — otherwise a breached
- * room drains to a few grams a tile and stops. **Reverted 2026-08-12 (Stu), because it flew the
+ * cell holding fewer than [SLOTS] units of a species could still shed them — otherwise a breached
+ * room drains to a few units a tile and stops. **Reverted 2026-08-12 (Stu), because it flew the
  * ship.** The rotation moved a gram or two per tile per tick, and since every tile shared one offset
  * it moved them *in step*: a grid-wide ripple in the pressure field, on a five-tick cycle, with no
  * reason to average to nothing on a hull that is not symmetric. [applyPressureForce] reads that
  * field, so the ripple became a small standing shove and a sealed vessel slowly departed.
  *
  * What is given up is stated plainly, because it is a real effect: a trace below the divisor **stays
- * put**, so a vented room keeps a few grams a tile. Nothing is lost — rounding down strands mass
+ * put**, so a vented room keeps a few units a tile. Nothing is lost — rounding down strands mass
  * here, it never destroys it — and the cheap fix, if the residue ever matters, is a rule for rim
  * faces alone, which empties the room without perturbing a single interior pressure.
  *
@@ -50,8 +50,8 @@ import org.emerge.demo.outofspace.world.StructureMap
  */
 class DiffusionStep(
     val air: AirField,
-    val ventedGrams: Long,
-    val ventedJoules: Long,
+    val ventedMass: Long,
+    val ventedEnergy: Long,
     /**
      * What actually crossed each face this pass, and the mass it came out of — the raw material for
      * [flow], kept separate so a caller that never asks the question never pays for the answer.
@@ -94,7 +94,7 @@ class DiffusionStep(
  * Raising [SLOTS] does *not* meaningfully worsen the stranding floor, which is the intuitive fear and
  * is wrong: a tile stops shedding when `count * FACE_SHARE / SLOTS` floors to zero, so the threshold is
  * `SLOTS / FACE_SHARE` — that is `1/α`, which the ceiling above pins between 4 and 5 whatever [SLOTS]
- * is. Measured on a 20×12 room drained through one rim hole: 2,930 grams left at 5/1, 3,288 at 13/3.
+ * is. Measured on a 20×12 room drained through one rim hole: 2,930 units left at 5/1, 3,288 at 13/3.
  */
 const val SLOTS = 5
 
@@ -129,20 +129,20 @@ private const val FACES = 4
 fun diffuseFluid(
     grid: Grid,
     structure: StructureMap,
-    grams: LongArray,
-    joules: LongArray? = null,
+    masses: LongArray,
+    energies: LongArray? = null,
 ): DiffusionStep {
     val edges = EdgeGrid(grid)
-    return diffuseFluid(edges, ApertureField.derive(edges, structure), grams, joules)
+    return diffuseFluid(edges, ApertureField.derive(edges, structure), masses, energies)
 }
 
 /**
- * One tick of diffusion over [grams] (tiles × species) and, if it is being tracked, [joules] (per
+ * One tick of diffusion over [masses] (tiles × species) and, if it is being tracked, [energies] (per
  * tile). Both are edited in place.
  *
  * Joules ride the mass rather than diffusing on their own account: what leaves across a face is the
  * same fraction of the tile's energy as of its mass, so temperature travels with the gas carrying it.
- * Diffusing energy separately would put joules in cells with no capacity to have them, where they
+ * Diffusing energy separately would put energies in cells with no capacity to have them, where they
  * read as ambient and are silently lost to every gauge in the vessel. The split is *telescoped* —
  * each face is given the difference between two running totals rather than its own rounded-down
  * fraction — so a tile whose mass leaves entirely has no energy left behind either. Ghost heat in an
@@ -158,22 +158,22 @@ fun diffuseFluid(
 fun diffuseFluid(
     edges: EdgeGrid,
     apertures: ApertureField,
-    grams: LongArray,
-    joules: LongArray? = null,
+    masses: LongArray,
+    energies: LongArray? = null,
     subSteps: Int = SUB_STEPS,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
     val species = Species.COUNT
 
-    val startingMass = tileMass(tiles, grams)
-    val deltaGrams = LongArray(grams.size)
-    val deltaJoules = if (joules == null) null else LongArray(tiles)
+    val startingMass = tileMass(tiles, masses)
+    val deltaMass = LongArray(masses.size)
+    val deltaEnergy = if (energies == null) null else LongArray(tiles)
 
-    var ventedGrams = 0L
-    var ventedJoules = 0L
+    var ventedMass = 0L
+    var ventedEnergy = 0L
 
-    // Net grams across each face, signed toward +x / +y. Both ends of a face add into the same slot,
+    // Net mass across each face, signed toward +x / +y. Both ends of a face add into the same slot,
     // so gas crossing in both directions cancels and what is left is the net movement — which is the
     // only thing a flow picture should claim. Accumulated across every sub-step, so the overlay shows
     // what the whole tick moved rather than whatever the last pass happened to be doing.
@@ -189,10 +189,10 @@ fun diffuseFluid(
     repeat(subSteps) { pass ->
         // Each pass reads a settled field: deltas are applied at the end of the pass that made them,
         // so a sub-step never sees another sub-step's half-finished arithmetic.
-        val mass = if (pass == 0) startingMass else tileMass(tiles, grams)
+        val mass = if (pass == 0) startingMass else tileMass(tiles, masses)
         if (pass > 0) {
-            deltaGrams.fill(0L)
-            deltaJoules?.fill(0L)
+            deltaMass.fill(0L)
+            deltaEnergy?.fill(0L)
         }
 
         for (tile in 0 until tiles) {
@@ -213,7 +213,7 @@ fun diffuseFluid(
 
             var outMass = 0L
             for (s in 0 until species) {
-                val count = grams[base + s]
+                val count = masses[base + s]
                 if (count <= 0L) continue
                 val share = count * FACE_SHARE / SLOTS
                 if (share <= 0L) continue
@@ -231,9 +231,9 @@ fun diffuseFluid(
                         else share * aperture / ApertureField.OPEN
                     if (out <= 0L) continue
 
-                    deltaGrams[base + s] -= out
+                    deltaMass[base + s] -= out
                     val neighbour = faceNeighbour[f]
-                    if (neighbour < 0) ventedGrams += out else deltaGrams[neighbour * species + s] += out
+                    if (neighbour < 0) ventedMass += out else deltaMass[neighbour * species + s] += out
                     faceOut[f] += out
                     outMass += out
                 }
@@ -252,9 +252,9 @@ fun diffuseFluid(
             // ── The energy on the gas that just left ──
             //
             // Telescoped: each face is handed the difference between two running totals of
-            // `joules × massSoFar / ownMass`, so the shares sum to exactly `joules × outMass / ownMass`
-            // and, when everything leaves, to exactly `joules`. Giving each face its own floored fraction
-            // instead would leave a few joules behind every time, and behind in an empty cell they are
+            // `energy × massSoFar / ownMass`, so the shares sum to exactly `energy × outMass / ownMass`
+            // and, when everything leaves, to exactly `energy`. Giving each face its own floored fraction
+            // instead would leave a few units of energy behind every time, and behind in an empty cell they are
             // heat with nothing to hold it.
             //
             // The running total goes through [scaledRatio] for exactly the reason
@@ -262,15 +262,15 @@ fun diffuseFluid(
             // `energy × carried` multiplies an energy by a mass, so it is **quadratic in the mass
             // unit** and reaches 2.9e22 for an ambient tile at one microgram per unit. The wrap does
             // not merely lose precision — it hands a face more energy than the tile has, and the
-            // cell is left holding negative joules, a negative kelvin, and eventually a negative
+            // cell is left holding negative energy, a negative kelvin, and eventually a negative
             // reduced temperature that indexes a saturation table at −1.
             //
             // Telescoping survives the reduction because it rests on [scaledRatio]'s two documented
             // properties and on nothing else: monotonic in the numerator, so no face can be handed a
             // negative share, and exact at the ends, so a tile that empties completely hands over
             // precisely `energy` and keeps nothing back.
-            if (joules != null && deltaJoules != null && outMass > 0L) {
-                val energy = joules[tile]
+            if (energies != null && deltaEnergy != null && outMass > 0L) {
+                val energy = energies[tile]
                 var carried = 0L
                 var assigned = 0L
                 for (f in 0 until FACES) {
@@ -280,25 +280,25 @@ fun diffuseFluid(
                     val out = upTo - assigned
                     assigned = upTo
                     if (out == 0L) continue
-                    deltaJoules[tile] -= out
+                    deltaEnergy[tile] -= out
                     val neighbour = faceNeighbour[f]
-                    if (neighbour < 0) ventedJoules += out else deltaJoules[neighbour] += out
+                    if (neighbour < 0) ventedEnergy += out else deltaEnergy[neighbour] += out
                 }
             }
         }
 
-        for (i in grams.indices) grams[i] += deltaGrams[i]
-        if (joules != null && deltaJoules != null) for (t in 0 until tiles) joules[t] += deltaJoules[t]
+        for (i in masses.indices) masses[i] += deltaMass[i]
+        if (energies != null && deltaEnergy != null) for (t in 0 until tiles) energies[t] += deltaEnergy[t]
     }
 
-    // Snapshotted rather than folded on demand: [grams] belongs to the caller, which goes on editing
+    // Snapshotted rather than folded on demand: [masses] belongs to the caller, which goes on editing
     // it after the pass, and a mass read later would not be the mass this flux came out of.
-    val endingMass = tileMass(tiles, grams)
+    val endingMass = tileMass(tiles, masses)
 
     return DiffusionStep(
-        air = if (joules == null) AirField.of(grams) else AirField.of(grams, joules),
-        ventedGrams = ventedGrams,
-        ventedJoules = ventedJoules,
+        air = if (energies == null) AirField.of(masses) else AirField.of(masses, energies),
+        ventedMass = ventedMass,
+        ventedEnergy = ventedEnergy,
         edges = edges,
         fluxX = fluxX,
         fluxY = fluxY,

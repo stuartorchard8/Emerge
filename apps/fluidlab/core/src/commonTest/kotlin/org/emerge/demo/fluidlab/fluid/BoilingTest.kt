@@ -110,10 +110,10 @@ class BoilingTest {
     private val grid = Grid(w, h)
     private val edges = EdgeGrid(grid)
     private val structure: StructureMap
-    private val grams = LongArray(grid.size * Species.COUNT)
+    private val mass = LongArray(grid.size * Species.COUNT)
     private val mx = LongArray(edges.xEdgeCount)
     private val my = LongArray(edges.yEdgeCount)
-    private var joules: LongArray
+    private var energy: LongArray
 
     /**
      * The pool starts at exactly the density liquid water coexists with its own vapour at [COLD] —
@@ -148,24 +148,24 @@ class BoilingTest {
             // initial condition being impossible.
             if (tile == poolTile) continue
             val base = tile * Species.COUNT
-            for (s in Species.ALL) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
+            for (s in Species.ALL) mass[base + s.ordinal] = AirField.AMBIENT_AIR[s]
         }
         // The pool: one tile of liquid water on the deck, under all that nitrogen.
-        grams[poolTile * Species.COUNT + Species.Water.ordinal] = poolGrams
-        joules = ambientGasJoules(grid.size, grams)
+        mass[poolTile * Species.COUNT + Species.Water.ordinal] = poolGrams
+        energy = ambientGasJoules(grid.size, mass)
         heatTo(COLD)
     }
 
     private fun step(ticks: Int) {
-        repeat(ticks) { stepFluid(grid, structure, grams, mx, my, FREEFALL, joules, null) }
+        repeat(ticks) { stepFluid(grid, structure, mass, mx, my, FREEFALL, energy, null) }
     }
 
-    private fun waterAt(tile: Int): Long = grams[tile * Species.COUNT + Species.Water.ordinal]
+    private fun waterAt(tile: Int): Long = mass[tile * Species.COUNT + Species.Water.ordinal]
 
     private fun totalWater(): Long = (0 until grid.size).sumOf { waterAt(it) }
 
     private fun totalNitrogen(): Long =
-        (0 until grid.size).sumOf { grams[it * Species.COUNT + Species.Nitrogen.ordinal] }
+        (0 until grid.size).sumOf { mass[it * Species.COUNT + Species.Nitrogen.ordinal] }
 
     /** How many tiles hold enough water to be worth calling wet — the spread of the stuff. */
     private fun wetTiles(): Int = (0 until grid.size).count { waterAt(it) > poolGrams / 1000 }
@@ -177,7 +177,7 @@ class BoilingTest {
     /** How much of the wettest cell is liquid, in SCALE — the lever rule read off the real world. */
     private fun liquidFractionOfPeak(): Long {
         val tile = (0 until grid.size).maxBy { waterAt(it) }
-        val kelvin = gasKelvin(joules, gasCapacity(grid.size, grams))[tile]
+        val kelvin = gasKelvin(energy, gasCapacity(grid.size, mass))[tile]
         return liquidFraction(
             reducedDensity(waterAt(tile), Species.Water, FULL, FULL) ?: 0L,
             reducedTemperature(kelvin, Species.Water)!!,
@@ -186,7 +186,7 @@ class BoilingTest {
 
     private fun phaseOfPeak(): FluidPhase {
         val tile = (0 until grid.size).maxBy { waterAt(it) }
-        val kelvin = gasKelvin(joules, gasCapacity(grid.size, grams))[tile]
+        val kelvin = gasKelvin(energy, gasCapacity(grid.size, mass))[tile]
         return phaseAt(
             reducedDensity(waterAt(tile), Species.Water, FULL, FULL) ?: 0L,
             reducedTemperature(kelvin, Species.Water)!!,
@@ -194,8 +194,8 @@ class BoilingTest {
     }
 
     private fun heatTo(kelvin: Int) {
-        val capacity = gasCapacity(grid.size, grams)
-        for (tile in 0 until grid.size) if (capacity[tile] > 0L) joules[tile] = capacity[tile] * kelvin
+        val capacity = gasCapacity(grid.size, mass)
+        for (tile in 0 until grid.size) if (capacity[tile] > 0L) energy[tile] = capacity[tile] * kelvin
     }
 
     /**
@@ -282,7 +282,7 @@ class BoilingTest {
         heatTo(HOT)
         var unpaid = 0L
         repeat(60) {
-            unpaid += stepFluid(grid, structure, grams, mx, my, FREEFALL, joules, null).cohesionUnpaid
+            unpaid += stepFluid(grid, structure, mass, mx, my, FREEFALL, energy, null).cohesionUnpaid
         }
         assertEquals(0L, unpaid, "the latent heat should never outrun the heat available to pay it")
     }

@@ -14,7 +14,7 @@ data class Vaporizer(
      * Grams per tick at full activation: **one belt-load**.
      *
      * ⚠️ **A producer must never out-produce the belt it feeds.** A belt tile holds one packet and a
-     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_GRAMS]
+     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_MASS]
      * per tick — which makes that the ceiling for every machine in the game. Deriving the rate from
      * the packet states the invariant instead of leaving it to two literals that happen to agree:
      * when the belt-load went from a tonne to 100 kg, the old hard-coded rates were suddenly 2.5x
@@ -23,12 +23,12 @@ data class Vaporizer(
      * Tunable per machine later — a slow smelter and a fast one are a reasonable thing to want — but
      * the cap is structural and anything above it is a machine that starves its own output.
      */
-    val gramsPerTick: Long = Capacity.PACKET_GRAMS,
+    val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: TileJoules = ambientJoules(MachineKind.Processor),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Processor),
 ) : Directed {
     override val kind: MachineKind get() = MachineKind.Vaporizer
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 }

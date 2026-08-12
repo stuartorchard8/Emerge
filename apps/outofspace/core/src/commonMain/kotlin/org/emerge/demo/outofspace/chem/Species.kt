@@ -7,7 +7,7 @@ package org.emerge.demo.outofspace.chem
  * molarMass = g/mol (settling). specificHeat = J/kg/K (heating cost).
  * solidKgPerCubicMetre = measured density of the pure solid — what a lump of it weighs, and so what
  * a rock made of it weighs. Textbook numbers, not knobs; the world's units arrive in
- * [org.emerge.demo.outofspace.world.solidGramsPerTile], which is the only place a scale is chosen.
+ * [org.emerge.demo.outofspace.world.solidMassPerTile], which is the only place a scale is chosen.
  */
 enum class Species(
     val molarMass: Int,

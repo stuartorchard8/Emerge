@@ -11,12 +11,12 @@ import org.emerge.demo.outofspace.num.Budget
 data class Pump(
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: TileJoules = ambientJoules(MachineKind.Pump),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Pump),
 ) : Machine, Directed {
     override val kind: MachineKind get() = MachineKind.Pump
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 
     companion object {
         /**

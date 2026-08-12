@@ -209,17 +209,17 @@ fun saturatedVapourDensity(temperatureR: Long): Long? =
  *
  * Returns 0 for a species that is not condensing, which is every species in the vessel today.
  */
-fun liquidVolumeFraction(grams: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
-    val densityR = reducedDensity(grams, species, volume, full) ?: return 0L
+fun liquidVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
+    val densityR = reducedDensity(mass, species, volume, full) ?: return 0L
     val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
     return liquidFraction(densityR, temperatureR) ?: 0L
 }
 
 /**
- * How many of a cell's [grams] of [species] are present as **vapour** — the rest being liquid.
+ * How many of a cell's [mass] of [species] are present as **vapour** — the rest being liquid.
  *
  * The lever rule again, read as a mass rather than as a volume: the cell holds `1 − f` of its room
- * at [saturatedVapourDensity], and that volume times that density is this. Returns all of [grams]
+ * at [saturatedVapourDensity], and that volume times that density is this. Returns all of [mass]
  * for a species that is not condensing, which is every species in the vessel today.
  *
  * This exists because **the two phases are not the same substance as far as transport is
@@ -229,23 +229,23 @@ fun liquidVolumeFraction(grams: Long, species: Species, volume: Int, full: Int, 
  * which is measurably what was happening: a saturated pool shed 76% of itself in twenty ticks, and
  * excluding its liquid from drift leaves it holding 87%.
  */
-fun vapourGrams(grams: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
-    if (grams <= 0L) return grams
-    val temperatureR = reducedTemperature(kelvin, species) ?: return grams
-    val vapourR = saturatedVapourDensity(temperatureR) ?: return grams
-    val liquidShare = liquidVolumeFraction(grams, species, volume, full, kelvin)
-    if (liquidShare <= 0L) return grams
+fun vapourMass(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
+    if (mass <= 0L) return mass
+    val temperatureR = reducedTemperature(kelvin, species) ?: return mass
+    val vapourR = saturatedVapourDensity(temperatureR) ?: return mass
+    val liquidShare = liquidVolumeFraction(mass, species, volume, full, kelvin)
+    if (liquidShare <= 0L) return mass
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
     // its way to nothing before the density has been divided down — hence the full tile asked for
     // here and the `volume / full` at the end rather than letting the helper do it.
     //
-    // The multiply itself lives in [gramsAtReducedDensity] now; it was one of four independent
+    // The multiply itself lives in [massAtReducedDensity] now; it was one of four independent
     // copies of it, all carrying the same overflow. The remaining fraction goes through
     // [scaledRatio] for the same reason: a ratio of two [SCALE] quantities must not be multiplied
     // into a mass.
-    val fullTile = gramsAtReducedDensity(vapourR, species, full, full) ?: return grams
+    val fullTile = massAtReducedDensity(vapourR, species, full, full) ?: return mass
     val mass = scaledRatio(SCALE - liquidShare, SCALE, fullTile) * volume / full
-    return minOf(mass, grams)
+    return minOf(mass, mass)
 }
 
 fun liquidFraction(densityR: Long, temperatureR: Long): Long? {

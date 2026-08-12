@@ -92,7 +92,7 @@ class StateEquationTest {
         for (species in CRITICAL.keys) {
             val c = CRITICAL.getValue(species)
             assertTrue(c.kelvin > 0, "$species needs a real critical temperature")
-            assertTrue(c.gramsPerTile > 0, "$species needs a real critical density")
+            assertTrue(c.massPerTile > 0, "$species needs a real critical density")
         }
         assertTrue(Species.Water in CRITICAL && Species.Nitrogen in CRITICAL)
     }
@@ -109,7 +109,7 @@ class StateEquationTest {
         //     900,000 g       →  +91,503,964,939
         //
         // Reachable in ~72 ticks of the debug water tool on one tile. Swept in GRAMS rather than in
-        // reduced density on purpose: grams are what a caller actually controls, and the old bug was
+        // reduced density on purpose: mass are what a caller actually controls, and the old bug was
         // reachable only by going past the density the callers were supposed to be held below.
         for (species in CRITICAL.keys) {
             val critical = CRITICAL[species]!!
@@ -117,16 +117,16 @@ class StateEquationTest {
                 var previous = Long.MIN_VALUE
                 // From empty to four times close packing — well past anything the volume clamps
                 // permit, because "the caller is supposed to prevent this" is what failed before.
-                val step = critical.gramsPerTile / 64
-                var grams = 0L
-                while (grams <= critical.gramsPerTile * 12) {
-                    val pressure = partialPressure(grams, species, kelvin, full, full)!!
+                val step = critical.massPerTile / 64
+                var mass = 0L
+                while (mass <= critical.massPerTile * 12) {
+                    val pressure = partialPressure(mass, species, kelvin, full, full)!!
                     assertTrue(
                         pressure >= previous,
-                        "$species at $kelvin K: pressure fell at $grams g, $previous -> $pressure",
+                        "$species at $kelvin K: pressure fell at $mass g, $previous -> $pressure",
                     )
                     previous = pressure
-                    grams += step
+                    mass += step
                 }
                 assertTrue(previous > 0L, "$species at $kelvin K ended at a non-positive $previous")
             }

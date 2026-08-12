@@ -2,13 +2,13 @@ package org.emerge.demo.outofspace.world
 
 /** A vent: throws material overboard. Somewhere for slag to go that is not "jam the line". */
 data class Vent(
-    val ventedGrams: Long = 0L,
+    val ventedMass: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: TileJoules = ambientJoules(MachineKind.Vent),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Vent),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Vent
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 }
 
 /**
@@ -21,11 +21,11 @@ data class Vent(
  */
 data class Hull(
     override val wiring: Wiring = Wiring.RUNNING,
-    override val joules: TileJoules = ambientJoules(MachineKind.Hull),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Hull),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Hull
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 }
 
 /**
@@ -45,11 +45,11 @@ data class Hull(
  */
 data class Airlock(
     override val wiring: Wiring = SEALED,
-    override val joules: TileJoules = ambientJoules(MachineKind.Airlock),
+    override val energy: TileEnergy = ambientEnergy(MachineKind.Airlock),
 ) : Machine {
     override val kind: MachineKind get() = MachineKind.Airlock
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withJoules(joules: TileJoules): Machine = copy(joules = joules)
+    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
 
     companion object {
         /** Wired to nothing: a freshly placed door holds pressure until it is given a channel. */

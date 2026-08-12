@@ -183,7 +183,7 @@ class WiringTest {
     @Test
     fun `half activation is half throughput`() {
         // Measured at the **belt side** of the extractor, not at the rock. Mass comes off a rock in
-        // whole 3 kg cells, so `extractedGrams` moves in lurches that say nothing about a rate; what
+        // whole 3 kg cells, so `extractedMass` moves in lurches that say nothing about a rate; what
         // the throttle governs is how fast the cell in the jaws is ground into the buffer.
         fun groundInASecond(w: Wiring): Long {
             val grid = Grid(5, 5)
@@ -192,11 +192,11 @@ class WiringTest {
             val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
             return (s[grid.index(2, 2)] as Extractor).buffer.mass
         }
-        // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_GRAMS`, which was
+        // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_MASS`, which was
         // the same number only by the coincidence that a packet was four ticks' output — a
         // coincidence that died when the belt-load dropped to 100 kg. What the throttle governs is
         // the *rate*, so the rate is what the expectation is built from.
-        val full = 4L * Extractor(Direction.Right).gramsPerTick
+        val full = 4L * Extractor(Direction.Right).massPerTick
         assertEquals(full, groundInASecond(wiring(SignalSource.Always to 1000)))
         assertEquals(full / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
         assertEquals(full / 4, groundInASecond(wiring(SignalSource.Always to 250)))
@@ -208,7 +208,7 @@ class WiringTest {
         // Track is inert -- it has no wiring and cannot be switched off, because it is plumbing. The
         // thing you switch off is the machine at the end of it, and a shut tank is a shut valve.
         val grid = Grid(12, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_GRAMS))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
         m[grid.index(8, 3)] = Storage(Direction.Right)
@@ -217,7 +217,7 @@ class WiringTest {
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, Bridge.STEP_TICKS * 8)
-        assertEquals(4 * Capacity.PACKET_GRAMS, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
+        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.railAt(grid.index(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
@@ -267,7 +267,7 @@ class WiringTest {
         // period. What matters is the *shape*: the rate falls away as the tank fills.
         //
         // Measured as **what has been ground out of the extractor**: everything taken off a rock,
-        // less the cell still in the jaws. Neither `extractedGrams` nor "mass aboard" would do — a
+        // less the cell still in the jaws. Neither `extractedMass` nor "mass aboard" would do — a
         // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
         // lurches that say nothing about a rate.
         fun ground(w: VesselState): Long =
@@ -363,24 +363,24 @@ class WiringTest {
 
     @Test
     fun `a storage releases only while it is told to`() {
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_GRAMS))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS))
         val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
         var s = run(twoUp(shut), 20)
-        assertEquals(5 * Capacity.PACKET_GRAMS, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
+        assertEquals(5 * Capacity.PACKET_MASS, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
         assertNull((s[g.index(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(Direction.Right, stored)), 20)
-        assertEquals(5 * Capacity.PACKET_GRAMS, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
         assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────
 
     @Test
-    fun `the world still never loses a gram with sensors and wiring in play`() {
+    fun `the world still never loses a unit of mass with sensors and wiring in play`() {
         var s = workingVessel(Grid(40, 28))
         repeat(240) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())

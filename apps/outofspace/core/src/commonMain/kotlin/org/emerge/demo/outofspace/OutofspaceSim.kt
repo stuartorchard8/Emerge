@@ -66,7 +66,7 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
-import org.emerge.demo.outofspace.world.vesselMassGrams
+import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
@@ -186,17 +186,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val added = w.heatAdded[i]
             if (added == 0L) continue
             val m = w.machines[i] ?: continue
-            w.machines[i] = m.withJoules(m.joules.plusSpread(added))
+            w.machines[i] = m.withEnergy(m.energy.plusSpread(added))
         }
         val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
         val conducted = stepSolidHeat(
             grid = state.grid,
             bodies = bodies,
             structure = structure,
-            airJoules = w.airJoules,
-            airCapacity = gasCapacity(state.grid.size, w.airGrams),
+            airEnergy = w.airEnergy,
+            airCapacity = gasCapacity(state.grid.size, w.airMass),
         )
-        w.applyBodyHeat(bodies, conducted.joules)
+        w.applyBodyHeat(bodies, conducted.energy)
 
         val edges = EdgeGrid(state.grid)
         val conduits = w.conduitsSnapshot()
@@ -207,20 +207,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Valves first: pressure propagates immediately, both layers see exchange (see [exchangeLayers]).
         val crossed = exchangeLayers(
             openings = valveOpenings(state.grid, conduits),
-            roomGrams = w.airGrams,
-            roomJoules = w.airJoules,
-            pipeGrams = w.pipeGrams,
-            pipeJoules = w.pipeJoules,
+            roomMass = w.airMass,
+            roomEnergy = w.airEnergy,
+            pipeMass = w.pipeMass,
+            pipeEnergy = w.pipeEnergy,
             pipeVolumes = volumes,
         )
 
         // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
         val pumped = applyPumps(
             demands = pumpDemands(state.grid, w.machines, conduits, signals),
-            roomGrams = w.airGrams,
-            roomJoules = w.airJoules,
-            pipeGrams = w.pipeGrams,
-            pipeJoules = w.pipeJoules,
+            roomMass = w.airMass,
+            roomEnergy = w.airEnergy,
+            pipeMass = w.pipeMass,
+            pipeEnergy = w.pipeEnergy,
             pipeVolumes = volumes,
         )
 
@@ -236,44 +236,44 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // transport: the gradient that pushes the hull this tick is the one that exists before the
         // gas has been allowed to answer it.
         val roomPressure = tilePressure(
-            state.grid.size, w.airGrams, gasKelvin(w.airJoules, gasCapacity(state.grid.size, w.airGrams)),
+            state.grid.size, w.airMass, gasKelvin(w.airEnergy, gasCapacity(state.grid.size, w.airMass)),
         )
         val pushed = applyPressureForce(
-            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.airGrams), roomPressure,
+            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.airMass), roomPressure,
         )
         val pipePressure = tilePressure(
-            state.grid.size, w.pipeGrams,
-            gasKelvin(w.pipeJoules, gasCapacity(state.grid.size, w.pipeGrams)), volumes,
+            state.grid.size, w.pipeMass,
+            gasKelvin(w.pipeEnergy, gasCapacity(state.grid.size, w.pipeMass)), volumes,
         )
         val pipePushed = applyPressureForce(
             edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
-            tileMass(state.grid.size, w.pipeGrams), pipePressure,
+            tileMass(state.grid.size, w.pipeMass), pipePressure,
         )
 
-        // On airGrams (edited by [displaceAir]).
-        val fluid = diffuseFluid(edges, roomApertures, w.airGrams, w.airJoules)
+        // On airMass (edited by [displaceAir]).
+        val fluid = diffuseFluid(edges, roomApertures, w.airMass, w.airEnergy)
 
         // Pipes: same model, connectivity from player-drawn layout. Volume does not enter here —
         // diffusion moves a *share* of what a cell holds, and a share is the same fraction of a thin
         // cell as of a fat one. Volume still governs pressure, which is what the valves and pumps
         // above read, so a pipe is still a small place that fills quickly.
-        val pipes = diffuseFluid(edges, plumbing, w.pipeGrams, w.pipeJoules)
+        val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy)
         // Pipes cannot vent to rim (ledger check).
-        require(pipes.ventedGrams == 0L && pipes.ventedJoules == 0L) {
-            "a sealed pipe network vented ${pipes.ventedGrams}g — a rim face was open"
+        require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {
+            "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
         }
 
         // ── Flight ────────────────────────────────────────────────────────────
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val mass = vesselMassGrams(machines, conduits, bridges)
+        val mass = vesselMass(machines, conduits, bridges)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
         val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
 
         // Dynamic rock spawning/despawning
-        // World-spawned rocks are free mass, not counted in baselineRockGrams.
+        // World-spawned rocks are free mass, not counted in baselineRockMass.
         // Uses the post-advance position (matching what `positionX/Y` will be below) so the
         // window-recenter decision agrees with the position the HUD reads this same tick
         val newPositionX = state.positionX + state.velocityX
@@ -327,27 +327,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
             tick = state.tick + 1,
-            extractedMass = w.extractedGrams,
-            ventedMass = w.ventedGrams,
+            extractedMass = w.extractedMass,
+            ventedMass = w.ventedMass,
             signals = signals,
             networks = networks,
             structure = structure,
             occupancy = occupancy,
-            generatedEnergy = w.generatedJoules,
+            generatedEnergy = w.generatedEnergy,
             radiatedEnergy = state.radiatedEnergy + conducted.radiated,
-            insertedJoules = w.insertedJoules,
-            acquiredJoules = w.acquiredJoules,
+            insertedEnergy = w.insertedEnergy,
+            acquiredEnergy = w.acquiredEnergy,
             // Solid→air energy (see [SolidHeatStep]).
             solidToAirEnergy = state.solidToAirEnergy + conducted.toAir,
             air = fluid.air,
             pipeAir = pipes.air,
             pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
-            airVentedMass = state.airVentedMass + fluid.ventedGrams,
-            // Separate from radiatedJoules: cleaner ledger.
-            airVentedEnergy = state.airVentedEnergy + fluid.ventedJoules,
+            airVentedMass = state.airVentedMass + fluid.ventedMass,
+            // Separate from radiatedEnergy: cleaner ledger.
+            airVentedEnergy = state.airVentedEnergy + fluid.ventedEnergy,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
-            injectedAirGrams = w.injectedAirGrams,
-            injectedAirJoules = w.injectedAirJoules,
+            injectedAirMass = w.injectedAirMass,
+            injectedAirEnergy = w.injectedAirEnergy,
             // Written by [applyPressureForce] and read by nobody: diffusion has no momentum to carry,
             // so what lands here is an impulse total that is never spent. Kept because the save format
             // is unchanged and a model that closes the ledger again will want somewhere to put it.
@@ -383,7 +383,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * the world moves underneath afterwards — which is also what `GridGrowTest` pins by digesting a
      * world that grew against the same world built at the final size.
      *
-     * Growth only ever adds vacuum tiles, at zero grams, zero joules and zero momentum, so no ledger
+     * Growth only ever adds vacuum tiles, at zero mass, zero energy and zero momentum, so no ledger
      * and no baseline moves; the accounting question is the one §5 raises about *shrinking*, and
      * that is what `fitRequested` triggers: the grid shrinks to the fitted box and whatever cells
      * are discarded are vented by `remapped`, which is why this must happen at the very end of the
@@ -433,10 +433,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun blocked(vararg outputs: Resource?): Boolean =
         outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
 
-    /** Grams this tick: rate × activation, with carry-over via [Rate]. */
-    private fun throttled(gramsPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
+    /** Mass this tick: rate × activation, with carry-over via [Rate]. */
+    private fun throttled(massPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
         if (activation <= 0) 0L to carry
-        else Rate.tick(gramsPerTick * activation, SignalField.FULL, carry)
+        else Rate.tick(massPerTick * activation, SignalField.FULL, carry)
 
     private fun vaporizeToGas(mixture: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
@@ -445,15 +445,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (g <= 0L) continue
             out[s.ordinal] += g
         }
-        return Mixture.ofGrams(out)
+        return Mixture.ofMass(out)
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input = m.input ?: return m
-        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
+        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
         // Full output blocks the machine (catches tailings too).
         if (blocked(m.product, m.tailings)) return m.copy(carry = carry)
-        val chunkMass = minOf(grams, input.mass)
+        val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
@@ -472,9 +472,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, at: Int): Smelter {
         val input = m.input ?: return m
-        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
+        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
         if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
-        val chunkMass = minOf(grams, input.mass)
+        val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
@@ -494,8 +494,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     private fun Work.vaporize(m: Vaporizer, activation: Int, at: Int): Vaporizer {
         val input = m.input ?: return m
-        val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
-        val chunkMass = minOf(grams, input.mass)
+        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
+        val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
@@ -506,11 +506,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         for (s in Species.ALL) {
             val g = gas[s]
             if (g <= 0L) continue
-            airGrams[base + s.ordinal] += g
+            airMass[base + s.ordinal] += g
             parcel[s.ordinal] = g
         }
-        val joules = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
-        airJoules[at] += joules
+        val energy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+        airEnergy[at] += energy
 
         return m.copy(
             input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
@@ -568,7 +568,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
-        var extractedGrams: Long = state.extractedMass
+        var extractedMass: Long = state.extractedMass
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
@@ -585,11 +585,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
-        var ventedGrams: Long = state.ventedMass
+        var ventedMass: Long = state.ventedMass
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
-        var injectedAirGrams: Long = state.injectedAirGrams
-        var injectedAirJoules: Long = state.injectedAirJoules
+        var injectedAirMass: Long = state.injectedAirMass
+        var injectedAirEnergy: Long = state.injectedAirEnergy
 
         // Debug engine direction, summed + clamped (see [Edit.Thrust]).
         var thrustDx: Int = 0
@@ -611,18 +611,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var bodyHandedY: Long = 0L
 
         // Mutable: edit pass moves air before fluid pass runs.
-        val airGrams: LongArray = state.air.copyGrams()
+        val airMass: LongArray = state.air.copyMass()
 
-        /** This tick's air temperature, as energy — mutable for the same reason [airGrams] is. */
-        val airJoules: LongArray = state.air.copyJoules()
+        /** This tick's air temperature, as energy — mutable for the same reason [airMass] is. */
+        val airEnergy: LongArray = state.air.copyEnergy()
 
-        /** This tick's momentum, mutable for the same reason [airGrams] is. */
+        /** This tick's momentum, mutable for the same reason [airMass] is. */
         val momentumX: LongArray = state.momentum.copyX()
         val momentumY: LongArray = state.momentum.copyY()
 
         /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
-        val pipeGrams: LongArray = state.pipeAir.copyGrams()
-        val pipeJoules: LongArray = state.pipeAir.copyJoules()
+        val pipeMass: LongArray = state.pipeAir.copyMass()
+        val pipeEnergy: LongArray = state.pipeAir.copyEnergy()
         val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
         val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 
@@ -654,55 +654,55 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * write made by an earlier one.
          */
         val heatAdded: LongArray = LongArray(state.grid.size)
-        var generatedJoules: Long = state.generatedEnergy
-        var insertedJoules: Long = state.insertedJoules
-        var acquiredJoules: Long = state.acquiredJoules
+        var generatedEnergy: Long = state.generatedEnergy
+        var insertedEnergy: Long = state.insertedEnergy
+        var acquiredEnergy: Long = state.acquiredEnergy
 
-        /** Charges [joules] of waste heat to the machine stored at [index]. */
-        fun heat(index: Int, joules: Long) {
-            if (joules <= 0L || index !in heatAdded.indices) return
-            heatAdded[index] += joules
-            generatedJoules += joules
+        /** Charges [energy] of waste heat to the machine stored at [index]. */
+        fun heat(index: Int, energy: Long) {
+            if (energy <= 0L || index !in heatAdded.indices) return
+            heatAdded[index] += energy
+            generatedEnergy += energy
         }
 
         /**
-         * Charges [joules] to the machine at [index] **without** counting it as generated.
+         * Charges [energy] to the machine at [index] **without** counting it as generated.
          *
          * The difference from [heat] is the whole point: this is energy that was already in the
          * world and has changed hands — a rock's heat arriving in the extractor that ate it. Booking
          * it as generated would break the thermal balance by exactly the amount that moved. Also
-         * increments [acquiredJoules] to record that the grid acquired this energy from outside.
+         * increments [acquiredEnergy] to record that the grid acquired this energy from outside.
          */
-        fun absorb(index: Int, joules: Long) {
-            if (joules == 0L || index !in heatAdded.indices) return
-            heatAdded[index] += joules
-            acquiredJoules += joules
+        fun absorb(index: Int, energy: Long) {
+            if (energy == 0L || index !in heatAdded.indices) return
+            heatAdded[index] += energy
+            acquiredEnergy += energy
         }
 
         /** Books energy inserted by the player via debug features. */
-        fun built(joules: Long) { insertedJoules += joules }
+        fun built(energy: Long) { insertedEnergy += energy }
 
         /** Books energy removed by scrapping debug-placed things. */
-        fun scrapped(joules: Long) { insertedJoules -= joules }
+        fun scrapped(energy: Long) { insertedEnergy -= energy }
 
         /** Apply conduction results back to machines/segments/bridges. */
-        fun applyBodyHeat(bodies: List<Body>, joules: LongArray) {
+        fun applyBodyHeat(bodies: List<Body>, energy: LongArray) {
             for (i in bodies.indices) {
                 val body = bodies[i]
-                if (joules[i] == body.joules) continue
+                if (energy[i] == body.energy) continue
                 when (body.slot) {
                     // A machine is several bodies now, one per tile, so the tile has to be named
                     // as well as the machine — see [Body.part].
                     BodySlot.Deck -> machines[body.at]?.let {
-                        machines[body.at] = it.withJoules(it.joules.with(body.part, joules[i]))
+                        machines[body.at] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
-                        layer(c)[body.at]?.let { layer(c)[body.at] = it.copy(joules = joules[i]) }
+                        layer(c)[body.at]?.let { layer(c)[body.at] = it.copy(energy = energy[i]) }
                     }
                     BodySlot.Span -> bridges[body.at]?.let {
-                        bridges[body.at] = it.withJoules(it.joules.with(body.part, joules[i])) as Bridge
+                        bridges[body.at] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
                     }
                 }
             }
@@ -712,11 +712,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun cutOpen(tile: Int) {
             val base = tile * Species.COUNT
             for (sp in Species.ALL) {
-                airGrams[base + sp.ordinal] += pipeGrams[base + sp.ordinal]
-                pipeGrams[base + sp.ordinal] = 0L
+                airMass[base + sp.ordinal] += pipeMass[base + sp.ordinal]
+                pipeMass[base + sp.ordinal] = 0L
             }
-            airJoules[tile] += pipeJoules[tile]
-            pipeJoules[tile] = 0L
+            airEnergy[tile] += pipeEnergy[tile]
+            pipeEnergy[tile] = 0L
         }
 
         /** Where a machine instance currently sits — extractors are charged heat by identity. */
@@ -731,7 +731,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
                             val c = edit.kind.conduit!!
                             if (layer(c)[edit.index] == null) {
-                                layer(c)[edit.index] = Segment(c).also { built(it.joules) }
+                                layer(c)[edit.index] = Segment(c).also { built(it.energy) }
                             }
                         }
                         // Valve: upgrade existing pipe or lay new.
@@ -739,11 +739,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             val existing = layer(Conduit.Pipe)[edit.index]
                             layer(Conduit.Pipe)[edit.index] =
                                 existing?.copy(valve = true)
-                                    ?: Segment(Conduit.Pipe, valve = true).also { built(it.joules) }
+                                    ?: Segment(Conduit.Pipe, valve = true).also { built(it.energy) }
                         }
                         MachineKind.Gauge -> if (rails[edit.index] == null) {
                             rails[edit.index] = Segment(Conduit.Rail, isGauge = true)
-                                .also { built(it.joules) }
+                                .also { built(it.energy) }
                         }
                         MachineKind.Bridge -> placeBridge(edit.index, edit.facing)
                         else -> placeBuilding(edit.index, edit.kind, edit.facing)
@@ -804,7 +804,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
-                is Edit.Inject -> inject(edit.index, edit.grams, edit.water)
+                is Edit.Inject -> inject(edit.index, edit.mass, edit.water)
                 // Recorded, never acted on here: a resize partway through a tick would leave half a
                 // world on each lattice, because `Work` addresses every tile through the grid the
                 // tick started on. Consumed at the very end of `reduce` — see [resized].
@@ -819,7 +819,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun removeBridge(at: Int): Boolean {
             val bridge = bridges.getOrNull(at) ?: return false
             bridges[at] = null
-            scrapped(bridge.joules.total)
+            scrapped(bridge.energy.total)
             return true
         }
 
@@ -829,7 +829,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val segment = line.getOrNull(at) ?: return false
             if (c == Conduit.Pipe) cutOpen(at)
             line[at] = null
-            scrapped(segment.joules)
+            scrapped(segment.energy)
             // Cut far halves of joins (prevent phantom connections).
             for (dir in Direction.ALL) {
                 val n = grid.neighbour(at, dir)
@@ -843,7 +843,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val origin = originAt(at) ?: return false
             val machine = machines[origin] ?: return false
             for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = -1
-            scrapped(machine.joules.total)
+            scrapped(machine.energy.total)
             machines[origin] = null
             return true
         }
@@ -856,12 +856,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and books nothing, so a held button over a wall does exactly nothing rather than quietly
          * accumulating a debt.
          */
-        private fun inject(at: Int, grams: Long, water: Boolean = false) {
-            if (at !in 0 until grid.size || grams <= 0L) return
+        private fun inject(at: Int, mass: Long, water: Boolean = false) {
+            if (at !in 0 until grid.size || mass <= 0L) return
             if (originOf[at] >= 0 && machines[originOf[at]]?.kind?.isPermeable == false) return
             val base = at * Species.COUNT
-            if (water) { injectWater(at, grams); return }
-            val shares = AirField.AMBIENT_AIR.scaledTo(grams)
+            if (water) { injectWater(at, mass); return }
+            val shares = AirField.AMBIENT_AIR.scaledTo(mass)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather
             // than from the tile it is arriving in — that gas is already at its own temperature.
             val parcel = LongArray(Species.COUNT)
@@ -875,17 +875,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (s in Species.ALL) {
                 val g = shares[s]
                 parcel[s.ordinal] = g
-                airGrams[base + s.ordinal] += g
+                airMass[base + s.ordinal] += g
                 added += g
             }
             if (added <= 0L) return
             // The heat comes in with the gas, at the temperature everything else here is. Derived
-            // from the grams rather than defaulted to zero, which is [AirField.of]'s rule: gas that
+            // from the mass rather than defaulted to zero, which is [AirField.of]'s rule: gas that
             // arrived with no energy is gas at absolute zero, and it stops behaving like a gas.
-            val joules = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
-            airJoules[at] += joules
-            injectedAirGrams += added
-            injectedAirJoules += joules
+            val energy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+            airEnergy[at] += energy
+            injectedAirMass += added
+            injectedAirEnergy += energy
         }
 
         /**
@@ -897,14 +897,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * they must share is the admission — this mints matter, and `airBalance` stays honest only
          * because the same two counters are told about it.
          */
-        private fun injectWater(at: Int, grams: Long) {
+        private fun injectWater(at: Int, mass: Long) {
             val parcel = LongArray(Species.COUNT)
-            parcel[Species.Water.ordinal] = grams
-            airGrams[at * Species.COUNT + Species.Water.ordinal] += grams
-            val joules = gasCapacityAt(parcel, 0) * Edit.WATER_INJECT_KELVIN
-            airJoules[at] += joules
-            injectedAirGrams += grams
-            injectedAirJoules += joules
+            parcel[Species.Water.ordinal] = mass
+            airMass[at * Species.COUNT + Species.Water.ordinal] += mass
+            val energy = gasCapacityAt(parcel, 0) * Edit.WATER_INJECT_KELVIN
+            airEnergy[at] += energy
+            injectedAirMass += mass
+            injectedAirEnergy += energy
         }
 
         /** Drop a body at ([x], [y]) (capture placeholder). Body heat → stored, booking → inserted. */
@@ -917,7 +917,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 composition = DEFAULT_ORE_BODY,
             )
             bodies.add(body)
-            built(body.joules.total)
+            built(body.energy.total)
         }
 
         /** Place building (click names centre, footprint grows around it). */
@@ -932,10 +932,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
             // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            if (!kind.isPermeable && !tryDisplaceAir(grid, airGrams, covered) { originOf[it] < 0 }) return
+            if (!kind.isPermeable && !tryDisplaceAir(grid, airMass, covered) { originOf[it] < 0 }) return
 
             machines[at] = built
-            built(built.joules.total)
+            built(built.energy.total)
             for (t in covered) originOf[t] = at
         }
 
@@ -955,7 +955,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (ports.size < 2) return
             if (portsClash(ports)) return
             bridges[at] = built
-            built(built.joules.total)
+            built(built.energy.total)
         }
 
         /** Any two ports of the same conduit on one tile clash. */
@@ -997,7 +997,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          *
          *  - mass, which becomes ore and moves [VesselState.extractedMass];
          *  - heat, which goes into the casing and is a *transfer* rather than work, so it is
-         *    [absorb]ed and not [heat]ed — putting it through the generated-joules term would mint
+         *    [absorb]ed and not [heat]ed — putting it through the generated-energy term would mint
          *    energy that was already in the world;
          *  - momentum, which the ship gains because the ore is now aboard and moving with it. The
          *    ship therefore hands the rock the negative of it, which is what [rockHandedX] is for.
@@ -1006,7 +1006,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * the ledgers exist to catch.
          */
         fun leech(m: Extractor, activation: Int, at: Int): Extractor {
-            val (grams, carry) = throttled(m.gramsPerTick, activation, m.carry)
+            val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
             // Backed up: stop working, holding whatever cell is already in the jaws. It is counted
             // as aboard either way, so nothing is forfeit by waiting.
             if (m.buffer.mass >= Extractor.BUFFER_CAP) return m.copy(carry = carry)
@@ -1017,10 +1017,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 input = if (found < 0) null else bite(found, at)
             }
             if (input == null) return m.copy(input = null, carry = carry)
-            if (grams <= 0L) return m.copy(input = input, carry = carry)
+            if (mass <= 0L) return m.copy(input = input, carry = carry)
 
             // The same shape as a processor working a lump: take a chunk off the input buffer.
-            val chunk = input.mixture.take(minOf(grams, input.mass))
+            val chunk = input.mixture.take(minOf(mass, input.mass))
             if (chunk.total <= 0L) return m.copy(input = input, carry = carry)
             heat(at, heatOfWorking(chunk.total, m))
             return m.copy(
@@ -1054,13 +1054,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             )
             if (cell < 0) return null
             val taken = biteCell(body, cell)
-            extractedGrams += taken.grams
-            absorb(at, taken.joules)
+            extractedMass += taken.mass
+            absorb(at, taken.energy)
             // The body lost this; the ship gained it, so the ship gave the body the negative.
             bodyHandedX -= taken.impulseX
             bodyHandedY -= taken.impulseY
             if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
-            return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.grams))
+            return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.mass))
         }
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
@@ -1094,7 +1094,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
-            val room = segment.held?.let { Capacity.headroom(it) } ?: Capacity.PACKET_GRAMS
+            val room = segment.held?.let { Capacity.headroom(it) } ?: Capacity.PACKET_MASS
             val buffer = bufferFor(m, port) ?: return
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = segment.held == null
@@ -1248,8 +1248,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Take whole packets (limit caps to available room). */
-        private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_GRAMS): Pair<SolidPacket, Resource>? {
-            val want = minOf(Capacity.PACKET_GRAMS, limit)
+        private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_MASS): Pair<SolidPacket, Resource>? {
+            val want = minOf(Capacity.PACKET_MASS, limit)
             if (want <= 0L || buffer.mass < want) return null
             val taken = buffer.mixture.take(want)
             return SolidPacket(Resource(buffer.form, taken)) to Resource(buffer.form, buffer.mixture - taken)
@@ -1281,8 +1281,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
                 is Vent -> {
-                    ventedGrams += packet.mass
-                    machines[target] = destination.copy(ventedGrams = destination.ventedGrams + packet.mass)
+                    ventedMass += packet.mass
+                    machines[target] = destination.copy(ventedMass = destination.ventedMass + packet.mass)
                     true
                 }
 

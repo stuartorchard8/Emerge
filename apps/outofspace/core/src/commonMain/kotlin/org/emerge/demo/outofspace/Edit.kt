@@ -1,6 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
+import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
@@ -45,7 +45,7 @@ sealed interface Edit {
     data class DropRock(val x: Float, val y: Float, val radius: Int = DEFAULT_ROCK_RADIUS) : Edit
 
     /**
-     * Puts [INJECT_GRAMS] of room-temperature air into a tile — the debug bellows.
+     * Puts [INJECT_MASS] of room-temperature air into a tile — the debug bellows.
      *
      * **It mints matter, and that is the whole difficulty with it.** Every other way gas enters this
      * world is a transfer from somewhere else, which is why `atmosphere + vented == baseline` can be
@@ -55,12 +55,12 @@ sealed interface Edit {
      *
      * So it is booked, exactly as [Thrust] is booked into `debugImpulseX`: the balance becomes
      * `atmosphere + vented − injected == baseline`, which is the old identity precisely whenever
-     * nothing has cheated. See [org.emerge.demo.outofspace.world.VesselState.injectedAirGrams].
+     * nothing has cheated. See [org.emerge.demo.outofspace.world.VesselState.injectedAirMass].
      *
      * One edit per tick for as long as the button is held — see [OutofspaceController.injectTile] —
      * so the rate is a rate rather than a function of the frame rate.
      */
-    data class Inject(val index: Int, val grams: Long = INJECT_GRAMS, val water: Boolean = false) : Edit
+    data class Inject(val index: Int, val mass: Long = INJECT_MASS, val water: Boolean = false) : Edit
 
     /**
      * Takes the grid back to the ship plus its pad. The only edit that can make the grid smaller,
@@ -84,18 +84,18 @@ sealed interface Edit {
          * tile-load rather than a mass that happens to equal one — but the atmosphere is a layer
          * above this file and the coincidence is close enough to state in words instead.
          */
-        val INJECT_GRAMS: Long = 1L * Budget.KILOGRAM
+        val INJECT_MASS: Long = 1L * Budget.KILOGRAM
 
         /**
          * What one tick of the *water* injector delivers — a sixty-fourth of what a tile holds when
          * it is full of saturated liquid, so a held button fills a tile in about a second.
          *
          * Derived rather than picked, and it has to be: liquid water is some seven hundred times
-         * denser than air, so [INJECT_GRAMS] would take six hundred ticks to make a puddle and would
+         * denser than air, so [INJECT_MASS] would take six hundred ticks to make a puddle and would
          * read as a broken tool. The number is whatever `Saturation.kt` says a full tile weighs at
          * [WATER_INJECT_KELVIN], divided by 64.
          */
-        val WATER_INJECT_GRAMS: Long = gramsAtReducedDensity(
+        val WATER_INJECT_MASS: Long = massAtReducedDensity(
             saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!)!!,
             Species.Water,
             VolumeField.FULL,

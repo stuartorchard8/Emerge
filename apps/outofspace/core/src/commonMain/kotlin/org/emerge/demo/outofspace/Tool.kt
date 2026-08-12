@@ -18,7 +18,7 @@ enum class Tool(val label: String) {
      *
      * A **debug** tool and labelled as one, alongside the debug engine and the rock drop. It mints
      * matter, which is the one thing this game's ledgers exist to forbid, so what it actually does is
-     * mint it *and admit to it* — see [Edit.Inject] and [org.emerge.demo.outofspace.world.VesselState.injectedAirGrams].
+     * mint it *and admit to it* — see [Edit.Inject] and [org.emerge.demo.outofspace.world.VesselState.injectedAirMass].
      */
     Inject("INJECT"),
 

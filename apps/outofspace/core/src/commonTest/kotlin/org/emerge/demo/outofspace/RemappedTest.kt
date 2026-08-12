@@ -58,13 +58,13 @@ class RemappedTest {
         machines[grid.index(10, 5)] = Hull()
         // Diverter
         val diverters = FlowCursors(mapOf(grid.index(7, 7) to 1))
-        // Air with uniform grams and joules
-        val airGrams = LongArray(grid.size * Species.COUNT) {
+        // Air with uniform mass and energy
+        val airMass = LongArray(grid.size * Species.COUNT) {
             val tile = it / Species.COUNT
             if (tile < grid.size) 100L else 0L
         }
-        val airJoules = LongArray(grid.size) { 500L }
-        val air = AirField.of(airGrams, airJoules)
+        val airEnergy = LongArray(grid.size) { 500L }
+        val air = AirField.of(airMass, airEnergy)
         // Momentum with non-zero values
         val xEdges = EdgeGrid(grid).xEdgeCount
         val yEdges = EdgeGrid(grid).yEdgeCount
@@ -107,18 +107,18 @@ class RemappedTest {
         assertEquals(s0.bridges, s1.bridges)
         assertEquals(s0.conduits, s1.conduits)
         assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
-        assertEquals(s0.air.copyGrams().contentToString(), s1.air.copyGrams().contentToString())
-        assertEquals(s0.air.copyJoules().contentToString(), s1.air.copyJoules().contentToString())
-        assertEquals(s0.pipeAir.copyGrams().contentToString(), s1.pipeAir.copyGrams().contentToString())
-        assertEquals(s0.pipeAir.copyJoules().contentToString(), s1.pipeAir.copyJoules().contentToString())
+        assertEquals(s0.air.copyMass().contentToString(), s1.air.copyMass().contentToString())
+        assertEquals(s0.air.copyEnergy().contentToString(), s1.air.copyEnergy().contentToString())
+        assertEquals(s0.pipeAir.copyMass().contentToString(), s1.pipeAir.copyMass().contentToString())
+        assertEquals(s0.pipeAir.copyEnergy().contentToString(), s1.pipeAir.copyEnergy().contentToString())
         assertTrue(s0.momentum.copyX().contentEquals(s1.momentum.copyX()), "momentum X")
         assertTrue(s0.momentum.copyY().contentEquals(s1.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s1.pipeMomentum.copyX()), "pipeMomentum X")
         assertTrue(s0.pipeMomentum.copyY().contentEquals(s1.pipeMomentum.copyY()), "pipeMomentum Y")
         assertEquals(s0.bodies, s1.bodies)
-        assertEquals(s0.baselineAirGrams, s1.baselineAirGrams)
-        assertEquals(s0.baselineAirJoules, s1.baselineAirJoules)
-        assertEquals(s0.baselineJoules, s1.baselineJoules)
+        assertEquals(s0.baselineAirMass, s1.baselineAirMass)
+        assertEquals(s0.baselineAirEnergy, s1.baselineAirEnergy)
+        assertEquals(s0.baselineEnergy, s1.baselineEnergy)
 
     }
 
@@ -215,12 +215,12 @@ class RemappedTest {
                 val oldTile = oldGrid.index(x, y)
                 val newTile = newGrid.index(x + dx, y + dy)
                 for (s in Species.entries) {
-                    val oldGrams = s0.air.gramsOf(oldTile, s)
-                    val newGrams = s1.air.gramsOf(newTile, s)
-                    assertEquals(oldGrams, newGrams, "air grams at ($x,$y) species=$s")
+                    val oldMass = s0.air.massOf(oldTile, s)
+                    val newMass = s1.air.massOf(newTile, s)
+                    assertEquals(oldMass, newMass, "air mass at ($x,$y) species=$s")
                 }
-                assertEquals(s0.air.copyJoules()[oldTile], s1.air.copyJoules()[newTile],
-                    "air joules at ($x,$y)")
+                assertEquals(s0.air.copyEnergy()[oldTile], s1.air.copyEnergy()[newTile],
+                    "air energy at ($x,$y)")
             }
         }
     }
@@ -240,9 +240,9 @@ class RemappedTest {
                 val oldTile = oldGrid.index(x, y)
                 val newTile = newGrid.index(x + dx, y + dy)
                 for (s in Species.entries) {
-                    val oldGrams = s0.pipeAir.gramsOf(oldTile, s)
-                    val newGrams = s1.pipeAir.gramsOf(newTile, s)
-                    assertEquals(oldGrams, newGrams)
+                    val oldMass = s0.pipeAir.massOf(oldTile, s)
+                    val newMass = s1.pipeAir.massOf(newTile, s)
+                    assertEquals(oldMass, newMass)
                 }
             }
         }
@@ -375,7 +375,7 @@ class RemappedTest {
      */
     @Ignore
     @Test
-    fun `airJouleBalance is preserved across remap`() {
+    fun `airEnergyBalance is preserved across remap`() {
         val s0 = populatedWorld()
         val oldGrid = s0.grid
         val newGrid = Grid(oldGrid.width + 3, oldGrid.height + 2)
@@ -421,7 +421,7 @@ class RemappedTest {
 
         val s1 = s0.remapped(newGrid, dx, dy)
 
-        // mass = massGrams + ventedGrams + extractedGrams (should be invariant)
+        // mass = mass + ventedMass + extractedMass (should be invariant)
         fun massBalance(s: VesselState) = s.mass + s.ventedMass + s.extractedMass
         assertEquals(massBalance(s0), massBalance(s1), "massBalance must be preserved")
     }
@@ -440,7 +440,7 @@ class RemappedTest {
         assertEquals(s0.bodies.size, s1.bodies.size, "body count must be preserved")
     }
 
-    /** ⚠️ **PARKED** — see [EnergyLedgers], and the `airJouleBalance` twin above for why. */
+    /** ⚠️ **PARKED** — see [EnergyLedgers], and the `airEnergyBalance` twin above for why. */
     @Ignore
     @Test
     fun `heatBalance is preserved across remap`() {
@@ -472,18 +472,18 @@ class RemappedTest {
         assertEquals(s0.bridges, s2.bridges, "bridges should be identical")
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
         assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
-        assertEquals(s0.air.copyGrams().contentToString(), s2.air.copyGrams().contentToString(), "air grams")
-        assertEquals(s0.air.copyJoules().contentToString(), s2.air.copyJoules().contentToString(), "air joules")
-        assertEquals(s0.pipeAir.copyGrams().contentToString(), s2.pipeAir.copyGrams().contentToString(), "pipeAir grams")
-        assertEquals(s0.pipeAir.copyJoules().contentToString(), s2.pipeAir.copyJoules().contentToString(), "pipeAir joules")
+        assertEquals(s0.air.copyMass().contentToString(), s2.air.copyMass().contentToString(), "air mass")
+        assertEquals(s0.air.copyEnergy().contentToString(), s2.air.copyEnergy().contentToString(), "air energy")
+        assertEquals(s0.pipeAir.copyMass().contentToString(), s2.pipeAir.copyMass().contentToString(), "pipeAir mass")
+        assertEquals(s0.pipeAir.copyEnergy().contentToString(), s2.pipeAir.copyEnergy().contentToString(), "pipeAir energy")
         assertTrue(s0.momentum.copyX().contentEquals(s2.momentum.copyX()), "momentum X")
         assertTrue(s0.momentum.copyY().contentEquals(s2.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s2.pipeMomentum.copyX()), "pipeMomentum X")
         assertTrue(s0.pipeMomentum.copyY().contentEquals(s2.pipeMomentum.copyY()), "pipeMomentum Y")
         assertEquals(s0.bodies, s2.bodies, "bodies should be identical")
-        assertEquals(s0.baselineAirGrams, s2.baselineAirGrams)
-        assertEquals(s0.baselineAirJoules, s2.baselineAirJoules)
-        assertEquals(s0.baselineJoules, s2.baselineJoules)
+        assertEquals(s0.baselineAirMass, s2.baselineAirMass)
+        assertEquals(s0.baselineAirEnergy, s2.baselineAirEnergy)
+        assertEquals(s0.baselineEnergy, s2.baselineEnergy)
 
     }
 
@@ -503,9 +503,9 @@ class RemappedTest {
         for (x in 0 until 5) {
             for (y in 0 until 4) {
                 val tile = newGrid.index(x, y)
-                assertEquals(0L, s1.air.gramsOf(tile, Species.Iron),
+                assertEquals(0L, s1.air.massOf(tile, Species.Iron),
                     "new tile ($x,$y) should be vacuum")
-                assertEquals(0L, s1.air.copyJoules()[tile], "new tile ($x,$y) joules should be zero")
+                assertEquals(0L, s1.air.copyEnergy()[tile], "new tile ($x,$y) energy should be zero")
             }
         }
     }

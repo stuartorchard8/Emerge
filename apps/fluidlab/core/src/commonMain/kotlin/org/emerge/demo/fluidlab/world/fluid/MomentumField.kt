@@ -4,9 +4,9 @@ import org.emerge.sim.core.physics.primitives.Frac
 
 /**
  * Fluid motion: stored on faces as momentum (gram·tiles/tick).
- * Momentum stored, velocity derived (v = p/m) — same pattern as HeatField (stores joules, derives kelvin).
+ * Momentum stored, velocity derived (v = p/m) — same pattern as HeatField (stores energy, derives kelvin).
  * Conserved quantity gets home in state (structural conservation). Long range avoids Frac's ±2 limit.
- * Units: momentum/grams = tiles/tick (velocity).
+ * Units: momentum/mass = tiles/tick (velocity).
  */
 class MomentumField(
     private val edges: EdgeGrid,
@@ -71,8 +71,8 @@ class MomentumField(
         fun of(edges: EdgeGrid, x: LongArray, y: LongArray): MomentumField =
             MomentumField(edges, x.copyOf(), y.copyOf())
 
-        private fun velocity(momentum: Long, grams: Long): Frac =
-            if (grams <= 0L) Frac(0L) else Frac(momentum * Int.MAX_VALUE.toLong() / grams)
+        private fun velocity(momentum: Long, mass: Long): Frac =
+            if (mass <= 0L) Frac(0L) else Frac(momentum * Int.MAX_VALUE.toLong() / mass)
 
         private fun abs(v: Long): Long = if (v < 0L) -v else v
     }

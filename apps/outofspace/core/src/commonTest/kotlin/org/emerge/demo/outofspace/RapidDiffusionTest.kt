@@ -34,13 +34,13 @@ class RapidDiffusionTest {
 
     private fun emptyAir() = LongArray(grid.size * Species.COUNT)
 
-    private fun put(grams: LongArray, tile: Int, species: Species, mass: Long) {
-        grams[tile * Species.COUNT + species.ordinal] += mass
+    private fun put(masses: LongArray, tile: Int, species: Species, mass: Long) {
+        masses[tile * Species.COUNT + species.ordinal] += mass
     }
 
-    private fun massAt(grams: LongArray, tile: Int): Long {
+    private fun massAt(masses: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += grams[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += masses[tile * Species.COUNT + s.ordinal]
         return sum
     }
 
@@ -50,33 +50,33 @@ class RapidDiffusionTest {
         return sum
     }
 
-    private fun assertNothingNegative(grams: LongArray, joules: LongArray? = null) {
-        for (g in grams) assertTrue(g >= 0L, "a tile shed more than it held: $g")
-        if (joules != null) for (j in joules) assertTrue(j >= 0L, "a tile shed more energy than it held: $j")
+    private fun assertNothingNegative(mass: LongArray, energy: LongArray? = null) {
+        for (g in mass) assertTrue(g >= 0L, "a tile shed more than it held: $g")
+        if (energy != null) for (j in energy) assertTrue(j >= 0L, "a tile shed more energy than it held: $j")
     }
 
     @Test
-    fun `a sealed box conserves every gram and every joule`() {
-        val grams = emptyAir()
+    fun `a sealed box conserves every unit of mass and energy`() {
+        val mass = emptyAir()
         // Lumpy on purpose: one heavy corner, one light one, two species that do not mix evenly.
-        put(grams, grid.index(0, 0), Species.Oxygen, 100_000L)
-        put(grams, grid.index(5, 4), Species.Nitrogen, 37L)
-        put(grams, grid.index(3, 2), Species.Oxygen, 4_321L)
-        val joules = LongArray(grid.size)
-        joules[grid.index(0, 0)] = 90_000_000L
-        joules[grid.index(3, 2)] = 1_234_567L
+        put(mass, grid.index(0, 0), Species.Oxygen, 100_000L)
+        put(mass, grid.index(5, 4), Species.Nitrogen, 37L)
+        put(mass, grid.index(3, 2), Species.Oxygen, 4_321L)
+        val energy = LongArray(grid.size)
+        energy[grid.index(0, 0)] = 90_000_000L
+        energy[grid.index(3, 2)] = 1_234_567L
 
-        val startGrams = total(grams)
-        val startJoules = total(joules)
+        val startMass = total(mass)
+        val startEnergy = total(energy)
         val apertures = sealed()
 
         repeat(120) { tick ->
-            val step = diffuseFluid(edges, apertures, grams, joules)
-            assertEquals(0L, step.ventedGrams, "a sealed box vented at tick $tick")
-            assertEquals(0L, step.ventedJoules, "a sealed box vented energy at tick $tick")
-            assertEquals(startGrams, total(grams), "mass drifted at tick $tick")
-            assertEquals(startJoules, total(joules), "energy drifted at tick $tick")
-            assertNothingNegative(grams, joules)
+            val step = diffuseFluid(edges, apertures, mass, energy)
+            assertEquals(0L, step.ventedMass, "a sealed box vented at tick $tick")
+            assertEquals(0L, step.ventedEnergy, "a sealed box vented energy at tick $tick")
+            assertEquals(startMass, total(mass), "mass drifted at tick $tick")
+            assertEquals(startEnergy, total(energy), "energy drifted at tick $tick")
+            assertNothingNegative(mass, energy)
         }
     }
 
@@ -89,16 +89,16 @@ class RapidDiffusionTest {
         // away from the 2× a biased model produces, and far enough above the integer floor's residue
         // (a gram or two per tile; flat is a fixed point but so are its immediate neighbours) that
         // this is not a figure anyone will have to tune.
-        val grams = emptyAir()
+        val mass = emptyAir()
         val perTile = 8_000L
-        put(grams, grid.index(0, 0), Species.Oxygen, perTile * grid.size)
+        put(mass, grid.index(0, 0), Species.Oxygen, perTile * grid.size)
         val apertures = sealed()
 
-        repeat(400) { diffuseFluid(edges, apertures, grams, null) }
+        repeat(400) { diffuseFluid(edges, apertures, mass, null) }
 
         val slack = perTile / 100
         for (tile in 0 until grid.size) {
-            val held = massAt(grams, tile)
+            val held = massAt(mass, tile)
             assertTrue(
                 held in (perTile - slack)..(perTile + slack),
                 "tile ${grid.xOf(tile)},${grid.yOf(tile)} holds $held, not about $perTile",
@@ -109,23 +109,23 @@ class RapidDiffusionTest {
     @Test
     fun `temperature rides along with the mass that carries it`() {
         // Half the box hot, half cold, nothing free to leave: energy per gram has to end up the same
-        // everywhere, because that is what "the joules go where the grams go" means over enough ticks.
-        val grams = emptyAir()
-        val joules = LongArray(grid.size)
+        // everywhere, because that is what "the energy goes where the mass goes" means over enough ticks.
+        val mass = emptyAir()
+        val energy = LongArray(grid.size)
         for (tile in 0 until grid.size) {
-            put(grams, tile, Species.Oxygen, 1_000L)
-            joules[tile] = if (grid.xOf(tile) < 3) 2_000_000L else 1_000_000L
+            put(mass, tile, Species.Oxygen, 1_000L)
+            energy[tile] = if (grid.xOf(tile) < 3) 2_000_000L else 1_000_000L
         }
-        val startJoules = total(joules)
+        val startEnergy = total(energy)
         val apertures = sealed()
 
-        repeat(400) { diffuseFluid(edges, apertures, grams, joules) }
+        repeat(400) { diffuseFluid(edges, apertures, mass, energy) }
 
-        assertEquals(startJoules, total(joules))
-        val hottest = joules.max()
-        val coldest = joules.min()
+        assertEquals(startEnergy, total(energy))
+        val hottest = energy.max()
+        val coldest = energy.min()
         // Floor residue is the only thing allowed to separate them: a gram of air is a few joules per
-        // kelvin, so a handful of joules is far below a kelvin and cannot be a gradient anyone sees.
+        // kelvin, so a handful of energy is far below a kelvin and cannot be a gradient anyone sees.
         assertTrue(hottest - coldest <= grid.size, "heat stayed stratified: $coldest..$hottest")
     }
 
@@ -137,32 +137,32 @@ class RapidDiffusionTest {
         y[edges.upEdgeOf(grid.index(2, 0))] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
-        val grams = emptyAir()
-        val joules = LongArray(grid.size)
+        val mass = emptyAir()
+        val energy = LongArray(grid.size)
         for (tile in 0 until grid.size) {
-            put(grams, tile, Species.Oxygen, 900L)
-            put(grams, tile, Species.Nitrogen, 2_100L)
-            joules[tile] = 3_000_000L
+            put(mass, tile, Species.Oxygen, 900L)
+            put(mass, tile, Species.Nitrogen, 2_100L)
+            energy[tile] = 3_000_000L
         }
-        val startGrams = total(grams)
-        val startJoules = total(joules)
+        val startMass = total(mass)
+        val startEnergy = total(energy)
 
-        var ventedGrams = 0L
-        var ventedJoules = 0L
+        var ventedMass = 0L
+        var ventedEnergy = 0L
         repeat(60) { tick ->
-            val step = diffuseFluid(edges, apertures, grams, joules)
-            ventedGrams += step.ventedGrams
-            ventedJoules += step.ventedJoules
-            assertEquals(startGrams, total(grams) + ventedGrams, "mass unaccounted for at tick $tick")
-            assertEquals(startJoules, total(joules) + ventedJoules, "energy unaccounted for at tick $tick")
-            assertNothingNegative(grams, joules)
+            val step = diffuseFluid(edges, apertures, mass, energy)
+            ventedMass += step.ventedMass
+            ventedEnergy += step.ventedEnergy
+            assertEquals(startMass, total(mass) + ventedMass, "mass unaccounted for at tick $tick")
+            assertEquals(startEnergy, total(energy) + ventedEnergy, "energy unaccounted for at tick $tick")
+            assertNothingNegative(mass, energy)
         }
-        assertTrue(ventedGrams > 0L, "a hole in the hull vented nothing")
-        assertTrue(ventedJoules > 0L, "the gas that left took no heat with it")
+        assertTrue(ventedMass > 0L, "a hole in the hull vented nothing")
+        assertTrue(ventedEnergy > 0L, "the gas that left took no heat with it")
     }
 
     @Test
-    fun `a few grams beside vacuum stay put, and that is the accepted cost`() {
+    fun `a trace beside vacuum stays put, and that is the accepted cost`() {
         // The price of dropping the remainder rotation, pinned so that it is a stated property rather
         // than a surprise: below the divisor a tile's share floors to zero across every face, so a
         // breached room drains to a trace and stops. Asserted, not lamented — if this ever starts
@@ -173,13 +173,13 @@ class RapidDiffusionTest {
         y[edges.upEdgeOf(leaking)] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
-        val grams = emptyAir()
-        put(grams, leaking, Species.Oxygen, 3L)
+        val mass = emptyAir()
+        put(mass, leaking, Species.Oxygen, 3L)
 
         var vented = 0L
-        repeat(SLOTS * 8) { vented += diffuseFluid(edges, apertures, grams, null).ventedGrams }
+        repeat(SLOTS * 8) { vented += diffuseFluid(edges, apertures, mass, null).ventedMass }
 
-        assertEquals(3L, massAt(grams, leaking), "a trace below the divisor should not have moved")
+        assertEquals(3L, massAt(mass, leaking), "a trace below the divisor should not have moved")
         assertEquals(0L, vented, "and so nothing should have left the grid")
     }
 
@@ -187,7 +187,7 @@ class RapidDiffusionTest {
     fun `heat drains in step with the gas carrying it`() {
         // Telescoping the joule split across the faces, stated as what it is for: the energy left in
         // a draining cell stays in proportion to the mass left in it, so the gas never separates from
-        // its own heat. It used to be phrased as "an emptied tile keeps no joules", which stopped
+        // its own heat. It used to be phrased as "an emptied tile keeps no energy", which stopped
         // being expressible when the remainder began staying home — nothing empties completely now.
         val x = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
         val y = IntArray(edges.yEdgeCount) { ApertureField.CLOSED }
@@ -195,25 +195,25 @@ class RapidDiffusionTest {
         y[edges.upEdgeOf(source)] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
-        val grams = emptyAir()
+        val mass = emptyAir()
         val startMass = 5_000L
-        put(grams, source, Species.Oxygen, startMass)
-        val joules = LongArray(grid.size)
-        val startJoules = 40_000_000L
-        joules[source] = startJoules
+        put(mass, source, Species.Oxygen, startMass)
+        val energy = LongArray(grid.size)
+        val startEnergy = 40_000_000L
+        energy[source] = startEnergy
 
-        var ventedJoules = 0L
-        repeat(300) { ventedJoules += diffuseFluid(edges, apertures, grams, joules).ventedJoules }
+        var ventedEnergy = 0L
+        repeat(300) { ventedEnergy += diffuseFluid(edges, apertures, mass, energy).ventedEnergy }
 
-        val left = massAt(grams, source)
+        val left = massAt(mass, source)
         assertTrue(left in 1 until startMass, "the fixture did not drain: $left of $startMass")
-        assertEquals(startJoules, joules[source] + ventedJoules, "energy went missing on the way out")
-        // Same joules per gram as it started with — cross-multiplied so integer division cannot
+        assertEquals(startEnergy, energy[source] + ventedEnergy, "energy went missing on the way out")
+        // Same energy per gram as it started with — cross-multiplied so integer division cannot
         // manufacture the agreement. Slack of one gram's worth: that is the floor, and nothing more.
-        val perGram = startJoules / startMass
+        val perUnitMass = startEnergy / startMass
         assertTrue(
-            joules[source] in (left - 1) * perGram..(left + 1) * perGram,
-            "the gas and its heat came apart: ${joules[source]} J on $left g, against $perGram J/g",
+            energy[source] in (left - 1) * perUnitMass..(left + 1) * perUnitMass,
+            "the gas and its heat came apart: ${energy[source]} J on $left mass, against $perUnitMass energy/mass",
         )
     }
 
@@ -225,12 +225,12 @@ class RapidDiffusionTest {
             val x = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
             val y = IntArray(edges.yEdgeCount) { ApertureField.CLOSED }
             x[edges.rightEdgeOf(grid.index(1, 2))] = aperture
-            val grams = emptyAir()
-            put(grams, grid.index(1, 2), Species.Oxygen, 100_000L)
+            val mass = emptyAir()
+            put(mass, grid.index(1, 2), Species.Oxygen, 100_000L)
             // One pass: the claim is that a half-open face passes half a *share*, which is arithmetic
             // on one transfer. Over several passes the source drains and the ratio drifts off a half.
-            diffuseFluid(edges, ApertureField(edges, x, y), grams, null, subSteps = 1)
-            return massAt(grams, grid.index(2, 2))
+            diffuseFluid(edges, ApertureField(edges, x, y), mass, null, subSteps = 1)
+            return massAt(mass, grid.index(2, 2))
         }
 
         assertEquals(0L, crossedIn(ApertureField.CLOSED))

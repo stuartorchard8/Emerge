@@ -50,7 +50,7 @@ class FluidStep(
  * meaningful against the producing density.
  *
  * [gasJoules] nullable = isothermal mode. [volumes] nullable = all cells full tile.
- * [grams], [mx], [my], [gasJoules] edited in place.
+ * [mass], [mx], [my], [gasJoules] edited in place.
  *
  * ### [latentHeat]
  *
@@ -59,7 +59,7 @@ class FluidStep(
  *
  * Switching it on makes boiling and condensing cost and release energy (see [settleCohesion]), which
  * is physically necessary but moves energy into a reservoir the vessel's ledger does not yet count.
- * Every `airJouleBalance` assertion in the suite will report the missing joules, correctly, because
+ * Every `airJouleBalance` assertion in the suite will report the missing energy, correctly, because
  * from the ledger's point of view they have vanished. Teaching the ledger the third term —
  * `thermal + cohesion + vented − fromSolid` — is the work that has to land before this can be the
  * default, and it is deliberately not bundled in here: the feature it serves cannot be exercised
@@ -69,7 +69,7 @@ class FluidStep(
 fun stepFluid(
     grid: Grid,
     structure: StructureMap,
-    grams: LongArray,
+    mass: LongArray,
     mx: LongArray,
     my: LongArray,
     gravity: Frac2,
@@ -77,7 +77,7 @@ fun stepFluid(
     volumes: VolumeField? = null,
 ): FluidStep {
     val edges = EdgeGrid(grid)
-    return stepFluid(edges, ApertureField.derive(edges, structure), grams, mx, my, gravity, gasJoules, volumes)
+    return stepFluid(edges, ApertureField.derive(edges, structure), mass, mx, my, gravity, gasJoules, volumes)
 }
 
 /**
@@ -89,7 +89,7 @@ fun stepFluid(
 fun stepFluid(
     edges: EdgeGrid,
     apertures: ApertureField,
-    grams: LongArray,
+    mass: LongArray,
     mx: LongArray,
     my: LongArray,
     gravity: Frac2,
@@ -102,7 +102,7 @@ fun stepFluid(
     // Snapshotted before anything moves, because the whole point of it is the difference across the
     // tick: whatever cohesion energy the fluid gains by spreading out has to be taken back off its
     // thermal energy at the end, and that is what makes a boiling liquid cool itself.
-    val cohesionBefore = if (gasJoules == null || !latentHeat) null else cohesionField(grid.size, grams, volumes)
+    val cohesionBefore = if (gasJoules == null || !latentHeat) null else cohesionField(grid.size, mass, volumes)
 
     // Sorting first, because it moves mass between tiles: the density and pressure fields everything
     // below reads have to be the ones it leaves behind, not the ones it started from.
@@ -117,19 +117,19 @@ fun stepFluid(
     // The extra sweep this costs is only paid where there is heat to read; an isothermal vessel has
     // no temperature to tell phases apart with and drifts as it always did.
     applySpeciesDrift(
-        edges, apertures, grams, gravity,
-        gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, grams)) },
+        edges, apertures, mass, gravity,
+        gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, mass)) },
         volumes,
     )
 
-    val tileGrams = tileMass(grid.size, grams)
+    val tileGrams = tileMass(grid.size, mass)
     // Temperature is read *after* drift, so a tile that has just gained gas is at the temperature its
     // new capacity implies. Drift moves mass without moving the energy on it, which cools whatever
-    // it fills a little and warms whatever it empties. It is a settling term of a few grams a tick,
+    // it fills a little and warms whatever it empties. It is a settling term of a few mass a tick,
     // so the effect is well under a kelvin; carrying energy on the drift fluxes too would be the
     // exact version, and is not worth a second transfer pass for that.
-    val kelvin = gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, grams)) }
-    val pressure = tilePressure(grid.size, grams, kelvin, volumes)
+    val kelvin = gasJoules?.let { gasKelvin(it, gasCapacity(grid.size, mass)) }
+    val pressure = tilePressure(grid.size, mass, kelvin, volumes)
 
     val rubbed = applyDrag(edges, mx, my)
     val lift = applyBuoyancy(edges, apertures, mx, my, tileGrams, pressure, gravity, volumes)
@@ -145,9 +145,9 @@ fun stepFluid(
     var escapedY = 0L
     repeat(subSteps) {
         // Fresh density each sub-step: the gas the last piece left behind.
-        val nowGrams = tileMass(grid.size, grams)
+        val nowGrams = tileMass(grid.size, mass)
         val moved =
-            advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, nowGrams, subSteps)
+            advectMass(edges, apertures, MomentumField.of(edges, mx, my), mass, nowGrams, subSteps)
         val carried = advectMomentum(edges, mx, my, moved.flux, nowGrams)
         // Heat rides the same fluxes as momentum.
         if (gasJoules != null) ventedJoules += advectHeat(edges, gasJoules, moved.flux, nowGrams)
@@ -160,10 +160,10 @@ fun stepFluid(
     // per sub-step because it is a function of where the mass finished, not of how it got there.
     val cohesionUnpaid =
         if (gasJoules == null || cohesionBefore == null) 0L
-        else settleCohesion(gasJoules, cohesionBefore, cohesionField(grid.size, grams, volumes))
+        else settleCohesion(gasJoules, cohesionBefore, cohesionField(grid.size, mass, volumes))
 
     // Momentum left on empty faces goes to nothing; a vacuum must not store a shove.
-    val after = tileMass(grid.size, grams)
+    val after = tileMass(grid.size, mass)
     var strandedX = 0L
     var strandedY = 0L
     for (e in 0 until edges.xEdgeCount) {
@@ -178,7 +178,7 @@ fun stepFluid(
     }
 
     return FluidStep(
-        air = if (gasJoules == null) AirField.of(grams) else AirField.of(grams, gasJoules),
+        air = if (gasJoules == null) AirField.of(mass) else AirField.of(mass, gasJoules),
         momentumX = mx.copyOf(),
         momentumY = my.copyOf(),
         ventedGrams = vented,

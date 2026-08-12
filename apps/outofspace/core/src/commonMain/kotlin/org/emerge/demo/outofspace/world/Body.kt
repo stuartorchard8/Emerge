@@ -17,7 +17,7 @@ enum class BodySlot {
 
 /**
  * One solid object with one temperature (wall, furnace, track tile).
- * Energy stored on object (Machine.joules/Segment.joules), not tile-field (prevents desync on copy).
+ * Energy stored on object (Machine.energy/Segment.energy), not tile-field (prevents desync on copy).
  * [permeable] controls conduction contacts (impermeable = tile-face; permeable = tile-sharing + air).
  */
 class Body(
@@ -25,7 +25,7 @@ class Body(
     /** The index it is stored at — its centre tile for a machine, its own tile for a fitting. */
     val at: Int,
     /**
-     * Which of a machine's tiles this is, as an index into its [Machine.joules].
+     * Which of a machine's tiles this is, as an index into its [Machine.energy].
      *
      * Zero for anything that is still stored as one piece — a fitting, a bridge — where [at] alone
      * identifies where the energy goes back. For a machine it is the other half of the address:
@@ -39,7 +39,7 @@ class Body(
     /** True for a fitting on a conduit layer: it shares its tile with the air rather than filling it. */
     val permeable: Boolean,
     /** Thermal energy, in the millijoules [Material] documents. */
-    val joules: Long,
+    val energy: Long,
     /** Millijoules/kelvin. Uses MachineKind.thermalTiles (not tiles[]) to avoid grid-edge clipping. */
     val capacity: Long,
     /**
@@ -74,7 +74,7 @@ class Body(
      * temperature of an empty tile already is — and it is a great deal more honest than the divide
      * by zero this used to be.
      */
-    val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules / capacity).toInt()
+    val kelvin: Int get() = if (capacity <= 0L) Temperature.SPACE_KELVIN else (energy / capacity).toInt()
 
     /** Whether this fitting is joined to its neighbour in [dir] — see [Segment.links]. */
     fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0
@@ -111,7 +111,7 @@ fun bodiesOf(
         // bound guards the one case that is not a placed machine: a grid that shrank underneath it.
         val covered = coveredTiles(grid, i, m.kind.size)
         for (part in covered.indices) {
-            if (part >= m.joules.size) break
+            if (part >= m.energy.size) break
             out.add(
                 Body(
                     slot = BodySlot.Deck,
@@ -120,7 +120,7 @@ fun bodiesOf(
                     tiles = intArrayOf(covered[part]),
                     material = m.kind.material,
                     permeable = false,
-                    joules = m.joules[part],
+                    energy = m.energy[part],
                     capacity = m.kind.capacityPerTile,
                     conductance = m.kind.conductance,
                 )
@@ -135,7 +135,7 @@ fun bodiesOf(
                 tiles = intArrayOf(i),
                 material = conduit.material,
                 permeable = true,
-                joules = s.joules,
+                energy = s.energy,
                 capacity = conduit.capacityPerTile,
                 conductance = conduit.conductance,
                 conduit = conduit,
@@ -158,7 +158,7 @@ fun bodiesOf(
         val span = spanParts(grid, i, b.facing)
         for (part in span.indices) {
             val tile = span[part]
-            if (tile < 0 || part >= b.joules.size) continue
+            if (tile < 0 || part >= b.energy.size) continue
             out.add(
                 Body(
                     slot = BodySlot.Span,
@@ -167,7 +167,7 @@ fun bodiesOf(
                     tiles = intArrayOf(tile),
                     material = b.conduit.material,
                     permeable = true,
-                    joules = b.joules[part],
+                    energy = b.energy[part],
                     capacity = b.conduit.capacityPerTile,
                     conductance = b.conduit.conductance,
                 )
@@ -180,15 +180,15 @@ fun bodiesOf(
 /**
  * Total thermal energy in every solid thing aboard — machines, conduit segments, and bridges.
  */
-fun solidJoules(
+fun solidEnergy(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
 ): Long {
     var sum = 0L
-    for (m in machines) sum += m?.joules?.total ?: 0L
-    conduits.all { _, _, s -> sum += s.joules }
-    for (b in bridges) sum += b?.joules?.total ?: 0L
+    for (m in machines) sum += m?.energy?.total ?: 0L
+    conduits.all { _, _, s -> sum += s.energy }
+    for (b in bridges) sum += b?.energy?.total ?: 0L
     return sum
 }
 

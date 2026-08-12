@@ -40,15 +40,15 @@ class SparseFieldTest {
         x[edges.xEdge(bx, ay)] = ApertureField.OPEN
     }
 
-    private fun fill(grams: LongArray, tile: Int, scale: Long = 1L) {
+    private fun fill(mass: LongArray, tile: Int, scale: Long = 1L) {
         for (s in Species.ALL) {
-            grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale
+            mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale
         }
     }
 
-    private fun massAt(grams: LongArray, tile: Int): Long {
+    private fun massAt(mass: LongArray, tile: Int): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += grams[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += mass[tile * Species.COUNT + s.ordinal]
         return sum
     }
 
@@ -56,19 +56,19 @@ class SparseFieldTest {
     fun `a cell with every face shut keeps what it holds`() {
         val (x, y) = sealed()
         val apertures = ApertureField(edges, x, y)
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val lone = grid.index(4, 3)
-        fill(grams, lone, scale = 3)
-        val before = massAt(grams, lone)
+        fill(mass, lone, scale = 3)
+        val before = massAt(mass, lone)
 
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
         var vented = 0L
         repeat(50) {
-            vented += stepFluid(edges, apertures, grams, mx, my, gravity).ventedGrams
+            vented += stepFluid(edges, apertures, mass, mx, my, gravity).ventedGrams
         }
 
-        assertEquals(before, massAt(grams, lone), "isolated gas moved")
+        assertEquals(before, massAt(mass, lone), "isolated gas moved")
         assertEquals(0L, vented, "isolated gas escaped a sealed cell")
         assertTrue(mx.all { it == 0L } && my.all { it == 0L }, "a sealed cell acquired momentum")
     }
@@ -80,26 +80,26 @@ class SparseFieldTest {
         for (i in 2 until 7) openBetween(x, i, 3, i + 1, 3)
         val apertures = ApertureField(edges, x, y)
 
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val head = grid.index(2, 3)
         val tail = grid.index(7, 3)
-        fill(grams, head, scale = 4)
+        fill(mass, head, scale = 4)
         // A bystander directly beneath the run, to catch the solver leaking across a shut face.
         val bystander = grid.index(4, 4)
-        fill(grams, bystander)
-        val bystanderBefore = massAt(grams, bystander)
-        val total = grams.sum()
+        fill(mass, bystander)
+        val bystanderBefore = massAt(mass, bystander)
+        val total = mass.sum()
 
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
         var vented = 0L
         repeat(200) {
-            vented += stepFluid(edges, apertures, grams, mx, my, gravity).ventedGrams
+            vented += stepFluid(edges, apertures, mass, mx, my, gravity).ventedGrams
         }
 
-        assertTrue(massAt(grams, tail) > 0L, "nothing reached the far end of the run")
-        assertEquals(bystanderBefore, massAt(grams, bystander), "gas crossed a closed face")
+        assertTrue(massAt(mass, tail) > 0L, "nothing reached the far end of the run")
+        assertEquals(bystanderBefore, massAt(mass, bystander), "gas crossed a closed face")
         assertEquals(0L, vented, "a sealed run vented")
-        assertEquals(total, grams.sum(), "mass was not conserved along the run")
+        assertEquals(total, mass.sum(), "mass was not conserved along the run")
     }
 }

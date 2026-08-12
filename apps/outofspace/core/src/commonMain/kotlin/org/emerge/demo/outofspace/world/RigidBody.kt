@@ -51,7 +51,7 @@ class RigidBody(
      * isothermal in practice; this only stops it having to say so in one integer. Putting bodies into
      * `stepSolidHeat` would make the per-cell figures mean something, and is not this step.
      */
-    val joules: TileJoules,
+    val energy: TileEnergy,
 ) {
     init {
         require(cells.size == width * height) { "a ${width}x$height body cannot have ${cells.size} cells" }
@@ -65,12 +65,12 @@ class RigidBody(
 
     /**
      * What one of its tiles weighs, from **what the body is actually made of**: a rock's ore, a
-     * fragment's casing. Held rather than recomputed because [massGrams] is read every tick by
+     * fragment's casing. Held rather than recomputed because [mass] is read every tick by
      * every body, and a mixture's density is a loop over the species table.
      */
-    val gramsPerTile: Long = when (kind) {
-        BodyKind.ROCK -> gramsPerTileOf(oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> machineKind!!.gramsPerTile
+    val massPerTile: Long = when (kind) {
+        BodyKind.ROCK -> massPerTileOf(oreComposition ?: Mixture.EMPTY)
+        BodyKind.FRAGMENT -> machineKind!!.massPerTile
     }
 
     /** Millijoules per kelvin for one of its tiles, from that same composition. */
@@ -79,17 +79,17 @@ class RigidBody(
         BodyKind.FRAGMENT -> machineKind!!.capacityPerTile
     }
 
-    val massGrams: Long get() = filled * gramsPerTile
+    val mass: Long get() = filled * massPerTile
 
     /** Millijoules per kelvin, from the same two numbers every other solid's capacity comes from. */
     val capacity: Long get() = filled * capacityPerTile
 
     val kelvin: Int get() =
-        if (capacity <= 0L) Temperature.SPACE_KELVIN else (joules.total / capacity).toInt()
+        if (capacity <= 0L) Temperature.SPACE_KELVIN else (energy.total / capacity).toInt()
 
     /** How fast it is going **through the world**, which is not how fast it crosses the grid. */
-    val velocityX: Long get() = scaledRatio(impulseX, massGrams, Flight.PER_TILE)
-    val velocityY: Long get() = scaledRatio(impulseY, massGrams, Flight.PER_TILE)
+    val velocityX: Long get() = scaledRatio(impulseX, mass, Flight.PER_TILE)
+    val velocityY: Long get() = scaledRatio(impulseY, mass, Flight.PER_TILE)
 
     /** Its centre in the vessel's frame, which is what "where is it" means for everything but drawing. */
     val centreX: Long get() = positionX + width * Flight.PER_TILE / 2L
@@ -106,13 +106,13 @@ class RigidBody(
         impulseY: Long = this.impulseY,
         oreComposition: Mixture? = this.oreComposition,
         machineKind: MachineKind? = this.machineKind,
-        joules: TileJoules = this.joules,
+        energy: TileEnergy = this.energy,
     ): RigidBody = RigidBody(
         kind = kind, width = width, height = height, cells = cells,
         positionX = positionX, positionY = positionY,
         impulseX = impulseX, impulseY = impulseY,
         oreComposition = oreComposition, machineKind = machineKind,
-        joules = joules,
+        energy = energy,
     )
 
     override fun equals(other: Any?): Boolean =
@@ -121,12 +121,12 @@ class RigidBody(
             width == other.width && height == other.height && cells.contentEquals(other.cells) &&
             positionX == other.positionX && positionY == other.positionY &&
             impulseX == other.impulseX && impulseY == other.impulseY &&
-            oreComposition == other.oreComposition && machineKind == other.machineKind && joules == other.joules)
+            oreComposition == other.oreComposition && machineKind == other.machineKind && energy == other.energy)
 
     override fun hashCode(): Int = (kind.ordinal * 31 + (positionX * 31 + positionY).toInt()) * 31 + cells.contentHashCode()
 
     override fun toString(): String =
-        "${kind.name}(${width}x$height, ${filled} cells, ${massGrams}g at " +
+        "${kind.name}(${width}x$height, ${filled} cells, ${mass}g at " +
             "${positionX / Flight.PER_TILE},${positionY / Flight.PER_TILE})"
 
     companion object {
@@ -178,7 +178,7 @@ class RigidBody(
                 positionX = positionX, positionY = positionY,
                 impulseX = impulseX, impulseY = impulseY,
                 oreComposition = composition,
-                joules = TileJoules.uniform(filled, capacityPerTileOf(composition) * kelvin),
+                energy = TileEnergy.uniform(filled, capacityPerTileOf(composition) * kelvin),
             )
         }
     }
@@ -223,7 +223,7 @@ fun driftBodies(
     platingGravity: org.emerge.sim.core.physics.primitives.Frac2,
     shipVelocityX: Long,
     shipVelocityY: Long,
-    shipMassGrams: Long,
+    shipMass: Long,
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
     /**
@@ -250,8 +250,8 @@ fun driftBodies(
      * *through the deck*, and a force transmitted by the contact cannot also be a force opening it.
      */
     fun restingSpeed(felt: Long, mass: Long): Long =
-        if (shipMassGrams <= 0L) RockContact.restingSpeed(felt)
-        else RockContact.restingSpeed(felt + scaledRatio(felt, shipMassGrams, mass))
+        if (shipMass <= 0L) RockContact.restingSpeed(felt)
+        else RockContact.restingSpeed(felt + scaledRatio(felt, shipMass, mass))
 
     var handedX = 0L
     var handedY = 0L
@@ -261,7 +261,7 @@ fun driftBodies(
     var shipVx = shipVelocityX
     var shipVy = shipVelocityY
     val moved = bodies.map { body ->
-        val mass = body.massGrams
+        val mass = body.mass
         if (mass <= 0L) return@map body
         val felt = platingFeltBy(grid, body.centreX, body.centreY, platingGravity)
         // ⚠️ The mass is the *scale*, not the numerator. `mass × raw` is a mass times a fixed-point
@@ -273,14 +273,14 @@ fun driftBodies(
         val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
         val swept = sweepBody(
             grid, structure, body,
-            shipVx, shipVy, shipMassGrams,
+            shipVx, shipVy, shipMass,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
         )
         handedX += swept.impulseX + platingX
         handedY += swept.impulseY + platingY
-        if (shipMassGrams > 0L) {
-            shipVx += scaledRatio(-(swept.impulseX + platingX), shipMassGrams, Flight.PER_TILE)
-            shipVy += scaledRatio(-(swept.impulseY + platingY), shipMassGrams, Flight.PER_TILE)
+        if (shipMass > 0L) {
+            shipVx += scaledRatio(-(swept.impulseX + platingX), shipMass, Flight.PER_TILE)
+            shipVy += scaledRatio(-(swept.impulseY + platingY), shipMass, Flight.PER_TILE)
         }
         swept.body.copy(
             impulseX = swept.body.impulseX + platingX,

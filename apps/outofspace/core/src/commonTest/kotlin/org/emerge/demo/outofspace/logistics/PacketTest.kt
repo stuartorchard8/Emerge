@@ -25,11 +25,11 @@ import kotlin.test.assertTrue
 class PacketTest {
 
     /** What a packet holds. Every fraction below is of this, so the dial can move freely. */
-    private val cap = Capacity.PACKET_GRAMS
+    private val cap = Capacity.PACKET_MASS
 
     // A hundred packets' worth, split by percent, so "take one packet and leave the rest" has a rest
     // to leave. Written as multiples of [cap] rather than as a mass: these were once round numbers of
-    // grams, which quietly became a tenth of a packet when the mass unit moved and turned every
+    // mass, which quietly became a tenth of a packet when the mass unit moved and turned every
     // "takes a whole packet" assertion into "takes the whole pile".
     private val orePile = Resource(
         Form.Ore,
@@ -186,7 +186,7 @@ class PacketTest {
 
     // ── Rates: the place a float would otherwise sneak in ──────────────────────
     //
-    // A machine's rate is whole grams per tick, so the clock cannot make it fractional. A *throttle*
+    // A machine's rate is whole mass per tick, so the clock cannot make it fractional. A *throttle*
     // can: these cover the one remaining division.
 
     @Test
@@ -195,8 +195,8 @@ class PacketTest {
         var delivered = 0L
         // 125 g/tick at 45% is 56.25 g — a quarter gram a tick that must not be dropped.
         repeat(4) {
-            val (grams, next) = Rate.tick(numerator = 125_000L * 450, denominator = 1_000, carry = carry)
-            delivered += grams
+            val (mass, next) = Rate.tick(numerator = 125_000L * 450, denominator = 1_000, carry = carry)
+            delivered += mass
             carry = next
         }
         assertEquals(225_000L, delivered, "56.25 g/tick must come to exactly 225 g over four ticks")
@@ -208,8 +208,8 @@ class PacketTest {
         var delivered = 0L
         val ticks = 3_600
         repeat(ticks) {
-            val (grams, next) = Rate.tick(125_000L * 450, 1_000, carry)
-            delivered += grams
+            val (mass, next) = Rate.tick(125_000L * 450, 1_000, carry)
+            delivered += mass
             carry = next
         }
         assertEquals(125_000L * 450 * ticks / 1_000, delivered, "a long run is exact, not about right")
@@ -233,15 +233,15 @@ class PacketTest {
 
     @Test
     fun `full activation needs no carry at all`() {
-        val (grams, carry) = Rate.tick(125_000L * 1_000, 1_000, carry = 0L)
-        assertEquals(125_000L, grams)
+        val (mass, carry) = Rate.tick(125_000L * 1_000, 1_000, carry = 0L)
+        assertEquals(125_000L, mass)
         assertEquals(0L, carry, "an unthrottled machine has no fraction to remember")
     }
 
     @Test
     fun `a zero rate delivers nothing and never accumulates`() {
-        val (grams, carry) = Rate.tick(0L, 60, 0L)
-        assertEquals(0L, grams)
+        val (mass, carry) = Rate.tick(0L, 60, 0L)
+        assertEquals(0L, mass)
         assertEquals(0L, carry)
     }
 

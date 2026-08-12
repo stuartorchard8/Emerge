@@ -274,7 +274,7 @@ class GridFitTriggerTest {
         assertEquals(target, controller.selected, "the fixture did not select anything")
 
         // Where that tile is, and where the fit is about to put it. Compared as a *position*, not as
-        // the machine sitting on it: a `Machine` carries its own joules, the heat sim moves them
+        // the machine sitting on it: a `Machine` carries its own energy, the heat sim moves them
         // every tick, and comparing the objects across the fit's tick fails on a temperature change
         // while the selection is perfectly correct.
         val before = controller.state
@@ -302,7 +302,7 @@ class GridFitTriggerTest {
     private fun assertBalanced(s: VesselState, whenever: String) {
         assertEquals(0L, s.airBalance, "airBalance $whenever")
         EnergyLedgers.assertBalanced(s, whenever)
-        // `inTransitGrams`, not `massGrams` — the latter includes the fabric of the ship, which no
+        // `inTransitMass`, not `mass` — the latter includes the fabric of the ship, which no
         // extractor produced, so it can never be zero.
         assertEquals(0L, s.inTransitMass + s.ventedMass - s.extractedMass, "massBalance $whenever")
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.

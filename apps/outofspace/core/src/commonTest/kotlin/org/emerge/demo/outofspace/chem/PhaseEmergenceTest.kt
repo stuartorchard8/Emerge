@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.num.Budget
-import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
+import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.VolumeField
@@ -36,9 +36,9 @@ class PhaseEmergenceTest {
         // agree — and the old value is the oracle, computed the way the solver has always computed
         // it rather than copied out of a run.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val grams = AirField.AMBIENT_AIR[species]
-            val ideal = millimolesOf(gramsFieldOf(species to grams), tile = 0)
-            val real = partialPressure(grams, species, room, full, full)!!
+            val mass = AirField.AMBIENT_AIR[species]
+            val ideal = millimolesOf(massFieldOf(species to mass), tile = 0)
+            val real = partialPressure(mass, species, room, full, full)!!
 
             val driftPerMille = (real - ideal) * 1000 / ideal
             assertTrue(
@@ -55,12 +55,12 @@ class PhaseEmergenceTest {
         val tr = reducedTemperature(room, Species.Nitrogen)!!
         assertTrue(tr > SCALE, "nitrogen at room temperature should be supercritical; Tr=$tr")
 
-        for (grams in listOf(755L, 10_000L, 200_000L)) {
-            val dr = reducedDensity(grams, Species.Nitrogen, full, full)!!
+        for (mass in listOf(755L, 10_000L, 200_000L)) {
+            val dr = reducedDensity(mass, Species.Nitrogen, full, full)!!
             assertEquals(
                 FluidPhase.Supercritical,
                 phaseAt(dr, tr),
-                "nitrogen at ${grams}g should have no liquid branch at room temperature",
+                "nitrogen at ${mass}g should have no liquid branch at room temperature",
             )
         }
     }
@@ -112,8 +112,8 @@ class PhaseEmergenceTest {
         val liquid = reducedDensity(liquidWater, Species.Water, full, full)!!
         val vapour = reducedDensity(critical(Species.Water) / 10, Species.Water, full, full)!!
 
-        val bound = cohesionJoules(liquid, Species.Water, full, full)
-        val free = cohesionJoules(vapour, Species.Water, full, full)
+        val bound = cohesionEnergy(liquid, Species.Water, full, full)
+        val free = cohesionEnergy(vapour, Species.Water, full, full)
 
         assertTrue(bound < 0, "a liquid must be bound; got $bound")
         assertTrue(free > bound, "pulling it apart must cost energy; bound=$bound free=$free")
@@ -140,7 +140,7 @@ class PhaseEmergenceTest {
 
     // ── helpers ──
 
-    private fun critical(species: Species): Long = CRITICAL.getValue(species).gramsPerTile
+    private fun critical(species: Species): Long = CRITICAL.getValue(species).massPerTile
 
     /**
      * A tile of liquid water, at two and a half times critical density.
@@ -170,13 +170,13 @@ class PhaseEmergenceTest {
         // reducedDensity cannot land it on the boundary and read as Separating again. Applied to the
         // reduced density rather than to the mass, so the whole conversion is the simulation's own.
         //
-        // ⚠️ It used to be `branch * gramsPerTile / SCALE` written out here, which is the multiply
-        // [gramsAtReducedDensity] exists to own — and this copy carried the overflow four months
+        // ⚠️ It used to be `branch * massPerTile / SCALE` written out here, which is the multiply
+        // [massAtReducedDensity] exists to own — and this copy carried the overflow four months
         // after the production copies were found, because a test that recomputes what it is testing
         // against inherits its bugs and reports them as failures of the thing under test. At one
         // microgram per unit it wrapped to a negative mass, which became a negative temperature and
         // surfaced as an ArrayIndexOutOfBoundsException in ValveTest.
-        return gramsAtReducedDensity(branch * 1001 / 1000, species, full, full)!!
+        return massAtReducedDensity(branch * 1001 / 1000, species, full, full)!!
     }
 
     private val liquidWater: Long = saturatedLiquid(Species.Water, room)
@@ -184,8 +184,8 @@ class PhaseEmergenceTest {
     private fun totalPressure(mix: Map<Species, Long>, kelvin: Int): Long =
         mix.entries.sumOf { (s, g) -> partialPressure(g, s, kelvin, full, full) ?: 0L }
 
-    /** A one-tile grams field, so the ideal-gas oracle can be asked the way the solver asks it. */
-    private fun gramsFieldOf(vararg amounts: Pair<Species, Long>): LongArray {
+    /** A one-tile mass field, so the ideal-gas oracle can be asked the way the solver asks it. */
+    private fun massFieldOf(vararg amounts: Pair<Species, Long>): LongArray {
         val out = LongArray(Species.COUNT)
         for ((s, g) in amounts) out[s.ordinal] = g
         return out

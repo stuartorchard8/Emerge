@@ -12,7 +12,7 @@ sealed interface Packet {
     /** What is in it, species by species. */
     val contents: Mixture
 
-    /** Total mass in grams. Also the quantity capacity is measured in today — see [Capacity]. */
+    /** Total mass in mass. Also the quantity capacity is measured in today — see [Capacity]. */
     val mass: Long get() = contents.total
 
     val isEmpty: Boolean get() = contents.isEmpty
@@ -32,15 +32,15 @@ data class FluidPacket(override val contents: Mixture) : Packet {
 }
 
 /**
- * Capacity: max grams per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
+ * Capacity: max mass per packet/slot/segment. quantityOf() wraps mass→volume transition (solids/liquids: volume; gases: mass).
  */
 object Capacity {
     /**
-     * Max grams per packet: a tonne. Separate from Rate (throughput).
+     * Max mass per packet: a tonne. Separate from Rate (throughput).
      *
      * A lump on a belt used to be a kilogram, back when a tile of rock was three. Solids are at
      * their real densities now — a tile of ore is about four tonnes — so a belt that moved kilograms
-     * would take an hour to shift one boulder. Everything measured in grams moved up by a thousand
+     * would take an hour to shift one boulder. Everything measured in mass moved up by a thousand
      * with it; the masses themselves moved by rather more (see [org.emerge.demo.fluidlab.world.Material]),
      * so the refinery runs about a third slower per rock than it used to, in exchange for numbers
      * that stay round.
@@ -62,7 +62,7 @@ object Capacity {
  * at 45% of 125 g/tick owes 56.25 g, and there is no honest integer for that. Rounding it away every
  * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is
  * a lot. So the fraction is carried in state: each tick adds the scaled numerator to a carry, takes
- * out whole grams, and keeps the remainder for next time. Over any run of ticks the delivered total
+ * out whole mass, and keeps the remainder for next time. Over any run of ticks the delivered total
  * is exact to within a gram.
  *
  * The carry is a plain `Long` living in whatever machine owns the rate, so it serialises with the
@@ -71,10 +71,10 @@ object Capacity {
  */
 object Rate {
     /**
-     * Given `numerator / denominator` grams and the accumulated fractional [carry], returns
+     * Given `numerator / denominator` mass and the accumulated fractional [carry], returns
      * `(gramsThisTick, newCarry)`.
      *
-     * @param numerator grams-per-tick already multiplied by the throttle, e.g. `125 * activation`
+     * @param numerator mass-per-tick already multiplied by the throttle, e.g. `125 * activation`
      * @param denominator what that multiplier is out of, e.g. [org.emerge.demo.fluidlab.world.SignalField.FULL]
      * @param carry leftover from the previous tick; start at 0
      */

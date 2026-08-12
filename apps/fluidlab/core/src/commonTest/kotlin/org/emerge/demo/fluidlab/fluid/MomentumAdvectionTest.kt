@@ -31,7 +31,7 @@ class MomentumAdvectionTest {
     private class Fluid(val grid: Grid) {
         val edges = EdgeGrid(grid)
         var apertures = ApertureField.allOpen(edges)
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
         var ventedGrams = 0L
@@ -39,8 +39,8 @@ class MomentumAdvectionTest {
         var escapedY = 0L
 
         fun step() {
-            val tileGrams = tileMass(grid.size, grams)
-            val result = advectMass(edges, apertures, MomentumField.of(edges, mx, my), grams, tileGrams)
+            val tileGrams = tileMass(grid.size, mass)
+            val result = advectMass(edges, apertures, MomentumField.of(edges, mx, my), mass, tileGrams)
             ventedGrams += result.ventedGrams
             val escape = advectMomentum(edges, mx, my, result.flux, tileGrams)
             escapedX += escape.x
@@ -48,10 +48,10 @@ class MomentumAdvectionTest {
         }
 
         fun put(tile: Int, mass: Long) {
-            grams[tile * Species.COUNT + Species.Nitrogen.ordinal] += mass
+            mass[tile * Species.COUNT + Species.Nitrogen.ordinal] += mass
         }
 
-        val totalGrams: Long get() = grams.sum()
+        val totalGrams: Long get() = mass.sum()
         val totalX: Long get() = mx.sum()
         val totalY: Long get() = my.sum()
     }
@@ -129,7 +129,7 @@ class MomentumAdvectionTest {
             fluid.mx[fluid.edges.rightEdgeOf(grid.index(2, 1))] >= downwindBefore,
             "the face ahead of the moving gas should not have lost momentum to it",
         )
-        assertTrue(fluid.grams[grid.index(2, 1) * Species.COUNT + Species.Nitrogen.ordinal] > 0L)
+        assertTrue(fluid.mass[grid.index(2, 1) * Species.COUNT + Species.Nitrogen.ordinal] > 0L)
     }
 
     @Test
@@ -162,7 +162,7 @@ class MomentumAdvectionTest {
             fluid.step()
             assertEquals(startX, fluid.totalX + fluid.escapedX, "tick $tick: x")
             assertEquals(startY, fluid.totalY + fluid.escapedY, "tick $tick: y")
-            for (g in fluid.grams) assertTrue(g >= 0L, "tick $tick: negative mass")
+            for (g in fluid.mass) assertTrue(g >= 0L, "tick $tick: negative mass")
         }
     }
 }

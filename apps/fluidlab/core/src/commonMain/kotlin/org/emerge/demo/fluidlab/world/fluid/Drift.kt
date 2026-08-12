@@ -15,14 +15,14 @@ import org.emerge.sim.core.physics.primitives.Frac2
 fun applySpeciesDrift(
     edges: EdgeGrid,
     apertures: ApertureField,
-    grams: LongArray,
+    mass: LongArray,
     gravity: Frac2,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
 ) {
     // What drift is allowed to see. Null temperature means "no opinion about phase", which reads
     // every gram as mobile and reproduces every tick simulated before this parameter existed.
-    val snapshot = if (kelvin == null) grams.copyOf() else vapourOf(grams, kelvin, volumes)
+    val snapshot = if (kelvin == null) mass.copyOf() else vapourOf(mass, kelvin, volumes)
     val total = tileMass(edges.grid.size, snapshot)
     val planned = LongArray((edges.xEdgeCount + edges.yEdgeCount) * Species.COUNT)
 
@@ -67,8 +67,8 @@ fun applySpeciesDrift(
 
         for (s in Species.ALL) {
             val amount = planned[base + s.ordinal] * factor / FACTOR_SCALE
-            if (amount > 0L) move(grams, before, after, s.ordinal, amount)
-            else if (amount < 0L) move(grams, after, before, s.ordinal, -amount)
+            if (amount > 0L) move(mass, before, after, s.ordinal, amount)
+            else if (amount < 0L) move(mass, after, before, s.ordinal, -amount)
         }
     }
 }
@@ -77,21 +77,21 @@ fun applySpeciesDrift(
  * The mobile part of each cell: its vapour, cell by cell and species by species.
  *
  * Planned against rather than applied to, which is the whole trick — the moves this array sizes are
- * then made out of [applySpeciesDrift]'s real `grams`, because phase is a *reading* of a cell and
+ * then made out of [applySpeciesDrift]'s real `mass`, because phase is a *reading* of a cell and
  * not a second place mass is stored. A cell asked to give up a gram gives up a gram; what this
  * decides is how many it is asked for.
  */
 private fun vapourOf(
-    grams: LongArray,
+    mass: LongArray,
     kelvin: IntArray,
     volumes: VolumeField?,
 ): LongArray {
-    val mobile = LongArray(grams.size)
+    val mobile = LongArray(mass.size)
     for (tile in kelvin.indices) {
         val base = tile * Species.COUNT
         val room = volumes?.at(tile) ?: VolumeField.FULL
         for (s in Species.ALL) {
-            val g = grams[base + s.ordinal]
+            val g = mass[base + s.ordinal]
             mobile[base + s.ordinal] =
                 if (g <= 0L) g else vapourGrams(g, s, room, VolumeField.FULL, kelvin[tile])
         }
@@ -133,7 +133,7 @@ private const val FACTOR_SCALE = 1L shl 20
  * [planned] gets signed per-species amounts (positive = before → after).
  */
 private fun exchange(
-    grams: LongArray,
+    mass: LongArray,
     total: LongArray,
     before: Int,
     after: Int,
@@ -145,9 +145,9 @@ private fun exchange(
     val mass = total[before] + total[after]
     if (mass <= 0L) return
 
-    val moles = millimolesOf(grams, before) + millimolesOf(grams, after)
+    val moles = millimolesOf(mass, before) + millimolesOf(mass, after)
     if (moles <= 0L) return
-    val average = mass * MILLI / moles          // grams per mole, averaged over the face
+    val average = mass * MILLI / moles          // mass per mole, averaged over the face
     val faceGrams = mass / 2L
 
     val down = LongArray(Species.COUNT)         // net movement from `before` to `after`
@@ -156,14 +156,14 @@ private fun exchange(
     var upTotal = 0L
 
     for (s in Species.ALL) {
-        var net = settling(grams, s, before, after, average, gravityRaw) +
-            mixing(grams, total, s, before, after, faceGrams)
+        var net = settling(mass, s, before, after, average, gravityRaw) +
+            mixing(mass, total, s, before, after, faceGrams)
         if (net == 0L) continue
 
         net = net * aperture / ApertureField.OPEN
         // Never more than the side it would come from actually holds.
         val donor = if (net > 0L) before else after
-        val available = grams[donor * Species.COUNT + s.ordinal]
+        val available = mass[donor * Species.COUNT + s.ordinal]
         if (available <= 0L) continue
         if (net > available) net = available
         if (net < -available) net = -available
@@ -188,7 +188,7 @@ private fun exchange(
  * Settling: `g × (M − M̄) / M`, applied to the upwind side. Positive = before → after.
  */
 private fun settling(
-    grams: LongArray,
+    mass: LongArray,
     s: Species,
     before: Int,
     after: Int,
@@ -202,7 +202,7 @@ private fun settling(
     // Toward +n when a heavy species is pulled that way, or a light one pushed the other way.
     val along = heaviness * gravityRaw > 0L
     val donor = if (along) before else after
-    val available = grams[donor * Species.COUNT + s.ordinal]
+    val available = mass[donor * Species.COUNT + s.ordinal]
     if (available <= 0L) return 0L
 
     val magnitude = if (heaviness > 0L) heaviness else -heaviness
@@ -219,32 +219,32 @@ private fun settling(
  * not pressure.
  */
 private fun mixing(
-    grams: LongArray,
+    mass: LongArray,
     total: LongArray,
     s: Species,
     before: Int,
     after: Int,
     faceGrams: Long,
 ): Long {
-    val here = share(grams, total, before, s)
-    val there = share(grams, total, after, s)
+    val here = share(mass, total, before, s)
+    val there = share(mass, total, after, s)
     val gap = here - there
     if (gap == 0L) return 0L
     return faceGrams * gap / SHARE_SCALE * MIXING_NUMERATOR / MIXING_DENOMINATOR
 }
 
 /** Species' fraction of a tile's gas, numerator over [SHARE_SCALE]. */
-private fun share(grams: LongArray, total: LongArray, tile: Int, s: Species): Long {
+private fun share(mass: LongArray, total: LongArray, tile: Int, s: Species): Long {
     val all = total[tile]
     if (all <= 0L) return 0L
-    return grams[tile * Species.COUNT + s.ordinal] * SHARE_SCALE / all
+    return mass[tile * Species.COUNT + s.ordinal] * SHARE_SCALE / all
 }
 
-private fun move(grams: LongArray, from: Int, to: Int, species: Int, amount: Long) {
+private fun move(mass: LongArray, from: Int, to: Int, species: Int, amount: Long) {
     if (amount <= 0L) return
-    val taken = minOf(amount, grams[from * Species.COUNT + species])
-    grams[from * Species.COUNT + species] -= taken
-    grams[to * Species.COUNT + species] += taken
+    val taken = minOf(amount, mass[from * Species.COUNT + species])
+    mass[from * Species.COUNT + species] -= taken
+    mass[to * Species.COUNT + species] += taken
 }
 
 private const val MILLI = 1000L

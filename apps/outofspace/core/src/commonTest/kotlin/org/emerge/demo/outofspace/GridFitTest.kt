@@ -193,7 +193,7 @@ class GridFitTest {
         assertEquals(0L, s.airBalance, "airBalance $whenever")
         EnergyLedgers.assertBalanced(s, whenever)
         // `extracted == aboard + vented`, per VesselState's own doc. **Aboard is
-        // `inTransitGrams`, not `massGrams`** — the latter adds the fabric of the ship itself, which
+        // `inTransitMass`, not `mass`** — the latter adds the fabric of the ship itself, which
         // no extractor ever produced, so it can never be zero. Stated wrongly here first time round,
         // which cost a qwen session; the rest of the suite says it correctly, e.g. VesselSimTest:61.
         assertEquals(
@@ -247,14 +247,14 @@ class GridFitTest {
         for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }
-        append('|').append(s.atmosphereMass).append('|').append(s.atmosphereJoules)
+        append('|').append(s.atmosphereMass).append('|').append(s.atmosphereEnergy)
         append('|').append(s.storedEnergy).append('|').append(s.radiatedEnergy)
         append('|').append(s.vesselImpulseX).append('|').append(s.vesselImpulseY)
         append('|').append(s.extractedMass).append('|').append(s.ventedMass)
         append('|').append(s.stockpile.toString())
         for (b in s.bodies.sortedWith(compareBy({ b -> b.positionX }, { b -> b.positionY }))) {
             append('|').append(b.positionX).append(',').append(b.positionY)
-            append(',').append(b.massGrams)
+            append(',').append(b.mass)
         }
     }
 }

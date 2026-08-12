@@ -428,7 +428,7 @@ class OutofspaceRenderer {
     /** Material lump at fractional tile coords. [mass] = size (interpolated), [scale] = appear/disappear. */
     private fun drawPacket(tx: Float, ty: Float, mass: Float, scale: Float, mixture: Mixture) {
         if (scale <= 0f) return
-        val fill = (mass / Capacity.PACKET_GRAMS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
+        val fill = (mass / Capacity.PACKET_MASS).coerceIn(Visual.PACKET_MIN_FILL, 1f)
         val side = Visual.PACKET_FILL * fill * scale
         rect(tx * tilePx, ty * tilePx, side * tilePx, side * tilePx, mixture.color.toLong())
     }

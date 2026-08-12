@@ -155,7 +155,7 @@ class FlightTest {
 
         val s = controller.state
         assertEquals(0L, s.exhaustMomentumX, "gas had already left, so this proved nothing")
-        assertEquals(s.baselineAirGrams, s.atmosphereMass, "and not a gram of it had gone overboard")
+        assertEquals(s.baselineAirMass, s.atmosphereMass, "and not a gram of it had gone overboard")
         assertTrue(s.netImpulseX > 0L, "the ship felt nothing on the tick the hull opened")
         assertTrue(s.velocityX > 0L, "and so it was already moving")
     }
@@ -286,7 +286,7 @@ class FlightTest {
      * same speed, out of a strictly larger impulse.
      *
      * This is the property that makes a laden hold a sluggish ship for free once H1 puts rocks in
-     * `cargoGrams` — the mass a thrust is divided by is the same walk as the mass the conservation
+     * `cargoMass` — the mass a thrust is divided by is the same walk as the mass the conservation
      * check compares, and it always has been.
      */
     @Test

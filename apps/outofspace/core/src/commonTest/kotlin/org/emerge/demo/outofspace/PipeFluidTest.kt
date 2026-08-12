@@ -59,25 +59,25 @@ class PipeFluidTest {
     }
 
     /** A pipe run along row [y] from [fromX] to [toX], with gas put into its first cell. */
-    private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, grams: Long = 400L): VesselState {
+    private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, mass: Long = 400L): VesselState {
         var s = VesselState(grid, hulled())
         for (x in fromX until toX) s = lay(s, grid.index(x, y), grid.index(x + 1, y))
 
         val head = grid.index(fromX, y)
-        val pipe = s.pipeAir.copyGrams()
-        pipe[head * Species.COUNT + Species.Nitrogen.ordinal] = grams
+        val pipe = s.pipeAir.copyMass()
+        pipe[head * Species.COUNT + Species.Nitrogen.ordinal] = mass
         return s.copy(
             pipeAir = AirField.of(pipe),
             // Charging by hand puts gas into the world, so the baseline has to move with it or the
             // ledger reads the fixture itself as a leak.
-            baselineAirGrams = s.baselineAirGrams + grams,
-            baselineAirJoules = AirField.of(pipe).totalJoules + s.air.totalJoules,
+            baselineAirMass = s.baselineAirMass + mass,
+            baselineAirEnergy = AirField.of(pipe).totalEnergy + s.air.totalEnergy,
         )
     }
 
     private fun pipeMass(s: VesselState, tile: Int): Long {
         var sum = 0L
-        for (sp in Species.ALL) sum += s.pipeAir.gramsOf(tile, sp)
+        for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
     }
 
@@ -88,8 +88,8 @@ class PipeFluidTest {
 
         assertTrue(pipeMass(after, grid.index(10, 4)) > 0L, "nothing reached the far end of the run")
         assertEquals(
-            start.pipeAir.totalGrams,
-            after.pipeAir.totalGrams,
+            start.pipeAir.totalMass,
+            after.pipeAir.totalMass,
             "the pipes gained or lost gas with nothing connected to them",
         )
         assertEquals(0L, after.airVentedMass, "a sealed pipe network vented")
@@ -99,7 +99,7 @@ class PipeFluidTest {
     fun `the air ledger spans both fields`() {
         val after = run(charged(), 200)
         assertEquals(
-            after.baselineAirGrams,
+            after.baselineAirMass,
             after.atmosphereMass + after.airVentedMass,
             "rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
@@ -108,11 +108,11 @@ class PipeFluidTest {
     @Test
     fun `a pipe cannot exchange gas with the room it runs through`() {
         val start = charged()
-        val roomBefore = start.air.totalGrams
+        val roomBefore = start.air.totalMass
         val after = run(start, 200)
 
-        assertEquals(roomBefore, after.air.totalGrams, "gas crossed between the layers with no vent")
-        assertEquals(start.pipeAir.totalGrams, after.pipeAir.totalGrams, "the pipes leaked into the room")
+        assertEquals(roomBefore, after.air.totalMass, "gas crossed between the layers with no vent")
+        assertEquals(start.pipeAir.totalMass, after.pipeAir.totalMass, "the pipes leaked into the room")
     }
 
     /**
@@ -152,12 +152,12 @@ class PipeFluidTest {
         for (x in 3 until 8) s = lay(s, grid.index(x, 4), grid.index(x + 1, 4))
         for (x in 3 until 8) s = lay(s, grid.index(x, 5), grid.index(x + 1, 5))
 
-        val pipe = s.pipeAir.copyGrams()
+        val pipe = s.pipeAir.copyMass()
         pipe[grid.index(3, 4) * Species.COUNT + Species.Nitrogen.ordinal] = 400L
         s = s.copy(
             pipeAir = AirField.of(pipe),
-            baselineAirGrams = s.baselineAirGrams + 400L,
-            baselineAirJoules = AirField.of(pipe).totalJoules + s.air.totalJoules,
+            baselineAirMass = s.baselineAirMass + 400L,
+            baselineAirEnergy = AirField.of(pipe).totalEnergy + s.air.totalEnergy,
         )
 
         val after = run(s, 200)
@@ -171,7 +171,7 @@ class PipeFluidTest {
     fun `cutting a pipe lets what was in it out into the room`() {
         val start = charged()
         val head = grid.index(3, 4)
-        val roomBefore = start.air.totalGrams
+        val roomBefore = start.air.totalMass
         val inPipe = pipeMass(start, head)
         assertTrue(inPipe > 0L, "the fixture put nothing in the pipe")
 
@@ -180,9 +180,9 @@ class PipeFluidTest {
         )
 
         assertEquals(0L, pipeMass(after, head), "the removed cell kept its gas")
-        assertTrue(after.air.totalGrams > roomBefore, "the gas did not arrive in the room")
+        assertTrue(after.air.totalMass > roomBefore, "the gas did not arrive in the room")
         assertEquals(
-            after.baselineAirGrams,
+            after.baselineAirMass,
             after.atmosphereMass + after.airVentedMass,
             "cutting a pipe minted or destroyed gas",
         )
@@ -195,6 +195,6 @@ class PipeFluidTest {
 
         assertEquals(after.pipeAir, back.pipeAir, "the pipes came back holding something else")
         assertEquals(after.pipeMomentum, back.pipeMomentum, "the pipes came back becalmed")
-        assertEquals(after.baselineAirGrams, back.baselineAirGrams, "the shared baseline did not survive")
+        assertEquals(after.baselineAirMass, back.baselineAirMass, "the shared baseline did not survive")
     }
 }

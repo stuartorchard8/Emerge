@@ -9,7 +9,7 @@ import org.emerge.demo.fluidlab.chem.TILE_LITRES
  * their fraction.
  *
  * ⚠️ It has to be far larger than it looks like it needs to be, because the divisor is a *tile* of
- * solid — millions of grams — while the dividend is a composition stated in parts per thousand. At
+ * solid — millions of mass — while the dividend is a composition stated in parts per thousand. At
  * a million, `500 g / 6_532_100 g` truncated to 76 parts in a million and put the density of a
  * half-and-half mixture out by a third of a per cent. The division below keeps the remainder
  * explicitly rather than leaning on this being big enough.
@@ -48,12 +48,12 @@ fun gramsPerTileOf(mixture: Mixture): Long {
     mixture.dominant?.let { if (mixture[it] == total) return it.solidGramsPerTile }
     var volume = 0L
     for (species in Species.ALL) {
-        val grams = mixture[species]
-        if (grams <= 0L) continue
-        // Whole part and remainder separately: `grams * VOLUME_UNIT` would overflow for a serious
+        val mass = mixture[species]
+        if (mass <= 0L) continue
+        // Whole part and remainder separately: `mass * VOLUME_UNIT` would overflow for a serious
         // pile of ore, and truncating the division would lose most of the value for a small one.
         val density = species.solidGramsPerTile
-        volume += grams / density * VOLUME_UNIT + grams % density * VOLUME_UNIT / density
+        volume += mass / density * VOLUME_UNIT + mass % density * VOLUME_UNIT / density
     }
     return if (volume <= 0L) 0L else total * VOLUME_UNIT / volume
 }
@@ -83,8 +83,8 @@ fun specificHeatOf(mixture: Mixture): Long {
 private fun weightedSpecificHeat(mixture: Mixture): Long {
     var weighted = 0L
     for (species in Species.ALL) {
-        val grams = mixture[species]
-        if (grams > 0L) weighted += grams * species.specificHeat
+        val mass = mixture[species]
+        if (mass > 0L) weighted += mass * species.specificHeat
     }
     return weighted
 }

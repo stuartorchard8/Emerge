@@ -11,12 +11,12 @@ import org.emerge.demo.fluidlab.world.fluid.millimolesOf
  * Air: flat LongArray (tiles × species), integers (exact conservation).
  * pressureAt = millimoles (not mass — lets heavy gas sink). densityAt = mass/volume.
  */
-class AirField(private val grams: LongArray, private val joules: LongArray) {
+class AirField(private val mass: LongArray, private val energy: LongArray) {
 
-    fun gramsOf(tile: Int, species: Species): Long = grams[tile * Species.COUNT + species.ordinal]
+    fun gramsOf(tile: Int, species: Species): Long = mass[tile * Species.COUNT + species.ordinal]
 
     /** Pressure in millimoles (particle count, not mass — heavy gases sink). */
-    fun pressureAt(tile: Int): Long = millimolesOf(grams, tile)
+    fun pressureAt(tile: Int): Long = millimolesOf(mass, tile)
 
     /**
      * Joules per kelvin held by the air in a tile — what it costs to warm this much gas by a degree.
@@ -24,22 +24,22 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
      * Here rather than at every call site because a tile's temperature depends on it, and computing
      * it from [copyGrams] would allocate the whole field once per tile queried.
      */
-    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(grams, tile)
+    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(mass, tile)
 
     /**
      * How hot the air in a tile is, in kelvin. A tile with no air reads as ambient — see [gasKelvin]
      * for why that is the right placeholder for an absent quantity rather than a dodge.
      */
     fun kelvinAt(tile: Int): Int {
-        val capacity = gasCapacityAt(grams, tile)
-        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (joules[tile] / capacity).toInt()
+        val capacity = gasCapacityAt(mass, tile)
+        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energy[tile] / capacity).toInt()
     }
 
     /** Total gas mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: Int): Long {
         var sum = 0L
         val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += grams[base + s.ordinal]
+        for (s in Species.ALL) sum += mass[base + s.ordinal]
         return sum
     }
 
@@ -60,32 +60,32 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
     fun mixtureAt(tile: Int): Mixture {
         val out = LongArray(Species.COUNT)
         val base = tile * Species.COUNT
-        for (s in Species.ALL) out[s.ordinal] = grams[base + s.ordinal]
+        for (s in Species.ALL) out[s.ordinal] = mass[base + s.ordinal]
         return Mixture.ofGrams(out)
     }
 
     val totalGrams: Long get() {
         var sum = 0L
-        for (g in grams) sum += g
+        for (g in mass) sum += g
         return sum
     }
 
     /** Total thermal energy of the atmosphere — the ledger quantity, the twin of [totalGrams]. */
     val totalJoules: Long get() {
         var sum = 0L
-        for (j in joules) sum += j
+        for (j in energy) sum += j
         return sum
     }
 
-    fun copyGrams(): LongArray = grams.copyOf()
+    fun copyGrams(): LongArray = mass.copyOf()
 
-    fun copyJoules(): LongArray = joules.copyOf()
+    fun copyJoules(): LongArray = energy.copyOf()
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is AirField && grams.contentEquals(other.grams) && joules.contentEquals(other.joules))
+            (other is AirField && mass.contentEquals(other.mass) && energy.contentEquals(other.energy))
 
-    override fun hashCode(): Int = 31 * grams.contentHashCode() + joules.contentHashCode()
+    override fun hashCode(): Int = 31 * mass.contentHashCode() + energy.contentHashCode()
 
     companion object {
         /** 1-tile at 1 atm: ~1kg ordinary air (N₂:O₂:CO₂ ≈ 755:232:13 by mass). */
@@ -98,7 +98,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
         /**
          * Air at room temperature.
          *
-         * The energy is **derived from the grams** rather than defaulted to zero, and that default is
+         * The energy is **derived from the mass** rather than defaulted to zero, and that default is
          * what makes this whole design safe. Heat lives inside [AirField] precisely because it must
          * not be possible to replace a world's air and leave its temperature behind: on a
          * `data class`, `copy(air = …)` does not re-evaluate other properties' defaults, so a
@@ -108,22 +108,22 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
          *
          * One value, so the two cannot disagree.
          */
-        fun of(grams: LongArray): AirField =
-            AirField(grams.copyOf(), ambientGasJoules(grams.size / Species.COUNT, grams))
+        fun of(mass: LongArray): AirField =
+            AirField(mass.copyOf(), ambientGasJoules(mass.size / Species.COUNT, mass))
 
         /** Air at a temperature somebody has an opinion about. Both arrays are copied. */
-        fun of(grams: LongArray, joules: LongArray): AirField =
-            AirField(grams.copyOf(), joules.copyOf())
+        fun of(mass: LongArray, energy: LongArray): AirField =
+            AirField(mass.copyOf(), energy.copyOf())
 
         /** Every enclosed tile filled with [AMBIENT_AIR]; vacuum left empty. */
         fun ambient(grid: Grid, structure: StructureMap): AirField {
-            val grams = LongArray(grid.size * Species.COUNT)
+            val mass = LongArray(grid.size * Species.COUNT)
             for (tile in 0 until grid.size) {
                 if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
                 val base = tile * Species.COUNT
-                for (s in Species.ALL) grams[base + s.ordinal] = AMBIENT_AIR[s]
+                for (s in Species.ALL) mass[base + s.ordinal] = AMBIENT_AIR[s]
             }
-            return of(grams)
+            return of(mass)
         }
     }
 }
@@ -134,7 +134,7 @@ class AirField(private val grams: LongArray, private val joules: LongArray) {
  */
 fun tryDisplaceAir(
     grid: Grid,
-    grams: LongArray,
+    mass: LongArray,
     area: Collection<Int>,
     permeable: (Int) -> Boolean,
 ): Boolean {
@@ -182,7 +182,7 @@ fun tryDisplaceAir(
     for (slot in order.indices) {
         val base = order[slot] * Species.COUNT
         var total = 0L
-        for (s in Species.ALL) total += grams[base + s.ordinal]
+        for (s in Species.ALL) total += mass[base + s.ordinal]
         if (total <= 0L) continue
 
         var reachable = false
@@ -196,18 +196,18 @@ fun tryDisplaceAir(
         if (!reachable) return false
 
         for (s in Species.ALL) {
-            val share = apportion(weights, grams[base + s.ordinal])
+            val share = apportion(weights, mass[base + s.ordinal])
             for (e in exits.indices) moved[e * Species.COUNT + s.ordinal] += share[e]
         }
     }
 
     for (slot in order.indices) {
         val base = order[slot] * Species.COUNT
-        for (s in Species.ALL) grams[base + s.ordinal] = 0L
+        for (s in Species.ALL) mass[base + s.ordinal] = 0L
     }
     for (e in exits.indices) {
         val base = exits[e] * Species.COUNT
-        for (s in Species.ALL) grams[base + s.ordinal] += moved[e * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) mass[base + s.ordinal] += moved[e * Species.COUNT + s.ordinal]
     }
     return true
 }

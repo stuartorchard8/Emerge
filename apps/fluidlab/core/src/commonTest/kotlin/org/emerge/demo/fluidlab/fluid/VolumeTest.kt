@@ -38,20 +38,20 @@ class VolumeTest {
 
     /** A row of cells holding a spread of gases, so a mistake cannot hide in a uniform field. */
     private class Cells(val count: Int = 6) {
-        val grams = LongArray(count * Species.COUNT)
+        val mass = LongArray(count * Species.COUNT)
 
         init {
             for (tile in 0 until count) {
                 val base = tile * Species.COUNT
                 for (s in Species.ALL) {
-                    grams[base + s.ordinal] = AirField.AMBIENT_AIR[s] * (tile + 1) / 2
+                    mass[base + s.ordinal] = AirField.AMBIENT_AIR[s] * (tile + 1) / 2
                 }
             }
             // One cell of pure carbon dioxide: heavy for its pressure, which is the case volume must
             // not quietly rescale.
             val heavy = 3 * Species.COUNT
-            for (s in Species.ALL) grams[heavy + s.ordinal] = 0L
-            grams[heavy + Species.CarbonDioxide.ordinal] = 1400L
+            for (s in Species.ALL) mass[heavy + s.ordinal] = 0L
+            mass[heavy + Species.CarbonDioxide.ordinal] = 1400L
         }
 
         fun kelvin(): IntArray = IntArray(count) { 250 + it * 40 }
@@ -60,8 +60,8 @@ class VolumeTest {
     @Test
     fun `a full cell reads the pressure it read before volume existed`() {
         val cells = Cells()
-        val plain = tilePressure(cells.count, cells.grams)
-        val full = tilePressure(cells.count, cells.grams, null, VolumeField.uniform(cells.count))
+        val plain = tilePressure(cells.count, cells.mass)
+        val full = tilePressure(cells.count, cells.mass, null, VolumeField.uniform(cells.count))
         assertContentEquals(plain, full)
     }
 
@@ -69,8 +69,8 @@ class VolumeTest {
     fun `a full cell reads the same hot pressure too`() {
         val cells = Cells()
         val kelvin = cells.kelvin()
-        val plain = tilePressure(cells.count, cells.grams, kelvin)
-        val full = tilePressure(cells.count, cells.grams, kelvin, VolumeField.uniform(cells.count))
+        val plain = tilePressure(cells.count, cells.mass, kelvin)
+        val full = tilePressure(cells.count, cells.mass, kelvin, VolumeField.uniform(cells.count))
         assertContentEquals(plain, full)
     }
 
@@ -91,12 +91,12 @@ class VolumeTest {
     @Test
     fun `squeezing a cell raises its pressure, by less than proportion, increasingly so`() {
         val cells = Cells()
-        val plain = tilePressure(cells.count, cells.grams)
+        val plain = tilePressure(cells.count, cells.mass)
 
         // Shortfall per cell at each compression, in parts per million of the ideal answer.
         val shortfalls = listOf(2, 4, 8).map { squeeze ->
             val volumes = VolumeField.of(IntArray(cells.count) { VolumeField.FULL / squeeze })
-            val squeezed = tilePressure(cells.count, cells.grams, null, volumes)
+            val squeezed = tilePressure(cells.count, cells.mass, null, volumes)
             (0 until cells.count).map { tile ->
                 val ideal = plain[tile] * squeeze
                 assertTrue(squeezed[tile] > plain[tile], "cell $tile at 1/$squeeze must rise at all")
@@ -116,8 +116,8 @@ class VolumeTest {
         val cells = Cells()
         val volumes = IntArray(cells.count) { VolumeField.FULL }
         volumes[2] = VolumeField.FULL / 4
-        val plain = tilePressure(cells.count, cells.grams)
-        val mixed = tilePressure(cells.count, cells.grams, null, VolumeField.of(volumes))
+        val plain = tilePressure(cells.count, cells.mass)
+        val mixed = tilePressure(cells.count, cells.mass, null, VolumeField.of(volumes))
         for (tile in 0 until cells.count) {
             // The untouched cells are the claim here — that a volume somewhere else in the field
             // cannot reach across and alter them. The shrunk one is checked for direction only; how
@@ -144,12 +144,12 @@ class VolumeTest {
         val grid = Grid(w, h)
         val edges = EdgeGrid(grid)
         val apertures = ApertureField.allOpen(edges)
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
 
         init {
             for (tile in 0 until grid.size) {
                 val base = tile * Species.COUNT
-                for (s in Species.ALL) grams[base + s.ordinal] = AirField.AMBIENT_AIR[s]
+                for (s in Species.ALL) mass[base + s.ordinal] = AirField.AMBIENT_AIR[s]
             }
         }
 
@@ -159,8 +159,8 @@ class VolumeTest {
             val my = LongArray(edges.yEdgeCount)
             applyBuoyancy(
                 edges, apertures, mx, my,
-                tileMass(grid.size, grams),
-                tilePressure(grid.size, grams, null, volumes),
+                tileMass(grid.size, mass),
+                tilePressure(grid.size, mass, null, volumes),
                 DOWN,
                 volumes,
             )
@@ -175,7 +175,7 @@ class VolumeTest {
     @Test
     fun `buoyancy at full volume is what it always was`() {
         val room = Room()
-        room.grams[2 * Species.COUNT + Species.Oxygen.ordinal] += 400L
+        room.mass[2 * Species.COUNT + Species.Oxygen.ordinal] += 400L
 
         val (plainX, plainY) = room.lift(null)
         val (fullX, fullY) = room.lift(VolumeField.uniform(room.grid.size))
@@ -223,19 +223,19 @@ class VolumeTest {
      *
      * `tilePressure` floors the room left for gas at one part in 1024 and its comment says the point
      * of the floor is to make the answer "merely a very large pressure, which is both finite". It
-     * was not finite: a handful of grams in a thousandth of a tile is past close packing, where the
+     * was not finite: a handful of mass in a thousandth of a tile is past close packing, where the
      * equation of state has no answer and `vanDerWaalsPressure` throws. Unreachable until transport
      * could push gas into a cell full of liquid — and a pool in a vessel under acceleration can.
      */
     @Test
     fun `gas crushed into a cell full of liquid reads a huge pressure, not a crash`() {
-        val grams = LongArray(Species.COUNT)
+        val mass = LongArray(Species.COUNT)
         val water = saturatedLiquidDensity(reducedTemperature(230, Species.Water)!!)!! *
             CRITICAL.getValue(Species.Water).gramsPerTile / SCALE
-        grams[Species.Water.ordinal] = water
-        grams[Species.Nitrogen.ordinal] = 2265L
+        mass[Species.Water.ordinal] = water
+        mass[Species.Nitrogen.ordinal] = 2265L
 
-        val squeezed = tilePressure(1, grams, intArrayOf(230), null)[0]
+        val squeezed = tilePressure(1, mass, intArrayOf(230), null)[0]
         val roomy = tilePressure(1, LongArray(Species.COUNT).also {
             it[Species.Nitrogen.ordinal] = 2265L
         }, intArrayOf(230), null)[0]

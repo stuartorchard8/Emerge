@@ -119,17 +119,17 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
     // so the clamp is a guard rail rather than a correction.
     val dominantForProduct = (total / 2L - impuritiesForProduct).coerceIn(0L, dominantMass)
 
-    val productGrams = LongArray(Species.COUNT)
-    productGrams[dominant.ordinal] = dominantForProduct
+    val productMass = LongArray(Species.COUNT)
+    productMass[dominant.ordinal] = dominantForProduct
     if (impuritiesForProduct > 0L) {
         // Spread the product's impurity allowance across the non-dominant species in proportion.
         val impurityWeights = LongArray(Species.COUNT)
         for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input.mixture[m]
         val share = apportion(impurityWeights, impuritiesForProduct)
-        for (i in productGrams.indices) if (i != dominant.ordinal) productGrams[i] = share[i]
+        for (i in productMass.indices) if (i != dominant.ordinal) productMass[i] = share[i]
     }
 
-    val productMixture = Mixture.ofGrams(productGrams)
+    val productMixture = Mixture.ofMass(productMass)
     return ProcessResult(
         product = Resource(input.form, productMixture),
         tailings = Resource(input.form, input.mixture - productMixture),
@@ -141,7 +141,7 @@ fun merge(a: Resource, b: Resource): Resource? =
     if (a.form != b.form) null else Resource(a.form, a.mixture + b.mixture)
 
 /**
- * Splits [amount] grams off [input], proportionally across its species — what a belt, a grabber or
+ * Splits [amount] mass off [input], proportionally across its species — what a belt, a grabber or
  * a machine input buffer does. Returns `(taken, left)`, which always sum back to [input].
  */
 fun takeFrom(input: Resource, amount: Long): Pair<Resource, Resource> {

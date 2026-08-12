@@ -46,7 +46,7 @@ package org.emerge.demo.fluidlab.chem
  * Fixed-point scale for every reduced quantity here: `SCALE` means 1.0.
  *
  * The size of this is not free choice in either direction. Too coarse and a trace species is
- * quantised out of existence — at a million, thirteen grams of carbon dioxide in a tile of air came
+ * quantised out of existence — at a million, thirteen mass of carbon dioxide in a tile of air came
  * out as a reduced density of `33`, two significant figures, and something rarer would have rounded
  * to zero and stopped exerting any pressure at all. Too fine and [reducedPressure] overflows, since
  * it multiplies a temperature by a density and both carry this scale.
@@ -107,7 +107,7 @@ const val CLOSE_PACKED: Long = 3 * SCALE
  * van der Waals and the honest price of a two-constant equation of state.
  *
  * @param kelvin critical temperature, K.
- * @param gramsPerTile critical density, expressed as the grams of this species that a full tile
+ * @param gramsPerTile critical density, expressed as the mass of this species that a full tile
  *   holds when it is exactly at critical density. Tile-relative for the same reason
  *   [org.emerge.demo.fluidlab.world.fluid.VolumeField] is: the solver never asks how big a metre
  *   is, and this keeps it from having to start.
@@ -128,11 +128,11 @@ class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Spe
 }
 
 /**
- * Millimoles of [species] in [grams] of it — the same conversion
+ * Millimoles of [species] in [mass] of it — the same conversion
  * [org.emerge.demo.fluidlab.world.fluid.millimolesOf] performs, kept here so the critical point
  * can be expressed in the same currency as everything downstream of it.
  */
-private fun millimolesIn(grams: Long, species: Species): Long = grams * (MILLI * MILLI / species.molarMass) / MILLI
+private fun millimolesIn(mass: Long, species: Species): Long = mass * (MILLI * MILLI / species.molarMass) / MILLI
 
 private const val MILLI = 1000L
 
@@ -282,7 +282,7 @@ private fun critical(kelvin: Int, kgPerCubicMetre: Int, species: Species): Criti
  *
  * This is deliberately not a field on [Species] and deliberately not written down anywhere: it is
  * computed from density and temperature every time it is asked for, the same way a tile's kelvin is
- * computed from its joules and its capacity rather than kept alongside them. A species does not
+ * computed from its energy and its capacity rather than kept alongside them. A species does not
  * have a phase; a cell does, and only for as long as its conditions hold.
  */
 enum class FluidPhase {
@@ -335,20 +335,20 @@ fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
 }
 
 /**
- * Reduced density of [grams] of [species] in a cell holding [volume] out of
+ * Reduced density of [mass] of [species] in a cell holding [volume] out of
  * [org.emerge.demo.fluidlab.world.fluid.VolumeField.FULL] — how packed it is, as a multiple of
  * its own critical density.
  *
  * Returns null for a species with no entry in [CRITICAL], which is the caller's signal to treat it
  * as an ideal gas.
  */
-fun reducedDensity(grams: Long, species: Species, volume: Int, full: Int): Long? {
+fun reducedDensity(mass: Long, species: Species, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
-    if (grams <= 0L) return 0L
+    if (mass <= 0L) return 0L
     // Divided against the critical density before being scaled by the cell's fullness, so that a
     // large mass in a small cell cannot run the intermediate past a Long on its way to a number
     // that was always going to be less than CLOSE_PACKED.
-    return grams * SCALE / c.gramsPerTile * full / volume
+    return mass * SCALE / c.gramsPerTile * full / volume
 }
 
 /** Reduced temperature — [kelvin] as a multiple of the species' critical temperature. */
@@ -358,7 +358,7 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
 }
 
 /**
- * The pressure [grams] of [species] contributes on its own, in the units
+ * The pressure [mass] of [species] contributes on its own, in the units
  * [org.emerge.demo.fluidlab.world.fluid.tilePressure] reports.
  *
  * Partial pressures, which is what makes the nitrogen-holds-the-water-down case work without
@@ -369,9 +369,9 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
  * Returns null for a species with no critical point on file — an ideal gas, whose pressure the
  * caller should compute the old way.
  */
-fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
+fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
-    val densityR = reducedDensity(grams, species, volume, full) ?: return null
+    val densityR = reducedDensity(mass, species, volume, full) ?: return null
     val temperatureR = reducedTemperature(kelvin, species) ?: return null
     return c.pressure * reducedPressure(densityR, temperatureR) / SCALE
 }
@@ -392,7 +392,7 @@ fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, ful
  * uniform — it is [liquidFraction] of its volume at [saturatedLiquidDensity] and the rest at
  * [saturatedVapourDensity] — and because the term is quadratic, the attraction of that mixture is
  * not the attraction of its mean density. The lever-rule version is what makes latent heat come out
- * *linear in the fraction boiled*, i.e. a constant joules-per-gram, which is what a latent heat is.
+ * *linear in the fraction boiled*, i.e. a constant energy-per-gram, which is what a latent heat is.
  * Applying it needs a temperature, which neither this nor [org.emerge.demo.fluidlab.world.fluid.cohesionField]
  * currently takes, so it is left for whoever turns latent heat on — it belongs with teaching the
  * ledger its third term, not before, since nothing consumes the difference until then.

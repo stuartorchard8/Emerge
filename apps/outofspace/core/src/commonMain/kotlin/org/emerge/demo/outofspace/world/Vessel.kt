@@ -143,17 +143,17 @@ data class VesselState(
     val ventedMass: Long = 0L,
 
     /**
-     * Cumulative joules put into the world by machines doing work, and cumulative joules radiated
+     * Cumulative energy put into the world by machines doing work, and cumulative energy radiated
      * away to space. The thermal counterpart of [extractedMass] and [ventedMass], and they buy the
      * same thing: `stored + radiated − generated` must never move, so an energy leak is one
      * assertion away rather than a mystery.
      */
     val generatedEnergy: Long = 0L,
     val radiatedEnergy: Long = 0L,
-    /** Cumulative grams of atmosphere lost to space. Air's counterpart to [radiatedEnergy]. */
+    /** Cumulative mass of atmosphere lost to space. Air's counterpart to [radiatedEnergy]. */
     val airVentedMass: Long = 0L,
     /**
-     * Cumulative grams of atmosphere put into the world by [org.emerge.demo.outofspace.Edit.Inject]
+     * Cumulative mass of atmosphere put into the world by [org.emerge.demo.outofspace.Edit.Inject]
      * — the debug bellows — rather than by any gas coming from anywhere.
      *
      * The air ledger's [debugImpulseX], and it is here for that term's reason exactly. The identity
@@ -168,9 +168,9 @@ data class VesselState(
      * It also gives the shortcut a provable death: when air comes from a tank or a cracker instead,
      * this returns to zero and rooms still fill.
      */
-    val injectedAirGrams: Long = 0L,
-    /** The heat that came in with it — [injectedAirGrams]'s twin, for the energy ledger. */
-    val injectedAirJoules: Long = 0L,
+    val injectedAirMass: Long = 0L,
+    /** The heat that came in with it — [injectedAirMass]'s twin, for the energy ledger. */
+    val injectedAirEnergy: Long = 0L,
     /**
      * The channel values computed this tick. Kept in the snapshot rather than recomputed by the
      * renderer so that what is drawn is exactly what the sim acted on — and so a machine can be
@@ -209,45 +209,45 @@ data class VesselState(
     /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
     val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
     /**
-     * What the atmosphere's energy started at — the gas's twin of [baselineAirGrams], and checked the
-     * same way: `airJoules + airVentedJoules == baselineAirJoules` on every tick.
+     * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
+     * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
      *
      * The air's heat lives inside [AirField] rather than beside it here, and deliberately — see
      * [AirField.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
      */
-    val baselineAirJoules: Long = air.totalJoules + pipeAir.totalJoules,
-    /** Cumulative joules blown overboard with escaping gas. */
+    val baselineAirEnergy: Long = air.totalEnergy + pipeAir.totalEnergy,
+    /** Cumulative energy blown overboard with escaping gas. */
     val airVentedEnergy: Long = 0L,
     /**
      * The energy the world's **solids** started with. Fixed at construction so the thermal balance
-     * has something to be compared against — the twin of [baselineAirGrams]. Bodies are not solids
+     * has something to be compared against — the twin of [baselineAirMass]. Bodies are not solids
      * in the ledger — their energy enters the grid only when the extractor bites, at which point
-     * [acquiredJoules] records the transfer.
+     * [acquiredEnergy] records the transfer.
      *
      * The balance it anchors is
      * `stored + radiated + solidToAir − generated − inserted − acquired == baseline`,
      * and the two terms beyond the obvious ones are:
      *
-     *  - [insertedJoules], energy the player inserts via debug features (placing machines, etc.).
+     *  - [insertedEnergy], energy the player inserts via debug features (placing machines, etc.).
      *  - [solidToAirEnergy], because the fabric and the atmosphere now exchange heat, so what one
      *    ledger loses the other gains. Counting it keeps both closed independently, which is what
      *    makes a break in one legible instead of being absorbed by the other.
-     *  - [acquiredJoules], energy the grid acquires from bodies when the extractor bites — bodies
+     *  - [acquiredEnergy], energy the grid acquires from bodies when the extractor bites — bodies
      *    are in [storedEnergy] but their energy enters the grid from outside, so subtracting
-     *    [acquiredJoules] cancels the double-count: `stored` holds the joules and `acquired`
+     *    [acquiredEnergy] cancels the double-count: `stored` holds the energy and `acquired`
      *    records the transfer so the ledger stays closed.
      */
-    val baselineJoules: Long = solidJoules(machines, conduits, bridges),
+    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges),
     /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
      */
-    val insertedJoules: Long = 0L,
+    val insertedEnergy: Long = 0L,
     /**
      * Energy acquired by the grid from bodies via extractor bites. Bodies are not part of the grid
      * — their thermal energy only enters the ledger when the extractor takes it.
      */
-    val acquiredJoules: Long = 0L,
+    val acquiredEnergy: Long = 0L,
     /** Cumulative net energy conducted from the solids into the atmosphere. Negative the other way. */
     val solidToAirEnergy: Long = 0L,
     /**
@@ -337,7 +337,7 @@ data class VesselState(
      * disagree the first time a single gram crossed between them, and the disagreement would look
      * exactly like a leak. What must not mix is what cannot mix.
      */
-    val baselineAirGrams: Long = air.totalGrams + pipeAir.totalGrams,
+    val baselineAirMass: Long = air.totalMass + pipeAir.totalMass,
 ) {
     init {
         require(machines.size == grid.size) { "machine list is ${machines.size}, grid holds ${grid.size}" }
@@ -383,7 +383,7 @@ data class VesselState(
         val openness = airlockOpenness(machines, signals)
         val edges = EdgeGrid(grid)
         val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, openness), openness)
-        diffuseFluid(edges, apertures, air.copyGrams(), joules = null).flow
+        diffuseFluid(edges, apertures, air.copyMass(), energies = null).flow
     }
 
     /**
@@ -468,38 +468,38 @@ data class VesselState(
         return portsOf(grid, m, index)
     }
 
-    /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineJoules] anchors. */
-    val storedEnergy: Long get() = solidJoules(machines, conduits, bridges)
+    /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
+    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges)
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
-    val atmosphereMass: Long get() = air.totalGrams + pipeAir.totalGrams
+    val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass
 
     /**
-     * The heat that atmosphere is carrying, in the rooms and in the pipes — what [baselineAirJoules]
+     * The heat that atmosphere is carrying, in the rooms and in the pipes — what [baselineAirEnergy]
      * anchors.
      *
      * The counterpart to [atmosphereMass], and it arrived a whole increment later than it should
      * have. The mass side got a both-fields total when the pipes were built; the energy side kept
-     * reading `air.totalJoules` alone. That was invisible for exactly as long as the pipe layer was
-     * sealed — no gas crossed, so no joules crossed — and the moment a valve opened, every joule that
+     * reading `air.totalEnergy` alone. That was invisible for exactly as long as the pipe layer was
+     * sealed — no gas crossed, so no energy crossed — and the moment a valve opened, every joule that
      * went into the plumbing read as destroyed. The lesson is the ledger's own: two quantities that
      * share a baseline have to be summed the same way, and the second one is easy to forget because
      * nothing fails until something moves.
      */
-    val atmosphereJoules: Long get() = air.totalJoules + pipeAir.totalJoules
+    val atmosphereEnergy: Long get() = air.totalEnergy + pipeAir.totalEnergy
 
     /**
      * How far the air ledger is out: `atmosphere + vented − injected − baseline`, which is **zero**,
      * always, on a world nothing has broken.
      *
      * One property rather than the sum written out at each of the four places that wanted it — the
-     * HUD, the harness, the fixtures and the tests. That is not tidiness: [atmosphereJoules] arrived
+     * HUD, the harness, the fixtures and the tests. That is not tidiness: [atmosphereEnergy] arrived
      * a whole increment after [atmosphereMass] because the two were summed at separate call sites
      * and only one of them learned about the pipes, and nothing failed until gas moved. Two
      * quantities that share a baseline have to be summed in one place, or eventually they are not
      * summed the same way.
      */
-    val airBalance: Long get() = atmosphereMass + airVentedMass - injectedAirGrams - baselineAirGrams
+    val airBalance: Long get() = atmosphereMass + airVentedMass - injectedAirMass - baselineAirMass
 
     /**
      * The same statement about the air's energy — [airBalance]'s twin, and zero for its reasons.
@@ -511,9 +511,9 @@ data class VesselState(
      *
      * ⚠️ **PARKED — see [heatBalance].** This one is parked with it, for the same reason.
      */
-    val airJouleBalance: Long
-        get() = atmosphereJoules + airVentedEnergy - solidToAirEnergy - injectedAirJoules -
-            baselineAirJoules
+    val airEnergyBalance: Long
+        get() = atmosphereEnergy + airVentedEnergy - solidToAirEnergy - injectedAirEnergy -
+            baselineAirEnergy
 
     /**
      * How far the solid energy ledger is out: `stored + radiated + toAir − generated − inserted −
@@ -521,7 +521,7 @@ data class VesselState(
      *
      * Named here rather than spelled out by each caller because it was spelled out by **six** of
      * them — the HUD and five test files — and a seven-term identity restated seven times is the
-     * shape of bug this codebase keeps paying for: [airJouleBalance] exists because its two halves
+     * shape of bug this codebase keeps paying for: [airEnergyBalance] exists because its two halves
      * were summed at separate call sites and only one of them learned about the pipes.
      *
      * ⚠️ **PARKED as of step 3 of `apps/outofspace/PLAN_unit_rescale.md` (2026-08-12).**
@@ -543,7 +543,7 @@ data class VesselState(
      */
     val heatBalance: Long
         get() = storedEnergy + radiatedEnergy + solidToAirEnergy -
-            generatedEnergy - insertedJoules - acquiredJoules - baselineJoules
+            generatedEnergy - insertedEnergy - acquiredEnergy - baselineEnergy
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =
@@ -555,13 +555,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoGrams(machines, conduits, bridges)
+    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMassGrams(machines, conduits, bridges)
+    val mass: Long get() = vesselMass(machines, conduits, bridges)
 
     /**
      * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
@@ -664,7 +664,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
  *
  * Every machine answers, so a sensor can be pointed at anything and mean something. The reference
  * capacity differs by kind (a belt's is its slots, a storage's is its tank), which is the point: the
- * question a sensor asks is "is this backing up?", not "how many grams".
+ * question a sensor asks is "is this backing up?", not "how much mass".
  */
 fun fullness(machine: Machine?): Int = when (machine) {
     null -> 0
@@ -738,7 +738,7 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
  * Cells that exist in both grids keep everything; cells only in the new one are vacuum.
  * The old origin lands at (dx, dy) in the new grid, so growing left by 4 is dx = +4.
  *
- * On a shrink, the gas in a discarded cell is **vented** to `airVentedGrams`/`airVentedJoules` and
+ * On a shrink, the gas in a discarded cell is **vented** to `airVentedMass`/`airVentedEnergy` and
  * its face momentum to `exhaustMomentumX/Y`, so every ledger holds. A discarded **solid** throws
  * instead: the grid is fitted around the solids, so losing one means the bounds were wrong. Rocks
  * are not grid-indexed and are translated, never discarded. See `PLAN_dynamic_grid.md` §5.
@@ -821,22 +821,22 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     val newDiverters = FlowCursors(remapCursors(diverters.snapshot()), remapCursors(diverters.mergeSnapshot()))
 
-    // ── 4. Dense field arrays: air / pipeAir (grams + joules) ────────────
+    // ── 4. Dense field arrays: air / pipeAir (mass + energy) ────────────
     fun remapAirField(src: AirField): AirField {
-        val newGrams = LongArray(newGrid.size * Species.COUNT)
-        val oldJoules = src.copyJoules()
-        val newJoules = LongArray(newGrid.size)
+        val newMass = LongArray(newGrid.size * Species.COUNT)
+        val oldEnergy = src.copyEnergy()
+        val newEnergy = LongArray(newGrid.size)
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
             val ni = remapTile(ox, oy) ?: continue
             val oi = grid.index(ox, oy)
             val baseN = ni * Species.COUNT
             val baseO = oi * Species.COUNT
             for (s in Species.entries) {
-                newGrams[baseN + s.ordinal] = src.gramsOf(oi, Species.entries[s.ordinal])
+                newMass[baseN + s.ordinal] = src.massOf(oi, Species.entries[s.ordinal])
             }
-            newJoules[ni] = oldJoules[oi]
+            newEnergy[ni] = oldEnergy[oi]
         }
-        return AirField.of(newGrams, newJoules)
+        return AirField.of(newMass, newEnergy)
     }
     val newAir = remapAirField(air)
     val newPipeAir = remapAirField(pipeAir)
@@ -907,8 +907,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     // ── 7. Vent whatever the new grid does not cover ─────────────────────
     // As a difference of totals rather than a walk of the discarded cells: exact by construction,
     // with no edge index to get wrong. Zero on a grow, so that needs no special case.
-    val ventedGas    = (air.totalGrams + pipeAir.totalGrams) - (newAir.totalGrams + newPipeAir.totalGrams)
-    val ventedJoules = (air.totalJoules + pipeAir.totalJoules) - (newAir.totalJoules + newPipeAir.totalJoules)
+    val ventedGas    = (air.totalMass + pipeAir.totalMass) - (newAir.totalMass + newPipeAir.totalMass)
+    val ventedEnergy = (air.totalEnergy + pipeAir.totalEnergy) - (newAir.totalEnergy + newPipeAir.totalEnergy)
     val ventedMomX   = (momentum.totalX + pipeMomentum.totalX) - (newMomentum.totalX + newPipeMomentum.totalX)
     val ventedMomY   = (momentum.totalY + pipeMomentum.totalY) - (newMomentum.totalY + newPipeMomentum.totalY)
 
@@ -932,13 +932,13 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         bodies = newBodies,
         // vented quantities — grow: difference is zero, no special case needed
         airVentedMass = airVentedMass + ventedGas,
-        airVentedEnergy = airVentedEnergy + ventedJoules,
+        airVentedEnergy = airVentedEnergy + ventedEnergy,
         exhaustMomentumX = exhaustMomentumX + ventedMomX,
         exhaustMomentumY = exhaustMomentumY + ventedMomY,
         // baselines passed through explicitly to avoid recompute on copy
-        baselineAirGrams = baselineAirGrams,
-        baselineAirJoules = baselineAirJoules,
-        baselineJoules = baselineJoules,
+        baselineAirMass = baselineAirMass,
+        baselineAirEnergy = baselineAirEnergy,
+        baselineEnergy = baselineEnergy,
     )
 }
 

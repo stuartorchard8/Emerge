@@ -19,27 +19,27 @@ class PumpDemand(val from: Int, val into: Int, val millimoles: Long)
  */
 fun applyPumps(
     demands: List<PumpDemand>,
-    roomGrams: LongArray,
-    roomJoules: LongArray?,
-    pipeGrams: LongArray,
-    pipeJoules: LongArray?,
+    roomMass: LongArray,
+    roomEnergy: LongArray?,
+    pipeMass: LongArray,
+    pipeEnergy: LongArray?,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
     if (demands.isEmpty()) return InterlayerStep(0L, 0L)
 
-    var movedGrams = 0L
-    var movedJoules = 0L
+    var movedMass = 0L
+    var movedEnergy = 0L
 
     for (demand in demands) {
         if (demand.millimoles <= 0L) continue
 
-        val roomMoles = millimolesOf(roomGrams, demand.from)
+        val roomMoles = millimolesOf(roomMass, demand.from)
         if (roomMoles <= 0L) continue
 
-        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomGrams, roomJoules, demand.from))
+        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomMass, roomEnergy, demand.from))
         val pipeCapacity =
-            pressureCapacity(pipeVolumes.at(demand.into), kelvinAt(pipeGrams, pipeJoules, demand.into))
-        val pipeMoles = millimolesOf(pipeGrams, demand.into)
+            pressureCapacity(pipeVolumes.at(demand.into), kelvinAt(pipeMass, pipeEnergy, demand.into))
+        val pipeMoles = millimolesOf(pipeMass, demand.into)
 
         // Stalled: the pipe is already holding this pump's limit. Compared as a cross-multiplication
         // rather than by forming two pressures, so a thin cell cannot round its way past the check.
@@ -50,11 +50,11 @@ fun applyPumps(
         val taken = minOf(demand.millimoles, roomMoles)
         val share = Share(taken, roomMoles)
 
-        val moved = handOver(share, demand.from, demand.into, roomGrams, roomJoules, pipeGrams, pipeJoules)
-        movedGrams += moved.grams
-        movedJoules += moved.joules
+        val moved = handOver(share, demand.from, demand.into, roomMass, roomEnergy, pipeMass, pipeEnergy)
+        movedMass += moved.mass
+        movedEnergy += moved.energy
     }
 
-    return InterlayerStep(movedGrams, movedJoules)
+    return InterlayerStep(movedMass, movedEnergy)
 }
 

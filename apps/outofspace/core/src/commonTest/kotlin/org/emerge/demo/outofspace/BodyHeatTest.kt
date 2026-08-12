@@ -17,7 +17,7 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.ambientJoules
+import org.emerge.demo.outofspace.world.ambientEnergy
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -67,12 +67,12 @@ class BodyHeatTest {
         val list = machines.toMutableList()
         val m = list[at]!!
         list[at] = m.atKelvin(kelvin)
-        return copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
+        return copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
     }
 
     private fun VesselState.railKelvin(tile: Int): Int {
         val s = rails[tile] ?: error("no track at $tile")
-        return (s.joules / s.conduit.capacityPerTile).toInt()
+        return (s.energy / s.conduit.capacityPerTile).toInt()
     }
 
     /**
@@ -98,10 +98,10 @@ class BodyHeatTest {
         val list = world.machines.toMutableList()
         val cold = (list[at] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
         val perTile = MachineKind.Smelter.capacityPerTile
-        list[at] = cold.withJoules(cold.joules.with(0, perTile * 2_000L))
-        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
+        list[at] = cold.withEnergy(cold.energy.with(0, perTile * 2_000L))
+        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
 
-        fun tiles(s: VesselState) = (s.machines[at] as Machine).joules
+        fun tiles(s: VesselState) = (s.machines[at] as Machine).energy
         val start = tiles(seeded)
         assertEquals(25, start.size, "a five-by-five smelter stores twenty-five figures, not one")
 
@@ -125,8 +125,8 @@ class BodyHeatTest {
     }
 
     @Test
-    fun `a machine keeps every joule it had when it is saved and loaded`() {
-        // The migration in Save.readTileJoules spreads an old file's single figure across the tiles,
+    fun `a machine keeps every unit of energy it had when it is saved and loaded`() {
+        // The migration in Save.readTileEnergy spreads an old file's single figure across the tiles,
         // and a spread that dropped its remainder would make save/load a slow leak that the energy
         // ledger would eventually notice. Round-tripping an uneven machine covers both directions.
         val g = Grid(14, 14)
@@ -135,14 +135,14 @@ class BodyHeatTest {
         val list = world.machines.toMutableList()
         val m = (list[at] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
         // Deliberately not divisible by twenty-five, so a lost remainder shows up.
-        list[at] = m.withJoules(m.joules.with(3, m.joules[3] + 1_000_000_007L))
+        list[at] = m.withEnergy(m.energy.with(3, m.energy[3] + 1_000_000_007L))
         val before = world.copy(machines = list.toList())
 
         val after = Save.read(Save.write(before))
         val restored = after.machines[at] as Machine
         assertEquals(
-            (before.machines[at] as Machine).joules,
-            restored.joules,
+            (before.machines[at] as Machine).energy,
+            restored.energy,
             "a saved machine must come back holding exactly what it held, tile by tile",
         )
     }
@@ -203,9 +203,9 @@ class BodyHeatTest {
         // Drive one tile of the upper run hot.
         val source = g.index(2, topRow)
         val rails = world.rails.toMutableList()
-        rails[source] = rails[source]!!.copy(joules = Conduit.Rail.capacityPerTile * 2_000L)
+        rails[source] = rails[source]!!.copy(energy = Conduit.Rail.capacityPerTile * 2_000L)
         var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
-        s = s.copy(baselineJoules = s.storedEnergy)
+        s = s.copy(baselineEnergy = s.storedEnergy)
 
         val settled = run(s, 40)
         val alongTheRun = settled.railKelvin(g.index(6, topRow))
@@ -247,19 +247,19 @@ class BodyHeatTest {
         val tank = single { Storage(it) }
         val at = g.index(5, 5)
 
-        // The same number of joules into each, on top of ambient.
+        // The same number of energy into each, on top of ambient.
         fun bump(s: VesselState): VesselState {
             val list = s.machines.toMutableList()
             val m = list[at]!!
-            list[at] = m.withJoules(m.joules.plusSpread(20_000_000_000L))
-            return s.copy(machines = list.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
+            list[at] = m.withEnergy(m.energy.plusSpread(20_000_000_000L))
+            return s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
         }
 
         val hotFurnace = bump(furnace).kelvinAt(at) - Temperature.AMBIENT_KELVIN
         val hotTank = bump(tank).kelvinAt(at) - Temperature.AMBIENT_KELVIN
         assertTrue(
             hotTank > hotFurnace,
-            "titanium should heat further than firebrick for the same joules: +${hotTank}K vs +${hotFurnace}K",
+            "titanium should heat further than firebrick for the same energy: +${hotTank}K vs +${hotFurnace}K",
         )
     }
 
@@ -275,8 +275,8 @@ class BodyHeatTest {
             mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Place(at, MachineKind.Hull, Direction.Right)))),
         )
         assertEquals(
-            ambientJoules(MachineKind.Hull).total,
-            s.insertedJoules,
+            ambientEnergy(MachineKind.Hull).total,
+            s.insertedEnergy,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
 
@@ -288,8 +288,8 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.insertedJoules < ambientJoules(MachineKind.Hull).total / 1_000L,
-            "and scrapping it takes that heat back out: ${s.insertedJoules}",
+            s.insertedEnergy < ambientEnergy(MachineKind.Hull).total / 1_000L,
+            "and scrapping it takes that heat back out: ${s.insertedEnergy}",
         )
     }
 }

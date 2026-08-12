@@ -13,7 +13,7 @@ package org.emerge.demo.fluidlab.world
  * fast — it runs. New machines default to "wired to ALWAYS at full", so placing one just works and
  * wiring is something you add rather than something you must do.
  *
- * Rates are grams per second, turned into whole grams per tick by
+ * Rates are mass per second, turned into whole mass per tick by
  * [org.emerge.demo.fluidlab.logistics.Rate] with the fraction kept in each machine's own `carry`.
  * Carry is machine state and not a global precisely so it survives a save.
  */
@@ -34,11 +34,11 @@ sealed interface Machine {
      * Defaults to room temperature for the machine's own footprint and material, so placing one
      * needs no separate act of initialisation.
      */
-    val joules: Long
+    val energy: Long
 
     fun withWiring(wiring: Wiring): Machine
 
-    fun withJoules(joules: Long): Machine
+    fun withJoules(energy: Long): Machine
 }
 
 /**

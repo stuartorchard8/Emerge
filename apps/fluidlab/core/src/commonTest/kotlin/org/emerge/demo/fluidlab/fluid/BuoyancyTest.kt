@@ -32,7 +32,7 @@ class BuoyancyTest {
         val grid = Grid(w + 2, h + 2)
         val edges = EdgeGrid(grid)
         val apertures: ApertureField
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
 
@@ -45,20 +45,20 @@ class BuoyancyTest {
         }
 
         fun air(tile: Int) {
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s]
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s]
         }
 
         /** Replace a tile's air with a single gas, at the same pressure as everything else. */
         fun pureGas(tile: Int, species: Species) {
-            val target = tilePressure(grid.size, grams)[grid.index(3, 3)]
-            for (s in Species.ALL) grams[tile * Species.COUNT + s.ordinal] = 0L
-            grams[tile * Species.COUNT + species.ordinal] = target * species.molarMass / 1000L
+            val target = tilePressure(grid.size, mass)[grid.index(3, 3)]
+            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = 0L
+            mass[tile * Species.COUNT + species.ordinal] = target * species.molarMass / 1000L
         }
 
         fun run(gravity: Frac2 = DOWN) = applyBuoyancy(
             edges, apertures, mx, my,
-            tileMass(grid.size, grams),
-            tilePressure(grid.size, grams),
+            tileMass(grid.size, mass),
+            tilePressure(grid.size, mass),
             gravity,
         )
 

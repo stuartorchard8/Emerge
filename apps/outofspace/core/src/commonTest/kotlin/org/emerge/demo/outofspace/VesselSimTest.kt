@@ -36,7 +36,7 @@ import kotlin.test.assertTrue
 /**
  * The tile world: belts, machines, jams and the whole-world conservation invariant.
  *
- * The headline assertion is [`nothing is created or destroyed`][`the world never loses a gram`]:
+ * The headline assertion is [`nothing is created or destroyed`][`the world never loses a unit of mass`]:
  * an extractor is the only place ore enters the world and a vent the only place it leaves, so
  *
  *     extracted == aboard + vented
@@ -56,7 +56,7 @@ class VesselSimTest {
     }
 
     private fun assertBalanced(s: VesselState, what: String) {
-        // Storage contents are part of inTransitGrams -- the stockpile is a view over the storages,
+        // Storage contents are part of inTransitMass -- the stockpile is a view over the storages,
         // not an account beside them -- so there is no separate "banked" term to add here.
         assertEquals(
             s.extractedMass,
@@ -332,10 +332,10 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
         )
-        s = run(s, ticksToMove(FEEDSTOCK_GRAMS))
+        s = run(s, ticksToMove(FEEDSTOCK_MASS))
 
         assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")
-        assertEquals(FEEDSTOCK_GRAMS, s.extractedMass, "and every gram of it should have become ore")
+        assertEquals(FEEDSTOCK_MASS, s.extractedMass, "and every gram of it should have become ore")
         assertBalanced(s, "extractor into a vent")
 
         // Nothing more arrives, however long it is left running.
@@ -526,7 +526,7 @@ class VesselSimTest {
         // is a thermal body now and radiating for one tick is not the same as being overwritten.
         assertEquals(
             store,
-            s[0]?.withJoules(store.joules),
+            s[0]?.withEnergy(store.energy),
             "a stray click must not destroy a machine and its contents",
         )
     }
@@ -590,7 +590,7 @@ class VesselSimTest {
     }
 
     @Test
-    fun `the world never loses a gram`() {
+    fun `the world never loses a unit of mass`() {
         var s = workingVessel(cfg.initialGrid)
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
@@ -642,7 +642,7 @@ class VesselSimTest {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             for (r in s.rails) {
                 val p = r?.held ?: continue
-                assertTrue(p.mass in 1L..Capacity.PACKET_GRAMS, "bad packet on the track: ${p.mass}g")
+                assertTrue(p.mass in 1L..Capacity.PACKET_MASS, "bad packet on the track: ${p.mass}g")
             }
         }
     }

@@ -32,7 +32,7 @@ class ProjectionTest {
         val grid = Grid(w + 2, h + 2)
         val edges = EdgeGrid(grid)
         val apertures: ApertureField
-        val grams = LongArray(grid.size * Species.COUNT)
+        val mass = LongArray(grid.size * Species.COUNT)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
 
@@ -51,14 +51,14 @@ class ProjectionTest {
 
         fun fill(tile: Int, scale: Long) {
             for (s in Species.ALL) {
-                grams[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale / AMBIENT
+                mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * scale / AMBIENT
             }
         }
 
         fun run() = project(
             edges, apertures, mx, my,
-            tileMass(grid.size, grams),
-            tilePressure(grid.size, grams),
+            tileMass(grid.size, mass),
+            tilePressure(grid.size, mass),
         )
 
         companion object { const val AMBIENT = 1000L }
@@ -148,8 +148,8 @@ class ProjectionTest {
             box.fill(box.grid.index(4, 3), Box.AMBIENT * 3)
             return project(
                 box.edges, box.apertures, box.mx, box.my,
-                tileMass(box.grid.size, box.grams),
-                tilePressure(box.grid.size, box.grams),
+                tileMass(box.grid.size, box.mass),
+                tilePressure(box.grid.size, box.mass),
                 iterations = iterations,
             ).vesselX
         }
@@ -172,7 +172,7 @@ class ProjectionTest {
             for (x in 2 until 10) for (y in 2 until 8) box.fill(box.grid.index(x, y), scale)
             box.run()
 
-            val tileGrams = tileMass(box.grid.size, box.grams)
+            val tileGrams = tileMass(box.grid.size, box.mass)
             var peak = 0L
             for (e in 0 until box.edges.xEdgeCount) {
                 val before = box.edges.xEdgeBefore(e)
@@ -199,9 +199,9 @@ class ProjectionTest {
         assertTrue(thin * 2 > thick && thick * 2 > thin, "thin $thin vs thick $thick differ too much")
 
         // ⚠️ A tenth of an atmosphere is roughly where this stops working. At a *hundredth* — about
-        // nine grams a tile — the solved field rounds to zero and the projection contributes nothing
+        // nine mass a tile — the solved field rounds to zero and the projection contributes nothing
         // at all, which is recorded here rather than asserted because it is a limitation and not a
-        // decision. It matters because a vented plume sits at fifteen to thirty grams a tile, right
+        // decision. It matters because a vented plume sits at fifteen to thirty mass a tile, right
         // on that floor: out there the motion is coming from `applyPressureForce`, which works on the
         // pressure difference directly and keeps its resolution, and not from this solve. If exhaust
         // physics ever needs the elliptic part to work in near-vacuum, the fix is to carry pressure

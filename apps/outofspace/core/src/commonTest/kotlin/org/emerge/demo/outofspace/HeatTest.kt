@@ -65,7 +65,7 @@ class HeatTest {
      *
      * Kept as a call rather than deleted so the un-parking is one flag rather than an archaeology
      * exercise. The identity itself now lives on `VesselState` as `heatBalance` and
-     * `airJouleBalance`, which is where the six copies of it belonged all along.
+     * `airEnergyBalance`, which is where the six copies of it belonged all along.
      */
     private fun assertEnergyBalanced(s: VesselState, what: String) =
         EnergyLedgers.assertBalanced(s, what)
@@ -158,15 +158,15 @@ class HeatTest {
 //        val g = sealed.grid
 //        val warm = run(sealed, 4)
 //        assertEnergyBalanced(warm, "before the breach")
-//        val storedBefore = warm.storedJoules
+//        val storedBefore = warm.storedEnergy
 //
 //        val breached = run(warm, 5, OutofspaceInput(listOf(Edit.Remove(g.index(4, 1)))))
 //        // The walls keep their heat -- steel has far more thermal mass than air, so most of a
 //        // vessel's stored energy is in its hull. What the breach empties is the *interior*.
 //        for (y in 2 until 8) for (x in 2 until 8) {
-//            assertEquals(0L, breached.heat.joulesAt(g.index(x, y)), "interior tile ($x,$y) should be empty")
+//            assertEquals(0L, breached.heat.energyAt(g.index(x, y)), "interior tile ($x,$y) should be empty")
 //        }
-//        assertTrue(breached.storedJoules < storedBefore, "and the total dropped")
+//        assertTrue(breached.storedEnergy < storedBefore, "and the total dropped")
 //        assertEnergyBalanced(breached, "after the breach")
 //    }
 
@@ -176,7 +176,7 @@ class HeatTest {
     fun `a smelter warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS))
         // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
         // slag port at (5,7), so the vents go one tile beyond each.
         val g0 = Grid(12, 12)
@@ -220,7 +220,7 @@ class HeatTest {
         val machines = room.machines.toMutableList()
         val wall = machines[hot]!!
         machines[hot] = wall.atKelvin(4_000)
-        var s = room.copy(machines = machines.toList()).let { it.copy(baselineJoules = it.storedEnergy) }
+        var s = room.copy(machines = machines.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
         repeat(240) {
@@ -255,7 +255,7 @@ class HeatTest {
         // Roomy enough that the five-tile furnace does not fill it: with nothing but space around
         // it, every face of the thing is exposed.
         val grid = Grid(11, 11)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_GRAMS))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS))
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(5, 5)] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())

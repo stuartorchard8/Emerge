@@ -171,8 +171,8 @@ class SaturationTest {
         // correction must be invisible to it — otherwise adopting this would have silently shifted
         // every pressure in the game.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val grams = AirField.AMBIENT_AIR[species]
-            val densityR = reducedDensity(grams, species, full, full)!!
+            val mass = AirField.AMBIENT_AIR[species]
+            val densityR = reducedDensity(mass, species, full, full)!!
             val temperatureR = reducedTemperature(293, species)!!
             assertEquals(
                 vanDerWaalsPressure(densityR, temperatureR),

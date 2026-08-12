@@ -7,11 +7,11 @@ import org.emerge.demo.outofspace.world.Temperature
 /**
  * What crossed between room and pipe.
  *
- * [grams] and [joules] are signed room-to-pipe (positive = room lost mass/energy).
+ * [mass] and [energy] are signed room-to-pipe (positive = room lost mass/energy).
  */
 class InterlayerStep(
-    val grams: Long,
-    val joules: Long,
+    val mass: Long,
+    val energy: Long,
 )
 
 /**
@@ -26,25 +26,25 @@ class InterlayerStep(
  */
 fun exchangeLayers(
     openings: IntArray,
-    roomGrams: LongArray,
-    roomJoules: LongArray?,
-    pipeGrams: LongArray,
-    pipeJoules: LongArray?,
+    roomMass: LongArray,
+    roomEnergy: LongArray?,
+    pipeMass: LongArray,
+    pipeEnergy: LongArray?,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
-    var movedGrams = 0L
-    var movedJoules = 0L
+    var movedMass = 0L
+    var movedEnergy = 0L
 
     for (tile in openings.indices) {
         val opening = openings[tile]
         if (opening <= 0) continue
 
-        val roomMoles = millimolesOf(roomGrams, tile)
-        val pipeMoles = millimolesOf(pipeGrams, tile)
+        val roomMoles = millimolesOf(roomMass, tile)
+        val pipeMoles = millimolesOf(pipeMass, tile)
         if (roomMoles == 0L && pipeMoles == 0L) continue
 
-        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomGrams, roomJoules, tile))
-        val pipeCapacity = pressureCapacity(pipeVolumes.at(tile), kelvinAt(pipeGrams, pipeJoules, tile))
+        val roomCapacity = pressureCapacity(VolumeField.FULL, kelvinAt(roomMass, roomEnergy, tile))
+        val pipeCapacity = pressureCapacity(pipeVolumes.at(tile), kelvinAt(pipeMass, pipeEnergy, tile))
 
         // The room's share at a common pressure, and how far it is from it. Positive means the room
         // is holding more than its share and gas moves into the pipe.
@@ -65,22 +65,22 @@ fun exchangeLayers(
         val share = Share(if (crossing < 0L) -crossing else crossing, donorMoles)
 
         val moved = if (fromRoom) {
-            handOver(share, tile, tile, roomGrams, roomJoules, pipeGrams, pipeJoules)
+            handOver(share, tile, tile, roomMass, roomEnergy, pipeMass, pipeEnergy)
         } else {
-            handOver(share, tile, tile, pipeGrams, pipeJoules, roomGrams, roomJoules)
+            handOver(share, tile, tile, pipeMass, pipeEnergy, roomMass, roomEnergy)
         }
         // Signed room-to-pipe, so a valve breathing in and out reads as the small net it is.
         val sign = if (fromRoom) 1L else -1L
-        movedGrams += sign * moved.grams
-        movedJoules += sign * moved.joules
+        movedMass += sign * moved.mass
+        movedEnergy += sign * moved.energy
     }
 
-    return InterlayerStep(movedGrams, movedJoules)
+    return InterlayerStep(movedMass, movedEnergy)
 }
 
 /**
  * Fraction of a cell leaving, kept as a ratio. Multiplying then dividing keeps each quantity
- * (species grams, energy, momentum) at its own precision without rounding out trace species.
+ * (species mass, energy, momentum) at its own precision without rounding out trace species.
  *
  * ### Why [of] goes through [scaledRatio]
  *
@@ -91,7 +91,7 @@ fun exchangeLayers(
  * 2.9e19 and wraps.
  *
  * That wrap is how it presented, and the presentation is worth recording because it was nothing like
- * the cause. A tile ended up holding **negative joules**, which read back as a negative kelvin, which
+ * the cause. A tile ended up holding **negative energy**, which read back as a negative kelvin, which
  * became a negative reduced temperature, which indexed `Saturation.sample` at −1 — an
  * `ArrayIndexOutOfBoundsException` inside the equation of state, six frames and two packages away
  * from a ratio in the plumbing.
@@ -104,7 +104,7 @@ internal class Share(val part: Long, val whole: Long) {
     fun of(quantity: Long): Long = scaledRatio(part, whole, quantity)
 }
 
-internal class Moved(val grams: Long, val joules: Long)
+internal class Moved(val mass: Long, val energy: Long)
 
 /**
  * Moves [share] of one cell's gas species-by-species, with energy. Tiles separate for pump usage
@@ -114,31 +114,31 @@ internal fun handOver(
     share: Share,
     donorTile: Int,
     acceptorTile: Int,
-    donorGrams: LongArray,
-    donorJoules: LongArray?,
-    acceptorGrams: LongArray,
-    acceptorJoules: LongArray?,
+    donorMass: LongArray,
+    donorEnergy: LongArray?,
+    acceptorMass: LongArray,
+    acceptorEnergy: LongArray?,
 ): Moved {
     val base = donorTile * Species.COUNT
     val target = acceptorTile * Species.COUNT
-    var grams = 0L
+    var mass = 0L
     for (s in Species.ALL) {
         val i = base + s.ordinal
-        val take = share.of(donorGrams[i])
+        val take = share.of(donorMass[i])
         if (take == 0L) continue
-        donorGrams[i] -= take
-        acceptorGrams[target + s.ordinal] += take
-        grams += take
+        donorMass[i] -= take
+        acceptorMass[target + s.ordinal] += take
+        mass += take
     }
 
     // Energy as a fraction of donor (exact), not mass × temperature (accumulates rounding error).
-    var joules = 0L
-    if (donorJoules != null && acceptorJoules != null) {
-        joules = share.of(donorJoules[donorTile])
-        donorJoules[donorTile] -= joules
-        acceptorJoules[acceptorTile] += joules
+    var energy = 0L
+    if (donorEnergy != null && acceptorEnergy != null) {
+        energy = share.of(donorEnergy[donorTile])
+        donorEnergy[donorTile] -= energy
+        acceptorEnergy[acceptorTile] += energy
     }
-    return Moved(grams, joules)
+    return Moved(mass, energy)
 }
 
 /**
@@ -148,8 +148,8 @@ internal fun pressureCapacity(volume: Int, kelvin: Int): Long =
     volume.toLong() * Temperature.AMBIENT_KELVIN / maxOf(kelvin, 1)
 
 /** Cell gas temperature. No gas → ambient (same convention as [gasKelvin]). */
-internal fun kelvinAt(grams: LongArray, gasJoules: LongArray?, tile: Int): Int {
-    if (gasJoules == null) return Temperature.AMBIENT_KELVIN
-    val capacity = gasCapacityAt(grams, tile)
-    return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (gasJoules[tile] / capacity).toInt()
+internal fun kelvinAt(mass: LongArray, gasEnergy: LongArray?, tile: Int): Int {
+    if (gasEnergy == null) return Temperature.AMBIENT_KELVIN
+    val capacity = gasCapacityAt(mass, tile)
+    return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (gasEnergy[tile] / capacity).toInt()
 }

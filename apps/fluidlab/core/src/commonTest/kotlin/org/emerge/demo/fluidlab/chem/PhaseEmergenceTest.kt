@@ -34,9 +34,9 @@ class PhaseEmergenceTest {
         // agree — and the old value is the oracle, computed the way the solver has always computed
         // it rather than copied out of a run.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val grams = AirField.AMBIENT_AIR[species]
-            val ideal = millimolesOf(gramsFieldOf(species to grams), tile = 0)
-            val real = partialPressure(grams, species, room, full, full)!!
+            val mass = AirField.AMBIENT_AIR[species]
+            val ideal = millimolesOf(gramsFieldOf(species to mass), tile = 0)
+            val real = partialPressure(mass, species, room, full, full)!!
 
             val driftPerMille = (real - ideal) * 1000 / ideal
             assertTrue(
@@ -53,12 +53,12 @@ class PhaseEmergenceTest {
         val tr = reducedTemperature(room, Species.Nitrogen)!!
         assertTrue(tr > SCALE, "nitrogen at room temperature should be supercritical; Tr=$tr")
 
-        for (grams in listOf(755L, 10_000L, 200_000L)) {
-            val dr = reducedDensity(grams, Species.Nitrogen, full, full)!!
+        for (mass in listOf(755L, 10_000L, 200_000L)) {
+            val dr = reducedDensity(mass, Species.Nitrogen, full, full)!!
             assertEquals(
                 FluidPhase.Supercritical,
                 phaseAt(dr, tr),
-                "nitrogen at ${grams}g should have no liquid branch at room temperature",
+                "nitrogen at ${mass}g should have no liquid branch at room temperature",
             )
         }
     }
@@ -170,7 +170,7 @@ class PhaseEmergenceTest {
     private fun totalPressure(mix: Map<Species, Long>, kelvin: Int): Long =
         mix.entries.sumOf { (s, g) -> partialPressure(g, s, kelvin, full, full) ?: 0L }
 
-    /** A one-tile grams field, so the ideal-gas oracle can be asked the way the solver asks it. */
+    /** A one-tile mass field, so the ideal-gas oracle can be asked the way the solver asks it. */
     private fun gramsFieldOf(vararg amounts: Pair<Species, Long>): LongArray {
         val out = LongArray(Species.COUNT)
         for ((s, g) in amounts) out[s.ordinal] = g

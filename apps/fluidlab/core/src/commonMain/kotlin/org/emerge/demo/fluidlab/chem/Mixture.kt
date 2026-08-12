@@ -6,18 +6,18 @@ import org.emerge.render.torus.RgbColor
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
  * Immutable. Splits use apportion() (largest-remainder). Operations: +, -, take, scaledTo.
  */
-class Mixture private constructor(private val grams: LongArray) {
+class Mixture private constructor(private val mass: LongArray) {
 
     init {
-        require(grams.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${grams.size}" }
+        require(mass.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${mass.size}" }
     }
 
-    operator fun get(species: Species): Long = grams[species.ordinal]
+    operator fun get(species: Species): Long = mass[species.ordinal]
 
-    /** Total mass in grams. */
+    /** Total mass in mass. */
     val total: Long get() {
         var sum = 0L
-        for (g in grams) sum += g
+        for (g in mass) sum += g
         return sum
     }
 
@@ -31,8 +31,8 @@ class Mixture private constructor(private val grams: LongArray) {
         get() {
             var best = -1
             var bestMass = 0L
-            for (i in grams.indices) {
-                if (grams[i] > bestMass) { bestMass = grams[i]; best = i }
+            for (i in mass.indices) {
+                if (mass[i] > bestMass) { bestMass = mass[i]; best = i }
             }
             return if (best < 0) null else Species.ALL[best]
         }
@@ -44,8 +44,8 @@ class Mixture private constructor(private val grams: LongArray) {
             var b = 0x00
             val a = 0xFF
             val total = total
-            for (i in grams.indices) {
-                val v = grams[i]*0xFF/total
+            for (i in mass.indices) {
+                val v = mass[i]*0xFF/total
                 if (v > 0) {
                     val sc = speciesColor(Species.ALL[i])
                     val scR = sc.shr(24) and 0xFF
@@ -65,7 +65,7 @@ class Mixture private constructor(private val grams: LongArray) {
 
     operator fun plus(other: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
-        for (i in out.indices) out[i] = grams[i] + other.grams[i]
+        for (i in out.indices) out[i] = mass[i] + other.mass[i]
         return Mixture(out)
     }
 
@@ -77,14 +77,14 @@ class Mixture private constructor(private val grams: LongArray) {
     operator fun minus(other: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
         for (i in out.indices) {
-            out[i] = grams[i] - other.grams[i]
-            require(out[i] >= 0L) { "subtracting more ${Species.ALL[i]} than present: ${grams[i]} - ${other.grams[i]}" }
+            out[i] = mass[i] - other.mass[i]
+            require(out[i] >= 0L) { "subtracting more ${Species.ALL[i]} than present: ${mass[i]} - ${other.mass[i]}" }
         }
         return Mixture(out)
     }
 
     /**
-     * Takes [amount] grams spread across the species in proportion to what is here — the operation
+     * Takes [amount] mass spread across the species in proportion to what is here — the operation
      * behind "grab a shovelful" and "the belt can only carry so much". Returns everything if
      * [amount] is at least [total]; returns empty for a non-positive amount.
      *
@@ -93,20 +93,20 @@ class Mixture private constructor(private val grams: LongArray) {
     fun take(amount: Long): Mixture {
         if (amount <= 0L) return EMPTY
         if (amount >= total) return this
-        return Mixture(apportion(grams, amount))
+        return Mixture(apportion(mass, amount))
     }
 
     /**
      * This mixture's *proportions* rendered at a different total — the "recipe" operation. An orebody
-     * described as 410g iron / 300g silica per kilogram becomes any number of grams of the same
+     * described as 410g iron / 300g silica per kilogram becomes any number of mass of the same
      * stuff. Unlike [take] this may scale up, because a recipe is a ratio and not a pile.
      */
-    fun scaledTo(grams: Long): Mixture {
-        if (grams <= 0L || isEmpty) return EMPTY
-        return Mixture(apportion(this.grams, grams))
+    fun scaledTo(mass: Long): Mixture {
+        if (mass <= 0L || isEmpty) return EMPTY
+        return Mixture(apportion(this.mass, mass))
     }
 
-    /** This mixture with only [species] kept, at [amount] grams. */
+    /** This mixture with only [species] kept, at [amount] mass. */
     fun onlyOf(species: Species, amount: Long): Mixture = of(species to amount)
 
     /** Human-readable, dominant species first — for debug output and test failures. */
@@ -117,9 +117,9 @@ class Mixture private constructor(private val grams: LongArray) {
     }
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Mixture && grams.contentEquals(other.grams))
+        this === other || (other is Mixture && mass.contentEquals(other.mass))
 
-    override fun hashCode(): Int = grams.contentHashCode()
+    override fun hashCode(): Int = mass.contentHashCode()
 
     companion object {
         val EMPTY: Mixture = Mixture(LongArray(Species.COUNT))
@@ -133,8 +133,8 @@ class Mixture private constructor(private val grams: LongArray) {
             return Mixture(out)
         }
 
-        /** Builds from raw per-species grams, indexed by [Species] ordinal. The array is copied. */
-        fun ofGrams(grams: LongArray): Mixture = Mixture(grams.copyOf())
+        /** Builds from raw per-species mass, indexed by [Species] ordinal. The array is copied. */
+        fun ofGrams(mass: LongArray): Mixture = Mixture(mass.copyOf())
     }
 }
 

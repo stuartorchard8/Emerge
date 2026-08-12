@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.SCALE
-import org.emerge.demo.outofspace.chem.gramsAtReducedDensity
+import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.chem.liquidVolumeFraction
 import org.emerge.demo.outofspace.chem.partialPressure
@@ -47,7 +47,7 @@ private val MOLAR_DIVISOR: Long = MILLI * Budget.GRAM
  *
  * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.
  */
-internal val AMBIENT_TILE_GRAMS: Long = AirField.AMBIENT_AIR.total
+internal val AMBIENT_TILE_MASS: Long = AirField.AMBIENT_AIR.total
 
 /** Denominator of [AMBIENT_SHARE]: air's composition in billionths. */
 private const val SHARE_ONE: Long = 1_000_000_000L
@@ -55,20 +55,20 @@ private const val SHARE_ONE: Long = 1_000_000_000L
 /**
  * What fraction of ordinary air each species is, in billionths of [SHARE_ONE].
  *
- * `AMBIENT_AIR[s] / AMBIENT_TILE_GRAMS` is a ratio of two masses, so it is a pure number that does
+ * `AMBIENT_AIR[s] / AMBIENT_TILE_MASS` is a ratio of two masses, so it is a pure number that does
  * not depend on what a mass unit means — and it is a **constant**, which is the useful part. Taken
  * once here it is exact to a part in 10⁹; taken per call inside [ambientPressureOf] it was
- * `grams × AMBIENT_AIR[s]`, a k² product with a safe mass scale of 95,700 (step 4b of
+ * `mass × AMBIENT_AIR[s]`, a k² product with a safe mass scale of 95,700 (step 4b of
  * PLAN_unit_rescale.md).
  *
  * ⚠️ Reducing the ratio *at the call site* instead would have been much worse than it looks, and
- * this is the trap worth recording: with `grams` as the scale the reduction leaves the denominator
+ * this is the trap worth recording: with `mass` as the scale the reduction leaves the denominator
  * with only ~16 bits, an absolute error of ~10⁻⁵ in the fraction. Nitrogen would survive that; a
  * trace species whose share is below 10⁻⁵ would come out wrong by a multiple of itself. Reducing a
  * constant against a constant has no such problem, because nothing is reduced at all.
  */
 private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
-    scaledRatio(AirField.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_GRAMS, SHARE_ONE)
+    scaledRatio(AirField.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_MASS, SHARE_ONE)
 }
 
 /**
@@ -91,7 +91,7 @@ private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
  */
 fun tilePressure(
     tileCount: Int,
-    grams: LongArray,
+    mass: LongArray,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
 ): LongArray =
@@ -105,7 +105,7 @@ fun tilePressure(
         // at all.
         var liquidShare = 0L
         for (s in Species.ALL) {
-            val g = grams[tile * Species.COUNT + s.ordinal]
+            val g = mass[tile * Species.COUNT + s.ordinal]
             if (g <= 0L) continue
             liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
         }
@@ -117,7 +117,7 @@ fun tilePressure(
 
         var sum = 0L
         for (s in Species.ALL) {
-            val g = grams[tile * Species.COUNT + s.ordinal]
+            val g = mass[tile * Species.COUNT + s.ordinal]
             // A condensing species is measured against the whole cell, because the lever rule has
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
@@ -127,7 +127,7 @@ fun tilePressure(
             // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
             // above says "a very large pressure"; without this it says "a crash", and a cell can now
             // genuinely reach that state — gas advected into a tile that is nearly solid with liquid
-            // has almost no room to be in, and a handful of grams in a thousandth of a tile is past
+            // has almost no room to be in, and a handful of mass in a thousandth of a tile is past
             // the limit. Clamped to the densest that species can physically be, the pressure comes
             // out enormous and finite, which is what the comment above always intended and what the
             // solver needs in order to push the gas back out.
@@ -138,21 +138,21 @@ fun tilePressure(
     }
 
 /**
- * The smallest volume [grams] of [species] can be squeezed into and still have a pressure: the
+ * The smallest volume [mass] of [species] can be squeezed into and still have a pressure: the
  * volume at which it reaches [CLOSE_PACKED].
  *
  * Inverts [org.emerge.demo.outofspace.chem.reducedDensity]. Zero for a species with no critical
  * point on file, which has no packing limit to reach.
  */
-private fun leastRoomFor(grams: Long, species: Species): Int {
-    if (grams <= 0L) return 0
+private fun leastRoomFor(mass: Long, species: Species): Int {
+    if (mass <= 0L) return 0
     val critical = CRITICAL[species] ?: return 0
     // Asked of [reducedDensity] rather than recomputed, since "how packed would this be in a full
-    // tile" is exactly what that function answers, and its own `grams * SCALE` was the same k1
+    // tile" is exactly what that function answers, and its own `mass * SCALE` was the same k1
     // overflow being repaired everywhere else here — 7.6e19 for a packed tile of water at one
     // microgram per unit. Rounded up so the strict inequality holds rather than merely being
     // approached.
-    val room = reducedDensity(grams, species, VolumeField.FULL, VolumeField.FULL)!! *
+    val room = reducedDensity(mass, species, VolumeField.FULL, VolumeField.FULL)!! *
         VolumeField.FULL / (CLOSE_PACKED - 1) + 1
     return room.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
 }
@@ -164,11 +164,11 @@ private fun leastRoomFor(grams: Long, species: Species): Int {
  * The mass is split across the species in [AirField.AMBIENT_AIR]'s proportions, because the question
  * being asked of it is always "what would *air* do here", never "what would this particular gas do".
  */
-internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
-    if (grams <= 0L) return 0L
+internal fun ambientPressureOf(mass: Long, kelvin: Int, volume: Int): Long {
+    if (mass <= 0L) return 0L
     var sum = 0L
     for (s in Species.ALL) {
-        val share = scaledRatio(grams, SHARE_ONE, AMBIENT_SHARE[s.ordinal])
+        val share = scaledRatio(mass, SHARE_ONE, AMBIENT_SHARE[s.ordinal])
         sum += partialPressure(share, s, kelvin, volume, VolumeField.FULL)
             ?: idealPressure(share, s, kelvin, volume)
     }
@@ -192,21 +192,21 @@ internal fun ambientPressureOf(grams: Long, kelvin: Int, volume: Int): Long {
  */
 internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long {
     if (target <= 0L) return 0L
-    val ceiling = closePackedAirGrams(volume)
-    var grams = (target * AMBIENT_TILE_GRAMS / AMBIENT_PRESSURE * volume / VolumeField.FULL)
+    val ceiling = closePackedAirMass(volume)
+    var mass = (target * AMBIENT_TILE_MASS / AMBIENT_PRESSURE * volume / VolumeField.FULL)
         .coerceAtMost(ceiling)
     repeat(NEWTON_STEPS) {
-        val here = ambientPressureOf(grams, kelvin, volume)
-        if (here == target) return grams
+        val here = ambientPressureOf(mass, kelvin, volume)
+        if (here == target) return mass
         // A thousandth of the current guess is small enough to be a local slope and large enough
         // that the pressure difference across it does not vanish into integer rounding.
-        val nudge = (grams / 1000L).coerceAtLeast(1L)
-        val slope = ambientPressureOf((grams + nudge).coerceAtMost(ceiling), kelvin, volume) - here
-        if (slope <= 0L) return grams
-        grams = (grams - (here - target) * nudge / slope).coerceAtMost(ceiling)
-        if (grams <= 0L) return 0L
+        val nudge = (mass / 1000L).coerceAtLeast(1L)
+        val slope = ambientPressureOf((mass + nudge).coerceAtMost(ceiling), kelvin, volume) - here
+        if (slope <= 0L) return mass
+        mass = (mass - (here - target) * nudge / slope).coerceAtMost(ceiling)
+        if (mass <= 0L) return 0L
     }
-    return grams
+    return mass
 }
 
 /**
@@ -224,7 +224,7 @@ internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long
  * heavier than the air around it. At the clamp the answer is "very much heavier", which is both
  * true and the direction the solver needs.
  */
-private fun closePackedAirGrams(volume: Int): Long {
+private fun closePackedAirMass(volume: Int): Long {
     var limit = Long.MAX_VALUE
     for (s in Species.ALL) {
         val share = AirField.AMBIENT_AIR[s]
@@ -232,13 +232,13 @@ private fun closePackedAirGrams(volume: Int): Long {
         // Invert reducedDensity: the total air mass whose share of species s just reaches close
         // packing in this volume.
         //
-        // ⚠️ This was `(CLOSE_PACKED - 1) / SCALE * critical.gramsPerTile`, which divides FIRST and
+        // ⚠️ This was `(CLOSE_PACKED - 1) / SCALE * critical.massPerTile`, which divides FIRST and
         // so evaluates to **2**, not 2.99999999 — a clamp a third tighter than the one it claims to
-        // be. [gramsAtReducedDensity] keeps the fraction, which loosens the ceiling by 50%. It is a
+        // be. [massAtReducedDensity] keeps the fraction, which loosens the ceiling by 50%. It is a
         // ceiling on a Newton search that only bites in a cell that is nearly all liquid, and
         // loosening it moves the search closer to the answer rather than further from it.
-        val atLimit = gramsAtReducedDensity(CLOSE_PACKED - 1, s, volume, VolumeField.FULL)!! *
-            AMBIENT_TILE_GRAMS / share
+        val atLimit = massAtReducedDensity(CLOSE_PACKED - 1, s, volume, VolumeField.FULL)!! *
+            AMBIENT_TILE_MASS / share
         limit = minOf(limit, atLimit)
     }
     return if (limit == Long.MAX_VALUE) Long.MAX_VALUE else limit
@@ -259,8 +259,8 @@ private const val NEWTON_STEPS = 2
  * what [partialPressure] converges to as a cell empties out, which is why swapping one for the other
  * moved no existing pressure by more than a tenth of a percent.
  */
-private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: Int): Long {
-    val moles = grams * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MOLAR_DIVISOR
+private fun idealPressure(mass: Long, species: Species, kelvin: Int, volume: Int): Long {
+    val moles = mass * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MOLAR_DIVISOR
     return moles * kelvin / AMBIENT_KELVIN * VolumeField.FULL / volume
 }
 
@@ -268,10 +268,10 @@ private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: In
 private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
-fun millimolesOf(grams: LongArray, tile: Int): Long {
+fun millimolesOf(mass: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
-    for (s in Species.ALL) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
+    for (s in Species.ALL) sum += mass[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
     return sum
 }
 
@@ -286,9 +286,9 @@ fun millimolesOf(grams: LongArray, tile: Int): Long {
 val AMBIENT_PRESSURE: Long = run {
     var sum = 0L
     for (s in Species.ALL) {
-        val grams = AirField.AMBIENT_AIR[s]
-        sum += partialPressure(grams, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
-            ?: (grams * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
+        val mass = AirField.AMBIENT_AIR[s]
+        sum += partialPressure(mass, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
+            ?: (mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
     }
     sum
 }

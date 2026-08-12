@@ -159,7 +159,7 @@ class FootprintTest {
      */
     private fun feed(endX: Int, endY: Int): VesselState {
         val grid = Grid(14, 14)
-        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_GRAMS))
+        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)

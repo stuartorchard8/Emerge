@@ -49,7 +49,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * Fixed-point scale for every reduced quantity here: `SCALE` means 1.0.
  *
  * The size of this is not free choice in either direction. Too coarse and a trace species is
- * quantised out of existence — at a million, thirteen grams of carbon dioxide in a tile of air came
+ * quantised out of existence — at a million, thirteen mass of carbon dioxide in a tile of air came
  * out as a reduced density of `33`, two significant figures, and something rarer would have rounded
  * to zero and stopped exerting any pressure at all. Too fine and [reducedPressure] overflows, since
  * it multiplies a temperature by a density and both carry this scale.
@@ -131,7 +131,7 @@ const val MAX_REDUCED_DENSITY: Long = CLOSE_PACKED - PACKING_MARGIN
  * the equation, not chosen — whereas real fluids measure around `0.29`. The three constants are
  * therefore over-determined: pick any two and the third follows.
  *
- * Taking [kelvin] and [gramsPerTile] as the inputs is the choice that matters, because those two
+ * Taking [kelvin] and [massPerTile] as the inputs is the choice that matters, because those two
  * are what place the phase transition in the state space the solver actually moves through — how
  * hot a cell has to get, and how dense it has to be. [pressure] is then whatever the equation says
  * it is. Supplying a measured critical pressure alongside them would not make the model more
@@ -142,12 +142,12 @@ const val MAX_REDUCED_DENSITY: Long = CLOSE_PACKED - PACKING_MARGIN
  * van der Waals and the honest price of a two-constant equation of state.
  *
  * @param kelvin critical temperature, K.
- * @param gramsPerTile critical density, expressed as the grams of this species that a full tile
+ * @param massPerTile critical density, expressed as the mass of this species that a full tile
  *   holds when it is exactly at critical density. Tile-relative for the same reason
  *   [org.emerge.demo.outofspace.world.VolumeField] is: the solver never asks how big a metre
  *   is, and this keeps it from having to start.
  */
-class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Species) {
+class Critical(val kelvin: Int, val massPerTile: Long, private val species: Species) {
 
     /**
      * Critical pressure, in the units [org.emerge.demo.outofspace.world.tilePressure]
@@ -159,11 +159,11 @@ class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Spe
      * the solver used before to within a fraction of a percent, because that is what van der Waals
      * *does* when the molecules are far apart. The old behaviour is the sparse limit of the new one.
      */
-    val pressure: Long = 3 * millimolesIn(gramsPerTile, species) * kelvin / (8 * REFERENCE_KELVIN)
+    val pressure: Long = 3 * millimolesIn(massPerTile, species) * kelvin / (8 * REFERENCE_KELVIN)
 }
 
 /**
- * Millimoles of [species] in [grams] of it — the same conversion
+ * Millimoles of [species] in [mass] of it — the same conversion
  * [org.emerge.demo.outofspace.world.millimolesOf] performs, kept here so the critical point
  * can be expressed in the same currency as everything downstream of it.
  *
@@ -177,8 +177,8 @@ class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Spe
  * gram per unit the arithmetic is bit-for-bit what it has always been and no pressure anywhere
  * moves. Left as its own division and the truncation would land differently.
  */
-private fun millimolesIn(grams: Long, species: Species): Long =
-    grams * (MILLI * MILLI / species.molarMass) / (MILLI * Budget.GRAM)
+private fun millimolesIn(mass: Long, species: Species): Long =
+    mass * (MILLI * MILLI / species.molarMass) / (MILLI * Budget.GRAM)
 
 private const val MILLI = 1000L
 
@@ -359,20 +359,20 @@ val MAX_REDUCED_PRESSURE: Long = Long.MAX_VALUE / 4 / CRITICAL.values.maxOf { it
 const val TILE_LITRES: Long = 830
 
 /**
- * `kg/m³ × litres` is grams, because a cubic metre is a thousand litres — so the textbook density
- * and [TILE_LITRES] give the answer in grams with no factor in between. [Budget.GRAM] is then what
- * turns those grams into integers, and it is the whole of this function's participation in the mass
+ * `kg/m³ × litres` is mass, because a cubic metre is a thousand litres — so the textbook density
+ * and [TILE_LITRES] give the answer in mass with no factor in between. [Budget.GRAM] is then what
+ * turns those mass into integers, and it is the whole of this function's participation in the mass
  * unit. Before step 8's audit it was absent, and a tile of critical water weighed 267 milligrams.
  */
 private fun critical(kelvin: Int, kgPerCubicMetre: Int, species: Species): Critical =
-    Critical(kelvin = kelvin, gramsPerTile = kgPerCubicMetre * TILE_LITRES * Budget.GRAM, species = species)
+    Critical(kelvin = kelvin, massPerTile = kgPerCubicMetre * TILE_LITRES * Budget.GRAM, species = species)
 
 /**
  * What a cell's fluid is *behaving* as. Read, never stored.
  *
  * This is deliberately not a field on [Species] and deliberately not written down anywhere: it is
  * computed from density and temperature every time it is asked for, the same way a tile's kelvin is
- * computed from its joules and its capacity rather than kept alongside them. A species does not
+ * computed from its energy and its capacity rather than kept alongside them. A species does not
  * have a phase; a cell does, and only for as long as its conditions hold.
  */
 enum class FluidPhase {
@@ -425,34 +425,34 @@ fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
 }
 
 /**
- * Reduced density of [grams] of [species] in a cell holding [volume] out of
+ * Reduced density of [mass] of [species] in a cell holding [volume] out of
  * [org.emerge.demo.outofspace.world.VolumeField.FULL] — how packed it is, as a multiple of
  * its own critical density.
  *
  * Returns null for a species with no entry in [CRITICAL], which is the caller's signal to treat it
  * as an ideal gas.
  */
-fun reducedDensity(grams: Long, species: Species, volume: Int, full: Int): Long? {
+fun reducedDensity(mass: Long, species: Species, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
-    if (grams <= 0L) return 0L
-    // `grams / c.gramsPerTile` is a ratio of two masses, so the mass unit cancels out of it and
+    if (mass <= 0L) return 0L
+    // `mass / c.massPerTile` is a ratio of two masses, so the mass unit cancels out of it and
     // what comes back — a multiple of critical density — does not depend on what a unit means.
-    // Taking that ratio first is what makes this scale-invariant; written as `grams * SCALE` it was
+    // Taking that ratio first is what makes this scale-invariant; written as `mass * SCALE` it was
     // linear in the mass unit and the last non-ledger row still red at 10⁶ (safe k 69,100). The
     // division against critical density already came first for the same reason at a smaller scale;
     // this only finishes the thought. See [scaledRatio] and step 4b of PLAN_unit_rescale.md.
-    return scaledRatio(grams, c.gramsPerTile, SCALE) * full / volume
+    return scaledRatio(mass, c.massPerTile, SCALE) * full / volume
 }
 
 /**
- * The inverse of [reducedDensity]: how many grams of [species] a cell of [volume] out of [full]
+ * The inverse of [reducedDensity]: how much mass of [species] a cell of [volume] out of [full]
  * holds when it sits at reduced density [densityR].
  *
  * ### Why this is a function and not four expressions
  *
- * It was four expressions, and every one of them was `densityR * c.gramsPerTile / SCALE` — the same
- * multiply, arrived at independently in `Edit.WATER_INJECT_GRAMS`, `vapourGrams`,
- * `closePackedAirGrams` and a `PhaseEmergenceTest` helper. That product is a reduced fraction (up to
+ * It was four expressions, and every one of them was `densityR * c.massPerTile / SCALE` — the same
+ * multiply, arrived at independently in `Edit.WATER_INJECT_MASS`, `vapourMass`,
+ * `closePackedAirMass` and a `PhaseEmergenceTest` helper. That product is a reduced fraction (up to
  * 1e8) times a mass, so it is linear in the mass unit and reaches 3.9e19 for critical carbon dioxide
  * at one microgram per unit. Four sites, one defect, and step 8's audit found them one at a time
  * over two passes — the test copy last, by way of an `ArrayIndexOutOfBoundsException` in `ValveTest`
@@ -465,10 +465,10 @@ fun reducedDensity(grams: Long, species: Species, volume: Int, full: Int): Long?
  *
  * Returns null for a species with no critical point on file, matching [reducedDensity].
  */
-fun gramsAtReducedDensity(densityR: Long, species: Species, volume: Int, full: Int): Long? {
+fun massAtReducedDensity(densityR: Long, species: Species, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
     if (densityR <= 0L) return 0L
-    return scaledRatio(densityR, SCALE, c.gramsPerTile) * volume / full
+    return scaledRatio(densityR, SCALE, c.massPerTile) * volume / full
 }
 
 /** Reduced temperature — [kelvin] as a multiple of the species' critical temperature. */
@@ -478,7 +478,7 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
 }
 
 /**
- * The pressure [grams] of [species] contributes on its own, in the units
+ * The pressure [mass] of [species] contributes on its own, in the units
  * [org.emerge.demo.outofspace.world.tilePressure] reports.
  *
  * Partial pressures, which is what makes the nitrogen-holds-the-water-down case work without
@@ -489,15 +489,15 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
  * Returns null for a species with no critical point on file — an ideal gas, whose pressure the
  * caller should compute the old way.
  */
-fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
+fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
     // Clamped, so that adding mass to a cell can never *throw*. [reducedPressure] keeps its strict
     // domain — past close packing there is genuinely no pressure to report — but that contract
     // belongs between the equation and its own internals, not between the equation and a caller
-    // holding grams. Before step 5 the only thing standing between "pour water into a tile" and an
+    // holding mass. Before step 5 the only thing standing between "pour water into a tile" and an
     // exception mid-tick was `leastRoomFor` computing exactly the right volume at every call site,
     // which is the coupling NUMERIC_LIMITS.md §6.1 is really about. Now it is belt and braces.
-    val densityR = (reducedDensity(grams, species, volume, full) ?: return null)
+    val densityR = (reducedDensity(mass, species, volume, full) ?: return null)
         .coerceAtMost(MAX_REDUCED_DENSITY)
     val temperatureR = reducedTemperature(kelvin, species) ?: return null
     return c.pressure * reducedPressure(densityR, temperatureR) / SCALE
@@ -519,18 +519,18 @@ fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, ful
  * uniform — it is [liquidFraction] of its volume at [saturatedLiquidDensity] and the rest at
  * [saturatedVapourDensity] — and because the term is quadratic, the attraction of that mixture is
  * not the attraction of its mean density. The lever-rule version is what makes latent heat come out
- * *linear in the fraction boiled*, i.e. a constant joules-per-gram, which is what a latent heat is.
+ * *linear in the fraction boiled*, i.e. a constant energy-per-gram, which is what a latent heat is.
  * Applying it needs a temperature, which neither this nor [org.emerge.demo.outofspace.world.cohesionField]
  * currently takes, so it is left for whoever turns latent heat on — it belongs with teaching the
  * ledger its third term, not before, since nothing consumes the difference until then.
  */
-fun cohesionJoules(densityR: Long, species: Species, volume: Int, full: Int): Long {
+fun cohesionEnergy(densityR: Long, species: Species, volume: Int, full: Int): Long {
     val c = CRITICAL[species] ?: return 0L
     val attraction = 3L * densityR * densityR / SCALE
     return -(c.pressure * attraction / SCALE) * volume / full * Budget.JOULE
 }
 
 // The pressure field is millimoles scaled by temperature, so a pressure times a volume is already an
-// energy in joules up to the reference temperature — hence [Budget.JOULE] above, which was a bare
+// energy in energy up to the reference temperature — hence [Budget.JOULE] above, which was a bare
 // 1000 while the energy unit happened to be the millijoule.
 

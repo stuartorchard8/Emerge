@@ -227,7 +227,7 @@ class GridGrowTest {
     @Test
     fun `every ledger stays zero across a growth on any edge`() {
         // Built **through the reducer**, unlike the geometry cases above: a hull dropped straight
-        // into the machine list is ship fabric that `baselineJoules` never counted, so the world is
+        // into the machine list is ship fabric that `baselineEnergy` never counted, so the world is
         // already 287 MJ adrift before anything grows. The fixture would have read as a growth that
         // broke the heat ledger. This is also the path the player takes.
         for ((name, at, _) in edgeCases(fitted())) {
@@ -248,7 +248,7 @@ class GridGrowTest {
     private fun assertBalanced(s: VesselState, whenever: String) {
         assertEquals(0L, s.airBalance, "airBalance $whenever")
         EnergyLedgers.assertBalanced(s, whenever)
-        // Aboard is `inTransitGrams`, **not** `massGrams` — the latter adds the fabric of the ship
+        // Aboard is `inTransitMass`, **not** `mass` — the latter adds the fabric of the ship
         // itself, which no extractor ever produced, so it can never be zero. Stated wrongly once
         // before, which cost a whole session; the rest of the suite says it correctly.
         assertEquals(
@@ -414,13 +414,13 @@ class GridGrowTest {
         for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
             append('|').append(tile).append(':').append(cursor)
         }
-        append('|').append(s.atmosphereMass).append('|').append(s.atmosphereJoules)
+        append('|').append(s.atmosphereMass).append('|').append(s.atmosphereEnergy)
         append('|').append(s.storedEnergy).append('|').append(s.radiatedEnergy)
         append('|').append(s.vesselImpulseX).append('|').append(s.vesselImpulseY)
         append('|').append(s.extractedMass).append('|').append(s.ventedMass)
         append('|').append(s.stockpile.toString())
         for (b in s.bodies.sortedWith(compareBy({ b -> b.positionX }, { b -> b.positionY }))) {
-            append('|').append(b.positionX).append(',').append(b.positionY).append(',').append(b.massGrams)
+            append('|').append(b.positionX).append(',').append(b.positionY).append(',').append(b.mass)
         }
     }
 }
