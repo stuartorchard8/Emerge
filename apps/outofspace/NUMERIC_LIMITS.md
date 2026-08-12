@@ -1,7 +1,10 @@
 # Numeric limits and dynamic ranges
 
-Status: **survey + physical baselines** — 2026-08-12. §11 added after the species rebase (osmium,
-argon); everything else is unchanged from the original survey except the §5 correction.
+Status: **DONE — the rescale happened.** 2026-08-12. One integer is **one microgram** of mass and
+**one centijoule** of energy, set in `num/Budget.kt`. `k = 10⁶`, which is three orders past what §8
+recommended and an order past what §7 called the practical ceiling for the whole system. §12 records
+what changed and why those two estimates were beatable; the sections before it are left as they were
+written, because the reasoning that turned out to be wrong is more useful than a tidy document.
 
 Every number below was measured against the code as it stands, either by evaluating the real
 functions or by running a real scenario. Nothing here is an estimate unless it says so. The probes
@@ -23,11 +26,14 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 | Next | ship-wide joules at 3000 K — **safe k ≈ 1.2e3** at the absolute worst packing |
 | ~~Already broken at k=1~~ | ~~`reducedPressure` at the packing wall~~ — **fixed 2026-08-12**, §6.1 |
 | Already broken at k=1 | diffusion strands anything under 5 units (§6.2) |
-| Recommended | **k = 100** as-is; **k = 1000** after five fixes (§8, listed by the tripwire in §9) |
+| Recommended | ~~**k = 100** as-is; **k = 1000** after five fixes~~ — **SHIPPED at k = 10⁶**, see §12 |
 
 The headline for the stated goal: **negligibility is set by the diffusion stranding floor, which is
 5 *units* regardless of what a unit means.** As a fraction of a tile of ambient air that is
-`5 / (k · 1000)` — today 0.5%, at k=1000 five parts per million.
+`5 / (k · 1000)` — at k=1 it was 0.5%, and at the k=10⁶ that shipped it is **five parts per
+billion**. Pinned by `NumericLimitsTest :: the stranding floor falls away from the floor a player
+can see`, which prints the gap between the stranding floor and the visible one: `x1` before, `x10⁶`
+after.
 
 ---
 
@@ -294,6 +300,8 @@ old expression produced, so this moved no pressure anybody could already represe
 ever move**. That is a fixed number of units, not a fixed mass — it is the one quantity in the whole
 system that k improves directly and unconditionally.
 
+**RESOLVED by the rescale.** The gap between this floor and the visible one is now 10⁶ — §12.
+
 It is also, precisely, the trace gas the `Negligible` floor added on 2026-08-12 hides from the
 overlays. That floor was set at 0.5% of ambient because that is where percentages round to zero;
 the stranding floor is 5/1000 of ambient for unrelated reasons. **The overlay change is cosmetic
@@ -361,7 +369,7 @@ through the extractors. Worth stating as a bound rather than discovering later.
 
 ---
 
-## 7. What each k buys
+## 7. What each k buys — SUPERSEDED, see §12
 
 | k | unit | stranding floor, as fraction of a tile of air | cost |
 |---|---|---|---|
@@ -380,7 +388,7 @@ comfortable one.**
 
 ---
 
-## 8. If it goes ahead
+## 8. If it goes ahead — SUPERSEDED, see §12
 
 Recommended: **k = 1000, one unit = one milligram.** Three orders of improvement in exactly the
 direction wanted, every SI conversion stays a decimal shift, and it sits inside every constraint
@@ -402,7 +410,7 @@ unit.
 
 ---
 
-## 9. The tripwire
+## 9. The tripwire — figures superseded, see §12
 
 `NumericLimitsTest` (in `core/src/commonTest`) is this document made executable, and it is the
 warning system for the rescale itself. It rebuilds every worst case in §5 out of the game's own
@@ -434,7 +442,7 @@ red when somebody fixes it.
 
 Runtime is 50 ms for both tests, so it costs nothing to keep in the suite.
 
-## 10. How to re-measure
+## 10. How to re-measure — see §12; the table now prints on every run
 
 The analytic bounds are now pinned by §9. The *measured* peaks are not, and two probes produced
 them, both deleted after reading:
@@ -575,3 +583,84 @@ Worth knowing before spending effort on it.
   now walks `Species.ALL`. This is the second instance of the mistake `AirField.mixtureAt` documents —
   **a caller that enumerates the species it believes a field holds goes wrong the moment the field
   holds one more** — and it will not be the last.
+
+---
+
+## 12. What actually happened — the rescale, 2026-08-12
+
+One integer is now **one microgram** and **one centijoule**. `k = 10⁶`.
+
+§8 recommended `k = 1000` and said going past it in one step was "not recommended without a separate
+think". §7 put the practical ceiling for the whole system at `~1e5`, bounded by `reducedDensity`'s
+`grams * SCALE`. Both were beaten by three orders and one order respectively, and it is worth being
+precise about why, because the survey was not sloppy — it was measuring the right expressions.
+
+**Every ceiling in §5 and §7 was a ceiling on `mass × scale`, and nothing needed that product.**
+The repair is one function, `num/Fixed.kt`'s `scaledRatio(numerator, denominator, scale)`, which
+reduces the fraction *before* scaling. Applied to an expression, it does not raise the bound — it
+removes the exponent. `velocityX` went from `safe k ≈ 17` to `k⁰`; so did `frameAcceleration`,
+`gramsPerTileOf` and `reducedDensity`, the last of which is why §7's ceiling did not bind. A survey
+that asks "how much room is left" cannot see this, because the answer is not a number of orders, it
+is that the question stops applying.
+
+### The two units came apart
+
+§8's item 3 — "a decision about whether solid joules stay in millijoules" — turned out to be the
+load-bearing one, and not for its stated reason. `Budget` held the energy unit *equal* to the mass
+unit, so a millionfold finer gram made a millionfold finer joule, one integer became a nanojoule,
+and a rock's thermal energy stopped fitting a `Long`. That, and not any mass row, is what stopped
+step 8 on the first attempt.
+
+Splitting them into two knobs dissolved it. **An energy quantity is a number of joules divided by
+the energy unit, so its integer count does not depend on the mass unit at all** — every joules row
+was being read as `k¹` in mass and is `k⁰`. The centijoule was then chosen for margin rather than
+necessity; the millijoule would also have fitted, and the table that said otherwise was extrapolating
+energy rows by the mass scale.
+
+The price of splitting is one named constant, `Budget.CAPACITY_DIVISOR`, wherever a mass meets a
+per-gram energy constant. It equalled 1 for the whole of the game's previous life, which is why
+`grams * specificHeat` and `grams * heatPerGram` read as complete expressions when they were not.
+Both are now routed; `heatOfWorking` is the second of them.
+
+### Where the headroom actually went
+
+The table at one microgram and one centijoule, printed by `NumericLimitsTest` on every run
+(`--tests '*NumericLimitsTest*' -i`). The four tightest live rows:
+
+| row | headroom | note |
+|---|---|---|
+| `cargo: Storage.CAP across the grid` | 80.1 | k¹; the tightest thing in the game now |
+| `capacityPerTileOf: densest tile × mean specific heat` | 118 | k¹ |
+| `millimolesOf: packed liquid × millimoles/kg` | 124 | k¹ |
+| `ambientPressureOf: SHARE_ONE²` | 9.22 | k⁰ — a fixed constant, cannot move |
+
+Against a safety factor of 4. `ambientPressureOf`'s row looks alarming and is not: it is
+`SHARE_ONE²` with no mass in it, so it is the same 9.22 at every unit and always was.
+
+Note what the tightest rows have in common: they are **grid-wide aggregates and per-tile products
+of two large quantities**, not the fixed-point conversions the survey spent its length on. The
+conversions were fixable; these are the real floor. A further 10× on the mass unit would put
+`cargo` under the safety factor, so **10⁶ is the last comfortable order** — this time for a reason
+that will not yield to reducing a fraction first.
+
+### What the survey got wrong about itself
+
+§9 said the tripwire's knob was `targetMassScale`, "set it to the unit you are aiming at". That was
+true and became a trap: the rows are measured by running the game's own constants, which are counts
+in whatever unit `Budget` is set to, so once the knob moved the file demanded the rescale twice over
+and every row went red at once. It is now derived from `Budget` itself and is green at either
+setting. **A budget stated independently of the unit it is budgeting is not a budget.**
+
+The same error, in the same file, in the opposite direction: five rows computed `grams *
+specificHeat` and called it an energy. Missing the divisor, they read **green** over the live
+`heatPerGram` overflow — model and code wrong in the same way, so they agreed. §6.4 is the same
+lesson and this is its third outing; it is not a coincidence and it deserves stating plainly: **a
+tripwire built from the same assumptions as the code cannot see a mistake in the assumptions.**
+
+### Not fixed, and not caused by this
+
+Six tests fail with the knob turned, all in the free-body gravity and contact area, plus
+`ProcessorChainTest`. Eight failed at one gram per unit. The set is not a subset: `RockContactTest ::
+the ship feels the body and the momentum ledger closes` newly fails, while three others newly pass.
+The area is known-broken and is being carried separately; the count moving is not evidence either
+way about the rescale.

@@ -1,13 +1,17 @@
 # Unit rescale: one stated budget, and a microgram floor
 
-Status: **PLANNED, nothing built** — 2026-08-12.
+Status: **DONE — the knob is turned** — 2026-08-12. One integer is one microgram of mass and one
+centijoule of energy. `NUMERIC_LIMITS.md` §12 is the retrospective: what the survey got right, what
+it got wrong about its own ceilings, and where the headroom went.
 
 Companion to `NUMERIC_LIMITS.md`, which is the survey this plan acts on. Read §5 (the constraint
 ladder), §6 (what is already broken) and §11 (the physical anchors) first; this file assumes them and
 does not restate their numbers.
 
-**Guarded by `NumericLimitsTest`.** Its `targetMassScale` knob is the progress meter for the whole
-job: raise it and the failures are the remaining work, by name.
+**Guarded by `NumericLimitsTest`.** ⚠️ Its `targetMassScale` was a hand-set literal and is now
+*derived from `Budget`* — the distance still to travel. As a progress meter the literal worked only
+until the knob moved, at which point the file demanded the rescale twice and every row went red at
+once. Turn the knob in `Budget`; the failures are the remaining work, by name.
 
 ---
 
@@ -563,11 +567,29 @@ fields are fine-unit and which are coarse (step 3).
 **Test**: a fixture save from the current version loads and produces an identical world to one built
 natively.
 
-### 8. Turn the knob — **ATTEMPTED 2026-08-12, and it is not a one-line change**
+### 8. Turn the knob — **DONE 2026-08-12**, on the second attempt
 
-`NumericLimitsTest` at `targetMassScale = 10⁶` is **green** — the overflow budget holds, which is
-what steps 1–6b were for. The knob was then turned for real (`MICROGRAMS_PER_UNIT = 1`) and the
-suite went to **39 failures**, so the knob has been turned back and the step is not done.
+`MICROGRAMS_PER_UNIT = 1`, `NANOJOULES_PER_UNIT = 10_000_000`. Six tests fail, all of them in the
+free-body gravity and contact area that was already broken at one gram per unit (eight failed there
+before the change; the set shifts by one in and three out, and that movement is not evidence about
+the rescale either way). `compileTestKotlinJs` passes.
+
+**First attempt, kept because the shape of it is the useful part:** the budget was green at
+`targetMassScale = 10⁶` and the suite still went to 39 failures the moment the knob moved. The
+distance between those two numbers is the whole lesson of this step. A green overflow budget says no
+*intermediate wraps*; it says nothing about the far commoner failure, which is a **constant or a
+fixture that meant one thing in grams and something else entirely in micrograms** — and which the
+sim reports not as an error but as an *absence*. Six milligrams of oxygen is not one millimole, so
+the pressure is zero and the room "does not flow". Two hundred nanograms of nitrogen does not raise
+a boiling point. A pile that was a hundred belt-loads becomes a tenth of one, and "take a packet and
+leave the rest" passes with no rest to leave.
+
+The 39 came down in this order, each with its own commit: the `chem/` audit step 2 had missed (and
+structurally could not have done — `Budget` lived in `world/`, which `chem` must not depend on, so
+it was **moved to `num/`**); a shared `gramsAtReducedDensity` replacing five copies of one
+expression; `diffuseFluid`'s energy split; `gramsPerTileOf` restated against a reference density;
+the k² heat-solver terms; per-tile body joules; the energy unit decoupled from the mass unit and
+save v14 written to state both; `heatOfWorking`; and the fixtures. 39 → 27 → 20 → 14 → 9 → 6.
 
 #### The finding: step 2's audit covered `world/`, not `chem/`
 
@@ -857,10 +879,24 @@ rather than fix it.)
 that is what a tile of air becomes the instant an upstream mass constant is wrong. It now returns
 zero, turning a crash a long way from its cause into an ordinary result.
 
-### 9. Re-derive what the new floor buys
-With the unit changed, the diffusion stranding floor is 5 units = 5 pg, i.e. 5e-12 of a tile-load.
-Restate `Negligible` against it — it is already a fraction of ambient, so it should need no numeric
-change at all, which is the test of whether it was defined correctly.
+### 9. Re-derive what the new floor buys — **DONE 2026-08-12**
+
+⚠️ The figure written here was **5 pg**, and it is wrong: five units at one microgram each is
+**5 µg**, about 5e-9 of a tile-load rather than 5e-12. Three orders, from nothing more than a
+slipped prefix in a plan — which is a fair sample of why this whole job was worth doing with a
+tripwire rather than with arithmetic on paper.
+
+`Negligible` needed no numeric change, as predicted: it is written as a fraction of
+`AirField.AMBIENT_AIR`, so it is a *physical* floor of about six grams of gas and follows the unit
+down on its own. That was the test of whether it had been defined correctly, and it had.
+
+What was missing was the statement of why it matters, so it is now pinned rather than argued:
+`NumericLimitsTest :: the stranding floor falls away from the floor a player can see` asserts the
+**ratio** between the two floors, because either one alone would pass while the relationship rotted.
+At one gram per integer it prints `gap x1` — the stranded gas and the visible floor were the same
+size, which is `NUMERIC_LIMITS.md` §6.2's finding that the `Negligible` overlay was cosmetic cover
+for a quantisation artefact. At one microgram it prints `gap x1,000,000`. That ratio is the rescale,
+in one number.
 
 ---
 

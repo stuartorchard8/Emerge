@@ -60,21 +60,29 @@ object Budget {
     /**
      * **The mass knob.** One integer of mass, in micrograms.
      *
-     * `1_000_000` is one gram per integer — today's unit. Step 8 lowers it to `1`, making one integer
-     * one microgram and buying six orders at the bottom of the range, which is what turns
-     * "negligible" into something genuinely negligible rather than half a percent of a tile.
+     * **`1` — one microgram per integer, set at step 8 on 2026-08-12.** It was `1_000_000`, one gram
+     * per integer, for the whole of the game's life before that.
+     *
+     * The six orders bought at the bottom of the range are what turn "negligible" into something
+     * genuinely negligible. Diffusion cannot move fewer than `SLOTS` integers of a species, so the
+     * stranding floor is five *integers* no matter what an integer means; at a gram it was five grams,
+     * which is the same size as the floor below which the readouts stop drawing anything at all. The
+     * two coincided, and `Negligible` was therefore hiding a quantisation artefact rather than
+     * describing a physical threshold — see `NUMERIC_LIMITS.md` §6.2 and
+     * `NumericLimitsTest :: the stranding floor falls away from the floor a player can see`. At a
+     * microgram the stranding floor is a millionfold below anything a player can see.
      *
      * Stated as micrograms-per-unit rather than as a multiplier so that it only ever goes *down*, and
-     * so the target is a real physical unit rather than an anonymous factor.
+     * so the unit is a real physical one rather than an anonymous factor.
      */
-    const val MICROGRAMS_PER_UNIT: Long = 1_000_000L
+    const val MICROGRAMS_PER_UNIT: Long = 1L
 
     /**
      * **The energy knob.** One integer of energy, in nanojoules.
      *
-     * `1_000_000` is one millijoule per integer — today's unit, and where the whole game's thermal
-     * behaviour has always lived. Step 8 raises it to `10_000_000`, one **centijoule** per integer:
-     * ten times *coarser*, not finer.
+     * **`10_000_000` — one centijoule per integer, set at step 8 on 2026-08-12.** It was `1_000_000`,
+     * a millijoule, and that is where the whole game's thermal behaviour had always lived. This is
+     * ten times *coarser*, the one move in this plan that goes that way.
      *
      * Coarser deserves its own justification, since every other move in this plan is toward finer.
      * The floor the rescale exists for is a **mass** floor — diffusion stranding, `Negligible`, a
@@ -83,9 +91,17 @@ object Budget {
      * their joules per tile, a rock tile supports a mass scale of 966,000 against a target of 10⁶.
      * Ten times coarser turns that into 9.66e6 and takes `atmosphere joules` out of the red with it.
      *
+     * ⚠️ Coarser was **margin, not the fix**. The wall it was chosen to clear was measured with a
+     * `NumericLimitsTest` that extrapolated every row by the *mass* scale — correct only while the
+     * two units were locked, which is precisely what this change undoes. An energy quantity is a
+     * number of joules divided by the energy unit, so its integer count does not depend on the mass
+     * unit at all, and simply decoupling the two knobs cleared every energy row on its own. The
+     * centijoule is kept because nothing wants a finer joule and the headroom is worth having, but
+     * it was not required, and the table that said otherwise was wrong.
+     *
      * ⚠️ Must stay a whole multiple of [MICROGRAMS_PER_UNIT], since [CAPACITY_DIVISOR] divides them.
      */
-    const val NANOJOULES_PER_UNIT: Long = 1_000_000L
+    const val NANOJOULES_PER_UNIT: Long = 10_000_000L
 
     /** One gram, in whatever the current unit is. The base every mass constant is written against. */
     const val GRAM: Long = 1_000_000L / MICROGRAMS_PER_UNIT
