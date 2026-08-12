@@ -589,17 +589,48 @@ correction lets the next layer of the sim run far enough to fail. That is the tr
 in a different costume — a budget derived from the auditor's list read green over the constants the
 auditor never listed.
 
+#### The `chem` audit — DONE
+
+`Budget` **moved from `world` to `num`** first, because the miss was structural rather than careless:
+`chem` deliberately does not depend on `world`, so a mass constant in `chem` *could not* have been
+written against `Budget.GRAM` even if somebody had thought to. A statement of what one integer means
+has to sit below everything that counts in integers.
+
+| site | what it was | what it is |
+| --- | --- | --- |
+| `Critical.gramsPerTile` | `kgPerCubicMetre * TILE_LITRES` | `× Budget.GRAM`. A cubic metre is a thousand litres, so `kg/m³ × litres` is already grams and the only missing factor was the unit. At 10⁶ a tile of critical water weighed 267 **milligrams**, which is why every phase test read `Vapour`. |
+| `millimolesIn`, `millimolesOf` | `grams × mmol/kg / MILLI` | `/ (MILLI × Budget.GRAM)`. **The one place in the game where the mass unit is divided *out***, because a mole is a particle count and must read the same number at every unit. Folded into the existing divide rather than added as a step, so at one gram per unit the arithmetic is bit-for-bit unchanged and no pressure moves. |
+| `vapourGrams` | `vapourR * gramsPerTile / SCALE * …` | two `scaledRatio` calls. `1e8 × gramsPerTile` is 3.9e19 for critical CO₂ at a microgram — a silent wrap. |
+| `process` | `impurities * (d - n) / (2d)` | `scaledRatio(d - n, 2d, impurities)`. `d` **is** `total` whenever the ore's own purity binds, so this was a product of two masses: quadratic in the unit, and it wraps in the direction that invents matter. |
+
+Guarded by two new `BudgetParityTest` assertions, both stated against the species table rather than
+against remembered figures: every critical density is `kg/m³ × TILE_LITRES` grams, and a kilogram of
+each species is `1000/molarMass` moles. Both are green at 10⁶ as well as at today's unit.
+
+Value-preserving at the current knob: 432 tests, the standing 7 failures, no new ones. JS compiles.
+
 #### What remains
 
-1. Audit `chem/` the way step 2 audited `world/`: critical densities, the molar bridge, and anything
-   else that reads as grams. This is the substantive half and it is not large — the chemistry has
-   few constants — but it is exacting.
-2. Then re-run and work through the residual **test literals**. Step 2 left "the rest of the ~134
+1. **The residual test literals — and test *expressions*.** Step 2 left "the rest of the ~134
    literals" for this step deliberately. These are moved expected values in the strict sense, so
    they come to Stu rather than being edited quietly — though most are of the form
    `expected: <100000000000> but was: <10000000>`, i.e. a test that restated a constant it does not
    own, and the fix is to express it in `Budget` terms rather than to pick a new number.
-3. Only then re-measure `NUMERIC_LIMITS.md` §10 and update both documents.
+2. Only then re-measure `NUMERIC_LIMITS.md` §10 and update both documents.
+
+At 10⁶ the count is now **54** (from 58 before this audit, 39 before `AMBIENT_AIR`). The number goes
+up as often as down and that is not a regression: each correction lets the next layer run far enough
+to fail, so the count measures reach rather than damage. `BudgetParityTest` and the overflow budget
+are both green there — the only red tripwire row is `atmosphere joules`, a parked ledger.
+
+⚠️ **The remaining failures are not all literals**, which is the one thing this audit changed about
+the shape of the work. `PhaseEmergenceTest` line 165 computes `branch * gramsPerTile / SCALE` — the
+*same* k¹ defect just fixed in `vapourGrams`, living in a test helper, wrapping to a negative mass
+and sending a negative temperature into `Saturation.sample`, which is where the
+`ArrayIndexOutOfBoundsException: Index -199 out of bounds for length 65` in `ValveTest` and
+`PumpTest` comes from. So the test sources need the same audit the main sources got, not just a pass
+of re-baselining, and a single wrapped helper accounts for a whole cluster of unrelated-looking
+red.
 
 **Fixed in passing**: `scaledRatio` divided by zero when handed a zero `scale`. Not hypothetical —
 `vanDerWaalsPressure` passes `8 × temperatureR`, which rounds to zero for a cold enough gas, and

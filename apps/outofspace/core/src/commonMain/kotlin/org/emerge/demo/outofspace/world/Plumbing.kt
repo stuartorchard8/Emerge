@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
+
 /**
  * Pump: draws gas from faced tile, delivers to pipe beneath.
  * Machine (not valve): has rate, direction, wiring.

@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.num
 
 /**
  * **What one integer means.** The single place the simulation states its units.
@@ -17,6 +17,16 @@ package org.emerge.demo.outofspace.world
  * is a 64th of what a tile of saturated liquid weighs. Those three need no rescaling at all, because
  * they are ratios and a ratio has no unit. Everything derived that way is one less thing that can
  * silently go wrong at step 8.
+ *
+ * ### Why this lives in `num` and not in `world`
+ *
+ * It was in `world` until step 8's audit of `chem`, and being there is what let that audit's misses
+ * happen. `chem` deliberately does not depend on `world` — `StateEquation` restates
+ * `Temperature.AMBIENT_KELVIN` rather than import it — so a mass constant in `chem` **could not**
+ * have been written against [GRAM] even if somebody had thought to. `Critical.gramsPerTile` was
+ * therefore a bare literal not because it was overlooked but because the layering forbade the
+ * alternative. A statement of what one integer means has to sit below everything that counts in
+ * integers, which is both packages.
  *
  * ### What is deliberately NOT here
  *

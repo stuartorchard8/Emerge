@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /**
  * The saturation curve: where a fluid holds liquid and vapour side by side, and at what pressure.
  *
@@ -236,7 +238,14 @@ fun vapourGrams(grams: Long, species: Species, volume: Int, full: Int, kelvin: I
     val critical = CRITICAL[species] ?: return grams
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
     // its way to nothing before the density has been divided down.
-    val mass = vapourR * critical.gramsPerTile / SCALE * (SCALE - liquidShare) / SCALE * volume / full
+    //
+    // Both reduced fractions go through [scaledRatio] rather than being multiplied into the mass:
+    // each is a ratio of two [SCALE] quantities, so the mass unit belongs entirely to the third
+    // term and the product is linear in it rather than carrying it twice. Written the obvious way
+    // this was `1e8 × gramsPerTile`, which is 3.9e19 for critical carbon dioxide at one microgram
+    // per unit — a wrap, and a silent one. Exact at today's unit, where no reduction is needed.
+    val vapourMass = scaledRatio(vapourR, SCALE, critical.gramsPerTile)
+    val mass = scaledRatio(SCALE - liquidShare, SCALE, vapourMass) * volume / full
     return minOf(mass, grams)
 }
 

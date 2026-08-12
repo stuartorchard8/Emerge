@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
+
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
  * of the world is a snapshot of the world.

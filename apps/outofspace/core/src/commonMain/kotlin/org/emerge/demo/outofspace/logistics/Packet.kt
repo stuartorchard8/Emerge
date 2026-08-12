@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.logistics
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
-import org.emerge.demo.outofspace.world.Budget
+import org.emerge.demo.outofspace.num.Budget
 
 /**
  * Matter in transit: discrete lumps on belts/pipes. Solid=Resource (Form matters), fluid=Mixture (source-dependent).

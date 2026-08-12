@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
@@ -22,6 +23,21 @@ private val MILLIMOLES_PER_KILOGRAM: LongArray = LongArray(Species.COUNT) { i ->
 }
 
 private const val MILLI = 1000L
+
+/**
+ * What divides a mass out of the millimole conversion — [MILLI], and [Budget.GRAM] with it.
+ *
+ * ⚠️ **A mole is a particle count and is not mass-dimensioned.** It must read the same number
+ * whatever an integer of mass is worth, so this is one of only two places in the game where the mass
+ * unit is deliberately divided *out* rather than multiplied in — the other being `millimolesIn`,
+ * which is this same conversion restated in `chem`. Everything downstream is built on the invariance:
+ * the pressure scale, `AMBIENT_PRESSURE`, `Negligible.MILLIMOLES`, `Critical.pressure`, and through
+ * that last one `MAX_REDUCED_PRESSURE`, which would collapse by the same factor the unit moved.
+ *
+ * Folded into the existing divide rather than applied as a separate step, so that at one gram per
+ * unit this is bit-for-bit the arithmetic it has always been and no pressure in the vessel moves.
+ */
+private val MOLAR_DIVISOR: Long = MILLI * Budget.GRAM
 
 /**
  * What a tile of ordinary air weighs at one atmosphere — the mass [applyPressureForce] scales the
@@ -233,7 +249,7 @@ private const val NEWTON_STEPS = 2
  * moved no existing pressure by more than a tenth of a percent.
  */
 private fun idealPressure(grams: Long, species: Species, kelvin: Int, volume: Int): Long {
-    val moles = grams * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MILLI
+    val moles = grams * MILLIMOLES_PER_KILOGRAM[species.ordinal] / MOLAR_DIVISOR
     return moles * kelvin / AMBIENT_KELVIN * VolumeField.FULL / volume
 }
 
@@ -244,7 +260,7 @@ private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 fun millimolesOf(grams: LongArray, tile: Int): Long {
     val base = tile * Species.COUNT
     var sum = 0L
-    for (s in Species.ALL) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI
+    for (s in Species.ALL) sum += grams[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
     return sum
 }
 

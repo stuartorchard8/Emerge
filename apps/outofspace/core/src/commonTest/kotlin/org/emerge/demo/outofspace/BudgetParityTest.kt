@@ -1,7 +1,10 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.Budget
+import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.TILE_LITRES
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Extractor
 import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
@@ -11,6 +14,7 @@ import org.emerge.demo.outofspace.world.Processor
 import org.emerge.demo.outofspace.world.Smelter
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Vaporizer
+import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -73,6 +77,46 @@ class BudgetParityTest {
 
         // ── Energy-dimensioned, so measured against the energy unit and not the mass one ──
         assertEquals(20_000L, Material.AIR_FILM.millijoules, "the air film is 20 J/K/tick")
+
+        // ── chem: the critical densities, audited in step 8 ──
+        //
+        // A tile at critical density holds `kg/m³ × TILE_LITRES` grams, because a cubic metre is a
+        // thousand litres. Stated for every species on file rather than for one, since the miss
+        // being guarded against was in the shared constructor and would take the whole table with it.
+        for ((species, c) in CRITICAL) {
+            val kgPerCubicMetre = when (species) {
+                Species.Water -> 322
+                Species.Nitrogen -> 313
+                Species.Oxygen -> 436
+                Species.CarbonDioxide -> 468
+                Species.Argon -> 536
+                else -> error("no critical density stated for $species")
+            }
+            assertEquals(kgPerCubicMetre * TILE_LITRES, c.gramsPerTile.grams, "critical $species")
+        }
+    }
+
+    /**
+     * A mole is a particle count, and the mass unit does not reach it.
+     *
+     * The one place in the game where [Budget.GRAM] is divided *out* instead of multiplied in — see
+     * `MOLAR_DIVISOR`. Asserted against the species table rather than against a remembered figure,
+     * so it states the conversion rather than its current value: a kilogram of nitrogen is
+     * `1000/28` moles no matter what an integer of mass is worth. Without the divisor this comes out
+     * a millionfold high at step 8's unit, and the pressure scale, `Negligible.MILLIMOLES` and
+     * `MAX_REDUCED_PRESSURE` all move with it.
+     */
+    @Test
+    fun `a mole is a particle count and does not move with the mass unit`() {
+        for (species in Species.ALL) {
+            val tile = LongArray(Species.COUNT)
+            tile[species.ordinal] = Budget.KILOGRAM
+            assertEquals(
+                1_000L * 1_000L / species.molarMass,
+                millimolesOf(tile, 0),
+                "millimoles in a kilogram of $species",
+            )
+        }
     }
 
     /**

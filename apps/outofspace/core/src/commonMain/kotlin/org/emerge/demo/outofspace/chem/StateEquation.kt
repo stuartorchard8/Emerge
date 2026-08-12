@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -165,8 +166,19 @@ class Critical(val kelvin: Int, val gramsPerTile: Long, private val species: Spe
  * Millimoles of [species] in [grams] of it — the same conversion
  * [org.emerge.demo.outofspace.world.millimolesOf] performs, kept here so the critical point
  * can be expressed in the same currency as everything downstream of it.
+ *
+ * ⚠️ **This is the mass unit's only exit from the mass system**, here and in its twin. A mole is a
+ * particle count: it does not move when [Budget.GRAM] moves, and everything built on it — the whole
+ * pressure scale, [Critical.pressure], [MAX_REDUCED_PRESSURE], `Negligible.MILLIMOLES` — is
+ * supposed to read the same number at every mass unit. So [Budget.GRAM] has to be divided *out*
+ * here, and it is the one place in the game where that is true.
+ *
+ * Folded into the existing [MILLI] divide rather than applied as a separate step, so that at one
+ * gram per unit the arithmetic is bit-for-bit what it has always been and no pressure anywhere
+ * moves. Left as its own division and the truncation would land differently.
  */
-private fun millimolesIn(grams: Long, species: Species): Long = grams * (MILLI * MILLI / species.molarMass) / MILLI
+private fun millimolesIn(grams: Long, species: Species): Long =
+    grams * (MILLI * MILLI / species.molarMass) / (MILLI * Budget.GRAM)
 
 private const val MILLI = 1000L
 
@@ -346,8 +358,14 @@ val MAX_REDUCED_PRESSURE: Long = Long.MAX_VALUE / 4 / CRITICAL.values.maxOf { it
  */
 const val TILE_LITRES: Long = 830
 
+/**
+ * `kg/m³ × litres` is grams, because a cubic metre is a thousand litres — so the textbook density
+ * and [TILE_LITRES] give the answer in grams with no factor in between. [Budget.GRAM] is then what
+ * turns those grams into integers, and it is the whole of this function's participation in the mass
+ * unit. Before step 8's audit it was absent, and a tile of critical water weighed 267 milligrams.
+ */
 private fun critical(kelvin: Int, kgPerCubicMetre: Int, species: Species): Critical =
-    Critical(kelvin = kelvin, gramsPerTile = kgPerCubicMetre * TILE_LITRES, species = species)
+    Critical(kelvin = kelvin, gramsPerTile = kgPerCubicMetre * TILE_LITRES * Budget.GRAM, species = species)
 
 /**
  * What a cell's fluid is *behaving* as. Read, never stored.

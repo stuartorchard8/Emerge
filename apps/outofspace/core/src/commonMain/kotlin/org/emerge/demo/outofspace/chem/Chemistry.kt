@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /**
  * A pile of matter: what it has been made into, and what it is made of.
  *
@@ -102,8 +104,15 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
     val d: Long = if (machineIsLower) 1000L else total
 
     // Share of the impurities that stays with the product: (1 - efficiency) / 2.
+    //
+    // Through [scaledRatio] because `d` is `total` whenever the ore's own purity is the binding
+    // constraint — which is the interesting half of the branch above — and `impurities × total` is
+    // then a product of two masses. That is quadratic in the mass unit: at one microgram per unit a
+    // twenty-tonne storage of dirty ore wraps a Long, and does so in the direction that invents
+    // matter. The value is unchanged wherever the old form did not overflow, since [scaledRatio]
+    // splits the same division into a whole part and a remainder rather than approximating it.
     val totalImpurities = total - dominantMass
-    val impuritiesForProduct = totalImpurities * (d - n) / (2L * d)
+    val impuritiesForProduct = scaledRatio(d - n, 2L * d, totalImpurities)
 
     // The product is half the total mass; whatever of that is not impurity is dominant species.
     // Both quantities are provably in range for exact arithmetic (flooring can only shrink them),

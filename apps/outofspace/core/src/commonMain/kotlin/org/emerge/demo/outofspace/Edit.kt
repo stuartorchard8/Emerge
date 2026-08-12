@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Budget
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.InputKey
