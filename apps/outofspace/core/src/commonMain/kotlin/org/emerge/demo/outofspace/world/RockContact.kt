@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /**
  * Rock-hull contact: swept overlap test + normal impulse with restitution (H2).
  * Ricochet: restitution=0.5 (tuned for legibility, not measured; rock on steel ~0.2-0.4).
@@ -62,7 +64,10 @@ private fun normalImpulse(rv: Long, mu: Long, rest: Long): Long {
     val speed = abs(rv)
     val num = if (speed < rest) RockContact.RESTITUTION_DEN
     else RockContact.RESTITUTION_DEN + RockContact.RESTITUTION_NUM
-    val magnitude = speed * mu * num / (RockContact.RESTITUTION_DEN * Flight.PER_TILE)
+    // Still one chain and one rounding — [scaledRatio] does the whole fraction in one go. The mass
+    // is [mu], and it is the term that wraps: a speed is at most a few tiles a tick, but a reduced
+    // mass is kilograms, and kilograms are 1e9 of anything now.
+    val magnitude = scaledRatio(mu, RockContact.RESTITUTION_DEN * Flight.PER_TILE, speed * num)
     return if (rv > 0L) -magnitude else magnitude
 }
 
@@ -119,9 +124,15 @@ fun sweepBody(
     var gotX = 0L
     var gotY = 0L
 
-    val mu = if (shipMassGrams <= 0L) mass else mass * shipMassGrams / (mass + shipMassGrams)
+    // The reduced mass, and the one expression here that is *quadratic* in the mass unit: a product
+    // of two masses over their sum. Written plainly it wraps for any pair heavier than a few grams
+    // once a unit is a microgram, so it is a reduced fraction — the ratio it computes is what the
+    // physics wants and the ratio has no unit.
+    val mu = if (shipMassGrams <= 0L) mass else scaledRatio(mass, mass + shipMassGrams, shipMassGrams)
 
-    fun relative(impulse: Long, shipVelocity: Long): Long = impulse * Flight.PER_TILE / mass - shipVelocity
+    // [RigidBody.velocityX]'s expression, on an impulse that is being carried through the sweep.
+    fun relative(impulse: Long, shipVelocity: Long): Long =
+        scaledRatio(impulse, mass, Flight.PER_TILE) - shipVelocity
 
     val startRvx = relative(ix, shipVelocityX)
     val startRvy = relative(iy, shipVelocityY)

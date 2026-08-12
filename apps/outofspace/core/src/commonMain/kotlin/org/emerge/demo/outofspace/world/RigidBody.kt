@@ -239,8 +239,13 @@ fun driftBodies(
         val mass = body.massGrams
         if (mass <= 0L) return@map body
         val felt = platingFeltBy(grid, body.centreX, body.centreY, platingGravity)
-        val platingX = mass * felt.x.raw / Flight.FRAC_ONE
-        val platingY = mass * felt.y.raw / Flight.FRAC_ONE
+        // ⚠️ The mass is the *scale*, not the numerator. `mass × raw` is a mass times a fixed-point
+        // one — one whole g of plating is a raw of [Flight.FRAC_ONE], 2.1e9 — so written the obvious
+        // way round it wraps for any body over about four kilograms at a microgram per unit. An 83 kg
+        // rock therefore did not fall at all, and `RockContactTest` reported that as "the body never
+        // landed": a wrapped impulse reads as an *absence*, which is the rescale's standing lesson.
+        val platingX = scaledRatio(felt.x.raw, Flight.FRAC_ONE, mass)
+        val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
         val swept = sweepBody(
             grid, structure, body,
             shipVelocityX, shipVelocityY, shipMassGrams,

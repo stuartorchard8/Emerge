@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Hull
@@ -204,8 +205,12 @@ class RockContactTest {
             positionX = x * Flight.PER_TILE - half,
             positionY = y * Flight.PER_TILE - half,
             composition = OutofspaceReducer.DEFAULT_ORE_BODY,
-            impulseX = blank.massGrams * velocityX / Flight.PER_TILE,
-            impulseY = blank.massGrams * velocityY / Flight.PER_TILE,
+            // ⚠️ The inverse of [RigidBody.velocityX], and it needs the same reduction: this rock is
+            // 8.3e13 units, and a quarter-tile-a-tick velocity is 2.5e8, so the plain product is 2e22
+            // and the fixture handed the body a wrapped impulse. It then sat exactly where it was put
+            // and the test said "the body never touched the wall".
+            impulseX = scaledRatio(velocityX, Flight.PER_TILE, blank.massGrams),
+            impulseY = scaledRatio(velocityY, Flight.PER_TILE, blank.massGrams),
         )
     }
 
