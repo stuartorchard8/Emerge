@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
+import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.solidGramsPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
 import kotlin.test.Test
@@ -91,11 +92,43 @@ class NumericLimitsTest {
 
     private val gridTiles: Long = OutofspaceConfig().initialGrid.size.toLong()
 
-    /** The heaviest single thing that can stand on a tile, and the most heat it can hold. */
-    private val heaviestMachineGrams: Long =
-        MachineKind.ALL.maxOf { it.gramsPerTile * it.thermalTiles }
+    /** The most heat a single machine can hold — the bound on one `Machine.joules` field. */
     private val heaviestMachineCapacity: Long =
         MachineKind.ALL.maxOf { it.capacityPerTile * it.thermalTiles }
+
+    /**
+     * How many tiles of *floor* a machine consumes, as against how many tiles of material it is
+     * made of.
+     *
+     * The two are the same for everything except a bridge, which is three tiles of rail spanning a
+     * gap while occupying none of it (`thermalTiles`, `MachineKind.size`). That exception is the
+     * whole reason this is a separate number: divide by the wrong one and a bridge either vanishes
+     * from the budget or is counted as if it were three deck plates.
+     */
+    private fun MachineKind.footprintTiles(): Long =
+        if (this == MachineKind.Bridge) 1L else (size * size).toLong()
+
+    /**
+     * The most mass, and the most heat capacity, that a **single tile** of a packed grid can carry.
+     *
+     * ⚠️ This is the correction that step 1 of `PLAN_unit_rescale.md` exists to make, and it is worth
+     * stating plainly because the wrong version was load-bearing for a conclusion in the survey.
+     *
+     * The bulk rows used to read `heaviestMachineGrams * gridTiles`: a whole smelter's mass charged
+     * to **every tile in the grid**. But a smelter is five tiles across, so a grid packed solid with
+     * smelters holds `gridTiles / 25` of them, not `gridTiles`. Multiplying the whole-machine figure
+     * by the tile count double-counts the footprint and overstates the bound by exactly `thermalTiles`
+     * — 25× for the machines that dominate the maximum.
+     *
+     * Dividing the per-machine figure by its footprint gives the honest quantity: a density, in
+     * grams (or joules per kelvin) **per tile of deck**, which is then multiplied by the grid. For
+     * everything but a bridge that reduces to `capacityPerTile` exactly, since `thermalTiles` and the
+     * footprint are the same number — which is the sanity check that this is the right divisor.
+     */
+    private val densestTileGrams: Long =
+        MachineKind.ALL.maxOf { it.gramsPerTile * it.thermalTiles / it.footprintTiles() }
+    private val densestTileCapacity: Long =
+        MachineKind.ALL.maxOf { it.capacityPerTile * it.thermalTiles / it.footprintTiles() }
 
     /**
      * A ship the game actually flies, rather than the heaviest one that could be drawn.
@@ -203,12 +236,27 @@ class NumericLimitsTest {
         )
 
         // ── Heat ──────────────────────────────────────────────────────────
-        budget("tile joules: heaviest machine at max kelvin", heaviestMachineCapacity * designMaxKelvin, 1)
+        // A single machine's `joules` field, which is what actually gets stored and is the row
+        // §2 shows governs the target: per-tile energy has three orders of headroom to spare.
+        budget("machine joules: heaviest machine at max kelvin", heaviestMachineCapacity * designMaxKelvin, 1)
+        // The densest a tile can be, machine and air together — the true per-tile energy ceiling,
+        // and the one a rescale has to keep representable no matter how big the map gets.
+        budget(
+            "tile joules: densest deck tile + its air at max kelvin",
+            (densestTileCapacity + AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong()) *
+                designMaxKelvin,
+            1,
+        )
         // Scales with grid AREA as well as with the mass unit — the one row where growing the map
-        // spends overflow headroom.
+        // spends overflow headroom. Uses the per-tile density, not the per-machine capacity: see
+        // [densestTileCapacity] for why the old form overstated this by 25x.
+        // ⚠️ This is a LEDGER aggregate (`storedJoules`), not a stored simulation quantity, and
+        // PLAN_unit_rescale.md §2 puts those out of scope — it is expected to be the last row red
+        // when the knob moves, and step 3 decides what to do about it. Corrected, it now agrees with
+        // the 7.56e12 J the plan quotes, which the old 25x form did not.
         budget(
             "ship joules: that across the whole grid",
-            heaviestMachineCapacity * designMaxKelvin * gridTiles, 1,
+            densestTileCapacity * designMaxKelvin * gridTiles, 1,
         )
         budget(
             "atmosphere joules: ambient air across the whole grid",
@@ -217,7 +265,7 @@ class NumericLimitsTest {
         )
 
         // ── Bulk mass ─────────────────────────────────────────────────────
-        budget("solid mass: heaviest machine across the grid", heaviestMachineGrams * gridTiles, 1)
+        budget("solid mass: densest deck across the whole grid", densestTileGrams * gridTiles, 1)
         budget("cargo: Storage.CAP across the grid", Storage.CAP * gridTiles, 1)
         budget("densest single tile (bound, not an intermediate)", densestSolidTile, 1)
 
@@ -244,15 +292,24 @@ class NumericLimitsTest {
      * heavier than this simply cannot reach [designTopSpeed]: the product wraps and the vessel's
      * velocity flips sign.
      *
-     * A grid packed solid with the heaviest machine is **already past it** at one gram per unit, so
-     * this asserts the reference ship rather than the worst buildable one, and reports how much of
-     * the range the worst buildable one would need. Anybody raising [targetMassScale] should read the
-     * printed ratio: it is the first thing the rescale spends.
+     * ⚠️ **Corrected at step 1 of `PLAN_unit_rescale.md`.** This doc used to say a grid packed solid
+     * with the heaviest machine was *already past* the limit at one gram per unit, on a `17.5x`
+     * figure. That figure came from the 25x footprint error described at [densestTileCapacity]: it
+     * charged a whole smelter's mass to every tile. Corrected, the worst buildable ship is
+     * **3.23e9 g against a 4.61e9 g budget — 0.7x, inside it.**
+     *
+     * So the heaviest-ship velocity wrap **is not a live bug at one gram per unit**, and the survey
+     * was wrong to list it as one. What remains true, and is why this test exists, is that flight is
+     * still the tightest row in the whole budget: `velocityX` supports a mass scale of only ~17, so
+     * it is the first thing a rescale spends and the reason step 4 exists.
+     *
+     * This asserts the reference ship rather than the worst buildable one, and prints how much of
+     * the range each needs. Anybody raising [targetMassScale] should read the printed ratio.
      */
     @Test
     fun `the flight model can fly the reference ship at design speed`() {
         val flyableGrams = Long.MAX_VALUE / (Flight.PER_TILE * designTopSpeed)
-        val heaviestBuildable = heaviestMachineGrams * gridTiles
+        val heaviestBuildable = densestTileGrams * gridTiles
         println(
             "flyable ship mass %,d g; reference ship %,d g (%.1f%% of budget); ".format(
                 flyableGrams, referenceShipGrams, 100.0 * referenceShipGrams / flyableGrams,

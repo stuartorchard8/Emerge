@@ -18,7 +18,7 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 | | |
 |---|---|
 | Physical anchors | §11 — what reality pins these ranges to, and why k=1000 falls out of specific heat |
-| Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); already impossible for the heaviest buildable vessel, see §5 |
+| Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); the heaviest buildable vessel fits today at 0.7× — see the correction in §5 |
 | Next | `apportion`: `weight * target` — **safe k ≈ 152** (k², at a full Storage) |
 | Next | ship-wide joules at 3000 K — **safe k ≈ 49** at the absolute worst packing |
 | Already broken at k=1 | `reducedPressure` at the packing wall (§6.1) |
@@ -190,12 +190,23 @@ out at 0.83 tiles/tick — below the speed the nav instrument is drawn for.
 > | ceiling (`Long.MAX / (PER_TILE × 2)`) | 4,611,686,018 | — |
 > | reference ship (⅛ of the grid in hull) | 275,351,760 | 6.0% of the ceiling |
 > | measured bare 96×60 hull | 110,523,137 | 2.4% |
-> | grid packed solid with extractors | 80,855,280,000 | **17.5× over — already impossible today** |
+> | grid packed solid with extractors | 3,234,211,200 | 70% of the ceiling — inside it |
+
+> ⚠️ **Second correction, 2026-08-12, and it retracts a bug.** The row above read *80,855,280,000 g,
+> 17.5× over — already impossible today*, and the paragraph under it said there was a buildable
+> vessel whose velocity wraps and which flies backwards. **There is not.** That figure charged a
+> whole extractor's mass — five tiles by five — to *every one of the 5760 tiles*, when a grid packed
+> solid with extractors holds 230 of them. It overstated the mass by exactly `thermalTiles`, 25×.
+> Corrected, the worst buildable vessel is inside the flight budget with room to spare.
 >
-> So there is a buildable vessel that the flight model cannot fly *at one gram per unit*, with no
-> rescale involved: its velocity wraps and it flies backwards. Nobody builds a solid block of
-> extractors, which is why this has never been seen, but it is a real edge and it is the first thing
-> a rescale spends.
+> The same error sat in `NumericLimitsTest`'s `ship joules` and `solid mass` rows; all three are
+> fixed, and `ship joules` now agrees with the 7.56e12 J quoted in `PLAN_unit_rescale.md` §2, which
+> it previously contradicted by the same 25×.
+>
+> **What survives**: flight is still the tightest row in the budget by a wide margin — `velocityX`
+> supports a mass scale of only ~17. The constraint is real; the claim that it is *already violated*
+> was not. This is the second time this document has been corrected by its own tripwire, which is
+> the argument for having built it.
 
 **#2 is a whole-ship sum, so it scales with grid area as well as k.** The 5760-tile figure is
 today's default grid; the dynamic grid can grow, and this bound shrinks proportionally. A world

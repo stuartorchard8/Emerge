@@ -102,10 +102,9 @@ divergence leaving zero is detectable on the tick it happens.
 
 Not in this plan, by decision. It is the natural first follow-on.
 
-⚠️ **`NumericLimitsTest`'s `ship joules` row is 25× pessimistic** — it multiplies a whole machine's
-capacity by every tile in the grid, when a grid holds 230 smelters rather than 5760. Correcting it is
-step 1, because as written it is the row most likely to block the target for a reason that is not
-real.
+✅ **Fixed at step 1.** `NumericLimitsTest`'s `ship joules` row was 25× pessimistic — it multiplied a
+whole machine's capacity by every tile in the grid, when a grid holds 230 smelters rather than 5760.
+The same error was in two more places and its correction retracted a bug; see step 1.
 
 ---
 
@@ -137,10 +136,24 @@ Scales that move into the budget: `Flight.PER_TILE`, `Composition.VOLUME_UNIT`, 
 Each step is separately committable and leaves the suite green. The tripwire's knob only moves at
 step 8.
 
-### 1. Correct the tripwire's pessimistic row
-`ship joules` should bound a grid's worth of *machines*, not a grid's worth of whole-machine
-capacities. Also add a per-tile-energy row, since §2 shows that is the number that actually governs.
-**Test**: the tripwire itself.
+### 1. Correct the tripwire's pessimistic row — **DONE 2026-08-12**
+`ship joules` now bounds a grid's worth of *machines* rather than a grid's worth of whole-machine
+capacities, via a stated per-tile density (`densestTileCapacity`), and a per-tile-energy row was
+added since §2 shows that is the number that actually governs.
+
+The error turned out to be a **family, not a row**: `solid mass` and the flight test's
+`heaviestBuildable` were built the same way. Correcting all three **retracts a bug this plan had in
+scope**:
+
+- The heaviest buildable vessel is **3.23e9 g against a 4.61e9 g flight budget — 0.7×, inside it.**
+  The 17.5×-over figure was the 25× footprint error. There is no ship whose velocity wraps at one
+  gram per unit, so **"heaviest-ship velocity wrap" is struck from step 6**; nothing to fix.
+- `ship joules` corrected agrees with the 7.56e12 J in §2, which the old form contradicted by the
+  same 25×. The two halves of this plan now use one number.
+- Flight remains the tightest row in the budget regardless (`velocityX`, safe k ≈ 17). The
+  constraint stands; only the claim that it was *already violated* falls.
+
+`NUMERIC_LIMITS.md` §1 and §5 carry the correction. **Test**: the tripwire itself, green at k=1.
 
 ### 2. Audit every mass- and energy-dimensioned constant
 Find them all, and make each one *derived from the budget* rather than a literal that happens to be
@@ -191,6 +204,8 @@ and a solver that pushes gas *into* an over-full tile.
 which is the assertion the survey's measurements should have been.
 
 ### 6. Small loose ends, while we are in the files
+- ~~The heaviest buildable ship's velocity wraps.~~ **Struck at step 1 — it does not.** It was the
+  25× footprint error, not a real edge.
 - `Body.kelvin` divides by a capacity it does not guard; `RigidBody.kelvin` does. Match them.
 - `gramsPerTileOf` needs a `require` stating the invariant that keeps it safe (per-mille
   compositions only) — it currently holds by convention across two call sites and nothing says so.
