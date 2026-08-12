@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
@@ -86,8 +87,8 @@ class OutofspaceHud {
                 keyValue("Generated", energy(s.generatedEnergy))
                 keyValue("Radiated", energy(s.radiatedEnergy))
                 keyValue("Stored", energy(s.storedEnergy))
-                keyValue("To air", energy(s.solidToAirEnergy / 1000L))
-                keyValue("Air heat vented", energy(s.airVentedEnergy / 1000L))
+                keyValue("To air", energy(s.solidToAirEnergy))
+                keyValue("Air heat vented", energy(s.airVentedEnergy))
                 // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
                 // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
                 // overflow at the target mass unit and that is accepted for the duration, so a LEAK
@@ -566,16 +567,37 @@ class OutofspaceHud {
 
     private fun signed(percent: Int): String = if (percent >= 0) "+$percent%" else "$percent%"
 
-    /** Joules get large fast; kJ and MJ keep the panel narrow. */
-    private fun energy(j: Long): String = when {
-        j < 10_000L -> "${j}J"
-        j < 10_000_000L -> "${j / 1000}kJ"
-        else -> "${j / 1_000_000}MJ"
+    /**
+     * Energy, read in joules whatever the sim's own unit currently is.
+     *
+     * The panel is the player's, and the player never chose [Budget.NANOJOULES_PER_UNIT] — so the
+     * conversion happens here, once, rather than every readout carrying a factor. Joules get large
+     * fast, so kJ and MJ keep the panel narrow.
+     */
+    private fun energy(v: Long): String {
+        val j = v / Budget.JOULE
+        return when {
+            j < 10_000L -> "${j}J"
+            j < 10_000_000L -> "${j / 1000}kJ"
+            else -> "${j / 1_000_000}MJ"
+        }
     }
 
-    /** Grams are the sim's unit; kilograms are the reading unit past a certain size. */
-    private fun mass(g: Long): String =
-        if (g < 10_000L) "${g}g" else "${g / 1000}.${(g % 1000) / 100}kg"
+    /**
+     * Mass, read in grams whatever the sim's own unit currently is — the twin of [energy], and see
+     * its note for why the conversion belongs here.
+     *
+     * Tonnes earn a tier because a vessel is tens of them: a hull plate quoted in kilograms is six
+     * digits before it means anything to anyone.
+     */
+    private fun mass(v: Long): String {
+        val g = v / Budget.GRAM
+        return when {
+            g < 10_000L -> "${g}g"
+            g < 10_000_000L -> "${g / 1000}.${(g % 1000) / 100}kg"
+            else -> "${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
+        }
+    }
 
     /** Distance/speed in PER_TILE billionths, to 6 decimals (breach sensitivity). */
     private fun tiles(v: Long): String {

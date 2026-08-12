@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.Overlay
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
@@ -211,7 +212,7 @@ object OutofspaceAgentHarness {
                     }
                     controller.injectTile = -1
                     println("[agent] injected ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
-                        "${state.injectedAirMass}g admitted, airBalance ${state.airBalance}")
+                        "${fmt(grams(state.injectedAirMass))}g admitted, airBalance ${fmt(grams(state.airBalance))}")
                 }
                 // The water injector, same shape as `inject` but a liquid — the only way to get one
                 // into the world. Arrives cold on purpose; see Edit.WATER_INJECT_KELVIN.
@@ -227,7 +228,7 @@ object OutofspaceAgentHarness {
                     controller.injectTile = -1
                     controller.tool = was
                     println("[agent] watered ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
-                        "${state.injectedAirMass}g admitted, airBalance ${state.airBalance}")
+                        "${fmt(grams(state.injectedAirMass))}g admitted, airBalance ${fmt(grams(state.airBalance))}")
                 }
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
                 // `wire <x> <y> <ALWAYS|WIRE> <permille>` — appends one RUN term, which is the whole
@@ -496,12 +497,12 @@ object OutofspaceAgentHarness {
                 // The air's temperature, which is a different number from the fabric's until
                 // conduction couples the two -- and the one the fluid actually acts on.
                 "airtemp" -> { tile -> state.airKelvinAt(tile).toDouble() }
-                "air", "mass" -> { tile -> state.air.mixtureAt(tile).total.toDouble() }
+                "air", "mass" -> { tile -> grams(state.air.mixtureAt(tile).total) }
                 // The pipes, which are a second fluid field on the same lattice and so map exactly
                 // like the room air. Worth having as its own view rather than folded into `air`: the
                 // whole question about a pipe is whether what is in it is in the PIPE, and a
                 // combined map cannot answer that.
-                "pipe" -> { tile -> state.pipeAir.mixtureAt(tile).total.toDouble() }
+                "pipe" -> { tile -> grams(state.pipeAir.mixtureAt(tile).total) }
                 "pipetemp" -> { tile -> state.pipeAir.kelvinAt(tile).toDouble() }
                 "pipepressure" -> { tile -> state.pipeAir.pressureAt(tile).toDouble() }
                 // One gas on its own. Bulk flow provably cannot mix or unmix, so the question
@@ -511,7 +512,7 @@ object OutofspaceAgentHarness {
                     val name = what.substringAfter(':')
                     val sp = Species.ALL.firstOrNull { it.name.equals(name, true) }
                         ?: error("unknown species '$name' (have ${Species.ALL.map { it.name }})")
-                    ({ tile: Int -> state.air.massOf(tile, sp).toDouble() })
+                    ({ tile: Int -> grams(state.air.massOf(tile, sp)) })
                 } else error(
                     "field pressure|density|speed|heat|airtemp|air|pipe|pipetemp|pipepressure|" +
                         "species:<Name>|flow|build"
@@ -619,7 +620,7 @@ object OutofspaceAgentHarness {
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
-            println("[agent]   air       ${air.total}g  ${composition(air)}")
+            println("[agent]   air       ${fmt(grams(air.total))}g  ${composition(air)}")
             println("[agent]   flow      x=${state.flow.xAt(tile)}g/t y=${state.flow.yAt(tile)}g/t " +
                 "speed=${"%.5f".format(state.flow.speedAt(tile))} tiles/tick")
         }
@@ -640,21 +641,40 @@ object OutofspaceAgentHarness {
          * grow.
          */
         private fun trend(samples: Int, ticksEach: Int) {
-            println("[agent] trend: %8s %12s %10s %12s %10s %10s".format(
+            println("[agent] trend: %8s %12s %10s %12s %10s".format(
                 "tick", "airMass", "dAir", "storedJ", "peakSpd"))
             var lastAir = state.atmosphereMass
             repeat(samples) {
                 repeat(ticksEach) { controller.stepOnce() }
                 val air = state.atmosphereMass
-                println("[agent]        %8d %12d %10d %12d %10.5f %10d".format(
-                    controller.tick, air, air - lastAir, state.storedEnergy, state.flow.peakSpeed()))
+                println("[agent]        %8d %12.3f %10.3f %12.3f %10.5f".format(
+                    controller.tick, grams(air), grams(air - lastAir), joules(state.storedEnergy),
+                    state.flow.peakSpeed()))
                 lastAir = air
             }
-            println("[agent]   baseline air ${state.baselineAirMass}g, vented ${state.airVentedMass}g " +
-                "(balance ${state.airBalance}g)")
+            println("[agent]   baseline air ${fmt(grams(state.baselineAirMass))}g, " +
+                "vented ${fmt(grams(state.airVentedMass))}g " +
+                "(balance ${fmt(grams(state.airBalance))}g)")
         }
 
         // ── observations ─────────────────────────────────────────────────────────────
+
+        /**
+         * The sim's mass unit read out in grams — the harness's half of the same rule the HUD
+         * follows (see `OutofspaceHud.mass`): a script states thresholds in the units a person
+         * weighs things in, and nothing outside [Budget] needs to know what one integer currently
+         * means. Move [Budget.MICROGRAMS_PER_UNIT] and every script below stays correct.
+         *
+         * A `Double` divide rather than an integer one, and that is the whole trick: a one-unit
+         * leak reads as 1e-6 rather than floored to 0, so `expect massBalance = 0` — which compares
+         * exactly — stays exactly as sharp a tripwire as it was in raw units. Integer division here
+         * would blind every conservation assertion in the suite to sub-gram drift.
+         */
+        private fun grams(units: Long): Double = units.toDouble() / Budget.GRAM
+
+        /** Energy in joules, the twin of [grams]; see its note for the `Double` and the tripwires. */
+        private fun joules(units: Long): Double = units.toDouble() / Budget.JOULE
+
         private fun reading(field: String): Double? = when (field) {
             "tick" -> controller.tick.toDouble()
             "machines" -> machineCount().toDouble()
@@ -664,34 +684,34 @@ object OutofspaceAgentHarness {
             "originY" -> state.positionY.toDouble() / Flight.PER_TILE
             // Rooms and pipes together, because they share one ledger and `airBalance` below is
             // that ledger. `pipeMass` separates them for a script that cares which side gas is on.
-            "airMass" -> state.atmosphereMass.toDouble()
-            "pipeMass" -> state.pipeAir.totalMass.toDouble()
-            "airVented" -> state.airVentedMass.toDouble()
+            "airMass" -> grams(state.atmosphereMass)
+            "pipeMass" -> grams(state.pipeAir.totalMass)
+            "airVented" -> grams(state.airVentedMass)
             // The flight loop's own number: what the gas leaving has pushed the ship by. Note it
             // counts the *reaction*, so venting to starboard makes this negative.
-            "impulseX" -> state.vesselImpulseX.toDouble()
-            "impulseY" -> state.vesselImpulseY.toDouble()
-            "injectedAir" -> state.injectedAirMass.toDouble()
-            "airBalance" -> state.airBalance.toDouble()
-            "extractedMass" -> state.extractedMass.toDouble()
-            "ventedMass" -> state.ventedMass.toDouble()
-            "inTransitMass" -> state.inTransitMass.toDouble()
-            "stockpileMass" -> state.stockpile.totalMass.toDouble()
-            "storedEnergy" -> state.storedEnergy.toDouble()
-            "generatedEnergy" -> state.generatedEnergy.toDouble()
-            "radiatedEnergy" -> state.radiatedEnergy.toDouble()
-            "solidToAirEnergy" -> state.solidToAirEnergy.toDouble()
+            "impulseX" -> grams(state.vesselImpulseX)
+            "impulseY" -> grams(state.vesselImpulseY)
+            "injectedAir" -> grams(state.injectedAirMass)
+            "airBalance" -> grams(state.airBalance)
+            "extractedMass" -> grams(state.extractedMass)
+            "ventedMass" -> grams(state.ventedMass)
+            "inTransitMass" -> grams(state.inTransitMass)
+            "stockpileMass" -> grams(state.stockpile.totalMass)
+            "storedEnergy" -> joules(state.storedEnergy)
+            "generatedEnergy" -> joules(state.generatedEnergy)
+            "radiatedEnergy" -> joules(state.radiatedEnergy)
+            "solidToAirEnergy" -> joules(state.solidToAirEnergy)
             // The whole solid balance as one number, so a script can `expect heatBalance == 0`
             // rather than reassembling five terms. Zero, always — see [VesselState.baselineEnergy].
-            "heatBalance" -> (
+            "heatBalance" -> joules(
                 state.storedEnergy + state.radiatedEnergy + state.solidToAirEnergy -
                     state.generatedEnergy - state.acquiredEnergy - state.insertedEnergy - state.baselineEnergy
-                ).toDouble()
-            "airHeatBalance" -> state.airEnergyBalance.toDouble()
+            )
+            "airHeatBalance" -> joules(state.airEnergyBalance)
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
             // -- and the right thing for a script to assert, since `extractedMass` on its own is a fact
             // about how long the starter vessel's extractor has been running.
-            "massBalance" -> (state.inTransitMass + state.ventedMass - state.extractedMass).toDouble()
+            "massBalance" -> grams(state.inTransitMass + state.ventedMass - state.extractedMass)
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
@@ -708,36 +728,36 @@ object OutofspaceAgentHarness {
             "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()
             "hottestAirK" -> (0 until state.grid.size).maxOf { state.airKelvinAt(it) }.toDouble()
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
-            "impulseX" -> state.vesselImpulseX.toDouble()
-            "impulseY" -> state.vesselImpulseY.toDouble()
+            "impulseX" -> grams(state.vesselImpulseX)
+            "impulseY" -> grams(state.vesselImpulseY)
             // The two instruments the momentum ledger is watched with. `undelivered` is the part of
             // the solve that had nowhere to go, and it is expected to grow under acceleration; the
             // whole ledger as one number is `momentumBalance`, which is zero or something is wrong.
-            "undeliveredX" -> state.undeliveredImpulseX.toDouble()
-            "undeliveredY" -> state.undeliveredImpulseY.toDouble()
+            "undeliveredX" -> grams(state.undeliveredImpulseX)
+            "undeliveredY" -> grams(state.undeliveredImpulseY)
             // The debug engine's cumulative cheating, which is subtracted rather than ignored: the
             // identity has a fifth store now, and it reduces to the old one whenever nothing has
             // fired. See [VesselState.debugImpulseX] for why a shortcut that did not book this would
             // cost the instrument rather than the physics.
-            "debugImpulseX" -> state.debugImpulseX.toDouble()
-            "debugImpulseY" -> state.debugImpulseY.toDouble()
+            "debugImpulseX" -> grams(state.debugImpulseX)
+            "debugImpulseY" -> grams(state.debugImpulseY)
             // Momentum that is now in the bodies, because the hull hit them. A store rather than an
             // apology: `+J` to the body and `−J` to the ship conserve by construction, and this term
             // is here because only the ship's half is inside the ledger. See [VesselState.bodyImpulseX].
-            "rockImpulseX" -> state.bodyImpulseX.toDouble()
-            "rockImpulseY" -> state.bodyImpulseY.toDouble()
-            "momentumBalance" -> (
+            "rockImpulseX" -> grams(state.bodyImpulseX)
+            "rockImpulseY" -> grams(state.bodyImpulseY)
+            "momentumBalance" -> grams(
                 state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
                     state.exhaustMomentumX + state.undeliveredImpulseX - state.debugImpulseX +
                     state.bodyImpulseX +
                     state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
                     state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY +
                     state.bodyImpulseY
-                ).toDouble()
+            )
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
-            "mass" -> state.mass.toDouble()
-            "thrustX" -> state.netImpulseX.toDouble()
-            "thrustY" -> state.netImpulseY.toDouble()
+            "mass" -> grams(state.mass)
+            "thrustX" -> grams(state.netImpulseX)
+            "thrustY" -> grams(state.netImpulseY)
             "velocityX" -> state.velocityX.toDouble() / Flight.PER_TILE
             "velocityY" -> state.velocityY.toDouble() / Flight.PER_TILE
             "positionX" -> state.positionX.toDouble() / Flight.PER_TILE
