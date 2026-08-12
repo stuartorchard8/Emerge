@@ -717,6 +717,31 @@ worth returning to: a 13-ppm mass change should not decide which way a body fall
 Effect at 10⁶: 41 → **27**. `VesselSimTest`, `MotionTest`, `WiringTest`, `GaugeTest`,
 `FootprintTest`, `SignalWiringTest` and `RockTest` all clear.
 
+#### The solid-heat solver multiplied capacities by capacities
+
+Two sites, both the harmonic mean of two mass-dimensioned quantities, both **quadratic in the mass
+unit**:
+
+- `Material.seriesConductance` — `2ab/(a+b)` over two conductances. A conductance is joules per
+  kelvin per tick, so it carries the unit; a steel hull plate conducts about 1.2e11 at one microgram
+  and the product reaches 2.9e22. Every contact in the vessel then read a nonsense conductance and
+  nothing conducted anywhere.
+- `stepSolidHeat`'s equilibrium cap — the same shape over two *capacities*, which are the larger
+  quantities, so it wrapped first.
+
+Both reduced to a fraction before scaling. `seriesConductance` stays symmetric in its arguments,
+since both orderings are exactly `2ab/(a+b)` and the whole/remainder split is exact.
+
+Effect at 10⁶: 27 → **20**. `ConduitLayersTest` and `HeatTest` clear, `BodyHeatTest` 5 → 1.
+
+#### ⚠️ Two `NumericLimitsTest` reds at 10⁶ are an artefact of the measurement
+
+`a velocity does not change when the mass unit does` and `reducing the fraction stays within a
+millionth` both **simulate** the rescale by multiplying a mass by a hardcoded `1_000_000`. With the
+knob already turned they double-scale and overflow. They are correct tests of the target *from*
+today's unit, and running them with the knob flipped measures nothing. Do not chase them; the third
+row — the overflow budget itself — is the real one, and it needs re-measuring (item 2 below).
+
 ⚠️ **Correction to the previous entry**: the `ValveTest`/`PumpTest`
 `ArrayIndexOutOfBoundsException` was attributed to the `PhaseEmergenceTest` helper. That was wrong —
 they are separate test classes and cannot share state. The helper carried the same defect, but the

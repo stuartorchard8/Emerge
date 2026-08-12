@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.num.scaledRatio
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -114,7 +115,14 @@ enum class Material(
  */
 fun seriesConductance(a: Long, b: Long): Long {
     val sum = a + b
-    return if (sum <= 0L) 0L else 2L * a * b / sum
+    // `2ab/(a+b)` multiplies two conductances together, and a conductance is joules per kelvin per
+    // tick — mass-dimensioned, so the product is **quadratic in the mass unit**. A steel hull plate
+    // conducts about 1.2e11 at one microgram per unit and the product reaches 2.9e22, which wraps and
+    // takes the whole solid-heat solver with it: every contact in the vessel reads a nonsense
+    // conductance and nothing conducts anywhere. Taken as the fraction `a/(a+b)` first, the unit
+    // cancels out of the ratio and is carried only by the `2b`. Exact wherever the old form did not
+    // overflow, and still symmetric in its arguments, since both orderings are exactly `2ab/(a+b)`.
+    return if (sum <= 0L) 0L else scaledRatio(a, sum, 2L * b)
 }
 
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */

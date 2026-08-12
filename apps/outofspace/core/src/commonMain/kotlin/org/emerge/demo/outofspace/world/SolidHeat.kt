@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /** Result of one solid conduction tick. [joules]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
 class SolidHeatStep(val joules: LongArray, val radiated: Long, val toAir: Long)
 
@@ -105,7 +107,11 @@ fun stepSolidHeat(
         val dT = if (gap > 0) gap else -gap
 
         val wanted = conductance * dT
-        val harmonic = capacity[hot] * capacity[cold] / (capacity[hot] + capacity[cold])
+        // The most that can cross without overshooting equilibrium — the harmonic mean of the two
+        // capacities. Same shape as [seriesConductance] and the same defect: a product of two
+        // capacities is quadratic in the mass unit, and capacities are the *larger* of the two
+        // quantities here, so this wrapped first. Reduced to a fraction before scaling.
+        val harmonic = scaledRatio(capacity[hot], capacity[hot] + capacity[cold], capacity[cold])
         transfers.add(hot, cold, minOf(wanted, harmonic * dT))
     }
 
