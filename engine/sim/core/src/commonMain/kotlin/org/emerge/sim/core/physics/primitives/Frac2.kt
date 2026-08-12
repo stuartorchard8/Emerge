@@ -15,13 +15,27 @@ data class Frac2(val x: Frac, val y: Frac) {
         x*other.x +
         y*other.y
     )
-    fun rotateByAngle(angle: Coord): Frac2 {
-        val rotation = Norm.fromAngle(angle)
-        return Frac2(
-            x = x * rotation.x - y * rotation.y,
-            y = x * rotation.y + y * rotation.x,
-        )
-    }
+    /**
+     * Rotated by the orientation [by] is pointing in — the 2D rotation matrix, applied directly.
+     *
+     * A [Norm] *is* the `(cos θ, sin θ)` pair the matrix is built from:
+     *
+     * ```
+     * [ cos  -sin ]   [ by.x  -by.y ]
+     * [ sin   cos ] = [ by.y   by.x ]
+     * ```
+     *
+     * so there is no angle in this at all. Prefer it over [rotateByAngle] whenever the caller
+     * already holds a direction, and — more to the point — whenever one orientation is applied to
+     * *many* vectors: the direction is recovered once and the loop is four multiplies a vector.
+     */
+    fun rotateBy(by: Norm): Frac2 = Frac2(
+        x = x * by.x - y * by.y,
+        y = x * by.y + y * by.x,
+    )
+
+    /** [rotateBy], for a caller that holds an angle rather than a direction. */
+    fun rotateByAngle(angle: Coord): Frac2 = rotateBy(Norm.fromAngle(angle))
 
     // len/lenSq/norm are computed on demand rather than cached via `by lazy`: a per-instance
     // lazy delegate (plus its capturing closure) is allocated eagerly in the constructor for
