@@ -108,7 +108,24 @@ class FlightTest {
 
         val s = controller.state
         assertTrue(s.velocityX > opening * 10L, "the ship barely gained on its first tick: $opening to ${s.velocityX}")
-        assertTrue(s.positionX > Flight.PER_TILE, "and should have covered a tile by now: ${s.positionX}")
+
+        // How far it got, against what a steady thrust says it should have. Under constant
+        // acceleration from rest the distance is the *average* speed times the time, and the average
+        // of a ramp from nothing is half the final — so x ≈ v·t/2, and the run bears that out at
+        // about 90% of it (the shortfall is the first few ticks, before the plume is established).
+        //
+        // This used to read `> PER_TILE`, and a whole tile is simply not a distance this ship covers
+        // in 120 ticks: the hull weighs forty tonnes of real steel and vents seven kilos of air over
+        // the run, so it gets about a twelfth of a tile. That figure was calibrated when hull plate
+        // was a made-up density rather than [Material.composition] at [MachineKind.fillPermille], and
+        // pinning a distance re-pins it every time that dial moves. What does not move is the shape:
+        // a constant thrust integrates to v·t/2 whatever the ship weighs, so check the integrator
+        // against the kinematics and let the magnitude be whatever the masses make it.
+        val predicted = s.velocityX * TICKS / 2L
+        assertTrue(
+            s.positionX > predicted / 2L && s.positionX < predicted * 2L,
+            "travelled ${s.positionX}, but a steady ramp to ${s.velocityX} over $TICKS ticks predicts ~$predicted",
+        )
         // The engine is on the x axis and nothing is pushing along y, so the sideways drift is the
         // atmosphere ringing under the plating rather than thrust. It must stay far smaller than the
         // thing being measured, or the "axis-aligned" claim above is not true of this fixture.
