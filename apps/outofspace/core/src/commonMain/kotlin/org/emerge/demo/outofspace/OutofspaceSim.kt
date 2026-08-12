@@ -519,6 +519,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         val energy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
         airEnergy[at] += energy
+        // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
+        solidBecameGas(chunkMass, energy)
 
         return m.copy(
             input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
@@ -589,10 +591,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         val ejectedMass = chunkMass + scoopedMass
-        // Propellant has left the cargo either way: overboard, or by becoming gas.
-        ventedMass += chunkMass
 
         if (path.isClear) {
+            // Straight overboard as the solid it still is, so only the solid ledger hears about it.
+            ventedMass += chunkMass
             // Out of the world at exhaust velocity, and the ship gets the other half.
             airVentedByExhaust(scoopedMass, scoopedEnergy)
             val impulse = ejectedMass * Thruster.tilesPerTick(cfg.ticksPerSecond)
@@ -606,8 +608,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // your own bulkhead expensive rather than merely useless.
             val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
             airEnergy[destination] += landed + scoopedEnergy
-            injectedAirMass += chunkMass
-            injectedAirEnergy += landed
+            solidBecameGas(chunkMass, landed)
         }
 
         return m.copy(
@@ -712,6 +713,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun airVentedByExhaust(mass: Long, energy: Long) {
             exhaustAirMass += mass
             exhaustAirEnergy += energy
+        }
+
+        /**
+         * Books [mass] of solid **becoming** [energy]'s worth of gas: the one event in the game that
+         * crosses between the two mass ledgers.
+         *
+         * Both halves, always, and that is the entire reason this is a function rather than two
+         * lines at each call site. The solid ledger has to hear that the cargo is gone
+         * ([VesselState.ventedMass]) and the air ledger has to hear that the atmosphere did not
+         * grow on its own ([VesselState.injectedAirMass]); book one and both identities are wrong
+         * in opposite directions, which reads as two unrelated leaks.
+         *
+         * ⚠️ [vaporize] did neither for the whole of its life — every running vaporizer drifted
+         * `massBalance` down and `airBalance` up by its throughput, on every tick, and no test was
+         * pointed at the machine to say so. It is one call now, shared with [fire], because two
+         * copies of this would eventually be one copy plus a machine that forgot.
+         */
+        fun solidBecameGas(mass: Long, energy: Long) {
+            ventedMass += mass
+            injectedAirMass += mass
+            injectedAirEnergy += energy
         }
 
         var fitRequested: Boolean = false
