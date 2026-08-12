@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.SCALE
@@ -36,10 +37,16 @@ import kotlin.test.fail
  *
  * ### How to use it during the rescale
  *
- * Raise [targetMassScale] to the unit you are aiming at. Every row that cannot support it fails **by
- * name**, which is the list of expressions that have to be restructured first — in effect a to-do
- * list generated from the game's own constants rather than from anybody's memory of them. Set it
- * back to `1` and the file returns to guarding today's arithmetic.
+ * Turn the knob in [Budget] itself. [targetMassScale] is derived from it — the distance still to
+ * travel — so every row that cannot support the remaining rescale fails **by name**, which is the
+ * list of expressions that have to be restructured first: a to-do list generated from the game's own
+ * constants rather than from anybody's memory of them. As the knob moves the demand shrinks to match,
+ * and when it arrives the file keeps guarding the arithmetic it now has.
+ *
+ * ⚠️ It used to be a literal that had to be raised by hand, and the two got out of step the moment
+ * the knob moved: the rows measure the game's constants *in today's unit*, so a fixed million asked
+ * for the rescale twice over and every row went red at once. A budget stated independently of the
+ * unit it is budgeting is not a budget.
  *
  * ### What a failure means
  *
@@ -55,14 +62,39 @@ import kotlin.test.fail
  * that a bug is still present — which goes red when somebody fixes it and teaches the next reader to
  * distrust the file.
  */
+/**
+ * Where the energy unit is going: one **centijoule** per integer, ten times coarser than the
+ * millijoule the game has always used. Written here rather than derived from [Budget] because it is
+ * the destination, and a destination read off the current position is not one.
+ *
+ * The mass target needs no equivalent: it is one microgram per integer, which is
+ * [Budget.MICROGRAMS_PER_UNIT] equalling 1 and so already spelled out by the field's own units.
+ */
+private const val TARGET_NANOJOULES_PER_UNIT: Long = 10_000_000L
+
 class NumericLimitsTest {
 
     /**
-     * The mass unit this budget is being checked against: `1` is one integer per gram, `1000` is one
-     * per milligram. **This is the knob.** Raise it to find out what blocks that unit; the failures
-     * are the answer.
+     * How much finer the mass unit still has to get: the factor every mass in this file would be
+     * multiplied by if the target were reached today.
+     *
+     * ### Why it is derived and not written down
+     *
+     * It used to be a literal `1_000_000`, and that was right for as long as the knob had not moved.
+     * Every worst case in this file is measured by *running the game's own constants* — a hull's
+     * `gramsPerTile`, a `Storage.CAP` — which are integer counts in whatever unit `Budget` is set to
+     * right now. Multiply those by a fixed million and the answer is only the target while the build
+     * is still at one gram per integer. Turn the knob and the file asks for the rescale **twice**:
+     * every row failed, including rows with nothing wrong with them, and the whole file had to be
+     * discounted as an artefact at exactly the moment it was most worth reading.
+     *
+     * [Budget.MICROGRAMS_PER_UNIT] *is* the remaining factor, by definition — it is how many
+     * micrograms one integer is still worth, and the target is one. So this reads `1_000_000` at
+     * today's unit and `1` at the target, and the file measures the same thing either way. At the
+     * target the rows still assert real headroom against [safetyFactor], and the ALREADY OVERFLOWED
+     * check still bites; what goes away is only the demand for a rescale that has already happened.
      */
-    private val targetMassScale = 1_000_000L
+    private val targetMassScale = Budget.MICROGRAMS_PER_UNIT
 
     /**
      * How much room every row keeps on top of the target, so that a budget is never merely *just*
@@ -157,6 +189,38 @@ class NumericLimitsTest {
      * to and is within a factor of three of the 110 tonnes measured on the standard bare hull.
      */
     private val referenceShipGrams: Long = MachineKind.Hull.gramsPerTile * gridTiles / 8L
+
+    /**
+     * An integer count out of [Budget]'s current mass unit and into plain grams.
+     *
+     * Every mass in this file comes from the game's own constants, so it is a count of whatever one
+     * integer is worth today. The budget rows want exactly that. The two *expression* cases below
+     * want a physical ship they can then scale themselves, and the difference is invisible until the
+     * knob moves — at which point they scale an already-scaled number and overflow.
+     */
+    private fun inGrams(units: Long): Long = units / Budget.GRAM
+
+    /**
+     * A heat capacity in [Budget]'s **energy** unit, from a mass in its mass unit.
+     *
+     * ### Why the rows cannot say `grams * specificHeat`
+     *
+     * Five of them did, and it was an energy for exactly as long as the two units were one unit.
+     * Specific heat is quoted per kilogram against a thousandth of a joule, so the product has to be
+     * divided by [Budget.CAPACITY_DIVISOR] — which was 1, and so read as nothing at all.
+     *
+     * Left uncorrected the rows overstate a solid tile's energy by ten million and two of them
+     * reported ALREADY OVERFLOWED at the target: a tripwire announcing a wrap in an expression the
+     * game does not evaluate. That is the more dangerous half of §6.4's lesson seen from the other
+     * side — the same missing factor read *green* over the live `heatPerGram` overflow one commit
+     * ago, because it was missing from the model and the code in the same way.
+     *
+     * The mass is divided **first**, matching `capacityPerTileOf` rather than being algebraically
+     * tidy: the intermediate a budget row measures has to be the intermediate the code forms, and
+     * the code forms this one.
+     */
+    private fun capacityOf(grams: Long, specificHeat: Long): Long =
+        grams / Budget.CAPACITY_DIVISOR * specificHeat
 
     /** The densest a tile of gas can legitimately get: close packing, three times critical. */
     private val densestPackedLiquid: Long =
@@ -253,10 +317,15 @@ class NumericLimitsTest {
      * How much finer the energy unit is getting — **less than one**, because it is getting coarser.
      *
      * `NANOJOULES_PER_UNIT` goes from 1e6 (a millijoule) to 1e7 (a centijoule), so every energy
-     * quantity takes a tenth as many integers to say. Stated as the target over the current value so
-     * that it reads the same way as [targetMassScale] and cannot be inverted by accident.
+     * quantity takes a tenth as many integers to say.
+     *
+     * Derived from the current unit for the same reason [targetMassScale] is: it is the distance
+     * still to travel, so it reads `0.1` at the millijoule and `1.0` once the centijoule is in
+     * place. Current over target rather than target over current, because a smaller unit means
+     * *more* integers — the one place in this file where the ratio genuinely inverts.
      */
-    private val targetEnergyScale = 1.0 / 10.0
+    private val targetEnergyScale =
+        Budget.NANOJOULES_PER_UNIT.toDouble() / TARGET_NANOJOULES_PER_UNIT
 
     private fun budget(name: String, worst: Long, exponent: Int, dim: Dim = Dim.MASS) {
         val perPower = when (dim) {
@@ -390,7 +459,7 @@ class NumericLimitsTest {
         // and the one a rescale has to keep representable no matter how big the map gets.
         budget(
             "tile joules: densest deck tile + its air at max kelvin",
-            (densestTileCapacity + AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong()) *
+            (densestTileCapacity + capacityOf(AirField.AMBIENT_AIR.total, Species.Water.specificHeat.toLong())) *
                 designMaxKelvin,
             1, Dim.ENERGY,
         )
@@ -405,17 +474,17 @@ class NumericLimitsTest {
         //   - the fictional pairing the [capacityPerTileOf] row uses, densest x hottest.
         budget(
             "solid tile joules: the heaviest real material at max kelvin",
-            Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } * designMaxKelvin,
+            Species.ALL.maxOf { capacityOf(it.solidGramsPerTile, it.specificHeat.toLong()) } * designMaxKelvin,
             1, Dim.ENERGY,
         )
         budget(
             "solid tile joules: densest x hottest (a material that does not exist)",
-            densestSolidTile * Species.ALL.maxOf { it.specificHeat.toLong() } * designMaxKelvin,
+            capacityOf(densestSolidTile, Species.ALL.maxOf { it.specificHeat.toLong() }) * designMaxKelvin,
             1, Dim.ENERGY,
         )
         budget(
             "solid tile joules: the heaviest real material at AMBIENT",
-            Species.ALL.maxOf { it.solidGramsPerTile * it.specificHeat.toLong() } *
+            Species.ALL.maxOf { capacityOf(it.solidGramsPerTile, it.specificHeat.toLong()) } *
                 Temperature.AMBIENT_KELVIN.toLong(),
             1, Dim.ENERGY,
         )
@@ -439,7 +508,7 @@ class NumericLimitsTest {
         )
         budget(
             "atmosphere joules: ambient air across the whole grid",
-            AirField.AMBIENT_AIR.total * Species.Water.specificHeat.toLong() *
+            capacityOf(AirField.AMBIENT_AIR.total, Species.Water.specificHeat.toLong()) *
                 Temperature.AMBIENT_KELVIN.toLong() * gridTiles, 1, Dim.ENERGY,
         )
 
@@ -483,16 +552,24 @@ class NumericLimitsTest {
      * move. That is the whole content of "scale-invariant", it is checkable directly, and it goes red
      * for the real failure mode — an intermediate wrapping — rather than for a bound being redrawn.
      *
-     * ⚠️ Deliberately run at 10⁶ and not at [targetMassScale]. This case is not a progress meter for
-     * the rescale; it is a unit test of the expression, and it should hold at the target unit whether
-     * or not the knob has been turned yet.
+     * ⚠️ Deliberately run at a fixed 10⁶ and not at [targetMassScale]. This case is not a progress
+     * meter for the rescale; it is a unit test of the expression, and it should hold at the target
+     * unit whether or not the knob has been turned yet.
+     *
+     * ⚠️ And for that to mean anything the masses have to be stated **in grams**, which is what
+     * [inGrams] is for. They are read off the game's own constants, and those are integer counts in
+     * whatever unit `Budget` is set to — so with the knob at the target, `mass * scale` was a real
+     * ship's mass in micrograms multiplied by a further million. The heaviest grid came to 2.75e20,
+     * which is not a number, and the case failed reporting that a velocity had moved. It had not;
+     * the fixture had. The expression under test was never wrong, and this is the second time in
+     * this plan that the instrument's own units have impersonated a defect in the thing measured.
      */
     @Test
     fun `a velocity does not change when the mass unit does`() {
         val scale = 1_000_000L
         // A spread rather than one pair: a bare fitting, a reference ship, and the heaviest grid
         // that can be built — and both signs, since the reduction shifts negatives too.
-        val masses = listOf(1_000L, referenceShipGrams, densestTileGrams * gridTiles)
+        val masses = listOf(1_000L, inGrams(referenceShipGrams), inGrams(densestTileGrams * gridTiles))
         val speeds = listOf(-designTopSpeed, -1L, 0L, 1L, designTopSpeed)
 
         for (mass in masses) for (speed in speeds) {
@@ -523,7 +600,8 @@ class NumericLimitsTest {
      */
     @Test
     fun `reducing the fraction stays within a millionth of a tile per tick`() {
-        val mass = referenceShipGrams * 1_000_000L
+        // In grams, then scaled to micrograms by hand — see [inGrams] and the note on the case above.
+        val mass = inGrams(referenceShipGrams) * 1_000_000L
         var worst = 0.0
         // Awkward ratios on purpose: a momentum that divides evenly cannot expose a rounding.
         for (numerator in listOf(1L, 3L, 7L, 999L, 1_000_003L)) {
