@@ -7,7 +7,7 @@ outofspace. **That draft's central choice was rejected** — see §2 for why. §
 
 ## 1. STATE OF PLAY — read this first
 
-### ✅ Steps 1 and 2 are BUILT and green (2026-08-13). Step 1 is committed as `3ea0a1fd`; step 2 is §3.
+### ✅ Steps 1, 2 and 3 are BUILT and green (2026-08-13). Step 1 is `3ea0a1fd`, step 2 is `0390bd6f`; step 3 is §3.
 
 ### Step 1
 
@@ -131,7 +131,7 @@ confirmed this was ever causing an observed desync**, and it is a separate quest
 
 ---
 
-## 3. The remaining steps — agreed scope, nothing built
+## 3. The steps
 
 End state (Stu, 2026-08-13): **every body has rotation like the vessel, with collisions imparting
 torque as well as momentum.** Scavengers and Drockets already do this, but only with circle colliders.
@@ -212,12 +212,45 @@ centreline produces zero torque at every throttle**.
 All three are in `RotationTest`, and the third earned its place exactly as predicted: booking torque
 about the grid origin instead of the centre of mass passes the other two.
 
-### Step 3 — world frame + camera mode
-World coordinates **do not exist today**; this step creates them. Camera becomes player-selectable:
-**Flight → world-relative, Build → grid-relative** (Stu's call).
+### ✅ Step 3 — world frame + camera mode. BUILT 2026-08-13.
 
-Drockets already does exactly this toggle at `WorldRenderer.kt:494`
-(`Coord(focusRotationOffset.raw - transform.ang.raw)`) — copy that pattern rather than inventing one.
+`ViewTurnTest` is green (6 assertions, <1 s), every suite from step 2 is still green, and all four
+hosts compile — desktop, web (`compileKotlinJs`), Android, and the agent harness.
+
+**What was built**
+
+| File | Change |
+|------|--------|
+| `ui_rect.vert`, `UiRectRenderer.kt` (engine) | A `uniform vec4 uView` — a 2x2 applied to every *vertex*, defaulting to identity. `drawInstanced` gained an optional `view` parameter; every existing caller is untouched and unaffected. |
+| `ViewTurn.kt` (new) | The pixels↔NDC conjugation and its inverse, as free functions. |
+| `CameraFrame.kt` (new), `Mode.kt` | `Grid` / `World`, chosen by `Mode.camera`. |
+| `OutofspaceRenderer.kt` | `viewAngle`, a widened cull window, and an un-turned pointer. Geometry unchanged. |
+| Four hosts | Pass `controller.mode.camera` to `draw`. |
+
+**The one thing that decided the shape of this step:** a `UiRectRenderer` instance is an
+**axis-aligned quad**, so the rotation cannot happen on the CPU. Turning only the instance centres
+swirls the scene while leaving every tile square — a visibly broken picture, not an approximate one.
+The turn has to reach the quad's own corners, so it is a uniform on the shared shader, and the app's
+geometry code is completely untouched by this step.
+
+⚠️ **NDC is not square, so the view matrix is not the rotation matrix.** It is `S⁻¹·R·S` with
+`S = diag(W/2, −H/2)` — `[[c, s/a], [−s·a, c]]` for `a = W/H`. Writing `R` straight into NDC shears
+every tile by the aspect ratio. This was derived wrong twice before it was right (the conjugation
+inverted), and **both wrong versions are exactly correct on a square display**, which is why
+`ViewTurnTest` checks a wide resolution and a tall one and not just a convenient one.
+
+⚠️ **The camera is derived from `Mode`, not separately selectable.** Read the plan's
+"player-selectable" as satisfied by the mode: choosing Build *is* choosing the grid frame. A second
+control would only permit combinations neither activity wants, so no key was added.
+
+⚠️ **The cull window widens to the screen's diagonal when turned**, since a turned screen's corners
+reach further than its edges. This roughly doubles the tiles drawn. Note that `MAX_RECTS = 48_000`
+is *already* exceeded at minimum zoom in an un-turned view (320×180 tiles × several layers), so this
+makes a pre-existing silent clip worse rather than introducing one. Not addressed here.
+
+Drockets' `WorldRenderer.kt:494` was read but not copied: it counter-rotates a *float* camera to
+hold a body's local frame still, which is the opposite sign and the opposite default from what this
+needed.
 
 ### Step 4 — `RigidBody` orientation, and collisions imparting torque
 `RigidBody` currently has **no orientation at all**: a box plus a row-major solid mask, axis-aligned.

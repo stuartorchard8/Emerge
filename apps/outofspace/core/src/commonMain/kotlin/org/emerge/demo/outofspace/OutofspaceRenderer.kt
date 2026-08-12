@@ -36,6 +36,7 @@ import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.UiRectRenderer
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -50,6 +51,13 @@ import kotlin.math.sqrt
  * The camera lives here and works in tile units: [OutofspaceRenderer.camX]/[OutofspaceRenderer.camY] is the tile at the centre of the
  * screen and [OutofspaceRenderer.tilePx] is the zoom. Screen y is down, matching the grid's +y and the direction
  * gravity will point when Phase 4 arrives.
+ *
+ * The camera also has an *orientation* — [viewAngle], chosen by the [CameraFrame] handed to [draw].
+ * That is the one thing the batch cannot express on the CPU, because a `UiRectRenderer` instance is
+ * an axis-aligned quad and turning only its centre would swirl the scene while leaving every tile
+ * square. So the turn is a uniform on the shared shader and the geometry here is unchanged; the only
+ * thing this class does differently in a turned view is widen the cull window and un-turn the
+ * pointer.
  */
 class OutofspaceRenderer {
 
@@ -64,6 +72,37 @@ class OutofspaceRenderer {
         private set
     var tilePx = 34f
         private set
+
+    /**
+     * How far the scene is turned on screen, and therefore how far every pointer position has to be
+     * turned back — see [screenToTile].
+     *
+     * Written by [draw] from the [CameraFrame] it is handed, so a host that never mentions a frame
+     * gets the axis-aligned view it always had. Kept as state rather than passed to each of the
+     * pointer calls because a pointer event does not arrive during a frame: it arrives between two,
+     * and the honest answer to "what tile is under the cursor" is the one the player last saw.
+     */
+    var viewAngle: Coord = Coord(0)
+        private set
+
+    /** `(cos, sin)` of [viewAngle] in screen-pixel axes, y down. Recomputed only when it moves. */
+    private var viewCos = 1f
+    private var viewSin = 0f
+
+    /** The 2x2 handed to [UiRectRenderer.drawInstanced], rebuilt per frame; see [setViewAngle]. */
+    private val viewTransform = floatArrayOf(1f, 0f, 0f, 1f)
+
+    private fun setViewAngle(angle: Coord) {
+        if (angle != viewAngle) {
+            val cs = ViewTurn.cosSin(angle)
+            viewCos = cs[0]
+            viewSin = cs[1]
+            viewAngle = angle
+        }
+        // Rebuilt every frame even when the angle held still: the aspect is the other half of it,
+        // and a window resized between two frames of the same heading still moves this matrix.
+        ViewTurn.transform(viewCos, viewSin, resW / resH, viewTransform)
+    }
 
     // Flat batch (refilled each frame).
     private val centers = FloatArray(MAX_RECTS * 2)
@@ -125,8 +164,8 @@ class OutofspaceRenderer {
     }
 
     fun panByPixels(dxPixels: Float, dyPixels: Float) {
-        camX -= dxPixels / tilePx
-        camY -= dyPixels / tilePx
+        camX -= unturnX(dxPixels, dyPixels) / tilePx
+        camY -= unturnY(dxPixels, dyPixels) / tilePx
     }
 
     fun zoomAtScreen(px: Float, py: Float, factor: Float) {
@@ -138,11 +177,25 @@ class OutofspaceRenderer {
         camY += before[1] - after[1]
     }
 
-    /** Framebuffer pixel → fractional tile coordinates. */
-    fun screenToTile(px: Float, py: Float): FloatArray = floatArrayOf(
-        camX + (px - resW * 0.5f) / tilePx,
-        camY + (py - resH * 0.5f) / tilePx,
-    )
+    /**
+     * Framebuffer pixel → fractional tile coordinates.
+     *
+     * The offset from the screen centre is turned *back* by [viewAngle] before it is scaled, which
+     * is what keeps building honest in a rotated view: the tile the player clicks is the tile they
+     * see under the cursor, and a pipe dragged along a tilted hull follows the hull.
+     */
+    fun screenToTile(px: Float, py: Float): FloatArray {
+        val dx = px - resW * 0.5f
+        val dy = py - resH * 0.5f
+        return floatArrayOf(
+            camX + unturnX(dx, dy) / tilePx,
+            camY + unturnY(dx, dy) / tilePx,
+        )
+    }
+
+    private fun unturnX(dx: Float, dy: Float): Float = ViewTurn.unturnX(viewCos, viewSin, dx, dy)
+
+    private fun unturnY(dx: Float, dy: Float): Float = ViewTurn.unturnY(viewCos, viewSin, dx, dy)
 
     /** Framebuffer pixel → tile index, or -1 when the pointer is off the grid. */
     fun tileIndexAt(px: Float, py: Float, state: VesselState): Int {
@@ -160,8 +213,10 @@ class OutofspaceRenderer {
         hoveredIndex: Int = -1,
         overlay: Overlay = Overlay.None,
         tickAlpha: Float = 1f,
+        camera: CameraFrame = CameraFrame.Grid,
     ) {
         followFrame(state)
+        setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
         alpha = tickAlpha.coerceIn(0f, 1f)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
@@ -170,9 +225,14 @@ class OutofspaceRenderer {
         count = 0
 
         val grid = state.grid
-        // On-screen tiles only.
-        val halfW = resW / (2f * tilePx)
-        val halfH = resH / (2f * tilePx)
+        // On-screen tiles only. Turned, the screen's corners reach further out along both axes than
+        // its edges do, so the window becomes the circle that contains it — never under-drawing, at
+        // the cost of some off-screen tiles at 45°. Anything cleverer would be a polygon test per
+        // tile to save work that is already one instanced call.
+        val turned = viewAngle.raw != 0
+        val radius = sqrt(resW * resW + resH * resH) / (2f * tilePx)
+        val halfW = if (turned) radius else resW / (2f * tilePx)
+        val halfH = if (turned) radius else resH / (2f * tilePx)
         val minX = max(0, floor(camX - halfW).toInt())
         val maxX = minOf(grid.width - 1, floor(camX + halfW).toInt() + 1)
         val minY = max(0, floor(camY - halfH).toInt())
@@ -297,7 +357,7 @@ class OutofspaceRenderer {
             tileRect(grid.xOf(hoveredIndex), grid.yOf(hoveredIndex), 1f, Colors.HOVER)
         }
 
-        rects.drawInstanced(count, centers, halfSizes, colors)
+        rects.drawInstanced(count, centers, halfSizes, colors, viewTransform)
         GPU.disableBlend()
     }
 

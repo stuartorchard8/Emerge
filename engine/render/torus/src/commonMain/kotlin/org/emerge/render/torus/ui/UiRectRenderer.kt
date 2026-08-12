@@ -17,6 +17,8 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         UiRectShaderSources.fragment(),
     )
 
+    private val uView = GPU.getUniformLocation(program, "uView")
+
     private val vao = GPU.genAndBindVertexArrays()
     private val quadVbo = GPU.genBuffers()
     private val centerVbo = GPU.genBuffers()
@@ -34,11 +36,26 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         initFloatBuffer(colorVbo, 3, 4)
     }
 
-    fun drawInstanced(count: Int, centers: FloatArray, halfSizes: FloatArray, colors: FloatArray) {
+    /**
+     * [view] is a 2x2 transform applied to every vertex about the screen centre, row-major
+     * `(m00, m01, m10, m11)`, and defaults to [IDENTITY].
+     *
+     * Deliberately a raw matrix rather than an angle: NDC is not square, so rotating a scene by θ is
+     * `S·R(θ)·S⁻¹` for the resolution's own scale, and only the caller knows the resolution. Passing
+     * an angle here would mean this class either guessing the aspect or silently shearing.
+     */
+    fun drawInstanced(
+        count: Int,
+        centers: FloatArray,
+        halfSizes: FloatArray,
+        colors: FloatArray,
+        view: FloatArray = IDENTITY,
+    ) {
         val n = count.coerceIn(0, maxRects)
         if (n <= 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
+        GPU.putUniform4fv(uView, view, 1)
         bind(centerVbo, centerBuffer, centers, n * 2)
         bind(halfSizeVbo, halfSizeBuffer, halfSizes, n * 2)
         bind(colorVbo, colorBuffer, colors, n * 4)
@@ -82,6 +99,10 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
 
     companion object {
         const val DEFAULT_MAX_RECTS = 128
+
+        /** Draw the batch exactly where the caller put it. Shared and never written to. */
+        val IDENTITY = floatArrayOf(1f, 0f, 0f, 1f)
+
         private const val QUAD_VERTEX_COUNT = 4
     }
 }

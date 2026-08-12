@@ -13,4 +13,14 @@ enum class Mode(val label: String) {
     ;
 
     val next: Mode get() = if (this == Build) Flight else Build
+
+    /**
+     * Which frame the camera holds still while in this mode.
+     *
+     * Derived rather than a separate setting the player toggles, because the mode **is** the choice:
+     * picking Build is saying "I am laying pipe" and picking Flight is saying "I am flying", and
+     * those are precisely the two questions the frame answers. A second control would only let the
+     * player put the two into a combination neither activity wants.
+     */
+    val camera: CameraFrame get() = if (this == Build) CameraFrame.Grid else CameraFrame.World
 }
