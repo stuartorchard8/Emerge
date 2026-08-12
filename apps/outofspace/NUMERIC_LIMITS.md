@@ -4,7 +4,8 @@ Status: **survey, nothing changed** — 2026-08-12.
 
 Every number below was measured against the code as it stands, either by evaluating the real
 functions or by running a real scenario. Nothing here is an estimate unless it says so. The probes
-were temporary and have been deleted; §9 says how to rebuild them.
+were temporary and have been deleted; §9 is the permanent tripwire that replaced them and §10 says
+how to rebuild the rest.
 
 The question this answers: **if the mass unit stops being "one gram" and becomes an anonymous unit
 `1 g / k`, how large can `k` be before something overflows, and what does that buy?**
@@ -15,12 +16,12 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 
 | | |
 |---|---|
-| Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 42** at realistic ship mass |
+| Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); already impossible for the heaviest buildable vessel, see §5 |
 | Next | `apportion`: `weight * target` — **safe k ≈ 152** (k², at a full Storage) |
 | Next | ship-wide joules at 3000 K — **safe k ≈ 49** at the absolute worst packing |
 | Already broken at k=1 | `reducedPressure` at the packing wall (§6.1) |
 | Already broken at k=1 | diffusion strands anything under 5 units (§6.2) |
-| Recommended | **k = 100** as-is; **k = 1000** after three one-line fixes (§8) |
+| Recommended | **k = 100** as-is; **k = 1000** after five fixes (§8, listed by the tripwire in §9) |
 
 The headline for the stated goal: **negligibility is set by the diffusion stranding floor, which is
 5 *units* regardless of what a unit means.** As a fraction of a tile of ambient air that is
@@ -151,7 +152,7 @@ when they look roomy today.
 
 | # | Expression | k^ | worst case | safe k |
 |---|---|---|---|---|
-| 1 | `velocityX`: `vesselImpulse * PER_TILE` | 1 | ship at 2 tiles/tick | **42** (realistic) / 5.7 (max-mass ship) |
+| 1 | `velocityX`: `vesselImpulse * PER_TILE` | 1 | ship at 2 tiles/tick | **16.7** (reference ship) — see below |
 | 2 | ship joules: heaviest machine at 3000 K × 5760 | 1 | 1.89e17 | **49** |
 | 3 | `apportion`: `weight * target` | **2** | full Storage, 4.0e14 | **152** |
 | 4 | `apportion`: `weight * target` | **2** | machine buffer, 1.6e13 | 759 |
@@ -174,6 +175,22 @@ is momentum, so `mass × velocity`; multiplying by `PER_TILE = 1e9` before divid
 speed at `9.22e9 / mass` tiles/tick. That is 83 tiles/tick for the measured 110-tonne hull today, and
 `83/k` after a rescale. `NAV_FULL_SCALE_SPEED` is already 2 tiles/tick, so at k=100 the ship tops
 out at 0.83 tiles/tick — below the speed the nav instrument is drawn for.
+
+> ⚠️ **Correction, found by the tripwire in §9.** The first version of this document reported a safe
+> k of 5.7 for a maximally-heavy ship. That was wrong by a factor of a hundred — a stray divisor in
+> the probe. Stated as a mass instead, at 2 tiles/tick the flight model can fly:
+>
+> | | grams | |
+> |---|---|---|
+> | ceiling (`Long.MAX / (PER_TILE × 2)`) | 4,611,686,018 | — |
+> | reference ship (⅛ of the grid in hull) | 275,351,760 | 6.0% of the ceiling |
+> | measured bare 96×60 hull | 110,523,137 | 2.4% |
+> | grid packed solid with extractors | 80,855,280,000 | **17.5× over — already impossible today** |
+>
+> So there is a buildable vessel that the flight model cannot fly *at one gram per unit*, with no
+> rescale involved: its velocity wraps and it flies backwards. Nobody builds a solid block of
+> extractors, which is why this has never been seen, but it is a real edge and it is the first thing
+> a rescale spends.
 
 **#2 is a whole-ship sum, so it scales with grid area as well as k.** The 5760-tile figure is
 today's default grid; the dynamic grid can grow, and this bound shrinks proportionally. A world
@@ -284,10 +301,42 @@ unit.
 
 ---
 
-## 9. How to re-measure
+## 9. The tripwire
 
-None of this is pinned by a test, which means it will drift. Two probes produced everything above,
-both deleted after reading:
+`NumericLimitsTest` (in `core/src/commonTest`) is this document made executable, and it is the
+warning system for the rescale itself. It rebuilds every worst case in §5 out of the game's own
+constants — densities, caps, grid size, machine masses — so moving any of them moves the rows that
+depend on it, by name.
+
+**The knob is `targetMassScale`.** Set it to the unit you are aiming at (`1` = one gram, `1000` = one
+milligram) and every row that cannot support that unit fails with its name, its actual headroom and
+the headroom it would need. That failure list *is* the to-do list, generated rather than remembered.
+At `targetMassScale = 1000` today it reads:
+
+```
+- velocityX: vesselImpulse * PER_TILE          headroom 16.7,     needs 4.00e+03
+- frameAcceleration: netImpulse * FRAC_ONE     headroom 780,      needs 4.00e+03
+- apportion: weight * target (full Storage)    headroom 2.31e+04, needs 4.00e+06
+- apportion: weight * target (machine buffer)  headroom 5.76e+05, needs 4.00e+06
+- ship joules: that across the whole grid      headroom 48.7,     needs 4.00e+03
+```
+
+Five expressions between here and milligrams — one more than §8 predicted, since `apportion`'s
+buffer case and `frameAcceleration` both fall inside the safety factor at that target.
+
+A second test states the flight ceiling as a mass rather than a margin, because that one already
+binds (see the correction in §5). It prints the budget breakdown on every run.
+
+Two deliberate omissions, both explained in the file: the §6.1 packing-wall overflow and the §6.2
+stranding floor. Pinning either would mean asserting that a known bug is still present, which goes
+red when somebody fixes it.
+
+Runtime is 50 ms for both tests, so it costs nothing to keep in the suite.
+
+## 10. How to re-measure
+
+The analytic bounds are now pinned by §9. The *measured* peaks are not, and two probes produced
+them, both deleted after reading:
 
 - **Analytic bounds** — a `commonTest` class that evaluates `solidGramsPerTile`, `Material`,
   `MachineKind.gramsPerTile × thermalTiles`, the caps, and each intermediate's worst case, printing
@@ -298,6 +347,6 @@ both deleted after reading:
 The measured peaks came from a bare hull with **no logistics running**, so the cargo path figures in
 §5 are the enforced caps rather than observations. A loaded vessel would confirm them.
 
-Making the analytic probe a permanent test — asserting that each intermediate keeps at least, say,
-100× headroom — would turn this document from a snapshot into a tripwire. Not done, since the ask
-was a survey.
+§9 is that analytic probe, made permanent. What remains unpinned is the scenario side: a loaded
+vessel with logistics running would confirm the cargo-path figures, which are currently the enforced
+caps rather than observations.
