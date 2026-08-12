@@ -73,6 +73,97 @@ class SaveTest {
      * defaults to exactly ambient, so a save that dropped the temperature line entirely would round
      * trip perfectly and only diverge once something was hot. This warms one room first.
      */
+    /**
+     * Step 7 of `PLAN_unit_rescale.md`: a save states the unit it was written in, and a file from a
+     * coarser unit is multiplied up on read.
+     *
+     * ### Why it is written this way
+     *
+     * The obvious test — hand-write a file in an old unit and assert the numbers that come out — has
+     * to restate the list of which fields are mass-dimensioned, which is precisely the knowledge
+     * being tested. It would agree with the migration by construction and catch nothing.
+     *
+     * So this changes **one token**: the unit in the header, and nothing else in the file. The same
+     * bytes are then read as a coarse-unit world and as a native one, and every mass in the first
+     * must be exactly `factor` times the second while everything dimensionless is untouched. A field
+     * the migration forgot fails the first half. A field it scales that it should not — a rock's
+     * composition, a tile index, a tick count — fails the second.
+     */
+    @Test
+    fun `a save from a coarser mass unit is multiplied up, and only where it should be`() {
+        val factor = 1_000L
+        val played = run(starterVessel(cfg.initialGrid), 200)
+        val native = Save.write(played)
+
+        // The one edit: same numbers, but the file now claims each was worth 1000x as much.
+        val header = native.lineSequence().first().split(' ')
+        val coarse = native.replaceFirst(
+            header.joinToString(" "),
+            "outofspace ${header[1]} ${header[2].toLong() * factor}",
+        )
+
+        val here = Save.read(native)
+        val there = Save.read(coarse)
+
+        // ── Mass, energy and momentum: all up by the factor ──
+        assertEquals(here.extractedGrams * factor, there.extractedGrams, "extracted")
+        assertEquals(here.ventedGrams * factor, there.ventedGrams, "vented")
+        assertEquals(here.generatedJoules * factor, there.generatedJoules, "generated")
+        assertEquals(here.radiatedJoules * factor, there.radiatedJoules, "radiated")
+        assertEquals(here.baselineJoules * factor, there.baselineJoules, "baseline joules")
+        assertEquals(here.baselineAirGrams * factor, there.baselineAirGrams, "baseline air")
+        assertEquals(here.insertedJoules * factor, there.insertedJoules, "inserted")
+        assertEquals(here.solidToAirJoules * factor, there.solidToAirJoules, "solid to air")
+        // ⚠️ NOT `massGrams` or `storedJoules`, and finding that out is what this test was for.
+        // A vessel's mass is *derived* from `Material.composition` and the species densities — it is
+        // never written to the file at all — so it is already in this build's units and must not
+        // move. Solid heat is the subtler case: `k=` is omitted for any machine sitting at ambient,
+        // and an omitted field is **reconstructed from a current-unit default** rather than read and
+        // scaled. Both are correct, and both would look like a migration bug to anyone who assumed
+        // "every mass in the world scales" without asking where each number came from.
+
+        // Guards the guard: if the world were empty these would all be 0 == 0.
+        assertTrue(here.extractedGrams > 0 || here.baselineAirGrams > 0, "the fixture must have mass in it")
+
+        // Air, tile by tile, is the biggest mass field in the game and goes through readMixture.
+        var airTiles = 0
+        for (t in 0 until here.grid.size) {
+            val a = here.air.mixtureAt(t)
+            if (a.isEmpty) continue
+            airTiles++
+            assertEquals(a.total * factor, there.air.mixtureAt(t).total, "air at tile $t")
+        }
+        assertTrue(airTiles > 0, "the fixture must have air in it")
+
+        // ── Dimensionless: identical ──
+        assertEquals(here.tick, there.tick, "a tick count is not a mass")
+        assertEquals(here.grid, there.grid, "nor is a grid")
+        assertEquals(here.positionX, there.positionX, "nor is a position — it is in tiles")
+        assertEquals(here.positionY, there.positionY, "nor is a position — it is in tiles")
+        assertEquals(here.machines.count { it != null }, there.machines.count { it != null }, "machine count")
+        // The trap this whole family of bugs lives in: same syntax as air, entirely different meaning.
+        for (i in here.bodies.indices) {
+            assertEquals(
+                here.bodies[i].oreComposition,
+                there.bodies[i].oreComposition,
+                "a rock's composition is proportions, not grams",
+            )
+        }
+    }
+
+    @Test
+    fun `a save finer than this build is refused rather than rounded`() {
+        // The one direction that cannot be migrated: dividing would round every mass in the world,
+        // and silently halving somebody's cargo is worse than declining to open the file.
+        val native = Save.write(starterVessel(cfg.initialGrid))
+        val header = native.lineSequence().first().split(' ')
+        val finer = native.replaceFirst(
+            header.joinToString(" "),
+            "outofspace ${header[1]} ${header[2].toLong() / 10}",
+        )
+        assertFailsWith<SaveError> { Save.read(finer) }
+    }
+
     @Test
     fun `air temperature survives a save`() {
         val start = starterVessel(cfg.initialGrid)

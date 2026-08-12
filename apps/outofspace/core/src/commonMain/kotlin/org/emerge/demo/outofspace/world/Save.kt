@@ -23,7 +23,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 12
+    const val VERSION = 13
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -38,7 +38,11 @@ object Save {
 
     fun write(state: VesselState): String {
         val out = StringBuilder()
-        out.append("outofspace ").append(VERSION).append('\n')
+        // The unit the numbers below are in, stated in the file rather than implied by its
+        // version. See [readScale]: a save is only interpretable if you know what one integer meant
+        // when it was written, and the version cannot say that once the unit is a knob.
+        out.append("outofspace ").append(VERSION)
+            .append(' ').append(Budget.MICROGRAMS_PER_UNIT).append('\n')
         out.append("grid ").append(state.grid.width).append(' ').append(state.grid.height).append('\n')
         out.append("gravity ").append(state.gravity.x.raw).append(' ').append(state.gravity.y.raw).append('\n')
         // Position absent = origin.
@@ -250,16 +254,17 @@ object Save {
         field: String,
         machine: Machine,
         version: Int,
+        scale: Long,
         fail: (String) -> Nothing,
     ): TileJoules {
         val tiles = machine.kind.thermalTiles
         if (version < 12) {
-            val total = field.toLongOrNull() ?: fail("bad joules '$field'")
+            val total = (field.toLongOrNull() ?: fail("bad joules '$field'")) * scale
             return TileJoules.uniform(tiles, 0L).plusSpread(total)
         }
         val parts = field.split(',')
         if (parts.size != tiles) fail("expected $tiles per-tile joules for ${machine.kind}, got ${parts.size}")
-        return TileJoules.of(LongArray(tiles) { parts[it].toLongOrNull() ?: fail("bad joules '$field'") })
+        return TileJoules.of(LongArray(tiles) { (parts[it].toLongOrNull() ?: fail("bad joules '$field'")) * scale })
     }
 
     private fun writeSegment(s: Segment): String {
@@ -298,6 +303,45 @@ object Save {
 
     // ── Reading ───────────────────────────────────────────────────────────────
 
+    /**
+     * What every mass-, energy- and momentum-dimensioned number in the file must be multiplied by.
+     *
+     * ### Why the file states its unit instead of the version implying it
+     *
+     * A save is a pile of bare integers, and an integer only means something once you know what one
+     * of them was worth when it was written. Keying that to the version number would work exactly
+     * once: [Budget.MICROGRAMS_PER_UNIT] is a knob, and the moment it moves twice there is no way to
+     * recover which of two units a version-13 file was written in. Stating the unit in the file
+     * makes every save self-describing and makes any future rescale free of save work entirely.
+     *
+     * ### Why one factor covers all three dimensions
+     *
+     * Because `Budget.MILLIJOULE == Budget.GRAM`: [Budget.ENERGY_PER_MASS] is pinned at 1000 by
+     * specific heat being quoted per kilogram, and that is exactly the relation which makes a
+     * millijoule-per-gram the pairing every capacity expression already assumes. Momentum is
+     * `gram·tiles/tick`, mass times a dimensionless velocity, so it follows mass too. One number
+     * rescales the lot, and if the [Budget.ENERGY_PER_MASS] relation is ever broken this function is
+     * the first thing that has to grow a second factor.
+     *
+     * Absent means one gram per unit: every file written before version 13 was, and the unit has
+     * only ever gone down, so the factor is always a whole number.
+     */
+    private fun readScale(stated: String?, line: Int): Long {
+        val fileUnit = if (stated == null) 1_000_000L else stated.toLongOrNull()
+            ?: throw SaveError("line $line: unreadable mass unit '$stated'")
+        if (fileUnit <= 0L) throw SaveError("line $line: mass unit must be positive, got $fileUnit")
+        if (fileUnit % Budget.MICROGRAMS_PER_UNIT != 0L) {
+            // Only ever a widening. A file finer than this build could not be represented without
+            // rounding every mass in the world, and silently halving somebody's cargo is a worse
+            // outcome than refusing to open it.
+            throw SaveError(
+                "line $line: save is in units of $fileUnit µg, which this build's " +
+                    "${Budget.MICROGRAMS_PER_UNIT} µg cannot represent without losing precision"
+            )
+        }
+        return fileUnit / Budget.MICROGRAMS_PER_UNIT
+    }
+
     fun read(text: String): VesselState {
         val lines = text.lineSequence().withIndex()
             .map { (n, raw) -> n + 1 to raw.substringBefore('#').trim() }
@@ -312,7 +356,7 @@ object Save {
         }
 
         val (headerLine, header) = next()
-        if (header.size != 2 || header[0] != "outofspace") {
+        if (header.size !in 2..3 || header[0] != "outofspace") {
             throw SaveError("line $headerLine: not an Out of Space save")
         }
         val version = header[1].toIntOrNull()
@@ -320,6 +364,7 @@ object Save {
         if (version !in 1..VERSION) {
             throw SaveError("save is version $version, this build reads version 1..$VERSION")
         }
+        val scale = readScale(header.getOrNull(2), headerLine)
 
         val (gridLine, gridTokens) = next()
         if (gridTokens.size != 3 || gridTokens[0] != "grid") throw SaveError("line $gridLine: expected a grid")
@@ -382,6 +427,10 @@ object Save {
             val (n, tokens) = next()
             fun fail(why: String): Nothing = throw SaveError("line $n: $why")
             fun long(i: Int): Long = tokens.getOrNull(i)?.toLongOrNull() ?: fail("expected a number")
+            // Every mass-, energy- or momentum-dimensioned field reads through this one and every
+            // dimensionless field reads through `long`. Which of the two a line uses IS the
+            // statement of what that field means — see [readScale].
+            fun scaled(i: Int): Long = long(i) * scale
             fun tile(i: Int): Int {
                 val t = tokens.getOrNull(i)?.toIntOrNull() ?: fail("expected a tile index")
                 if (t !in 0 until grid.size) fail("tile $t is outside a ${grid.width}x${grid.height} grid")
@@ -391,34 +440,34 @@ object Save {
             when (tokens[0]) {
                 "gravity" -> gravity = Frac2(Frac(long(1)), Frac(long(2)))
                 "position" -> { positionX = long(1); positionY = long(2) }
-                "thrust" -> { netImpulseX = long(1); netImpulseY = long(2) }
+                "thrust" -> { netImpulseX = scaled(1); netImpulseY = scaled(2) }
                 "tick" -> tick = long(1)
                 // `mined` is v9's name for it: the same quantity, counted at the miner instead.
-                "mined", "extracted" -> extracted = long(1)
-                "vented" -> vented = long(1)
-                "generated" -> generated = long(1)
-                "radiated" -> radiated = long(1)
-                "airvented" -> airVented = long(1)
-                "airventedheat" -> airVentedJoules = long(1)
-                "airinjected" -> { injectedAirGrams = long(1); injectedAirJoules = long(2) }
-                "baselineairheat" -> baselineAirJoules = long(1)
-                "baselinejoules" -> baselineJoules = long(1)
-                "inserted" -> inserted = long(1)
-                "acquired" -> acquired = long(1)
+                "mined", "extracted" -> extracted = scaled(1)
+                "vented" -> vented = scaled(1)
+                "generated" -> generated = scaled(1)
+                "radiated" -> radiated = scaled(1)
+                "airvented" -> airVented = scaled(1)
+                "airventedheat" -> airVentedJoules = scaled(1)
+                "airinjected" -> { injectedAirGrams = scaled(1); injectedAirJoules = scaled(2) }
+                "baselineairheat" -> baselineAirJoules = scaled(1)
+                "baselinejoules" -> baselineJoules = scaled(1)
+                "inserted" -> inserted = scaled(1)
+                "acquired" -> acquired = scaled(1)
                 // Old spelling: the energy the player inserted, now [insertedJoules].
-                "construction" -> inserted = long(1)
-                "solidtoair" -> solidToAir = long(1)
-                "baselineair" -> baselineAir = long(1)
+                "construction" -> inserted = scaled(1)
+                "solidtoair" -> solidToAir = scaled(1)
+                "baselineair" -> baselineAir = scaled(1)
 
                 "machine" -> {
                     val t = tile(1)
                     if (machines[t] != null) fail("two machines at tile $t")
-                    machines[t] = readMachine(tokens.drop(2), version, ::fail)
+                    machines[t] = readMachine(tokens.drop(2), version, scale, ::fail)
                 }
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
                     val t = tile(1)
-                    val segment = readSegment(tokens.drop(2), ::fail)
+                    val segment = readSegment(tokens.drop(2), scale, ::fail)
                     val layer = layers[segment.conduit.ordinal]
                     // Per layer, not per tile. Two segments on one tile is what layers are *for*;
                     // two of the same conduit on one tile is still a corrupt file.
@@ -428,7 +477,7 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (bridges[t] != null) fail("two bridges at tile $t")
-                    bridges[t] = readMachine(tokens.drop(2), version, ::fail) as? Bridge ?: fail("not a bridge")
+                    bridges[t] = readMachine(tokens.drop(2), version, scale, ::fail) as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
                 "merge" -> merges[tile(1)] = long(2).toInt()
@@ -440,17 +489,17 @@ object Save {
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad joules in '${tokens[i]}'")
                 }
-                "airheat" -> readSparse(tokens, airJoules, ::fail)
+                "airheat" -> readSparse(tokens, airJoules, scale, ::fail)
                 "pipeair" -> {
                     val t = tile(1)
-                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), ::fail)
+                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
                     for (s in Species.ALL) pipeGrams[t * Species.COUNT + s.ordinal] = mix[s]
                 }
-                "pipeairheat" -> readSparse(tokens, pipeJoules, ::fail)
-                "pipemomx" -> readSparse(tokens, pipeMomentumX, ::fail)
-                "pipemomy" -> readSparse(tokens, pipeMomentumY, ::fail)
-                "momx" -> readSparse(tokens, momentumX, ::fail)
-                "momy" -> readSparse(tokens, momentumY, ::fail)
+                "pipeairheat" -> readSparse(tokens, pipeJoules, scale, ::fail)
+                "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
+                "pipemomy" -> readSparse(tokens, pipeMomentumY, scale, ::fail)
+                "momx" -> readSparse(tokens, momentumX, scale, ::fail)
+                "momy" -> readSparse(tokens, momentumY, scale, ::fail)
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
                 "body", "rock" -> {
@@ -463,24 +512,28 @@ object Save {
                             kind = BodyKind.ROCK,
                             width = w, height = h,
                             cells = BooleanArray(bits.length) { bits[it] == '1' },
+                            // Position is in Flight units — tiles, not mass — so it does not move.
                             positionX = long(3), positionY = long(4),
-                            impulseX = long(5), impulseY = long(6),
-                            joules = long(7),
-                            oreComposition = readMixture(tokens[8], ::fail),
+                            impulseX = scaled(5), impulseY = scaled(6),
+                            joules = scaled(7),
+                            // ⚠️ NOT scaled. A rock's composition is *proportions*, the same shape
+                            // of value as `Material.composition`, and multiplying it would be
+                            // meaningless rather than merely wrong — see `capacityPerTileOf`.
+                            oreComposition = readMixture(tokens[8], 1L, ::fail),
                         ),
                     )
                 }
                 "impulse" -> {
-                    impulseX = long(1); impulseY = long(2)
-                    exhaustX = long(3); exhaustY = long(4)
+                    impulseX = scaled(1); impulseY = scaled(2)
+                    exhaustX = scaled(3); exhaustY = scaled(4)
                     // Absent = zero (ledger had fewer stores).
-                    if (tokens.size > 6) { undeliveredX = long(5); undeliveredY = long(6) }
-                    if (tokens.size > 8) { debugX = long(7); debugY = long(8) }
-                    if (tokens.size > 10) { bodyImpulseX = long(9); bodyImpulseY = long(10) }
+                    if (tokens.size > 6) { undeliveredX = scaled(5); undeliveredY = scaled(6) }
+                    if (tokens.size > 8) { debugX = scaled(7); debugY = scaled(8) }
+                    if (tokens.size > 10) { bodyImpulseX = scaled(9); bodyImpulseY = scaled(10) }
                 }
                 "air" -> {
                     val t = tile(1)
-                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), ::fail)
+                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
                     for (s in Species.ALL) airGrams[t * Species.COUNT + s.ordinal] = mix[s]
                 }
                 else -> fail("unknown entry '${tokens[0]}'")
@@ -565,17 +618,17 @@ object Save {
     }
 
     /** The reading half of [writeSparse]. */
-    private fun readSparse(tokens: List<String>, into: LongArray, fail: (String) -> Nothing) {
+    private fun readSparse(tokens: List<String>, into: LongArray, scale: Long, fail: (String) -> Nothing) {
         for (i in 1 until tokens.size) {
             val eq = tokens[i].indexOf('=')
             if (eq < 0) fail("expected index=value, got '${tokens[i]}'")
             val at = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad index in '${tokens[i]}'")
             if (at !in into.indices) fail("index $at is outside the field")
-            into[at] = tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'")
+            into[at] = (tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'")) * scale
         }
     }
 
-    private fun readMachine(tokens: List<String>, version: Int, fail: (String) -> Nothing): Machine {
+    private fun readMachine(tokens: List<String>, version: Int, scale: Long, fail: (String) -> Nothing): Machine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
@@ -588,9 +641,14 @@ object Save {
         fun facing(): Direction = f["facing"]?.let { name ->
             Direction.ALL.firstOrNull { it.name == name } ?: fail("unknown direction '$name'")
         } ?: fail("$kindName needs a facing")
-        fun res(key: String): Resource? = f[key]?.let { readResource(it, fail) }
+        fun res(key: String): Resource? = f[key]?.let { readResource(it, scale, fail) }
         fun num(key: String, fallback: Long): Long =
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
+        // ⚠️ Scales the value read from the file but NOT the fallback, which is a current-unit
+        // constant off the machine's own data class. Scaling a default would rescale a number that
+        // was never in the old unit to begin with.
+        fun massNum(key: String, fallback: Long): Long =
+            f[key]?.let { (it.toLongOrNull() ?: fail("bad number '$it'")) * scale } ?: fallback
 
         // V1 rate was per second; V2+ is per tick. Convert v1 by dividing by V1_TICKS_PER_SECOND.
         /**
@@ -602,8 +660,8 @@ object Save {
          * constant it does not own" family again, and it survived a rate change silently.
          */
         fun rate(fallback: Long): Long {
-            val stored = num("rate", fallback * V1_TICKS_PER_SECOND)
-            return if (version < 2) stored / V1_TICKS_PER_SECOND else num("rate", fallback)
+            val stored = massNum("rate", fallback * V1_TICKS_PER_SECOND)
+            return if (version < 2) stored / V1_TICKS_PER_SECOND else massNum("rate", fallback)
         }
 
         val machine: Machine = when (kind) {
@@ -613,34 +671,34 @@ object Save {
                     Conduit.entries.firstOrNull { it.name == name } ?: fail("unknown conduit '$name'")
                 } ?: Conduit.Rail,
                 // `held` = v5 bridge slot name; read as entry so old saves load material.
-                entry = (f["in"] ?: f["held"])?.let { readPacket(it, fail) },
-                middle = f["span"]?.let { readPacket(it, fail) },
-                exit = f["out"]?.let { readPacket(it, fail) },
+                entry = (f["in"] ?: f["held"])?.let { readPacket(it, scale, fail) },
+                middle = f["span"]?.let { readPacket(it, scale, fail) },
+                exit = f["out"]?.let { readPacket(it, scale, fail) },
             )
             MachineKind.Extractor -> Extractor(
                 facing = facing(),
                 buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
                 input = res("in"),
-                carry = num("carry", 0L),
+                carry = massNum("carry", 0L),
                 gramsPerTick = rate(Extractor(Direction.Right).gramsPerTick),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
                 input = res("in"), product = res("out"), tailings = res("waste"),
-                carry = num("carry", 0L),
+                carry = massNum("carry", 0L),
                 gramsPerTick = rate(Processor(Direction.Right).gramsPerTick),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
                 input = res("in"),
-                carry = num("carry", 0L),
+                carry = massNum("carry", 0L),
                 gramsPerTick = rate(Vaporizer(Direction.Right).gramsPerTick),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 input = res("in"), refined = res("out"), slag = res("waste"),
-                carry = num("carry", 0L),
+                carry = massNum("carry", 0L),
                 gramsPerTick = rate(Smelter(Direction.Right).gramsPerTick),
             )
             MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
@@ -652,7 +710,7 @@ object Save {
                     InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
                 } ?: InputKey.Up,
             )
-            MachineKind.Vent -> Vent(ventedGrams = num("vented", 0L))
+            MachineKind.Vent -> Vent(ventedGrams = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
             MachineKind.Hull -> Hull()
             MachineKind.Airlock -> Airlock()
@@ -665,11 +723,11 @@ object Save {
         // to running would come back from a hand-written save wide open.
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
         // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
-        val heated = f["k"]?.let { j -> machine.withJoules(readTileJoules(j, machine, version, fail)) } ?: machine
+        val heated = f["k"]?.let { j -> machine.withJoules(readTileJoules(j, machine, version, scale, fail)) } ?: machine
         return heated.withWiring(wiring)
     }
 
-    private fun readSegment(tokens: List<String>, fail: (String) -> Nothing): Segment {
+    private fun readSegment(tokens: List<String>, scale: Long, fail: (String) -> Nothing): Segment {
         val conduitName = tokens.firstOrNull() ?: fail("expected a conduit")
         val conduit = Conduit.entries.firstOrNull { it.name == conduitName } ?: fail("unknown conduit '$conduitName'")
         val f = fields(tokens.drop(1), fail)
@@ -678,7 +736,7 @@ object Save {
         return Segment(
             conduit = conduit,
             links = links,
-            held = f["held"]?.let { readPacket(it, fail) },
+            held = f["held"]?.let { readPacket(it, scale, fail) },
             // `gauge=1` since v11; before that, *having* a channel was what made a segment a gauge.
             isGauge = f["gauge"] == "1" || f["channel"] != null,
             lastForm = f["lastform"]?.let { name ->
@@ -688,9 +746,11 @@ object Save {
                 Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
             },
             lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
-            lastMass = f["lastmass"]?.toLongOrNull() ?: 0L,
+            lastMass = (f["lastmass"]?.toLongOrNull() ?: 0L) * scale,
             valve = f["valve"] == "1",
-            joules = f["k"]?.toLongOrNull() ?: conduit.ambientPerTile,
+            // Same rule as massNum: the stored figure scales, the ambient fallback does not.
+            joules = f["k"]?.let { (it.toLongOrNull() ?: fail("bad joules '$it'")) * scale }
+                ?: conduit.ambientPerTile,
         )
     }
 
@@ -737,7 +797,12 @@ object Save {
             else -> fail("unknown signal source '$name'")
         }
 
-    private fun readMixture(text: String, fail: (String) -> Nothing): Mixture {
+    /**
+     * ⚠️ [scale] is **1** for a mixture that states proportions and the file's factor for one that
+     * states a mass. The same syntax carries both — air in a tile is grams, a rock's `oreComposition`
+     * is parts — so the distinction cannot be made here and every caller has to declare it.
+     */
+    private fun readMixture(text: String, scale: Long, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY
         val grams = LongArray(Species.COUNT)
         for (part in text.split(',')) {
@@ -747,22 +812,22 @@ object Save {
             val species = Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
             val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
             if (mass < 0L) fail("negative mass in '$part'")
-            grams[species.ordinal] += mass
+            grams[species.ordinal] += mass * scale
         }
         return Mixture.ofGrams(grams)
     }
 
-    private fun readResource(text: String, fail: (String) -> Nothing): Resource {
+    private fun readResource(text: String, scale: Long, fail: (String) -> Nothing): Resource {
         val slash = text.indexOf('/')
         if (slash < 0) fail("expected FORM/mixture, got '$text'")
         val name = text.substring(0, slash)
         val form = Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
-        return Resource(form, readMixture(text.substring(slash + 1), fail))
+        return Resource(form, readMixture(text.substring(slash + 1), scale, fail))
     }
 
-    private fun readPacket(text: String, fail: (String) -> Nothing): Packet = when {
-        text.startsWith("S:") -> SolidPacket(readResource(text.substring(2), fail))
-        text.startsWith("F:") -> FluidPacket(readMixture(text.substring(2), fail))
+    private fun readPacket(text: String, scale: Long, fail: (String) -> Nothing): Packet = when {
+        text.startsWith("S:") -> SolidPacket(readResource(text.substring(2), scale, fail))
+        text.startsWith("F:") -> FluidPacket(readMixture(text.substring(2), scale, fail))
         else -> fail("expected S: or F:, got '$text'")
     }
 
