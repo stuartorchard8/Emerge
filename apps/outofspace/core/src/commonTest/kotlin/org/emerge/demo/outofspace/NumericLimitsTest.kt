@@ -17,6 +17,8 @@ import org.emerge.demo.outofspace.world.SPECIFIC_HEAT_SCALE
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.Negligible
+import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.solidGramsPerTile
 import org.emerge.demo.outofspace.world.thermalTiles
@@ -517,6 +519,18 @@ class NumericLimitsTest {
         budget("cargo: Storage.CAP across the grid", Storage.CAP * gridTiles, 1)
         budget("densest single tile (bound, not an intermediate)", densestSolidTile, 1)
 
+        // Printed on every run, green or red. `NUMERIC_LIMITS.md` §10 says re-measuring means
+        // reading this table, and a table you can only see by breaking the build is not one you can
+        // re-measure from — the figures in §7 went stale for exactly that reason.
+        println(
+            buildString {
+                appendLine("Overflow budget at ${Budget.MICROGRAMS_PER_UNIT} µg / " +
+                    "${Budget.NANOJOULES_PER_UNIT} nJ per unit " +
+                    "(mass still to go x$targetMassScale, energy x${targetEnergyScale.sig3()}):")
+                for (r in rows) appendLine(r)
+            },
+        )
+
         if (failures.isNotEmpty()) {
             fail(
                 buildString {
@@ -616,5 +630,58 @@ class NumericLimitsTest {
             "the reduction lost ${worst.sig3()} units of ${Flight.PER_TILE}, which is more than a " +
                 "millionth of a tile per tick — too coarse to call the ratio scale-invariant",
         )
+    }
+
+    /**
+     * Step 9 of `PLAN_unit_rescale.md`: what the finer unit actually buys, stated as the one number
+     * the whole rescale exists to move.
+     *
+     * ### The two floors
+     *
+     * `Negligible` is what a *player* can see: the readouts say nothing below half a percent of a
+     * tile of ordinary air. It is written as a fraction of [AirField.AMBIENT_AIR], so it is a
+     * **physical** floor — about six grams of gas, whatever one integer happens to be worth. That is
+     * the property this pins, and it is why step 9 needed no numeric change to `Negligible` at all:
+     * a floor defined against the thing it is a fraction of follows the unit down on its own.
+     *
+     * The diffusion stranding floor is not physical. A cell sheds `count * FACE_SHARE / SLOTS` per
+     * face, so **fewer than [SLOTS] integers can never move at all**, and that is a fixed number of
+     * integers — the one quantity in the system the mass unit improves directly and unconditionally
+     * (`NUMERIC_LIMITS.md` §6.2).
+     *
+     * ### Why the gap is the whole point
+     *
+     * At one gram per integer the two floors were **the same size**: five stranded grams against a
+     * six-gram visible floor. §6.2 is blunt about what that meant — the `Negligible` overlay change
+     * was *cosmetic cover for a quantisation artefact*, hiding stranded gas at exactly the scale
+     * where it was becoming visible. The rescale is the real fix, and this measures it: the gap is
+     * the mass scale itself, so at a microgram the stranding floor sits a millionfold below anything
+     * a readout could show.
+     *
+     * Asserted as a ratio rather than as either floor separately, because either alone would pass
+     * while the relationship rotted — and the relationship is the claim.
+     */
+    @Test
+    fun `the stranding floor falls away from the floor a player can see`() {
+        val visibleGrams = Negligible.GRAMS / Budget.GRAM
+        assertTrue(
+            visibleGrams in 4L..8L,
+            "the visible floor should be about six grams of gas whatever the unit is, got " +
+                "$visibleGrams g — Negligible has stopped being a fraction of a tile of air",
+        )
+
+        // Both floors as a count of integers, which is the only footing they share.
+        val gap = Negligible.GRAMS / SLOTS.toLong()
+        assertEquals(
+            Budget.GRAM * visibleGrams / SLOTS.toLong(), gap,
+            "the gap between the two floors is the mass unit and nothing else",
+        )
+        println(
+            "stranding floor $SLOTS units = ${SLOTS * Budget.MICROGRAMS_PER_UNIT} µg; " +
+                "visible floor ${Negligible.GRAMS} units = $visibleGrams g; gap x${gap.commas()}",
+        )
+        // At one gram per integer this ratio is about 1 and the cover story of §6.2 applies. The
+        // knob is what moves it.
+        assertTrue(gap >= 1L, "the visible floor can never sit below the stranding floor")
     }
 }
