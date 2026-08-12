@@ -209,7 +209,17 @@ fun platingFeltBy(grid: Grid, centreX: Long, centreY: Long, platingGravity: org.
  * ship owes itself the negative of it, and booking both in the same breath is what makes the whole
  * business conserve by construction. See [VesselState.bodyImpulseX].
  */
-class BodyStep(val bodies: List<RigidBody>, val handedX: Long, val handedY: Long)
+class BodyStep(
+    val bodies: List<RigidBody>,
+    val handedX: Long,
+    val handedY: Long,
+    /**
+     * The twist that went with it, about the vessel's centre of mass — booked at the body's own
+     * centre, because a rock bouncing off a nacelle spins the ship and a rock bouncing off the nose
+     * does not. The ship owes itself the negative of this, exactly as it does of [handedX].
+     */
+    val handedTorque: Long = 0L,
+)
 
 /**
  * Body drift: grid moves by ship velocity, body advances by (body - ship) velocity.
@@ -224,6 +234,7 @@ fun driftBodies(
     shipVelocityX: Long,
     shipVelocityY: Long,
     shipMass: Long,
+    about: MassDistribution = MassDistribution.EMPTY,
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
     /**
@@ -255,6 +266,7 @@ fun driftBodies(
 
     var handedX = 0L
     var handedY = 0L
+    var handedTorque = 0L
     // The ship's velocity moves as it hands momentum out, and the *next* body has to sweep against
     // where the hull is going rather than where it started. Same defect as the stale wall inside
     // [sweepBody] and the same fix, one level up; it only shows with two heavy bodies aboard.
@@ -276,16 +288,26 @@ fun driftBodies(
             shipVx, shipVy, shipMass,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
         )
-        handedX += swept.impulseX + platingX
-        handedY += swept.impulseY + platingY
+        val gaveX = swept.impulseX + platingX
+        val gaveY = swept.impulseY + platingY
+        handedX += gaveX
+        handedY += gaveY
+        // Booked where the body is, in the millitiles [torqueAbout] works in — the body's centre is
+        // kept at [Flight.PER_TILE] to the tile, a thousand times finer than a lever arm needs.
+        handedTorque += torqueAbout(
+            about,
+            body.centreX / (Flight.PER_TILE / Rotation.MILLI_TILE),
+            body.centreY / (Flight.PER_TILE / Rotation.MILLI_TILE),
+            gaveX, gaveY,
+        )
         if (shipMass > 0L) {
-            shipVx += scaledRatio(-(swept.impulseX + platingX), shipMass, Flight.PER_TILE)
-            shipVy += scaledRatio(-(swept.impulseY + platingY), shipMass, Flight.PER_TILE)
+            shipVx += scaledRatio(-gaveX, shipMass, Flight.PER_TILE)
+            shipVy += scaledRatio(-gaveY, shipMass, Flight.PER_TILE)
         }
         swept.body.copy(
             impulseX = swept.body.impulseX + platingX,
             impulseY = swept.body.impulseY + platingY,
         )
     }
-    return BodyStep(moved, handedX, handedY)
+    return BodyStep(moved, handedX, handedY, handedTorque)
 }

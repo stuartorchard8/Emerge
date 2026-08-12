@@ -7,7 +7,9 @@ outofspace. **That draft's central choice was rejected** — see §2 for why. §
 
 ## 1. STATE OF PLAY — read this first
 
-### ✅ Step 1 is VERIFIED and COMMITTED as `3ea0a1fd` (2026-08-13).
+### ✅ Steps 1 and 2 are BUILT and green (2026-08-13). Step 1 is committed as `3ea0a1fd`; step 2 is §3.
+
+### Step 1
 
 All 8 `TrigTest` assertions pass on JVM, `compileTestKotlinJs` is green (the common-source-set JS
 trap), and Scavengers, Drockets, Cyto and Out of Space test suites are green.
@@ -134,9 +136,52 @@ confirmed this was ever causing an observed desync**, and it is a separate quest
 End state (Stu, 2026-08-13): **every body has rotation like the vessel, with collisions imparting
 torque as well as momentum.** Scavengers and Drockets already do this, but only with circle colliders.
 
-### Step 2 — vessel `ang` / `angVel` and torque
+### ✅ Step 2 — vessel `ang` / `angVel` and torque. BUILT 2026-08-13.
 
-**Next up. Nothing built.** Groundwork surveyed 2026-08-13, recorded here so it need not be re-derived:
+`RotationTest` is green (8 assertions, 2.2 s) and so are `:engine:sim:core`, `:apps:outofspace:core`,
+`:apps:scavengers:core`, `:apps:drockets:core` and `:apps:cyto:core`. `compileTestKotlinJs` is clean.
+
+**What was built**
+
+| File | Change |
+|------|--------|
+| `Rotation.kt` (new) | The angular unit system — `Coord` angle, `Coord` raw/tick rate, mass·tile²/tick impulse, millitile arms — plus `MassDistribution`, `massDistribution`, `torqueAbout`, `angularVelocity`. |
+| `Flight.kt` | `forEachVesselMass` is now the **one walk**; `structureMass`, `cargoMass`, `vesselMass` and `massDistribution` are all projections of it. |
+| `Vessel.kt` | `ang: Coord`, `angImpulse`, `netTorque` stored; `distribution` and `angVel` derived. |
+| `PressureForce.kt`, `RigidBody.kt`, `OutofspaceSim.fire`/`bite` | Each producer books its own torque, at its own position, in the same breath as its impulse. |
+| `Save.kt` | New `rotation <ang> <angImpulse> <netTorque>` keyword. Appended, not versioned — absent reads as zero, which is what every older save means. |
+
+**The two decisions worth not re-deriving**
+
+1. **`Σ m·r²` is never materialised.** At a microgram per unit a fully plated 96×60 grid puts it
+   within a factor of four of overflowing a `Long`, and it overflows worst for the ship whose centre
+   is furthest from the origin — so the parallel-axis one-pass trick is the *wrong* optimisation
+   here. `MassDistribution` stores the mass-normalised `gyrationSq` instead, which is bounded by the
+   largest `r²` on the grid however heavy the ship gets. Two passes over one walk; the second needs
+   the centre the first found.
+2. **`angularVelocity` divides by the gyration radius first and the mass second.** Only that order
+   keeps both steps inside `scaledRatio`'s exact range. The other order leaves it reducing a 6.5e9
+   denominator against a 1e12 scale, which shifts the numerator to nothing — a silent zero, not an
+   error. Measured, not guessed: the first call needs no reduction at all.
+
+⚠️ **The debug engine books no torque, deliberately.** `Edit.Thrust` is a key that pushes the ship,
+not a nozzle bolted anywhere, so its honest application point is the centre of mass. It is the one
+of the five terms with no position, and it retires with the shortcut.
+
+⚠️ **One `MassDistribution` per tick, taken from the incoming state.** Thrusters fire during the
+machine pass, before the cargo pass has finished moving anything; a producer that recomputed the
+centre mid-tick would have the tick twisting about two points at once. Same choice, same reason, as
+handing `state.velocityX` to `driftBodies`.
+
+⚠️ **A multi-tile machine is a point mass at its anchor.** Exactly right for the centre of mass
+(`coveredTiles` centres a footprint on its anchor) and an approximation for the inertia, short by
+`m·(w²+h²)/12` — about two tile² against the tens to hundreds a real lever arm contributes.
+
+**Still open from this step:** `state.velocityX` handed to `driftBodies` is still the grid's *linear*
+velocity only. Once the renderer makes the rotation visible, a body's grid-frame velocity picks up
+an `ω × r` term and that call is where it enters. See the last bullet of the original survey below.
+
+<details><summary>Original groundwork survey (2026-08-13), kept for the file/line references</summary>
 
 - **Where the linear impulse is booked:** `OutofspaceSim.kt:326-327`. `netImpulseX/Y` is a sum of
   five contributions — `pushed.vesselX`, `pipePushed.vesselX`, `thrustX`, `−handedX`,
@@ -161,6 +206,11 @@ torque as well as momentum.** Scavengers and Drockets already do this, but only 
 Failing test first: an unbalanced thruster layout spins the ship, a balanced one does not — and a
 third case worth pinning, since it is the one a wrong `r` still passes: **a single thruster on the
 centreline produces zero torque at every throttle**.
+
+</details>
+
+All three are in `RotationTest`, and the third earned its place exactly as predicted: booking torque
+about the grid origin instead of the centre of mass passes the other two.
 
 ### Step 3 — world frame + camera mode
 World coordinates **do not exist today**; this step creates them. Camera becomes player-selectable:

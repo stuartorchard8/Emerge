@@ -47,16 +47,46 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  */
 fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
     var sum = 0L
-    for (m in machines) {
-        if (m == null) continue
-        sum += m.kind.massPerTile * m.kind.thermalTiles
-    }
-    conduits.all { conduit, _, _ -> sum += conduit.massPerTile }
-    for (b in bridges) {
-        if (b == null) continue
-        sum += b.kind.massPerTile * MachineKind.Bridge.thermalTiles
-    }
+    forEachVesselMass(machines, conduits, bridges) { _, fabric, _ -> sum += fabric }
     return sum
+}
+
+/**
+ * The one walk over everything the vessel weighs, tile by tile.
+ *
+ * [structureMass], [cargoMass] and [massDistribution] are all projections of this and none of them
+ * has its own traversal, for the reason [cargoMass] gives: two implementations of "what is aboard"
+ * disagree the first time a buffer is added to one of them. Rotation is what forced the extraction —
+ * a moment of inertia needs the same masses *and their positions*, and a second walk to find the
+ * positions would be the third answer to the same question.
+ *
+ * [action] is handed the tile the mass sits on, the fabric there (what the thing is made of) and the
+ * cargo there (what it is carrying), kept apart because the two totals are separately meaningful and
+ * separately tested.
+ *
+ * ⚠️ **A multi-tile machine is a point mass at its anchor tile.** That is exactly right for the
+ * centre of mass — [coveredTiles] centres a footprint on its anchor, so the anchor *is* the centre —
+ * and it is an approximation for the moment of inertia, which loses the machine's own spread about
+ * its centre. A five-tile smelter is short by `m·(w²+h²)/12`, about two tile² against the tens to
+ * hundreds a real lever arm contributes. Worth knowing, not worth a second walk.
+ */
+inline fun forEachVesselMass(
+    machines: List<Machine?>,
+    conduits: Conduits,
+    bridges: List<Machine?>,
+    action: (tile: Int, fabric: Long, cargo: Long) -> Unit,
+) {
+    for (t in machines.indices) {
+        val m = machines[t] ?: continue
+        action(t, m.kind.massPerTile * m.kind.thermalTiles, massIn(m))
+    }
+    conduits.all { conduit, tile, segment ->
+        action(tile, conduit.massPerTile, if (conduit == Conduit.Rail) segment.held?.mass ?: 0L else 0L)
+    }
+    for (t in bridges.indices) {
+        val b = bridges[t] ?: continue
+        action(t, b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b))
+    }
 }
 
 /**
@@ -74,9 +104,7 @@ fun cargoMass(
     bridges: List<Machine?>,
 ): Long {
     var sum = 0L
-    for (m in machines) sum += massIn(m)
-    for (r in conduits[Conduit.Rail]) sum += r?.held?.mass ?: 0L
-    for (b in bridges) sum += massIn(b)
+    forEachVesselMass(machines, conduits, bridges) { _, _, cargo -> sum += cargo }
     return sum
 }
 
@@ -85,7 +113,11 @@ fun vesselMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-): Long = structureMass(machines, conduits, bridges) + cargoMass(machines, conduits, bridges)
+): Long {
+    var sum = 0L
+    forEachVesselMass(machines, conduits, bridges) { _, fabric, cargo -> sum += fabric + cargo }
+    return sum
+}
 
 /**
  * What the inside of an accelerating vessel feels: the plating's own gravity, less the acceleration.

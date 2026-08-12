@@ -63,7 +63,12 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.driftBodies
+import org.emerge.demo.outofspace.world.massDistribution
+import org.emerge.demo.outofspace.world.tileCentre
+import org.emerge.demo.outofspace.world.torqueAbout
 import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
@@ -92,6 +97,7 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.gasCapacity
 import org.emerge.sim.core.PlayerId
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
@@ -243,6 +249,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
         val pushed = applyPressureForce(
             edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.airMass), roomPressure,
+            w.about,
         )
         val pipePressure = tilePressure(
             state.grid.size, w.pipeMass,
@@ -250,7 +257,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
         val pipePushed = applyPressureForce(
             edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
-            tileMass(state.grid.size, w.pipeMass), pipePressure,
+            tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
         )
 
         // On airMass (edited by [displaceAir]).
@@ -281,6 +288,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // window-recenter decision agrees with the position the HUD reads this same tick
         val newPositionX = state.positionX + state.velocityX
         val newPositionY = state.positionY + state.velocityY
+        // Explicit, from the start-of-tick spin, for the same reason the position is: this tick's
+        // torque is not known until this tick's fluid has been solved. `toInt` is not a truncation
+        // to apologise for — [Coord]'s two's-complement wrap *is* the turn, so an angle that runs
+        // past π comes back at −π exactly and never drifts. See [Rotation].
+        val newAng = Coord((state.ang.raw + angularVelocity(state.angImpulse, w.about)).toInt())
         val vesselTileX = newPositionX / Flight.PER_TILE
         val vesselTileY = newPositionY / Flight.PER_TILE
         val bodiesToDrift = RockSpawner.process(
@@ -311,6 +323,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             state.velocityX,
             state.velocityY,
             mass,
+            w.about,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
@@ -325,6 +338,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // minted: the two halves are written from one number in [fire].
         val netImpulseX = pushed.vesselX + pipePushed.vesselX + thrustX - handedX - w.exhaustMomentumX
         val netImpulseY = pushed.vesselY + pipePushed.vesselY + thrustY - handedY - w.exhaustMomentumY
+
+        // The same five contributions crossed with the point each one is applied at — see
+        // [torqueAbout] for why this is summed term by term and not derived from `netImpulse`.
+        //
+        // The debug engine is the one term with no position and therefore no torque, and that is
+        // deliberate rather than an omission: [Edit.Thrust] is a key that pushes the *ship*, not a
+        // nozzle bolted anywhere, so the honest place to apply it is the centre of mass, where its
+        // lever arm is zero. When a real engine retires it the term goes with it.
+        val handedTorque = w.bodyHandedTorque + bodiesDrifted.handedTorque
+        val netTorque = pushed.torque + pipePushed.torque - handedTorque - w.exhaustTorque
 
         return state.copy(
             machines = machines,
@@ -367,9 +390,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             vesselImpulseY = state.vesselImpulseY + netImpulseY,
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
+            angImpulse = state.angImpulse + netTorque,
+            netTorque = netTorque,
             // Explicit integration: move by velocity at tick start.
             positionX = newPositionX,
             positionY = newPositionY,
+            ang = newAng,
             // Debug engine (non-physics, booked alongside thrust).
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
@@ -598,8 +624,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Out of the world at exhaust velocity, and the ship gets the other half.
             airVentedByExhaust(scoopedMass, scoopedEnergy)
             val impulse = ejectedMass * Thruster.tilesPerTick(cfg.ticksPerSecond)
-            exhaustMomentumX += impulse * m.facing.dx
-            exhaustMomentumY += impulse * m.facing.dy
+            val outX = impulse * m.facing.dx
+            val outY = impulse * m.facing.dy
+            exhaustMomentumX += outX
+            exhaustMomentumY += outY
+            // At the bell, which is the tile the machine is on. The ship keeps `−p` and `−τ`, and
+            // both halves are written from the one number here so neither can be minted.
+            exhaustTorque += torqueAbout(
+                about, tileCentre(grid.xOf(at)), tileCentre(grid.yOf(at)), outX, outY,
+            )
         } else {
             val destination = path.destination
             val base = destination * Species.COUNT
@@ -709,6 +742,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var exhaustMomentumX: Long = 0L
         var exhaustMomentumY: Long = 0L
 
+        /**
+         * Where the vessel's mass is **at the start of the tick**, which is the point every torque
+         * this tick is booked about.
+         *
+         * One distribution for the whole tick, on purpose. The machine pass fires the thrusters
+         * before the cargo pass has finished moving anything, so a producer that asked again
+         * mid-tick would get a slightly different centre and the tick would be twisting about two
+         * points at once. The same choice, for the same reason, that hands `state.velocityX` to
+         * [driftBodies] and integrates the position from it: one frame per tick, stated once.
+         */
+        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges)
+
+        /**
+         * The twist that went overboard with the exhaust — the angular half of [exhaustMomentumX],
+         * booked at the thruster that threw it, and the whole reason this step exists. Two engines
+         * that balance linearly do not balance about the centre of mass unless they straddle it.
+         */
+        var exhaustTorque: Long = 0L
+
         /** Atmosphere a thruster's plume carried off the grid — see [OutofspaceReducer.fire]. */
         fun airVentedByExhaust(mass: Long, energy: Long) {
             exhaustAirMass += mass
@@ -750,6 +802,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         var bodyHandedX: Long = 0L
         var bodyHandedY: Long = 0L
+
+        /** Its angular half, about [about] — see [BodyStep.handedTorque]. */
+        var bodyHandedTorque: Long = 0L
 
         // Mutable: edit pass moves air before fluid pass runs.
         val airMass: LongArray = state.air.copyMass()
@@ -1200,6 +1255,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The body lost this; the ship gained it, so the ship gave the body the negative.
             bodyHandedX -= taken.impulseX
             bodyHandedY -= taken.impulseY
+            // Booked at the extractor, not at the rock: the arm is bolted to the hull there, and
+            // that is the point the reaction to hauling a cell in actually pulls on.
+            bodyHandedTorque -= torqueAbout(
+                about, tileCentre(grid.xOf(at)), tileCentre(grid.yOf(at)),
+                taken.impulseX, taken.impulseY,
+            )
             if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
             return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.mass))
         }

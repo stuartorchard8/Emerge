@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.FluidPacket
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -147,6 +148,14 @@ object Save {
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
             .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
             .append(' ').append(state.bodyImpulseX).append(' ').append(state.bodyImpulseY)
+            .append('\n')
+        // Rotation. A new keyword rather than more fields on `thrust`, because `thrust` means the
+        // linear pair and a reader that had to count tokens to find out otherwise is a reader that
+        // will eventually miscount. Appended, not versioned: absent reads as zero, which is a ship
+        // pointing the way the grid is drawn and not turning — exactly what every save before this
+        // was. Only the angular momentum carries the mass unit, so only it is rescaled on the way in.
+        out.append("rotation ").append(state.ang.raw)
+            .append(' ').append(state.angImpulse).append(' ').append(state.netTorque)
             .append('\n')
         return out.toString()
     }
@@ -461,6 +470,9 @@ object Save {
         var gravity = VesselState.FREEFALL
         var positionX = 0L
         var positionY = 0L
+        var ang = Coord(0)
+        var angImpulse = 0L
+        var netTorque = 0L
         var netImpulseX = 0L
         var netImpulseY = 0L
         var tick = 0L
@@ -505,6 +517,10 @@ object Save {
                 "gravity" -> gravity = Frac2(Frac(long(1)), Frac(long(2)))
                 "position" -> { positionX = long(1); positionY = long(2) }
                 "thrust" -> { netImpulseX = scaled(1); netImpulseY = scaled(2) }
+                "rotation" -> {
+                    ang = Coord(tokens.getOrNull(1)?.toIntOrNull() ?: fail("expected an angle"))
+                    angImpulse = scaled(2); netTorque = scaled(3)
+                }
                 "tick" -> tick = long(1)
                 // `mined` is v9's name for it: the same quantity, counted at the miner instead.
                 "mined", "extracted" -> extracted = scaled(1)
@@ -642,6 +658,9 @@ object Save {
             positionY = positionY,
             netImpulseX = netImpulseX,
             netImpulseY = netImpulseY,
+            ang = ang,
+            angImpulse = angImpulse,
+            netTorque = netTorque,
             tick = tick,
             extractedMass = extracted,
             ventedMass = vented,

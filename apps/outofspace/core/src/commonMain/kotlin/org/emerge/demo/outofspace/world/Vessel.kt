@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -130,6 +131,31 @@ data class VesselState(
      */
     val netImpulseX: Long = 0L,
     val netImpulseY: Long = 0L,
+    /**
+     * Which way the vessel is pointing, as a [Coord] — see [Rotation] for the unit.
+     *
+     * The angular twin of [positionX] and stored for the same reason: an orientation is a history of
+     * angular velocities. Zero is the orientation the grid is drawn in, so every existing save and
+     * every hand-authored fixture starts pointing the way it always did.
+     *
+     * ⚠️ **Nothing on the grid rotates with it yet.** The grid is still the frame everything aboard
+     * is written in, and this says how that frame is turned relative to open space. Step 3 of
+     * `PLAN_trig_free_rotation.md` is what makes the renderer and the camera care.
+     */
+    val ang: Coord = Coord(0),
+    /**
+     * The vessel's angular momentum — the twin of [vesselImpulseX], in mass·tile²/tick.
+     *
+     * Stored rather than the angular velocity, for the reason [velocityX] gives: momentum is what
+     * the tick's producers add up to, and dividing it by an inertia that changes as cargo moves is
+     * something to do on the way out, not on the way in. See [angVel].
+     */
+    val angImpulse: Long = 0L,
+    /**
+     * The torque delivered during the tick that produced this state — the twin of [netImpulseX], and
+     * kept for the same reason: a force is not recoverable from a history.
+     */
+    val netTorque: Long = 0L,
     /**
      * Free-floating solids: rocks — see [RigidBody].
      *
@@ -562,6 +588,23 @@ data class VesselState(
      * [Flight].
      */
     val mass: Long get() = vesselMass(machines, conduits, bridges)
+
+    /**
+     * Where that mass is, which is what every torque is booked about — see [MassDistribution].
+     *
+     * Recomputed on demand like [mass], and for the same reason: it is a fact about the layout and
+     * its cargo, so storing it would be storing a second answer to a question the walk already
+     * answers. The tick computes it once and passes it down; a readout can afford to ask again.
+     */
+    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges)
+
+    /**
+     * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
+     *
+     * Derived from [angImpulse] over the moment of inertia, so like the linear velocity there is no
+     * integrated quantity to drift and nothing to be wrong about across a save.
+     */
+    val angVel: Long get() = angularVelocity(angImpulse, distribution)
 
     /**
      * How fast the vessel is going, in the billionths of a tile per tick [Flight.PER_TILE] counts.
