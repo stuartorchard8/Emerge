@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 
@@ -435,7 +436,9 @@ class SaveTest {
         )
         assertEquals(Grid(6, 4), state.grid)
         assertEquals(Direction.Up, (state[8] as Sensor).facing)
-        assertEquals(500L, state.rails[10]?.held?.mass)
+        // The save says 250 and 250, and a version-1 save is written in grams — so what comes back is
+        // half a kilogram in whatever this build's unit is, not the digits on the page.
+        assertEquals(500L * Budget.GRAM, state.rails[10]?.held?.mass)
         assertTrue(state.rails[9]!!.linkedTo(Direction.Right))
     }
 
@@ -456,7 +459,7 @@ class SaveTest {
             machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
         """.trimIndent() + "\n"
         val extractor = assertNotNull(Save.read(v1).machines[20] as? Extractor)
-        assertEquals(250L, extractor.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
+        assertEquals(250L * Budget.GRAM, extractor.gramsPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
     }
 
     @Test

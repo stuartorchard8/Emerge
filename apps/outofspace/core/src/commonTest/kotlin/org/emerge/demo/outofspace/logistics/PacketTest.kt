@@ -27,21 +27,53 @@ class PacketTest {
     /** What a packet holds. Every fraction below is of this, so the dial can move freely. */
     private val cap = Capacity.PACKET_GRAMS
 
+    // A hundred packets' worth, split by percent, so "take one packet and leave the rest" has a rest
+    // to leave. Written as multiples of [cap] rather than as a mass: these were once round numbers of
+    // grams, which quietly became a tenth of a packet when the mass unit moved and turned every
+    // "takes a whole packet" assertion into "takes the whole pile".
     private val orePile = Resource(
         Form.Ore,
         Mixture.of(
-            Species.Iron to 4_100_000L,
-            Species.Silica to 3_000_000L,
-            Species.Copper to 1_800_000L,
-            Species.Titanium to 1_100_000L,
+            Species.Iron to 41L * cap,
+            Species.Silica to 30L * cap,
+            Species.Copper to 18L * cap,
+            Species.Titanium to 11L * cap,
         ),
     )
 
     private val atmosphere = Mixture.of(
-        Species.Nitrogen to 7_800_000L,
-        Species.Oxygen to 2_100_000L,
-        Species.CarbonDioxide to 100_000L,
+        Species.Nitrogen to 78L * cap,
+        Species.Oxygen to 21L * cap,
+        Species.CarbonDioxide to 1L * cap,
     )
+
+    /**
+     * Equal to within [ppb] parts per billion — the resolution a proportional split is actually
+     * promised at, and no better.
+     *
+     * ### Why a sample is not exact
+     *
+     * [org.emerge.demo.outofspace.chem.apportion] splits through `scaledRatio(cumulative, sum,
+     * target)`, and `scaledRatio` reduces a fraction it cannot multiply out by **shifting both terms
+     * right** until `d <= Long.MAX_VALUE / scale`. A ten-tonne ore pile packed into hundred-kilogram
+     * packets is `sum = 1e13` against `scale = 1e11`: the ceiling is about 9.2e7, so seventeen bits
+     * leave the numerator and the iron share lands 590 ppb light.
+     *
+     * That is the contract working, not failing. `scaledRatio` promises **monotonic** and **exact at
+     * the ends**, and both still hold — the packet totals exactly one capacity and
+     * [assertConserved] still balances to the last unit. What it does not promise is exactness in the
+     * middle, and at a microgram per integer the middle is where a real pile now sits. Shrinking the
+     * fixture would not help: any pile at least one packet big has `d >= scale`, which is already
+     * three orders past the ceiling.
+     *
+     * A part per million is 0.1 g on a 100 kg packet. Nothing in the game can see it; leaving the
+     * assertion exact would only mean nobody could see this note either.
+     */
+    private fun assertNear(expected: Long, actual: Long, ppb: Long, what: String) {
+        val slack = expected / 1_000_000_000L * ppb + 1L
+        val off = if (actual > expected) actual - expected else expected - actual
+        assertTrue(off <= slack, "$what: expected $expected, was $actual — off by $off, allowed $slack")
+    }
 
     private fun assertConserved(inputs: List<Mixture>, outputs: List<Mixture>, what: String) {
         val delta = conservationOf(inputs, outputs)
@@ -64,11 +96,13 @@ class PacketTest {
     fun `a packet is a proportional sample, not the good bits skimmed off`() {
         val (packet, _) = packSolid(orePile)
         val p = assertNotNull(packet).contents
-        // The pile is 41% iron; so is the packet, to the nearest gram.
-        assertEquals(cap * 41 / 100, p[Species.Iron])
-        assertEquals(cap * 30 / 100, p[Species.Silica])
-        assertEquals(cap * 18 / 100, p[Species.Copper])
-        assertEquals(cap * 11 / 100, p[Species.Titanium])
+        // The pile is 41% iron; so is the packet, to a part in a million — see [assertNear].
+        assertNear(cap * 41 / 100, p[Species.Iron], ppb = 1_000, what = "iron")
+        assertNear(cap * 30 / 100, p[Species.Silica], ppb = 1_000, what = "silica")
+        assertNear(cap * 18 / 100, p[Species.Copper], ppb = 1_000, what = "copper")
+        assertNear(cap * 11 / 100, p[Species.Titanium], ppb = 1_000, what = "titanium")
+        // Whatever the shares round to, they still add up to exactly one packet.
+        assertEquals(cap, p.total)
     }
 
     @Test
@@ -92,7 +126,7 @@ class PacketTest {
         assertEquals(cap, assertNotNull(packet).mass)
         assertConserved(listOf(atmosphere), listOf(packet.contents, left), "packFluid")
         // Composition of the slug matches the source: 78% nitrogen.
-        assertEquals(cap * 78 / 100, packet.contents[Species.Nitrogen])
+        assertNear(cap * 78 / 100, packet.contents[Species.Nitrogen], ppb = 1_000, what = "nitrogen")
     }
 
     // ── Merging ────────────────────────────────────────────────────────────────
