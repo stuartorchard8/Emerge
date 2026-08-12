@@ -278,12 +278,13 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 
 | # | Step | Why here | Size |
 |---|---|---|---|
-| **1** | **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it entirely: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested. Nothing about shapes changes, so any regression is the solver's. **This is the step that buys stacking.** | M |
-| **2** | **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 1, on both operands. | Now a contact has an `r`, so torque is free. First step where a rock visibly spins. | S |
-| **3** | **The frame fix (§5).** `R(−vesselAng)` and `ω × r` into the grid/world conversion. | Makes the vessel's `ang` physical. Independent of shapes; could equally be step 0. | S |
-| **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
-| **5** | **Body-vs-body broad phase + stacking.** | Needs 1 and 4. | M |
-| **6** | **The vessel as an operand.** Vessel passed through the same narrow phase and solver as a body of box cells. | The unification payoff. | L |
+| **1** | **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
+| **2** | **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
+| **3** | **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
+| **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
+| **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
+| **5** | **Body-vs-body broad phase + stacking.** | Needs 2 and 4. | M |
+| **6** | **The vessel as an operand.** Vessel passed through the same narrow phase and solver as a body of box cells, colliders on every tile (Stu: optimise later). | The unification payoff. | L |
 | — | *Later, unblocked by the above:* `CellShape.Box` per cell, `CellShape.Triangle`, OBB-vs-OBB SAT. | Each is one narrow-phase function. | — |
 
 Test targets worth naming now, because they are the ones that discriminate:
@@ -407,7 +408,7 @@ By `PLAN_trig_free_rotation.md`, which itself is now built through step 3. No co
 | `PLAN_unified_bodies` | Already built — this plan continues it by giving the unified body its angular half |
 | `PLAN_grid_vs_continuous` §4 | Grid as addressing scheme, not frame — now §5.1, the basis of the whole frame change |
 
-Added to §7 as a consequence, after the frame step and before the vessel-as-operand step:
+Added to §7 as step 4b:
 
 > **Step 4b — `fromMachine` + the tolerance rule.** Dismantling a machine spawns a
 > `BodyKind.FRAGMENT` body with exposed edges shaved by `RigidBody.TOLERANCE`, which finally makes
