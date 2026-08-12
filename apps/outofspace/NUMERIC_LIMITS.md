@@ -21,7 +21,7 @@ The question this answers: **if the mass unit stops being "one gram" and becomes
 | Tightest constraint | `velocityX = vesselImpulse * PER_TILE / mass` — **safe k ≈ 17** (reference ship) to 42 (measured bare hull); the heaviest buildable vessel fits today at 0.7× — see the correction in §5 |
 | Next | ~~`apportion`: `weight * target`~~ — **fixed at step 4b**, now k¹ at 4.6e11 (§6.5) |
 | Next | ship-wide joules at 3000 K — **safe k ≈ 1.2e3** at the absolute worst packing |
-| Already broken at k=1 | `reducedPressure` at the packing wall (§6.1) |
+| ~~Already broken at k=1~~ | ~~`reducedPressure` at the packing wall~~ — **fixed 2026-08-12**, §6.1 |
 | Already broken at k=1 | diffusion strands anything under 5 units (§6.2) |
 | Recommended | **k = 100** as-is; **k = 1000** after five fixes (§8, listed by the tripwire in §9) |
 
@@ -167,8 +167,8 @@ when they look roomy today.
 | 3 | `apportion`: running total | 1 | full Storage, 2.0e7 | **4.61e11** — fixed at plan step 4b |
 | 4 | `apportion`: running total | 1 | machine buffer, 4.0e6 | 2.31e12 — fixed at plan step 4b |
 | 5 | `potentialOf`: pressure *ratio* × `SOUND_IMPULSE` | 1 | see row 10 | fixed at plan step 4b |
-| 6 | `reducedPressure` at the packing wall | 1 | — | **already broken, see §6.1** |
-| 7 | `reducedDensity`: `grams * SCALE` | 1 | packed CO₂, 1.17e14 | 7.9e4 |
+| 6 | `reducedPressure` at the packing wall | — | — | **FIXED at plan step 5**, see §6.1 |
+| 7 | `reducedDensity`: ratio taken first | **0** | over-packed cell × FULL | **ANY** — fixed at plan step 5 |
 | 8 | `ambientPressureOf`: share reduced once | 1 | at close packing, 1.33e6 | **6.91e12** — fixed at plan step 4b |
 | 9 | `frameAcceleration`: now `scaledRatio` | **0** | 1 tile/tick² × FRAC_ONE | **ANY** — ⚠️ was OVERFLOWING, see §6.4 |
 | 10 | `potentialOf` at 10 atm (ordinary play) | 1 | 2.5e3 | **3.69e15** — fixed at plan step 4b |
@@ -236,7 +236,7 @@ Worth an explicit `require`, whatever else happens.
 ⚠️ **§6.4 was found by fixing §5 row 9 and is the reason to distrust a green row.** Added 2026-08-12.
 
 
-### 6.1 `reducedPressure` overflows at the packing wall
+### 6.1 `reducedPressure` overflows at the packing wall — FIXED 2026-08-12
 
 `vanDerWaalsPressure` computes `8·Tr·ρr / (3 − ρr)`. `leastRoomFor` deliberately drives density to
 `CLOSE_PACKED − 1`, making that denominator **1**, so the term reaches ~1e17 and
@@ -262,6 +262,31 @@ oscillates as mass increases past close packing:
 Negative pressure means the solver pushes gas **into** an over-full tile. Reachable in about 72
 ticks of the debug water tool on one tile, or 9 ticks on a pipe cell. Independent of any rescale —
 this wants fixing either way, by clamping short of the wall with a margin rather than by one unit.
+
+**Fixed at step 5 of `PLAN_unit_rescale.md`**, in three parts, because the overflow was the symptom
+and the coupling was the disease:
+
+1. **A margin, not a unit.** `MAX_REDUCED_DENSITY = CLOSE_PACKED − SCALE/32` — evaluation is held at
+   `ρr ≤ 2.96875` instead of 2.99999999, so the gap below the wall can never be 1. Costs the top ~1%
+   of a liquid branch that only runs 2.1–3.0 anyway. A thirty-second specifically because
+   `StateEquationTest` sweeps the isotherm's *shape* to `3 − 0.05`, and a clamp biting inside that
+   sweep would flatten the defect those tests exist to pin.
+2. **A ceiling derived from the consumer, not from a design temperature.** `MAX_REDUCED_PRESSURE` is
+   `Long.MAX / 4 / max(c.pressure)` — read off the `CRITICAL` table, so adding a species moves it
+   automatically. Deliberately *not* sized from an assumed maximum kelvin: that is precisely the
+   mistake §6.4 records. Note it clamps the **result**, not the thermal term — clamp the numerator
+   and the attraction term goes on growing underneath it, turning an overflow into a falling
+   pressure, which is the one thing the Maxwell construction exists to prevent.
+3. **`partialPressure` no longer throws.** It clamps reduced density before evaluating, so adding
+   mass to a cell cannot raise an exception mid-tick. `reducedPressure` keeps its strict domain —
+   past close packing there is genuinely no pressure — but that contract now lives between the
+   equation and its internals rather than depending on every caller's `leastRoomFor` computing
+   exactly the right volume. **That coupling was the real bug**; the wrap was how it showed.
+
+Pinned by `StateEquationTest :: a tile's pressure never falls as mass is crammed into it, right
+through the packing wall` — swept in *grams*, to twelve times close packing, for every species at
+80/293/700/3000 K. A companion test pins that every value below the ceiling is bit-for-bit what the
+old expression produced, so this moved no pressure anybody could already represent.
 
 ### 6.2 Diffusion strands anything under 5 units
 

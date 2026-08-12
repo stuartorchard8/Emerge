@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.SCALE
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
@@ -10,6 +11,7 @@ import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Storage
 import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.gramsPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -285,7 +287,14 @@ class NumericLimitsTest {
         budget("gramsPerTileOf: densest tile (scale-invariant)", densestSolidTile, 0)
 
         // ── Gas and pressure ──────────────────────────────────────────────
-        budget("reducedDensity: packed liquid * SCALE", densestPackedLiquid * SCALE, 1)
+        // `grams / criticalDensity` is a ratio of two masses; step 5 takes it first, so what bounds
+        // this is the answer it returns — a multiple of critical density — times the cell fullness.
+        // Budgeted at twelve times close packing, far past anything the volume clamps allow, since
+        // the point of the row is that no mass can reach it whatever a unit means.
+        budget(
+            "reducedDensity: over-packed cell * FULL (scale-invariant)",
+            12L * CLOSE_PACKED * VolumeField.FULL, 0,
+        )
         budget(
             "millimolesOf: packed liquid * millimoles/kg",
             densestPackedLiquid * (1_000_000L / Species.Water.molarMass), 1,

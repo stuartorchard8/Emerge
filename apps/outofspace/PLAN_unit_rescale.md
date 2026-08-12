@@ -424,13 +424,41 @@ tests across `VesselSimTest`, `GaugeTest`, `WiringTest` and `FootprintTest`. Lef
 | `machine joules` | 281,000 | **unscoped**, and *stored*, so §2 does not exempt it |
 | `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | ledgers — §2, parked at step 3 |
 
-### 5. Fix `reducedPressure` at the packing wall
-Independent of the rescale but in the same arithmetic. Clamp density short of `CLOSE_PACKED` by a
-**margin** rather than by one unit, so `3 − ρr` cannot be 1 and the thermal term cannot reach 1e17.
-Three of four species currently wrap; the symptom is a pressure that flips sign above close packing
-and a solver that pushes gas *into* an over-full tile.
-**Test**: pressure is monotonic in mass across and beyond the packing limit, for every species —
-which is the assertion the survey's measurements should have been.
+### 5. Fix `reducedPressure` at the packing wall — **DONE 2026-08-12, with one extra**
+
+The margin went in as planned (`MAX_REDUCED_DENSITY = CLOSE_PACKED − SCALE/32`, so `3 − ρr` is never
+below 0.03125), but the margin alone would have been a fix sized to an assumption. Written up fully
+in `NUMERIC_LIMITS.md` §6.1; the three parts are a density margin, a pressure ceiling **derived from
+the `CRITICAL` table rather than from a design temperature**, and making `partialPressure` total.
+
+**The coupling was the disease; the overflow was the symptom.** Before this, the only thing between
+"pour water into a tile" and an exception mid-tick was `leastRoomFor` computing exactly the right
+volume at every call site. `partialPressure` now clamps reduced density itself, so no caller can
+raise one. `reducedPressure` keeps its strict domain — `StateEquationTest :: packing the cell solid
+is refused rather than answered` still holds, and deliberately: that contract belongs between the
+equation and its internals, not between the equation and a caller holding grams.
+
+**Two things worth remembering.** The ceiling clamps the *result*, not the thermal term: clamp the
+numerator and the attraction term goes on growing underneath it, turning an overflow into a
+*falling* pressure — the one thing the Maxwell construction exists to prevent. And it is sized from
+the largest `c.pressure` any species has rather than from a maximum kelvin, because sizing a bound
+from a design intention is exactly what §6.4 caught reading green over a live overflow.
+
+**The extra**: `reducedDensity` was the last non-ledger row still red (safe k 69,100), and it is the
+same ratio shape as step 4b — `grams / criticalDensity` is two masses. Taking the ratio first makes
+it **scale-invariant**, so the packing wall and the last rescale blocker closed in the same commit.
+
+**Test**: as prescribed — `a tile's pressure never falls as mass is crammed into it, right through
+the packing wall`, swept in *grams* to twelve times close packing, every species, at 80/293/700/3000
+K. Plus a compatibility test: every value below the ceiling is bit-for-bit what the old expression
+produced, so nothing anybody could already represent moved. 426 tests, the standing 7 failures.
+
+**The board at Kₘ = 10⁶ is now three rows, and no arithmetic among them:**
+
+| Row | safe k | |
+|---|---|---|
+| `machine joules` | 281,000 | step 6b — store per tile |
+| `ship joules`, `atmosphere joules` | 1,220 / 1.31e6 | parked ledgers (§2) |
 
 ### 6. Small loose ends, while we are in the files
 - ~~The heaviest buildable ship's velocity wraps.~~ **Struck at step 1 — it does not.** It was the
@@ -445,6 +473,44 @@ which is the assertion the survey's measurements should have been.
 - Audit for more of the **"caller enumerates the species it believes a field holds"** family. Argon
   found one in the injector; `AirField.mixtureAt` documents an earlier one. There will be others,
   and they are invisible until a species is added.
+
+### 6b. Store a machine's energy and mass per tile — **SCOPED 2026-08-12, not built**
+
+The last unscoped red row. `machine joules` is `capacityPerTile × thermalTiles × kelvin` held as one
+lump on `Machine.joules`; stored per tile instead, the `thermalTiles` factor leaves the expression
+and the row becomes one the tripwire already has:
+
+| | worst | headroom |
+|---|---|---|
+| lump sum, as built | 3.2854e13 | 281,000 |
+| per tile | 1.3267e12 | **6.95e6** |
+
+**24.76×**, which is `thermalTiles` — a smelter and an extractor are both 25 tiles. That clears the
+4e6 the target needs, so no new row is required: `machine joules` simply *becomes* `tile joules`,
+which is already green at 10⁶.
+
+⚠️ **The margin is 1.74×, and the row stays k¹.** This divides a constant by 25; it does not remove
+an exponent the way steps 4 and 4b did. It goes red again at k ≈ 1.7e6. Adequate for a microgram,
+and the first thing to come back if anything finer is ever wanted.
+
+**Precedent, and the reason this is the right shape.** `AirField` already stores `grams` and
+`joules` as per-tile `LongArray`s. The machine is the outlier, not the proposal — and that is also
+why `atmosphere joules` and `ship joules` need no fix: those are *sums somebody computes*, never
+numbers anything stores, which is exactly what §2 exempts. **After this and step 5, nothing is red
+at 10⁶ that is not a parked ledger.**
+
+**This is a data-model change, not an arithmetic one**, and it is being taken deliberately:
+machines should be a real part of the world that interacts with the simulation as a set of adjacent
+tiles, rather than a lump with a single temperature. So it carries work the earlier steps did not:
+
+- `Machine.joules: Long` → per-tile storage over the machine's footprint; heat exchange, save format
+  (another migration) and the HUD all follow.
+- **A machine stops being isothermal** and needs conduction *between its own tiles*, which does not
+  exist today. That is the substantive part, and the interesting one for a game whose stated purpose
+  is being a vehicle for heat simulation: a smelter acquires a hot face and a cool one.
+
+Sequenced after step 5 and sized separately. It is the only remaining item that changes what the
+simulation *does* rather than how it computes it.
 
 ### 7. Save migration
 Species are already stored by name, so composition changes are free. Masses and energies are not:

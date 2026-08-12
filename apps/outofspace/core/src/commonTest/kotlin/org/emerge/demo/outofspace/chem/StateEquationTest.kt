@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.world.VolumeField
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -24,6 +25,9 @@ class StateEquationTest {
     private val cold = SCALE * 9 / 10
     private val critical = SCALE
     private val hot = SCALE * 11 / 10
+
+    /** A whole tile — the volume every sweep here uses. */
+    private val full = VolumeField.FULL
 
     @Test
     fun `the critical point is where the equation says it is`() {
@@ -91,6 +95,75 @@ class StateEquationTest {
             assertTrue(c.gramsPerTile > 0, "$species needs a real critical density")
         }
         assertTrue(Species.Water in CRITICAL && Species.Nitrogen in CRITICAL)
+    }
+
+    @Test
+    fun `a tile's pressure never falls as mass is crammed into it, right through the packing wall`() {
+        // Step 5 of PLAN_unit_rescale.md, and the assertion NUMERIC_LIMITS.md §6.1's measurements
+        // should have been. The symptom being pinned is not an exception — it is a pressure that
+        // CHANGED SIGN and oscillated as mass went up, because `8·Tr·ρr/(3 − ρr)` reached ~1e17 at
+        // a gap of one and `c.pressure × that` wrapped a Long for three species out of four:
+        //
+        //     801,780 g water →  +45,280,586,281
+        //     850,000 g       →  -68,401,856,743
+        //     900,000 g       →  +91,503,964,939
+        //
+        // Reachable in ~72 ticks of the debug water tool on one tile. Swept in GRAMS rather than in
+        // reduced density on purpose: grams are what a caller actually controls, and the old bug was
+        // reachable only by going past the density the callers were supposed to be held below.
+        for (species in CRITICAL.keys) {
+            val critical = CRITICAL[species]!!
+            for (kelvin in listOf(80, 293, 700, 3000)) {
+                var previous = Long.MIN_VALUE
+                // From empty to four times close packing — well past anything the volume clamps
+                // permit, because "the caller is supposed to prevent this" is what failed before.
+                val step = critical.gramsPerTile / 64
+                var grams = 0L
+                while (grams <= critical.gramsPerTile * 12) {
+                    val pressure = partialPressure(grams, species, kelvin, full, full)!!
+                    assertTrue(
+                        pressure >= previous,
+                        "$species at $kelvin K: pressure fell at $grams g, $previous -> $pressure",
+                    )
+                    previous = pressure
+                    grams += step
+                }
+                assertTrue(previous > 0L, "$species at $kelvin K ended at a non-positive $previous")
+            }
+        }
+    }
+
+    @Test
+    fun `clamping the wall left every representable density untouched`() {
+        // The compatibility claim: wherever the old form produced a REPRESENTABLE answer, the new
+        // one produces bit-for-bit the same number. Not an approximation — scaledRatio splits
+        // `8·Tr·ρr / gap` into a whole part and a remainder, which is an identity.
+        //
+        // ⚠️ "Representable" is the pressure ceiling, not the density ceiling, and the two are not
+        // the same line. At a high enough reduced temperature MAX_REDUCED_PRESSURE bites while the
+        // density is still well short of MAX_REDUCED_DENSITY — measured, at Tr=4 and ρr=2.95. That
+        // is the clamp doing its job rather than a discrepancy, so the oracle is only consulted
+        // where it has an answer worth having.
+        var compared = 0
+        for (tr in listOf(cold, critical, hot, SCALE * 4)) {
+            var density = 0L
+            while (density < MAX_REDUCED_DENSITY) {
+                val gap = CLOSE_PACKED - density
+                val expected = 8L * tr * density / gap - 3L * density * density / SCALE
+                if (expected <= MAX_REDUCED_PRESSURE) {
+                    assertEquals(
+                        expected,
+                        vanDerWaalsPressure(density, tr),
+                        "Tr=$tr, rho=$density must be unchanged by the packing clamp",
+                    )
+                    compared++
+                }
+                density += SCALE / 64
+            }
+        }
+        // Guards the guard: if the ceiling were ever set low enough to swallow the ordinary curve,
+        // the sweep above would pass by comparing almost nothing.
+        assertTrue(compared > 700, "only $compared densities were actually compared")
     }
 
     @Test

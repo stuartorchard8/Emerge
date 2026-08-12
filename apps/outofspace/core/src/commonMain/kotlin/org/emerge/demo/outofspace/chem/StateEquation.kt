@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.scaledRatio
+
 /**
  * The equation of state: what pressure a fluid pushes back with, given how much of it is packed
  * into a cell and how hot it is.
@@ -80,6 +82,38 @@ const val SCALE: Long = 100_000_000L
  * resists spreading, and boils when it is heated — it is sound.
  */
 const val CLOSE_PACKED: Long = 3 * SCALE
+
+/**
+ * The margin [MAX_REDUCED_DENSITY] holds back from the wall, as a fraction of one reduced unit.
+ *
+ * A thirty-second — 0.03125 — chosen to clear the sweeps that examine the curve's *shape*:
+ * `StateEquationTest` walks the isotherm to `3 − 0.05` looking for the falling stretch, and a clamp
+ * biting inside that sweep would be flattening the very defect those tests exist to pin.
+ * (`SaturationTest` goes further, to `3 − 0.01`, but only asserts the curve never falls — which a
+ * flat clamp satisfies by construction.)
+ *
+ * It also bounds `ρr / (3 − ρr)` at **96**, which is what makes the thermal term's arithmetic safe
+ * at any temperature rather than up to an assumed one.
+ */
+private const val PACKING_MARGIN: Long = SCALE / 32
+
+/**
+ * The densest a fluid is allowed to actually *be evaluated at* — a margin short of [CLOSE_PACKED].
+ *
+ * [CLOSE_PACKED] is the physical wall and stays the domain limit: past it there is no pressure and
+ * [vanDerWaalsPressure] refuses. This is a narrower, arithmetic limit inside that domain, and the
+ * distinction is the whole of `NUMERIC_LIMITS.md` §6.1: the equation was being *asked* for values
+ * it could not represent while still technically inside its domain, because `leastRoomFor` drives
+ * density to `CLOSE_PACKED − 1` and a denominator of 1 sends `8·Tr·ρr/(3 − ρr)` to about 1e17.
+ *
+ * ### What it costs, stated plainly
+ *
+ * `ρr` tops out at **2.96875** instead of 2.99999999. Against a liquid branch that already only
+ * runs from about 2.1 to 3.0 at room temperature — and which [CLOSE_PACKED] notes is 3% light
+ * against real water anyway — that is the top ~1% of the representable liquid range, traded for
+ * a pressure curve that no longer changes sign. Everything below it is bit-for-bit unchanged.
+ */
+const val MAX_REDUCED_DENSITY: Long = CLOSE_PACKED - PACKING_MARGIN
 
 /**
  * Where a species stops being able to tell liquid from gas.
@@ -164,12 +198,27 @@ fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
     require(densityR in 0 until CLOSE_PACKED) {
         "density must be inside the close-packing limit; got $densityR of $CLOSE_PACKED"
     }
-    // Numerator carries SCALE², denominator SCALE, so the quotient lands back on SCALE. Both
-    // multiplications are done before either division to keep a dense cell from rounding its way
-    // onto a different branch of the curve than the one it is really on.
-    val thermal = 8L * temperatureR * densityR / (CLOSE_PACKED - densityR)
-    val attraction = 3L * densityR * densityR / SCALE
-    return thermal - attraction
+    // Held a margin short of the wall. Being *inside* the domain is not the same as being
+    // representable in it: at `densityR = CLOSE_PACKED - 1` the gap below is literally 1, the
+    // thermal term reaches ~1e17, and multiplying that by a critical pressure in [partialPressure]
+    // wrapped a Long for three species out of four. See NUMERIC_LIMITS.md §6.1.
+    val rho = densityR.coerceAtMost(MAX_REDUCED_DENSITY)
+    val gap = CLOSE_PACKED - rho
+
+    // `8·Tr·ρr / (3 − ρr)`. Taken as the ratio `ρr / gap` first — bounded by [PACKING_DIVISIONS]
+    // because of the clamp above — so that no temperature, however absurd, can overflow the
+    // numerator on its way to a quotient that was always going to be small. Exactly equal to the
+    // old `8 * temperatureR * densityR / gap` wherever that did not overflow: `scaledRatio` splits
+    // the same division into a whole part and a remainder rather than approximating it.
+    val thermal = scaledRatio(rho, gap, 8L * temperatureR)
+    val attraction = 3L * rho * rho / SCALE
+
+    // The last guard, and the one that does not rest on an assumed maximum temperature: whatever
+    // comes out, [partialPressure] is going to multiply it by a critical pressure. Clamping the
+    // *result* rather than the thermal term alone is what keeps the curve monotonic — clamp the
+    // numerator and the attraction term would go on growing underneath it, and a pressure that
+    // FALLS as a fluid is compressed is the exact instability `reducedPressure` exists to remove.
+    return (thermal - attraction).coerceAtMost(MAX_REDUCED_PRESSURE)
 }
 
 /**
@@ -263,6 +312,26 @@ val CRITICAL: Map<Species, Critical> = mapOf(
 )
 
 /**
+ * The largest reduced pressure [vanDerWaalsPressure] will report.
+ *
+ * Derived from the table above rather than picked, and that is the point: whatever the equation
+ * returns, [partialPressure] multiplies it by some `c.pressure`, so the ceiling is set by the
+ * *largest critical pressure any species has* (water, by four times) with a factor of four to
+ * spare. Any species added later moves this number automatically instead of quietly eating the
+ * margin.
+ *
+ * ⚠️ It is deliberately **not** derived from a maximum temperature. The obvious alternative — pick
+ * a design maximum kelvin and size the margin for it — is precisely the mistake `NUMERIC_LIMITS.md`
+ * §6.4 records: a budget derived from a design intention read green over a live overflow for
+ * months, because the expression was also fed by inputs nobody had counted. A ceiling that depends
+ * only on the consumer cannot be wrong about its inputs.
+ *
+ * The physical reading is honest enough: pressure at close packing is infinite, so *every* finite
+ * representation of it is a clamp. This one states where it is.
+ */
+val MAX_REDUCED_PRESSURE: Long = Long.MAX_VALUE / 4 / CRITICAL.values.maxOf { it.pressure }
+
+/**
  * How many litres of room a tile is, worked out from what the world already believes rather than
  * declared.
  *
@@ -348,10 +417,13 @@ fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
 fun reducedDensity(grams: Long, species: Species, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
     if (grams <= 0L) return 0L
-    // Divided against the critical density before being scaled by the cell's fullness, so that a
-    // large mass in a small cell cannot run the intermediate past a Long on its way to a number
-    // that was always going to be less than CLOSE_PACKED.
-    return grams * SCALE / c.gramsPerTile * full / volume
+    // `grams / c.gramsPerTile` is a ratio of two masses, so the mass unit cancels out of it and
+    // what comes back — a multiple of critical density — does not depend on what a unit means.
+    // Taking that ratio first is what makes this scale-invariant; written as `grams * SCALE` it was
+    // linear in the mass unit and the last non-ledger row still red at 10⁶ (safe k 69,100). The
+    // division against critical density already came first for the same reason at a smaller scale;
+    // this only finishes the thought. See [scaledRatio] and step 4b of PLAN_unit_rescale.md.
+    return scaledRatio(grams, c.gramsPerTile, SCALE) * full / volume
 }
 
 /** Reduced temperature — [kelvin] as a multiple of the species' critical temperature. */
@@ -374,7 +446,14 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
  */
 fun partialPressure(grams: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
     val c = CRITICAL[species] ?: return null
-    val densityR = reducedDensity(grams, species, volume, full) ?: return null
+    // Clamped, so that adding mass to a cell can never *throw*. [reducedPressure] keeps its strict
+    // domain — past close packing there is genuinely no pressure to report — but that contract
+    // belongs between the equation and its own internals, not between the equation and a caller
+    // holding grams. Before step 5 the only thing standing between "pour water into a tile" and an
+    // exception mid-tick was `leastRoomFor` computing exactly the right volume at every call site,
+    // which is the coupling NUMERIC_LIMITS.md §6.1 is really about. Now it is belt and braces.
+    val densityR = (reducedDensity(grams, species, volume, full) ?: return null)
+        .coerceAtMost(MAX_REDUCED_DENSITY)
     val temperatureR = reducedTemperature(kelvin, species) ?: return null
     return c.pressure * reducedPressure(densityR, temperatureR) / SCALE
 }
