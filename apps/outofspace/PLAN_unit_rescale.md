@@ -214,7 +214,7 @@ argon injector and `AirField.mixtureAt`. Now derived from each machine's own def
 so `compileTestKotlinJs` had been broken since it landed while every JVM run stayed green. Exactly
 the trap `reference_common_source_set_jvm_apis` documents. Hand-rolled formatting now; JS compiles.
 
-### 3. Park the energy conservation checks, and let those ledgers rot
+### 3. Park the energy conservation checks, and let those ledgers rot — **DONE 2026-08-12**
 Not a fix — an explicit, temporary surrender, so that a known-overflowing ledger cannot be mistaken
 for a real regression while the units move underneath it (§2).
 
@@ -230,6 +230,46 @@ for a real regression while the units move underneath it (§2).
 un-parks all of it; until then the energy ledgers say nothing, and the plan should not pretend
 otherwise.
 **Test**: the parked list is written down here and checked off by the follow-on.
+
+#### What was done
+
+**One switch, not a dozen annotations**: `EnergyLedgers.PARKED` in commonTest. Flipping it to
+`false` un-parks everything below in a single edit, and the suite then names what is still broken.
+That shape was chosen because almost none of the affected tests is *about* energy — `GridGrowTest`
+grows a grid, `ValveTest` opens a valve — and `@Ignore`-ing them to silence one assertion each would
+have taken a large amount of unrelated coverage down with it, against this step's own instruction
+that nothing else changes.
+
+**One incidental fix, and it belongs to the same bug family as the rest of this plan.** The
+seven-term solid-heat identity was written out **longhand in six places** — the HUD and five test
+files. It is now `VesselState.heatBalance`, the named twin of the `airBalance` / `airJouleBalance`
+that already existed. This is the third "caller restates something it does not own" found by this
+plan, after the argon injector and `Save.kt`'s rate fallbacks; `airJouleBalance` itself exists
+because two halves of an identity were summed at separate call sites and only one learned about the
+pipes. Parking a thing written down six times is not possible without first writing it down once.
+
+**Parked — the checklist for the follow-on.** Flip `EnergyLedgers.PARKED` and work this list:
+
+| Where | What is parked |
+|---|---|
+| `HeatTest.assertEnergyBalanced` | both identities; delegates to the switch, called from 3 live tests |
+| `HeatTest :: energy is conserved on every tick of a working vessel` | `@Ignore` — the identity *was* the test |
+| `GridVentTest :: a shrink vents the joules it discards` | `@Ignore` — every assertion in it is an energy identity |
+| `RemappedTest :: airJouleBalance is preserved across remap` | `@Ignore` |
+| `RemappedTest :: heatBalance is preserved across remap` | `@Ignore` |
+| `GridFitTest` / `GridGrowTest` / `GridFitTriggerTest` `assertBalanced` | the `airJouleBalance` line and the longhand heat identity |
+| `GridVentTest` (4 further sites) | `airJouleBalance` |
+| `EditorToolsTest :: injected gas is admitted…` | the `airJouleBalance` line only; its mass half still runs |
+| `ValveTest` / `PumpTest` `assertBalanced` | the air-energy half only; the air-*mass* half still runs |
+| `OutofspaceHud` | the `balanced`/`LEAK` lamps for ENERGY and air heat, replaced by a parked note |
+
+**Still live, deliberately**: every mass identity — `airBalance`, `massBalance`,
+`atmosphereGrams`-vs-`baselineAirGrams` — and the momentum identities, which this step never touched.
+The HUD keeps its MASS BALANCE lamp and all the energy *readouts*; what was withdrawn is the verdict
+on them, since a LEAK lamp lit by the plan rather than by a bug is a lamp nobody looks at again.
+
+**Verification**: 421 tests, the same 8 pre-existing failures as before this step and no others; 4
+new skips, exactly the four `@Ignore`s above. `compileTestKotlinJs` green.
 
 ### 4. Fix the five multiply-before-divide sites
 - `velocityX`: `vesselImpulse * PER_TILE / mass` — divide first, or lower `PER_TILE`. Fixes the

@@ -87,15 +87,15 @@ class OutofspaceHud {
                 keyValue("Radiated", joules(s.radiatedJoules))
                 keyValue("Stored", joules(s.storedJoules))
                 keyValue("To air", joules(s.solidToAirJoules / 1000L))
-                val heatBalanced = s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                    s.generatedJoules - s.insertedJoules - s.acquiredJoules == s.baselineJoules
-                row(if (heatBalanced) "balanced" else "LEAK", if (heatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
-                // Atmosphere energy ledger (separate from mass ledger).
-                val airHeatBalanced =
-                    s.atmosphereJoules + s.airVentedJoules - s.solidToAirJoules == s.baselineAirJoules
                 keyValue("Air heat vented", joules(s.airVentedJoules / 1000L))
-                row(if (airHeatBalanced) "air heat balanced" else "AIR HEAT LEAK",
-                    if (airHeatBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
+                // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
+                // overflow at the target mass unit and that is accepted for the duration, so a LEAK
+                // lamp here would be lit by the plan rather than by a bug, and a lamp that is always
+                // on is one nobody looks at again. The readouts above stay: they are still the
+                // numbers, it is only the verdict on them that is suspended. Mass balance, which
+                // survives the rescale, keeps its lamp and is the tripwire that matters.
+                row("(energy ledgers parked — unit rescale §3)", 0x8A8A8AFFL)
                 gap()
                 // One row per circuit the player has actually laid, rather than six fixed colours
                 // most of which read zero. An empty list here means no wire aboard, which is the

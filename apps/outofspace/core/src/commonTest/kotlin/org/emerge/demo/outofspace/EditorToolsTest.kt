@@ -150,7 +150,7 @@ class EditorToolsTest {
         assertEquals(10L * Edit.INJECT_GRAMS, s.injectedAirGrams, "ten ticks is ten kilograms")
         assertTrue(s.atmosphereGrams > before, "the room did not actually get any heavier")
         assertEquals(0L, s.airBalance, "the air ledger broke")
-        assertEquals(0L, s.airJouleBalance, "the air's energy ledger broke")
+        EnergyLedgers.assertAirBalanced(s, "the air's energy ledger broke")
     }
 
     /**

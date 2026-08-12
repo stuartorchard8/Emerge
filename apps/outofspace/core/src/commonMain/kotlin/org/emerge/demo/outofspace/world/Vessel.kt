@@ -507,10 +507,42 @@ data class VesselState(
      * the fabric and the gas and mass never does, so what the solid ledger says it gave, this one has
      * to be holding. Leave it out and a warm room reads as a leak — which is exactly what the first
      * version of this property did.
+     *
+     * ⚠️ **PARKED — see [heatBalance].** This one is parked with it, for the same reason.
      */
     val airJouleBalance: Long
         get() = atmosphereJoules + airVentedJoules - solidToAirJoules - injectedAirJoules -
             baselineAirJoules
+
+    /**
+     * How far the solid energy ledger is out: `stored + radiated + toAir − generated − inserted −
+     * acquired − baseline`, the third of the set, and zero on a world nothing has broken.
+     *
+     * Named here rather than spelled out by each caller because it was spelled out by **six** of
+     * them — the HUD and five test files — and a seven-term identity restated seven times is the
+     * shape of bug this codebase keeps paying for: [airJouleBalance] exists because its two halves
+     * were summed at separate call sites and only one of them learned about the pipes.
+     *
+     * ⚠️ **PARKED as of step 3 of `apps/outofspace/PLAN_unit_rescale.md` (2026-08-12).**
+     *
+     * This property still computes the right thing. What is parked is *checking* it. The rescale
+     * pushes the mass unit to a microgram, and §2 of that plan measured the consequence: the
+     * whole-grid energy accumulators are single `Long`s and they **overflow** somewhere above
+     * `Kₘ = 1.4e5`. That is accepted for the duration — restructuring the accumulators was the only
+     * part of the job needing more than a reordering, so taking them out of scope is what kept the
+     * plan to five fixes.
+     *
+     * So for now these totals say nothing, and a non-zero value here is expected rather than
+     * alarming. **Mass conservation stays live and is the real tripwire** for a rescaling mistake;
+     * it survives the target unit with room to spare.
+     *
+     * The follow-on that stores ledger *divergence* instead of running totals un-parks all of it.
+     * Until then, do not read the energy ledger and do not re-enable its checks piecemeal — the
+     * switch is `EnergyLedgers.PARKED` in commonTest, and the parked list is in the plan.
+     */
+    val heatBalance: Long
+        get() = storedJoules + radiatedJoules + solidToAirJoules -
+            generatedJoules - insertedJoules - acquiredJoules - baselineJoules
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
     fun pressurePercentAt(index: Int): Int =

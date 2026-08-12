@@ -245,9 +245,10 @@ class GridGrowTest {
         }
     }
 
+    /** ⚠️ The energy identities are **PARKED** for the unit rescale — see [EnergyLedgers]. */
     private fun assertBalanced(s: VesselState, whenever: String) {
         assertEquals(0L, s.airBalance, "airBalance $whenever")
-        assertEquals(0L, s.airJouleBalance, "airJouleBalance $whenever")
+        EnergyLedgers.assertBalanced(s, whenever)
         // Aboard is `inTransitGrams`, **not** `massGrams` — the latter adds the fabric of the ship
         // itself, which no extractor ever produced, so it can never be zero. Stated wrongly once
         // before, which cost a whole session; the rest of the suite says it correctly.
@@ -257,12 +258,6 @@ class GridGrowTest {
             "massBalance $whenever",
         )
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.
-        assertEquals(
-            0L,
-            s.storedJoules + s.radiatedJoules + s.solidToAirJoules -
-                s.generatedJoules - s.insertedJoules - s.acquiredJoules - s.baselineJoules,
-            "heatBalance $whenever",
-        )
     }
 
     // ── 5. The P1 gap, pinned ─────────────────────────────────────────────

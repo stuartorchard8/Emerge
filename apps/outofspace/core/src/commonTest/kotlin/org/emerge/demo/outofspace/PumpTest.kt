@@ -69,17 +69,14 @@ class PumpTest {
         return sum
     }
 
+    /** ⚠️ The energy half is **PARKED** for the unit rescale — see [EnergyLedgers]. Mass is not. */
     private fun assertBalanced(s: VesselState, what: String) {
         assertEquals(
             s.baselineAirGrams,
             s.atmosphereGrams + s.airVentedGrams,
             "$what: rooms plus pipes plus vented no longer accounts for the air the world started with",
         )
-        assertEquals(
-            s.baselineAirJoules,
-            s.atmosphereJoules + s.airVentedJoules - s.solidToAirJoules,
-            "$what: the heat the atmosphere is carrying no longer adds up",
-        )
+        EnergyLedgers.assertAirBalanced(s, what)
     }
 
     /** A pipe run with a pump on it at [pumpX], drawing from the room above (facing Up). */

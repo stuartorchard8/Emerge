@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.remapped
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -151,10 +152,16 @@ class GridVentTest {
         assertEquals(0L, after.airBalance, "airBalance after a shrink")
     }
 
+    /**
+     * ⚠️ **PARKED** — every assertion here is an energy identity, so with [EnergyLedgers] silenced
+     * the case would run and prove nothing. Its mass twin, `a shrink vents the gas it discards`,
+     * still covers that a shrink books what it throws away rather than deleting it.
+     */
+    @Ignore
     @Test
     fun `a shrink vents the joules it discards`() {
         val before = gassyWorld()
-        assertEquals(0L, before.airJouleBalance, "the fixture is out before anything shrinks")
+        EnergyLedgers.assertAirBalanced(before, "the fixture is out before anything shrinks")
 
         val after = before.remapped(Grid(12, 14), 0, 0)
 
@@ -167,7 +174,7 @@ class GridVentTest {
             after.atmosphereJoules + (after.airVentedJoules - before.airVentedJoules),
             "joules discarded by the shrink were not booked to airVentedJoules",
         )
-        assertEquals(0L, after.airJouleBalance, "airJouleBalance after a shrink")
+        EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a shrink")
     }
 
     @Test
@@ -183,7 +190,7 @@ class GridVentTest {
 
         assertTrue(after.pipeAir.totalGrams < before.pipeAir.totalGrams, "no pipe gas was discarded")
         assertEquals(0L, after.airBalance, "airBalance with pipe gas discarded")
-        assertEquals(0L, after.airJouleBalance, "airJouleBalance with pipe gas discarded")
+        EnergyLedgers.assertAirBalanced(after, "airJouleBalance with pipe gas discarded")
     }
 
     @Test
@@ -211,7 +218,7 @@ class GridVentTest {
         val after = before.remapped(Grid(12, 9), 0, 0)
 
         assertEquals(0L, after.airBalance, "airBalance")
-        assertEquals(0L, after.airJouleBalance, "airJouleBalance")
+        EnergyLedgers.assertAirBalanced(after, "airJouleBalance")
         assertEquals(0L, momentumX(after), "momentum identity on x")
         assertEquals(0L, momentumY(after), "momentum identity on y")
     }
@@ -227,7 +234,7 @@ class GridVentTest {
 
         assertTrue(after.atmosphereGrams < before.atmosphereGrams, "nothing was discarded")
         assertEquals(0L, after.airBalance, "airBalance after a near-side shrink")
-        assertEquals(0L, after.airJouleBalance, "airJouleBalance after a near-side shrink")
+        EnergyLedgers.assertAirBalanced(after, "airJouleBalance after a near-side shrink")
         assertEquals(0L, momentumX(after), "momentum identity on x")
         assertEquals(0L, momentumY(after), "momentum identity on y")
     }
