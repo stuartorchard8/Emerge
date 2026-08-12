@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
 
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.InputKey
@@ -77,8 +78,13 @@ sealed interface Edit {
          * What one tick of the injector delivers: a kilogram, which is about what a tile holds at one
          * atmosphere. So a held button fills a room at roughly a tile a tick — fast enough to be a
          * tool and slow enough to watch the front move.
+         *
+         * **Derivation**: one kilogram, which is [Budget]'s unit for exactly this reason. It could
+         * equally be written as `AirField.AMBIENT_AIR.total` and that would be truer still — a
+         * tile-load rather than a mass that happens to equal one — but the atmosphere is a layer
+         * above this file and the coincidence is close enough to state in words instead.
          */
-        const val INJECT_GRAMS: Long = 1000L
+        val INJECT_GRAMS: Long = 1L * Budget.KILOGRAM
 
         /**
          * What one tick of the *water* injector delivers — a sixty-fourth of what a tile holds when

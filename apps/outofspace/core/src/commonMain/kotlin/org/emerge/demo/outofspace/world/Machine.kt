@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.logistics.Capacity
+
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
  * of the world is a snapshot of the world.
@@ -63,8 +65,15 @@ sealed interface Directed : Machine {
     fun rotated(): Machine
 }
 
-/** Machine input buffers hold this much before they stop accepting. */
-const val MACHINE_BUFFER_CAP = 4_000_000L
+/**
+ * Machine input buffers hold this much before they stop accepting.
+ *
+ * **Derivation**: four belt-loads ([Capacity.PACKET_GRAMS]). Stated against the packet rather than
+ * as a mass of its own, because what this number actually controls is *how many deliveries a machine
+ * can be ahead of itself* — a buffer that is not a whole number of packets has a remainder no belt
+ * can ever fill, and the machine reads as stuck just short of full.
+ */
+val MACHINE_BUFFER_CAP = 4L * Capacity.PACKET_GRAMS
 
 /**
  * And output buffers hold this much before the machine stops *running*.
@@ -73,5 +82,8 @@ const val MACHINE_BUFFER_CAP = 4_000_000L
  * indefinitely — tens of tonnes inside one tile, invisibly. Capping it makes a blocked output
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
+ *
+ * **Derivation**: the same four belt-loads as [MACHINE_BUFFER_CAP], and deliberately equal to it —
+ * a machine that can hoard more output than input would drain its feed before it stalled.
  */
-const val MACHINE_OUTPUT_CAP = 4_000_000L
+val MACHINE_OUTPUT_CAP = 4L * Capacity.PACKET_GRAMS

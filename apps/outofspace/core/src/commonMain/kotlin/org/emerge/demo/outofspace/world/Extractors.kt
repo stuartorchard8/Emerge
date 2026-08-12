@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.logistics.Capacity
 
 /**
  * The ore source: a deck plate that leeches mass off whatever rock is lying on it.
@@ -38,7 +39,7 @@ data class Extractor(
     val input: Resource? = null,
     val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
-    val gramsPerTick: Long = 250_000L,
+    val gramsPerTick: Long = 250L * Budget.KILOGRAM,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Extractor),
 ) : Directed {
@@ -48,7 +49,15 @@ data class Extractor(
     override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
-        const val BUFFER_CAP = 5_000_000L
+        /**
+         * How much chewed rock an extractor holds before it stops biting.
+         *
+         * **Derivation**: five belt-loads — a little over one tile of ore, so the machine can hold
+         * roughly one cell's worth of what it just bit off while the belt takes it away. Bigger than
+         * [MACHINE_BUFFER_CAP] on purpose: an extractor's supply arrives in whole cells rather than
+         * in packets, so it needs room for a bite it cannot refuse.
+         */
+        val BUFFER_CAP = 5L * Capacity.PACKET_GRAMS
     }
 }
 

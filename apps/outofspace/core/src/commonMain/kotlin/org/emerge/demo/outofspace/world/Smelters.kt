@@ -9,7 +9,7 @@ data class Smelter(
     val refined: Resource? = null,
     val slag: Resource? = null,
     val carry: Long = 0L,
-    val gramsPerTick: Long = 125_000L,
+    val gramsPerTick: Long = 125L * Budget.KILOGRAM,
     override val wiring: Wiring = Wiring.RUNNING,
     override val joules: Long = ambientJoules(MachineKind.Smelter),
 ) : Directed {

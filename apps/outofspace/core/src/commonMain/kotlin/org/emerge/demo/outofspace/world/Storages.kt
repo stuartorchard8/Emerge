@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.logistics.Capacity
 
 /**
  * A buffer you can see the level of. Holds one form, releases it out the front while its RUN
@@ -24,6 +25,15 @@ data class Storage(
     override fun withJoules(joules: Long): Machine = copy(joules = joules)
 
     companion object {
-        const val CAP = 20_000_000L
+        /**
+         * How much a warehouse holds: **twenty belt-loads**.
+         *
+         * **Derivation**: `20 × PACKET_GRAMS`, which is a shade over three full tiles of solid steel
+         * and so reads as a room packed with material rather than a crate. Stated in packets because
+         * that is the unit the player actually experiences it filling in, and because it keeps
+         * storage a whole multiple of what a belt can deliver — see [MACHINE_BUFFER_CAP] for why the
+         * remainder matters.
+         */
+        val CAP = 20L * Capacity.PACKET_GRAMS
     }
 }

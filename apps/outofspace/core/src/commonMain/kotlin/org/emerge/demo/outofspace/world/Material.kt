@@ -81,8 +81,13 @@ enum class Material(
          * at real scale: [AirField.AMBIENT_AIR] is a real kilogram of air in a tile. Only the solids
          * moved. Scaling this with them made every wall equalise with its room inside a tick, which
          * showed up as gas tests failing rather than heat ones.
+         *
+         * **Derivation**: 20 J/K/tick, stated in [Budget]'s energy units. It is **energy**-dimensioned
+         * — millijoules per kelvin per tick — so it moves with `Budget.MILLIJOULE` and not with
+         * `Budget.GRAM`. Those two travel together by the `ENERGY_PER_MASS` relation, so writing it
+         * this way costs nothing today and keeps it correct if the relation is ever revisited.
          */
-        const val AIR_FILM: Long = 20_000L
+        val AIR_FILM: Long = 20L * Budget.JOULE
 
         /**
          * Exposed-face radiance: mJ/K/tick per face (linear gap, not T⁴; vacuum = excellent

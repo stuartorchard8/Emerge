@@ -24,6 +24,12 @@ data class Pump(
          * fills one length of pipe in a few dozen ticks and drains the room it is facing over a few
          * thousand. Fast enough to watch, slow enough that a network fills visibly from its pump
          * rather than appearing full.
+         *
+         * ⚠️ **Molar, not mass-dimensioned — this one does NOT move with [Budget].** A millimole is a
+         * count of particles, and a rescale of the mass unit leaves a particle count alone. It is
+         * called out here because it is the one constant in the game that *reads* as though it were
+         * a quantity of stuff and is not: scaling it alongside the masses would make every pump in
+         * the game a million times stronger. See `Budget`'s "what is deliberately not here".
          */
         const val MILLIMOLES_PER_TICK: Long = 200L
 

@@ -168,6 +168,38 @@ class NumericLimitsTest {
      *   masses are multiplied together. Quadratic rows are the dangerous ones: they look roomy at
      *   one gram per unit and are spent four times as fast.
      */
+    /**
+     * ⚠️ Formatting is done by hand because this file is in **commonTest**, and `String.format` is a
+     * JVM API. It compiles on JVM and fails to resolve on JS, so the tripwire commit that introduced
+     * it broke `compileTestKotlinJs` while every JVM run stayed green — the exact trap `reference_
+     * common_source_set_jvm_apis` documents. Left as helpers rather than moving the file to jvmTest,
+     * because the budget it guards is common-source arithmetic and belongs beside it.
+     */
+    private fun Long.commas(): String =
+        toString().reversed().chunked(3).joinToString(",").reversed()
+
+    /** Three significant figures, without `%.3g`. */
+    private fun Double.sig3(): String {
+        if (this == 0.0 || !this.isFinite()) return toString()
+        val exponent = kotlin.math.floor(kotlin.math.log10(kotlin.math.abs(this))).toInt()
+        val mantissa = this / pow10(exponent)
+        val rounded = kotlin.math.round(mantissa * 100.0) / 100.0
+        return if (exponent in -3..5) {
+            val scaled = kotlin.math.round(this * pow10(2 - exponent)) / pow10(2 - exponent)
+            scaled.toString()
+        } else {
+            "${rounded}e$exponent"
+        }
+    }
+
+    private fun pow10(n: Int): Double {
+        var out = 1.0
+        repeat(kotlin.math.abs(n)) { out *= 10.0 }
+        return if (n < 0) 1.0 / out else out
+    }
+
+    private fun String.pad(width: Int): String = padEnd(width)
+
     private fun budget(name: String, worst: Long, exponent: Int) {
         val required = safetyFactor * when (exponent) {
             2 -> targetMassScale.toDouble() * targetMassScale.toDouble()
@@ -175,18 +207,17 @@ class NumericLimitsTest {
         }
         if (worst <= 0L) {
             failures += "$name: worst case came out $worst — it has ALREADY overflowed a Long"
-            rows += "  %-46s OVERFLOWED".format(name)
+            rows += "  ${name.pad(52)} OVERFLOWED"
             return
         }
         val headroom = Long.MAX_VALUE.toDouble() / worst.toDouble()
         val safeK = if (exponent == 2) kotlin.math.sqrt(headroom) else headroom
-        rows += "  %-46s worst=%-20d k^%d  headroom=%.3g  safe k=%.3g".format(
-            name, worst, exponent, headroom, safeK,
-        )
+        rows += "  ${name.pad(52)} worst=${worst.toString().pad(20)} k^$exponent  " +
+            "headroom=${headroom.sig3()}  safe k=${safeK.sig3()}"
         if (headroom < required) {
-            failures += ("%s: headroom %.3g, needs %.3g for a mass scale of %d — " +
-                "restructure it or lower the target (NUMERIC_LIMITS.md §8)")
-                .format(name, headroom, required, targetMassScale)
+            failures += "$name: headroom ${headroom.sig3()}, needs ${required.sig3()} for a mass " +
+                "scale of $targetMassScale — restructure it or lower the target " +
+                "(NUMERIC_LIMITS.md §8)"
         }
     }
 
@@ -311,11 +342,11 @@ class NumericLimitsTest {
         val flyableGrams = Long.MAX_VALUE / (Flight.PER_TILE * designTopSpeed)
         val heaviestBuildable = densestTileGrams * gridTiles
         println(
-            "flyable ship mass %,d g; reference ship %,d g (%.1f%% of budget); ".format(
-                flyableGrams, referenceShipGrams, 100.0 * referenceShipGrams / flyableGrams,
-            ) + "heaviest buildable %,d g would need %.1fx the budget".format(
-                heaviestBuildable, heaviestBuildable.toDouble() / flyableGrams,
-            ),
+            "flyable ship mass ${flyableGrams.commas()} g; " +
+                "reference ship ${referenceShipGrams.commas()} g " +
+                "(${(100.0 * referenceShipGrams / flyableGrams).sig3()}% of budget); " +
+                "heaviest buildable ${heaviestBuildable.commas()} g would need " +
+                "${(heaviestBuildable.toDouble() / flyableGrams).sig3()}x the budget",
         )
         assertTrue(
             referenceShipGrams * safetyFactor * targetMassScale < flyableGrams,

@@ -155,16 +155,50 @@ scope**:
 
 `NUMERIC_LIMITS.md` §1 and §5 carry the correction. **Test**: the tripwire itself, green at k=1.
 
-### 2. Audit every mass- and energy-dimensioned constant
-Find them all, and make each one *derived from the budget* rather than a literal that happens to be
-right. Known already: `Storage.CAP`, `MACHINE_BUFFER_CAP`, `MACHINE_OUTPUT_CAP`,
-`Extractors.BUFFER_CAP`, `Packet.PACKET_GRAMS`, `Edit.INJECT_GRAMS`, `Edit.WATER_INJECT_GRAMS`,
-`Plumbing.MILLIMOLES_PER_TICK`, `Material.AIR_FILM`, plus gram literals in tests.
-`Negligible` is already a fraction of ambient and needs nothing — **that is the pattern the others
-should follow**, and where a constant can be expressed as a fraction of something physical it
-should be, rather than rescaled.
-**Test**: a test asserting no surviving literal is silently mass-dimensioned is not really
-expressible; instead each constant gets its derivation in a comment, and step 8 is the check.
+### 2. Audit every mass- and energy-dimensioned constant — **DONE 2026-08-12**
+
+`world/Budget.kt` is now the single place that states what one integer means. Every mass- and
+energy-dimensioned constant in `commonMain` derives from it:
+
+| constant | was | now |
+|---|---|---|
+| `Capacity.PACKET_GRAMS` | `1_000_000L` | `1 × TONNE` — the logistics quantum everything else counts in |
+| `MACHINE_BUFFER_CAP` | `4_000_000L` | `4 × PACKET_GRAMS` |
+| `MACHINE_OUTPUT_CAP` | `4_000_000L` | `4 × PACKET_GRAMS`, deliberately equal to the input |
+| `Storage.CAP` | `20_000_000L` | `20 × PACKET_GRAMS` |
+| `Extractor.BUFFER_CAP` | `5_000_000L` | `5 × PACKET_GRAMS` |
+| machine `gramsPerTick` ×4 | `250_000L` / `125_000L` | `250` / `125 × KILOGRAM` |
+| `Edit.INJECT_GRAMS` | `1000L` | `1 × KILOGRAM` |
+| `Material.AIR_FILM` | `20_000L` | `20 × JOULE` — **energy**-dimensioned, so it moves with `MILLIJOULE` |
+
+Stating the buffers as **counts of packets** rather than as masses of their own turned out to be the
+better form for a reason that is not about rescaling: a buffer that is not a whole number of packets
+has a remainder no belt can ever deliver, and the machine reads as stuck just short of full.
+
+Already ratios and needing nothing, which is the pattern: `Negligible` (per-mille of ambient),
+`Material.RADIANCE` (a fraction of a hull plate's capacity), `Edit.WATER_INJECT_GRAMS` (a 64th of a
+saturated tile).
+
+⚠️ **`Plumbing.MILLIMOLES_PER_TICK` is molar and must NOT move.** A millimole is a particle count. It
+is the one constant in the game that *reads* mass-dimensioned and is not, so scaling it with the
+masses would make every pump a million times stronger. Called out on the constant itself and in
+`Budget`'s "what is deliberately not here", alongside the other dimensionless scales.
+
+**Test**: `BudgetParityTest`, and it is written to **survive step 8** — each assertion divides by the
+unit, so it states a fact in grams and joules rather than pinning an integer. Asserting
+`PACKET_GRAMS == 1_000_000` would need re-baselining by hand the moment the knob moves, which is the
+worst habit a rescale could teach. Asserting *a packet is one tonne* is true at every scale.
+
+**Dry-run**: `MICROGRAMS_PER_UNIT` was temporarily set to `1` and `BudgetParityTest` stayed green, so
+the derivation chain does hold at the target unit. Step 8 is now a one-line change.
+
+**Deliberately deferred**: ~134 gram literals in `commonTest`. They are fixtures rather than
+constants, step 8 is the check for them, and rewriting them now would be a large diff with no
+guard — better done when the knob moves and the failures say which ones actually mattered.
+
+**Fixed in passing**: the step-1 tripwire used `String.format`, a JVM-only API, in **commonTest** —
+so `compileTestKotlinJs` had been broken since it landed while every JVM run stayed green. Exactly
+the trap `reference_common_source_set_jvm_apis` documents. Hand-rolled formatting now; JS compiles.
 
 ### 3. Park the energy conservation checks, and let those ledgers rot
 Not a fix — an explicit, temporary surrender, so that a known-overflowing ledger cannot be mistaken

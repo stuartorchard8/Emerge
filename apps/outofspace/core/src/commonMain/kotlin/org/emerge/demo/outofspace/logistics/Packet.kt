@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.logistics
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.world.Budget
 
 /**
  * Matter in transit: discrete lumps on belts/pipes. Solid=Resource (Form matters), fluid=Mixture (source-dependent).
@@ -44,8 +45,12 @@ object Capacity {
      * with it; the masses themselves moved by rather more (see [org.emerge.demo.outofspace.world.Material]),
      * so the refinery runs about a third slower per rock than it used to, in exchange for numbers
      * that stay round.
+     *
+     * **Derivation**: one tonne. This is the quantum the whole logistics layer is built on — every
+     * buffer below is a small whole number of these — so it is stated in [Budget]'s units and
+     * everything else refers back to it rather than restating a mass of its own.
      */
-    const val PACKET_GRAMS: Long = 1_000_000L
+    val PACKET_GRAMS: Long = 1L * Budget.TONNE
 
     /** The measure capacity is expressed in. Mass today; see the class note for why it is a function. */
     fun quantityOf(packet: Packet): Long = packet.mass
