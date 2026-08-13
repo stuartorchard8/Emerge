@@ -35,3 +35,13 @@ tasks.register<JavaExec>("outofspaceAgent") {
     for (key in listOf("oos.agent.w", "oos.agent.h"))
         providers.systemProperty(key).orNull?.let { systemProperty(key, it) }
 }
+
+tasks.register<JavaExec>("benchOutofspace") {
+    group = "verification"
+    description = "Headless tick profiler: where the tick's time goes, and how much of it scales " +
+        "with Species.COUNT. Run it, append filler species to the Species enum, run it again — the " +
+        "subsystem that grows fastest is the one worth making sparse. --args=\"[ticks] [innerReps]\"."
+    mainClass = "org.emerge.desktop.OutofspaceBenchKt"
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootDir
+}
