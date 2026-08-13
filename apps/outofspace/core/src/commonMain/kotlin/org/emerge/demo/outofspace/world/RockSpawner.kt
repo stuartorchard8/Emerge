@@ -300,8 +300,28 @@ object RockSpawner {
      *
      * Samples [simplex2D] at increasing frequencies/decreasing amplitudes (standard fBm), then
      * remaps the [-1,1] result to a [0,1] density.
+     *
+     * ### Why [density] is a billion and not a thousand
+     *
+     * It is the resolution of the recipe this returns: the share each species gets is
+     * `weight × density / total`, floored, so `density` is the smallest fraction the result can
+     * express. At 1000 that was one part per thousand — and with a hundred species summing to a
+     * total in the thousands, **every trace mineral was pinned to exactly that one value or zero**.
+     * Measured over 1600 chunks, all fifty-one species at the old abundances of 1 or 2 came out
+     * identical: about 2% of chunks, one part per thousand, never anything else.
+     *
+     * A billion gives six more digits, which is what osmium at 490 parts per billion needs in order
+     * to be *rarer than* gold rather than merely tied with it. Raising the abundances alone would
+     * not have done it: this expression is ratio-invariant, so scaling every weight by a million
+     * leaves the output bit-for-bit identical. Both halves were required.
+     *
+     * ⚠️ The product `weight × density` is taken in `Long` deliberately. `weight` is the noise-
+     * modulated abundance, up to 16× the table value, so the worst case today is about
+     * 4.5×10⁸ × 10⁹ ≈ 4.5×10¹⁷ — comfortable against `Long`'s 9.2×10¹⁸, and *immediately* overflow
+     * if either factor were an `Int`. See [Species.relativeAbundance] for the matching ceiling on
+     * the other side.
      */
-    private fun mixtureForChunk(chunkX: Int, chunkY: Int, density: Int = 1000, species: List<Species> = Species.NATURAL): Mixture {
+    private fun mixtureForChunk(chunkX: Int, chunkY: Int, density: Long = 1_000_000_000L, species: List<Species> = Species.NATURAL): Mixture {
         val relativeComposition = IntArray(species.size)
         var totalComposition = 0L
 
