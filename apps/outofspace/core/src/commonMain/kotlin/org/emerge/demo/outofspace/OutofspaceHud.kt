@@ -366,7 +366,10 @@ class OutofspaceHud {
             } else {
                 for ((label, resource) in buffers) {
                     keyValue(label, "${mass(resource.mass)}  ${resource.form.name}")
-                    row("   " + composition(resource.mixture), 0x9AA4B4FFL)
+                    val rows = composition(resource.mixture).split('\n')
+                    for (r in rows) {
+                        row(" $r", 0x9AA4B4FFL)
+                    }
                 }
             }
         }
@@ -440,7 +443,12 @@ class OutofspaceHud {
                 keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, index)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
             }
             val mix = s.air.mixtureAt(index)
-            if (!mix.isEmpty) row("   " + composition(mix), 0x9AA4B4FFL)
+            if (!mix.isEmpty) {
+                val rows = composition(mix, 5).split('\n')
+                for (r in rows) {
+                    row(" $r", 0x9AA4B4FFL)
+                }
+            }
         }
     }
 
@@ -456,20 +464,17 @@ class OutofspaceHud {
         return horizontal + vertical
     }
 
-    /** Mixture as percentages, richest first (4-letter species abbrev). */
-    private fun composition(mixture: Mixture): String {
+    /** Mixture as percentages, richest first. */
+    private fun composition(mixture: Mixture, maxEntries: Int = 3): String {
         if (mixture.isEmpty) return "empty"
         val total = mixture.total
         val present = Species.ALL.filter { mixture[it] > 0L }.sortedByDescending { mixture[it] }
-        // A species under one percent prints as "0%", which is a word and a number that between them
-        // say nothing — and diffusion leaves such a share in nearly every tile. They are counted
-        // rather than dropped silently, because "there is something else in here" is worth knowing;
-        // it is the per-species arithmetic that isn't.
-        val named = present.filterNot { Negligible.share(mixture[it], total) }
-        val traces = present.size - named.size
-        if (named.isEmpty()) return "traces only ($traces)"
-        val listed = named.joinToString("  ") { "${it.name.take(4).uppercase()} ${mixture[it] * 100 / total}%" }
-        return if (traces == 0) listed else "$listed  +$traces trace"
+        // Only top 2 minerals are shown, with remaining composition represented as "other"
+        val named = if (present.size > maxEntries) present.take(2) else present
+        val pcts = named.map { mixture[it] * 100 / total }
+        val remainingPercent = 100L - pcts.sum()
+        val listed = named.indices.joinToString("\n") { "${pcts[it].toString().padStart(3)}% ${named[it].name.uppercase()}" }
+        return if (present.size <= maxEntries) listed else "$listed\n${remainingPercent.toString().padStart(3)}% other"
     }
 
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
