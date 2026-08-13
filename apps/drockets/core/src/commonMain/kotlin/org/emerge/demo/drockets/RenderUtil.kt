@@ -3,7 +3,6 @@ package org.emerge.demo.drockets
 import kotlin.math.abs
 
 internal const val TRIANGLE_VERTEX_OFFSET = 0
-internal const val QUAD_VERTEX_OFFSET = 3
 
 /**
  * Maps an HSV triplet to linear RGB. `h` is in degrees [0, 360], `s` and `v` in [0, 1].

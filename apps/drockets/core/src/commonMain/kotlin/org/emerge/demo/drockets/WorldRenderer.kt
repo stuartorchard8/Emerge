@@ -1,8 +1,8 @@
 package org.emerge.demo.drockets
 
 import org.emerge.demo.drockets.shader.PlanetShader
-import org.emerge.demo.drockets.shader.StarscapeShader
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.shader.StarscapeShader
 import org.emerge.render.torus.GpuFloatBuffer
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.put
@@ -165,7 +165,6 @@ class WorldRenderer(
 
         // ── Layer 0: starscape background ──
         starscapeShader.draw(
-            vOffset = QUAD_VERTEX_OFFSET,
             bearing = -viewRotationRad,
             resolutionX = resolution.x,
             resolutionY = resolution.y,
@@ -591,15 +590,10 @@ class WorldRenderer(
 
     private fun uploadVerts() {
         val verts = floatArrayOf(
-            // [0..2] Triangle strip for CircleShader / PlanetShader (3 verts)
+            // Triangle strip for CircleShader / PlanetShader (3 verts)
             -1f, 1.7320508f,
             2f, 0f,
             -1f, -1.7320508f,
-            // [3..6] Fullscreen quad for StarscapeShader (4 verts, triangle strip)
-            -1f, 1f,
-            -1f, -1f,
-            1f, 1f,
-            1f, -1f,
         )
         val buf = GpuFloatBuffer(verts.size)
         buf.put(verts).flip()

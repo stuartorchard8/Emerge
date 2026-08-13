@@ -40,6 +40,7 @@ import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
+import org.emerge.render.torus.shader.StarscapeShader
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
@@ -69,6 +70,7 @@ import kotlin.math.sqrt
 class OutofspaceRenderer {
 
     private val rects = UiRectRenderer(maxRects = MAX_RECTS)
+    private val starscape = StarscapeShader()
 
     private var resW = 1f
     private var resH = 1f
@@ -240,6 +242,8 @@ class OutofspaceRenderer {
         alpha = tickAlpha.coerceIn(0f, 1f)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
+        val starscapeBearing = if (camera == CameraFrame.Grid) state.ang else Coord(0)
+        starscape.draw(bearing = starscapeBearing.toFloat() * PI.toFloat(), resolutionX = resW, resolutionY = resH)
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
         count = 0
@@ -381,7 +385,10 @@ class OutofspaceRenderer {
         GPU.disableBlend()
     }
 
-    fun cleanup() = rects.deleteProgram()
+    fun cleanup() {
+        starscape.deleteProgram()
+        rects.deleteProgram()
+    }
 
     /**
      * One tile of pipe.
