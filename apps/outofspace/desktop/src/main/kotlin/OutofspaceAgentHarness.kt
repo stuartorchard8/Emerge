@@ -746,14 +746,7 @@ object OutofspaceAgentHarness {
             // is here because only the ship's half is inside the ledger. See [VesselState.bodyImpulseX].
             "rockImpulseX" -> grams(state.bodyImpulseX)
             "rockImpulseY" -> grams(state.bodyImpulseY)
-            "momentumBalance" -> grams(
-                state.vesselImpulseX + state.momentum.totalX + state.pipeMomentum.totalX +
-                    state.exhaustMomentumX + state.undeliveredImpulseX - state.debugImpulseX +
-                    state.bodyImpulseX +
-                    state.vesselImpulseY + state.momentum.totalY + state.pipeMomentum.totalY +
-                    state.exhaustMomentumY + state.undeliveredImpulseY - state.debugImpulseY +
-                    state.bodyImpulseY
-            )
+            "momentumBalance" -> grams(state.momentumBalanceX + state.momentumBalanceY)
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "mass" -> grams(state.mass)
             "thrustX" -> grams(state.netImpulseX)

@@ -632,6 +632,33 @@ data class VesselState(
     val pose: Pose get() = Pose(positionX, positionY, ang)
 
     /**
+     * The whole momentum identity as one number: zero, or momentum has been minted or lost.
+     *
+     * `vessel + gas + pipe gas + exhaust + undelivered + bodies − debug engine == 0`. Written here
+     * once because it was written out by hand in seven places, and a conservation law that is
+     * transcribed seven times is a conservation law with seven chances to be transcribed wrong.
+     *
+     * ⚠️ **Stated in the world frame, and the ship's own stores are the ones already in it.**
+     * [vesselImpulseX], [exhaustMomentumX] and [bodyImpulseX] are world-frame — see
+     * [org.emerge.demo.outofspace.OutofspaceSim] for where the turn happens and why. The gas fields
+     * are not and cannot be: [momentum] is per-edge on the grid, so it is a direction in the ship by
+     * construction, and it is turned here on the way out instead. That is exact for the gas, whose
+     * momentum is a live quantity read at the pose it is read at; [undeliveredImpulseX] is a running
+     * total and so is turned by an angle that is only approximately its own, which is tolerable only
+     * because the term is tiny and non-accumulating (see its own note). If it ever grows, it needs
+     * turning where it is booked, exactly as the exhaust does.
+     */
+    val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX -
+        debugImpulseX + pose.turnedX(gasMomentumX, gasMomentumY)
+
+    val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY -
+        debugImpulseY + pose.turnedY(gasMomentumX, gasMomentumY)
+
+    /** Everything the gas is holding, in the grid's axes — the un-turned half of [momentumBalanceX]. */
+    private val gasMomentumX: Long get() = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX
+    private val gasMomentumY: Long get() = momentum.totalY + pipeMomentum.totalY + undeliveredImpulseY
+
+    /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
      *
      * This is what the fluid is run under — [gravity] alone never is any more. See

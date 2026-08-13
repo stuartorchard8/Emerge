@@ -403,14 +403,21 @@ fun driftBodies(
         // landed": a wrapped impulse reads as an *absence*, which is the rescale's standing lesson.
         val platingX = scaledRatio(felt.x.raw, Flight.FRAC_ONE, mass)
         val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
+        // ⚠️ Plating pulls toward the *deck*, so what comes back is a direction in the grid, while a
+        // body's momentum is in the world — the same frame boundary the vessel's own ledger crosses
+        // in [OutofspaceSim.step], and the same failure if it is not crossed: a rock aboard a ship
+        // turned on its side fell along the grid's y rather than toward the plating under it. The
+        // torque below keeps the **grid-frame** pair, because it is booked against a grid-frame arm.
+        val worldPlatingX = ship.pose.turnedX(platingX, platingY)
+        val worldPlatingY = ship.pose.turnedY(platingX, platingY)
         val swept = sweepBody(
             grid, structure, body,
             ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass, about,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
             machines,
         )
-        val gaveX = swept.impulseX + platingX
-        val gaveY = swept.impulseY + platingY
+        val gaveX = swept.impulseX + worldPlatingX
+        val gaveY = swept.impulseY + worldPlatingY
         handedX += gaveX
         handedY += gaveY
         // ⚠️ Two torques, from two different arms, and conflating them was the bug this split fixes.
@@ -438,8 +445,8 @@ fun driftBodies(
             shipVy += scaledRatio(-gaveY, shipMass, Flight.PER_TILE)
         }
         swept.body.copy(
-            impulseX = swept.body.impulseX + platingX,
-            impulseY = swept.body.impulseY + platingY,
+            impulseX = swept.body.impulseX + worldPlatingX,
+            impulseY = swept.body.impulseY + worldPlatingY,
         )
     }
     return BodyStep(moved, handedX, handedY, handedTorque)

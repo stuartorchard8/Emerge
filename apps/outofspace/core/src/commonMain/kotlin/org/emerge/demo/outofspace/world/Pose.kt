@@ -44,6 +44,25 @@ class Pose(
     fun toWorldY(localX: Long, localY: Long): Long = y + rotScale(localX, sin) + rotScale(localY, cos)
 
     /**
+     * A **direction** in this pose's frame, expressed in the world: [toWorldX] without the offset.
+     *
+     * The distinction is not pedantry. A point has a position and a direction does not, so a
+     * momentum, a velocity or a force turns with the body but does not translate with it — putting
+     * one through [toWorldX] adds the ship's position to it, which is nonsense of a size that grows
+     * as the ship flies. Everything the grid produces is a direction in this sense: the pressure on
+     * a bulkhead, an exhaust plume, the pull of plating. See [VesselState.vesselImpulseX] for why
+     * they have to be turned at all.
+     */
+    fun turnedX(localX: Long, localY: Long): Long = rotScale(localX, cos) - rotScale(localY, sin)
+
+    fun turnedY(localX: Long, localY: Long): Long = rotScale(localX, sin) + rotScale(localY, cos)
+
+    /** The inverse of [turnedX]: a world-frame direction read back in this pose's axes. */
+    fun unturnedX(worldX: Long, worldY: Long): Long = rotScale(worldX, cos) + rotScale(worldY, sin)
+
+    fun unturnedY(worldX: Long, worldY: Long): Long = -rotScale(worldX, sin) + rotScale(worldY, cos)
+
+    /**
      * The inverse of [toWorldX] — `R(−ang)` applied to the offset from this pose's origin.
      *
      * ⚠️ The subtraction happens **first**, and that is not a stylistic choice: see [rotScale].

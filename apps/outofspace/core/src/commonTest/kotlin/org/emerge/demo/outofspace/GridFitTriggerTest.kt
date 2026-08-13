@@ -308,14 +308,12 @@ class GridFitTriggerTest {
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.
         assertEquals(
             0L,
-            s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX + s.exhaustMomentumX +
-                s.undeliveredImpulseX - s.debugImpulseX + s.bodyImpulseX,
+            s.momentumBalanceX,
             "momentumBalance x $whenever",
         )
         assertEquals(
             0L,
-            s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY + s.exhaustMomentumY +
-                s.undeliveredImpulseY - s.debugImpulseY + s.bodyImpulseY,
+            s.momentumBalanceY,
             "momentumBalance y $whenever",
         )
     }

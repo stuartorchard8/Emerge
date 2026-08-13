@@ -354,8 +354,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // hull, what the debug engine adds, and what the vessel handed the bodies around it.
         // A thruster's exhaust took `+p` overboard with it, so the ship keeps `−p`. Nothing is
         // minted: the two halves are written from one number in [fire].
-        val netImpulseX = pushed.vesselX + pipePushed.vesselX + thrustX - handedX - w.exhaustMomentumX
-        val netImpulseY = pushed.vesselY + pipePushed.vesselY + thrustY - handedY - w.exhaustMomentumY
+        //
+        // ⚠️ **The frame changes here, and this is the only place it does.** Everything the grid
+        // produces — a pressure on a bulkhead, a plume out of a nozzle — is a direction *in the
+        // ship*, because the grid is the ship. The ship's momentum is a direction *in the world*.
+        // Without this turn a thruster pushed along the grid's axes however the ship was pointing:
+        // the torque was right, because a torque is a scalar and reads the same in both frames, so
+        // the ship rotated correctly and then accelerated as though it had not. Turned by the
+        // **start-of-tick** pose, which is the attitude the fluid was solved at.
+        //
+        // `handed` is already in the world — a body's momentum is world-frame and the contact
+        // solver turns the exchange on the way out (see [sweepBody]) — so it is subtracted after
+        // the turn and not before. The debug engine is world-frame too, and for the same reason it
+        // has no torque: [Edit.Thrust] is a key that shoves the ship, not a nozzle bolted anywhere.
+        //
+        // ⚠️ The exhaust is turned **on its own** and then subtracted, rather than being folded into
+        // the sum before the turn. `turn(a − b)` and `turn(a) − turn(b)` differ by a unit or two
+        // under truncation, and the exhaust store below has to be the same number this subtracts or
+        // the ledger picks up a drift of a gram or two a tick — which is exactly the size of thing
+        // `momentumBalance` exists to catch, so it must not be the instrument's own doing.
+        // The exhaust, in the world. One number, used twice: subtracted from the ship here and added
+        // to the overboard store below, which is what makes the pair impossible to unbalance.
+        val exhaustX = state.pose.turnedX(w.exhaustMomentumX, w.exhaustMomentumY)
+        val exhaustY = state.pose.turnedY(w.exhaustMomentumX, w.exhaustMomentumY)
+        val pressureX = pushed.vesselX + pipePushed.vesselX
+        val pressureY = pushed.vesselY + pipePushed.vesselY
+        val netImpulseX = state.pose.turnedX(pressureX, pressureY) + thrustX - handedX - exhaustX
+        val netImpulseY = state.pose.turnedY(pressureX, pressureY) + thrustY - handedY - exhaustY
 
         // The same five contributions crossed with the point each one is applied at — see
         // [torqueAbout] for why this is summed term by term and not derived from `netImpulse`.
@@ -401,8 +426,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // [VesselState.flow]). See the extraction plan §3.
             momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
             // Momentum that is genuinely somewhere else now: astern of the ship at 3 km/s.
-            exhaustMomentumX = state.exhaustMomentumX + w.exhaustMomentumX,
-            exhaustMomentumY = state.exhaustMomentumY + w.exhaustMomentumY,
+            //
+            // ⚠️ Turned into the world by the same pose `netImpulse` was, and it has to be the same
+            // one: this is the `+p` whose `−p` the ship just took, and a pair booked in two
+            // different frames does not cancel. Turned as it is *booked* rather than as it is read,
+            // because it is a running total over ticks the ship was pointing different ways and
+            // there is no one angle that could undo it afterwards.
+            exhaustMomentumX = state.exhaustMomentumX + exhaustX,
+            exhaustMomentumY = state.exhaustMomentumY + exhaustY,
             // Pipe pressure + pump momentum all push the ship (see [exchangeLayers], [applyPumps]).
             vesselImpulseX = state.vesselImpulseX + netImpulseX,
             vesselImpulseY = state.vesselImpulseY + netImpulseY,

@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.exhaustPath
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -49,6 +50,41 @@ class ThrusterTest {
         assertTrue(s.velocityX < 0L, "exhaust went +x, so the ship must go −x, not ${s.velocityX}")
         assertTrue(s.positionX < 0L, "and it must have got somewhere: ${s.positionX}")
         assertEquals(0L, s.debugImpulseX, "the debug engine was not supposed to be involved")
+    }
+
+    /**
+     * The same motor on a ship that has been turned: the push turns with it.
+     *
+     * A thruster's nozzle is bolted to the hull, so what it produces is a direction *in the ship*.
+     * The ship's momentum is a direction *in the world*. Nothing in the grid changes when the ship
+     * turns — the exhaust still leaves through the same face of the same tile — so the whole of the
+     * difference is the one conversion between those two frames, and this is the test that there is
+     * one. Turned a quarter turn clockwise (+y is down, so +ang is clockwise), the ship's +x is the
+     * world's +y: an engine that pushed to port now pushes up.
+     *
+     * The linear half only. Torque is a scalar and reads the same in both frames, which is why the
+     * spin was already right and only this was wrong.
+     */
+    @Test
+    fun `a turned ship is pushed the way it is pointing`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(
+            cfg,
+            hullWithThruster(cfg.initialGrid, Direction.Right).copy(ang = QUARTER_TURN),
+        )
+
+        repeat(TICKS) { controller.stepOnce() }
+
+        val s = controller.state
+        assertTrue(s.exhaustMomentumY != 0L, "nothing left the nozzle, so this proved nothing")
+        assertTrue(s.velocityY < 0L, "exhaust went to world +y, so the ship must go −y, not ${s.velocityY}")
+        // The unturned run puts everything on x; a quarter turn must leave nothing worth measuring
+        // there. Relative, not absolute: what matters is that the axes swapped, not the speed.
+        assertTrue(
+            abs(s.velocityX) * 20L < abs(s.velocityY),
+            "it is still being pushed along the grid: ${s.velocityX} against ${s.velocityY}",
+        )
+        assertTrue(s.positionY < 0L, "and it must have got somewhere: ${s.positionY}")
     }
 
     /**
@@ -97,8 +133,7 @@ class ThrusterTest {
             val s = controller.state
             assertEquals(
                 0L,
-                s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX +
-                    s.exhaustMomentumX + s.undeliveredImpulseX + s.bodyImpulseX - s.debugImpulseX,
+                s.momentumBalanceX,
                 "tick ${s.tick}: ship ${s.vesselImpulseX}, exhaust ${s.exhaustMomentumX}",
             )
         }
@@ -248,5 +283,10 @@ class ThrusterTest {
 
         /** Midships, as far from a corner as the box allows. */
         const val BAY_Y = 16
+
+        /** A quarter turn clockwise: a half turn is `Int.MAX_VALUE`, so this is half of that. */
+        val QUARTER_TURN = Coord(Int.MAX_VALUE / 2)
     }
 }
+
+private fun abs(v: Long): Long = if (v < 0L) -v else v

@@ -241,11 +241,7 @@ class RockContactTest {
      * Both axes at once, because a term dropped on one axis and doubled on the other is exactly the
      * kind of thing a per-axis check would let through.
      */
-    private fun balance(s: VesselState): Long =
-        s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX + s.exhaustMomentumX +
-            s.undeliveredImpulseX + s.bodyImpulseX - s.debugImpulseX +
-            s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY + s.exhaustMomentumY +
-            s.undeliveredImpulseY + s.bodyImpulseY - s.debugImpulseY
+    private fun balance(s: VesselState): Long = s.momentumBalanceX + s.momentumBalanceY
 
     /** A body centred on a tile, given a velocity in the world frame rather than an impulse. */
     private fun bodyAt(x: Int, y: Int, velocityX: Long = 0L, velocityY: Long = 0L): RigidBody {

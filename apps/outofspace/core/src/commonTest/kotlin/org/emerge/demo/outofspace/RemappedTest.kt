@@ -421,13 +421,9 @@ class RemappedTest {
 
         // The full momentum identity:
         // vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body - debug == 0
-        fun momentumX(s: VesselState) =
-            s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX +
-                s.exhaustMomentumX + s.undeliveredImpulseX + s.bodyImpulseX - s.debugImpulseX
+        fun momentumX(s: VesselState) = s.momentumBalanceX
 
-        fun momentumY(s: VesselState) =
-            s.vesselImpulseY + s.momentum.totalY + s.pipeMomentum.totalY +
-                s.exhaustMomentumY + s.undeliveredImpulseY + s.bodyImpulseY - s.debugImpulseY
+        fun momentumY(s: VesselState) = s.momentumBalanceY
 
         assertEquals(momentumX(s0), momentumX(s1), "momentumBalanceX must be preserved")
         assertEquals(momentumY(s0), momentumY(s1), "momentumBalanceY must be preserved")

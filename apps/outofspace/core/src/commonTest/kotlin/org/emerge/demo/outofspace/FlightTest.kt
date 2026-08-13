@@ -245,8 +245,7 @@ class FlightTest {
             val s = controller.state
             assertEquals(
                 0L,
-                s.vesselImpulseX + s.momentum.totalX + s.pipeMomentum.totalX +
-                    s.exhaustMomentumX + s.undeliveredImpulseX - s.debugImpulseX,
+                s.momentumBalanceX,
                 "tick ${s.tick}: the debug engine minted ${s.debugImpulseX} and the books do not say so",
             )
         }
@@ -390,13 +389,13 @@ class FlightTest {
             val aboardY = s.momentum.totalY + s.pipeMomentum.totalY
             assertEquals(
                 0L,
-                s.vesselImpulseX + aboardX + s.exhaustMomentumX + s.undeliveredImpulseX,
+                s.momentumBalanceX,
                 "tick ${s.tick}: x — ship ${s.vesselImpulseX}, aboard $aboardX, " +
                     "exhaust ${s.exhaustMomentumX}, undelivered ${s.undeliveredImpulseX}",
             )
             assertEquals(
                 0L,
-                s.vesselImpulseY + aboardY + s.exhaustMomentumY + s.undeliveredImpulseY,
+                s.momentumBalanceY,
                 "tick ${s.tick}: y — ship ${s.vesselImpulseY}, aboard $aboardY, " +
                     "exhaust ${s.exhaustMomentumY}, undelivered ${s.undeliveredImpulseY}",
             )
