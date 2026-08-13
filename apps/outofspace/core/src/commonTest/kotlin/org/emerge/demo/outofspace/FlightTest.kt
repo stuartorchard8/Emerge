@@ -299,9 +299,17 @@ class FlightTest {
         repeat(BURN_TICKS) { light.stepOnce(); heavy.stepOnce() }
 
         assertTrue(heavy.state.mass > light.state.mass, "the ballast weighed nothing")
-        assertEquals(
-            light.state.velocityX, heavy.state.velocityX,
-            "same engine, same acceleration, different mass — and different speeds",
+        // Within the quantisation, not to the unit. The debug engine turns an acceleration into an
+        // impulse by multiplying by mass and the flight step turns it back by dividing, and that
+        // round trip truncates toward zero once per tick against a divisor that IS the mass — so two
+        // ships of different mass can end a burn one unit apart per tick. They used to agree exactly,
+        // for the wrong reason: `scaledRatio` reduced the fraction by shifting and the discarded bits
+        // were far wider than the discrepancy, so both ships landed on the same coarse grid. Now that
+        // the ratio is exact the difference is visible, and one unit in 1.5e9 is what it should be.
+        assertTrue(
+            kotlin.math.abs(light.state.velocityX - heavy.state.velocityX) <= BURN_TICKS,
+            "same engine, same acceleration, different mass — and different speeds: " +
+                "${light.state.velocityX} vs ${heavy.state.velocityX} over $BURN_TICKS ticks",
         )
         assertTrue(
             heavy.state.debugImpulseX > light.state.debugImpulseX,

@@ -18,26 +18,34 @@ package org.emerge.demo.outofspace.num
  * of the top speed for a velocity, of the pressure ratio for a potential. Never an order of
  * magnitude, and never enough.
  *
- * ### What actually works: reduce the fraction first
+ * ### What actually works: split, then widen
  *
- * A ratio does not care what unit its two halves are in as long as they are in the same one. So
- * this shifts both down together until the denominator is small enough that the scaling cannot
- * overflow, and only then does the arithmetic. The result is **scale-invariant**: it costs nothing
- * at one gram per unit, it holds at a microgram, and it holds at any unit after that without
- * anybody having to come back and re-derive a bound.
+ * The common case is the split: `n/d × scale + (n%d) × scale/d`, where the remainder is smaller
+ * than `d` and so `remainder × scale` cannot overflow as long as `d ≤ Long.MAX / scale`. That is
+ * every call at today's mass unit, and it is **exact**.
  *
- * The precision given up is small and measured (`NumericLimitsTest`). The denominator keeps at
- * least 33 bits after the reduction, so the ratio is good to about one part in 10¹⁰.  Shifting
- * rather than dividing by an arbitrary factor keeps it exact for the common case where no reduction
- * is needed at all — which is every call at today's mass unit.
+ * When the denominator is larger than that, the arithmetic moves to a 128-bit intermediate
+ * ([mulDivTowardZero]) rather than losing bits to get there. It used to shift `n` and `d` down
+ * together until the product fit, which is scale-invariant and cheap and was wrong in a way that
+ * matters:
  *
- * ### The two properties callers are entitled to rely on
+ * ⚠️ **Shifting the numerator is an error of ±2^k in the numerator's own units**, not a relative
+ * error. At a microgram unit a tile's mass needs ~18 bits of reduction, so a result derived from
+ * a *small* numerator against a *large* denominator came back with an absolute slop of hundreds of
+ * thousands of units. For a velocity that is noise. For [org.emerge.demo.outofspace.chem.apportion]
+ * it is matter: differencing a running total whose steps are wrong by ±2^k hands a trace species
+ * more than the mixture contains, and `Mixture.minus` then fails loudly (`subtracting more Osmium
+ * than present: 376 - 1772`) a long way downstream of here. Exactness is not a luxury at these
+ * sites — the split is a conservation law.
  *
- * 1. **Monotonic** and non-decreasing in [numerator], for fixed [denominator] and [scale]. The
- *    reduction shift depends only on those two, so a whole series of calls sharing them is
- *    reduced identically and stays ordered. [org.emerge.demo.outofspace.chem.apportion] rests its
- *    entire conservation argument on this.
+ * ### The three properties callers are entitled to rely on
+ *
+ * 1. **Monotonic** and non-decreasing in [numerator], for fixed [denominator] and [scale] — trivial
+ *    now that the result is exact. [org.emerge.demo.outofspace.chem.apportion] rests its entire
+ *    conservation argument on this.
  * 2. **Exact at the ends**: `scaledRatio(0, d, s) == 0` and `scaledRatio(d, d, s) == s`.
+ * 3. **Exact everywhere else too**: the result is `numerator × scale / denominator` truncated
+ *    toward zero, with no intermediate rounding of any kind.
  *
  * ⚠️ **The whole part is still a plain multiply.** `n / d * scale` overflows if the ratio itself is
  * enormous — a gram of hull carrying a ship's momentum. That was true of every form this replaced
@@ -51,17 +59,101 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
     // anything upstream gets its mass unit wrong. The answer is zero either way, so the guard costs
     // nothing and turns a crash a long way from its cause into an ordinary result.
     if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
-    var n = numerator
-    var d = denominator
     // Below this, `remainder × scale` cannot overflow, because the remainder is smaller than `d`.
-    val ceiling = Long.MAX_VALUE / scale
-    while (d > ceiling) {
-        n = n shr 1
-        d = d shr 1
+    if (denominator <= Long.MAX_VALUE / scale) {
+        // Exact, and for both signs: Kotlin truncates toward zero and `%` takes the dividend's sign,
+        // so the whole part and the remainder always agree about which way they lean.
+        return numerator / denominator * scale + numerator % denominator * scale / denominator
     }
-    // Exact for the reduced pair, and for both signs: Kotlin truncates toward zero and `%` takes the
-    // dividend's sign, so the whole part and the remainder always agree about which way they lean.
-    return n / d * scale + n % d * scale / d
+    return mulDiv(numerator, scale, denominator, round = false)
+}
+
+/**
+ * [scaledRatio], rounded to the **nearest** integer rather than truncated toward zero — halves away
+ * from zero, so it is symmetric about the origin and `−f(x) == f(−x)` still holds.
+ *
+ * ### Why a second rounding rule earns its place
+ *
+ * Truncation is the right default: it is what integer division does, it never overshoots, and for a
+ * quantity that is *consumed* — mass taken off a pile, energy moved between tiles — never
+ * overshooting is the safety property that matters.
+ *
+ * A **rotation** is the case where it is wrong, and wrong in a way that compounds. `R(θ)` applied to
+ * a vector is four of these, and truncation pulls every one of them toward zero, so a turned vector
+ * comes back systematically *shorter* than it went in. Applied once that is a unit or two. Applied
+ * to a running total, once per tick, for as long as the ship is turning, it is a drift: the momentum
+ * ledger on a rotating starter vessel walked monotonically to 112 over forty ticks and stopped the
+ * tick the rotation did, because the error has a sign and the sign never changes. Rounding to
+ * nearest makes the same error a coin flip, and a coin flip does not accumulate — it random-walks at
+ * √n instead of marching at n.
+ *
+ * See [org.emerge.demo.outofspace.world.rotScale], which is the reason this exists.
+ */
+fun scaledRatioRounded(numerator: Long, denominator: Long, scale: Long): Long {
+    if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
+    if (denominator <= Long.MAX_VALUE / scale) {
+        val whole = numerator / denominator * scale
+        val part = numerator % denominator * scale
+        var q = part / denominator
+        val r = part % denominator
+        // `2×|r| ≥ d` said without the doubling, which would overflow for a denominator past 2^62.
+        val magnitude = if (r < 0L) -r else r
+        if (magnitude >= denominator - magnitude) q += if (r < 0L) -1L else 1L
+        return whole + q
+    }
+    return mulDiv(numerator, scale, denominator, round = true)
+}
+
+/**
+ * `a × b / d`, with the product carried in 128 bits so nothing is lost on the way — truncated toward
+ * zero, or rounded to nearest with halves away from zero when [round] is set. [d] must be positive;
+ * [a] may be either sign, [b] must not be negative.
+ *
+ * Only reached when `d > Long.MAX / b`, which is rare enough that a bit-at-a-time division is the
+ * right trade: correctness at every mass unit, paid for on the path that would otherwise be wrong.
+ * The result is assumed to fit a `Long` — it does wherever this is called from, since `a ≤ d` there
+ * bounds it by `b`. Note `a = Long.MIN_VALUE` has no positive magnitude and is not supported.
+ */
+internal fun mulDiv(a: Long, b: Long, d: Long, round: Boolean): Long {
+    val negative = a < 0L
+    val magnitude = if (negative) (-a).toULong() else a.toULong()
+    val multiplier = b.toULong()
+    val divisor = d.toULong()
+
+    // Schoolbook 64×64 → 128, in 32-bit limbs.
+    val aLo = magnitude and 0xFFFFFFFFuL
+    val aHi = magnitude shr 32
+    val bLo = multiplier and 0xFFFFFFFFuL
+    val bHi = multiplier shr 32
+    val ll = aLo * bLo
+    val lh = aLo * bHi
+    val hl = aHi * bLo
+    val mid = lh + (ll shr 32)                       // cannot overflow: both terms fit 64 bits here
+    val midCarry = if (mid < lh) 1uL shl 32 else 0uL // the one place the sum can wrap
+    val mid2 = mid + hl
+    val carry = midCarry + (if (mid2 < mid) 1uL shl 32 else 0uL)
+    val high = aHi * bHi + (mid2 shr 32) + carry
+    val low = (mid2 shl 32) or (ll and 0xFFFFFFFFuL)
+
+    // Long division of the 128-bit product by `divisor`, most significant bit first. `remainder`
+    // stays below `divisor`, so shifting it left one place can never wrap.
+    var remainder = 0uL
+    var quotient = 0uL
+    for (bit in 127 downTo 0) {
+        val digit = if (bit >= 64) (high shr (bit - 64)) and 1uL else (low shr bit) and 1uL
+        remainder = (remainder shl 1) or digit
+        if (remainder >= divisor) {
+            remainder -= divisor
+            // A set bit at 64 or above means the quotient does not fit a `Long`, which the callers
+            // rule out; dropping it here would silently wrap, so say so instead.
+            require(bit < 64) { "quotient of $a × $b / $d does not fit a Long" }
+            quotient = quotient or (1uL shl bit)
+        }
+    }
+    // Halves away from zero, on the magnitude — the sign goes back on below.
+    if (round && remainder * 2uL >= divisor) quotient++
+    val result = quotient.toLong()
+    return if (negative) -result else result
 }
 
 /**

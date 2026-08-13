@@ -105,6 +105,30 @@ class ChemistryTest {
     }
 
     @Test
+    fun `apportion never over-draws a trace species out of a heavy mixture`() {
+        // The shape that crashed a running game: a few hundred units of one species riding along in
+        // a mixture weighing tonnes. At a microgram the sum is large enough that scaledRatio used to
+        // reduce the fraction by shifting, which is an error of ±2^k in the *numerator's* units —
+        // hundreds of thousands of units, against a species holding hundreds. Differencing the
+        // running total then handed the trace far more than the mixture contained, and Mixture.minus
+        // failed with "subtracting more Osmium than present: 376 - 1772" several frames later.
+        val heavy = 5_669_573_360_735L
+        val trace = 1_230L
+        val rest = 7_232_430_064_034L
+        val weights = longArrayOf(heavy, trace, rest, 0, 0, 0, 0, 0)
+        val sum = weights.sum()
+        val targets = longArrayOf(1, 366_743_985_224L, sum / 3, sum / 2, sum - 1, sum)
+        for (target in targets) {
+            val out = apportion(weights, target)
+            assertEquals(target, out.sum(), "total for $target")
+            for (i in out.indices) {
+                assertTrue(out[i] >= 0L, "negative share at $i for $target")
+                assertTrue(out[i] <= weights[i], "over-drew $i for $target: ${out[i]} of ${weights[i]}")
+            }
+        }
+    }
+
+    @Test
     fun `apportion gives the same proportions whatever the mass unit is`() {
         // The point of step 4b. Multiplying every weight AND the target by a million is a change of
         // unit and nothing else, so the shares must come back multiplied by a million too — to
