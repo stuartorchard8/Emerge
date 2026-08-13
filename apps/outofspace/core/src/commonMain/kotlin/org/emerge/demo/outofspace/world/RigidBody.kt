@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.sim.core.physics.primitives.Coord
 
 /** What kind of rigid body this is. */
 enum class BodyKind {
@@ -41,6 +42,22 @@ class RigidBody(
     /** Momentum in world frame (not vessel frame — ship's frame accelerates). */
     val impulseX: Long,
     val impulseY: Long,
+    /**
+     * How far it is turned relative to open space — the exact counterpart of [VesselState.ang], in
+     * the same unit and stored for the same reason.
+     *
+     * Step 3 of `PLAN_rigid_bodies.md`. A body's orientation is a history, not a derivation: it is
+     * the integral of every twist it has ever taken and nothing else in the save can reconstruct it.
+     */
+    val ang: Coord = Coord(0),
+    /**
+     * Its angular momentum, in mass·tile²/tick — the counterpart of [VesselState.angImpulse].
+     *
+     * Stored rather than the angular *velocity* because that is the conserved quantity: a body that
+     * loses a cell to an extractor keeps its momentum and changes its spin, which is the way round
+     * that stays right without anybody having to remember to fix it up.
+     */
+    val angImpulse: Long = 0L,
     /** What a rock is made of, as proportions. Null for fragments (they carry [machineKind] instead). */
     val oreComposition: Mixture? = null,
     /** Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction. */
@@ -100,27 +117,74 @@ class RigidBody(
     val velocityX: Long get() = scaledRatio(impulseX, mass, Flight.PER_TILE)
     val velocityY: Long get() = scaledRatio(impulseY, mass, Flight.PER_TILE)
 
-    /** Its centre, in the world. */
-    val centreX: Long get() = positionX + width * Flight.PER_TILE / 2L
-    val centreY: Long get() = positionY + height * Flight.PER_TILE / 2L
+    /**
+     * Where it is and how far it is turned — everything a transform needs, in one object.
+     *
+     * ⚠️ Built fresh on every read, and [Pose] runs a CORDIC loop in its constructor. Hoist it out
+     * of a loop over cells; it is cheap once a tick and not cheap once a cell.
+     */
+    val pose: Pose get() = Pose(positionX, positionY, ang)
 
     /**
-     * Its top-left corner in [pose]'s frame — grid coordinates, which is what every tile index in
-     * the game is built from.
+     * The same pose expressed in [ship]'s grid, which is where every tile index in the game lives.
      *
-     * ⚠️ **A body has no orientation of its own yet** (step 3), so this is the corner of an
-     * axis-aligned box even when the *vessel* is turned. That is wrong in a way that does not show
-     * while `ang` is zero and shows badly the moment it is not, and it is deliberately left for the
-     * step that gives bodies an angle. Until then the sim is exactly as correct as it was.
+     * Composed rather than converted: the corner goes through [Pose.toLocalX] and the angles simply
+     * subtract, because rotations commute in two dimensions. That identity is what lets a body have
+     * an orientation without anything downstream of it learning about world coordinates.
+     */
+    fun poseIn(ship: Pose): Pose = Pose(
+        ship.toLocalX(positionX, positionY),
+        ship.toLocalY(positionX, positionY),
+        Coord(ang.raw - ship.ang.raw),
+    )
+
+    /**
+     * Where its mass is and how reluctantly it spins — [cellDistribution] over its own cells.
+     *
+     * Held, not computed per read: it is a double walk of the cell grid and the solver asks for it
+     * several times a substep. A body's cells never change without a new body being built, so there
+     * is nothing for it to go stale against — unlike the vessel's, which moves as cargo does.
+     */
+    val about: MassDistribution = cellDistribution(width, height, cells, massPerTile)
+
+    /** Its spin, in [Coord] raw per tick — derived from [angImpulse] exactly as [velocityX] is. */
+    val angVel: Long get() = angularVelocity(angImpulse, about)
+
+    /** Its centre of mass, in the world — the point it actually spins about. */
+    val comX: Long get() = pose.toWorldX(about.comX * COM_SCALE, about.comY * COM_SCALE)
+    val comY: Long get() = pose.toWorldY(about.comX * COM_SCALE, about.comY * COM_SCALE)
+
+    /**
+     * The centre of its **bounding box**, in the world — where it looks like it is, for the plating
+     * test, the spawner and the tests that watch it fall.
+     *
+     * Not the centre of mass, which is [comX], and the difference is real for anything that is not a
+     * rectangle. This is the "is it over the deck" question, and that one wants the silhouette.
+     */
+    val centreX: Long get() = pose.toWorldX(width * Flight.PER_TILE / 2L, height * Flight.PER_TILE / 2L)
+    val centreY: Long get() = pose.toWorldY(width * Flight.PER_TILE / 2L, height * Flight.PER_TILE / 2L)
+
+    /**
+     * Its local origin in [pose]'s frame — grid coordinates, which is what every tile index in the
+     * game is built from.
+     *
+     * ⚠️ This is the origin **only**, not the placement: since step 3 a body has an orientation of
+     * its own, so knowing where its corner landed does not tell you where its cells are. Anything
+     * that walks cells wants [poseIn] instead.
      */
     fun localX(pose: Pose): Long = pose.toLocalX(positionX, positionY)
 
     fun localY(pose: Pose): Long = pose.toLocalY(positionX, positionY)
 
-    /** Its centre in [pose]'s frame — what plating, torque arms and the extractor's reach all want. */
+    /** Its bounding-box centre in [pose]'s frame — what plating and the extractor's reach want. */
     fun localCentreX(pose: Pose): Long = pose.toLocalX(centreX, centreY)
 
     fun localCentreY(pose: Pose): Long = pose.toLocalY(centreX, centreY)
+
+    /** Its centre of mass in [pose]'s frame — what a torque arm wants, and only that. */
+    fun localComX(pose: Pose): Long = pose.toLocalX(comX, comY)
+
+    fun localComY(pose: Pose): Long = pose.toLocalY(comX, comY)
 
     fun copy(
         kind: BodyKind = this.kind,
@@ -131,6 +195,8 @@ class RigidBody(
         positionY: Long = this.positionY,
         impulseX: Long = this.impulseX,
         impulseY: Long = this.impulseY,
+        ang: Coord = this.ang,
+        angImpulse: Long = this.angImpulse,
         oreComposition: Mixture? = this.oreComposition,
         machineKind: MachineKind? = this.machineKind,
         energy: TileEnergy = this.energy,
@@ -138,6 +204,7 @@ class RigidBody(
         kind = kind, width = width, height = height, cells = cells,
         positionX = positionX, positionY = positionY,
         impulseX = impulseX, impulseY = impulseY,
+        ang = ang, angImpulse = angImpulse,
         oreComposition = oreComposition, machineKind = machineKind,
         energy = energy,
     )
@@ -148,6 +215,7 @@ class RigidBody(
             width == other.width && height == other.height && cells.contentEquals(other.cells) &&
             positionX == other.positionX && positionY == other.positionY &&
             impulseX == other.impulseX && impulseY == other.impulseY &&
+            ang == other.ang && angImpulse == other.angImpulse &&
             oreComposition == other.oreComposition && machineKind == other.machineKind && energy == other.energy)
 
     override fun hashCode(): Int = (kind.ordinal * 31 + (positionX * 31 + positionY).toInt()) * 31 + cells.contentHashCode()
@@ -157,6 +225,12 @@ class RigidBody(
             "${positionX / Flight.PER_TILE},${positionY / Flight.PER_TILE})"
 
     companion object {
+        /**
+         * Millitiles to [Flight.PER_TILE]s: what a centre of mass has to be multiplied by to stand
+         * next to a position. A thousandth of a tile is as fine as a lever arm is ever measured.
+         */
+        const val COM_SCALE: Long = Flight.PER_TILE / Rotation.MILLI_TILE
+
         /**
          * How well a rock conducts heat — the one solid property its composition does not supply.
          *
@@ -318,20 +392,32 @@ fun driftBodies(
         val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
         val swept = sweepBody(
             grid, structure, body,
-            ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass,
+            ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass, about,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
         )
         val gaveX = swept.impulseX + platingX
         val gaveY = swept.impulseY + platingY
         handedX += gaveX
         handedY += gaveY
-        // Booked where the body is, in the millitiles [torqueAbout] works in — the body's centre is
-        // kept at [Flight.PER_TILE] to the tile, a thousand times finer than a lever arm needs.
-        handedTorque += torqueAbout(
+        // ⚠️ Two torques, from two different arms, and conflating them was the bug this split fixes.
+        //
+        // The **contact** torque comes back from the sweep already booked at the points the touches
+        // actually happened, which is the only place it can be booked correctly — a rock landing on
+        // one corner twists the ship differently from a rock landing flat, and a figure derived from
+        // the total impulse cannot tell those apart.
+        //
+        // The **plating** torque is a separate arm: a field acts at the body's centre of mass, not
+        // at whatever it happens to be touching, and it acts whether the body is touching anything
+        // at all. Booked in millitiles, which is what [torqueAbout] works in.
+        //
+        // ⚠️ [SweptBody.torque] is what the ship **received**, and [handedTorque] is what it
+        // **gave** — hence the sign. Equal and opposite, because the two impulses act at the same
+        // point, and the whole exchange is booked about the ship's centre of mass either way.
+        handedTorque += -swept.torque + torqueAbout(
             about,
-            body.localCentreX(ship.pose) / (Flight.PER_TILE / Rotation.MILLI_TILE),
-            body.localCentreY(ship.pose) / (Flight.PER_TILE / Rotation.MILLI_TILE),
-            gaveX, gaveY,
+            body.localComX(ship.pose) / RigidBody.COM_SCALE,
+            body.localComY(ship.pose) / RigidBody.COM_SCALE,
+            platingX, platingY,
         )
         if (shipMass > 0L) {
             shipVx += scaledRatio(-gaveX, shipMass, Flight.PER_TILE)

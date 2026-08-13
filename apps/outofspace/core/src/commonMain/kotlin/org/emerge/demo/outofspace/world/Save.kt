@@ -27,7 +27,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 15
+    const val VERSION = 16
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -77,6 +77,10 @@ object Save {
                 .append(' ').append(writeMixture(b.oreComposition!!))
                 .append(' ')
             for (c in b.cells) out.append(if (c) '1' else '0')
+            // Orientation last, after the shape, so that every field a v15 file had keeps the index
+            // it had — a v15 save loads into this build unchanged and simply arrives unturned, which
+            // is what it meant.
+            out.append(' ').append(b.ang.raw).append(' ').append(b.angImpulse)
             out.append("   # ").append(b.filled).append(" cells, ").append(b.mass).append("g\n")
         }
 
@@ -605,6 +609,12 @@ object Save {
                             // of value as `Material.composition`, and multiplying it would be
                             // meaningless rather than merely wrong — see `capacityPerTileOf`.
                             oreComposition = readMixture(tokens[8], Rescale.NONE, ::fail),
+                            // v16. Absent from every earlier file, and absent means zero: a body
+                            // that predates step 3 was never turned, because nothing could turn it.
+                            ang = Coord(tokens.getOrNull(10)?.toIntOrNull() ?: 0),
+                            // Mass·tile²/tick, so it carries the mass unit exactly once and is
+                            // rescaled like any other momentum.
+                            angImpulse = if (tokens.size > 11) scaled(11) else 0L,
                         ),
                     )
                 }

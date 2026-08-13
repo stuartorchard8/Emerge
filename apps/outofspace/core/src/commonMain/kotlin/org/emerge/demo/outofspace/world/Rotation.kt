@@ -52,6 +52,21 @@ object Rotation {
      * costs nothing because [angularVelocity] was going to divide by the mass anyway.
      */
     const val GYRATION_SCALE: Long = 1_000_000L
+
+    /**
+     * A single cell's own moment about its own centre, in [GYRATION_SCALE]ths — `a²/6` for a square
+     * of side one tile.
+     *
+     * Without it a body's cells are point masses, and a **one-cell body has no moment of inertia at
+     * all**: `gyrationSq` comes out zero, [angularVelocity] short-circuits, and the smallest rock in
+     * the game is the one thing in it that cannot be made to spin. That is not a rounding artefact,
+     * it is the parallel-axis theorem's other term being left out.
+     *
+     * ⚠️ Square, because a cell is a square today. When step 4 of `PLAN_rigid_bodies.md` makes cells
+     * discs this becomes `r²/2` = 125_000 for a half-tile disc, and it is written as its own constant
+     * so that change is one line rather than a hunt.
+     */
+    const val CELL_MOMENT: Long = GYRATION_SCALE / 6L
 }
 
 /**
@@ -142,6 +157,83 @@ fun massDistribution(
 
 /** The centre of tile column/row [n], in millitiles. */
 fun tileCentre(n: Int): Long = n * Rotation.MILLI_TILE + Rotation.MILLI_TILE / 2L
+
+/**
+ * The same three numbers for a **free body**: a grid of equal cells, each weighing [massPerTile].
+ *
+ * The same two passes as [massDistribution] and for the same reason, but the walk is a cell grid
+ * rather than machines-conduits-bridges. Kept as a separate function rather than generalised over a
+ * callback because the two disagree about what a "tile" weighs — a vessel tile is fabric plus cargo
+ * and changes every tick, a body's cells are all the same rock — and pretending otherwise would cost
+ * the body a per-cell lookup it does not need.
+ *
+ * Positions are millitiles from the body's **local origin**, which is the top-left corner of its cell
+ * box: the same origin [RigidBody.positionX] places, so [Pose] can carry both without a fudge.
+ */
+fun cellDistribution(width: Int, height: Int, cells: BooleanArray, massPerTile: Long): MassDistribution {
+    if (massPerTile <= 0L) return MassDistribution.EMPTY
+    var filled = 0L
+    var momentX = 0L
+    var momentY = 0L
+    for (cy in 0 until height) {
+        for (cx in 0 until width) {
+            if (!cells[cy * width + cx]) continue
+            filled++
+            momentX += tileCentre(cx)
+            momentY += tileCentre(cy)
+        }
+    }
+    if (filled == 0L) return MassDistribution.EMPTY
+
+    // Every cell weighs the same, so the mass divides out of the centroid entirely and the moments
+    // can be counted in cells. That is not a micro-optimisation: `Σ m·x` for an 83-tonne rock at a
+    // microgram per unit is the quantity [Rotation.GYRATION_SCALE] exists to keep off the books.
+    val comX = momentX / filled
+    val comY = momentY / filled
+
+    // Summed and then divided once, not divided per cell: `r²` is millitile², which is already
+    // [Rotation.GYRATION_SCALE]'s unit, and the sum of it over even a huge body is ~1e14 — nowhere
+    // near the range that forced [massDistribution] to fold the division inside its loop. The mass
+    // is absent from this sum for the same reason it is absent from the centroid above.
+    var rSqTotal = 0L
+    for (cy in 0 until height) {
+        for (cx in 0 until width) {
+            if (!cells[cy * width + cx]) continue
+            val rx = tileCentre(cx) - comX
+            val ry = tileCentre(cy) - comY
+            rSqTotal += rx * rx + ry * ry + Rotation.CELL_MOMENT
+        }
+    }
+    return MassDistribution(
+        mass = filled * massPerTile,
+        comX = comX,
+        comY = comY,
+        gyrationSq = rSqTotal / filled,
+    )
+}
+
+/**
+ * How fast a point at lever arm [r] is going because the thing it belongs to is spinning at
+ * [angVelRaw] — the `ω × r` that turns an angular velocity into a contact's closing speed.
+ *
+ * [r] is one component of the arm at [Flight.PER_TILE] to the tile and the result is in the same
+ * unit per tick, so this drops straight into the linear velocities the solver already carries. It is
+ * the *magnitude* only: which component of the velocity it becomes, and with which sign, is the
+ * caller's business, because `ω × r = (−ω·r_y, ω·r_x)` and getting that pairing wrong is a body that
+ * spins the wrong way rather than a body that overflows.
+ *
+ * ⚠️ Not `angVelRaw * r / RAW_PER_RADIAN`. An arm is up to ~1e11 and a spin is raw, so the plain
+ * product leaves the range almost immediately — the same trap as [rotScale] and the same fix.
+ */
+fun spinSpeed(angVelRaw: Long, r: Long): Long {
+    if (angVelRaw == 0L || r == 0L) return 0L
+    val magnitude = scaledRatio(
+        numerator = if (angVelRaw < 0L) -angVelRaw else angVelRaw,
+        denominator = Rotation.RAW_PER_RADIAN,
+        scale = if (r < 0L) -r else r,
+    )
+    return if ((angVelRaw < 0L) == (r < 0L)) magnitude else -magnitude
+}
 
 /**
  * The torque a linear impulse applied at [atX], [atY] exerts about [about] — `τ = rₓF_y − r_yF_x`.

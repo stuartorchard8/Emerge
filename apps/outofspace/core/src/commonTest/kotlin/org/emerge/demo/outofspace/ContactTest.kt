@@ -7,11 +7,16 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.Operand
+import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
+import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.collectHullContacts
 import org.emerge.demo.outofspace.world.solveContacts
+import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -47,8 +52,7 @@ class ContactTest {
         val overlap = Flight.PER_TILE / 4L
         collectHullContacts(
             world.grid, world.structure, body, 0,
-            atX = WALL * Flight.PER_TILE - Flight.PER_TILE + overlap,
-            atY = ROW * Flight.PER_TILE,
+            at = Pose(WALL * Flight.PER_TILE - Flight.PER_TILE + overlap, ROW * Flight.PER_TILE, Coord(0)),
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
 
@@ -80,8 +84,7 @@ class ContactTest {
         val shallow = Flight.PER_TILE / 8L
         collectHullContacts(
             world.grid, world.structure, body, 0,
-            atX = WALL * Flight.PER_TILE,
-            atY = ROW * Flight.PER_TILE - Flight.PER_TILE + shallow,
+            at = Pose(WALL * Flight.PER_TILE, ROW * Flight.PER_TILE - Flight.PER_TILE + shallow, Coord(0)),
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
 
@@ -98,7 +101,7 @@ class ContactTest {
         val contacts = ArrayList<Contact>()
         collectHullContacts(
             world.grid, world.structure, oneCell(), 0,
-            atX = 2L * Flight.PER_TILE, atY = 2L * Flight.PER_TILE,
+            at = Pose(2L * Flight.PER_TILE, 2L * Flight.PER_TILE, Coord(0)),
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
         assertTrue(contacts.isEmpty(), "a body in open space touched ${contacts.size} things")
@@ -123,28 +126,23 @@ class ContactTest {
             contact(normalX = Flight.FRAC_ONE, normalY = 0L),
             contact(normalX = 0L, normalY = Flight.FRAC_ONE),
         )
-        val vx = longArrayOf(toward)
-        val vy = longArrayOf(toward)
+        val body = free(vx = toward, vy = toward)
 
-        solveContacts(contacts, longArrayOf(MASS), vx, vy, 0L, 0L, shipMass = 0L)
+        solveContacts(contacts, listOf(body), ship = null)
 
-        assertTrue(vx[0] >= 0L, "still driving into the left wall at ${vx[0]}")
-        assertTrue(vy[0] >= 0L, "still driving into the floor at ${vy[0]}")
+        assertTrue(body.velocityX >= 0L, "still driving into the left wall at ${body.velocityX}")
+        assertTrue(body.velocityY >= 0L, "still driving into the floor at ${body.velocityY}")
     }
 
     /** A contact already separating is not a contact to answer — pushing it would add energy. */
     @Test
     fun `a separating touch is left alone`() {
         val away = 2L * Flight.PER_TILE
-        val vx = longArrayOf(away)
-        val vy = longArrayOf(0L)
+        val body = free(vx = away, vy = 0L)
 
-        solveContacts(
-            listOf(contact(normalX = Flight.FRAC_ONE, normalY = 0L)),
-            longArrayOf(MASS), vx, vy, 0L, 0L, shipMass = 0L,
-        )
+        solveContacts(listOf(contact(normalX = Flight.FRAC_ONE, normalY = 0L)), listOf(body), ship = null)
 
-        assertEquals(away, vx[0], "a body leaving was pushed again")
+        assertEquals(away, body.velocityX, "a body leaving was pushed again")
     }
 
     /**
@@ -162,18 +160,117 @@ class ContactTest {
         val crawling = Flight.PER_TILE / 100L
         val falling = 2L * Flight.PER_TILE
 
-        val slow = longArrayOf(crawling)
-        solveContacts(listOf(floor), longArrayOf(MASS), longArrayOf(0L), slow, 0L, 0L, shipMass = 0L)
+        val slow = free(vx = 0L, vy = crawling)
+        solveContacts(listOf(floor), listOf(slow), ship = null)
 
-        val fast = longArrayOf(falling)
-        solveContacts(listOf(floor), longArrayOf(MASS), longArrayOf(0L), fast, 0L, 0L, shipMass = 0L)
+        val fast = free(vx = 0L, vy = falling)
+        solveContacts(listOf(floor), listOf(fast), ship = null)
 
-        assertTrue(fast[0] < 0L, "a body dropped hard did not come back up: ${fast[0]}")
+        assertTrue(fast.velocityY < 0L, "a body dropped hard did not come back up: ${fast.velocityY}")
         assertTrue(
-            slow[0] > -crawling / 2L,
-            "a body settling was bounced instead of stopped: ${slow[0]} from $crawling",
+            slow.velocityY > -crawling / 2L,
+            "a body settling was bounced instead of stopped: ${slow.velocityY} from $crawling",
         )
-        assertTrue(slow[0] <= 0L, "and it should not still be sinking: ${slow[0]}")
+        assertTrue(slow.velocityY <= 0L, "and it should not still be sinking: ${slow.velocityY}")
+    }
+
+    // ── The angular half ──────────────────────────────────────────────────────
+
+    /**
+     * **The discriminator for step 3.** The same blow, at the same speed, along the same normal:
+     * through the centre of mass it only shoves, off the centre of mass it also spins.
+     *
+     * Both halves are asserted against each other because either alone passes on something broken.
+     * A solver that ignored the arm entirely would pass the centreline half; a solver that spun
+     * everything — an arm computed from the wrong origin, say, which is the specific mistake step 1
+     * caught the vessel making — would pass the off-centre half. Only the pair pins it.
+     */
+    @Test
+    fun `a blow off the centre of mass spins the body and one through it does not`() {
+        val falling = 2L * Flight.PER_TILE
+        val floor = { at: Long ->
+            Contact(
+                body = 0, pointX = at, pointY = 0L,
+                normalX = 0L, normalY = -Flight.FRAC_ONE,
+                depth = Flight.PER_TILE / 100L, restingSpeed = 0L,
+            )
+        }
+
+        val square = free(vx = 0L, vy = falling)
+        solveContacts(listOf(floor(0L)), listOf(square), ship = null)
+
+        val corner = free(vx = 0L, vy = falling)
+        solveContacts(listOf(floor(2L * Flight.PER_TILE)), listOf(corner), ship = null)
+
+        assertEquals(0L, square.spun, "a blow straight through the centre of mass twisted it")
+        assertTrue(square.angVel == 0L, "and it should not be turning: ${square.angVel}")
+        assertTrue(corner.spun != 0L, "a blow two tiles off the centre of mass did not twist it")
+        assertTrue(corner.angVel != 0L, "and it should be turning: ${corner.angVel}")
+    }
+
+    /**
+     * A long arm makes a body **easier to move and harder to stop**: the impulse that answers a
+     * contact out on a limb is smaller, because most of the closing speed goes into spin instead.
+     *
+     * This is [Operand.effectiveMass] being read at all. A solver that sized every bounce against
+     * the whole mass would hand the two contacts identical impulses, and the visible symptom would
+     * be rocks that pivot off a corner as hard as they rebound off a flat — energy from nowhere,
+     * the same shape of defect as the stale wall.
+     */
+    @Test
+    fun `a contact far from the centre of mass takes a smaller impulse`() {
+        val falling = 2L * Flight.PER_TILE
+        fun struck(at: Long): Long {
+            val body = free(vx = 0L, vy = falling)
+            solveContacts(
+                listOf(
+                    Contact(
+                        body = 0, pointX = at, pointY = 0L,
+                        normalX = 0L, normalY = -Flight.FRAC_ONE,
+                        depth = Flight.PER_TILE / 100L, restingSpeed = 0L,
+                    ),
+                ),
+                listOf(body), ship = null, iterations = 1,
+            )
+            return -body.gaveY
+        }
+
+        val centred = struck(0L)
+        val distant = struck(3L * Flight.PER_TILE)
+        assertTrue(centred > 0L, "the centred blow delivered nothing at all")
+        assertTrue(distant < centred, "an arm's length out the blow was as hard: $distant vs $centred")
+    }
+
+    /**
+     * A spin the solver cannot see is a spin that pumps energy. The body here is **not** moving —
+     * its centre of mass is at rest — and it is still driving one corner into the floor, because it
+     * is turning.
+     *
+     * `ω × r` is what makes that contact visible, and it is the term this pins: without it the
+     * closing speed reads as zero, the contact is skipped as separating, and a spinning rock grinds
+     * through a bulkhead at any speed at all.
+     */
+    @Test
+    fun `a spinning body still closes on a contact its centre is not approaching`() {
+        val body = free(vx = 0L, vy = 0L, spin = Rotation.RAW_PER_RADIAN / 10L)
+        // Two tiles to the *left* of the centre of mass. Turning clockwise (+ang is clockwise, +y
+        // down), a point out to the left is on its way up — so the floor to meet it is above.
+        solveContacts(
+            listOf(
+                Contact(
+                    body = 0, pointX = -2L * Flight.PER_TILE, pointY = 0L,
+                    normalX = 0L, normalY = Flight.FRAC_ONE,
+                    depth = Flight.PER_TILE / 100L, restingSpeed = 0L,
+                ),
+            ),
+            listOf(body), ship = null,
+        )
+
+        assertTrue(body.spun != 0L, "a body at rest but spinning was treated as touching nothing")
+        assertTrue(
+            body.angVel in 0L until Rotation.RAW_PER_RADIAN / 10L,
+            "the spin should have been taken off it, not reversed or ignored: ${body.angVel}",
+        )
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────
@@ -188,6 +285,21 @@ class ContactTest {
         normalX = normalX, normalY = normalY,
         depth = Flight.PER_TILE / 100L,
         restingSpeed = resting,
+    )
+
+    /**
+     * A free operand with its centre of mass at the grid origin, so a contact's lever arm is just
+     * its point — which keeps the arithmetic in a failure message readable.
+     *
+     * [GYRATION_SQ] is a third of a tile², roughly a 2×2 block of cells, so an arm of a tile or two
+     * is comparable to the radius of gyration and the angular terms are the same size as the linear
+     * ones. Pick it much smaller and every test here passes on rounding.
+     */
+    private fun free(vx: Long, vy: Long, spin: Long = 0L) = Operand(
+        mass = MASS,
+        about = MassDistribution(mass = MASS, comX = 0L, comY = 0L, gyrationSq = GYRATION_SQ),
+        comX = 0L, comY = 0L,
+        velocityX = vx, velocityY = vy, angVel = spin,
     )
 
     /** One solid tile at ([WALL], [ROW]) in an otherwise empty, airless world. */
@@ -219,5 +331,8 @@ class ContactTest {
 
         /** A round mass, so the arithmetic in a failure message is readable. */
         const val MASS = 1_000_000_000L
+
+        /** A third of a tile² of gyration — see [free]. */
+        const val GYRATION_SQ = Rotation.GYRATION_SCALE / 3L
     }
 }

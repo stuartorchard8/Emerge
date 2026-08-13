@@ -384,14 +384,19 @@ class OutofspaceRenderer {
      * a solid slab of one colour at the zoom anyone plays at.
      */
     private fun drawBody(body: RigidBody, pose: Pose) {
-        // The world is where a body lives; the grid is where this function draws.
-        val ox = body.localX(pose).toFloat() / Flight.PER_TILE
-        val oy = body.localY(pose).toFloat() / Flight.PER_TILE
+        // The world is where a body lives; the grid is where this function draws. The pose is
+        // composed once — it runs a CORDIC loop — and then every cell centre goes through it.
+        val inGrid = body.poseIn(pose)
+        val half = Flight.PER_TILE / 2L
         for (cy in 0 until body.height) {
             for (cx in 0 until body.width) {
                 if (!body.cells[cy * body.width + cx]) continue
-                val wx = (ox + cx + 0.5f) * tilePx
-                val wy = (oy + cy + 0.5f) * tilePx
+                // Turned centre, axis-aligned square — which is not a rendering shortcut but the
+                // shape the *sim* collides with, spelled the same way. See [collectHullContacts].
+                val lx = cx * Flight.PER_TILE + half
+                val ly = cy * Flight.PER_TILE + half
+                val wx = inGrid.toWorldX(lx, ly).toFloat() / Flight.PER_TILE * tilePx
+                val wy = inGrid.toWorldY(lx, ly).toFloat() / Flight.PER_TILE * tilePx
                 rect(wx, wy, tilePx, tilePx, Colors.ROCK)
                 // Cell-local checker (grain doesn't crawl as body drifts).
                 if ((cx + cy) and 1 == 0) {

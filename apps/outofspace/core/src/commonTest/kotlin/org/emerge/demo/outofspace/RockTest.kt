@@ -59,21 +59,42 @@ class RockTest {
      * torque, so the deck the rock lands on is very slightly tilted and a normal perpendicular to a
      * tilted deck has a world-frame x component. The body is not drifting; the floor is banked.
      *
-     * It needs restating in the grid frame, which is a thing to do once a body has an orientation to
-     * state it against — **step 3**. Kept whole and named rather than folded into the test above,
-     * so that what is parked is legible.
+     * ✅ **Un-parked by step 3. The bound is still exactly zero — what changed is the window.**
+     *
+     * ⚠️ It now runs **while the body is in freefall** rather than for a fixed seven ticks, and that
+     * is a narrowing worth stating rather than slipping in. The subject was always the plating: does
+     * a straight-down gravity push straight down. Seven ticks used to be a freefall because a body
+     * that landed simply stopped; since step 3 it lands on **one corner of a deck that is banked**
+     * — the ship is turning, because this very rock's weight is a torque on it — and comes away
+     * cartwheeling. Everything after that first touch is the contact solver's business, and reading
+     * it here measured the landing while claiming to measure gravity.
+     *
+     * The gate is [RigidBody.angImpulse], which is exact rather than a guess at when contact
+     * happened: the plating acts at the centre of mass and therefore cannot twist a body, so any
+     * angular momentum at all means something touched it.
+     *
+     * ⚠️ A cartwheeling rock **never settles**, and that is a real gap rather than a quirk of this
+     * fixture — nothing takes energy out of a spin, because there is no friction until step 4 of
+     * `PLAN_rigid_bodies.md`. The already-parked `RockContactTest :: a body that lands on the deck
+     * settles and stays put` is where that comes due.
      */
-    @Ignore
     @Test
     fun `a body falling under straight-down gravity does not drift sideways`() {
         val controller = OutofspaceController(CFG, bareHull())
         controller.dropRock(18f, 10f)
-        repeat(7) { controller.stepOnce() }
 
-        assertEquals(
-            0L, controller.state.bodies.single().velocityX,
-            "the body drifted sideways under a straight-down gravity",
-        )
+        var freefallTicks = 0
+        repeat(7) {
+            controller.stepOnce()
+            val body = controller.state.bodies.singleOrNull() ?: return@repeat
+            if (body.angImpulse != 0L) return@repeat
+            freefallTicks++
+            assertEquals(
+                0L, body.velocityX,
+                "the body drifted sideways under a straight-down gravity",
+            )
+        }
+        assertTrue(freefallTicks >= 3, "it never fell freely at all, so nothing was measured")
     }
 
     /**

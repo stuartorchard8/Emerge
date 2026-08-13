@@ -7,10 +7,12 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Save
@@ -18,6 +20,7 @@ import org.emerge.demo.outofspace.world.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.tileCentre
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.torqueAbout
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -175,6 +178,30 @@ class RotationTest {
         assertEquals(played.ang, loaded.ang, "orientation")
         assertEquals(played.angImpulse, loaded.angImpulse, "angular momentum")
         assertEquals(played.netTorque, loaded.netTorque, "this tick's torque")
+    }
+
+    /**
+     * A **body's** orientation survives a save too — step 3, and the reason for save v16.
+     *
+     * Written as its own test rather than folded into the one above because it is a different pair
+     * of fields on a different object, and because a body's two new columns sit at the end of a line
+     * that already had ten: an off-by-one there reads a shape as an angle and would show up as a
+     * rock that loads spinning, which is exactly the kind of thing a round trip is for.
+     */
+    @Test
+    fun `a body's orientation survives a save round trip`() {
+        val cfg = OutofspaceConfig()
+        val turning = RigidBody.rockBlob(
+            radius = 2,
+            positionX = 12L * Flight.PER_TILE, positionY = 9L * Flight.PER_TILE,
+            composition = OutofspaceReducer.DEFAULT_ORE_BODY,
+        ).copy(ang = Coord(123_456_789), angImpulse = -987_654_321_000L)
+
+        val loaded = Save.read(Save.write(box(cfg.initialGrid, BAY_HIGH).copy(bodies = listOf(turning))))
+
+        val body = loaded.bodies.single()
+        assertEquals(turning.ang, body.ang, "which way the rock is facing")
+        assertEquals(turning.angImpulse, body.angImpulse, "and how fast it is turning")
     }
 
     /** A save written before rotation existed loads as a ship pointing forward and not turning. */
