@@ -28,8 +28,8 @@ class AdvectionTest {
 
     private fun emptyAir() = LongArray(grid.size * Species.COUNT)
 
-    private fun put(mass: LongArray, tile: Int, vararg parts: Pair<Species, Long>) {
-        for ((s, mass) in parts) mass[tile * Species.COUNT + s.ordinal] += mass
+    private fun put(masses: LongArray, tile: Int, vararg parts: Pair<Species, Long>) {
+        for ((s, mass) in parts) masses[tile * Species.COUNT + s.ordinal] += mass
     }
 
     private fun massAt(mass: LongArray, tile: Int): Long {

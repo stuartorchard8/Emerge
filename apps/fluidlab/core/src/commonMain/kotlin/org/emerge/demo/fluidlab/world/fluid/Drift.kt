@@ -133,7 +133,7 @@ private const val FACTOR_SCALE = 1L shl 20
  * [planned] gets signed per-species amounts (positive = before → after).
  */
 private fun exchange(
-    mass: LongArray,
+    masses: LongArray,
     total: LongArray,
     before: Int,
     after: Int,
@@ -145,7 +145,7 @@ private fun exchange(
     val mass = total[before] + total[after]
     if (mass <= 0L) return
 
-    val moles = millimolesOf(mass, before) + millimolesOf(mass, after)
+    val moles = millimolesOf(masses, before) + millimolesOf(masses, after)
     if (moles <= 0L) return
     val average = mass * MILLI / moles          // mass per mole, averaged over the face
     val faceGrams = mass / 2L
@@ -156,14 +156,14 @@ private fun exchange(
     var upTotal = 0L
 
     for (s in Species.ALL) {
-        var net = settling(mass, s, before, after, average, gravityRaw) +
-            mixing(mass, total, s, before, after, faceGrams)
+        var net = settling(masses, s, before, after, average, gravityRaw) +
+            mixing(masses, total, s, before, after, faceGrams)
         if (net == 0L) continue
 
         net = net * aperture / ApertureField.OPEN
         // Never more than the side it would come from actually holds.
         val donor = if (net > 0L) before else after
-        val available = mass[donor * Species.COUNT + s.ordinal]
+        val available = masses[donor * Species.COUNT + s.ordinal]
         if (available <= 0L) continue
         if (net > available) net = available
         if (net < -available) net = -available
