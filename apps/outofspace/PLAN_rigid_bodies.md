@@ -5,15 +5,25 @@
 unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/torque, world-frame
 camera) stand and are prerequisites.*
 
-**Step 1 is built (`72d943b5`, `cc417e8c`). Everything else in this document is not.**
+**Steps 1 and 2 are built** (`72d943b5`, `cc417e8c`, `a6e66646`). Everything else is not.
 
-⚠️ **Two `@Ignore`d claims are owed back by steps 3 and 4**, both measured rather than assumed —
-each passes with the vessel's spin forced to zero and fails with it live:
-`RockContactTest.a body cannot tunnel through a bulkhead` (containment during a long bounce) and
-`RockTest.a body falling under straight-down gravity does not drift sideways`. Neither is a
-regression; before step 1 the vessel's angle was a number nothing read, so both were measuring a
-room that could not tilt. **Do not soften either bound** — containment is the thing that is broken,
-and it is broken for the reason this plan exists.
+✅ **Step 2 un-parked `a body cannot tunnel through a bulkhead`** one commit after step 1 parked it.
+Containment came back on its own once contacts were solved as a list — the failure was the old
+resolver letting a rock out of a tumbling box, not the bound being wrong. That is the clearest
+evidence so far that the solver was the missing piece rather than an extra.
+
+⚠️ **One `@Ignore`d claim is still owed, by step 3**: `RockTest.a body falling under straight-down
+gravity does not drift sideways`. Measured — it passes with the vessel's spin forced to zero. It is
+not drift: the plating pulls on a rock half a tile off the hull's centre of mass, which is a real
+torque, so the deck it lands on is banked and a normal perpendicular to a banked deck has world-frame
+x. It needs restating in the grid frame, which needs a body to have an orientation. **Do not soften
+the bound.**
+
+⚠️ **Contacts are solved per body per substep, not globally.** That is enough for a corner, which is
+two contacts on one body, and it is what un-parked containment. **Global synchronisation across
+bodies is still owed and lands with step 5**, where body-vs-body makes it necessary; a stack cannot
+converge while each body is solved in its own substep loop. Do not read "the solver exists" as
+"stacking works".
 
 ⚠️ **Found while building step 1: the vessel was rotating about its grid *origin*, not its centre of
 mass.** Step 2 of the rotation plan booked torque about the centre of mass and then integrated the
@@ -320,7 +330,7 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 | # | Step | Why here | Size |
 |---|---|---|---|
 | **1** | ✅ **BUILT `cc417e8c`** (transform `72d943b5`). **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
-| **2** | **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
+| **2** | ✅ **BUILT `a6e66646`.** **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
 | **3** | **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
 | **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
 | **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
