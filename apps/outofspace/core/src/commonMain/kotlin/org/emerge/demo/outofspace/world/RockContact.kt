@@ -185,7 +185,15 @@ fun sweepBody(
     var at = poseAt(0)
     var lx = at.toLocalX(px, py)
     var ly = at.toLocalY(px, py)
+    // A body that begins the tick already inside the hull is left alone — a rock dropped onto the
+    // deck by the editor starts that way, and pushing it out would fling it. It is not a contact,
+    // it is a placement.
     val wedged = overlapsHull(grid, structure, body, lx, ly)
+
+    val contacts = ArrayList<Contact>(4)
+    val oneMass = longArrayOf(mass)
+    val vx1 = LongArray(1)
+    val vy1 = LongArray(1)
 
     for (k in 0 until steps) {
         val vx = worldVel(ix)
@@ -194,53 +202,61 @@ fun sweepBody(
         val nwy = py + (vy * (k + 1) / steps - vy * k / steps)
 
         val next = poseAt(k + 1)
-        val nlx = next.toLocalX(nwx, nwy)
-        val nly = next.toLocalY(nwx, nwy)
-        // The body's displacement *in the grid's frame* over this substep. This is the quantity the
-        // wall cares about, and it already contains the ship's translation and its spin.
-        val dx = nlx - lx
-        val dy = nly - ly
+        var nlx = next.toLocalX(nwx, nwy)
+        var nly = next.toLocalY(nwx, nwy)
 
-        if (wedged || !overlapsHull(grid, structure, body, nlx, nly)) {
+        if (wedged) {
             px = nwx; py = nwy; at = next; lx = nlx; ly = nly
             continue
         }
 
-        var hitX = dx != 0L && overlapsHull(grid, structure, body, nlx, ly)
-        var hitY = dy != 0L && overlapsHull(grid, structure, body, lx, nly)
-        if (!hitX && !hitY) {
-            hitX = dx != 0L
-            hitY = dy != 0L
+        contacts.clear()
+        collectHullContacts(grid, structure, body, 0, nlx, nly, restingSpeedX, restingSpeedY, contacts)
+        if (contacts.isEmpty()) {
+            px = nwx; py = nwy; at = next; lx = nlx; ly = nly
+            continue
         }
 
-        // Whichever axis did not hit still travels. The world position has to follow the local one,
-        // so a blocked axis is undone through the same pose that blocked it.
-        val keptX = if (hitX) lx else nlx
-        val keptY = if (hitY) ly else nly
-        px = next.toWorldX(keptX, keptY)
-        py = next.toWorldY(keptX, keptY)
-        at = next; lx = keptX; ly = keptY
+        // ── Velocity: every contact of this substep, solved together ──────────────
+        //
+        // The whole substance of step 2. What this replaces answered one axis at a time, in the
+        // middle of moving, so a body in a corner had its second wall answered against a velocity
+        // the first had already spent.
+        vx1[0] = worldVel(ix); vy1[0] = worldVel(iy)
+        // Grid axes, because that is where a normal is. The ship's velocity comes in the same way.
+        val gridVx = rotScale(vx1[0], next.cos) + rotScale(vy1[0], next.sin)
+        val gridVy = -rotScale(vx1[0], next.sin) + rotScale(vy1[0], next.cos)
+        val gridSvx = rotScale(svx, next.cos) + rotScale(svy, next.sin)
+        val gridSvy = -rotScale(svx, next.sin) + rotScale(svy, next.cos)
+        vx1[0] = gridVx; vy1[0] = gridVy
+        val solved = solveContacts(contacts, oneMass, vx1, vy1, gridSvx, gridSvy, shipMass)
 
-        // ⚠️ The closing speed is a *grid-axis* quantity and the impulse it produces is too, but a
-        // body's momentum is in the world — so the impulse is turned into world axes before it is
-        // booked, on both sides of the exchange. Booking a grid-frame impulse into a world-frame
-        // ledger would be a slow leak that only appears once the ship is turned.
-        if (hitX) {
-            val j = normalImpulse(dx * steps, mu, restingSpeedX)
-            val jx = rotScale(j, at.cos)
-            val jy = rotScale(j, at.sin)
-            ix += jx; iy += jy
-            gotX += jx; gotY += jy
-            svx += recoil(jx); svy += recoil(jy)
+        // ⚠️ The impulse comes back in grid axes and a body's momentum is in the world, so it is
+        // turned before it is booked — on both halves of the exchange, or the ledger leaks the
+        // moment the ship is turned.
+        val jx = rotScale(solved.alongX[0], next.cos) - rotScale(solved.alongY[0], next.sin)
+        val jy = rotScale(solved.alongX[0], next.sin) + rotScale(solved.alongY[0], next.cos)
+        ix += jx; iy += jy
+        gotX += jx; gotY += jy
+        svx += recoil(jx); svy += recoil(jy)
+
+        // ── Position: out of the wall, along the normals that put it there ────────
+        //
+        // Deepest push per direction rather than the sum, so a cell touching two tiles of the same
+        // flat wall is one wall and not two — summing would launch a body off any surface wider
+        // than itself.
+        var pushLeft = 0L; var pushRight = 0L; var pushUp = 0L; var pushDown = 0L
+        for (c in contacts) {
+            if (c.normalX > 0L) pushRight = maxOf(pushRight, c.depth)
+            if (c.normalX < 0L) pushLeft = maxOf(pushLeft, c.depth)
+            if (c.normalY > 0L) pushDown = maxOf(pushDown, c.depth)
+            if (c.normalY < 0L) pushUp = maxOf(pushUp, c.depth)
         }
-        if (hitY) {
-            val j = normalImpulse(dy * steps, mu, restingSpeedY)
-            val jx = -rotScale(j, at.sin)
-            val jy = rotScale(j, at.cos)
-            ix += jx; iy += jy
-            gotX += jx; gotY += jy
-            svx += recoil(jx); svy += recoil(jy)
-        }
+        nlx += pushRight - pushLeft
+        nly += pushDown - pushUp
+        px = next.toWorldX(nlx, nly)
+        py = next.toWorldY(nlx, nly)
+        at = next; lx = nlx; ly = nly
     }
 
     return SweptBody(body.copy(positionX = px, positionY = py, impulseX = ix, impulseY = iy), gotX, gotY)

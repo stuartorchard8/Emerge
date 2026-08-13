@@ -77,21 +77,15 @@ class RockContactTest {
      * flying at things fast.
      */
     /**
-     * ⚠️ **PARKED by step 1 of `PLAN_rigid_bodies.md`, and it is the right failure to have.**
+     * ⚠️ **Was parked by step 1 and un-parked by step 2, one commit later.**
      *
-     * Measured: this passes with the vessel's spin forced to zero and fails with it live, so the
-     * sweep arithmetic is sound and the *rotation* is what breaks it. That is the known gap the plan
-     * is built around — a body has **no orientation** and the hull test is an axis-aligned cell mask,
-     * so a hull frame that turns has nothing correct to be tested against. Forty ticks of an
-     * 83-tonne rock bouncing inside a light box now tumbles the box through most of a turn, and
-     * containment fails.
-     *
-     * Nothing regressed. Before the frame change the vessel's angle was a number nothing read, so
-     * this test was measuring a room that could not tilt. Un-`@Ignore` at **step 4**, when a body
-     * has an angle and the narrow phase produces a real normal. Do not "fix" it by softening the
-     * bound — the bound is containment, and containment is the thing that is actually broken.
+     * Worth keeping the history because it says what the contact solver actually bought. Step 1 made
+     * the vessel's rotation physical, and forty ticks of an 83-tonne rock bouncing inside a light box
+     * tumbles the box through most of a turn — at which point the old resolver, which answered one
+     * axis at a time in the middle of moving, let the rock out through a wall. Step 2 replaced that
+     * with a list of contacts solved together, and containment came back on its own. The bound was
+     * never the problem, which is why it was not softened.
      */
-    @Ignore
     @Test
     fun `a body cannot tunnel through a bulkhead`() {
         val fast = bodyAt(x = 20, y = 16, velocityX = 16L * Flight.PER_TILE)
