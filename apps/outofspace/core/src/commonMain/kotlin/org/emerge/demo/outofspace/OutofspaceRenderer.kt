@@ -109,6 +109,7 @@ class OutofspaceRenderer {
     }
 
     // Flat batch (refilled each frame).
+    private val matrices = FloatArray(MAX_RECTS * Mat4.FLOATS)
     private val centers = FloatArray(MAX_RECTS * 2)
     private val halfSizes = FloatArray(MAX_RECTS * 2)
     private val colors = FloatArray(MAX_RECTS * 4)
@@ -374,7 +375,7 @@ class OutofspaceRenderer {
             tileRect(grid.xOf(hoveredIndex), grid.yOf(hoveredIndex), 1f, Colors.HOVER)
         }
 
-        rects.drawInstanced(count, centers, halfSizes, colors, viewTransform)
+        rects.drawInstanced(count, matrices, colors, viewTransform)
         GPU.disableBlend()
     }
 
@@ -922,10 +923,16 @@ class OutofspaceRenderer {
         if (count >= MAX_RECTS) return
         val px = wx - camX * tilePx + resW * 0.5f
         val py = wy - camY * tilePx + resH * 0.5f
-        centers[count * 2] = px / resW * 2f - 1f
-        centers[count * 2 + 1] = 1f - py / resH * 2f
-        halfSizes[count * 2] = w / resW
-        halfSizes[count * 2 + 1] = h / resH
+
+        val m = Mat4.translation(
+            px / resW * 2f - 1f,
+            1f - py / resH * 2f,
+        ).times(Mat4.scale(
+            w / resW,
+            h / resH,
+        ))
+        m.copyInto(matrices, count * Mat4.FLOATS)
+
         colors[count * 4] = ((color shr 24) and 0xFF).toFloat() / 255f
         colors[count * 4 + 1] = ((color shr 16) and 0xFF).toFloat() / 255f
         colors[count * 4 + 2] = ((color shr 8) and 0xFF).toFloat() / 255f

@@ -123,8 +123,7 @@ class CytoRenderer {
     private val colorTmp = FloatArray(4)
     private val neighbourTmp = FloatArray(CytoCellShader.MAX_NEIGHBOURS * 4)
 
-    private val BG_CENTER = floatArrayOf(0f, 0f)
-    private val BG_HALF_SIZE = floatArrayOf(1f, 1f)
+    private val BG_MAT4 = Mat4.identity().m
     private val BG_COLOR = floatArrayOf(0f, 0f, 0f, 1f)
 
     // ── daylight (the energy landscape, applied as a white multiply over the finished scene) ──────────────
@@ -511,7 +510,7 @@ class CytoRenderer {
     private fun drawWorldLayer(frame: CytoFrame) {
         // Background fill (opaque) — clears the frame.
         GPU.disableBlend()
-        bgShader.drawInstanced(1, BG_CENTER, BG_HALF_SIZE, BG_COLOR)
+        bgShader.drawInstanced(1, BG_MAT4, BG_COLOR)
         // The GROUND is the matter field, in its own pigment colours and unlit — the nutrient topology.
         // Daylight is not a layer here; it lands at the end of the pass as a multiply over everything.
         drawMatterField(frame)

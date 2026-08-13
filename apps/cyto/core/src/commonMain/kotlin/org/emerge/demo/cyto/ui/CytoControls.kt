@@ -4,6 +4,7 @@ import org.emerge.demo.cyto.CellColorMode
 import org.emerge.demo.cyto.cells.CellType
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.render.torus.ui.UiTextRenderer
 import kotlin.math.min
@@ -199,20 +200,25 @@ class CytoControls {
         layout()
         // Fills.
         val n = buttons.size
-        val centers = FloatArray(n * 2)
-        val halfSizes = FloatArray(n * 2)
+        val matrices = FloatArray(n * Mat4.FLOATS)
         val colors = FloatArray(n * 4)
         for (i in 0 until n) {
             val b = buttons[i]
-            centers[i * 2] = (b.x + b.w * 0.5f) / resW * 2f - 1f
-            centers[i * 2 + 1] = 1f - (b.y + b.h * 0.5f) / resH * 2f
-            halfSizes[i * 2] = b.w / resW
-            halfSizes[i * 2 + 1] = b.h / resH
+
+            val m = Mat4.translation(
+                (b.x + b.w * 0.5f) / resW * 2f - 1f,
+                1f - (b.y + b.h * 0.5f) / resH * 2f,
+            ).times(Mat4.scale(
+                b.w / resW,
+                b.h / resH,
+            ))
+            m.copyInto(matrices, i * Mat4.FLOATS)
+
             packColor(b.color, colors, i * 4, alpha = 0.85f)
         }
         GPU.enableBlend()
         GPU.setBlendFuncSrcAlphaOneMinusSrcAlpha()
-        rectShader.drawInstanced(n, centers, halfSizes, colors)
+        rectShader.drawInstanced(n, matrices, colors)
 
         // Labels (contrast colour over each swatch).
         val labelHeight = (min(resW, resH) * 0.022f).coerceIn(9f, 18f)

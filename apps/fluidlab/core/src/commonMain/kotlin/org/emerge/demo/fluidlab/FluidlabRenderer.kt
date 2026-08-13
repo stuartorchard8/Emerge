@@ -6,8 +6,8 @@ import org.emerge.demo.fluidlab.world.Temperature
 import org.emerge.demo.fluidlab.world.fluid.AMBIENT_PRESSURE
 import org.emerge.demo.fluidlab.world.fluid.EdgeGrid
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.ui.UiRectRenderer
-import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sqrt
@@ -55,6 +55,7 @@ class FluidlabRenderer {
     var tilePx = 22f
         private set
 
+    private val matrices = FloatArray(MAX_RECTS * Mat4.FLOATS)
     private val centers = FloatArray(MAX_RECTS * 2)
     private val halfSizes = FloatArray(MAX_RECTS * 2)
     private val colors = FloatArray(MAX_RECTS * 4)
@@ -121,7 +122,7 @@ class FluidlabRenderer {
 
         if (hoveredTile >= 0) tileRect(grid.xOf(hoveredTile), grid.yOf(hoveredTile), 1f, HOVER)
 
-        rects.drawInstanced(count, centers, halfSizes, colors)
+        rects.drawInstanced(count, matrices, colors)
         GPU.disableBlend()
     }
 
@@ -214,10 +215,16 @@ class FluidlabRenderer {
         val py = wy - camY * tilePx + resH * 0.5f
         // Cheap off-screen reject: a lab grid is small, but a zoomed-in view still culls most of it.
         if (px + w < 0f || px - w > resW || py + h < 0f || py - h > resH) return
-        centers[count * 2] = px / resW * 2f - 1f
-        centers[count * 2 + 1] = 1f - py / resH * 2f
-        halfSizes[count * 2] = w / resW
-        halfSizes[count * 2 + 1] = h / resH
+
+        val m = Mat4.translation(
+            px / resW * 2f - 1f,
+            1f - py / resH * 2f,
+        ).times(Mat4.scale(
+            w / resW,
+            h / resH,
+        ))
+        m.copyInto(matrices, count * Mat4.FLOATS)
+
         colors[count * 4] = ((color shr 24) and 0xFF).toFloat() / 255f
         colors[count * 4 + 1] = ((color shr 16) and 0xFF).toFloat() / 255f
         colors[count * 4 + 2] = ((color shr 8) and 0xFF).toFloat() / 255f

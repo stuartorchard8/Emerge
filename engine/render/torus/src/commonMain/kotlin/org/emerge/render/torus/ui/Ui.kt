@@ -1,6 +1,7 @@
 package org.emerge.render.torus.ui
 
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.Mat4
 import kotlin.math.abs
 
 /** Screen position a panel is anchored to. [Center] centres a panel on both axes (for title screens / modal
@@ -315,18 +316,21 @@ class Ui {
                 while (j < cs.size && cs[j].let { it is RectCmd && it.clip == clip }) j++
                 if (clip != curClip) { applyClip(clip); curClip = clip }
                 val n = j - i
-                val centers = FloatArray(n * 2)
-                val halfSizes = FloatArray(n * 2)
+                val matrices = FloatArray(n * Mat4.FLOATS)
                 val colors = FloatArray(n * 4)
                 for (k in 0 until n) {
                     val r = cs[i + k] as RectCmd
-                    centers[k * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
-                    centers[k * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
-                    halfSizes[k * 2] = r.w / resW
-                    halfSizes[k * 2 + 1] = r.h / resH
+                    val m = Mat4.translation(
+                        (r.x + r.w * 0.5f) / resW * 2f - 1f,
+                        1f - (r.y + r.h * 0.5f) / resH * 2f,
+                    ).times(Mat4.scale(
+                        r.w / resW,
+                        r.h / resH,
+                    ))
+                    m.copyInto(matrices, k * Mat4.FLOATS)
                     packColor(r.color, colors, k * 4)
                 }
-                rectRenderer.drawInstanced(n, centers, halfSizes, colors)
+                rectRenderer.drawInstanced(n, matrices, colors)
                 i = j
             } else if (c is TextCmd) {
                 if (c.clip != curClip) { applyClip(c.clip); curClip = c.clip }
@@ -365,18 +369,27 @@ class Ui {
             while (j < rs.size && rs[j].clip == clip) j++
             applyClip(clip)
             val n = j - i
+            val matrices = FloatArray(n * Mat4.FLOATS)
             val centers = FloatArray(n * 2)
             val halfSizes = FloatArray(n * 2)
             val colors = FloatArray(n * 4)
             for (k in 0 until n) {
                 val r = rs[i + k]
+                val m = Mat4.translation(
+                    (r.x + r.w * 0.5f) / resW * 2f - 1f,
+                    1f - (r.y + r.h * 0.5f) / resH * 2f,
+                ).times(Mat4.scale(
+                    r.w / resW,
+                    r.h / resH,
+                ))
+                m.copyInto(matrices, k * Mat4.FLOATS)
                 centers[k * 2] = (r.x + r.w * 0.5f) / resW * 2f - 1f
                 centers[k * 2 + 1] = 1f - (r.y + r.h * 0.5f) / resH * 2f
                 halfSizes[k * 2] = r.w / resW
                 halfSizes[k * 2 + 1] = r.h / resH
                 packColor(r.color, colors, k * 4)
             }
-            rectRenderer.drawInstanced(n, centers, halfSizes, colors)
+            rectRenderer.drawInstanced(n, matrices, colors)
             i = j
         }
         var lastClip = Int.MIN_VALUE
