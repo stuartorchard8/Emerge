@@ -5,19 +5,44 @@
 unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/torque, world-frame
 camera) stand and are prerequisites.*
 
-**Steps 1 and 2 are built** (`72d943b5`, `cc417e8c`, `a6e66646`). Everything else is not.
+**Steps 1, 2 and 3 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`). Everything else is
+not.
 
 ✅ **Step 2 un-parked `a body cannot tunnel through a bulkhead`** one commit after step 1 parked it.
 Containment came back on its own once contacts were solved as a list — the failure was the old
 resolver letting a rock out of a tumbling box, not the bound being wrong. That is the clearest
 evidence so far that the solver was the missing piece rather than an extra.
 
-⚠️ **One `@Ignore`d claim is still owed, by step 3**: `RockTest.a body falling under straight-down
-gravity does not drift sideways`. Measured — it passes with the vessel's spin forced to zero. It is
-not drift: the plating pulls on a rock half a tile off the hull's centre of mass, which is a real
-torque, so the deck it lands on is banked and a normal perpendicular to a banked deck has world-frame
-x. It needs restating in the grid frame, which needs a body to have an orientation. **Do not soften
-the bound.**
+✅ **Step 3 paid the owed `@Ignore` back**: `RockTest.a body falling under straight-down gravity does
+not drift sideways` runs again with its bound still at exactly zero. What changed is the *window*,
+not the number — it is gated on `angImpulse` and so runs for actual freefall. Seven ticks used to be
+a freefall because a body that landed stopped; a body now lands on one corner of a banked deck and
+comes away cartwheeling, and reading that measured the landing while claiming to measure gravity.
+
+⚠️ **Nothing takes energy out of a spin, and step 3 is what makes that visible.** There is no
+friction until step 4, so a rock that lands on a corner cartwheels for ever. This is the same debt
+`RockContactTest :: a body that lands on the deck settles and stays put` has been parked on, and
+step 4 is where it comes due — friction is no longer a polish item.
+
+⚠️ **The solver is Jacobi, not Gauss-Seidel, and it must stay that way.** Answered one contact after
+another, each touch sees the spin the touches before it put on the body: a symmetric blob thrown
+square at a bulkhead came away turning at 0.04 rad/tick and rebounded at 30% of its approach instead
+of 50%, with the missing energy in the spin. **No number of extra passes removes it** — the state it
+lands in satisfies every constraint, it is simply the wrong one. Reading a frozen state and writing
+at the end of the pass makes identical contacts get identical impulses, so their torques cancel
+exactly: measured residual spin fell from 26,313,612 raw to 45,278, and the bounce landed on
+−124,993,900 against a target of −125,000,000. Restitution is captured **once, before the first
+pass**, for the same class of reason: recomputed per pass, a manifold of several touches converges
+on no bounce at all.
+
+⚠️ **A cell needs its own moment of inertia.** Cells entered the gyration sum as point masses, which
+gives a one-cell body `gyrationSq == 0` — the smallest rock in the game was the only thing in it that
+could not be made to spin. `Rotation.CELL_MOMENT` is the parallel-axis term that was missing, `a²/6`
+for a square, and it becomes `r²/2` = 125_000 when step 4 makes cells discs.
+
+⚠️ **Turning is travel.** The substep count now reads the tip speed as well as the linear one: a
+spinning rock parked against a bulkhead sweeps its own width through the wall in a tick, and a sweep
+sized on the centre's motion alone steps clean over it.
 
 ⚠️ **Contacts are solved per body per substep, not globally.** That is enough for a corner, which is
 two contacts on one body, and it is what un-parked containment. **Global synchronisation across
@@ -331,7 +356,7 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 |---|---|---|---|
 | **1** | ✅ **BUILT `cc417e8c`** (transform `72d943b5`). **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
 | **2** | ✅ **BUILT `a6e66646`.** **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
-| **3** | **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
+| **3** | ✅ **BUILT `e49e20e1`.** **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
 | **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
 | **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
 | **5** | **Body-vs-body broad phase + stacking.** | Needs 2 and 4. | M |
