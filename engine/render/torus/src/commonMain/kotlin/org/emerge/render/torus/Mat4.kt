@@ -49,14 +49,20 @@ value class Mat4(val m: FloatArray) {
     }
 
     /** Sets this matrix to a rotation of [rad] radians about the Z axis, in place. */
-    fun setRotationZ(rad: Float): Mat4 {
+    fun setRotationZ(rad: Float): Mat4 = setRotationZ(cos(rad), sin(rad))
+
+    /**
+     * Sets this matrix to the Z rotation with the given [cos]/[sin], in place — for callers whose
+     * angle never was a radian. A sim that turns by an integer angle gets its cosine and sine from
+     * its own exact table, and converting that to radians only to take `cos` of it again would put
+     * a float trig round-trip in the middle of the one path that was built to avoid trig.
+     */
+    fun setRotationZ(cos: Float, sin: Float): Mat4 {
         setIdentity()
-        val c = cos(rad)
-        val s = sin(rad)
-        m[0] = c
-        m[1] = s
-        m[4] = -s
-        m[5] = c
+        m[0] = cos
+        m[1] = sin
+        m[4] = -sin
+        m[5] = cos
         return this
     }
 
@@ -106,5 +112,6 @@ value class Mat4(val m: FloatArray) {
         fun translation(tx: Float, ty: Float): Mat4 = scratch().setTranslation(tx, ty)
         fun scale(sx: Float, sy: Float): Mat4 = scratch().setScale(sx, sy)
         fun rotationZ(rad: Float): Mat4 = scratch().setRotationZ(rad)
+        fun rotationZ(cos: Float, sin: Float): Mat4 = scratch().setRotationZ(cos, sin)
     }
 }

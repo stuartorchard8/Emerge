@@ -43,6 +43,15 @@ actual object GPU {
         }
     }
 
+    actual fun putUniformMatrix4fv(location: Int, v: FloatArray) {
+        MemoryStack.stackPush().use { st ->
+            val fb = st.mallocFloat(Mat4.FLOATS)
+            fb.put(v, 0, Mat4.FLOATS)
+            fb.flip()
+            GL33C.glUniformMatrix4fv(location, false, fb)
+        }
+    }
+
     actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) = GL33C.glVertexAttribPointer(index, size, type, normalized, stride, offset.toLong())
     actual fun vertexAttribDivisor(index: Int, divisor: Int) = GL33C.glVertexAttribDivisor(index, divisor)
 

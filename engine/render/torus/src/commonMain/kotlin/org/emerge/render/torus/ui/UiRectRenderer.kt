@@ -2,6 +2,7 @@ package org.emerge.render.torus.ui
 
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.GpuFloatBuffer
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.put
 import org.emerge.render.torus.shader.UiRectShaderSources
 import org.emerge.render.torus.shader.ShaderFactory
@@ -37,11 +38,11 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
     }
 
     /**
-     * [view] is a 2x2 transform applied to every vertex about the screen centre, row-major
-     * `(m00, m01, m10, m11)`, and defaults to [IDENTITY].
+     * [view] is a transform applied to every vertex about the screen centre, and defaults to
+     * [IDENTITY].
      *
      * Deliberately a raw matrix rather than an angle: NDC is not square, so rotating a scene by θ is
-     * `S·R(θ)·S⁻¹` for the resolution's own scale, and only the caller knows the resolution. Passing
+     * `S⁻¹·R(θ)·S` for the resolution's own scale, and only the caller knows the resolution. Passing
      * an angle here would mean this class either guessing the aspect or silently shearing.
      */
     fun drawInstanced(
@@ -49,13 +50,13 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         centers: FloatArray,
         halfSizes: FloatArray,
         colors: FloatArray,
-        view: FloatArray = IDENTITY,
+        view: Mat4 = IDENTITY,
     ) {
         val n = count.coerceIn(0, maxRects)
         if (n <= 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
-        GPU.putUniform4fv(uView, view, 1)
+        GPU.putUniformMatrix4fv(uView, view.m)
         bind(centerVbo, centerBuffer, centers, n * 2)
         bind(halfSizeVbo, halfSizeBuffer, halfSizes, n * 2)
         bind(colorVbo, colorBuffer, colors, n * 4)
@@ -101,7 +102,7 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         const val DEFAULT_MAX_RECTS = 128
 
         /** Draw the batch exactly where the caller put it. Shared and never written to. */
-        val IDENTITY = floatArrayOf(1f, 0f, 0f, 1f)
+        val IDENTITY: Mat4 = Mat4.identity()
 
         private const val QUAD_VERTEX_COUNT = 4
     }

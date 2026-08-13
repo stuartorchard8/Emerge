@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.render.torus.Mat4
 import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.math.abs
 import kotlin.test.Test
@@ -28,7 +29,7 @@ class ViewTurnTest {
      */
     @Test
     fun `turning in NDC is turning in pixels`() {
-        for ((w, h) in listOf(1920f to 1080f, 600f to 900f, 512f to 512f)) {
+        for ((w, h) in RESOLUTIONS) {
             for (angle in ANGLES) {
                 val cs = ViewTurn.cosSin(angle)
                 ViewTurn.transform(cs[0], cs[1], w / h, m)
@@ -37,8 +38,8 @@ class ViewTurnTest {
                     // The same offset, taken round both ways: NDC then turn, versus turn then NDC.
                     val ndc = ndc(px, py, w, h)
                     val viaNdc = floatArrayOf(
-                        m[0] * ndc[0] + m[1] * ndc[1],
-                        m[2] * ndc[0] + m[3] * ndc[1],
+                        m00 * ndc[0] + m01 * ndc[1],
+                        m10 * ndc[0] + m11 * ndc[1],
                     )
                     val turned = turnPixels(cs[0], cs[1], px, py)
                     val viaPixels = ndc(turned[0], turned[1], w, h)
@@ -99,12 +100,22 @@ class ViewTurnTest {
     @Test
     fun `a zero angle is exactly the identity`() {
         val cs = ViewTurn.cosSin(Coord(0))
-        ViewTurn.transform(cs[0], cs[1], 1920f / 1080f, m)
+        for ((w, h) in RESOLUTIONS) {
+            ViewTurn.transform(cs[0], cs[1], w / h, m)
 
-        // Numeric comparison rather than a list equality: `-sin * aspect` with a zero sine is
-        // negative zero, which is a different *value* to `List.equals` and the same *number* to
-        // everything else, the GPU included.
-        assertTrue(m[0] == 1f && m[1] == 0f && m[2] == 0f && m[3] == 1f, "not identity: ${m.toList()}")
+            // Numeric comparison rather than a list equality: the off-diagonals with a zero sine are
+            // negative zero, which is a different *value* to `List.equals` and the same *number* to
+            // everything else, the GPU included.
+            //
+            // Exact, and every resolution, because the conjugation multiplies the diagonal by the
+            // aspect and then by its reciprocal: a float pair that failed to round-trip would leave
+            // a still view very slightly scaled. It holds for these; the assertion is here so a
+            // future change of scale factors cannot lose it quietly.
+            assertTrue(
+                m00 == 1f && m01 == 0f && m10 == 0f && m11 == 1f,
+                "not identity at ${w}x$h: ${m.m.toList()}",
+            )
+        }
     }
 
     /** Build holds the grid still and Flight holds the world still — see [Mode.camera]. */
@@ -116,7 +127,13 @@ class ViewTurnTest {
 
     // ── Fixture ───────────────────────────────────────────────────────────────
 
-    private val m = FloatArray(4)
+    private val m = Mat4.scratch()
+
+    // The 2x2 the turn actually is, read out of the column-major 4x4: column c, row r is `m[c*4+r]`.
+    private val m00 get() = m.m[0]
+    private val m01 get() = m.m[4]
+    private val m10 get() = m.m[1]
+    private val m11 get() = m.m[5]
 
     /** A pixel offset from the screen centre, as an NDC offset — the renderer's own conversion. */
     private fun ndc(px: Float, py: Float, w: Float, h: Float) =
@@ -141,6 +158,9 @@ class ViewTurnTest {
          * place in this app where float is the right answer.
          */
         const val TOLERANCE = 1e-4f
+
+        /** Wide, tall, and square — the naive matrix is correct at 1:1 and wrong either side of it. */
+        val RESOLUTIONS = listOf(1920f to 1080f, 600f to 900f, 512f to 512f)
 
         /** A turn's worth of headings, deliberately including the axes and both branch cuts. */
         val ANGLES = listOf(0, 1, Int.MAX_VALUE / 4, Int.MAX_VALUE / 2, Int.MAX_VALUE, -Int.MAX_VALUE / 3, -7)

@@ -36,6 +36,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
 import org.emerge.render.torus.GPU
+import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.math.floor
@@ -90,8 +91,8 @@ class OutofspaceRenderer {
     private var viewCos = 1f
     private var viewSin = 0f
 
-    /** The 2x2 handed to [UiRectRenderer.drawInstanced], rebuilt per frame; see [setViewAngle]. */
-    private val viewTransform = floatArrayOf(1f, 0f, 0f, 1f)
+    /** The matrix handed to [UiRectRenderer.drawInstanced], rebuilt per frame; see [setViewAngle]. */
+    private val viewTransform = Mat4.identity()
 
     private fun setViewAngle(angle: Coord) {
         if (angle != viewAngle) {

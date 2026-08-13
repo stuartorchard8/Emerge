@@ -30,6 +30,9 @@ expect object GPU {
     fun putUniform2f(location: Int, v0: Float, v1: Float)
     fun putUniform4fv(location: Int, v: FloatArray, count: Int)
 
+    /** Uploads one 4x4 uniform from 16 **column-major** floats — the [Mat4] layout. */
+    fun putUniformMatrix4fv(location: Int, v: FloatArray)
+
     fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int)
     fun vertexAttribDivisor(index: Int, divisor: Int)
 

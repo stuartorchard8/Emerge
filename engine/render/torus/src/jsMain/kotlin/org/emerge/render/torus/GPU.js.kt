@@ -135,6 +135,12 @@ actual object GPU {
         gl.uniform4fv(uniformLocObjs[location], f32)
     }
 
+    actual fun putUniformMatrix4fv(location: Int, v: FloatArray) {
+        val f32 = Float32Array(Mat4.FLOATS)
+        f32.set(v.sliceArray(0 until Mat4.FLOATS).toTypedArray(), 0)
+        gl.uniformMatrix4fv(uniformLocObjs[location], false, f32)
+    }
+
     // -- Vertex attributes --
 
     actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) {

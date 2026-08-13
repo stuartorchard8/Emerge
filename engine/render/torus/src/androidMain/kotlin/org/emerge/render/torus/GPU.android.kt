@@ -41,6 +41,9 @@ actual object GPU {
     actual fun putUniform2f(location: Int, v0: Float, v1: Float) = GLES30.glUniform2f(location, v0, v1)
     actual fun putUniform4fv(location: Int, v: FloatArray, count: Int) = GLES30.glUniform4fv(location, count, v, 0)
 
+    actual fun putUniformMatrix4fv(location: Int, v: FloatArray) =
+        GLES30.glUniformMatrix4fv(location, 1, false, v, 0)
+
     actual fun putVertexAttribPointer(index: Int, size: Int, type: Int, normalized: Boolean, stride: Int, offset: Int) =
         GLES30.glVertexAttribPointer(index, size, type, normalized, stride, offset)
 
