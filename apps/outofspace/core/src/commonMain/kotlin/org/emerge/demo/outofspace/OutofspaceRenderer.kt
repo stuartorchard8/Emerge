@@ -30,6 +30,7 @@ import org.emerge.demo.outofspace.world.Pump
 import org.emerge.demo.outofspace.world.Vent
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Vaporizer
 import org.emerge.demo.outofspace.world.Thruster
 import org.emerge.demo.outofspace.world.VesselState
@@ -68,12 +69,12 @@ class OutofspaceRenderer {
     private var resW = 1f
     private var resH = 1f
 
-    var camX = 0f
-        private set
-    var camY = 0f
-        private set
-    var tilePx = 34f
-        private set
+    /** Anchor, pan, and zoom — see [Camera], which is where that arithmetic is tested. */
+    private val camera = Camera()
+
+    val camX: Float get() = camera.camX
+    val camY: Float get() = camera.camY
+    val tilePx: Float get() = camera.tilePx
 
     /**
      * How far the scene is turned on screen, and therefore how far every pointer position has to be
@@ -100,6 +101,7 @@ class OutofspaceRenderer {
             viewCos = cs[0]
             viewSin = cs[1]
             viewAngle = angle
+            camera.setViewCosSin(viewCos, viewSin)
         }
         // Rebuilt every frame even when the angle held still: the aspect is the other half of it,
         // and a window resized between two frames of the same heading still moves this matrix.
@@ -119,23 +121,54 @@ class OutofspaceRenderer {
     }
 
     /**
-     * The camera is in tile coordinates, so it moves with the origin when the grid grows on a near
-     * edge — otherwise building off the left of the ship jumps the view sideways by the amount it
-     * grew. A far-side growth reports zero and the camera correctly stays put.
+     * What the anchor follows, once per frame, and it is not the same thing in both modes.
      *
-     * Lazily created because the first state is not known until the first frame.
+     * **Flying**, it is the ship's centre of mass: that is the point the hull turns about, so the
+     * ship turns in place instead of swinging about some corner of itself.
+     *
+     * **Building**, nothing follows anything. A centre of mass moves whenever a machine is placed or
+     * a crate slides along a belt, and a workbench that drifts a few pixels every time the player
+     * builds on it is worse than one that sits still — the ship is not going anywhere, and the
+     * player is aiming at tiles. So the anchor is simply left where it is, and the only thing that
+     * touches it is [FrameShift], for the one case where the tile it names has genuinely moved: the
+     * grid growing on a near edge, which shifts every coordinate written down outside the state.
+     *
+     * The shift is *advanced* every frame either way, growth in flight included, or a Build mode
+     * returned to would apply a delta it had already been spared and jump.
      */
-    private var frame: FrameShift? = null
+    private fun followAnchor(state: VesselState, frame: CameraFrame) {
+        val move = (shift ?: FrameShift(state).also { shift = it }).advance(state)
+        when (frame) {
+            CameraFrame.World -> followVessel(state)
+            CameraFrame.Grid -> camera.shiftAnchor(move.dx.toFloat(), move.dy.toFloat())
+        }
+    }
 
-    private fun followFrame(state: VesselState) {
-        val f = frame ?: FrameShift(state).also { frame = it }
-        val move = f.advance(state)
-        camX += move.dx
-        camY += move.dy
+    /** Lazily created: the first state is not known until the first frame. */
+    private var shift: FrameShift? = null
+
+    /**
+     * The ship's centre of mass, as the anchor.
+     *
+     * A vessel with no mass — an empty grid, or the last machine deleted — leaves the anchor alone
+     * rather than snapping the view to the grid's corner.
+     */
+    private fun followVessel(state: VesselState) {
+        val about = state.distribution
+        if (about.mass <= 0L) return
+        camera.followVessel(
+            about.comX.toFloat() / Rotation.MILLI_TILE,
+            about.comY.toFloat() / Rotation.MILLI_TILE,
+        )
     }
 
     /** Centre on built area (fallback: grid centre). */
     fun centreOn(state: VesselState) {
+        // The anchor first: [centreOn] is the one framing call that arrives before any frame has
+        // been drawn, and a pan is measured from wherever the anchor is when it is taken. The ship
+        // is where a fresh camera should start in either mode — Build mode holds that, rather than
+        // starting from the grid's corner.
+        followVessel(state)
         var minX = Int.MAX_VALUE
         var minY = Int.MAX_VALUE
         var maxX = Int.MIN_VALUE
@@ -150,34 +183,23 @@ class OutofspaceRenderer {
             if (y > maxY) maxY = y
         }
         if (maxX < minX) {
-            camX = state.grid.width / 2f
-            camY = state.grid.height / 2f
+            camera.lookAt(state.grid.width / 2f, state.grid.height / 2f)
         } else {
-            camX = (minX + maxX + 1) / 2f
-            camY = (minY + maxY + 1) / 2f
+            camera.lookAt((minX + maxX + 1) / 2f, (minY + maxY + 1) / 2f)
         }
     }
 
     /** Focus on a tile at a stated zoom (scripted panning). */
     fun focusOn(tileX: Float, tileY: Float, pixelsPerTile: Float = tilePx) {
-        camX = tileX
-        camY = tileY
-        tilePx = pixelsPerTile.coerceIn(MIN_TILE_PX, MAX_TILE_PX)
+        camera.lookAt(tileX, tileY)
+        camera.setZoom(pixelsPerTile)
     }
 
-    fun panByPixels(dxPixels: Float, dyPixels: Float) {
-        camX -= unturnX(dxPixels, dyPixels) / tilePx
-        camY -= unturnY(dxPixels, dyPixels) / tilePx
-    }
+    /** A drag is screen-space and stays that way; [camX] is where it lands in the grid. */
+    fun panByPixels(dxPixels: Float, dyPixels: Float) = camera.panByPixels(dxPixels, dyPixels)
 
-    fun zoomAtScreen(px: Float, py: Float, factor: Float) {
-        if (!factor.isFinite() || factor <= 0f) return
-        val before = screenToTile(px, py)
-        tilePx = (tilePx * factor).coerceIn(MIN_TILE_PX, MAX_TILE_PX)
-        val after = screenToTile(px, py)
-        camX += before[0] - after[0]
-        camY += before[1] - after[1]
-    }
+    fun zoomAtScreen(px: Float, py: Float, factor: Float) =
+        camera.zoomAtScreen(px, py, factor, resW, resH)
 
     /**
      * Framebuffer pixel → fractional tile coordinates.
@@ -186,14 +208,7 @@ class OutofspaceRenderer {
      * is what keeps building honest in a rotated view: the tile the player clicks is the tile they
      * see under the cursor, and a pipe dragged along a tilted hull follows the hull.
      */
-    fun screenToTile(px: Float, py: Float): FloatArray {
-        val dx = px - resW * 0.5f
-        val dy = py - resH * 0.5f
-        return floatArrayOf(
-            camX + unturnX(dx, dy) / tilePx,
-            camY + unturnY(dx, dy) / tilePx,
-        )
-    }
+    fun screenToTile(px: Float, py: Float): FloatArray = camera.screenToTile(px, py, resW, resH)
 
     private fun unturnX(dx: Float, dy: Float): Float = ViewTurn.unturnX(viewCos, viewSin, dx, dy)
 
@@ -217,7 +232,7 @@ class OutofspaceRenderer {
         tickAlpha: Float = 1f,
         camera: CameraFrame = CameraFrame.Grid,
     ) {
-        followFrame(state)
+        followAnchor(state, camera)
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
         alpha = tickAlpha.coerceIn(0f, 1f)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
@@ -945,9 +960,6 @@ class OutofspaceRenderer {
 
         /** Reach of the largest footprint, used to widen the machine pass past the screen edge. */
         private const val MAX_REACH = 2
-
-        private const val MIN_TILE_PX = 6f
-        private const val MAX_TILE_PX = 64f
 
         /** Bar-full reference for machine buffers — a machine holding this much is visibly backed up. */
         private const val BUFFER_BAR_FULL = 4_000f
