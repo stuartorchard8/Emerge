@@ -5,7 +5,7 @@
 unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/torque, world-frame
 camera) stand and are prerequisites.*
 
-**Steps 1, 2, 3 and 4 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`, `8cfeeaf2`).
+**Steps 1, 2, 3, 4 and 5 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`, `8cfeeaf2`).
 Everything else is not.
 
 ✅ **Step 2 un-parked `a body cannot tunnel through a bulkhead`** one commit after step 1 parked it.
@@ -63,11 +63,42 @@ for a square, and it becomes `r²/2` = 125_000 when step 4 makes cells discs.
 spinning rock parked against a bulkhead sweeps its own width through the wall in a tick, and a sweep
 sized on the centre's motion alone steps clean over it.
 
-⚠️ **Contacts are solved per body per substep, not globally.** That is enough for a corner, which is
-two contacts on one body, and it is what un-parked containment. **Global synchronisation across
-bodies is still owed and lands with step 5**, where body-vs-body makes it necessary; a stack cannot
-converge while each body is solved in its own substep loop. Do not read "the solver exists" as
-"stacking works".
+✅ **Step 5 made the solve global, and that — not the narrow phase — is what rock-on-rock needed.**
+Disc-vs-Disc had been correct and unreachable since step 4: bodies were swept one at a time, so by
+the time the second rock was stepped the first had already spent its whole tick and was not there to
+be hit. `sweepBody` is gone; `sweepBodies` runs one substep clock, one contact list and one solve for
+every body in the world, and `Contact` names **both** sides — a body index or `Contact.HULL` — so the
+solver cannot tell a rock from a ship.
+
+⚠️ **The substep clock is sized on the fastest *pair*, not the fastest body.** Two rocks closing
+head-on approach at the sum of their speeds, so a budget sized on the larger alone lets them step
+through each other above half the tunnelling speed — the one failure the sweep exists to rule out,
+by the one route the hull test could never see. The top two reaches summed is the largest closing
+speed any pair can have, and it is never smaller than a single body's reach against the hull.
+
+⚠️ **A lattice of discs cannot be pushed off another lattice of discs by its own contact normals,
+and the jam is an attractor.** Two blobs overlapping by half a tile have every cell of one sitting
+midway between two cells of the other: each body is asked to go left exactly as hard as it is asked
+to go right, the deepest-push-per-direction rule subtracts one from the other, and the pair sits
+interpenetrated for ever. Measured: a pair placed 3.3 tiles apart eased out to exactly 3.5 and
+**stopped**, so a settling pile would find the interlock on its own. Body-vs-body depenetration is
+**Stu, having seen both: keep the jam.** Rubble that has keyed together reads as a pile of ore, where
+two blobs standing exactly tangent read as two blobs — so `RockContact.separateAlongCentres` defaults
+to `false`, the per-axis rule, and a placed pair walks to the nearest half-tile interlock and stops.
+The alternative — separating along the **line of centres**, the one direction two distinct bodies
+cannot cancel — stays live behind the same switch for the day that reading stops being wanted. It is
+a *position* rule either way: the velocity solve always answers each contact on its own normal, so a
+rock is held up by the same impulse under both. What the tests guard is the half that could quietly
+stop being true — that the jam settles **still**, rather than creeping or buzzing or spitting the
+pair out later.
+
+⚠️ **The momentum ledger is summed from the bodies' impulses, not from the ship's.** They are the
+same quantity with opposite signs, and the ship's is one number rather than `n`, which makes it the
+tempting one to read. It is wrong: what the vessel owes itself is *exactly what the bodies were
+given*, and the two sums differ by a few units, because each is turned out of grid axes separately.
+Booked off the ship's side the ledger failed by 2 on a moving ship and 199 across a grid fit. Booked
+off the bodies', body-on-body cancels for free — those impulses are equal and opposite between two
+entries of the same sum — so a pair of rocks bumping in the hold cannot fly the ship.
 
 ⚠️ **Found while building step 1: the vessel was rotating about its grid *origin*, not its centre of
 mass.** Step 2 of the rotation plan booked torque about the centre of mass and then integrated the
@@ -378,7 +409,7 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 | **3** | ✅ **BUILT `e49e20e1`.** **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
 | **4** | ✅ **BUILT `8cfeeaf2`.** **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
 | **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
-| **5** | **Body-vs-body broad phase + stacking.** | Needs 2 and 4. | M |
+| **5** | ✅ **BUILT.** **Body-vs-body broad phase + the global solve.** `sweepBodies` replaces the per-body sweep; `Contact` names both operands; bounding-circle broad phase per pair and per cell; friction looked up from both bodies' compositions. | Needs 2 and 4. | M |
 | **6** | **The vessel as an operand.** Vessel passed through the same narrow phase and solver as a body of box cells, colliders on every tile (Stu: optimise later). | The unification payoff. | L |
 | — | *Later, unblocked by the above:* `CellShape.Box` per cell, `CellShape.Triangle`, OBB-vs-OBB SAT. | Each is one narrow-phase function. | — |
 
@@ -421,8 +452,11 @@ Test targets worth naming now, because they are the ones that discriminate:
   not collision at all**: nothing lands, at HEAD or here. See the note in the preamble.
 - A rock striking the ship **off the centre of mass** spins the ship; striking **through** it does
   not. The centreline case is the discriminator, exactly as in step 2.
-- A rock dropped on a stack of two rocks leaves all three at rest — the stacking test, which step 1
-  must pass and the current architecture cannot.
+- A rock dropped on a stack of two rocks leaves all three at rest. ⛔ **Still not writable**, and not
+  for a collision reason: nothing lands on the deck at all (see the preamble), so a pile has no
+  floor to rest on. What step 5 could state instead is the same chain lying down — `BodyContactTest
+  :: a rock driven onto a rock against the wall does not sink into it` is hull-against-rock-against-
+  rock, three contacts in one line, and it is the property a per-body sweep cannot have.
 - A rock hanging motionless in world space **drifts in an arc** across the deck of a spinning ship
   (§5), and drifts in a straight line across a ship that is only translating.
 

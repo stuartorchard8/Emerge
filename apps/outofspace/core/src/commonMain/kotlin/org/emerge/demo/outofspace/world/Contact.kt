@@ -24,6 +24,19 @@ import org.emerge.demo.outofspace.num.scaledRatio
 class Contact(
     /** Which body, as an index into the list being stepped. */
     val body: Int,
+    /**
+     * What it is touching: another body's index, or [HULL] for the vessel.
+     *
+     * ⚠️ **The solver does not know which of the two it is**, and that is the whole of step 5. A
+     * contact used to name one body and mean "against the ship" by omission, so a rock could only
+     * ever be answered against the hull and two rocks passed through each other. Naming both sides
+     * makes rock-on-rock the *same* contact as rock-on-hull with a different index in one field —
+     * and it is what lets a stack converge, because the body underneath is solved in the same pass
+     * as the body on top rather than in its own sweep afterwards.
+     *
+     * The normal points **out of [other] and into [body]**, whichever [other] turns out to be.
+     */
+    val other: Int = HULL,
     /** Where they touch, in the **grid frame**, at [Flight.PER_TILE] to the tile. */
     val pointX: Long,
     val pointY: Long,
@@ -49,7 +62,12 @@ class Contact(
      * spinning in it spins for ever.
      */
     val friction: Long = 0L,
-)
+) {
+    companion object {
+        /** [other]'s value when the thing being touched is the vessel rather than another body. */
+        const val HULL: Int = -1
+    }
+}
 
 /**
  * Every place [body] — placed in the grid by [at] — is inside the hull.
@@ -125,6 +143,115 @@ fun collectHullContacts(
 }
 
 /**
+ * Every place two **bodies** touch each other — step 5 of `PLAN_rigid_bodies.md`, and the first
+ * collision in the game that does not involve the ship at all.
+ *
+ * Both are grids of discs, so the narrow phase is Disc-vs-Disc for every pair of cells that reach
+ * each other, and it is exact at every angle of either body for the same reason the hull pair is: a
+ * disc has no orientation to get wrong. The normal comes out pointing **out of [b] and into [a]**,
+ * which is the direction [Contact] promises, so [a] is pushed along it and [b] against it.
+ *
+ * ### The broad phase, such as it is
+ *
+ * Two rejections, both bounding circles: the pair as wholes, then cell against cell. A rock is a
+ * couple of dozen cells and a scene is a handful of rocks, so the quadratic inside a rejected-pair
+ * test is a few hundred compares a tick — cheaper than the tile walk the hull side already does per
+ * cell. Stu's call on the hull was *colliders for every tile, optimise later*, and this is the same
+ * call for the same reason: a spatial index is invisible above the broad phase, so it stays cheap to
+ * add and costs nothing to defer.
+ *
+ * ⚠️ Emitted **once per pair**, with the lower index as [a]. Emitting both orderings would double
+ * every impulse in a stack, and it would do it silently — a body would simply be twice as springy as
+ * the one under it.
+ */
+fun collectBodyContacts(
+    a: RigidBody,
+    aIndex: Int,
+    aAt: Pose,
+    b: RigidBody,
+    bIndex: Int,
+    bAt: Pose,
+    restingSpeedX: Long,
+    restingSpeedY: Long,
+    into: MutableList<Contact>,
+) {
+    val half = Flight.PER_TILE / 2L
+    val aCentreX = aAt.toWorldX(a.width * Flight.PER_TILE / 2L, a.height * Flight.PER_TILE / 2L)
+    val aCentreY = aAt.toWorldY(a.width * Flight.PER_TILE / 2L, a.height * Flight.PER_TILE / 2L)
+    val bCentreX = bAt.toWorldX(b.width * Flight.PER_TILE / 2L, b.height * Flight.PER_TILE / 2L)
+    val bCentreY = bAt.toWorldY(b.width * Flight.PER_TILE / 2L, b.height * Flight.PER_TILE / 2L)
+    // ⚠️ Differences before any multiply, and this is the §5.3 hazard in its purest form: these are
+    // world-ish grid coordinates, and a product of two of them leaves `Long` three tiles from the
+    // origin.
+    if (!withinReach(aCentreX - bCentreX, aCentreY - bCentreY, a.boundRadius + b.boundRadius)) return
+
+    for (ay in 0 until a.height) {
+        for (ax in 0 until a.width) {
+            val aCell = ay * a.width + ax
+            if (!a.cells[aCell]) continue
+            val aShape = a.shapeAt(aCell)
+            val axx = aAt.toWorldX(ax * Flight.PER_TILE + half, ay * Flight.PER_TILE + half)
+            val ayy = aAt.toWorldY(ax * Flight.PER_TILE + half, ay * Flight.PER_TILE + half)
+            for (by in 0 until b.height) {
+                for (bx in 0 until b.width) {
+                    val bCell = by * b.width + bx
+                    if (!b.cells[bCell]) continue
+                    val bShape = b.shapeAt(bCell)
+                    val bxx = bAt.toWorldX(bx * Flight.PER_TILE + half, by * Flight.PER_TILE + half)
+                    val byy = bAt.toWorldY(bx * Flight.PER_TILE + half, by * Flight.PER_TILE + half)
+                    if (!withinReach(axx - bxx, ayy - byy, shapeReach(aShape) + shapeReach(bShape))) continue
+                    contactBetween(
+                        a = aShape, ax = axx, ay = ayy,
+                        b = bShape, bx = bxx, by = byy,
+                        body = aIndex, other = bIndex,
+                        restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
+                        friction = frictionBetween(a, aCell, b, bCell),
+                        into = into,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Do two bodies overlap at all — the boolean half of [collectBodyContacts], and it must agree with
+ * it for the same reason [overlapBetween] must agree with [contactBetween]: a body that this says is
+ * interpenetrating is eased out on a budget rather than bounced, and a `true` the narrow phase does
+ * not back up with a contact is a body being told to wait for a push that never comes.
+ */
+fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
+    val half = Flight.PER_TILE / 2L
+    val aCentreX = aAt.toWorldX(a.width * Flight.PER_TILE / 2L, a.height * Flight.PER_TILE / 2L)
+    val aCentreY = aAt.toWorldY(a.width * Flight.PER_TILE / 2L, a.height * Flight.PER_TILE / 2L)
+    val bCentreX = bAt.toWorldX(b.width * Flight.PER_TILE / 2L, b.height * Flight.PER_TILE / 2L)
+    val bCentreY = bAt.toWorldY(b.width * Flight.PER_TILE / 2L, b.height * Flight.PER_TILE / 2L)
+    if (!withinReach(aCentreX - bCentreX, aCentreY - bCentreY, a.boundRadius + b.boundRadius)) {
+        return false
+    }
+    for (ay in 0 until a.height) {
+        for (ax in 0 until a.width) {
+            val aCell = ay * a.width + ax
+            if (!a.cells[aCell]) continue
+            val aShape = a.shapeAt(aCell)
+            val axx = aAt.toWorldX(ax * Flight.PER_TILE + half, ay * Flight.PER_TILE + half)
+            val ayy = aAt.toWorldY(ax * Flight.PER_TILE + half, ay * Flight.PER_TILE + half)
+            for (by in 0 until b.height) {
+                for (bx in 0 until b.width) {
+                    val bCell = by * b.width + bx
+                    if (!b.cells[bCell]) continue
+                    val bShape = b.shapeAt(bCell)
+                    val bxx = bAt.toWorldX(bx * Flight.PER_TILE + half, by * Flight.PER_TILE + half)
+                    val byy = bAt.toWorldY(bx * Flight.PER_TILE + half, by * Flight.PER_TILE + half)
+                    if (overlapBetween(aShape, axx, ayy, bShape, bxx, byy)) return true
+                }
+            }
+        }
+    }
+    return false
+}
+
+/**
  * The friction of one cell of a body against one tile of the ship — **from what the two are made
  * of**, and looked up per contact rather than read from a constant by the solver.
  *
@@ -138,13 +265,46 @@ fun collectHullContacts(
  * — it knows a tile is solid and not what kind of solid, which is all every other reader of it
  * needs.
  */
-fun frictionBetween(body: RigidBody, cell: Int, machine: Machine?): Long {
-    val bodySide = when (body.kind) {
-        BodyKind.ROCK -> roughnessOf(body.oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> body.machineKind!!.material.roughness
-    }
-    val tileSide = (machine?.kind ?: MachineKind.Hull).material.roughness
-    return pairRoughness(bodySide, tileSide)
+fun frictionBetween(body: RigidBody, cell: Int, machine: Machine?): Long =
+    pairRoughness(roughnessOfBody(body), (machine?.kind ?: MachineKind.Hull).material.roughness)
+
+/**
+ * The friction of one body's cell against **another body's** cell — the same lookup, both sides now
+ * being rubble.
+ *
+ * It is a separate entry point rather than a default argument because the two questions differ in
+ * what they are given, not in what they compute: a hull side is a tile's machine and a body side is
+ * a composition. What they share is [pairRoughness], which is where the answer actually comes from,
+ * and which is the thing that must stay single so that mixture-dependent friction lands in one
+ * place later.
+ *
+ * Rock on rock is the roughest pair the table produces, which is what makes a heap of rubble
+ * behave like a heap rather than like a bag of ball bearings.
+ */
+fun frictionBetween(a: RigidBody, aCell: Int, b: RigidBody, bCell: Int): Long =
+    pairRoughness(roughnessOfBody(a), roughnessOfBody(b))
+
+/** What a body's surface is like, from what it is made of. */
+private fun roughnessOfBody(body: RigidBody): Long = when (body.kind) {
+    BodyKind.ROCK -> roughnessOf(body.oreComposition ?: Mixture.EMPTY)
+    BodyKind.FRAGMENT -> body.machineKind!!.material.roughness
+}
+
+/**
+ * Are two circles of combined radius [reach], [dx] and [dy] apart, close enough to be worth a narrow
+ * phase?
+ *
+ * ⚠️ **Reduced to millitiles before the squares**, and this is §5.3 rather than tidiness: a gap
+ * across a thirty-tile grid is 3e10 and its square is 9e20, so the obvious form wraps and answers
+ * *no* for a pair that is touching — a rejection that reads, as ever, like an absence. Truncating the
+ * gap toward zero and rounding the reach up makes the test **inclusive** where it is inexact, which
+ * is the only direction a broad phase may err in.
+ */
+private fun withinReach(dx: Long, dy: Long, reach: Long): Boolean {
+    val mx = dx / RigidBody.COM_SCALE
+    val my = dy / RigidBody.COM_SCALE
+    val r = reach / RigidBody.COM_SCALE + 1L
+    return mx * mx + my * my < r * r
 }
 
 /** Integer floor division, which is not what `/` does for negatives — and a body goes negative. */
@@ -307,6 +467,16 @@ fun solveContacts(
     if (contacts.isEmpty()) return
     val n = contacts.size
 
+    /**
+     * The other side of a contact — the vessel, or another body, and the solver cannot tell.
+     *
+     * This one function is the whole of what step 5 added to this file, which is the property §3.1
+     * of the plan was written to buy: a contact is a point, a normal and a depth, and *who* it is
+     * between is an index the resolver looks up rather than a case it branches on.
+     */
+    fun otherOf(c: Contact): Operand? =
+        if (c.other == Contact.HULL) ship else bodies[c.other].takeIf { it.mass > 0L }
+
     // Arms and effective masses are fixed for the whole solve — the geometry does not move while
     // the velocities are being argued over — so they are worked out once. §5.3's reduction to
     // millitiles happens here and nowhere else.
@@ -323,29 +493,40 @@ fun solveContacts(
     val step = LongArray(n)
     val stepTangent = LongArray(n)
 
+    // ⚠️ Counted on **both** sides of every contact. A rock with a rock on top of it is pushed by
+    // that touch just as hard as the one on top is, and a share that only counted the contacts
+    // naming a body as its first operand would let the body underneath take a whole impulse from
+    // each of the several touches resting on it and fire it out of the stack.
     val onBody = HashMap<Int, Long>()
-    for (c in contacts) onBody[c.body] = (onBody[c.body] ?: 0L) + 1L
+    for (c in contacts) {
+        onBody[c.body] = (onBody[c.body] ?: 0L) + 1L
+        if (c.other != Contact.HULL) onBody[c.other] = (onBody[c.other] ?: 0L) + 1L
+    }
 
     for (i in 0 until n) {
         val c = contacts[i]
         val body = bodies[c.body]
+        val other = otherOf(c)
         arx[i] = (c.pointX - body.comX) / RigidBody.COM_SCALE
         ary[i] = (c.pointY - body.comY) / RigidBody.COM_SCALE
-        brx[i] = if (ship == null) 0L else (c.pointX - ship.comX) / RigidBody.COM_SCALE
-        bry[i] = if (ship == null) 0L else (c.pointY - ship.comY) / RigidBody.COM_SCALE
-        share[i] = onBody[c.body] ?: 1L
+        brx[i] = if (other == null) 0L else (c.pointX - other.comX) / RigidBody.COM_SCALE
+        bry[i] = if (other == null) 0L else (c.pointY - other.comY) / RigidBody.COM_SCALE
+        share[i] = maxOf(
+            onBody[c.body] ?: 1L,
+            if (c.other == Contact.HULL) 1L else onBody[c.other] ?: 1L,
+        )
 
         val ma = body.effectiveMass(arx[i], ary[i], c.normalX, c.normalY)
-        mu[i] = if (ship == null || ship.mass <= 0L) ma else {
-            val mb = ship.effectiveMass(brx[i], bry[i], c.normalX, c.normalY)
+        mu[i] = if (other == null || other.mass <= 0L) ma else {
+            val mb = other.effectiveMass(brx[i], bry[i], c.normalX, c.normalY)
             scaledRatio(ma, ma + mb, mb)
         }
         // The same quantity along the tangent, and it is genuinely a different number: the arm that
         // is short across a normal is long across the tangent perpendicular to it, which is exactly
         // why friction spins a body up or stops it spinning rather than merely slowing it down.
         val ta = body.effectiveMass(arx[i], ary[i], -c.normalY, c.normalX)
-        muTangent[i] = if (ship == null || ship.mass <= 0L) ta else {
-            val tb = ship.effectiveMass(brx[i], bry[i], -c.normalY, c.normalX)
+        muTangent[i] = if (other == null || other.mass <= 0L) ta else {
+            val tb = other.effectiveMass(brx[i], bry[i], -c.normalY, c.normalX)
             scaledRatio(ta, ta + tb, tb)
         }
 
@@ -353,7 +534,7 @@ fun solveContacts(
         // That is what makes restitution survive being solved iteratively: recomputed each pass it
         // would be applied to a closing speed the previous pass had already spent, and a manifold of
         // several touches would converge on zero bounce instead of on half of one.
-        val closing = closingAt(contacts[i], bodies[c.body], ship, arx[i], ary[i], brx[i], bry[i])
+        val closing = closingAt(contacts[i], bodies[c.body], other, arx[i], ary[i], brx[i], bry[i])
         val speed = if (closing < 0L) -closing else closing
         target[i] = if (closing >= 0L || speed < c.restingSpeed) 0L
         else scaledRatio(RockContact.RESTITUTION_NUM, RockContact.RESTITUTION_DEN, speed)
@@ -377,7 +558,8 @@ fun solveContacts(
             val c = contacts[i]
             val body = bodies[c.body]
             if (body.mass <= 0L) { step[i] = 0L; stepTangent[i] = 0L; continue }
-            val closing = closingAt(c, body, ship, arx[i], ary[i], brx[i], bry[i])
+            val other = otherOf(c)
+            val closing = closingAt(c, body, other, arx[i], ary[i], brx[i], bry[i])
             // What this touch still needs: to be separating at [target], rather than closing.
             val wanted = target[i] - closing
             // Shared out, because every contact on this body is about to push it at once and each
@@ -397,7 +579,7 @@ fun solveContacts(
             // cancels the sliding — and then Coulomb says it may not have more than `μ` times what
             // is pressing them together.
             if (c.friction <= 0L) { stepTangent[i] = 0L; continue }
-            val sliding = slidingAt(c, body, ship, arx[i], ary[i], brx[i], bry[i])
+            val sliding = slidingAt(c, body, other, arx[i], ary[i], brx[i], bry[i])
             // ⚠️ **Signed, and [scaledRatio] is not.** It returns zero for a negative `scale` — a
             // deliberate guard, and harmless on the normal above, where `wanted <= 0` is filtered
             // out one line earlier so the argument is always positive. A *sliding* speed has no such
@@ -430,7 +612,7 @@ fun solveContacts(
             val jx = rotScale(j, c.normalX) - rotScale(jt, c.normalY)
             val jy = rotScale(j, c.normalY) + rotScale(jt, c.normalX)
             bodies[c.body].apply(arx[i], ary[i], jx, jy)
-            ship?.takeIf { it.mass > 0L }?.apply(brx[i], bry[i], -jx, -jy)
+            otherOf(c)?.takeIf { it.mass > 0L }?.apply(brx[i], bry[i], -jx, -jy)
         }
         if (!moved) return
     }
@@ -450,14 +632,14 @@ private fun clampTo(value: Long, limit: Long): Long =
 private fun slidingAt(
     c: Contact,
     body: Operand,
-    ship: Operand?,
+    other: Operand?,
     arx: Long,
     ary: Long,
     brx: Long,
     bry: Long,
 ): Long {
-    val relX = body.pointVelocityX(arx, ary) - (ship?.pointVelocityX(brx, bry) ?: 0L)
-    val relY = body.pointVelocityY(arx, ary) - (ship?.pointVelocityY(brx, bry) ?: 0L)
+    val relX = body.pointVelocityX(arx, ary) - (other?.pointVelocityX(brx, bry) ?: 0L)
+    val relY = body.pointVelocityY(arx, ary) - (other?.pointVelocityY(brx, bry) ?: 0L)
     return rotScale(relX, -c.normalY) + rotScale(relY, c.normalX)
 }
 
@@ -465,7 +647,7 @@ private fun slidingAt(
 private fun closingAt(
     c: Contact,
     body: Operand,
-    ship: Operand?,
+    other: Operand?,
     arx: Long,
     ary: Long,
     brx: Long,
@@ -474,8 +656,8 @@ private fun closingAt(
     // At the point, not at the centres — which is the whole of what an angular half changes about
     // the linear solve. A rock already spinning presents a different closing speed at each of its
     // contacts, and a rock skimming a wall approaches it at one corner while leaving it at the other.
-    val relX = body.pointVelocityX(arx, ary) - (ship?.pointVelocityX(brx, bry) ?: 0L)
-    val relY = body.pointVelocityY(arx, ary) - (ship?.pointVelocityY(brx, bry) ?: 0L)
+    val relX = body.pointVelocityX(arx, ary) - (other?.pointVelocityX(brx, bry) ?: 0L)
+    val relY = body.pointVelocityY(arx, ary) - (other?.pointVelocityY(brx, bry) ?: 0L)
     return rotScale(relX, c.normalX) + rotScale(relY, c.normalY)
 }
 

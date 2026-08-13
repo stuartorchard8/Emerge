@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.sim.core.physics.primitives.Coord
@@ -146,6 +147,29 @@ class RigidBody(
      * is nothing for it to go stale against — unlike the vessel's, which moves as cargo does.
      */
     val about: MassDistribution = cellDistribution(width, height, cells, massPerTile)
+
+    /**
+     * The circle about its bounding-box centre that contains all of it, whatever angle it is at —
+     * the broad phase's whole rejection test, and the reason a body pair costs one compare rather
+     * than a double walk of two cell grids.
+     *
+     * Half the box's diagonal. It has to be the diagonal and not the half-width: the box turns with
+     * the body, so its corner is what sweeps the widest circle, and a bound taken on the width would
+     * miss a pair touching corner-first at 45°. Held rather than recomputed because it is a square
+     * root and the pair loop asks for it every substep.
+     *
+     * ⚠️ **Squared in millitiles, not in [Flight.PER_TILE]s.** Half a five-cell body is 2.5e9 and its
+     * square is 6.3e18 against a `Long`'s 9.2e18, so the sum of two of them wraps for any body bigger
+     * than about three cells — the §5.3 hazard, in a constant that would then read as a bound of
+     * nothing and let every pair through. In millitiles a hundred-tile body squares to 2.5e9, which
+     * is not close to anything. Rounded **up**, because a bound that is a millitile short is a bound.
+     */
+    val boundRadius: Long = (
+        isqrt(
+            (width * (Rotation.MILLI_TILE / 2L)) * (width * (Rotation.MILLI_TILE / 2L)) +
+                (height * (Rotation.MILLI_TILE / 2L)) * (height * (Rotation.MILLI_TILE / 2L)),
+        ) + 1L
+        ) * COM_SCALE
 
     /** Its spin, in [Coord] raw per tick — derived from [angImpulse] exactly as [velocityX] is. */
     val angVel: Long get() = angularVelocity(angImpulse, about)
@@ -377,17 +401,22 @@ fun driftBodies(
         if (shipMass <= 0L) RockContact.restingSpeed(felt)
         else RockContact.restingSpeed(felt + scaledRatio(felt, shipMass, mass))
 
-    var handedX = 0L
-    var handedY = 0L
-    var handedTorque = 0L
-    // The ship's velocity moves as it hands momentum out, and the *next* body has to sweep against
-    // where the hull is going rather than where it started. Same defect as the stale wall inside
-    // [sweepBody] and the same fix, one level up; it only shows with two heavy bodies aboard.
-    var shipVx = ship.velocityX
-    var shipVy = ship.velocityY
-    val moved = bodies.map { body ->
+    // ⚠️ **One sweep for all of them, not one sweep each**, and that is step 5 of
+    // `PLAN_rigid_bodies.md` rather than a tidy-up. A body swept on its own has nothing to touch but
+    // the hull — whatever the narrow phase can do, the *shape of the tick* decided that two rocks
+    // pass through each other — and a stack cannot converge while the rock underneath is solved in a
+    // loop iteration of its own, after the one above it has already spent its whole tick.
+    //
+    // The stale-wall fix that used to live here, feeding each body's recoil to the next, is gone
+    // with the loop: there is one ship operand now and every body argues with it in the same pass.
+    val restingX = LongArray(bodies.size)
+    val restingY = LongArray(bodies.size)
+    val platingX = LongArray(bodies.size)
+    val platingY = LongArray(bodies.size)
+    for (i in bodies.indices) {
+        val body = bodies[i]
         val mass = body.mass
-        if (mass <= 0L) return@map body
+        if (mass <= 0L) continue
         // Plating is a field the *ship* makes, so whether a body is over the deck is a question
         // about the grid, asked in the grid's frame.
         val felt = platingFeltBy(
@@ -401,52 +430,52 @@ fun driftBodies(
         // way round it wraps for any body over about four kilograms at a microgram per unit. An 83 kg
         // rock therefore did not fall at all, and `RockContactTest` reported that as "the body never
         // landed": a wrapped impulse reads as an *absence*, which is the rescale's standing lesson.
-        val platingX = scaledRatio(felt.x.raw, Flight.FRAC_ONE, mass)
-        val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
+        platingX[i] = scaledRatio(felt.x.raw, Flight.FRAC_ONE, mass)
+        platingY[i] = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
+        restingX[i] = restingSpeed(felt.x.raw, mass)
+        restingY[i] = restingSpeed(felt.y.raw, mass)
+    }
+
+    val swept = sweepBodies(
+        grid, structure, bodies,
+        ship, shipMass, about,
+        restingX, restingY,
+        machines,
+    )
+
+    // The contact half of the ledger comes back from the sweep already booked at the points the
+    // touches actually happened, which is the only place it can be booked correctly — a rock landing
+    // on one corner twists the ship differently from a rock landing flat, and a figure derived from
+    // the total impulse cannot tell those apart.
+    var handedX = swept.handedX
+    var handedY = swept.handedY
+    var handedTorque = swept.handedTorque
+
+    val moved = swept.bodies.mapIndexed { i, body ->
+        if (bodies[i].mass <= 0L) return@mapIndexed body
         // ⚠️ Plating pulls toward the *deck*, so what comes back is a direction in the grid, while a
         // body's momentum is in the world — the same frame boundary the vessel's own ledger crosses
         // in [OutofspaceSim.step], and the same failure if it is not crossed: a rock aboard a ship
         // turned on its side fell along the grid's y rather than toward the plating under it. The
-        // torque below keeps the **grid-frame** pair, because it is booked against a grid-frame arm.
-        val worldPlatingX = ship.pose.turnedX(platingX, platingY)
-        val worldPlatingY = ship.pose.turnedY(platingX, platingY)
-        val swept = sweepBody(
-            grid, structure, body,
-            ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass, about,
-            restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
-            machines,
-        )
-        val gaveX = swept.impulseX + worldPlatingX
-        val gaveY = swept.impulseY + worldPlatingY
-        handedX += gaveX
-        handedY += gaveY
-        // ⚠️ Two torques, from two different arms, and conflating them was the bug this split fixes.
-        //
-        // The **contact** torque comes back from the sweep already booked at the points the touches
-        // actually happened, which is the only place it can be booked correctly — a rock landing on
-        // one corner twists the ship differently from a rock landing flat, and a figure derived from
-        // the total impulse cannot tell those apart.
-        //
-        // The **plating** torque is a separate arm: a field acts at the body's centre of mass, not
-        // at whatever it happens to be touching, and it acts whether the body is touching anything
-        // at all. Booked in millitiles, which is what [torqueAbout] works in.
-        //
-        // ⚠️ [SweptBody.torque] is what the ship **received**, and [handedTorque] is what it
-        // **gave** — hence the sign. Equal and opposite, because the two impulses act at the same
-        // point, and the whole exchange is booked about the ship's centre of mass either way.
-        handedTorque += -swept.torque + torqueAbout(
+        // torque keeps the **grid-frame** pair, because it is booked against a grid-frame arm.
+        val worldPlatingX = ship.pose.turnedX(platingX[i], platingY[i])
+        val worldPlatingY = ship.pose.turnedY(platingX[i], platingY[i])
+        handedX += worldPlatingX
+        handedY += worldPlatingY
+        // ⚠️ The **plating** torque is a separate arm from the contact one: a field acts at the
+        // body's centre of mass, not at whatever it happens to be touching, and it acts whether the
+        // body is touching anything at all. Booked in millitiles, which is what [torqueAbout] works
+        // in, and about the arm the body had at the *start* of the tick, which is where the field
+        // was sampled.
+        handedTorque += torqueAbout(
             about,
-            body.localComX(ship.pose) / RigidBody.COM_SCALE,
-            body.localComY(ship.pose) / RigidBody.COM_SCALE,
-            platingX, platingY,
+            bodies[i].localComX(ship.pose) / RigidBody.COM_SCALE,
+            bodies[i].localComY(ship.pose) / RigidBody.COM_SCALE,
+            platingX[i], platingY[i],
         )
-        if (shipMass > 0L) {
-            shipVx += scaledRatio(-gaveX, shipMass, Flight.PER_TILE)
-            shipVy += scaledRatio(-gaveY, shipMass, Flight.PER_TILE)
-        }
-        swept.body.copy(
-            impulseX = swept.body.impulseX + worldPlatingX,
-            impulseY = swept.body.impulseY + worldPlatingY,
+        body.copy(
+            impulseX = body.impulseX + worldPlatingX,
+            impulseY = body.impulseY + worldPlatingY,
         )
     }
     return BodyStep(moved, handedX, handedY, handedTorque)

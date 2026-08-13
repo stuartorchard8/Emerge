@@ -89,6 +89,8 @@ fun contactBetween(
     bx: Long,
     by: Long,
     body: Int,
+    /** Which body [b] belongs to, or [Contact.HULL] — carried through untouched. */
+    other: Int = Contact.HULL,
     restingSpeedX: Long,
     restingSpeedY: Long,
     friction: Long,
@@ -96,9 +98,9 @@ fun contactBetween(
 ) {
     when {
         a is CellShape.Disc && b is CellShape.Box ->
-            discVsBox(a, ax, ay, b, bx, by, body, restingSpeedX, restingSpeedY, friction, into)
+            discVsBox(a, ax, ay, b, bx, by, body, other, restingSpeedX, restingSpeedY, friction, into)
         a is CellShape.Disc && b is CellShape.Disc ->
-            discVsDisc(a, ax, ay, b, bx, by, body, restingSpeedX, restingSpeedY, friction, into)
+            discVsDisc(a, ax, ay, b, bx, by, body, other, restingSpeedX, restingSpeedY, friction, into)
         else -> throw IllegalArgumentException(
             "no narrow phase for ${a::class.simpleName} against ${b::class.simpleName} — " +
                 "add the pair rather than falling through, or the two will pass through each other",
@@ -122,6 +124,7 @@ private fun discVsBox(
     boxX: Long,
     boxY: Long,
     body: Int,
+    other: Int,
     restingSpeedX: Long,
     restingSpeedY: Long,
     friction: Long,
@@ -143,7 +146,7 @@ private fun discVsBox(
         if (dist <= 0L) return
         into.add(
             contactAt(
-                body = body,
+                body = body, other = other,
                 pointX = boxX + nearX, pointY = boxY + nearY,
                 dirX = outX, dirY = outY, dirLength = dist,
                 depth = disc.radius - dist,
@@ -166,7 +169,7 @@ private fun discVsBox(
     val sign = if (alongX) (if (dx >= 0L) 1L else -1L) else (if (dy >= 0L) 1L else -1L)
     into.add(
         Contact(
-            body = body,
+            body = body, other = other,
             pointX = discX, pointY = discY,
             normalX = if (alongX) sign * Flight.FRAC_ONE else 0L,
             normalY = if (alongX) 0L else sign * Flight.FRAC_ONE,
@@ -193,6 +196,7 @@ private fun discVsDisc(
     bx: Long,
     by: Long,
     body: Int,
+    other: Int,
     restingSpeedX: Long,
     restingSpeedY: Long,
     friction: Long,
@@ -209,7 +213,7 @@ private fun discVsDisc(
     // overlap lens as well, so there is nothing to choose between the conventions.
     into.add(
         contactAt(
-            body = body,
+            body = body, other = other,
             pointX = bx + scaledRatio(dx, dist, b.radius),
             pointY = by + scaledRatio(dy, dist, b.radius),
             dirX = dx, dirY = dy, dirLength = dist,
@@ -234,6 +238,7 @@ private fun discVsDisc(
  */
 private fun contactAt(
     body: Int,
+    other: Int,
     pointX: Long,
     pointY: Long,
     dirX: Long,
@@ -254,7 +259,7 @@ private fun contactAt(
     val resting = if (weightX + weightY <= 0L) restingSpeedX else
         (weightX * restingSpeedX + weightY * restingSpeedY) / (weightX + weightY)
     return Contact(
-        body = body,
+        body = body, other = other,
         pointX = pointX, pointY = pointY,
         normalX = normalX, normalY = normalY,
         depth = depth,

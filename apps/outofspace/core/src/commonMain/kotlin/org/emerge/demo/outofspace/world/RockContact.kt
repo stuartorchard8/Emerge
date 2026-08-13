@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.sim.core.physics.primitives.Coord
 
@@ -58,6 +59,29 @@ object RockContact {
     const val MAX_DEPENETRATION: Long = Flight.PER_TILE / 10L
 
     /**
+     * Which way two interpenetrating **bodies** are eased apart — a switch, because the two rules
+     * feel different and the choice is a judgement about rubble rather than a fact about arithmetic.
+     *
+     * `false` — **Stu's call, and the default** — is the rule the hull uses: deepest push per
+     * direction, along the contacts' own normals. `true` separates along the line joining the two
+     * centres of mass instead, which is the only direction two distinct bodies cannot cancel.
+     *
+     * ⚠️ **`false` jams, and it jams into a stable configuration rather than a rare one.** Two blobs
+     * overlapping by half a tile have every cell of one sitting midway between two cells of the
+     * other, so each is asked to go left exactly as hard as it is asked to go right and the two
+     * subtract to nothing. Measured: a pair placed 3.3 tiles apart eased out to exactly 3.5 and
+     * stopped there, which means the interlock is where the per-axis rule *converges*. That reads as
+     * rubble that has settled *into* itself rather than rubble sitting on rubble, and it is what the
+     * default was chosen for — a pile of ore that keys together looks like a pile of ore. What it is
+     * not is a bug that has been left in: the failure mode is stillness in the wrong shape, never
+     * violence, and `true` is here for the day that reading stops being wanted.
+     *
+     * It is a **position** rule either way. Neither setting touches the velocity solve, which always
+     * answers each contact on its own normal, so a rock is held up by the same impulse under both.
+     */
+    var separateAlongCentres: Boolean = false
+
+    /**
      * Resting threshold: v > a/e (below this, bounce ends in one tick = buzzing).
      * REST_FLOOR = perTick/1000 (terminates asymptote in freefall). One rounding chain (§5g).
      */
@@ -69,24 +93,6 @@ object RockContact {
         return if (perTick < REST_FLOOR) REST_FLOOR else perTick
     }
 }
-
-/**
- * One body's tick of travel across the grid, stopped and bounced wherever the hull is in the way.
- */
-class SweptBody(
-    val body: RigidBody,
-    val impulseX: Long,
-    val impulseY: Long,
-    /**
-     * The angular momentum the **ship** took from the contacts, about its own centre of mass.
-     *
-     * Booked at the contact point rather than worked out afterwards from [impulseX] — a total
-     * impulse has already lost the positions it was applied at, and the case the whole feature
-     * exists for is two touches that cancel linearly and twist hard. Same argument as
-     * [torqueAbout]'s, one level down.
-     */
-    val torque: Long,
-)
 
 /** Integer floor division, which is not what `/` does for negatives — and a body goes negative. */
 private fun floorTile(v: Long): Long =
@@ -140,99 +146,133 @@ fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose)
 }
 
 /**
- * Sweep one body: relative velocity (body world-frame, ship grid-frame), bounce off hull.
- * Normal: ask x-only and y-only overlap separately (exact corner case, no preference).
+ * What one tick of sweeping did to **every** body at once, and what it therefore did to the ship.
  *
- * ### ⚠️ The ship recoils *inside* this loop, and it has to
+ * [handedX] is the momentum the vessel gave the bodies through contacts — the negative of what its
+ * own operand received, booked in the same breath so the exchange conserves by construction. Body
+ * against body does not appear in it at all, and that is the point: those impulses are internal to
+ * the set of bodies and the ship is not a party to them.
+ */
+class SweptBodies(
+    val bodies: List<RigidBody>,
+    val handedX: Long,
+    val handedY: Long,
+    /** The twist that went with it, about the vessel's own centre of mass. */
+    val handedTorque: Long,
+)
+
+/**
+ * Sweep **all** the bodies together: one substep clock, one contact list, one solve — step 5 of
+ * `PLAN_rigid_bodies.md`.
  *
- * [shipVelocityX] is where the ship started the tick, and for most of this file's life that was the
- * same as where it is: a rock was a pebble against a hull, so the recoil rounded away and a wall
- * that never moved was a wall that never moved. It is not true any more. A default ore body is
+ * ### ⚠️ Why this is one function and not a loop over bodies
+ *
+ * It used to be `bodies.map { sweepBody(it) }`, and no amount of care inside `sweepBody` could have
+ * made two rocks touch: a body swept alone has nothing to touch but the hull, and by the time the
+ * next body is swept the first has already spent its whole tick. That is not an omission in the
+ * narrow phase — Disc-vs-Disc has existed since step 4 — it is the **shape of the tick**, which is
+ * exactly what §2 of the plan said would have to change and what step 2 deliberately left owed.
+ *
+ * A stack is the case that makes it unavoidable rather than merely tidier. Three rocks in a pile are
+ * two contacts that must be answered *together*: solved in sequence, the top rock is given its
+ * support before the middle one knows it is being leaned on, so the pile sinks by one rock's
+ * penetration every tick and jitters while it does it. Solved from one frozen state, the middle rock
+ * feels the weight above and the deck below in the same pass and the tower converges.
+ *
+ * ### The ship recoils inside this loop, and it has to
+ *
+ * [ShipMotion.velocityX] is where the ship started the tick, and for most of this file's life that
+ * was the same as where it is: a rock was a pebble against a hull, so the recoil rounded away and a
+ * wall that never moved was a wall that never moved. It is not true any more. A default ore body is
  * **83 tonnes** and the box the tests fly is **40**, so a bounce moves the ship more than it moves
  * the rock, and a restitution computed against a stale wall is computed against the wrong closing
  * speed.
  *
  * Left stale it is an energy source rather than merely an inaccuracy. A rock dropped under one g
- * doubled its speed on every bounce — 5, 21, 95, 1821 tiles a tick — because each sub-step's
- * impulse was sized from a closing speed that the previous sub-step's impulse had already spent.
- * Nothing in the ledger noticed: momentum conserved perfectly the whole way up. Conservation of
- * momentum is not conservation of energy, and this is the shape of the difference.
+ * doubled its speed on every bounce — 5, 21, 95, 1821 tiles a tick — because each sub-step's impulse
+ * was sized from a closing speed that the previous sub-step's impulse had already spent. Nothing in
+ * the ledger noticed: momentum conserved perfectly the whole way up. Conservation of momentum is not
+ * conservation of energy, and this is the shape of the difference.
  *
  * With the recoil fed back the arithmetic collapses to the law it was always supposed to be:
  * `rv' = rv + J/μ` and `J = −(1+e)·rv·μ` give `rv' = −e·rv` exactly, for any mass ratio, which is
  * what makes the bounce terminate rather than merely shrink.
  */
-fun sweepBody(
+fun sweepBodies(
     grid: Grid,
     structure: StructureMap,
-    body: RigidBody,
+    bodies: List<RigidBody>,
     ship: ShipMotion,
     shipMass: Long,
     shipAbout: MassDistribution,
-    restingSpeedX: Long,
-    restingSpeedY: Long,
+    /** Per body, because it is derived from what that body weighs — see [driftBodies]. */
+    restingSpeedX: LongArray,
+    restingSpeedY: LongArray,
     /** The ship's machines by tile, for [frictionBetween]. `null` is bare hull throughout. */
     machines: List<Machine?>? = null,
-): SweptBody {
-    val mass = body.mass
-    if (mass <= 0L) return SweptBody(body, 0L, 0L, 0L)
+): SweptBodies {
+    val n = bodies.size
+    if (n == 0) return SweptBodies(bodies, 0L, 0L, 0L)
 
-    // World, because that is where a body lives now. The hull is reached through [ship].
-    var px = body.positionX
-    var py = body.positionY
-    var ix = body.impulseX
-    var iy = body.impulseY
-    var gotX = 0L
-    var gotY = 0L
+    val px = LongArray(n) { bodies[it].positionX }
+    val py = LongArray(n) { bodies[it].positionY }
+    val ix = LongArray(n) { bodies[it].impulseX }
+    val iy = LongArray(n) { bodies[it].impulseY }
+    val ang = LongArray(n) { bodies[it].ang.raw.toLong() }
+    val angImpulse = LongArray(n) { bodies[it].angImpulse }
+    val mass = LongArray(n) { bodies[it].mass }
 
-    // The angular half, carried alongside the linear one and integrated in the same breath. Step 3
-    // of `PLAN_rigid_bodies.md`: `L = Σ τ`, `ω = L/I`, `ang += ω`, which is the same three lines the
-    // linear side has always had.
-    var bodyAng = body.ang.raw.toLong()
-    var bodyAngImpulse = body.angImpulse
-    var gotTorque = 0L
+    // The centre of mass in each body's own frame — the point it spins about and the point every
+    // lever arm is measured from. Fixed for the tick: a rock does not shed cells mid-sweep.
+    val comLocalX = LongArray(n) { bodies[it].about.comX * RigidBody.COM_SCALE }
+    val comLocalY = LongArray(n) { bodies[it].about.comY * RigidBody.COM_SCALE }
 
-    // The body's centre of mass in its own frame, which is the point it spins about and the point
-    // every lever arm is measured from. Fixed for the tick: a rock does not shed cells mid-sweep.
-    val comLocalX = body.about.comX * RigidBody.COM_SCALE
-    val comLocalY = body.about.comY * RigidBody.COM_SCALE
-
-    // Where the wall is going, updated as the body shoves it. See the note on this function.
+    // Where the wall is going, updated as the bodies shove it. See the note on this function.
     var svx = ship.velocityX
     var svy = ship.velocityY
     var sav = ship.angVel
 
-    fun worldVel(impulse: Long): Long = scaledRatio(impulse, mass, Flight.PER_TILE)
+    fun worldVel(impulse: Long, m: Long): Long =
+        if (m <= 0L) 0L else scaledRatio(impulse, m, Flight.PER_TILE)
 
-    // The reach is the *relative* travel, because that is what can step over a wall. Measured in the
-    // grid's own axes, which is where walls are.
-    val startRvx = worldVel(ix) - svx
-    val startRvy = worldVel(iy) - svy
-    // ⚠️ **Turning is travel too.** A body's far corner moves at `ω × r` whether or not its centre
-    // is going anywhere, so a spinning rock parked against a bulkhead sweeps its own width through
-    // the wall in a tick and a substep count sized on the linear speed alone would step clean over
-    // the contact. Step 3 is what makes this reachable; before it, every body's `ω` was zero.
-    //
-    // The radius is the furthest cell corner from the centre of mass, upper-bounded by the whole
-    // cell box, which is cheap and never under-estimates.
-    val spinRadius = maxOf(
-        maxOf(comLocalX, body.width * Flight.PER_TILE - comLocalX),
-        maxOf(comLocalY, body.height * Flight.PER_TILE - comLocalY),
-    )
-    val tipSpeed = spinSpeed(angularVelocity(bodyAngImpulse, body.about) - sav, spinRadius)
-    val reach = maxOf(
-        maxOf(
-            if (startRvx < 0L) -startRvx else startRvx,
-            if (startRvy < 0L) -startRvy else startRvy,
-        ),
-        if (tipSpeed < 0L) -tipSpeed else tipSpeed,
-    )
-    val steps = (reach / RockContact.MAX_SUBSTEP + 1L).toInt()
+    /** How far body [i] can travel this tick, in the grid's axes, centre and tip alike. */
+    fun reachOf(i: Int): Long {
+        if (mass[i] <= 0L) return 0L
+        val rvx = worldVel(ix[i], mass[i]) - svx
+        val rvy = worldVel(iy[i], mass[i]) - svy
+        // ⚠️ **Turning is travel too.** A body's far corner moves at `ω × r` whether or not its
+        // centre is going anywhere, so a spinning rock parked against a bulkhead sweeps its own
+        // width through the wall in a tick and a substep count sized on the linear speed alone would
+        // step clean over the contact. The radius is the furthest cell corner from the centre of
+        // mass, upper-bounded by the whole cell box, which is cheap and never under-estimates.
+        val body = bodies[i]
+        val spinRadius = maxOf(
+            maxOf(comLocalX[i], body.width * Flight.PER_TILE - comLocalX[i]),
+            maxOf(comLocalY[i], body.height * Flight.PER_TILE - comLocalY[i]),
+        )
+        val tip = spinSpeed(angularVelocity(angImpulse[i], body.about) - sav, spinRadius)
+        return maxOf(maxOf(abs(rvx), abs(rvy)), abs(tip))
+    }
+
+    // ⚠️ **The clock is sized on the fastest *pair*, not on the fastest body**, and that is a step-5
+    // change rather than a refinement. Two rocks closing head-on approach each other at the sum of
+    // their speeds, so a substep budget sized on the larger alone lets them step through each other
+    // at anything over half the tunnelling speed — the one failure mode the sweep exists to rule
+    // out, arriving by the one route the hull test could never see. The top two reaches summed is
+    // the largest closing speed any pair can have, and it is never smaller than a single body's own
+    // reach against the hull.
+    var first = 0L
+    var second = 0L
+    for (i in 0 until n) {
+        val r = reachOf(i)
+        if (r > first) { second = first; first = r } else if (r > second) { second = r }
+    }
+    val steps = ((first + second) / RockContact.MAX_SUBSTEP + 1L).toInt()
 
     /**
      * The vessel's pose part way through the tick.
      *
-     * The sweep advances the body in the world and the ship in the world, and asks where the body
+     * The sweep advances the bodies in the world and the ship in the world, and asks where each body
      * has got to *in the ship's frame* at each substep. Both are moving, so the relative motion —
      * including everything the ship's rotation contributes — falls out of the subtraction instead of
      * being written down as an `ω × r` term that could be got wrong or forgotten.
@@ -244,26 +284,26 @@ fun sweepBody(
     )
 
     /**
-     * The body's own pose, in the grid, right now — composed from where it is in the world and
-     * where the ship is in the world.
+     * A body's own pose, in the grid — composed from where it is in the world and where the ship is.
      *
      * The angles subtract because rotations commute in two dimensions, so a ship turning under a
      * body it is not touching turns the body's *grid* orientation and leaves its world orientation
      * alone. That is the same thing the linear side already does, where astern drift is the grid
      * leaving rather than the body moving, and it arrives here for free rather than as a term.
      */
-    fun gridPose(worldX: Long, worldY: Long, ang: Long, shipPose: Pose): Pose = Pose(
+    fun gridPose(worldX: Long, worldY: Long, a: Long, shipPose: Pose): Pose = Pose(
         shipPose.toLocalX(worldX, worldY),
         shipPose.toLocalY(worldX, worldY),
-        Coord((ang - shipPose.ang.raw).toInt()),
+        Coord((a - shipPose.ang.raw).toInt()),
     )
 
-    // ── A body that begins the tick already inside the hull ───────────────────────
+    // ── A body that begins the tick already inside something ──────────────────────
     //
     // It is a placement and not a contact: the editor drops rocks onto the deck, an extractor frees
-    // one from inside a seam, and an airlock can shut on top of one. None of those is an impact and
-    // none of them should be answered with a bounce — a body that arrived at rest inside a wall has
-    // no closing speed to reverse, and reversing the depth instead would fling it across the room.
+    // one from inside a seam, an airlock can shut on top of one, and — since bodies collide with
+    // each other — two of them can be spawned overlapping. None of those is an impact and none
+    // should be answered with a bounce: a body that arrived at rest inside a wall has no closing
+    // speed to reverse, and reversing the depth instead would fling it across the room.
     //
     // ⚠️ **It is eased out, not exempted.** This used to skip the whole substep — no contacts, no
     // solve, no push — which meant a wedged body flew with its collisions switched off until it
@@ -272,80 +312,131 @@ fun sweepBody(
     // a rock grinding along a bulkhead sank through it a third of a tile a tick and left the ship
     // entirely. Discs did not introduce that, they made it reachable.
     //
-    // So the rule is now **depenetration**, and it is a limit on the *position* correction alone.
-    //
     // ⚠️ The velocity solve is **not** skipped for a wedged body, and skipping it was tried first.
     // It looks right — a placement is not an impact, so do not answer it — and it puts a resting
     // rock through the floor: a body lying on the deck is overlapping it, so it reads as wedged
     // every tick, and a wedged body with no normal impulse has nothing holding it up. The plating
     // accelerates it into the deck each tick while a tenth of a tile of push lifts it, gravity wins,
     // and the rock sinks out of the ship. (Measured: dropped at y=12 it was 1,700 tiles below the
-    // hull and still falling after 120 ticks.)
-    //
-    // The exemption is unnecessary anyway, which is the part worth keeping in mind. The solver only
-    // ever reverses a **closing** speed, so a body that was *placed* inside a wall — motionless
-    // relative to it — asks for no impulse of its own accord and gets none. What would have flung it
-    // was never the impulse, it was the position push being sized on a depth of a whole tile. That
-    // is what the budget below is for, and it is the only thing that needed fixing.
-    val wedged = overlapsHull(grid, structure, body, gridPose(px, py, bodyAng, poseAt(0)))
+    // hull and still falling after 120 ticks.) The exemption is unnecessary anyway: the solver only
+    // ever reverses a **closing** speed, so a body that was *placed* inside a wall asks for no
+    // impulse of its own accord. What would have flung it was the position push being sized on a
+    // depth of a whole tile and applied once per substep, dozens of times a tick. The budget below
+    // is the entire fix, and a tenth of a tile a tick is faster than an editor drop can be noticed
+    // settling and far too slow to jump a wall.
+    val startPose = poseAt(0)
+    val startGrid = Array(n) { gridPose(px[it], py[it], ang[it], startPose) }
+    val depenetration = LongArray(n) { i ->
+        var stuck = overlapsHull(grid, structure, bodies[i], startGrid[i])
+        if (!stuck) {
+            for (j in 0 until n) {
+                if (j == i) continue
+                if (bodiesOverlap(bodies[i], startGrid[i], bodies[j], startGrid[j])) { stuck = true; break }
+            }
+        }
+        if (stuck) RockContact.MAX_DEPENETRATION else Long.MAX_VALUE
+    }
 
-    // ⚠️ And it is pushed out **slowly**, which is the half that makes the above safe.
-    //
-    // A push sized on the depth is applied once per *substep*, and a fast body takes dozens of them
-    // — so a body buried a tile deep, answered at full depth every substep, is not eased out but
-    // catapulted, and it crosses the room and leaves through the far wall. (Measured: the rock in
-    // the tunnelling test stopped escaping to starboard and started escaping to port.) A tenth of a
-    // tile a tick is faster than an editor drop can be noticed settling and far too slow to jump a
-    // wall, and a body that is still buried after it simply gets another tenth next tick.
-    var depenetration = if (wedged) RockContact.MAX_DEPENETRATION else Long.MAX_VALUE
+    var handedX = 0L
+    var handedY = 0L
+    var handedTorque = 0L
 
-    val contacts = ArrayList<Contact>(4)
+    val contacts = ArrayList<Contact>(8)
+    val turned = arrayOfNulls<Pose>(n)
+    val inGrid = arrayOfNulls<Pose>(n)
+    val pushLeft = LongArray(n)
+    val pushRight = LongArray(n)
+    val pushUp = LongArray(n)
+    val pushDown = LongArray(n)
+    /** The deepest touch each colliding pair has, keyed `a * n + b` — see the position push below. */
+    val pairDepth = HashMap<Long, Long>()
 
     for (k in 0 until steps) {
-        val vx = worldVel(ix)
-        val vy = worldVel(iy)
-        val spin = angularVelocity(bodyAngImpulse, body.about)
-
-        // One substep of travel *and* of turning, taken about the centre of mass rather than about
-        // the local origin — a body spins about its mass, and turning about the corner of its cell
-        // box would walk it sideways across the deck at a speed proportional to its spin. The vessel
-        // had exactly this bug until step 1 found it.
-        val turned = Pose(px, py, Coord(bodyAng.toInt()))
-            .turnedAbout(
-                Coord((spin * (k + 1) / steps - spin * k / steps).toInt()),
-                comLocalX, comLocalY,
-            )
-            .movedBy(vx * (k + 1) / steps - vx * k / steps, vy * (k + 1) / steps - vy * k / steps)
-
         val next = poseAt(k + 1)
-        var inGrid = gridPose(turned.x, turned.y, turned.ang.raw.toLong(), next)
 
+        // ── One substep of travel, for everything at once ─────────────────────────
+        //
+        // Taken about each body's centre of mass rather than about its local origin — a body spins
+        // about its mass, and turning about the corner of its cell box would walk it sideways across
+        // the deck at a speed proportional to its spin. The vessel had exactly this bug until step 1
+        // found it.
+        for (i in 0 until n) {
+            val vx = worldVel(ix[i], mass[i])
+            val vy = worldVel(iy[i], mass[i])
+            val spin = angularVelocity(angImpulse[i], bodies[i].about)
+            val moved = Pose(px[i], py[i], Coord(ang[i].toInt()))
+                .turnedAbout(
+                    Coord((spin * (k + 1) / steps - spin * k / steps).toInt()),
+                    comLocalX[i], comLocalY[i],
+                )
+                .movedBy(
+                    vx * (k + 1) / steps - vx * k / steps,
+                    vy * (k + 1) / steps - vy * k / steps,
+                )
+            turned[i] = moved
+            inGrid[i] = gridPose(moved.x, moved.y, moved.ang.raw.toLong(), next)
+        }
+
+        // ── Every touch in the world, in a stable order ───────────────────────────
+        //
+        // Hull first and then pairs, both by index, because §6 of the plan asks for an order a broad
+        // phase cannot perturb. The Jacobi solve makes the order irrelevant to the *answer*, but the
+        // accumulators are summed in it and a lockstep host cannot afford the difference.
         contacts.clear()
-        collectHullContacts(
-            grid, structure, body, 0, inGrid, restingSpeedX, restingSpeedY, contacts, machines,
-        )
+        for (i in 0 until n) {
+            if (mass[i] <= 0L) continue
+            collectHullContacts(
+                grid, structure, bodies[i], i, inGrid[i]!!,
+                restingSpeedX[i], restingSpeedY[i], contacts, machines,
+            )
+        }
+        for (i in 0 until n) {
+            if (mass[i] <= 0L) continue
+            for (j in i + 1 until n) {
+                if (mass[j] <= 0L) continue
+                collectBodyContacts(
+                    bodies[i], i, inGrid[i]!!,
+                    bodies[j], j, inGrid[j]!!,
+                    // ⚠️ The **larger** of the two thresholds, so that the pair agrees with itself.
+                    // A resting rule is about when a bounce is small enough to stop being a bounce,
+                    // and taking one body's answer would make the same contact bouncy or asleep
+                    // depending on which of the two the loop happened to name first.
+                    maxOf(restingSpeedX[i], restingSpeedX[j]),
+                    maxOf(restingSpeedY[i], restingSpeedY[j]),
+                    contacts,
+                )
+            }
+        }
         if (contacts.isEmpty()) {
-            px = turned.x; py = turned.y; bodyAng = turned.ang.raw.toLong()
+            for (i in 0 until n) {
+                px[i] = turned[i]!!.x; py[i] = turned[i]!!.y
+                ang[i] = turned[i]!!.ang.raw.toLong()
+            }
             continue
         }
 
-        // ── Velocity: every contact of this substep, solved together ──────────────
+        // ── Velocity: every contact in the world, solved together ─────────────────
         //
-        // The whole substance of step 2, now with the angular half step 3 adds. Grid axes, because
-        // that is where a normal is; the operands come in the same way. A scalar spin needs no
-        // turning — it is the same number in any set of axes — which is why only the velocities are
-        // conjugated here and the angular velocities are passed straight through.
-        val worldVx = worldVel(ix)
-        val worldVy = worldVel(iy)
-        val bodyOp = Operand(
-            mass = mass,
-            about = body.about,
-            comX = inGrid.toWorldX(comLocalX, comLocalY),
-            comY = inGrid.toWorldY(comLocalX, comLocalY),
-            velocityX = rotScale(worldVx, next.cos) + rotScale(worldVy, next.sin),
-            velocityY = -rotScale(worldVx, next.sin) + rotScale(worldVy, next.cos),
-            angVel = spin,
-        )
+        // Grid axes, because that is where a normal is; every operand comes in the same way. A
+        // scalar spin needs no turning — it is the same number in any set of axes — which is why
+        // only the velocities are conjugated here and the angular velocities are passed straight
+        // through.
+        val ops = ArrayList<Operand>(n)
+        for (i in 0 until n) {
+            val worldVx = worldVel(ix[i], mass[i])
+            val worldVy = worldVel(iy[i], mass[i])
+            ops.add(
+                Operand(
+                    mass = mass[i],
+                    about = bodies[i].about,
+                    comX = inGrid[i]!!.toWorldX(comLocalX[i], comLocalY[i]),
+                    comY = inGrid[i]!!.toWorldY(comLocalX[i], comLocalY[i]),
+                    velocityX = rotScale(worldVx, next.cos) + rotScale(worldVy, next.sin),
+                    velocityY = -rotScale(worldVx, next.sin) + rotScale(worldVy, next.cos),
+                    angVel = angularVelocity(angImpulse[i], bodies[i].about),
+                ),
+            )
+        }
         val shipOp = if (shipMass <= 0L) null else Operand(
             mass = shipMass,
             about = shipAbout,
@@ -355,25 +446,51 @@ fun sweepBody(
             velocityY = -rotScale(svx, next.sin) + rotScale(svy, next.cos),
             angVel = sav,
         )
-        solveContacts(contacts, listOf(bodyOp), shipOp)
+        solveContacts(contacts, ops, shipOp)
 
         // ⚠️ The impulse comes back in grid axes and a body's momentum is in the world, so it is
         // turned before it is booked — on both halves of the exchange, or the ledger leaks the
-        // moment the ship is turned. The **torque does not turn**, for the same reason the spin
-        // did not on the way in.
-        val jx = rotScale(bodyOp.gaveX, next.cos) - rotScale(bodyOp.gaveY, next.sin)
-        val jy = rotScale(bodyOp.gaveX, next.sin) + rotScale(bodyOp.gaveY, next.cos)
-        ix += jx; iy += jy
-        gotX += jx; gotY += jy
-        bodyAngImpulse += bodyOp.spun
+        // moment the ship is turned. The **torque does not turn**, for the same reason the spin did
+        // not on the way in.
+        //
+        // ⚠️ The ledger is summed from **the bodies'** impulses and not from the ship's, even though
+        // the two are the same quantity with opposite signs and the ship's is one number rather than
+        // `n`. What the vessel owes itself is *exactly what the bodies were given* — that is what
+        // [VesselState.bodyImpulseX] means — and the two sums differ by a few units of rounding,
+        // because each is turned out of grid axes separately. Booked off the ship's side the
+        // momentum ledger failed by 2 on a moving ship and by 199 across a grid fit: not enough to
+        // see, exactly the kind of thing the ledger exists to catch, and a lie about which number is
+        // definitive.
+        //
+        // Body-on-body stays out of it for free. Those impulses are equal and opposite between two
+        // entries of this very sum, so they cancel as they are added, and the vessel is charged for
+        // nothing it did not do.
+        var stepX = 0L
+        var stepY = 0L
+        for (i in 0 until n) {
+            val op = ops[i]
+            val jx = rotScale(op.gaveX, next.cos) - rotScale(op.gaveY, next.sin)
+            val jy = rotScale(op.gaveX, next.sin) + rotScale(op.gaveY, next.cos)
+            ix[i] += jx
+            iy[i] += jy
+            angImpulse[i] += op.spun
+            stepX += jx
+            stepY += jy
+        }
+        handedX += stepX
+        handedY += stepY
         if (shipOp != null) {
-            svx += scaledRatio(-jx, shipMass, Flight.PER_TILE)
-            svy += scaledRatio(-jy, shipMass, Flight.PER_TILE)
+            svx += scaledRatio(-stepX, shipMass, Flight.PER_TILE)
+            svy += scaledRatio(-stepY, shipMass, Flight.PER_TILE)
             sav += angularVelocity(shipOp.spun, shipAbout)
-            gotTorque += shipOp.spun
+            // The twist **is** read off the ship's operand, because there is nothing on the bodies'
+            // side to sum: each body's `spun` is about its own centre of mass, and a torque about
+            // one point says nothing about a torque about another without the arm that separates
+            // them — which is the whole reason the contact point is booked rather than derived.
+            handedTorque += -shipOp.spun
         }
 
-        // ── Position: out of the wall, along the normals that put it there ────────
+        // ── Position: out of whatever it is in, along the normals that put it there ─
         //
         // Deepest push per direction rather than the sum, so a cell touching two tiles of the same
         // flat wall is one wall and not two — summing would launch a body off any surface wider
@@ -386,52 +503,125 @@ fun sweepBody(
         // box corner reports a *diagonal* normal, and filing the whole radial depth under both axes
         // pushes a body out by `depth` along x **and** `depth` along y, up to 1.41× too far and in
         // the wrong direction. What that did on a wall the body was grazing was slide it along the
-        // wall rather than off it: the overlap survived the tick, `wedged` latched at the next
-        // tick's start, and a wedged body has its collisions switched off for the whole tick — so a
-        // rock grinding along the top bulkhead sank through it a third of a tile at a time and left
-        // the ship, which is what made the free pass for a wedged body untenable. The tunnelling
-        // test caught it as an escape, four ticks and eight tiles later.
-        var pushLeft = 0L; var pushRight = 0L; var pushUp = 0L; var pushDown = 0L
+        // wall rather than off it, and the overlap survived the tick — which is how a rock grinding
+        // along the top bulkhead left the ship. The tunnelling test caught it four ticks later.
+        for (i in 0 until n) { pushLeft[i] = 0L; pushRight[i] = 0L; pushUp[i] = 0L; pushDown[i] = 0L }
+        pairDepth.clear()
         for (c in contacts) {
-            val alongX = rotScale(c.depth, c.normalX)
-            val alongY = rotScale(c.depth, c.normalY)
-            if (alongX > 0L) pushRight = maxOf(pushRight, alongX)
-            if (alongX < 0L) pushLeft = maxOf(pushLeft, -alongX)
-            if (alongY > 0L) pushDown = maxOf(pushDown, alongY)
-            if (alongY < 0L) pushUp = maxOf(pushUp, -alongY)
+            if (c.other != Contact.HULL && RockContact.separateAlongCentres) {
+                // ── Body against body: along the line of centres, not along the normals ───
+                //
+                // ⚠️ **A lattice of discs cannot be pushed off another lattice of discs by its own
+                // contact normals**, and this is the step's sharpest surprise. Two blobs overlapping
+                // by half a tile have every cell of one sitting midway between two cells of the
+                // other: each body is asked to go left exactly as hard as it is asked to go right,
+                // the deepest-push-per-direction rule subtracts one from the other, and the pair
+                // sits interpenetrated for ever.
+                //
+                // It is not a measure-zero curiosity either, which is what makes it worth a rule of
+                // its own. Measured: a pair placed 3.3 tiles apart eased out to exactly 3.5 and
+                // **stopped there** — the half-tile interlock is where the per-axis push converges,
+                // so it is an attractor rather than a coincidence, and a settling pile would find it
+                // on its own.
+                //
+                // The line between the two centres of mass is the one direction that cannot cancel:
+                // two distinct bodies have distinct centres, and separating along it is what "ease
+                // them apart" has always meant. It is used for the *position* only — the velocity
+                // solve still answers every contact on its own normal, which is where the physics
+                // is — so a rock resting on a rock is still held up by a vertical impulse and merely
+                // un-overlapped along the line joining them.
+                val key = c.body.toLong() * n + c.other
+                if (c.depth > (pairDepth[key] ?: 0L)) pairDepth[key] = c.depth
+                continue
+            }
+            // ⚠️ **Half each when both sides can move**, and the whole of it against the ship. Two
+            // rocks each pushed out by the full depth separate by twice their overlap, which on a
+            // settled pile is a pump: every substep parts them, gravity closes them, and the stack
+            // breathes.
+            val shared = c.other != Contact.HULL
+            val alongX = rotScale(c.depth, c.normalX) / (if (shared) 2L else 1L)
+            val alongY = rotScale(c.depth, c.normalY) / (if (shared) 2L else 1L)
+            val a = c.body
+            if (alongX > 0L) pushRight[a] = maxOf(pushRight[a], alongX)
+            if (alongX < 0L) pushLeft[a] = maxOf(pushLeft[a], -alongX)
+            if (alongY > 0L) pushDown[a] = maxOf(pushDown[a], alongY)
+            if (alongY < 0L) pushUp[a] = maxOf(pushUp[a], -alongY)
+            if (!shared) continue
+            // The other side of the same touch, pushed the other way: the normal points out of
+            // [Contact.other] and into [Contact.body], so it is the same depth with the sign turned.
+            val b = c.other
+            if (alongX < 0L) pushRight[b] = maxOf(pushRight[b], -alongX)
+            if (alongX > 0L) pushLeft[b] = maxOf(pushLeft[b], alongX)
+            if (alongY < 0L) pushDown[b] = maxOf(pushDown[b], -alongY)
+            if (alongY > 0L) pushUp[b] = maxOf(pushUp[b], alongY)
         }
+        for ((key, depth) in pairDepth) {
+            val a = (key / n).toInt()
+            val b = (key % n).toInt()
+            // ⚠️ Differences before any multiply — §5.3 — and reduced to millitiles besides, because
+            // the length of this vector is about to be squared.
+            val dx = (ops[a].comX - ops[b].comX) / RigidBody.COM_SCALE
+            val dy = (ops[a].comY - ops[b].comY) / RigidBody.COM_SCALE
+            val length = isqrt(dx * dx + dy * dy)
+            // Concentric bodies have no line of centres, so there is nothing to separate along. The
+            // next tick's motion gives them one; the same choice [contactBetween] makes for two
+            // discs sharing a centre, for the same reason.
+            if (length <= 0L) continue
+            // ⚠️ **Half each**, because both sides move. Two rocks each pushed out by the full depth
+            // separate by twice their overlap, which on a settled pile is a pump: every substep
+            // parts them, gravity closes them, and the stack breathes.
+            // Magnitude in and the sign reapplied after, the way [unitOf] and [momentOf] already do
+            // it: [scaledRatio] guards against a negative scale and a line of centres points
+            // whichever way it likes.
+            val outX = signed(dx, scaledRatio(if (dx < 0L) -dx else dx, length, depth / 2L))
+            val outY = signed(dy, scaledRatio(if (dy < 0L) -dy else dy, length, depth / 2L))
+            if (outX > 0L) { pushRight[a] = maxOf(pushRight[a], outX); pushLeft[b] = maxOf(pushLeft[b], outX) }
+            if (outX < 0L) { pushLeft[a] = maxOf(pushLeft[a], -outX); pushRight[b] = maxOf(pushRight[b], -outX) }
+            if (outY > 0L) { pushDown[a] = maxOf(pushDown[a], outY); pushUp[b] = maxOf(pushUp[b], outY) }
+            if (outY < 0L) { pushUp[a] = maxOf(pushUp[a], -outY); pushDown[b] = maxOf(pushDown[b], -outY) }
+        }
+
         // ⚠️ Pushed out along the **grid's** axes, which is where the depths were measured, so the
         // correction is applied to the grid pose and read back into the world rather than added to
         // the world position directly.
         //
         // Held to what is left of this tick's [depenetration] allowance, which is unlimited for a
         // body that is merely being stopped by a wall and a tenth of a tile for one that began the
-        // tick inside it — see [wedged] for why the second needs a budget at all.
-        var moveX = pushRight - pushLeft
-        var moveY = pushDown - pushUp
-        val asked = maxOf(if (moveX < 0L) -moveX else moveX, if (moveY < 0L) -moveY else moveY)
-        if (asked > depenetration) {
-            moveX = moveX * depenetration / asked
-            moveY = moveY * depenetration / asked
-            depenetration = 0L
-        } else if (depenetration != Long.MAX_VALUE) {
-            depenetration -= asked
+        // tick inside something — see the note above for why the second needs a budget at all.
+        for (i in 0 until n) {
+            var moveX = pushRight[i] - pushLeft[i]
+            var moveY = pushDown[i] - pushUp[i]
+            val asked = maxOf(abs(moveX), abs(moveY))
+            if (asked > depenetration[i]) {
+                moveX = moveX * depenetration[i] / asked
+                moveY = moveY * depenetration[i] / asked
+                depenetration[i] = 0L
+            } else if (depenetration[i] != Long.MAX_VALUE) {
+                depenetration[i] -= asked
+            }
+            val out = inGrid[i]!!.movedBy(moveX, moveY)
+            px[i] = next.toWorldX(out.x, out.y)
+            py[i] = next.toWorldY(out.x, out.y)
+            ang[i] = turned[i]!!.ang.raw.toLong()
         }
-        inGrid = inGrid.movedBy(moveX, moveY)
-        px = next.toWorldX(inGrid.x, inGrid.y)
-        py = next.toWorldY(inGrid.x, inGrid.y)
-        bodyAng = turned.ang.raw.toLong()
     }
 
-    return SweptBody(
-        body.copy(
-            positionX = px, positionY = py,
-            impulseX = ix, impulseY = iy,
-            ang = Coord(bodyAng.toInt()), angImpulse = bodyAngImpulse,
-        ),
-        gotX, gotY, gotTorque,
+    return SweptBodies(
+        List(n) { i ->
+            bodies[i].copy(
+                positionX = px[i], positionY = py[i],
+                impulseX = ix[i], impulseY = iy[i],
+                ang = Coord(ang[i].toInt()), angImpulse = angImpulse[i],
+            )
+        },
+        handedX, handedY, handedTorque,
     )
 }
+
+private fun abs(v: Long): Long = if (v < 0L) -v else v
+
+/** [magnitude], carrying [like]'s sign. */
+private fun signed(like: Long, magnitude: Long): Long = if (like < 0L) -magnitude else magnitude
 
 /**
  * How the vessel is placed and where it is going, for one tick — everything a sweep needs to know
