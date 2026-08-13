@@ -72,7 +72,7 @@ data class Thruster(
          * blocked motor dumps is **quadratic**, so doubling it doubles the push and quadruples the
          * damage done by pointing it at your own wall.
          */
-        const val EXHAUST_METRES_PER_SECOND: Long = 3_000L
+        const val EXHAUST_METRES_PER_SECOND: Long = 700L
 
         /**
          * How wide a tile is, in millimetres.
