@@ -5,7 +5,20 @@
 unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/torque, world-frame
 camera) stand and are prerequisites.*
 
-**Nothing in this document is built.**
+**Step 1 is built (`72d943b5`, `cc417e8c`). Everything else in this document is not.**
+
+⚠️ **Two `@Ignore`d claims are owed back by steps 3 and 4**, both measured rather than assumed —
+each passes with the vessel's spin forced to zero and fails with it live:
+`RockContactTest.a body cannot tunnel through a bulkhead` (containment during a long bounce) and
+`RockTest.a body falling under straight-down gravity does not drift sideways`. Neither is a
+regression; before step 1 the vessel's angle was a number nothing read, so both were measuring a
+room that could not tilt. **Do not soften either bound** — containment is the thing that is broken,
+and it is broken for the reason this plan exists.
+
+⚠️ **Found while building step 1: the vessel was rotating about its grid *origin*, not its centre of
+mass.** Step 2 of the rotation plan booked torque about the centre of mass and then integrated the
+angle without moving the origin, which spins the ship about a corner of the pad. Fixed by
+[Pose.turnedAbout]. It was invisible for exactly as long as nothing read `ang`.
 
 ---
 
@@ -306,7 +319,7 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 
 | # | Step | Why here | Size |
 |---|---|---|---|
-| **1** | **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
+| **1** | ✅ **BUILT `cc417e8c`** (transform `72d943b5`). **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
 | **2** | **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
 | **3** | **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
 | **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
