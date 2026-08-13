@@ -5,8 +5,8 @@
 unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/torque, world-frame
 camera) stand and are prerequisites.*
 
-**Steps 1, 2 and 3 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`). Everything else is
-not.
+**Steps 1, 2, 3 and 4 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`, `8cfeeaf2`).
+Everything else is not.
 
 ✅ **Step 2 un-parked `a body cannot tunnel through a bulkhead`** one commit after step 1 parked it.
 Containment came back on its own once contacts were solved as a list — the failure was the old
@@ -19,10 +19,29 @@ not the number — it is gated on `angImpulse` and so runs for actual freefall. 
 a freefall because a body that landed stopped; a body now lands on one corner of a banked deck and
 comes away cartwheeling, and reading that measured the landing while claiming to measure gravity.
 
-⚠️ **Nothing takes energy out of a spin, and step 3 is what makes that visible.** There is no
-friction until step 4, so a rock that lands on a corner cartwheels for ever. This is the same debt
-`RockContactTest :: a body that lands on the deck settles and stays put` has been parked on, and
-step 4 is where it comes due — friction is no longer a polish item.
+✅ **Step 4 paid the friction debt**, and it did not pay the parked test back. `RockContactTest ::
+a body that lands on the deck settles and stays put` is **still `@Ignore`d, for a reason that is not
+friction**: a rock dropped under plating does not land at all. It passes through the deck around
+tick 5 and flies off into space. Checked at `2ad4120f` in a worktree — HEAD does exactly the same,
+so this predates every step of this plan. ⚠️ **The parking note above it is out of date**: it
+describes a landed body shifting 0.41 of a tile, and there is no landed body to shift. The drop path
+is its own defect and it is nobody's step here.
+
+⚠️ **`wedged` was a free pass and is now depenetration.** A body that began the tick inside the hull
+used to skip the whole substep — no contacts, no solve, no push — and fly until it happened to come
+out somewhere. That was survivable only while a cell was a whole tile: a **disc body is small enough
+to clear a one-tile wall inside one such spell**, and a rock grinding along a bulkhead sank through
+it a third of a tile a tick and left the ship. Discs did not introduce it, they made it reachable —
+and it is reachable in ordinary play too, because an airlock can close on a rock. It is now eased
+out along its contact normals at `MAX_DEPENETRATION`, a tenth of a tile a tick.
+
+⚠️ **Do not also skip the velocity solve for a wedged body.** It was tried, it reads as obviously
+right — a placement is not an impact — and it puts a **resting** rock through the floor: a body lying
+on the deck overlaps it, so it reads as wedged every tick and then has nothing holding it up. The
+exemption is unnecessary anyway: the solver only ever reverses a *closing* speed, so a body placed
+inside a wall asks for no impulse of its own accord. What would have flung it was the position push
+sized on a whole tile of depth and applied once per substep, dozens of times a tick. The budget is
+the entire fix.
 
 ⚠️ **The solver is Jacobi, not Gauss-Seidel, and it must stay that way.** Answered one contact after
 another, each touch sees the spin the touches before it put on the body: a symmetric blob thrown
@@ -357,16 +376,49 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 | **1** | ✅ **BUILT `cc417e8c`** (transform `72d943b5`). **The world frame (§5).** Bodies store position *and* impulse in world coordinates; the vessel gets a pose; collision queries transform into vessel-local space once. Delete the grid frame from the physics; the grid stays the addressing scheme. | **Stu's call: first.** It is the change that makes the vessel's existing `ang` physical, and every later step would otherwise be built on a frame that is about to be deleted. Shape-independent. | M |
 | **2** | ✅ **BUILT `a6e66646`.** **`Contact` + solver skeleton.** Replace `sweepBody`'s inline bounce with: broad phase → contact list → iterative solve → integrate. Keep discs out of it: generate the *existing* axis-aligned hull contacts, but as `Contact` values with a real point and normal. | Proves the new tick shape against behaviour that already works and is already tested, so any regression is the solver's. **This is the step that buys stacking.** | M |
 | **3** | ✅ **BUILT `e49e20e1`.** **Body `ang`, `angImpulse`, gyration.** The exact mirror of what step 2 of the rotation plan did to the vessel; `Rotation.kt` already has the machinery. Torque applied at the contact point from step 2, on both operands. | A contact now has an `r`, so torque is free. First step where a rock visibly spins. | S |
-| **4** | **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
+| **4** | ✅ **BUILT `8cfeeaf2`.** **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
 | **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
 | **5** | **Body-vs-body broad phase + stacking.** | Needs 2 and 4. | M |
 | **6** | **The vessel as an operand.** Vessel passed through the same narrow phase and solver as a body of box cells, colliders on every tile (Stu: optimise later). | The unification payoff. | L |
 | — | *Later, unblocked by the above:* `CellShape.Box` per cell, `CellShape.Triangle`, OBB-vs-OBB SAT. | Each is one narrow-phase function. | — |
 
+### ⚠️ What step 4 turned up, in the order it hurt
+
+Three of these four are arithmetic, all four were silent, and **three of them were invisible until
+friction asked a question the normal never asks**. That is the pattern worth keeping: a quantity used
+in only one direction is a quantity tested in only one direction.
+
+1. **`isqrt` never entered its Newton loop** — `y = x + 1` makes `while (y < x)` false at once, so it
+   returned `n`. Every off-axis normal came out at 5 raw against a unit of 2,147,483,647, which is a
+   collision system nine orders of magnitude weak and reads, as ever, like an absence.
+2. **`pointVelocity` was off by 10⁶**: it subtracted a spin term in millitiles from a velocity in
+   `PER_TILE`s. **`ω × r` has effectively not existed since step 3.** The test covering it asserted
+   only that *something* had been booked, and a millionth of the right impulse is still not zero.
+3. **`effectiveMass` overflowed on the tangent.** `scaledRatio(kSq, kSq + cross², mass)` carries its
+   remainder as `n % d × scale`, which is `k² × m` — 2e6 × 8.3e13 = **1.7e20**, wrapped. §6 called
+   this one in advance. The fix is to put the mass in the *numerator*: same fraction, and the
+   remainder is bounded by the denominator instead of by the mass. It hid because the **normal never
+   reaches it** — a contact answered along its own normal has `cross == 0` and returns early.
+4. **`scaledRatio` answers zero for a negative `scale`.** A deliberate guard, and harmless on the
+   normal, where `wanted <= 0` is filtered out one line earlier so the argument is always positive.
+   A *sliding* speed is signed, so friction was silently dead in one of the two directions.
+
+⚠️ **And a note on what the tests were worth.** Three had to be restated, and all three were pinning
+an accident of square-on-square geometry rather than a physical claim: an exactly-zero sideways
+component (true only while every normal lay on an axis by construction), a contact point at the
+middle of an overlap box (a box-on-box notion — a disc touches at *one* place), and a spin that must
+not reverse (a bouncing contact is *supposed* to reverse a spin). Meanwhile the one that mattered sat
+green through defect 2 for an entire step. **A test that asks only whether something happened cannot
+catch a term of the wrong size**; each is now stated against a magnitude that survives a change of
+shape — the tip rebounds at `e`, the deflection is measured against the bounce. The tunnelling test
+is the counterexample to keep in mind: it states a property of the world, it has survived every
+geometry change under it, and it caught this step's real escape.
+
 Test targets worth naming now, because they are the ones that discriminate:
 
-- **`RockContactTest.kt:137` un-`@Ignore`d** — a body that lands on the deck settles and stays put.
-  It is already written and already the right test.
+- ⛔ **`RockContactTest.kt:137` un-`@Ignore`d** — a body that lands on the deck settles and stays
+  put. It is already written and already the right test, and it is **blocked on something that is
+  not collision at all**: nothing lands, at HEAD or here. See the note in the preamble.
 - A rock striking the ship **off the centre of mass** spins the ship; striking **through** it does
   not. The centreline case is the discriminator, exactly as in step 2.
 - A rock dropped on a stack of two rocks leaves all three at rest — the stacking test, which step 1
