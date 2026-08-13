@@ -35,7 +35,7 @@ class PacketTest {
         Form.Ore,
         Mixture.of(
             Species.Iron to 41L * cap,
-            Species.Silica to 30L * cap,
+            Species.Quartz to 30L * cap,
             Species.Copper to 18L * cap,
             Species.Titanium to 11L * cap,
         ),
@@ -98,7 +98,7 @@ class PacketTest {
         val p = assertNotNull(packet).contents
         // The pile is 41% iron; so is the packet, to a part in a million — see [assertNear].
         assertNear(cap * 41 / 100, p[Species.Iron], ppb = 1_000, what = "iron")
-        assertNear(cap * 30 / 100, p[Species.Silica], ppb = 1_000, what = "silica")
+        assertNear(cap * 30 / 100, p[Species.Quartz], ppb = 1_000, what = "silica")
         assertNear(cap * 18 / 100, p[Species.Copper], ppb = 1_000, what = "copper")
         assertNear(cap * 11 / 100, p[Species.Titanium], ppb = 1_000, what = "titanium")
         // Whatever the shares round to, they still add up to exactly one packet.

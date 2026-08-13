@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.LANTHANIDE_SUITE
+import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -1070,6 +1072,26 @@ class OutofspaceRenderer {
         /** The lilac of an argon discharge tube, which is the only way anyone has ever seen argon. */
         const val ARGON      = 0xB88AD8FFL
         const val EMPTY      = 0x707070FFL
+
+        // ── Mineral-class colours ───────────────────────────────────────
+        //
+        // The fallback palette for the long tail of the species table — see `speciesClassColor`.
+        // Chosen to be separable at the size a belt packet is actually drawn, which rules out
+        // fine distinctions: these have to read as different at a dozen pixels across.
+        /** Silicates: the pale, dusty rock everything else is buried in. */
+        const val SILICATE   = 0xC4B89AFFL
+        /** Sulfides: brassy, which is genuinely what pyrite and chalcopyrite look like. */
+        const val SULFIDE    = 0xC8A040FFL
+        /** Oxides: the red-browns of rust and hematite. */
+        const val OXIDE      = 0x9A5240FFL
+        /** Carbonates: chalky and near-white. */
+        const val CARBONATE  = 0xD8D4CCFFL
+        /** Halides and sulfates: the glassy, faintly translucent evaporite look. */
+        const val SALT       = 0xA8C0C8FFL
+        /** Refined metal that has no colour of its own — the generic ingot grey. */
+        const val METAL      = 0xA0A4ACFFL
+        /** Ices, which read as cold before they read as anything else. */
+        const val ICE        = 0xA8D8E8FFL
     }
 
     /** Scales, thresholds, and offsets that drive the renderer's visual layout. */
@@ -1191,15 +1213,29 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
 /**
  * The colour a species is drawn in — shared by the renderer's packets and the HUD's readouts, so a
  * lump on a belt and its name in the inspector are unmistakably the same stuff.
+ *
+ * ### Why this is no longer one branch per species
+ *
+ * It used to be an exhaustive `when`, which was the right shape for fourteen species and is the
+ * wrong one for a hundred and fifty: nobody can hand-pick that many colours that stay distinguishable,
+ * and an exhaustive `when` turns every addition to the table into a compile error in the renderer.
+ *
+ * So the ones the player handles constantly keep their authored colour, and everything else takes
+ * its **class**'s colour. That is not a degradation — it is more readable than a hundred and fifty
+ * near-identical greys would be. A player does not need to tell xenotime from monazite at a glance;
+ * they need to tell *a rare-earth phosphate* from *a sulfide*, and the eye does that far better with
+ * eight colours than with a hundred. The specific name is a tooltip away.
  */
 fun speciesColor(dominant: Species?): Long = when (dominant) {
+    null -> OutofspaceRenderer.Colors.EMPTY
+
+    // ── The ones worth knowing on sight ──
     Species.Iron -> OutofspaceRenderer.Colors.IRON
     Species.Aluminum -> OutofspaceRenderer.Colors.ALUMINUM
     Species.Copper -> OutofspaceRenderer.Colors.COPPER
     Species.Titanium -> OutofspaceRenderer.Colors.TITANIUM
-    Species.Silica -> OutofspaceRenderer.Colors.SILICA
+    Species.Quartz -> OutofspaceRenderer.Colors.SILICA
     Species.Carbon -> OutofspaceRenderer.Colors.CARBON
-    Species.RareEarth -> OutofspaceRenderer.Colors.RARE_EARTH
     Species.Uranium -> OutofspaceRenderer.Colors.URANIUM
     Species.Oxygen -> OutofspaceRenderer.Colors.OXYGEN
     Species.Nitrogen -> OutofspaceRenderer.Colors.NITROGEN
@@ -1207,5 +1243,45 @@ fun speciesColor(dominant: Species?): Long = when (dominant) {
     Species.Water -> OutofspaceRenderer.Colors.WATER
     Species.Osmium -> OutofspaceRenderer.Colors.OSMIUM
     Species.Argon -> OutofspaceRenderer.Colors.ARGON
-    null -> OutofspaceRenderer.Colors.EMPTY
+
+    else -> speciesClassColor(dominant)
 }
+
+/**
+ * The fallback: what family this species belongs to, rendered as a colour.
+ *
+ * Membership is read off [MINERALS] wherever it can be, rather than restated as a list here. A
+ * sulfide is a thing whose formula contains sulfur — that is the definition, and deriving it means
+ * a mineral added to the table is coloured correctly without anyone remembering to come here.
+ */
+private fun speciesClassColor(s: Species): Long {
+    val formula = MINERALS[s]
+    return when {
+        // Ices first: several are also "carbonates" by formula and this is the meaning that matters.
+        s in ICES -> OutofspaceRenderer.Colors.ICE
+        formula == null -> if (s in LANTHANIDES) OutofspaceRenderer.Colors.RARE_EARTH
+            else OutofspaceRenderer.Colors.METAL
+        LANTHANIDE_SUITE.containsKey(s) -> OutofspaceRenderer.Colors.RARE_EARTH
+        Species.Sulfur in formula -> OutofspaceRenderer.Colors.SULFIDE
+        Species.Silicon in formula -> OutofspaceRenderer.Colors.SILICATE
+        Species.Carbon in formula -> OutofspaceRenderer.Colors.CARBONATE
+        Species.Chlorine in formula || Species.Fluorine in formula -> OutofspaceRenderer.Colors.SALT
+        Species.Oxygen in formula -> OutofspaceRenderer.Colors.OXIDE
+        else -> OutofspaceRenderer.Colors.EMPTY
+    }
+}
+
+/** The volatiles, whose *phase* is what the player cares about rather than their chemistry. */
+private val ICES: Set<Species> = setOf(
+    Species.Water, Species.CarbonDioxide, Species.CarbonMonoxide, Species.Ammonia,
+    Species.Methane, Species.HydrogenSulfide, Species.SulfurDioxide,
+    Species.Nitrogen, Species.Hydrogen, Species.Oxygen,
+    Species.Helium, Species.Neon, Species.Argon, Species.Krypton, Species.Xenon,
+)
+
+private val LANTHANIDES: Set<Species> = setOf(
+    Species.Lanthanum, Species.Cerium, Species.Praseodymium, Species.Neodymium,
+    Species.Samarium, Species.Europium, Species.Gadolinium, Species.Terbium,
+    Species.Dysprosium, Species.Holmium, Species.Erbium, Species.Thulium,
+    Species.Ytterbium, Species.Lutetium, Species.Yttrium, Species.Scandium,
+)

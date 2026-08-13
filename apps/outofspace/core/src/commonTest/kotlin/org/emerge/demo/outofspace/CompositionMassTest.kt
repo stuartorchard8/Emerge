@@ -52,7 +52,7 @@ class CompositionMassTest {
     fun `density orders bodies the way the real materials do`() {
         val uranium = rock(pure(Species.Uranium)).mass
         val iron = rock(pure(Species.Iron)).mass
-        val silica = rock(pure(Species.Silica)).mass
+        val silica = rock(pure(Species.Quartz)).mass
         val ice = rock(pure(Species.Water)).mass
         assertTrue(uranium > iron, "uranium ($uranium g) should outweigh iron ($iron g)")
         assertTrue(iron > silica, "iron ($iron g) should outweigh silica ($silica g)")
@@ -66,9 +66,9 @@ class CompositionMassTest {
      */
     @Test
     fun `a mixture's density is the harmonic mean, not the arithmetic one`() {
-        val half = Mixture.of(Species.Iron to 500L, Species.Silica to 500L)
+        val half = Mixture.of(Species.Iron to 500L, Species.Quartz to 500L)
         val ironDensity = Species.Iron.solidMassPerTile
-        val silicaDensity = Species.Silica.solidMassPerTile
+        val silicaDensity = Species.Quartz.solidMassPerTile
 
         val harmonic = 2L * ironDensity * silicaDensity / (ironDensity + silicaDensity)
         val arithmetic = (ironDensity + silicaDensity) / 2L
@@ -132,7 +132,7 @@ class CompositionMassTest {
 
     @Test
     fun `a rock starts at ambient whatever it is made of`() {
-        for (species in listOf(Species.Uranium, Species.Silica, Species.Water)) {
+        for (species in listOf(Species.Uranium, Species.Quartz, Species.Water)) {
             assertEquals(Temperature.AMBIENT_KELVIN, rock(pure(species)).kelvin, "a $species rock")
         }
     }
@@ -153,7 +153,7 @@ class CompositionMassTest {
     /** Eating a rock hollow returns exactly its mass — no crumb minted or lost on the way. */
     @Test
     fun `biting a rock to nothing yields exactly its mass`() {
-        var body: RigidBody? = rock(Mixture.of(Species.Iron to 410L, Species.Silica to 300L))
+        var body: RigidBody? = rock(Mixture.of(Species.Iron to 410L, Species.Quartz to 300L))
         val whole = body!!.mass
         var taken = 0L
         while (body != null) {
@@ -181,10 +181,16 @@ class CompositionMassTest {
     /**
      * No scale factor anywhere: a tile of ore weighs what that much ore weighs.
      *
-     * Stated against the arithmetic a person would do by hand — the ore field's abundance is about
-     * 4.8 tonnes a cubic metre, and a tile is [TILE_LITRES] of room — because the point of the
-     * number is that you *can* check it by hand. This is the assertion that fails if anyone
-     * reintroduces a fudge factor between real densities and the world.
+     * Stated against the arithmetic a person would do by hand — the ore field assays about 4.3
+     * tonnes a cubic metre, and a tile is [TILE_LITRES] of room — because the point of the number is
+     * that you *can* check it by hand. This is the assertion that fails if anyone reintroduces a
+     * fudge factor between real densities and the world.
+     *
+     * ⚠️ The band moved from 4600..4900 when [OutofspaceReducer.DEFAULT_ORE_BODY] was restated in
+     * minerals: native copper at 8960 kg/m³ became chalcopyrite at 4200, and titanium metal at 4510
+     * became ilmenite at 4720. **The band is not the thing under test** — it is a sanity range on a
+     * *chosen* input, and the input genuinely changed. What is under test is the absence of a scale
+     * factor, and that is why the range is wide and hand-derived rather than pinned to a digit.
      */
     @Test
     fun `a tile of ore weighs what that much ore weighs`() {
@@ -195,7 +201,7 @@ class CompositionMassTest {
         // millions of tonnes the moment the unit moved.
         val kgPerCubicMetre = perTile / Budget.GRAM / TILE_LITRES
         assertTrue(
-            kgPerCubicMetre in 4_600L..4_900L,
+            kgPerCubicMetre in 4_200L..4_500L,
             "the ore field assays at $kgPerCubicMetre kg/m3, which is not a rock",
         )
     }

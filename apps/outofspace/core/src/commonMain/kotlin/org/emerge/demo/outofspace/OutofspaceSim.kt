@@ -759,12 +759,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * drifting — osmium has an abundance now and does not appear here, so the extractor cannot
      * produce it and only mined rocks can. That is the intended behaviour and not the bug; the bug
      * would be reading this list as though it told you what the world contains.
+     *
+     * It is now stated in **minerals**, which is what an ore body is made of. Copper and titanium
+     * used to appear here as loose elements, and under the rebuilt species table that is incoherent:
+     * neither occurs native, so they arrive as [Species.Chalcopyrite] and [Species.Ilmenite] — the
+     * rocks you would actually be digging — and the elements come out of a refinery instead. Iron
+     * stays as itself because native iron is real, and it is what a kamacite-bearing body gives you.
      */
     val DEFAULT_ORE_BODY: Mixture = Mixture.of(
         Species.Iron to 410L,
-        Species.Silica to 300L,
-        Species.Copper to 180L,
-        Species.Titanium to 110L,
+        Species.Quartz to 300L,
+        Species.Chalcopyrite to 180L,
+        Species.Ilmenite to 110L,
     )
 
     /** Mutable scratch for one tick (reducer stays pure). */

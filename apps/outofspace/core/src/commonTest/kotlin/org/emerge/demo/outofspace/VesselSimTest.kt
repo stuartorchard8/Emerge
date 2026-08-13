@@ -380,7 +380,7 @@ class VesselSimTest {
     @Test
     fun `a smelter stalls rather than mixing two metals`() {
         val grid = Grid(3, 1)
-        val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Silica to 100L))
+        val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L))
         val smelter = Smelter(Direction.Right, input = ironOre)
         var s = VesselState(grid, listOf(smelter, null, null))
         s = run(s, 20)
@@ -388,7 +388,7 @@ class VesselSimTest {
         assertEquals(Form.IronIngot, assertNotNull(after.refined).form)
 
         // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
-        val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Silica to 100L))
+        val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L))
         var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null))
         val heldBefore = (s2[0] as Smelter).refined!!.mass
         s2 = run(s2, 20)
@@ -617,7 +617,11 @@ class VesselSimTest {
         assertEquals(s.extractedMass, accountedFor)
 
         // And no species appeared from nowhere: only what the ore body contains is present.
-        val fromOreBody = setOf(Species.Iron, Species.Silica, Species.Copper, Species.Titanium)
+        // Read off the ore body rather than restated, so changing what the extractor mines is not
+        // also a test edit. The claim is "nothing the ore body does not contain", and that is a
+        // statement about the ore body — spelling it out again only creates a second thing to keep
+        // in step.
+        val fromOreBody = Species.ALL.filter { OutofspaceReducer.DEFAULT_ORE_BODY[it] > 0L }.toSet()
         val present = Species.ALL.filter { inWorld[it] > 0L }
         assertTrue(present.all { it in fromOreBody }, "unexpected species in the world: $present")
     }

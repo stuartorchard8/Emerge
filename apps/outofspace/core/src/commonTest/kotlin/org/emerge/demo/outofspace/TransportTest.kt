@@ -615,8 +615,8 @@ class TransportTest {
      */
     @Test
     fun `ore of different purities blends, because that is what powder does`() {
-        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Silica to share(300))))
-        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Silica to share(125))))
+        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Quartz to share(300))))
+        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Quartz to share(125))))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
         val h = held(n, grid.index(4, 3) to dirty, grid.index(5, 3) to clean)

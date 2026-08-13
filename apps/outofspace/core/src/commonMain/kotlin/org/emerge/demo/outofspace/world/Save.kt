@@ -27,7 +27,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 16
+    const val VERSION = 17
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -947,6 +947,30 @@ object Save {
      * states a mass. The same syntax carries both — air in a tile is mass, a rock's `oreComposition`
      * is parts — so the distinction cannot be made here and every caller has to declare it.
      */
+    /**
+     * Species names that older saves use, and what they mean now.
+     *
+     * The species table was rebuilt around real minerals in version 17, and two entries could not
+     * survive it. `Silica` was a compound sitting in a list of elements — it was always SiO₂, at
+     * quartz's density, so it becomes [Species.Quartz] with every number unchanged and no rescale.
+     * `RareEarth` was a fiction: there is no such element, and its 140 g/mol and 7010 kg/m³ were a
+     * blend of cerium's mass and neodymium's density. It becomes [Species.Monazite], the ore a
+     * player mining "rare earth" was standing in.
+     *
+     * ⚠️ Monazite is **235** g/mol against RareEarth's 140, so a loaded world's rare-earth pile has
+     * the same *mass* — which is what is conserved and what the ledger checks — but a different
+     * particle count. Nothing on a belt or in a stockpile notices; a tile of it in the atmosphere
+     * would read a lower pressure. That is a real difference and it is the right one, because the
+     * old number described nothing.
+     *
+     * Kept as a map rather than a version-gated branch because a name is a name whatever version
+     * wrote it, and a file that says `Silica` means quartz regardless of what else it says.
+     */
+    private val RENAMED_SPECIES: Map<String, Species> = mapOf(
+        "Silica" to Species.Quartz,
+        "RareEarth" to Species.Monazite,
+    )
+
     private fun readMixture(text: String, scale: Rescale, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY
         val masses = LongArray(Species.COUNT)
@@ -954,7 +978,9 @@ object Save {
             val eq = part.indexOf('=')
             if (eq < 0) fail("expected SPECIES=mass, got '$part'")
             val name = part.substring(0, eq)
-            val species = Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+            val species = Species.ALL.firstOrNull { it.name == name }
+                ?: RENAMED_SPECIES[name]
+                ?: fail("unknown species '$name'")
             val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
             if (mass < 0L) fail("negative mass in '$part'")
             masses[species.ordinal] += scale.of(mass)

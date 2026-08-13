@@ -70,7 +70,7 @@ enum class Material(
     Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L), conductanceCentiTicks = 5_200L, roughness = 400L),
 
     /** Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot. */
-    Firebrick("FIREBRICK", Mixture.of(Species.Silica to 550L, Species.Aluminum to 450L), conductanceCentiTicks = 88_000L, roughness = 700L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Quartz to 550L, Species.Aluminum to 450L), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
     /** What a full tile of this stuff weighs, at its real density. */

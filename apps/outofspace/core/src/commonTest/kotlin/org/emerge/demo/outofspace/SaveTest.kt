@@ -356,7 +356,7 @@ class SaveTest {
     fun `a gauge keeps that it is one, and its last reading`() {
         val grid = Grid(6, 4)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Silica to 590L))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L))
         rails[grid.index(2, 2)] = Segment(org.emerge.demo.outofspace.world.Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
@@ -365,7 +365,7 @@ class SaveTest {
         assertNotNull(back)
         assertTrue(back.isGauge)
         assertEquals(Form.Ore, back.lastForm)
-        assertEquals(Species.Silica, back.lastDominant)
+        assertEquals(Species.Quartz, back.lastDominant)
         assertEquals(590, back.lastPurity)
         assertEquals(1000L, back.lastMass)
     }

@@ -163,7 +163,7 @@ class GaugeTest {
             Direction.Right,
             input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS)),
             product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2)),
-            tailings = Resource(Form.Ore, Mixture.of(Species.Silica to Capacity.PACKET_MASS * 3 / 10)),
+            tailings = Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10)),
         )
         val rows = contentsBreakdown(p)
         assertEquals(listOf("INPUT", "CONCENTRATE", "TAILINGS"), rows.map { it.first })

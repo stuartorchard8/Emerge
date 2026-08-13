@@ -113,7 +113,7 @@ object OutofspaceBench {
         println("  — Mixture (allocation-bound; per op, not per tick) —")
 
         // Representative of what a belt actually does: a two-species ore mixture, merged and split.
-        val ore = Mixture.of(Species.Iron to 700_000L, Species.Silica to 300_000L)
+        val ore = Mixture.of(Species.Iron to 700_000L, Species.Quartz to 300_000L)
         val other = Mixture.of(Species.Iron to 120_000L, Species.Copper to 40_000L)
         val ops = innerReps * 100
         perOp("plus", time(ops) { ore + other }, ops)
