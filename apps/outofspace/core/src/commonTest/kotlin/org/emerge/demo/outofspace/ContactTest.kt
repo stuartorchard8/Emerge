@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Contact
@@ -8,9 +9,13 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Operand
 import org.emerge.demo.outofspace.world.Pose
+import org.emerge.demo.outofspace.world.pairRoughness
+import org.emerge.demo.outofspace.world.roughnessOf
 import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.RockContact
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.VesselState
@@ -61,9 +66,17 @@ class ContactTest {
         assertEquals(-Flight.FRAC_ONE, c.normalX, "the push must be back the way it came, not into the wall")
         assertEquals(0L, c.normalY, "a face-on touch has no sideways component")
         assertEquals(overlap, c.depth, "the depth is how far in it got")
-        // The overlap is a quarter-tile sliver against the wall's left edge, so its centre is an
-        // eighth of a tile inside.
-        assertEquals(WALL * Flight.PER_TILE + overlap / 2L, c.pointX, "the point is the middle of the overlap")
+        // ⚠️ **The point is on the wall's face**, and step 4 is what moved it there. It used to be
+        // the middle of the overlap box, which is what a box against a box has to say, because two
+        // overlapping rectangles touch across a region and the middle of it is the only fair
+        // summary. A **disc** against a box touches at one place — the closest point on the box to
+        // the disc's centre — so there is nothing to average and the exact answer is available.
+        //
+        // Derived rather than observed: the cell's centre lands at `WALL·PER − PER/4`, which is
+        // outside the wall tile, so the closest point on that tile is on its left face at
+        // `WALL·PER`, level with the centre. The depth checked above is the same number under both
+        // conventions, which is why only this line moved.
+        assertEquals(WALL * Flight.PER_TILE, c.pointX, "the point is where the disc touches the face")
         assertEquals(ROW * Flight.PER_TILE + Flight.PER_TILE / 2L, c.pointY, "and centred on the face")
     }
 
@@ -249,10 +262,21 @@ class ContactTest {
      * `ω × r` is what makes that contact visible, and it is the term this pins: without it the
      * closing speed reads as zero, the contact is skipped as separating, and a spinning rock grinds
      * through a bulkhead at any speed at all.
+     *
+     * ⚠️ **Pinned against the tip speed, and the version this replaces was not.** That one asserted
+     * only that *something* had been booked and that the spin had not reversed — and both of those
+     * pass on a term a **millionth** of its true size, which is what `ω × r` was for a whole step
+     * after an arm in millitiles was subtracted from a velocity in [Flight.PER_TILE]s. A spinning
+     * rock ground through bulkheads the entire time with this test green.
+     *
+     * It also had the claim backwards. A bouncing contact is *supposed* to reverse a spin; only a
+     * solver that could barely see the spin would leave its sign alone. What the restitution
+     * actually promises is a magnitude, so a term of the wrong size cannot satisfy it.
      */
     @Test
     fun `a spinning body still closes on a contact its centre is not approaching`() {
-        val body = free(vx = 0L, vy = 0L, spin = Rotation.RAW_PER_RADIAN / 10L)
+        val spin = Rotation.RAW_PER_RADIAN / 10L
+        val body = free(vx = 0L, vy = 0L, spin = spin)
         // Two tiles to the *left* of the centre of mass. Turning clockwise (+ang is clockwise, +y
         // down), a point out to the left is on its way up — so the floor to meet it is above.
         solveContacts(
@@ -266,14 +290,87 @@ class ContactTest {
             listOf(body), ship = null,
         )
 
+        // The tip rebounds at `e` times the speed it arrived at, and on a fixed arm that is the
+        // spin rebounding at `e` times its own — the arm cancels, because it is the same arm going
+        // in and coming out. Derived from the restitution rather than read off the solver.
+        val expected = -spin * RockContact.RESTITUTION_NUM / RockContact.RESTITUTION_DEN
         assertTrue(body.spun != 0L, "a body at rest but spinning was treated as touching nothing")
         assertTrue(
-            body.angVel in 0L until Rotation.RAW_PER_RADIAN / 10L,
-            "the spin should have been taken off it, not reversed or ignored: ${body.angVel}",
+            abs(body.angVel - expected) < abs(expected) / 4L,
+            "the tip should rebound at half its speed: ${body.angVel} against $expected",
         )
     }
 
+    // ── Friction ──────────────────────────────────────────────────────────────
+
+    /**
+     * **What step 4 is for.** A body spinning against a surface it is pressed into is slowed by it,
+     * and the same body against a frictionless surface is not.
+     *
+     * Asserted as a pair, because either half alone passes on something broken: a solver that damped
+     * every spin regardless would pass the first, and one that never applied a tangential impulse at
+     * all would pass the second. Only the difference between them is evidence that the friction on
+     * the *contact* is what did it.
+     *
+     * Nothing anywhere else takes energy out of a spin — space is a vacuum and a rock turning in it
+     * turns for ever — so this is the whole of the mechanism by which a rock that lands on a corner
+     * eventually stops cartwheeling.
+     */
+    @Test
+    fun `friction takes the spin off a body pressed against a surface`() {
+        val spin = Rotation.RAW_PER_RADIAN / 10L
+        fun ground(mu: Long): Operand {
+            val body = free(vx = 0L, vy = Flight.PER_TILE / 2L, spin = spin)
+            solveContacts(
+                listOf(
+                    Contact(
+                        body = 0, pointX = 0L, pointY = 2L * Flight.PER_TILE,
+                        normalX = 0L, normalY = -Flight.FRAC_ONE,
+                        depth = Flight.PER_TILE / 100L, restingSpeed = 0L,
+                        friction = mu,
+                    ),
+                ),
+                listOf(body), ship = null,
+            )
+            return body
+        }
+
+        val gripped = ground(pairRoughness(800L, 800L))
+        val slippery = ground(0L)
+
+        assertEquals(spin, slippery.angVel, "a frictionless touch slowed the spin")
+        assertTrue(
+            gripped.angVel < spin,
+            "a gripping touch left the spin alone: ${gripped.angVel} against $spin",
+        )
+        assertTrue(gripped.angVel >= 0L, "and it drove the spin backwards: ${gripped.angVel}")
+    }
+
+    /**
+     * Stu's ordering, stated as a test rather than as five numbers in an enum: **metal slides and
+     * rock does not.**
+     *
+     * The rule is that the smoother surface governs, so rock against a steel deck grips at steel's
+     * number and not at rock's — which is why the middle case equals the metal-on-metal one rather
+     * than sitting between the two.
+     */
+    @Test
+    fun `rock grips harder than metal, and the smoother surface governs`() {
+        val rock = roughnessOf(Mixture.EMPTY)
+        val steel = Material.Steel.roughness
+
+        val rockOnRock = pairRoughness(rock, rock)
+        val rockOnSteel = pairRoughness(rock, steel)
+        val steelOnSteel = pairRoughness(steel, steel)
+
+        assertTrue(rockOnRock > rockOnSteel, "rubble on rubble slid as easily as rubble on plate")
+        assertEquals(steelOnSteel, rockOnSteel, "the rougher surface decided the pair")
+        assertTrue(steelOnSteel > 0L, "the ship is frictionless")
+    }
+
     // ── Fixture ───────────────────────────────────────────────────────────────
+
+    private fun abs(v: Long): Long = if (v < 0L) -v else v
 
     private fun contact(
         normalX: Long,

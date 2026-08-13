@@ -63,3 +63,21 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
     // dividend's sign, so the whole part and the remainder always agree about which way they lean.
     return n / d * scale + n % d * scale / d
 }
+
+/**
+ * Integer square root: the largest `r` such that `r * r <= n`.
+ *
+ * Newton's method with integer division, starting from an upper bound of `n + 1`.
+ * `n = 0` → `0`; `n = 1` → `1`; `n = 2` → `1`; `n = 3` → `1`; `n = 4` → `2`; etc.
+ */
+fun isqrt(n: Long): Long {
+    if (n < 0L) throw IllegalArgumentException("isqrt of negative")
+    if (n == 0L) return 0L
+    var x = n
+    var y = (x + 1L) shr 1
+    while (y < x) {
+        x = y
+        y = (x + n / x) shr 1
+    }
+    return x
+}

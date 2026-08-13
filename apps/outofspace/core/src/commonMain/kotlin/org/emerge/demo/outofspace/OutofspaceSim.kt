@@ -341,6 +341,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ShipMotion(state.pose, state.velocityX, state.velocityY, spin),
             mass,
             w.about,
+            w.machines,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).

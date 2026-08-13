@@ -186,6 +186,17 @@ class RigidBody(
 
     fun localComY(pose: Pose): Long = pose.toLocalY(comX, comY)
 
+    /**
+     * What [cell] of this body is, geometrically — a disc, for every cell of every body today.
+     *
+     * ⚠️ A function rather than a stored array, and that is the whole of what requirement 4 of
+     * `PLAN_rigid_bodies.md` needs right now. Stu wants cells to be **selectively** OBBs or triangles
+     * later; storing a shape per cell before any of them differ would be a column of identical values
+     * in every body and in every save, and the narrow phase cannot tell the difference — it asks this
+     * question and dispatches on the answer. When shapes start to differ, this reads an array.
+     */
+    fun shapeAt(cell: Int): CellShape = CellShape.CELL
+
     fun copy(
         kind: BodyKind = this.kind,
         width: Int = this.width,
@@ -335,6 +346,8 @@ fun driftBodies(
     ship: ShipMotion,
     shipMass: Long,
     about: MassDistribution = MassDistribution.EMPTY,
+    /** The ship's machines by tile — carried this far for one reason, [frictionBetween]. */
+    machines: List<Machine?>? = null,
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
     /**
@@ -394,6 +407,7 @@ fun driftBodies(
             grid, structure, body,
             ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass, about,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
+            machines,
         )
         val gaveX = swept.impulseX + platingX
         val gaveY = swept.impulseY + platingY

@@ -65,7 +65,21 @@ class RockContactTest {
             abs(closing + speed / 2L) < Flight.PER_TILE / 1000L,
             "the bounce is $closing against an approach of $speed",
         )
-        assertEquals(0L, body.velocityY, "a frictionless normal impulse moved it sideways")
+        // ⚠️ **Deflection is asserted against the bounce, not against a fixed distance**, and the
+        // exact-zero form this replaces was a statement about the *shape of the hull* dressed up as
+        // one about the physics. It held only while every cell was a square meeting a square
+        // face-on, so every normal lay on an axis and a push along it could not have a y component
+        // by construction. A disc meeting a tile's corner has a genuinely diagonal normal, and
+        // since step 4 the contact also carries friction — both of which deflect a throw slightly,
+        // correctly, and neither of which this test is about.
+        //
+        // What it is about is that the wall sent the body back rather than sideways. Half a per cent
+        // of the closing speed is a ricochet; a tenth of it would be a body skating along the wall,
+        // and that is the failure worth catching.
+        assertTrue(
+            abs(body.velocityY) * 20L < abs(closing),
+            "it skated along the wall instead of off it: ${body.velocityY} sideways against $closing",
+        )
     }
 
     /**

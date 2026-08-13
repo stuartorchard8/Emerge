@@ -42,21 +42,35 @@ enum class Material(
     val label: String,
     val composition: Mixture,
     val conductanceCentiTicks: Long,
+    /**
+     * How much a surface of this stuff grips one it is sliding across — Coulomb's `μ`, in parts per
+     * thousand, and the third physical property a material has here.
+     *
+     * Stated per material rather than per contact because that is what it is a fact about, exactly
+     * as [conductanceCentiTicks] is: a joint's conductance is a property of the two things meeting
+     * and neither of the numbers that make it is. [pairRoughness] is where two of these become one.
+     *
+     * The values are dry static coefficients, near enough to measure against: steel on steel is
+     * about 0.4–0.6, and brick and stone are appreciably grippier at 0.6–0.8. What matters for the
+     * game is the ordering — **metal slides and rock does not** — which is the thing that decides
+     * whether a rock skates across a deck or stays where it lands.
+     */
+    val roughness: Long,
 ) {
     /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Iron to 990L, Species.Carbon to 10L), conductanceCentiTicks = 2_450L),
+    Steel("STEEL", Mixture.of(Species.Iron to 990L, Species.Carbon to 10L), conductanceCentiTicks = 2_450L, roughness = 400L),
 
     /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
-    Iron("IRON", Mixture.of(Species.Iron to 1_000L), conductanceCentiTicks = 400L),
+    Iron("IRON", Mixture.of(Species.Iron to 1_000L), conductanceCentiTicks = 400L, roughness = 450L),
 
     /** Pipe and cable. Barely any thermal mass and enormous conductance — a heat pipe by accident. */
-    Copper("COPPER", Mixture.of(Species.Copper to 1_000L), conductanceCentiTicks = 58L),
+    Copper("COPPER", Mixture.of(Species.Copper to 1_000L), conductanceCentiTicks = 58L, roughness = 500L),
 
     /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
-    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L), conductanceCentiTicks = 5_200L),
+    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L), conductanceCentiTicks = 5_200L, roughness = 400L),
 
     /** Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot. */
-    Firebrick("FIREBRICK", Mixture.of(Species.Silica to 550L, Species.Aluminum to 450L), conductanceCentiTicks = 88_000L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Silica to 550L, Species.Aluminum to 450L), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
     /** What a full tile of this stuff weighs, at its real density. */
@@ -104,6 +118,38 @@ enum class Material(
         val RADIANCE: Long get() = MachineKind.Hull.capacityPerTile / 6_533L
     }
 }
+
+/**
+ * The friction of a contact, from the two surfaces that make it: **the smoother one governs.**
+ *
+ * The same shape of rule as [seriesConductance] and for a related reason — a property of a joint is
+ * never better than its worse half. Grip comes from the two surfaces keying into each other, so a
+ * rough face against a polished one has nothing to bite on: rock dragged over steel slides at
+ * steel's number, not at rock's. It also gives the ordering Stu asked for directly, with metal on
+ * metal at the bottom and rock on rock at the top, and it needs no special case at the extremes —
+ * a frictionless surface makes every contact it takes part in frictionless.
+ *
+ * `RollingResistanceSystem` in the engine combines Drockets' two materials the same way, with
+ * `min(a.rough, b.rough)`, which is the nearest thing in the codebase to a precedent.
+ *
+ * ⚠️ Returned in [Flight.FRAC_ONE]ths rather than in per mille, because that is the unit the solver
+ * multiplies a normal impulse by. Converted here, once, rather than at the multiply.
+ */
+fun pairRoughness(a: Long, b: Long): Long = minOf(a, b) * Flight.FRAC_ONE / 1_000L
+
+/**
+ * What a rock's surface grips like.
+ *
+ * ⚠️ **One constant, and the argument is the hook that makes it stop being one.** A rock is a
+ * [Mixture] rather than a [Material] — it is whatever the ore field made it — so unlike a hull plate
+ * there is no enum entry to hang a number on. Deriving grip from a composition means saying what
+ * each species' surface is like, and that is a table of invented numbers until something in the game
+ * depends on the difference. What is real today is Stu's ordering: rubble grips harder than any
+ * metal aboard, so at 800 against steel's 400 a rock stays where it lands on a deck and two rocks
+ * grinding together stay put on each other.
+ */
+@Suppress("UNUSED_PARAMETER")
+fun roughnessOf(ore: Mixture): Long = 800L
 
 /**
  * Two things in contact conduct at the **series** combination of their conductances.

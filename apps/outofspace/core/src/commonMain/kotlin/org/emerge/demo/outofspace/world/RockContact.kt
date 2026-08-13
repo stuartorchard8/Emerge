@@ -44,6 +44,20 @@ object RockContact {
     const val REST_FLOOR: Long = Flight.PER_TILE / 1000L
 
     /**
+     * The most a body that began the tick **inside** the hull may be pushed out of it in one tick.
+     *
+     * A rock dropped by the editor, freed by an extractor, or shut in by an airlock is a placement
+     * and not an impact: it is eased out along its contact normals with its momentum untouched. This
+     * is what stops "eased" becoming "launched" — the push is sized on the depth and applied once per
+     * *substep*, so a fast body would otherwise be answered at full depth dozens of times in a tick
+     * and thrown clean across the room.
+     *
+     * A tenth of a tile a tick: below what reads as movement while a rock settles, and far too slow
+     * to cross a one-tile wall. A body still buried after it gets another tenth next tick.
+     */
+    const val MAX_DEPENETRATION: Long = Flight.PER_TILE / 10L
+
+    /**
      * Resting threshold: v > a/e (below this, bounce ends in one tick = buzzing).
      * REST_FLOOR = perTick/1000 (terminates asymptote in freefall). One rounding chain (§5g).
      */
@@ -85,26 +99,39 @@ private fun floorTile(v: Long): Long =
  * through [VesselState.pose] first, which is what [RigidBody.poseIn] is for. This function is the
  * boundary: everything below it is tile indices.
  *
- * Cell centres turn with the body and cell boxes do not, exactly as in [collectHullContacts] and for
- * the reason set out there — the two must agree about where a cell is, or a body would be pushed out
- * of a wall this function says it is not in.
+ * ⚠️ **This asks [overlapBetween], which is the same geometry [collectHullContacts] emits contacts
+ * from, and the two agreeing is load-bearing.** A body this says is inside the hull is left alone for
+ * the whole tick — an editor drop is a placement, not a contact — so a `true` the narrow phase does
+ * not back up with a contact is a body with its collisions switched off. Testing full tile boxes
+ * while the narrow phase tested inscribed discs did exactly that, and a rock walked through a
+ * bulkhead at sixteen tiles a tick: the corner of a tile is outside its own disc, so every grazing
+ * touch left the body "wedged" in a wall it was not in.
  */
 fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose): Boolean {
     val half = Flight.PER_TILE / 2L
     for (cy in 0 until body.height) {
         for (cx in 0 until body.width) {
-            if (!body.cells[cy * body.width + cx]) continue
-            val x0 = at.toWorldX(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half) - half
-            val y0 = at.toWorldY(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half) - half
-            val tx0 = floorTile(x0)
-            val ty0 = floorTile(y0)
-            val tx1 = floorTile(x0 + Flight.PER_TILE - 1L)
-            val ty1 = floorTile(y0 + Flight.PER_TILE - 1L)
+            val cell = cy * body.width + cx
+            if (!body.cells[cell]) continue
+            val shape = body.shapeAt(cell)
+            val centreX = at.toWorldX(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            val centreY = at.toWorldY(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            val reach = shapeReach(shape)
+            val tx0 = floorTile(centreX - reach)
+            val ty0 = floorTile(centreY - reach)
+            val tx1 = floorTile(centreX + reach - 1L)
+            val ty1 = floorTile(centreY + reach - 1L)
             for (ty in ty0..ty1) {
                 if (ty < 0 || ty >= grid.height) continue
                 for (tx in tx0..tx1) {
                     if (tx < 0 || tx >= grid.width) continue
-                    if (structure.isImpermeable(grid.index(tx.toInt(), ty.toInt()))) return true
+                    if (!structure.isImpermeable(grid.index(tx.toInt(), ty.toInt()))) continue
+                    val hit = overlapBetween(
+                        shape, centreX, centreY,
+                        CellShape.TILE,
+                        tx * Flight.PER_TILE + half, ty * Flight.PER_TILE + half,
+                    )
+                    if (hit) return true
                 }
             }
         }
@@ -144,6 +171,8 @@ fun sweepBody(
     shipAbout: MassDistribution,
     restingSpeedX: Long,
     restingSpeedY: Long,
+    /** The ship's machines by tile, for [frictionBetween]. `null` is bare hull throughout. */
+    machines: List<Machine?>? = null,
 ): SweptBody {
     val mass = body.mass
     if (mass <= 0L) return SweptBody(body, 0L, 0L, 0L)
@@ -229,10 +258,46 @@ fun sweepBody(
         Coord((ang - shipPose.ang.raw).toInt()),
     )
 
-    // A body that begins the tick already inside the hull is left alone — a rock dropped onto the
-    // deck by the editor starts that way, and pushing it out would fling it. It is not a contact,
-    // it is a placement.
+    // ── A body that begins the tick already inside the hull ───────────────────────
+    //
+    // It is a placement and not a contact: the editor drops rocks onto the deck, an extractor frees
+    // one from inside a seam, and an airlock can shut on top of one. None of those is an impact and
+    // none of them should be answered with a bounce — a body that arrived at rest inside a wall has
+    // no closing speed to reverse, and reversing the depth instead would fling it across the room.
+    //
+    // ⚠️ **It is eased out, not exempted.** This used to skip the whole substep — no contacts, no
+    // solve, no push — which meant a wedged body flew with its collisions switched off until it
+    // happened to come out somewhere. That was survivable only while cells were full tiles, because
+    // a tile-wide body cannot clear a one-tile wall inside one such spell. A disc body can, and did:
+    // a rock grinding along a bulkhead sank through it a third of a tile a tick and left the ship
+    // entirely. Discs did not introduce that, they made it reachable.
+    //
+    // So the rule is now **depenetration**, and it is a limit on the *position* correction alone.
+    //
+    // ⚠️ The velocity solve is **not** skipped for a wedged body, and skipping it was tried first.
+    // It looks right — a placement is not an impact, so do not answer it — and it puts a resting
+    // rock through the floor: a body lying on the deck is overlapping it, so it reads as wedged
+    // every tick, and a wedged body with no normal impulse has nothing holding it up. The plating
+    // accelerates it into the deck each tick while a tenth of a tile of push lifts it, gravity wins,
+    // and the rock sinks out of the ship. (Measured: dropped at y=12 it was 1,700 tiles below the
+    // hull and still falling after 120 ticks.)
+    //
+    // The exemption is unnecessary anyway, which is the part worth keeping in mind. The solver only
+    // ever reverses a **closing** speed, so a body that was *placed* inside a wall — motionless
+    // relative to it — asks for no impulse of its own accord and gets none. What would have flung it
+    // was never the impulse, it was the position push being sized on a depth of a whole tile. That
+    // is what the budget below is for, and it is the only thing that needed fixing.
     val wedged = overlapsHull(grid, structure, body, gridPose(px, py, bodyAng, poseAt(0)))
+
+    // ⚠️ And it is pushed out **slowly**, which is the half that makes the above safe.
+    //
+    // A push sized on the depth is applied once per *substep*, and a fast body takes dozens of them
+    // — so a body buried a tile deep, answered at full depth every substep, is not eased out but
+    // catapulted, and it crosses the room and leaves through the far wall. (Measured: the rock in
+    // the tunnelling test stopped escaping to starboard and started escaping to port.) A tenth of a
+    // tile a tick is faster than an editor drop can be noticed settling and far too slow to jump a
+    // wall, and a body that is still buried after it simply gets another tenth next tick.
+    var depenetration = if (wedged) RockContact.MAX_DEPENETRATION else Long.MAX_VALUE
 
     val contacts = ArrayList<Contact>(4)
 
@@ -255,13 +320,10 @@ fun sweepBody(
         val next = poseAt(k + 1)
         var inGrid = gridPose(turned.x, turned.y, turned.ang.raw.toLong(), next)
 
-        if (wedged) {
-            px = turned.x; py = turned.y; bodyAng = turned.ang.raw.toLong()
-            continue
-        }
-
         contacts.clear()
-        collectHullContacts(grid, structure, body, 0, inGrid, restingSpeedX, restingSpeedY, contacts)
+        collectHullContacts(
+            grid, structure, body, 0, inGrid, restingSpeedX, restingSpeedY, contacts, machines,
+        )
         if (contacts.isEmpty()) {
             px = turned.x; py = turned.y; bodyAng = turned.ang.raw.toLong()
             continue
@@ -316,17 +378,46 @@ fun sweepBody(
         // Deepest push per direction rather than the sum, so a cell touching two tiles of the same
         // flat wall is one wall and not two — summing would launch a body off any surface wider
         // than itself.
+        //
+        // ⚠️ **The depth is projected onto the normal before it is compared**, and step 4 is what
+        // made that mandatory. A box against a box has an axis-aligned normal and the projection is
+        // the identity, which is why the earlier form — the depth itself, filed under the sign of
+        // the normal's component — was right for as long as it was the only shape. A disc against a
+        // box corner reports a *diagonal* normal, and filing the whole radial depth under both axes
+        // pushes a body out by `depth` along x **and** `depth` along y, up to 1.41× too far and in
+        // the wrong direction. What that did on a wall the body was grazing was slide it along the
+        // wall rather than off it: the overlap survived the tick, `wedged` latched at the next
+        // tick's start, and a wedged body has its collisions switched off for the whole tick — so a
+        // rock grinding along the top bulkhead sank through it a third of a tile at a time and left
+        // the ship, which is what made the free pass for a wedged body untenable. The tunnelling
+        // test caught it as an escape, four ticks and eight tiles later.
         var pushLeft = 0L; var pushRight = 0L; var pushUp = 0L; var pushDown = 0L
         for (c in contacts) {
-            if (c.normalX > 0L) pushRight = maxOf(pushRight, c.depth)
-            if (c.normalX < 0L) pushLeft = maxOf(pushLeft, c.depth)
-            if (c.normalY > 0L) pushDown = maxOf(pushDown, c.depth)
-            if (c.normalY < 0L) pushUp = maxOf(pushUp, c.depth)
+            val alongX = rotScale(c.depth, c.normalX)
+            val alongY = rotScale(c.depth, c.normalY)
+            if (alongX > 0L) pushRight = maxOf(pushRight, alongX)
+            if (alongX < 0L) pushLeft = maxOf(pushLeft, -alongX)
+            if (alongY > 0L) pushDown = maxOf(pushDown, alongY)
+            if (alongY < 0L) pushUp = maxOf(pushUp, -alongY)
         }
         // ⚠️ Pushed out along the **grid's** axes, which is where the depths were measured, so the
         // correction is applied to the grid pose and read back into the world rather than added to
         // the world position directly.
-        inGrid = inGrid.movedBy(pushRight - pushLeft, pushDown - pushUp)
+        //
+        // Held to what is left of this tick's [depenetration] allowance, which is unlimited for a
+        // body that is merely being stopped by a wall and a tenth of a tile for one that began the
+        // tick inside it — see [wedged] for why the second needs a budget at all.
+        var moveX = pushRight - pushLeft
+        var moveY = pushDown - pushUp
+        val asked = maxOf(if (moveX < 0L) -moveX else moveX, if (moveY < 0L) -moveY else moveY)
+        if (asked > depenetration) {
+            moveX = moveX * depenetration / asked
+            moveY = moveY * depenetration / asked
+            depenetration = 0L
+        } else if (depenetration != Long.MAX_VALUE) {
+            depenetration -= asked
+        }
+        inGrid = inGrid.movedBy(moveX, moveY)
         px = next.toWorldX(inGrid.x, inGrid.y)
         py = next.toWorldY(inGrid.x, inGrid.y)
         bodyAng = turned.ang.raw.toLong()
