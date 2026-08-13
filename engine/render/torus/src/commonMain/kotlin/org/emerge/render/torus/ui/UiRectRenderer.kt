@@ -18,8 +18,6 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         UiRectShaderSources.fragment(),
     )
 
-    private val uView = GPU.getUniformLocation(program, "uView")
-
     private val vao = GPU.genAndBindVertexArrays()
     private val quadVbo = GPU.genBuffers()
     private val mat4Vbo = GPU.genBuffers()
@@ -40,13 +38,11 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         count: Int,
         matrices: FloatArray,
         colors: FloatArray,
-        view: Mat4 = IDENTITY,
     ) {
         val n = count.coerceIn(0, maxRects)
         if (n <= 0) return
         GPU.bindVertexArray(vao)
         GPU.useProgram(program)
-        GPU.putUniformMatrix4fv(uView, view.m)
         bind(colorVbo, colorBuffer, colors, n * 4)
         bind(mat4Vbo, mat4Buffer, matrices, n * Mat4.FLOATS)
         GPU.drawTrianglesInstanced(0, QUAD_VERTEX_COUNT, n)
@@ -100,9 +96,6 @@ class UiRectRenderer(private val maxRects: Int = DEFAULT_MAX_RECTS) {
         private const val INSTANCE_MAT4_ATTR = 2
 
         const val DEFAULT_MAX_RECTS = 128
-
-        /** Draw the batch exactly where the caller put it. Shared and never written to. */
-        val IDENTITY: Mat4 = Mat4.identity()
 
         private const val QUAD_VERTEX_COUNT = 4
     }

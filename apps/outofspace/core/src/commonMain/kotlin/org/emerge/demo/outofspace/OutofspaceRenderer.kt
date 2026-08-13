@@ -40,6 +40,8 @@ import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.sim.core.physics.primitives.Coord
+import org.emerge.sim.core.physics.primitives.Frac
+import kotlin.math.PI
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -110,8 +112,6 @@ class OutofspaceRenderer {
 
     // Flat batch (refilled each frame).
     private val matrices = FloatArray(MAX_RECTS * Mat4.FLOATS)
-    private val centers = FloatArray(MAX_RECTS * 2)
-    private val halfSizes = FloatArray(MAX_RECTS * 2)
     private val colors = FloatArray(MAX_RECTS * 4)
     private var count = 0
 
@@ -375,7 +375,7 @@ class OutofspaceRenderer {
             tileRect(grid.xOf(hoveredIndex), grid.yOf(hoveredIndex), 1f, Colors.HOVER)
         }
 
-        rects.drawInstanced(count, matrices, colors, viewTransform)
+        rects.drawInstanced(count, matrices, colors)
         GPU.disableBlend()
     }
 
@@ -414,7 +414,7 @@ class OutofspaceRenderer {
                 val ly = cy * Flight.PER_TILE + half
                 val wx = inGrid.toWorldX(lx, ly).toFloat() / Flight.PER_TILE * tilePx
                 val wy = inGrid.toWorldY(lx, ly).toFloat() / Flight.PER_TILE * tilePx
-                rect(wx, wy, tilePx, tilePx, Colors.ROCK)
+                rect(wx, wy, tilePx, tilePx, Colors.ROCK, inGrid.ang)
                 // Cell-local checker (grain doesn't crawl as body drifts).
                 if ((cx + cy) and 1 == 0) {
                     rect(wx, wy, tilePx * Visual.ROCK_GRAIN, tilePx * Visual.ROCK_GRAIN, Colors.ROCK_GRAIN)
@@ -919,18 +919,18 @@ class OutofspaceRenderer {
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, scale * tilePx, scale * tilePx, color)
 
     /** [wx],[wy] are world pixels (tile units × [tilePx]); converted to NDC here. */
-    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long) {
+    private fun rect(wx: Float, wy: Float, w: Float, h: Float, color: Long, angle: Coord = Coord(0)) {
         if (count >= MAX_RECTS) return
         val px = wx - camX * tilePx + resW * 0.5f
         val py = wy - camY * tilePx + resH * 0.5f
 
-        val m = Mat4.translation(
+        val m = viewTransform.times(Mat4.translation(
             px / resW * 2f - 1f,
             1f - py / resH * 2f,
-        ).times(Mat4.scale(
+        )).times(Mat4.scale(
             w / resW,
             h / resH,
-        ))
+        )).times(Mat4.rotationZ(angle.toFloat() * -PI.toFloat()))   // TODO why do we need to use -PI here
         m.copyInto(matrices, count * Mat4.FLOATS)
 
         colors[count * 4] = ((color shr 24) and 0xFF).toFloat() / 255f
