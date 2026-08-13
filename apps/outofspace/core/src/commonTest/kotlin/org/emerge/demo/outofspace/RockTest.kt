@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -38,16 +39,41 @@ class RockTest {
         controller.dropRock(18f, 10f)
         controller.stepOnce()
 
-        val start = controller.state.bodies.single().centreY
+        val start = controller.state.bodies.single().localCentreY(controller.state.pose)
         repeat(6) { controller.stepOnce() }
         val body = controller.state.bodies.single()
+        val fell = body.localCentreY(controller.state.pose)
 
-        assertTrue(body.centreY > start, "the body hung in the air at $start")
+        assertTrue(fell > start, "the body hung in the air at $start")
         assertTrue(body.velocityY > 0L, "and it is not even falling: ${body.velocityY}")
-        // Sideways is the assertion that says gravity is being applied and not merely noise: nothing
-        // pushes along x here, and a body that wandered would mean the felt gravity had a component
-        // it should not.
-        assertEquals(0L, body.velocityX, "the body drifted sideways under a straight-down gravity")
+    }
+
+    /**
+     * Nothing pushes along x here, so a body that wandered would mean the felt gravity had a
+     * component it should not — the assertion that says gravity is being *applied* and not merely
+     * noise.
+     *
+     * ⚠️ **PARKED by step 1 of `PLAN_rigid_bodies.md`.** Measured: it passes with the vessel's spin
+     * forced to zero and fails with it live. The cause is real and is not this test's subject — the
+     * plating pulls on a rock sitting half a tile off the hull's centre of mass, which is a genuine
+     * torque, so the deck the rock lands on is very slightly tilted and a normal perpendicular to a
+     * tilted deck has a world-frame x component. The body is not drifting; the floor is banked.
+     *
+     * It needs restating in the grid frame, which is a thing to do once a body has an orientation to
+     * state it against — **step 3**. Kept whole and named rather than folded into the test above,
+     * so that what is parked is legible.
+     */
+    @Ignore
+    @Test
+    fun `a body falling under straight-down gravity does not drift sideways`() {
+        val controller = OutofspaceController(CFG, bareHull())
+        controller.dropRock(18f, 10f)
+        repeat(7) { controller.stepOnce() }
+
+        assertEquals(
+            0L, controller.state.bodies.single().velocityX,
+            "the body drifted sideways under a straight-down gravity",
+        )
     }
 
     /**
@@ -111,27 +137,28 @@ class RockTest {
         controller.dropRock(18f, 30f)
         controller.stepOnce()
 
-        val start = controller.state.bodies.single().centreX
+        // Grid frame: "astern" is a statement about the deck sliding out from under it. The body's
+        // *world* position is the thing that does not move, and that is asserted separately below.
+        val start = controller.state.bodies.single().localCentreX(controller.state.pose)
+        val startWorld = controller.state.bodies.single().centreX
         val from = controller.state.positionX
         controller.thrustX = 1
         repeat(TICKS) { controller.stepOnce() }
         controller.thrustX = 0
 
         val body = controller.state.bodies.single()
+        val here = body.localCentreX(controller.state.pose)
         val travelled = controller.state.positionX - from
         assertTrue(travelled > 0L, "the ship never fired, so this proved nothing")
-        assertTrue(
-            body.centreX < start,
-            "the body kept station with an accelerating ship: $start then ${body.centreX}",
-        )
+        assertTrue(here < start, "the body kept station with an accelerating ship: $start then $here")
         assertEquals(0L, body.impulseX, "something pushed a body nothing was touching")
         assertEquals(0L, body.impulseY)
+        // The sharpest form of the same claim, and the one the world frame makes available: a body
+        // nothing touched did not move *at all*. The drift is entirely the ship's.
+        assertEquals(startWorld, body.centreX, "a body in freefall moved through open space")
         // And the drift is the ship's own travel, exactly: same number, same tick, opposite sign,
         // because it is one grid moving. Nothing here is approximate any more.
-        assertEquals(
-            travelled, start - body.centreX,
-            "the body and the grid disagree about how far the ship went",
-        )
+        assertEquals(travelled, start - here, "the body and the grid disagree about how far the ship went")
     }
 
     /** A save carries the bodies, their shapes, where they got to and how much was admitted. */

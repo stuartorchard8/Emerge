@@ -65,6 +65,9 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.angularVelocity
+import org.emerge.demo.outofspace.world.Pose
+import org.emerge.demo.outofspace.world.Rotation
+import org.emerge.demo.outofspace.world.ShipMotion
 import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.massDistribution
 import org.emerge.demo.outofspace.world.tileCentre
@@ -286,16 +289,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // World-spawned rocks are free mass, not counted in baselineRockMass.
         // Uses the post-advance position (matching what `positionX/Y` will be below) so the
         // window-recenter decision agrees with the position the HUD reads this same tick
-        val newPositionX = state.positionX + state.velocityX
-        val newPositionY = state.positionY + state.velocityY
+        //
+        // ⚠️ **The turn is about the centre of mass, and the origin moves so that it can be.**
+        // `positionX` is the world position of the grid's *origin*, and adding the spin to `ang`
+        // without moving the origin would rotate the ship about tile (0,0) — a corner of the pad,
+        // usually off the hull entirely. That was invisible while nothing in the sim read `ang`;
+        // it is not invisible now that a body's frame conversion goes through the pose.
+        // [Pose.turnedAbout] is what moves the origin to hold the pivot still.
+        //
         // Explicit, from the start-of-tick spin, for the same reason the position is: this tick's
         // torque is not known until this tick's fluid has been solved. `toInt` is not a truncation
         // to apologise for — [Coord]'s two's-complement wrap *is* the turn, so an angle that runs
         // past π comes back at −π exactly and never drifts. See [Rotation].
-        val newAng = Coord((state.ang.raw + angularVelocity(state.angImpulse, w.about)).toInt())
+        val spin = angularVelocity(state.angImpulse, w.about)
+        val comScale = Flight.PER_TILE / Rotation.MILLI_TILE
+        val newPose = state.pose
+            .turnedAbout(Coord(spin.toInt()), w.about.comX * comScale, w.about.comY * comScale)
+            .movedBy(state.velocityX, state.velocityY)
+        val newPositionX = newPose.x
+        val newPositionY = newPose.y
+        val newAng = newPose.ang
         val vesselTileX = newPositionX / Flight.PER_TILE
         val vesselTileY = newPositionY / Flight.PER_TILE
         val bodiesToDrift = RockSpawner.process(
+            pose = state.pose,
             tick = state.tick,
             bodies = w.bodies.toList(),
             vesselTileX = vesselTileX,
@@ -306,12 +323,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         w.bodies.addAll(bodiesToDrift)
 
         // Bodies fly here because this is where the ship's own motion is known.
-        // A body's motion is now stated against the *world* while its position is
-        // stated on the *grid*, so drifting one needs the velocity of the grid itself. See [RigidBody].
+        // A body is stated entirely in the *world* now — position and momentum both — so drifting
+        // one needs the ship's whole *pose* and not just its velocity: the sweep asks where the body
+        // has got to in the grid's frame, and the grid is turning as well as moving. See [RigidBody].
         //
-        // `state.velocityX` is the start-of-tick velocity, which is exactly what the ship's own
-        // position is advanced by below: the grid slides by the same amount for the body as it does
-        // for the hull, because it is the same grid.
+        // Start-of-tick throughout, which is exactly what the ship's own pose is advanced by above:
+        // the grid slides and turns by the same amount for the body as it does for the hull, because
+        // it is the same grid.
         //
         // It is also where a body can hit something, because a contact is an exchange and the ship's
         // half of it has to join `netImpulse` below in the same tick the body's half is booked. The
@@ -320,8 +338,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure,
             w.bodies,
             state.gravity,
-            state.velocityX,
-            state.velocityY,
+            ShipMotion(state.pose, state.velocityX, state.velocityY, spin),
             mass,
             w.about,
         )
@@ -755,6 +772,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges)
 
         /**
+         * Where the grid sits in the world, taken once from the incoming state and shared — the same
+         * choice, for the same reason, as [about]. A body reached by an extractor part way through
+         * the machine pass and one reached at the end must be measured against the same frame, or
+         * the tick converts two bodies through two different poses.
+         */
+        val pose: Pose = state.pose
+
+        /**
          * The twist that went overboard with the exhaust — the angular half of [exhaustMomentumX],
          * booked at the thruster that threw it, and the whole reason this step exists. Two engines
          * that balance linearly do not balance about the centre of mass unless they straddle it.
@@ -1106,10 +1131,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Drop a body at ([x], [y]) (capture placeholder). Body heat → stored, booking → inserted. */
         private fun dropRock(x: Float, y: Float, radius: Int) {
             val half = radius * Flight.PER_TILE
+            // [Edit.DropRock] carries a *grid* coordinate, because it comes from a cursor over the
+            // deck. A body is stored in the world, so it is placed through the pose.
+            val localX = (x * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L
+            val localY = (y * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L
             val body = RigidBody.rockBlob(
                 radius = radius,
-                positionX = (x * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
-                positionY = (y * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L,
+                positionX = pose.toWorldX(localX, localY),
+                positionY = pose.toWorldY(localX, localY),
                 composition = DEFAULT_ORE_BODY,
             )
             bodies.add(body)
@@ -1232,7 +1261,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val x0 = grid.xOf(at) - reach
             val y0 = grid.yOf(at) - reach
             for (r in bodies.indices) {
-                if (reachableCell(bodies[r], x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
+                if (reachableCell(bodies[r], pose, x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
             }
             return -1
         }
@@ -1245,7 +1274,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val body = bodies[index]
             val reach = machines[at]!!.kind.reach
             val cell = reachableCell(
-                body, grid.xOf(at) - reach, grid.yOf(at) - reach,
+                body, pose, grid.xOf(at) - reach, grid.yOf(at) - reach,
                 grid.xOf(at) + reach, grid.yOf(at) + reach,
             )
             if (cell < 0) return null

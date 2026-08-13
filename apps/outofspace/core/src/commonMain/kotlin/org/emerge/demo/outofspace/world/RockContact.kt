@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.sim.core.physics.primitives.Coord
 
 /**
  * Rock-hull contact: swept overlap test + normal impulse with restitution (H2).
@@ -76,7 +77,8 @@ private fun abs(v: Long): Long = if (v < 0L) -v else v
 /**
  * Does [body], placed with its top-left corner at [atX], [atY], overlap anything solid?
  *
- * Same as the [Rock] overload — [body] carries [width], [height], [cells] the same way.
+ * ⚠️ [atX]/[atY] are **grid-frame** — a body stores world coordinates, so a caller converts through
+ * [VesselState.pose] first. This function is the boundary: everything below it is tile indices.
  */
 fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, atX: Long, atY: Long): Boolean {
     for (cy in 0 until body.height) {
@@ -127,8 +129,7 @@ fun sweepBody(
     grid: Grid,
     structure: StructureMap,
     body: RigidBody,
-    shipVelocityX: Long,
-    shipVelocityY: Long,
+    ship: ShipMotion,
     shipMass: Long,
     restingSpeedX: Long,
     restingSpeedY: Long,
@@ -136,6 +137,7 @@ fun sweepBody(
     val mass = body.mass
     if (mass <= 0L) return SweptBody(body, 0L, 0L)
 
+    // World, because that is where a body lives now. The hull is reached through [ship].
     var px = body.positionX
     var py = body.positionY
     var ix = body.impulseX
@@ -150,60 +152,113 @@ fun sweepBody(
     val mu = if (shipMass <= 0L) mass else scaledRatio(mass, mass + shipMass, shipMass)
 
     // Where the wall is going, updated as the body shoves it. See the note on this function.
-    var svx = shipVelocityX
-    var svy = shipVelocityY
+    var svx = ship.velocityX
+    var svy = ship.velocityY
 
     /** What the ship's velocity moves by when the body is handed [j] — the equal and opposite half. */
     fun recoil(j: Long): Long =
         if (shipMass <= 0L) 0L else scaledRatio(-j, shipMass, Flight.PER_TILE)
 
-    // [RigidBody.velocityX]'s expression, on an impulse that is being carried through the sweep.
-    fun relative(impulse: Long, shipVelocity: Long): Long =
-        scaledRatio(impulse, mass, Flight.PER_TILE) - shipVelocity
+    fun worldVel(impulse: Long): Long = scaledRatio(impulse, mass, Flight.PER_TILE)
 
-    val startRvx = relative(ix, svx)
-    val startRvy = relative(iy, svy)
+    // The reach is the *relative* travel, because that is what can step over a wall. Measured in the
+    // grid's own axes, which is where walls are.
+    val startRvx = worldVel(ix) - svx
+    val startRvy = worldVel(iy) - svy
     val reach = maxOf(abs(startRvx), abs(startRvy))
     val steps = (reach / RockContact.MAX_SUBSTEP + 1L).toInt()
 
-    val wedged = overlapsHull(grid, structure, body, px, py)
+    /**
+     * The vessel's pose part way through the tick.
+     *
+     * The sweep advances the body in the world and the ship in the world, and asks where the body
+     * has got to *in the ship's frame* at each substep. Both are moving, so the relative motion —
+     * including everything the ship's rotation contributes — falls out of the subtraction instead of
+     * being written down as an `ω × r` term that could be got wrong or forgotten.
+     */
+    fun poseAt(step: Int): Pose = Pose(
+        ship.pose.x + svx * step / steps,
+        ship.pose.y + svy * step / steps,
+        Coord((ship.pose.ang.raw + ship.angVel * step / steps).toInt()),
+    )
+
+    var at = poseAt(0)
+    var lx = at.toLocalX(px, py)
+    var ly = at.toLocalY(px, py)
+    val wedged = overlapsHull(grid, structure, body, lx, ly)
 
     for (k in 0 until steps) {
-        val rvx = relative(ix, svx)
-        val rvy = relative(iy, svy)
-        val dx = rvx * (k + 1) / steps - rvx * k / steps
-        val dy = rvy * (k + 1) / steps - rvy * k / steps
-        val nx = px + dx
-        val ny = py + dy
+        val vx = worldVel(ix)
+        val vy = worldVel(iy)
+        val nwx = px + (vx * (k + 1) / steps - vx * k / steps)
+        val nwy = py + (vy * (k + 1) / steps - vy * k / steps)
 
-        if (wedged || !overlapsHull(grid, structure, body, nx, ny)) {
-            px = nx
-            py = ny
+        val next = poseAt(k + 1)
+        val nlx = next.toLocalX(nwx, nwy)
+        val nly = next.toLocalY(nwx, nwy)
+        // The body's displacement *in the grid's frame* over this substep. This is the quantity the
+        // wall cares about, and it already contains the ship's translation and its spin.
+        val dx = nlx - lx
+        val dy = nly - ly
+
+        if (wedged || !overlapsHull(grid, structure, body, nlx, nly)) {
+            px = nwx; py = nwy; at = next; lx = nlx; ly = nly
             continue
         }
 
-        var hitX = dx != 0L && overlapsHull(grid, structure, body, nx, py)
-        var hitY = dy != 0L && overlapsHull(grid, structure, body, px, ny)
+        var hitX = dx != 0L && overlapsHull(grid, structure, body, nlx, ly)
+        var hitY = dy != 0L && overlapsHull(grid, structure, body, lx, nly)
         if (!hitX && !hitY) {
             hitX = dx != 0L
             hitY = dy != 0L
         }
 
-        if (!hitX) px = nx
-        if (!hitY) py = ny
+        // Whichever axis did not hit still travels. The world position has to follow the local one,
+        // so a blocked axis is undone through the same pose that blocked it.
+        val keptX = if (hitX) lx else nlx
+        val keptY = if (hitY) ly else nly
+        px = next.toWorldX(keptX, keptY)
+        py = next.toWorldY(keptX, keptY)
+        at = next; lx = keptX; ly = keptY
+
+        // ⚠️ The closing speed is a *grid-axis* quantity and the impulse it produces is too, but a
+        // body's momentum is in the world — so the impulse is turned into world axes before it is
+        // booked, on both sides of the exchange. Booking a grid-frame impulse into a world-frame
+        // ledger would be a slow leak that only appears once the ship is turned.
         if (hitX) {
-            val j = normalImpulse(rvx, mu, restingSpeedX)
-            ix += j
-            gotX += j
-            svx += recoil(j)
+            val j = normalImpulse(dx * steps, mu, restingSpeedX)
+            val jx = rotScale(j, at.cos)
+            val jy = rotScale(j, at.sin)
+            ix += jx; iy += jy
+            gotX += jx; gotY += jy
+            svx += recoil(jx); svy += recoil(jy)
         }
         if (hitY) {
-            val j = normalImpulse(rvy, mu, restingSpeedY)
-            iy += j
-            gotY += j
-            svy += recoil(j)
+            val j = normalImpulse(dy * steps, mu, restingSpeedY)
+            val jx = -rotScale(j, at.sin)
+            val jy = rotScale(j, at.cos)
+            ix += jx; iy += jy
+            gotX += jx; gotY += jy
+            svx += recoil(jx); svy += recoil(jy)
         }
     }
 
     return SweptBody(body.copy(positionX = px, positionY = py, impulseX = ix, impulseY = iy), gotX, gotY)
 }
+
+/**
+ * How the vessel is placed and where it is going, for one tick — everything a sweep needs to know
+ * about the thing it might hit.
+ *
+ * Bundled rather than passed as four longs because the sweep now needs the *pose*, not just the
+ * velocity, and a pose plus its rate is one idea. It is also the shape the unified body will take:
+ * every operand of a collision is a pose and a motion, and the vessel is about to be one of them.
+ */
+class ShipMotion(
+    val pose: Pose,
+    /** World-frame, per tick, at [Flight.PER_TILE] to the tile. */
+    val velocityX: Long,
+    val velocityY: Long,
+    /** [Coord] raw per tick. */
+    val angVel: Long,
+)

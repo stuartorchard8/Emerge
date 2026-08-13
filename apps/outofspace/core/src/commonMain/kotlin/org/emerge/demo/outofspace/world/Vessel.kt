@@ -617,6 +617,21 @@ data class VesselState(
     val velocityY: Long get() = scaledRatio(vesselImpulseY, mass, Flight.PER_TILE)
 
     /**
+     * Where the grid sits in the world and how far it is turned — the vessel as one rigid body.
+     *
+     * [positionX] is the world position of the grid's **origin**, tile (0,0)'s corner, and not of
+     * the centre of mass: the centre of mass moves in grid coordinates every time a packet slides
+     * down a rail, and a pose anchored to it would slew the whole ship sideways when it did. The
+     * ship still *turns* about its centre of mass — see [Pose.turnedAbout], which is what moves the
+     * origin to keep that pivot still.
+     *
+     * This is the single conversion point between the world, which is where bodies and momentum
+     * live, and the grid, which is the addressing scheme for everything aboard. Step 1 of
+     * `PLAN_rigid_bodies.md`.
+     */
+    val pose: Pose get() = Pose(positionX, positionY, ang)
+
+    /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
      *
      * This is what the fluid is run under — [gravity] alone never is any more. See
@@ -945,13 +960,17 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     val newPipeMomentum = MomentumField.of(newPipeEdges, newPipeMomentumX, newPipeMomentumY)
 
-    // ── 6. Bodies: shift positions ───────────────────────────────────────
-    val newBodies = bodies.map {
-        it.copy(
-            positionX = it.positionX + dx * Flight.PER_TILE.toLong(),
-            positionY = it.positionY + dy * Flight.PER_TILE.toLong(),
-        )
-    }
+    // ── 6. Bodies: nothing to do ─────────────────────────────────────────
+    // They used to be shifted by the same offset the tile indices moved by, because they were
+    // stored in the grid's frame. They are stored in the **world** now, and a rock does not move
+    // because the player built a row of hull off the port bow. What moves instead is the grid's
+    // *origin*: tile (0,0) is a different place than it was, `dx`,`dy` tiles away in grid axes, so
+    // the pose has to follow it or everything aboard would appear to jump. See [VesselState.pose].
+    val newBodies = bodies
+    val shiftedOrigin = pose.let { it.movedBy(
+        it.toWorldX(-dx.toLong() * Flight.PER_TILE, -dy.toLong() * Flight.PER_TILE) - it.x,
+        it.toWorldY(-dx.toLong() * Flight.PER_TILE, -dy.toLong() * Flight.PER_TILE) - it.y,
+    ) }
 
     // ── 7. Vent whatever the new grid does not cover ─────────────────────
     // As a difference of totals rather than a walk of the discarded cells: exact by construction,
@@ -979,6 +998,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         momentum = newMomentum,
         pipeMomentum = newPipeMomentum,
         bodies = newBodies,
+        positionX = shiftedOrigin.x,
+        positionY = shiftedOrigin.y,
         // vented quantities — grow: difference is zero, no special case needed
         airVentedMass = airVentedMass + ventedGas,
         airVentedEnergy = airVentedEnergy + ventedEnergy,

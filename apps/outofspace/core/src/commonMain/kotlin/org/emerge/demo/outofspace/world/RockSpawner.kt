@@ -122,7 +122,22 @@ object RockSpawner {
      * One UNPOPULATED chunk per tick (nearest to vessel, outside NEAR zone) is spawned into.
      * Bodies whose chunk leaves the WINDOW_SIZE×WINDOW_SIZE window are despawned.
      */
+    /**
+     * Where the grid sits in the world, for this call only.
+     *
+     * The spawner thinks entirely in **tiles on the grid** — chunks, spawn windows and the overlap
+     * test are all grid quantities — while a body is stored in the world. Rather than convert a
+     * body's position back and forth (which would run it through [rotScale] twice a tick and let it
+     * drift), this converts once in each direction: existing bodies are *read* into the grid frame
+     * for the two comparisons, and a newly spawned body is *written* out of it at birth.
+     *
+     * Held rather than threaded because the object already keeps `lastVesselChunk` across calls, and
+     * it is rewritten at the top of every [process].
+     */
+    private var pose: Pose = Pose.IDENTITY
+
     fun process(
+        pose: Pose,
         tick: Long,
         bodies: List<RigidBody>,
         vesselTileX: Long,
@@ -131,6 +146,7 @@ object RockSpawner {
         if (!enabled) return bodies
         if (tick < ACTIVATE_AFTER_TICK) return bodies
 
+        this.pose = pose
         val vesselChunkX = chunkIndexOf(vesselTileX)
         val vesselChunkY = chunkIndexOf(vesselTileY)
 
@@ -145,8 +161,8 @@ object RockSpawner {
         // ── Despawn bodies outside the WINDOW_SIZE×WINDOW_SIZE window ──
         val result = ArrayList<RigidBody>(bodies.size)
         for (body in bodies) {
-            val bodyTileX = body.positionX / Flight.PER_TILE
-            val bodyTileY = body.positionY / Flight.PER_TILE
+            val bodyTileX = body.localX(pose) / Flight.PER_TILE
+            val bodyTileY = body.localY(pose) / Flight.PER_TILE
             val bodyChunkX = chunkIndexOf(bodyTileX)
             val bodyChunkY = chunkIndexOf(bodyTileY)
             val dx = abs(bodyChunkX)
@@ -183,7 +199,7 @@ object RockSpawner {
             val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
 
             for (body in newBodies) {
-                if (!wouldOverlap(body.positionX / Flight.PER_TILE, body.positionY / Flight.PER_TILE, (body.width / 2), result)) {
+                if (!wouldOverlap(body.localX(pose) / Flight.PER_TILE, body.localY(pose) / Flight.PER_TILE, (body.width / 2), result)) {
                     result.add(body)
                 }
             }
@@ -236,10 +252,11 @@ object RockSpawner {
 
             val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
 
+            // Born on the grid, stored in the world — the one conversion, done once. See [pose].
             bodies.add(RigidBody.rockBlob(
                 radius = radius,
-                positionX = tileX.toLong() * Flight.PER_TILE,
-                positionY = tileY.toLong() * Flight.PER_TILE,
+                positionX = pose.toWorldX(tileX.toLong() * Flight.PER_TILE, tileY.toLong() * Flight.PER_TILE),
+                positionY = pose.toWorldY(tileX.toLong() * Flight.PER_TILE, tileY.toLong() * Flight.PER_TILE),
                 composition = composition,
             ))
         }
@@ -532,8 +549,8 @@ object RockSpawner {
         val maxY = (tileY + halfSpan) * Flight.PER_TILE
 
         for (body in bodies) {
-            val bodyMinX = body.positionX
-            val bodyMinY = body.positionY
+            val bodyMinX = body.localX(pose)
+            val bodyMinY = body.localY(pose)
             val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE
             val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE
 

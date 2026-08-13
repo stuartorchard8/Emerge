@@ -95,7 +95,7 @@ class Bite(val body: RigidBody?, val mass: Long, val energy: Long, val impulseX:
  * half-open exactly as [overlapsHull]'s is: a cell that only touches the plate's edge is beside it,
  * not on it.
  */
-fun reachableCell(body: RigidBody, x0: Int, y0: Int, x1: Int, y1: Int): Int {
+fun reachableCell(body: RigidBody, pose: Pose, x0: Int, y0: Int, x1: Int, y1: Int): Int {
     val loX = x0.toLong() * Flight.PER_TILE
     val loY = y0.toLong() * Flight.PER_TILE
     val hiX = (x1 + 1).toLong() * Flight.PER_TILE
@@ -107,8 +107,9 @@ fun reachableCell(body: RigidBody, x0: Int, y0: Int, x1: Int, y1: Int): Int {
     var bestDistance = Long.MAX_VALUE
     for (i in body.cells.indices) {
         if (!body.cells[i]) continue
-        val cellX = body.positionX + (i % body.width) * Flight.PER_TILE
-        val cellY = body.positionY + (i / body.width) * Flight.PER_TILE
+        // Grid frame: the plate is a tile and a body is in the world, so the body comes to it.
+        val cellX = body.localX(pose) + (i % body.width) * Flight.PER_TILE
+        val cellY = body.localY(pose) + (i / body.width) * Flight.PER_TILE
         if (cellX + Flight.PER_TILE <= loX || cellX >= hiX) continue
         if (cellY + Flight.PER_TILE <= loY || cellY >= hiY) continue
         // In tiles, so the square cannot overflow however far out the body is.

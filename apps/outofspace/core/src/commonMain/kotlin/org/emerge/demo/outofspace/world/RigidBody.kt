@@ -14,8 +14,17 @@ enum class BodyKind {
 /**
  * Free-floating solid (rock or fragment). Own grid, momentum, temperature.
  *
- * ⚠️ Two frames: [impulseX/Y] in world frame, [positionX/Y] in vessel's grid frame.
- * Astern drift: grid moves by ship velocity each tick, so bodies drift relative to ship.
+ * **One frame: the world.** Both [positionX]/[positionY] and [impulseX]/[impulseY] are world
+ * quantities, so there is nothing to convert between them and no rotating reference frame to carry
+ * fictitious forces. Step 1 of `PLAN_rigid_bodies.md` moved the position here; it used to be in the
+ * vessel's grid frame, which was only valid while the vessel's angle was zero and which could not
+ * survive vessels and bodies being one kind of thing.
+ *
+ * Everything that speaks **tiles** — the hull test, the extractor, the spawner, the renderer — asks
+ * for [localX]/[localY] against [VesselState.pose] instead. Astern drift is not a rule any more: a
+ * body holds still in the world and the grid slides out from under it, which is what it always
+ * meant.
+ *
  * Not stored in bodiesOf (derives from machines/conduits/bridges).
  */
 class RigidBody(
@@ -26,7 +35,7 @@ class RigidBody(
     val height: Int,
     /** Which cells of that box are solid, row-major. A body is rarely a rectangle. */
     val cells: BooleanArray,
-    /** Top-left corner of [cells], in the vessel's grid frame, in billionths [Flight.PER_TILE] counts. */
+    /** Top-left corner of [cells], **in the world**, in billionths [Flight.PER_TILE] counts. */
     val positionX: Long,
     val positionY: Long,
     /** Momentum in world frame (not vessel frame — ship's frame accelerates). */
@@ -91,9 +100,27 @@ class RigidBody(
     val velocityX: Long get() = scaledRatio(impulseX, mass, Flight.PER_TILE)
     val velocityY: Long get() = scaledRatio(impulseY, mass, Flight.PER_TILE)
 
-    /** Its centre in the vessel's frame, which is what "where is it" means for everything but drawing. */
+    /** Its centre, in the world. */
     val centreX: Long get() = positionX + width * Flight.PER_TILE / 2L
     val centreY: Long get() = positionY + height * Flight.PER_TILE / 2L
+
+    /**
+     * Its top-left corner in [pose]'s frame — grid coordinates, which is what every tile index in
+     * the game is built from.
+     *
+     * ⚠️ **A body has no orientation of its own yet** (step 3), so this is the corner of an
+     * axis-aligned box even when the *vessel* is turned. That is wrong in a way that does not show
+     * while `ang` is zero and shows badly the moment it is not, and it is deliberately left for the
+     * step that gives bodies an angle. Until then the sim is exactly as correct as it was.
+     */
+    fun localX(pose: Pose): Long = pose.toLocalX(positionX, positionY)
+
+    fun localY(pose: Pose): Long = pose.toLocalY(positionX, positionY)
+
+    /** Its centre in [pose]'s frame — what plating, torque arms and the extractor's reach all want. */
+    fun localCentreX(pose: Pose): Long = pose.toLocalX(centreX, centreY)
+
+    fun localCentreY(pose: Pose): Long = pose.toLocalY(centreX, centreY)
 
     fun copy(
         kind: BodyKind = this.kind,
@@ -231,8 +258,7 @@ fun driftBodies(
     structure: StructureMap,
     bodies: List<RigidBody>,
     platingGravity: org.emerge.sim.core.physics.primitives.Frac2,
-    shipVelocityX: Long,
-    shipVelocityY: Long,
+    ship: ShipMotion,
     shipMass: Long,
     about: MassDistribution = MassDistribution.EMPTY,
 ): BodyStep {
@@ -270,12 +296,19 @@ fun driftBodies(
     // The ship's velocity moves as it hands momentum out, and the *next* body has to sweep against
     // where the hull is going rather than where it started. Same defect as the stale wall inside
     // [sweepBody] and the same fix, one level up; it only shows with two heavy bodies aboard.
-    var shipVx = shipVelocityX
-    var shipVy = shipVelocityY
+    var shipVx = ship.velocityX
+    var shipVy = ship.velocityY
     val moved = bodies.map { body ->
         val mass = body.mass
         if (mass <= 0L) return@map body
-        val felt = platingFeltBy(grid, body.centreX, body.centreY, platingGravity)
+        // Plating is a field the *ship* makes, so whether a body is over the deck is a question
+        // about the grid, asked in the grid's frame.
+        val felt = platingFeltBy(
+            grid,
+            body.localCentreX(ship.pose),
+            body.localCentreY(ship.pose),
+            platingGravity,
+        )
         // ⚠️ The mass is the *scale*, not the numerator. `mass × raw` is a mass times a fixed-point
         // one — one whole g of plating is a raw of [Flight.FRAC_ONE], 2.1e9 — so written the obvious
         // way round it wraps for any body over about four kilograms at a microgram per unit. An 83 kg
@@ -285,7 +318,7 @@ fun driftBodies(
         val platingY = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
         val swept = sweepBody(
             grid, structure, body,
-            shipVx, shipVy, shipMass,
+            ShipMotion(ship.pose, shipVx, shipVy, ship.angVel), shipMass,
             restingSpeed(felt.x.raw, mass), restingSpeed(felt.y.raw, mass),
         )
         val gaveX = swept.impulseX + platingX
@@ -296,8 +329,8 @@ fun driftBodies(
         // kept at [Flight.PER_TILE] to the tile, a thousand times finer than a lever arm needs.
         handedTorque += torqueAbout(
             about,
-            body.centreX / (Flight.PER_TILE / Rotation.MILLI_TILE),
-            body.centreY / (Flight.PER_TILE / Rotation.MILLI_TILE),
+            body.localCentreX(ship.pose) / (Flight.PER_TILE / Rotation.MILLI_TILE),
+            body.localCentreY(ship.pose) / (Flight.PER_TILE / Rotation.MILLI_TILE),
             gaveX, gaveY,
         )
         if (shipMass > 0L) {

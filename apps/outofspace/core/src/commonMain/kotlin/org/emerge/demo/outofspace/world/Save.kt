@@ -27,7 +27,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 14
+    const val VERSION = 15
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -67,7 +67,8 @@ object Save {
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
         // Bodies: free mass, no tracking beyond the list itself.
 
-        // Body momentum in world frame, position on vessel grid. Shape as 0/1 run for hand-editing.
+        // Body momentum AND position both in the world frame since v15 — see [Pose]. Shape as a
+        // 0/1 run for hand-editing.
         for (b in state.bodies) {
             out.append("body ").append(b.width).append(' ').append(b.height)
                 .append(' ').append(b.positionX).append(' ').append(b.positionY)
@@ -592,7 +593,8 @@ object Save {
                             kind = BodyKind.ROCK,
                             width = w, height = h,
                             cells = BooleanArray(bits.length) { bits[it] == '1' },
-                            // Position is in Flight units — tiles, not mass — so it does not move.
+                            // Flight units — tiles, not mass — so the mass rescale does not touch it.
+                            // World frame since v15; a v14 file is converted below.
                             positionX = long(3), positionY = long(4),
                             impulseX = scaled(5), impulseY = scaled(6),
                             // Per filled cell since v14; one figure before that, spread evenly —
@@ -637,12 +639,30 @@ object Save {
             if (pipeEnergy.any { it != 0L }) AirField.of(pipeMass, pipeEnergy) else AirField.of(pipeMass)
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
-        val loaded = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
+        val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
             val shipMass = vesselMass(machines.toList(), conduits, bridges.toList())
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
                     impulseY = it.impulseY + it.mass * impulseY / shipMass,
+                )
+            }
+        }
+        // V15: body *position* followed its momentum out of the vessel frame and into the world —
+        // step 1 of `PLAN_rigid_bodies.md`, which deleted the vessel frame rather than correcting
+        // for it. A version 14 file states a body's corner in grid coordinates, so it is placed
+        // through the pose the same file describes.
+        //
+        // In practice every such file has `ang == 0` and the conversion is a translation, because
+        // nothing could turn a ship until the tick before this format changed. It goes through
+        // [Pose] anyway rather than adding `positionX`: a migration that is only correct for the
+        // saves that happen to exist is a migration that breaks on the first one that does not.
+        val loaded = if (version >= 15 || bodies.isEmpty()) momentumFixed else {
+            val pose = Pose(positionX, positionY, ang)
+            momentumFixed.map {
+                it.copy(
+                    positionX = pose.toWorldX(it.positionX, it.positionY),
+                    positionY = pose.toWorldY(it.positionX, it.positionY),
                 )
             }
         }

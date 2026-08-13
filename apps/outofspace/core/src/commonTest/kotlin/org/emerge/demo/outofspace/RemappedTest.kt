@@ -336,8 +336,20 @@ class RemappedTest {
 
     // ── Bodies ────────────────────────────────────────────────────────────
 
+    /**
+     * A rock does not move because the player built a row of hull off the port bow.
+     *
+     * **This replaces `bodies shift by dx_PER_TILE and dy_PER_TILE`, which asserted the opposite** —
+     * correctly, while a body's position was stored in the grid's frame and every tile index moved
+     * under it. Step 1 of `PLAN_rigid_bodies.md` moved bodies into the world, and the same physical
+     * fact now has the opposite spelling: the body holds still and the *origin* is what moves.
+     *
+     * Both halves are asserted, because either alone would pass on a broken implementation. A body
+     * that never moved would satisfy the first even if the pose had been left behind, and the grid
+     * would then have slid out from under the whole asteroid field.
+     */
     @Test
-    fun `bodies shift by dx_PER_TILE and dy_PER_TILE`() {
+    fun `a grid that grows moves its origin, not its bodies`() {
         val s0 = populatedWorld()
         val oldGrid = s0.grid
         val newGrid = Grid(oldGrid.width + 4, oldGrid.height + 3)
@@ -347,10 +359,20 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         for (i in s0.bodies.indices) {
-            val expectedX = s0.bodies[i].positionX + dx * Flight.PER_TILE
-            val expectedY = s0.bodies[i].positionY + dy * Flight.PER_TILE
-            assertEquals(expectedX, s1.bodies[i].positionX, "body $i positionX")
-            assertEquals(expectedY, s1.bodies[i].positionY, "body $i positionY")
+            assertEquals(s0.bodies[i].positionX, s1.bodies[i].positionX, "body $i moved in the world, x")
+            assertEquals(s0.bodies[i].positionY, s1.bodies[i].positionY, "body $i moved in the world, y")
+            // And the point of it: in the *grid* it has shifted by exactly the growth, so a body
+            // that was over tile (5,5) is over tile (9,8), which is the same place on the deck.
+            assertEquals(
+                s0.bodies[i].localX(s0.pose) + dx * Flight.PER_TILE,
+                s1.bodies[i].localX(s1.pose),
+                "body $i is over the wrong tile now, x",
+            )
+            assertEquals(
+                s0.bodies[i].localY(s0.pose) + dy * Flight.PER_TILE,
+                s1.bodies[i].localY(s1.pose),
+                "body $i is over the wrong tile now, y",
+            )
         }
     }
 

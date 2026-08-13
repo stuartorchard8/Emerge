@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.Hull
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Machine
 import org.emerge.demo.outofspace.world.Motion
+import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.MachineKind
 import org.emerge.demo.outofspace.world.Extractor
@@ -303,7 +304,7 @@ class OutofspaceRenderer {
         drawDepartures(state)
 
         // Bodies over built (not part of vessel).
-        for (body in state.bodies) drawBody(body)
+        for (body in state.bodies) drawBody(body, state.pose)
 
         // Overlay over machines.
         if (overlay != Overlay.None) {
@@ -382,9 +383,10 @@ class OutofspaceRenderer {
      * Each cell is inset slightly and gets a lighter face, so a rock reads as rubble rather than as
      * a solid slab of one colour at the zoom anyone plays at.
      */
-    private fun drawBody(body: RigidBody) {
-        val ox = body.positionX.toFloat() / Flight.PER_TILE
-        val oy = body.positionY.toFloat() / Flight.PER_TILE
+    private fun drawBody(body: RigidBody, pose: Pose) {
+        // The world is where a body lives; the grid is where this function draws.
+        val ox = body.localX(pose).toFloat() / Flight.PER_TILE
+        val oy = body.localY(pose).toFloat() / Flight.PER_TILE
         for (cy in 0 until body.height) {
             for (cx in 0 until body.width) {
                 if (!body.cells[cy * body.width + cx]) continue
