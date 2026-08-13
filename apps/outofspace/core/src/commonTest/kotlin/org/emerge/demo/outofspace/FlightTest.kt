@@ -395,17 +395,12 @@ class FlightTest {
             val s = controller.state
             val aboardX = s.momentum.totalX + s.pipeMomentum.totalX
             val aboardY = s.momentum.totalY + s.pipeMomentum.totalY
-            assertEquals(
-                0L,
-                s.momentumBalanceX,
-                "tick ${s.tick}: x — ship ${s.vesselImpulseX}, aboard $aboardX, " +
-                    "exhaust ${s.exhaustMomentumX}, undelivered ${s.undeliveredImpulseX}",
-            )
-            assertEquals(
-                0L,
-                s.momentumBalanceY,
-                "tick ${s.tick}: y — ship ${s.vesselImpulseY}, aboard $aboardY, " +
-                    "exhaust ${s.exhaustMomentumY}, undelivered ${s.undeliveredImpulseY}",
+            MomentumLedger.assertBalanced(
+                s,
+                "tick ${s.tick} — ship (${s.vesselImpulseX}, ${s.vesselImpulseY}), " +
+                    "aboard ($aboardX, $aboardY), " +
+                    "exhaust (${s.exhaustMomentumX}, ${s.exhaustMomentumY}), " +
+                    "undelivered (${s.undeliveredImpulseX}, ${s.undeliveredImpulseY})",
             )
         }
 

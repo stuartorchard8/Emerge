@@ -452,7 +452,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
             motion = w.motion.freeze(),
-        ).resized(w.fitRequested)
+        ).bookedFrameTurn(state.pose).resized(w.fitRequested)
+    }
+
+    /**
+     * Charge the ledger for the momentum the gas appears to gain by being carried round with the
+     * hull — see [VesselState.frameTurnImpulseX] for what it is and why it is not physics.
+     *
+     * Applied to the finished state and against [was], the pose the tick started at, because the
+     * term the algebra asks for is the **end-of-tick** gas vector turned through the tick's change
+     * of attitude. Working it through: the gas gave the hull `P` this tick and was turned by the
+     * start-of-tick pose when it did (see `netImpulse`), so the balance moves by
+     * `[R(θₜ) − R(θₜ₋₁)]·(G − P)` — and `G − P` is what the gas is holding when the tick ends, which
+     * is what this reads. Nothing to do if the ship did not turn, which is the overwhelmingly common
+     * case and worth not paying four multiplies for.
+     */
+    private fun VesselState.bookedFrameTurn(was: Pose): VesselState {
+        if (pose.ang == was.ang) return this
+        val gasX = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX
+        val gasY = momentum.totalY + pipeMomentum.totalY + undeliveredImpulseY
+        return copy(
+            frameTurnImpulseX = frameTurnImpulseX + pose.turnedX(gasX, gasY) - was.turnedX(gasX, gasY),
+            frameTurnImpulseY = frameTurnImpulseY + pose.turnedY(gasX, gasY) - was.turnedY(gasX, gasY),
+        )
     }
 
     /**

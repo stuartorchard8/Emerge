@@ -147,12 +147,13 @@ object Save {
         writeSparse(out, "momx", state.momentum.copyX())
         writeSparse(out, "momy", state.momentum.copyY())
 
-        // Ten impulse values (ledger grew). Appended, not versioned: absent reads as zero.
+        // Twelve impulse values (ledger grew). Appended, not versioned: absent reads as zero.
         out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
             .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
             .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
             .append(' ').append(state.bodyImpulseX).append(' ').append(state.bodyImpulseY)
+            .append(' ').append(state.frameTurnImpulseX).append(' ').append(state.frameTurnImpulseY)
             .append('\n')
         // Rotation. A new keyword rather than more fields on `thrust`, because `thrust` means the
         // linear pair and a reader that had to count tokens to find out otherwise is a reader that
@@ -467,6 +468,8 @@ object Save {
         var undeliveredY = 0L
         var debugX = 0L
         var debugY = 0L
+        var frameTurnX = 0L
+        var frameTurnY = 0L
         var bodyImpulseX = 0L
         var bodyImpulseY = 0L
         val bodies = ArrayList<RigidBody>()
@@ -625,6 +628,7 @@ object Save {
                     if (tokens.size > 6) { undeliveredX = scaled(5); undeliveredY = scaled(6) }
                     if (tokens.size > 8) { debugX = scaled(7); debugY = scaled(8) }
                     if (tokens.size > 10) { bodyImpulseX = scaled(9); bodyImpulseY = scaled(10) }
+                    if (tokens.size > 12) { frameTurnX = scaled(11); frameTurnY = scaled(12) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -729,6 +733,8 @@ object Save {
             debugImpulseY = debugY,
             bodyImpulseX = bodyImpulseX,
             bodyImpulseY = bodyImpulseY,
+            frameTurnImpulseX = frameTurnX,
+            frameTurnImpulseY = frameTurnY,
             bodies = loaded,
         )
     }

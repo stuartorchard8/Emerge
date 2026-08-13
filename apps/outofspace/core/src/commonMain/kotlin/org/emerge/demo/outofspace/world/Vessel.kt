@@ -353,6 +353,30 @@ data class VesselState(
     val bodyImpulseX: Long = 0L,
     val bodyImpulseY: Long = 0L,
     /**
+     * **World-frame momentum that appeared because the ship turned, and that nobody applied.**
+     *
+     * The one term in the ledger that is not an impulse. The gas's momentum lives per-edge on the
+     * grid, so it is stated in the *ship's* axes and it is turned into the world at read time — see
+     * [momentumBalanceX]. Turn the ship and that stored vector points somewhere else in the world
+     * without anything having pushed it: `R(θₜ)·G` is simply not `R(θₜ₋₁)·G`. The difference is real
+     * — a shipful of air genuinely does swing round with the hull — but the hull is never charged
+     * for swinging it, so the world-frame linear identity has no way to close while the ship rotates.
+     *
+     * Measured before this term existed: `momentumBalanceX` on a rotating starter vessel walked
+     * monotonically to 359 by tick 116, tick by tick exactly equal to
+     * `pose.turnedX(gas) − previousPose.turnedX(gas)`, and stopped dead on the ticks the rotation
+     * stopped. Nothing was leaking; the instrument was reading a frame change as a loss.
+     *
+     * ⚠️ **This is bookkeeping and not physics.** It is accumulated and subtracted here so that the
+     * ledger states a true identity, and it touches no trajectory: nothing reads it but
+     * [momentumBalanceX]. The physics it stands in for — the hull taking a reaction for dragging its
+     * own atmosphere round, and that reaction's torque — is not modelled, and this term is exactly
+     * how big that omission is. If it ever grows to a size that matters next to [vesselImpulseX],
+     * that is the signal to model it rather than to book it.
+     */
+    val frameTurnImpulseX: Long = 0L,
+    val frameTurnImpulseY: Long = 0L,
+    /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
      * the ore balance, and a break in one does not obscure the other.
@@ -634,7 +658,8 @@ data class VesselState(
     /**
      * The whole momentum identity as one number: zero, or momentum has been minted or lost.
      *
-     * `vessel + gas + pipe gas + exhaust + undelivered + bodies − debug engine == 0`. Written here
+     * `vessel + gas + pipe gas + exhaust + undelivered + bodies − debug engine − frame turn == 0`,
+     * where the last term is the one that is not an impulse — see [frameTurnImpulseX]. Written here
      * once because it was written out by hand in seven places, and a conservation law that is
      * transcribed seven times is a conservation law with seven chances to be transcribed wrong.
      *
@@ -649,10 +674,10 @@ data class VesselState(
      * turning where it is booked, exactly as the exhaust does.
      */
     val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX -
-        debugImpulseX + pose.turnedX(gasMomentumX, gasMomentumY)
+        debugImpulseX - frameTurnImpulseX + pose.turnedX(gasMomentumX, gasMomentumY)
 
     val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY -
-        debugImpulseY + pose.turnedY(gasMomentumX, gasMomentumY)
+        debugImpulseY - frameTurnImpulseY + pose.turnedY(gasMomentumX, gasMomentumY)
 
     /** Everything the gas is holding, in the grid's axes — the un-turned half of [momentumBalanceX]. */
     private val gasMomentumX: Long get() = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX

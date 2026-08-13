@@ -1,6 +1,6 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.num.scaledRatioRounded
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Norm
 
@@ -133,6 +133,20 @@ class Pose(
  * so it never forms the wide product at all. It refuses negatives, hence the sign handling here —
  * a sine is negative for half of every turn and a coordinate is negative for half of every grid.
  *
+ * ### ⚠️ Why it rounds to nearest and does not truncate
+ *
+ * Everything else in the simulation truncates, and a rotation is the one place that is wrong. `R(θ)`
+ * is four of these multiplies and truncation pulls all four toward zero, so a turned vector comes
+ * back systematically *short*. On a single read that is a unit or two and nobody could see it. On
+ * the ship's momentum, which is a running total turned once per tick as it is booked, the shortfall
+ * has a fixed sign and simply piles up: `momentumBalanceX` on a rotating starter vessel walked
+ * monotonically to 112 over forty ticks and **stopped moving the tick the rotation stopped**, which
+ * is the fingerprint of a biased rounding rather than of momentum going missing.
+ *
+ * [scaledRatioRounded] makes each error a coin flip instead. It does not make the turn exact —
+ * nothing integer can — but an unbiased error random-walks rather than drifts, which is the
+ * difference between a ledger that closes to a handful of units for ever and one that does not.
+ *
  * ### Measured, not asserted
  *
  * A full rotation of any point on a 96×60 grid is out by at most **1667 sub-units, 1.7e-6 tile**,
@@ -144,7 +158,7 @@ class Pose(
  */
 fun rotScale(value: Long, fracRaw: Long): Long {
     if (value == 0L || fracRaw == 0L) return 0L
-    val magnitude = scaledRatio(
+    val magnitude = scaledRatioRounded(
         numerator = if (fracRaw < 0L) -fracRaw else fracRaw,
         denominator = Flight.FRAC_ONE,
         scale = if (value < 0L) -value else value,

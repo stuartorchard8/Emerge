@@ -306,15 +306,6 @@ class GridFitTriggerTest {
         // extractor produced, so it can never be zero.
         assertEquals(0L, s.inTransitMass + s.ventedMass - s.extractedMass, "massBalance $whenever")
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.
-        assertEquals(
-            0L,
-            s.momentumBalanceX,
-            "momentumBalance x $whenever",
-        )
-        assertEquals(
-            0L,
-            s.momentumBalanceY,
-            "momentumBalance y $whenever",
-        )
+        MomentumLedger.assertBalanced(s, "momentumBalance $whenever")
     }
 }
