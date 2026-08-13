@@ -25,6 +25,22 @@ package org.emerge.demo.outofspace.chem
  */
 
 /**
+ *   Refinement methods
+ *
+ *   Four that fall out of the data and would each be a different machine:
+ *
+ *   1. Thermal decomposition — carbonates and hydrates give up CO₂/H₂O on heating alone. Calcite → lime + CO₂, serpentine → olivine +
+ *   water. No reagent, just heat, which makes it the natural tier-1 refinery and a good sink for waste heat from the reactor.
+ *   2. Carbothermic reduction — the iron one. Hematite + carbon → iron + CO. Consumes graphite, and the FeO-vs-Fe₂O₃ ratio decides how
+ *   much, so ore choice has a running cost rather than just a yield.
+ *   3. Roasting — sulfides + O₂ → oxide + SO₂. Two-stage (roast then reduce), produces a genuinely nasty gas you have to vent or scrub,
+ *   which gives your atmosphere sim something to do that the player actually cares about.
+ *   4. Fractional separation — for the rare earths, and deliberately not a smelt. LANTHANIDE_SUITE is a mixture that no single-pass process
+ *   separates; it wants a cascade where each stage improves purity slightly, so the player builds a long chain of identical units. That's
+ *   the marquee endgame build, and it's the one the table was designed to make possible.
+ */
+
+/**
  * Per-atom mass for the species whose [Species.molarMass] is molecular rather than atomic.
  *
  * Everything absent from this map contributes its [Species.molarMass] directly, which is correct for
