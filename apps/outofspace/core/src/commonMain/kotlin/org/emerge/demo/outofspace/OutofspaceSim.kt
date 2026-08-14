@@ -117,9 +117,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private const val FLUID_PERIOD      = 1
     private const val HEAT_PERIOD       = 1
     private const val PUMP_PERIOD       = 1
-    private const val PRESSURE_PERIOD   = 1
     private const val MACHINE_PERIOD    = 1
-    private const val FLIGHT_PERIOD     = 1
 
     /** Runs on tick 0 (all periods divide 0). */
     private fun shouldRun(tick: Long, period: Int): Boolean = tick % period == 0L
