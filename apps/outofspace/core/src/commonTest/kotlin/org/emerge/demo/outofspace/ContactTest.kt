@@ -6,8 +6,8 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Contact
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Operand
@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.collectHullContacts
+import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.demo.outofspace.world.solveContacts
 import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
@@ -417,7 +418,7 @@ class ContactTest {
         width = 1, height = 1, cells = booleanArrayOf(true),
         positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
         oreComposition = OutofspaceReducer.DEFAULT_ORE_BODY,
-        energy = org.emerge.demo.outofspace.world.TileEnergy.uniform(1, 0L),
+        energy = TileEnergy.uniform(1, 0L),
     )
 
     private companion object {

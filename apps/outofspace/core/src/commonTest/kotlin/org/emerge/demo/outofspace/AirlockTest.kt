@@ -1,10 +1,10 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Airlock
+import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Structure

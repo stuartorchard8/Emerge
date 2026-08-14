@@ -1,5 +1,9 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
+
 /**
  * Every tile's [Structure], derived rather than authored.
  *
@@ -41,13 +45,13 @@ class StructureMap(private val kinds: ByteArray) {
          * all: rails and bridges live on their own layers and share a tile with the deck beneath
          * them, so a belt running through a room does not divide it.
          *
-         * The exception is a [MachineKind.isPermeable] one, which is a plate and not a block: it is
+         * The exception is a [org.emerge.demo.outofspace.world.machine.MachineKind.isPermeable] one, which is a plate and not a block: it is
          * skipped entirely, so the tile it stands on is whatever the flood fill would have made it.
          * Nothing downstream needs a case for it — air, heat and rock contact all read this map, and
          * all three then treat the tile as the empty floor it is.
          *
          * [openness] names the tiles that are open *this tick* despite being solid things — today,
-         * [Airlock]s that are being signalled. They are skipped exactly as a permeable plate is, so
+         * [org.emerge.demo.outofspace.world.machine.Airlock]s that are being signalled. They are skipped exactly as a permeable plate is, so
          * the fill pours through an open door and the room beyond it correctly becomes outside. Omit
          * it and every door is shut, which is the right answer for a world being loaded or built.
          * See [org.emerge.demo.outofspace.world.airlockOpenness].

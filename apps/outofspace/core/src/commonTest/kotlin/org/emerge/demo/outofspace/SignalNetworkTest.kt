@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.SignalNetworks
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,7 +96,7 @@ class SignalNetworkTest {
 
     @Test
     fun `an isolated tile is a network of one`() {
-        val s = edit(empty(), Edit.Place(grid.index(5, 5), org.emerge.demo.outofspace.world.MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
+        val s = edit(empty(), Edit.Place(grid.index(5, 5), MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
         val n = networks(s)
 
         assertEquals(1, n.count)

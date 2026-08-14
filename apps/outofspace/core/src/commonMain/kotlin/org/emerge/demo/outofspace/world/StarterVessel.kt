@@ -1,6 +1,13 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.OutofspaceReducer
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.Vent
 
 /**
  * Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents).

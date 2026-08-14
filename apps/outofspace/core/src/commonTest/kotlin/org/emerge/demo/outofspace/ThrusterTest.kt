@@ -8,14 +8,14 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.StructureMap
-import org.emerge.demo.outofspace.world.Thruster
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.exhaustPath
+import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -24,7 +24,7 @@ import kotlin.test.assertTrue
 /**
  * The first engine you can build: propellant in, exhaust out, ship the other way.
  *
- * Four claims, one per case of [org.emerge.demo.outofspace.world.ExhaustPath], plus the ledgers.
+ * Four claims, one per case of [org.emerge.demo.outofspace.world.machine.ExhaustPath], plus the ledgers.
  * The ledgers are the reason most of this file exists — a thruster spends solid mass, mints gas,
  * moves atmosphere and hands momentum overboard, which is four of the world's conservation
  * identities touched by one machine, and the whole design turns on none of them noticing.

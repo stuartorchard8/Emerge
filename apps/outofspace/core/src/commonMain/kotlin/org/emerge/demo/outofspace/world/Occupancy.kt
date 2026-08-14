@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Machine
+
 /**
  * Which tiles belong to which machine.
  *

@@ -1,10 +1,14 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.StructureMap
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * A rocket motor on one tile: propellant in at the back, exhaust out the front, and the ship goes
@@ -27,7 +31,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * ⚠️ **A blocked motor produces no direct impulse at all**, and that is the physics and not a
  * simplification: exhaust that hits your own ship pushes your own ship, so the two halves cancel
  * exactly. What is left is a tile full of very hot, very fast gas, which pushes on the hull around
- * it through [applyPressureForce] like any other pressure — so a badly placed thruster is not
+ * it through [org.emerge.demo.outofspace.world.applyPressureForce] like any other pressure — so a badly placed thruster is not
  * *nothing*, it is a wildly inefficient one. See [exhaustPath] for how "blocked" is decided.
  *
  * A motor bolted face-first against a wall is that case taken to its limit rather than a fourth
@@ -134,9 +138,9 @@ data class Thruster(
  * There is deliberately no third case for "nowhere to put it". A thruster's own tile is always
  * somewhere, so the walk always has an answer and no caller needs a branch for the absence of one.
  *
- * ⚠️ Derived every tick from [StructureMap], not cached on the machine and refreshed on edit. One
+ * ⚠️ Derived every tick from [org.emerge.demo.outofspace.world.StructureMap], not cached on the machine and refreshed on edit. One
  * ray per thruster over a map that is itself rebuilt every tick is nothing, and it means there is no
- * invalidation to forget — the same trade [StructureMap] and [Occupancy] already made, and for the
+ * invalidation to forget — the same trade [org.emerge.demo.outofspace.world.StructureMap] and [org.emerge.demo.outofspace.world.Occupancy] already made, and for the
  * same reason: a cache here would be wrong for exactly one tick after a wall moved, which is the
  * tick a player is watching.
  */

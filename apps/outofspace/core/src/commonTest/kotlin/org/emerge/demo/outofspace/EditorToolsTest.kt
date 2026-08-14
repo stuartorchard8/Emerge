@@ -2,12 +2,13 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
-import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.machine.Machine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -37,7 +38,7 @@ class EditorToolsTest {
 
     /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
     private fun layered(): OutofspaceController {
-        val machines = arrayOfNulls<org.emerge.demo.outofspace.world.Machine>(grid.size)
+        val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 2..10) { machines[grid.index(x, 2)] = Hull(); machines[grid.index(x, 8)] = Hull() }
         for (y in 2..8) { machines[grid.index(2, y)] = Hull(); machines[grid.index(10, y)] = Hull() }
         machines[grid.index(6, 5)] = Storage(Direction.Right)

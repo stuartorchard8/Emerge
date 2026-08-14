@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.PortKind
@@ -15,36 +15,36 @@ import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
-import org.emerge.demo.outofspace.world.Airlock
-import org.emerge.demo.outofspace.world.Hull
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.SignalField
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
-import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Extractor
-import org.emerge.demo.outofspace.world.Processor
-import org.emerge.demo.outofspace.world.KeyInput
-import org.emerge.demo.outofspace.world.Sensor
-import org.emerge.demo.outofspace.world.Smelter
-import org.emerge.demo.outofspace.world.Storage
-import org.emerge.demo.outofspace.world.Pump
-import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Rotation
-import org.emerge.demo.outofspace.world.Vaporizer
-import org.emerge.demo.outofspace.world.Thruster
+import org.emerge.demo.outofspace.world.machine.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.shader.StarscapeShader
 import org.emerge.render.torus.ui.UiRectRenderer
 import org.emerge.sim.core.physics.primitives.Coord
-import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.math.PI
 import kotlin.math.floor
 import kotlin.math.max
@@ -598,7 +598,7 @@ class OutofspaceRenderer {
         val n = m.kind.size
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
-        if (m !is Sensor && m !is KeyInput && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(index)) <= 0) {
+        if (m !is Sensor && m !is WireButton && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(index)) <= 0) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, index, m)
@@ -616,6 +616,10 @@ class OutofspaceRenderer {
             }
             is Processor -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
+                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+            }
+            is ThermalDecomposer -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.ThermalDecomposer))
                 fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
             }
             is Vaporizer -> {
@@ -652,7 +656,7 @@ class OutofspaceRenderer {
             }
             // A button: its face lights up while it is held, and its key is written on it by the
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
-            is KeyInput -> {
+            is WireButton -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.KeyInput))
                 val pressed = state.signals.at(index) / SignalField.FULL.toFloat()
                 tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
@@ -1218,6 +1222,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Bridge -> 0x1A2030FFL
     MachineKind.Extractor -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
+    MachineKind.ThermalDecomposer -> 0x5E5A3BFFL
     MachineKind.Vaporizer -> 0x905A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Storage -> 0x3A4A5AFFL

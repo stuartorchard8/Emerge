@@ -1,6 +1,11 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.capacityPerTile
+import org.emerge.demo.outofspace.world.size
 
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
@@ -24,10 +29,10 @@ sealed interface Machine {
     val wiring: Wiring
 
     /**
-     * How much thermal energy this machine is holding, in the millijoules [Material] documents —
+     * How much thermal energy this machine is holding, in the millijoules [org.emerge.demo.outofspace.world.Material] documents —
      * **one figure per tile of it**, not one for the whole machine.
      *
-     * On the machine rather than in a field beside it, and that is load-bearing — see [Body]. A
+     * On the machine rather than in a field beside it, and that is load-bearing — see [org.emerge.demo.outofspace.world.Body]. A
      * parallel array keyed by tile would be desynchronised by `copy(machines = …)`, which is the
      * operation every save load, every fixture and every player edit goes through, and the symptom
      * is a freshly laid rail inheriting the energy of the furnace that used to stand there. Here,
@@ -148,7 +153,7 @@ class TileEnergy private constructor(private val perTile: LongArray) {
  *
  * The footprint, squared — except for a bridge, which claims no floor space at all and is
  * nonetheless three tiles of metal spanning three tiles of room. Deliberately **not** derived from
- * the clipped [coveredTiles] of wherever it stands: what a thing is made of does not change when it
+ * the clipped [org.emerge.demo.outofspace.world.coveredTiles] of wherever it stands: what a thing is made of does not change when it
  * is built near the edge of the grid, and a capacity that varied with position would make an
  * identical machine hold a different amount of heat depending on where you put it.
  */

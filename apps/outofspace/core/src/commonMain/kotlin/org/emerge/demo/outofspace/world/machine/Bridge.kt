@@ -1,7 +1,9 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.logistics.Packet
-import org.emerge.demo.outofspace.world.MachineKind.Bridge
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Bridge: 3-tile span for crossing conduit runs. Occupies no layer (no special network cases).

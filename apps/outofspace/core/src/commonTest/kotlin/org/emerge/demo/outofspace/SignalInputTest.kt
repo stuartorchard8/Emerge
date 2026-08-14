@@ -1,15 +1,15 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Airlock
+import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.KeyInput
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.SignalField
@@ -57,7 +57,7 @@ class SignalInputTest {
     /** One button on one run of wire, going nowhere in particular. */
     private fun rig(key: InputKey = InputKey.Up): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(buttonAt.first, buttonAt.second)] = KeyInput(key)
+        machines[grid.index(buttonAt.first, buttonAt.second)] = WireButton(key)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, buttonAt.first, farEnd.first, buttonAt.second)
         return VesselState(
@@ -101,8 +101,8 @@ class SignalInputTest {
     @Test
     fun `holding two keys drives both their buttons`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 2)] = KeyInput(InputKey.Left)
-        machines[grid.index(2, 6)] = KeyInput(InputKey.Right)
+        machines[grid.index(2, 2)] = WireButton(InputKey.Left)
+        machines[grid.index(2, 6)] = WireButton(InputKey.Right)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
@@ -119,7 +119,7 @@ class SignalInputTest {
     @Test
     fun `a button with no wire under it is harmless`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 4)] = KeyInput(InputKey.Up)
+        machines[grid.index(2, 4)] = WireButton(InputKey.Up)
         val s = run(VesselState(grid, machines.toList()), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
@@ -128,7 +128,7 @@ class SignalInputTest {
     fun `a button keeps its key across a save`() {
         val s = rig(InputKey.B)
         val back = Save.read(Save.write(s))
-        assertEquals(InputKey.B, (back[grid.index(buttonAt.first, buttonAt.second)] as KeyInput).key)
+        assertEquals(InputKey.B, (back[grid.index(buttonAt.first, buttonAt.second)] as WireButton).key)
     }
 
     // ── The whole point ───────────────────────────────────────────────────────
@@ -159,7 +159,7 @@ class SignalInputTest {
         machines[grid.index(w, h / 2)] = Airlock(
             wiring = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Wire, SignalField.FULL)))),
         )
-        machines[grid.index(3, h / 2)] = KeyInput(InputKey.Right)
+        machines[grid.index(3, h / 2)] = WireButton(InputKey.Right)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 3, w, h / 2)

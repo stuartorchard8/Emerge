@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.cook
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.chem.smelt
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -11,7 +12,7 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.FlowCursors
@@ -20,7 +21,7 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Directed
+import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.Grid
@@ -36,29 +37,29 @@ import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Body
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.BodySlot
-import org.emerge.demo.outofspace.world.Airlock
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.MACHINE_BUFFER_CAP
-import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
-import org.emerge.demo.outofspace.world.MachineKind
-import org.emerge.demo.outofspace.world.Extractor
-import org.emerge.demo.outofspace.world.biteCell
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.reach
-import org.emerge.demo.outofspace.world.reachableCell
-import org.emerge.demo.outofspace.world.Processor
-import org.emerge.demo.outofspace.world.Pump
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.KeyInput
-import org.emerge.demo.outofspace.world.Sensor
+import org.emerge.demo.outofspace.world.machine.reachableCell
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalNetworks
-import org.emerge.demo.outofspace.world.Smelter
-import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.StructureMap
-import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockSpawner
@@ -77,9 +78,9 @@ import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
-import org.emerge.demo.outofspace.world.Vaporizer
-import org.emerge.demo.outofspace.world.Thruster
-import org.emerge.demo.outofspace.world.exhaustPath
+import org.emerge.demo.outofspace.world.machine.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.gasCapacityAt
 import org.emerge.demo.outofspace.world.MomentumField
@@ -98,6 +99,7 @@ import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.gasCapacity
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
@@ -162,7 +164,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             if (seen >= 0) raise(i, fullness(w.machines[seen]))
                         }
                         // A finger on a key, on the same footing as any other transmitter.
-                        is KeyInput -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
+                        is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
                         else -> {}
                     }
                 }
@@ -185,10 +187,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 w.machines[i] = when (m) {
                     is Extractor -> w.leech(m, activation, i)
                     is Processor -> w.refine(cfg, m, activation, i)
+                    is ThermalDecomposer -> w.refine(cfg, m, activation, i)
                     is Smelter -> w.melt(cfg, m, activation, i)
                     is Vaporizer -> w.vaporize(m, activation, i)
                     is Thruster -> w.fire(cfg, m, activation, i, structure)
-                    else -> m
+                    is Airlock, is Bridge, is Pump, is Sensor, is Storage,
+                    is Hull, is Vent, is WireButton -> m
                 }
             }
         }
@@ -617,6 +621,49 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 inside = null,
                 product = r.product,
                 tailings = r.tailings,
+                progress = 0,
+                carry = carry,
+            )
+        } else {
+            return m.copy(
+                input = input,
+                inside = inProgress,
+                progress = m.progress + actionProgress.toInt(),
+                carry = carry,
+            )
+        }
+    }
+
+    private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, at: Int): ThermalDecomposer {
+        val input: Resource?
+        val inProgress: Resource?
+
+        if (m.inside == null) {
+            inProgress = m.input ?: return m // Nothing to do if there's no input
+            input = null
+            // Apply all heat as soon as new material starts being processed
+            heat(at, heatOfWorking(inProgress.mass, m))
+        } else {
+            input = m.input
+            inProgress = m.inside
+        }
+
+        val (actionProgress, carry) = throttled(1, activation, m.carry)
+        if (m.progress + actionProgress >= m.ticksPerAction) {
+            // Full output blocks the machine (catches tailings too).
+            if (m.product != null) {
+                return m.copy(
+                    input = input,
+                    inside = inProgress,
+                    progress = m.ticksPerAction,
+                    carry = carry,
+                )
+            }
+            val r = cook(inProgress, m.setTemperature)
+            return m.copy(
+                input = input,
+                inside = null,
+                product = r,
                 progress = 0,
                 carry = carry,
             )
@@ -1135,7 +1182,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.BindKey -> {
                     val at = originAt(edit.index) ?: return
                     val m = machines[at]
-                    if (m is KeyInput) machines[at] = m.copy(key = edit.key)
+                    if (m is WireButton) machines[at] = m.copy(key = edit.key)
                 }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
@@ -1609,6 +1656,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return when (destination) {
                 is Processor -> acceptInto(destination.input, packet)?.let { machines[target] =
                     destination.copy(input = it); true } ?: false
+                is ThermalDecomposer -> acceptInto(destination.input, packet)?.let { machines[target] =
+                    destination.copy(input = it); true } ?: false
                 is Smelter -> acceptInto(destination.input, packet)?.let { machines[target] =
                     destination.copy(input = it); true } ?: false
                 is Vaporizer -> acceptInto(destination.input, packet)?.let { machines[target] =
@@ -1639,7 +1688,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Bridge -> false
                 is Extractor -> false
                 is Pump -> false
-                is Sensor, is KeyInput -> false
+                is Sensor, is WireButton -> false
                 is Hull, is Airlock -> false
             }
         }
@@ -1661,11 +1710,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
             MachineKind.Extractor -> Extractor(facing)
             MachineKind.Processor -> Processor(facing)
+            MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
             MachineKind.Vaporizer -> Vaporizer(facing)
             MachineKind.Smelter -> Smelter(facing)
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
-            MachineKind.KeyInput -> KeyInput()
+            MachineKind.KeyInput -> WireButton()
             MachineKind.Vent -> Vent()
             MachineKind.Thruster -> Thruster(facing)
             MachineKind.Pump -> Pump(facing)

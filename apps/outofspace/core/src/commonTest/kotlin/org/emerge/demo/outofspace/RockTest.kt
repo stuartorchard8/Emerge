@@ -3,8 +3,8 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Flight
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save

@@ -1,4 +1,6 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
+
+import org.emerge.demo.outofspace.world.Conduit
 
 /**
  * What kind of thing sits on a tile — the palette the player builds from.
@@ -15,6 +17,7 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Bridge("BRIDGE", Conduit.Rail),
     Extractor("EXTRACTOR", isPermeable=true),
     Processor("PROCESSOR"),
+    ThermalDecomposer("THERMAL DECOMPOSER", isPermeable=true),
     Vaporizer("VAPORIZER", isPermeable=true),
     Smelter("SMELTER"),
     Storage("STORAGE"),

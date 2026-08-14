@@ -1,4 +1,7 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
+
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Watches the tile it faces and puts that machine's fullness on the wire beneath it.
@@ -7,7 +10,7 @@ package org.emerge.demo.outofspace.world
  * reading — a machine that measured several things would need a UI to say which.
  *
  * It used to name a colour. It no longer names anything: what it drives is whatever run of
- * [Conduit.Signal] passes under its own tile, so the answer to "what does this sensor control" is
+ * [org.emerge.demo.outofspace.world.Conduit.Signal] passes under its own tile, so the answer to "what does this sensor control" is
  * something you can trace with your eye instead of something you have to remember. A sensor with no
  * wire under it is not an error — it is a half-built vessel, and it simply drives nothing.
  */

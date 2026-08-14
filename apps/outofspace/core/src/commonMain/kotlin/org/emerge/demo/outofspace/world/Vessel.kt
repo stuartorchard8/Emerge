@@ -5,6 +5,23 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
+import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 
@@ -760,11 +777,12 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Bridge -> machine.mass
     is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
     is Processor -> (machine.input?.mass ?: 0L) + (machine.inside?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
+    is ThermalDecomposer -> (machine.input?.mass ?: 0L) + (machine.inside?.mass ?: 0L) + (machine.product?.mass ?: 0L)
     is Vaporizer -> (machine.input?.mass ?: 0L)
     is Thruster -> (machine.input?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
     is Storage -> machine.contents?.mass ?: 0L
-    is Sensor, is KeyInput -> 0L
+    is Sensor, is WireButton -> 0L
     is Hull, is Airlock -> 0L
     is Vent -> 0L
     is Pump -> 0L
@@ -782,11 +800,12 @@ fun fullness(machine: Machine?): Int = when (machine) {
     is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
     is Extractor -> (machine.buffer.mass * SignalField.FULL / Extractor.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is ThermalDecomposer -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
     is Vaporizer -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Thruster -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Smelter -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Storage -> ((machine.contents?.mass ?: 0L) * SignalField.FULL / Storage.CAP).toInt()
-    is Sensor, is KeyInput -> 0
+    is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
     is Vent -> 0
     is Pump -> 0
@@ -816,6 +835,11 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.product?.let { "CONCENTRATE" to it },
         machine.tailings?.let { "TAILINGS" to it },
     )
+    is ThermalDecomposer -> listOfNotNull(
+        machine.input?.let { "INPUT" to it },
+        machine.inside?.let { "PROCESSING" to it },
+        machine.product?.let { "CONCENTRATE" to it },
+    )
     is Vaporizer -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
     )
@@ -828,7 +852,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.slag?.let { "SLAG" to it },
     )
     is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
-    is Sensor, is KeyInput, is Vent, is Pump, is Hull, is Airlock -> emptyList()
+    is Sensor, is WireButton, is Vent, is Pump, is Hull, is Airlock -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
@@ -840,12 +864,15 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
             (machine.inside?.mixture ?: Mixture.EMPTY) +
             (machine.product?.mixture ?: Mixture.EMPTY) +
             (machine.tailings?.mixture ?: Mixture.EMPTY)
+    is ThermalDecomposer -> (machine.input?.mixture ?: Mixture.EMPTY) +
+            (machine.inside?.mixture ?: Mixture.EMPTY) +
+            (machine.product?.mixture ?: Mixture.EMPTY)
     is Vaporizer -> machine.input?.mixture ?: Mixture.EMPTY
     is Thruster -> machine.input?.mixture ?: Mixture.EMPTY
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
     is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
-    is Sensor, is KeyInput -> Mixture.EMPTY
+    is Sensor, is WireButton -> Mixture.EMPTY
     is Hull, is Airlock -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
     is Pump -> Mixture.EMPTY

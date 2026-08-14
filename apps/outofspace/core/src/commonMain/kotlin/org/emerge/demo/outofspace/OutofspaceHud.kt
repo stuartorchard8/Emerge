@@ -8,15 +8,15 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Negligible
-import org.emerge.demo.outofspace.world.Sensor
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
@@ -493,7 +493,7 @@ class OutofspaceHud {
             // under it, and the readout's job is to say whether there is one.
             val wired = controller.state.networks[index] >= 0
 
-            if (machine is KeyInput) {
+            if (machine is WireButton) {
                 clauseRow(
                     lhs = "WHEN KEY",
                     cmp = machine.key.label,

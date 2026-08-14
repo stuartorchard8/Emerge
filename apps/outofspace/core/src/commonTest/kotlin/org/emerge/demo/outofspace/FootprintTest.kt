@@ -10,14 +10,16 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
-import org.emerge.demo.outofspace.world.Processor
-import org.emerge.demo.outofspace.world.Smelter
-import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.sim.core.PlayerId
@@ -201,7 +203,7 @@ class FootprintTest {
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(6, 6)] = Storage(Direction.Right, stored)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
-        m[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Sensor(Direction.Up)
+        m[grid.index(7, 8)] = Sensor(Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
         val wires = arrayOfNulls<org.emerge.demo.outofspace.world.Segment>(grid.size)
         wires[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Segment(org.emerge.demo.outofspace.world.Conduit.Signal)
@@ -228,10 +230,10 @@ class FootprintTest {
         fun room(kind: MachineKind): VesselState {
             val m = arrayOfNulls<Machine>(grid.size)
             for (i in 1..14) {
-                m[grid.index(i, 1)] = org.emerge.demo.outofspace.world.Hull()
-                m[grid.index(i, 14)] = org.emerge.demo.outofspace.world.Hull()
-                m[grid.index(1, i)] = org.emerge.demo.outofspace.world.Hull()
-                m[grid.index(14, i)] = org.emerge.demo.outofspace.world.Hull()
+                m[grid.index(i, 1)] = Hull()
+                m[grid.index(i, 14)] = Hull()
+                m[grid.index(1, i)] = Hull()
+                m[grid.index(14, i)] = Hull()
             }
             m[grid.index(8, 8)] = OutofspaceReducer.let { _ ->
                 when (kind) {

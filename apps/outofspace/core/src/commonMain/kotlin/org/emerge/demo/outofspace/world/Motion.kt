@@ -1,7 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.logistics.Packet
-
 /**
  * Where everything on the conduit layers came from during the tick that just ran.
  *
@@ -71,7 +69,7 @@ class Motion(
         const val FROM_PORT: Int = 5
 
         /**
-         * Slot bits for [bridgeSlotIsNew], matching [Bridge]'s entry/middle/exit order.
+         * Slot bits for [bridgeSlotIsNew], matching [org.emerge.demo.outofspace.world.machine.Bridge]'s entry/middle/exit order.
          *
          * Only the middle and the exit are ever set. A bridge's ports sit at ±1 from its centre,
          * which is exactly where the entry and exit slots are drawn, so stepping onto a bridge is a

@@ -9,8 +9,8 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VolumeField
 
@@ -32,7 +32,7 @@ sealed interface Edit {
     /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
     data class Cut(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
 
-    /** Binds a button to a different key — see [org.emerge.demo.outofspace.world.KeyInput]. */
+    /** Binds a button to a different key — see [org.emerge.demo.outofspace.world.machine.WireButton]. */
     data class BindKey(val index: Int, val key: InputKey) : Edit
 
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */

@@ -1,6 +1,9 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -34,14 +37,14 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
 /**
  * Everything the hull is made of, in mass.
  *
- * From [Material.massPerTile] and [MachineKind.thermalTiles] — the same two numbers the heat model
+ * From [Material.massPerTile] and [thermalTiles] — the same two numbers the heat model
  * already uses to work out what a thing costs to warm, because they are the same fact about the same
  * object. A furnace is twenty-five tiles of firebrick whether you are asking what it weighs or what
  * it holds, and deriving both from one place is what stops a vessel that is heavy for heat and light
  * for thrust.
  *
  * ⚠️ These are real masses now: a real density from [Material.composition], at the fraction of a
- * tile the machine actually is ([MachineKind.fillPermille]). The dial that sets how briskly a given
+ * tile the machine actually is ([org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille]). The dial that sets how briskly a given
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */

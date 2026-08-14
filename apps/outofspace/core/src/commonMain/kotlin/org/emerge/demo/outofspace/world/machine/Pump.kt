@@ -1,6 +1,8 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Pump: draws gas from faced tile, delivers to pipe beneath.
@@ -12,7 +14,7 @@ data class Pump(
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
     override val energy: TileEnergy = ambientEnergy(MachineKind.Pump),
-) : Machine, Directed {
+) : Directed {
     override val kind: MachineKind get() = MachineKind.Pump
     override fun rotated(): Machine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)

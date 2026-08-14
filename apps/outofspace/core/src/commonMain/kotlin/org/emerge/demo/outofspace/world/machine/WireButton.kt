@@ -1,7 +1,9 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
+
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * The keys a [KeyInput] can be bound to.
+ * The keys a [WireButton] can be bound to.
  *
  * A fixed palette rather than "any key", for the reason the old channel list was a fixed palette:
  * naming a key needs a keyboard, and this game has to work on a phone. Six is enough to fly with —
@@ -43,7 +45,7 @@ enum class InputKey(val label: String) {
  * value there. That is the property that makes it worth having — anything a sensor can drive, a
  * finger can now drive too.
  */
-data class KeyInput(
+data class WireButton(
     val key: InputKey = InputKey.Up,
     override val wiring: Wiring = Wiring.RUNNING,
     override val energy: TileEnergy = ambientEnergy(MachineKind.KeyInput),

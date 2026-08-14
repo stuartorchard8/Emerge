@@ -4,8 +4,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid

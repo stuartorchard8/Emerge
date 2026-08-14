@@ -1,7 +1,9 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Mineral vaporizer: emits input ore into the fluid sim as species.

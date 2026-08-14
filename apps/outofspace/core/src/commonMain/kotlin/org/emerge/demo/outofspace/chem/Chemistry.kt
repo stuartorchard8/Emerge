@@ -136,6 +136,14 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
     )
 }
 
+/**
+ * Heats [input] up to [setTemperature].
+ */
+fun cook(input: Resource, setTemperature: Int): Resource {
+    // TODO: add temperature to resources
+    return input
+}
+
 /** Pours two piles of the same form together, or returns null if the forms differ. */
 fun merge(a: Resource, b: Resource): Resource? =
     if (a.form != b.form) null else Resource(a.form, a.mixture + b.mixture)

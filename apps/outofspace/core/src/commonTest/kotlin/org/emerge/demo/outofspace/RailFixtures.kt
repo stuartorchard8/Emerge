@@ -3,11 +3,11 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Extractor
+import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.massPerTileOf
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.STARTER_DEMO_PLATE_Y
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X

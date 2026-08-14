@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.num.scaledRatio
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.thermalTiles
 
 /** Shared temperatures across all systems (air, fabric, vacuum). */
 object Temperature {
@@ -28,7 +30,7 @@ object Temperature {
  *
  * A tile of any of this is a full [org.emerge.demo.outofspace.chem.TILE_LITRES] of the solid — six
  * and a half tonnes of steel. Nothing is built out of full tiles of metal; what fraction of a tile
- * a given machine actually is lives on the machine, as [MachineKind.fillPermille], because that is a
+ * a given machine actually is lives on the machine, as [org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille], because that is a
  * fact about the machine and not about the steel.
  *
  * [conductanceCentiTicks] is the second half: how long heat takes to cross a contact of this stuff,
@@ -112,7 +114,7 @@ enum class Material(
          *
          * This one *does* scale, because it is the solid side: it sets how fast a hull plate sheds
          * its own heat to space. Anchored against the plate that actually does the radiating —
-         * [MachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
+         * [org.emerge.demo.outofspace.world.machine.MachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
          * ship cools to space on the timescale it always did.
          */
         val RADIANCE: Long get() = MachineKind.Hull.capacityPerTile / 6_533L
@@ -175,7 +177,7 @@ fun seriesConductance(a: Long, b: Long): Long {
 val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Hull, MachineKind.Airlock -> Material.Steel
-        MachineKind.Smelter -> Material.Firebrick
+        MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
         MachineKind.Thruster,
@@ -216,7 +218,7 @@ val MachineKind.fillPermille: Int
         MachineKind.Hull, MachineKind.Airlock -> 60
 
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
-        MachineKind.Smelter -> 250
+        MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
 
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,

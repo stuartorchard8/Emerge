@@ -3,6 +3,9 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.sim.core.physics.primitives.Coord
 
 /** What kind of rigid body this is. */

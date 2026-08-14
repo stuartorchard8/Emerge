@@ -1,10 +1,7 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Airlock
-import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.SignalField
-import org.emerge.demo.outofspace.world.StructureMap
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
  * How much of each face is open to flow — an **area**, not a yes-or-no.

@@ -2,15 +2,14 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Conduits
 
-import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.Extractor
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test

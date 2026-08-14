@@ -1,4 +1,4 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
 
@@ -6,6 +6,11 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Pose
+import org.emerge.demo.outofspace.world.RigidBody
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * The ore source: a deck plate that leeches mass off whatever rock is lying on it.
@@ -20,14 +25,14 @@ import org.emerge.demo.outofspace.logistics.Capacity
  *
  *  - **It is five tiles across**, which is a smelter's footprint rather than a processor's, because
  *    it is a floor to land a rock on and a rock is five tiles across.
- *  - **It is permeable.** Air crosses it and a rock does not bounce off it — see [StructureMap] and
- *    [overlapsHull]. A solid deck machine would be a wall a rock could never get on top of, so an
+ *  - **It is permeable.** Air crosses it and a rock does not bounce off it — see [org.emerge.demo.outofspace.world.StructureMap] and
+ *    [org.emerge.demo.outofspace.world.overlapsHull]. A solid deck machine would be a wall a rock could never get on top of, so an
  *    impermeable extractor could not do the one thing it exists to do.
  *
  * [input] is how a rate in mass meets a rock measured in whole cells, and it makes the extractor
  * read like every other machine in the game: an input buffer, a rate, an output buffer. Mass leaves
  * a rock one **cell** at a time — a few kilograms of whatever that rock assays at, see
- * [RigidBody.massPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
+ * [org.emerge.demo.outofspace.world.RigidBody.massPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
  * buffer at [massPerTick] like a processor working a lump. A dense body is worth more ore per bite
  * as well as taking more to shift. The rock is never half-eaten, which is what keeps the two ledgers
  * exact against each other, and the ore still comes out in a steady trickle rather than in lurches.
@@ -37,7 +42,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
  */
 data class Extractor(
     override val facing: Direction,
-    /** The cell it is chewing on. Counts as mass aboard — see [massIn] — because it is. */
+    /** The cell it is chewing on. Counts as mass aboard — see [org.emerge.demo.outofspace.world.massIn] — because it is. */
     val input: Resource? = null,
     val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
@@ -92,7 +97,7 @@ class Bite(val body: RigidBody?, val mass: Long, val energy: Long, val impulseX:
  *
  * The nearest one to the plate's centre, so a body hanging half off is eaten from the side that is
  * actually over the machine, and so the answer never depends on iteration luck. The far edge is
- * half-open exactly as [overlapsHull]'s is: a cell that only touches the plate's edge is beside it,
+ * half-open exactly as [org.emerge.demo.outofspace.world.overlapsHull]'s is: a cell that only touches the plate's edge is beside it,
  * not on it.
  */
 fun reachableCell(body: RigidBody, pose: Pose, x0: Int, y0: Int, x1: Int, y1: Int): Int {

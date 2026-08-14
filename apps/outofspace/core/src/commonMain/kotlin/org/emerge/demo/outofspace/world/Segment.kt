@@ -2,11 +2,8 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.logistics.MergeResult
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.logistics.mergeInto
 
 /** Conduit layer: rail, pipe, power, signal. Four separate networks sharing one tile grid. */
 enum class Conduit(val label: String) {
@@ -42,7 +39,7 @@ data class Segment(
     val lastMass: Long = 0L,
     /**
      * How much thermal energy this length of track is holding, in the millijoules [Material]
-     * documents — see [Machine.energy] for why it lives here rather than in a field beside the
+     * documents — see [org.emerge.demo.outofspace.world.machine.Machine.energy] for why it lives here rather than in a field beside the
      * layer.
      *
      * The default reads [conduit], which is declared above it: a tile of rail starts as iron at room

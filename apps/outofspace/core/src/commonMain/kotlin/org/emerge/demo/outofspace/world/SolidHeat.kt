@@ -2,6 +2,12 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.Vaporizer
 
 /** Result of one solid conduction tick. [energy]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
 class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)

@@ -2,8 +2,8 @@ package org.emerge.desktop
 
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.Mode
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.DeleteLayer
@@ -17,7 +17,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
@@ -251,7 +251,7 @@ object OutofspaceAgentHarness {
                     val want = InputKey.ALL.firstOrNull { it.name.equals(t[3], true) }
                         ?: error("unknown key '${t[3]}' (have ${InputKey.ALL.map { it.label }})")
                     val current = controller.state.machineCovering(at)
-                    require(current is KeyInput) { "no button at ${t[1]},${t[2]}" }
+                    require(current is WireButton) { "no button at ${t[1]},${t[2]}" }
                     controller.bindKey(at, want)
                     settle()
                     println("[agent] bind ${t[1]},${t[2]} -> ${want.label}")

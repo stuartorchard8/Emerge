@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X
 import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
 import org.emerge.demo.outofspace.world.VesselState

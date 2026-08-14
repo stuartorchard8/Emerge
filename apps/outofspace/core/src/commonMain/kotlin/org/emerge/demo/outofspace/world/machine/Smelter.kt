@@ -1,7 +1,9 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /** A smelter: refined metal out the front, slag out the side. */
 data class Smelter(

@@ -1,6 +1,6 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.world.Pump
+import org.emerge.demo.outofspace.world.machine.Pump
 
 /**
  * One pump's request for this tick: take [millimoles] out of the room at [from] and put it into the

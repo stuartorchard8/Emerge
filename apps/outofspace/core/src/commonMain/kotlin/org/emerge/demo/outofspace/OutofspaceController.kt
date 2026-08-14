@@ -1,13 +1,12 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.KeyInput
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
@@ -177,7 +176,7 @@ class OutofspaceController(
 
     /** Cycles which key a button answers to. */
     fun cycleInputKey(index: Int, delta: Int) {
-        val current = state.machineCovering(index) as? KeyInput ?: return
+        val current = state.machineCovering(index) as? WireButton ?: return
         val all = InputKey.ALL
         val next = all[((all.indexOf(current.key) + delta) % all.size + all.size) % all.size]
         bindKey(index, next)

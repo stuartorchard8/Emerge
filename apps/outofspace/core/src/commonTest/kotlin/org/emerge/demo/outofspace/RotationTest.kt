@@ -9,14 +9,14 @@ import org.emerge.demo.outofspace.world.AirField
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Save
-import org.emerge.demo.outofspace.world.Thruster
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.tileCentre

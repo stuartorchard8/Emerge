@@ -7,8 +7,8 @@ import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
-import org.emerge.demo.outofspace.world.InputKey
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*

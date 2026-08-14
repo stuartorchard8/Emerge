@@ -1,4 +1,7 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
+
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.Wiring
 
 /** A vent: throws material overboard. Somewhere for slag to go that is not "jam the line". */
 data class Vent(
@@ -17,7 +20,7 @@ data class Vent(
  *
  * Hull is a machine rather than a separate "paint the structure" mode purely so it reuses the whole
  * build/remove/inspect pipeline unchanged — placing a wall and placing a belt should not be two
- * different verbs. [StructureMap] derives the enclosed space from wherever these end up.
+ * different verbs. [org.emerge.demo.outofspace.world.StructureMap] derives the enclosed space from wherever these end up.
  */
 data class Hull(
     override val wiring: Wiring = Wiring.RUNNING,

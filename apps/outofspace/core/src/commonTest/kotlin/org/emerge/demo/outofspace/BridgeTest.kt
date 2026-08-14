@@ -9,13 +9,13 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Bridge
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Machine
-import org.emerge.demo.outofspace.world.MachineKind
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
-import org.emerge.demo.outofspace.world.Storage
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.sim.core.PlayerId

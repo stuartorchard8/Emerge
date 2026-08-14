@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.Machine
+
 /**
  * Which list a solid thing is stored in. Enough, with its index, to put a body's heat back where it
  * came from once the conduction pass has worked out where it went.
@@ -25,7 +28,7 @@ class Body(
     /** The index it is stored at — its centre tile for a machine, its own tile for a fitting. */
     val at: Int,
     /**
-     * Which of a machine's tiles this is, as an index into its [Machine.energy].
+     * Which of a machine's tiles this is, as an index into its [org.emerge.demo.outofspace.world.machine.Machine.energy].
      *
      * Zero for anything that is still stored as one piece — a fitting, a bridge — where [at] alone
      * identifies where the energy goes back. For a machine it is the other half of the address:
@@ -47,7 +50,7 @@ class Body(
      *
      * Carried rather than read off [material] because a joint conducts through the metal that is
      * actually there: a hull plate is a few per cent of its tile, and so is its cross-section. It
-     * therefore takes the same [MachineKind.fillPermille] its [capacity] does, and the pair of them
+     * therefore takes the same [org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille] its [capacity] does, and the pair of them
      * moving together is what holds every thermal time constant in the game still while the masses
      * underneath them become real. Divide one by the other and you get the number
      * [Material.conductanceCentiTicks] states.

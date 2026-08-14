@@ -2,12 +2,14 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Storage
 
 /**
  * The global construction inventory: how much of each [Form] the vessel has to build with, and what
  * it is made of.
  *
- * **This is a view over the vessel's [Storage] machines, not an account of its own.** Material is
+ * **This is a view over the vessel's [org.emerge.demo.outofspace.world.machine.Storage] machines, not an account of its own.** Material is
  * available for construction because it is sitting in a warehouse somewhere aboard, and it stops
  * being available the moment that warehouse is emptied, moved or breached. The earlier design had a
  * central node that absorbed deliveries into a separate tally, which meant matter existed in one of

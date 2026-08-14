@@ -7,8 +7,8 @@ import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState

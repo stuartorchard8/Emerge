@@ -1,15 +1,17 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
 
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * A buffer you can see the level of. Holds one form, releases it out the front while its RUN
  * activation is positive — so a storage wired to a sensor is a valve, and a storage wired to nothing
  * is a dead end that fills up.
  *
- * **Storage is also the vessel's inventory.** The global [Stockpile] construction draws on is the sum
+ * **Storage is also the vessel's inventory.** The global [org.emerge.demo.outofspace.world.Stockpile] construction draws on is the sum
  * of every storage aboard, computed fresh each tick — there is no separate act of "banking". That
  * keeps material in one place instead of two: what you can build with is exactly what you can walk
  * up to and point at, and blowing a hole beside a full warehouse costs you the contents.

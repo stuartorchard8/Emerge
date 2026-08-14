@@ -9,12 +9,12 @@ import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.Processor
-import org.emerge.demo.outofspace.world.Storage
-import org.emerge.demo.outofspace.world.Vent
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.sim.core.physics.primitives.Coord
 
 /**

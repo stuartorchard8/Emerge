@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
 
 /**
  * One touch: **a point, a normal, and a depth** — step 2 of `PLAN_rigid_bodies.md`.

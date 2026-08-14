@@ -11,6 +11,27 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.FluidPacket
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.Directed
+import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Pump
+import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.TileEnergy
+import org.emerge.demo.outofspace.world.machine.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Vent
+import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.ambientEnergy
+import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -214,6 +235,14 @@ object Save {
                 put("progress", m.progress.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
+            is ThermalDecomposer -> {
+                put("in", m.input?.let { writeResource(it) })
+                put("inside", m.inside?.let { writeResource(it) })
+                put("out", m.product?.let { writeResource(it) })
+                put("carry", m.carry.toString())
+                put("progress", m.progress.toString())
+                put("temp", m.setTemperature.toString())
+            }
             is Vaporizer -> {
                 put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
@@ -237,7 +266,7 @@ object Save {
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
             // A button is its key and its wiring; the common code writes the second.
-            is KeyInput -> put("key", m.key.name)
+            is WireButton -> put("key", m.key.name)
             // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
             // heat are all written by the common code around this.
             is Pump -> {}
@@ -818,6 +847,13 @@ object Save {
                 progress = num("actionProgress", 0L).toInt(),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
+            MachineKind.ThermalDecomposer -> ThermalDecomposer(
+                facing = facing(),
+                input = res("in"), inside = res("inside"), product = res("out"),
+                carry = massNum("carry", 0L),
+                progress = num("actionProgress", 0L).toInt(),
+                setTemperature = num("temp", 900L).toInt(),
+            )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
                 input = res("in"),
@@ -834,7 +870,7 @@ object Save {
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
             // under it, and no colour can be turned back into a piece of geometry that was never laid.
             MachineKind.Sensor -> Sensor(facing = facing())
-            MachineKind.KeyInput -> KeyInput(
+            MachineKind.KeyInput -> WireButton(
                 key = f["key"]?.let { name ->
                     InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
                 } ?: InputKey.Up,

@@ -7,10 +7,10 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Hull
-import org.emerge.demo.outofspace.world.Machine
+import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
-import org.emerge.demo.outofspace.world.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
  * with a running vaporizer in it had a `massBalance` drifting one way and an `airBalance` drifting
  * the other. Neither instrument had a test pointed at this machine, and an instrument nobody points
  * at anything is one you eventually learn to ignore — which is the whole argument for the stores in
- * the first place. Found while building [org.emerge.demo.outofspace.world.Thruster], which does the
+ * the first place. Found while building [org.emerge.demo.outofspace.world.machine.Thruster], which does the
  * same conversion and had to get it right.
  */
 class VaporizerTest {

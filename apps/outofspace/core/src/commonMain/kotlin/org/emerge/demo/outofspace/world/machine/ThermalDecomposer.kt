@@ -1,24 +1,26 @@
-package org.emerge.demo.outofspace.world
+package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * Mineral processor: concentrate out facing side, tailings out clockwise-side.
- * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material). Slower than extractor (jam = throughput lesson).
+ * Thermal decomposition — carbonates and hydrates give up CO₂/H₂O on heating alone.
+ * Calcite → lime + CO₂, serpentine → olivine + water.
+ * No reagent, just heat, which makes it the natural tier-1 refinery and a good sink for waste heat from the reactor.
  */
-data class Processor(
+data class ThermalDecomposer(
     override val facing: Direction,
     val input: Resource? = null,
     val inside: Resource? = null,
     val product: Resource? = null,
-    val tailings: Resource? = null,
     val carry: Long = 0L,
     /**
      * Minimum number of machine ticks it takes to convert inProgress resources to product and tailings.
      */
     val ticksPerAction: Int = 128,
     val progress: Int = 0,
-    val efficiencyPermille: Int = 900,
+    val setTemperature: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
     override val energy: TileEnergy = ambientEnergy(MachineKind.Processor),
 ) : Directed {
