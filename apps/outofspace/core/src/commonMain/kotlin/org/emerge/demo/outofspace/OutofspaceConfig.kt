@@ -25,8 +25,10 @@ data class OutofspaceConfig(
      *
      * Only [OutofspaceController]'s frame accumulator reads it, which is the one place that is
      * honestly about real time.
+     *
+     * 64 is chosen as the base rate because every subsystem period divides it evenly.
      */
-    val ticksPerSecond: Int = 4,
+    val ticksPerSecond: Int = 64,
 ) {
     val secondsPerTick: Float get() = 1f / ticksPerSecond
 }

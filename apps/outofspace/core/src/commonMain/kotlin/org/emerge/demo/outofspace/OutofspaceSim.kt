@@ -104,9 +104,25 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
- * Machines throttled by RUN activation (rate × activation). Row-major walk order for determinism.
- * Belt delivery: one step per advance (not instant), so jams crawl backwards visually. */
+ *
+ * Subsystems run at different frequencies determined by their period (power of 2).
+ * A subsystem with period P runs every P ticks. No rate scaling — each subsystem moves its full
+ * amount when it fires.
+ *
+ * Row-major walk order for determinism. Belt delivery: one step per advance (not instant),
+ * so jams crawl backwards visually. */
 object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
+
+    /** Periods (ticks between activations). All must divide [OutofspaceConfig.ticksPerSecond] evenly. */
+    private const val FLUID_PERIOD      = 1
+    private const val HEAT_PERIOD       = 1
+    private const val PUMP_PERIOD       = 1
+    private const val PRESSURE_PERIOD   = 1
+    private const val MACHINE_PERIOD    = 1
+    private const val FLIGHT_PERIOD     = 1
+
+    /** Runs on tick 0 (all periods divide 0). */
+    private fun shouldRun(tick: Long, period: Int): Boolean = tick % period == 0L
 
     override fun reduce(
         cfg: OutofspaceConfig,
@@ -126,89 +142,92 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val occupancy = Occupancy(w.originOf.copyOf())
 
-        // Who is joined to whom, this tick, from the wire the player has actually laid. Derived after
-        // the edits above so that a run cut a moment ago has already parted.
-        val networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
-
-        // Every transmitter drives the network under its own tile. There is no addressing step and
-        // nothing names anything: reaching a machine means laying wire to it.
-        val signals = SignalField.build(networks) { raise ->
-            for (i in w.machines.indices) {
-                when (val m = w.machines[i]) {
-                    is Sensor -> {
-                        val target = w.grid.neighbour(i, m.facing)
-                        val seen = if (target < 0) -1 else w.originOf[target]
-                        if (seen >= 0) raise(i, fullness(w.machines[seen]))
+        // ── Machines ─────────────────────────────────────────────────────────────
+        // Signals/networks/structure/openness only change when machines change, so
+        // we compute them here and reuse between machine ticks (where nothing else
+        // modifies them).
+        var networks = SignalNetworks.none(w.grid.size)
+        var signals = SignalField.none(w.grid.size)
+        var openness = IntArray(w.machines.size) { 0 }
+        var structure = StructureMap.derive(w.grid, w.machines, openness)
+        if (shouldRun(state.tick, MACHINE_PERIOD)) {
+            // Signals derived from network + machine fullness + player keys. Only
+            // machines read signals, so we compute them here alongside structure.
+            networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
+            w.networks = networks
+            signals = SignalField.build(networks) { raise ->
+                for (i in w.machines.indices) {
+                    when (val m = w.machines[i]) {
+                        is Sensor -> {
+                            val target = w.grid.neighbour(i, m.facing)
+                            val seen = if (target < 0) -1 else w.originOf[target]
+                            if (seen >= 0) raise(i, fullness(w.machines[seen]))
+                        }
+                        // A finger on a key, on the same footing as any other transmitter.
+                        is KeyInput -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
+                        else -> {}
                     }
-                    // A finger on a key, on the same footing as any other transmitter.
-                    is KeyInput -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
-                    else -> {}
+                }
+                // Gauge persists after packet leaves.
+                for (t in w.rails.indices) {
+                    val r = w.rails[t] ?: continue
+                    if (r.isGauge) raise(t, r.lastPurity)
                 }
             }
-            // Gauge persists after packet leaves.
-            for (t in w.rails.indices) {
-                val r = w.rails[t] ?: continue
-                if (r.isGauge) raise(t, r.lastPurity)
+            w.signals = signals
+
+            // Signals before structure: an airlock is a wall whose solidity is a signal.
+            // Edits this tick are already applied in w, so sensors/gauges still see them.
+            openness = airlockOpenness(w.machines, signals) ?: IntArray(w.machines.size) { 0 }
+            structure = StructureMap.derive(w.grid, w.machines, openness)
+
+            for (i in w.machines.indices) {
+                val m = w.machines[i] ?: continue
+                val activation = m.wiring.activation(Action.Run, signals.at(i))
+                w.machines[i] = when (m) {
+                    is Extractor -> w.leech(m, activation, i)
+                    is Processor -> w.refine(cfg, m, activation, i)
+                    is Smelter -> w.melt(cfg, m, activation, i)
+                    is Vaporizer -> w.vaporize(m, activation, i)
+                    is Thruster -> w.fire(cfg, m, activation, i, structure)
+                    else -> m
+                }
+            }
+
+            // Rails first: produced output can go on the track after it moves.
+            val ports = w.portsByTile(Conduit.Rail)
+            if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
+
+            for ((tile, at) in ports) for (port in at) {
+                if (port.kind == PortKind.Output) w.pushOut(tile, port)
             }
         }
-        w.networks = networks
-        w.signals = signals
 
-        // Signals before structure, because an airlock is a wall whose solidity is a signal. Nothing
-        // upstream minds: sensors read machine fullness and gauges read the rail, and neither asks
-        // what is enclosed. Edits this tick are already applied, so both still see them.
-        val openness = airlockOpenness(w.machines, signals)
-        val structure = StructureMap.derive(w.grid, w.machines, openness)
-
-        for (i in w.machines.indices) {
-            val m = w.machines[i] ?: continue
-            val activation = m.wiring.activation(Action.Run, signals.at(i))
-            w.machines[i] = when (m) {
-                is Extractor -> w.leech(m, activation, i)
-                is Processor -> w.refine(cfg, m, activation, i)
-                is Smelter -> w.melt(cfg, m, activation, i)
-                is Vaporizer -> w.vaporize(m, activation, i)
-                is Thruster -> w.fire(cfg, m, activation, i, structure)
-                else -> m
+        // ── Heat ──────────────────────────────────────────────────────────────────
+        // When skipped, heat state is carried forward from the previous tick.
+        var conductedRadiated = 0L
+        var conductedToAir = 0L
+        if (shouldRun(state.tick, HEAT_PERIOD)) {
+            // Waste heat lands in the machine that did the work — see [heatPerGram] — so it
+            // has to conduct out through the casing before the room feels it.
+            for (i in w.machines.indices) {
+                val added = w.heatAdded[i]
+                if (added == 0L) continue
+                val m = w.machines[i] ?: continue
+                w.machines[i] = m.withEnergy(m.energy.plusSpread(added))
             }
+            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
+            val result = stepSolidHeat(
+                grid = state.grid,
+                bodies = bodies,
+                structure = structure,
+                airEnergy = w.airEnergy,
+                airCapacity = gasCapacity(state.grid.size, w.airMass),
+            )
+            conductedRadiated = result.radiated
+            conductedToAir = result.toAir
+            w.applyBodyHeat(bodies, result.energy)
         }
-
-        // Rails first: produced output can go on the track after it moves.
-        val ports = w.portsByTile(Conduit.Rail)
-        if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
-
-        for ((tile, at) in ports) for (port in at) {
-            if (port.kind == PortKind.Output) w.pushOut(tile, port)
-        }
-
-        // Felt gravity: plating + engine impulse from previous tick (fluid solved under this gravity). See [experiencedGravity].
-        val felt = experiencedGravity(state.gravity, state.netImpulseX, state.netImpulseY, state.mass)
-
-        // ── Heat ──────────────────────────────────────────────────────────────
-        //
-        // Conduction runs **before** the fluid, and on the air as the edit pass left it. That order
-        // is what makes convection a loop rather than a lag: a wall warms the parcel beside it, and
-        // then, in the same tick, buoyancy finds that parcel light and lifts it. The other way round
-        // the gas is moved first and heated afterwards, so every parcel rises one tick after it was
-        // warmed and the circulation always trails its own cause.
-        //
-        // Waste heat lands in the machine that did the work — see [heatPerGram] — so it has to
-        // conduct out through the casing before the room feels it.
-        for (i in w.machines.indices) {
-            val added = w.heatAdded[i]
-            if (added == 0L) continue
-            val m = w.machines[i] ?: continue
-            w.machines[i] = m.withEnergy(m.energy.plusSpread(added))
-        }
-        val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
-        val conducted = stepSolidHeat(
-            grid = state.grid,
-            bodies = bodies,
-            structure = structure,
-            airEnergy = w.airEnergy,
-            airCapacity = gasCapacity(state.grid.size, w.airMass),
-        )
-        w.applyBodyHeat(bodies, conducted.energy)
 
         val edges = EdgeGrid(state.grid)
         val conduits = w.conduitsSnapshot()
@@ -216,37 +235,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val plumbing = pipeApertures(edges, conduits)
         val volumes = pipeVolumes(state.grid, conduits)
 
-        // Valves first: pressure propagates immediately, both layers see exchange (see [exchangeLayers]).
-        val crossed = exchangeLayers(
-            openings = valveOpenings(state.grid, conduits),
-            roomMass = w.airMass,
-            roomEnergy = w.airEnergy,
-            pipeMass = w.pipeMass,
-            pipeEnergy = w.pipeEnergy,
-            pipeVolumes = volumes,
-        )
+        // ── Valves + Pumps ────────────────────────────────────────────────────────
+        if (shouldRun(state.tick, PUMP_PERIOD)) {
+            // Valves first: pressure propagates immediately, both layers see exchange
+            // (see [exchangeLayers]).
+            exchangeLayers(
+                openings = valveOpenings(state.grid, conduits),
+                roomMass = w.airMass,
+                roomEnergy = w.airEnergy,
+                pipeMass = w.pipeMass,
+                pipeEnergy = w.pipeEnergy,
+                pipeVolumes = volumes,
+            )
 
-        // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
-        val pumped = applyPumps(
-            demands = pumpDemands(state.grid, w.machines, conduits, signals),
-            roomMass = w.airMass,
-            roomEnergy = w.airEnergy,
-            pipeMass = w.pipeMass,
-            pipeEnergy = w.pipeEnergy,
-            pipeVolumes = volumes,
-        )
+            // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
+            applyPumps(
+                demands = pumpDemands(state.grid, w.machines, conduits, signals),
+                roomMass = w.airMass,
+                roomEnergy = w.airEnergy,
+                pipeMass = w.pipeMass,
+                pipeEnergy = w.pipeEnergy,
+                pipeVolumes = volumes,
+            )
+        }
 
-        // ── Thrust, before anything moves ──────────────────────────────────────
-        //
-        // The hull's share of the pressure it contains, taken from the field as the tick found it.
-        // Where gas pushes on a face it can cross, the push goes to the gas; where it pushes on a
-        // closed one, the bulkhead takes it — and inside a sealed vessel those terms telescope to
-        // exactly zero however the pressure is arranged. Open a hole and one term loses its partner,
-        // which is the whole of rocket thrust here. See [applyPressureForce].
-        //
-        // It reads the pre-diffusion field for the same reason the old solver applied forces before
-        // transport: the gradient that pushes the hull this tick is the one that exists before the
-        // gas has been allowed to answer it.
+        // ── Pressure ──────────────────────────────────────────────────────────────
+        // Results used by flight below, so computed unconditionally.
         val roomPressure = tilePressure(
             state.grid.size, w.airMass, gasKelvin(w.airEnergy, gasCapacity(state.grid.size, w.airMass)),
         )
@@ -263,20 +277,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
         )
 
-        // On airMass (edited by [displaceAir]).
-        val fluid = diffuseFluid(edges, roomApertures, w.airMass, w.airEnergy)
-
-        // Pipes: same model, connectivity from player-drawn layout. Volume does not enter here —
-        // diffusion moves a *share* of what a cell holds, and a share is the same fraction of a thin
-        // cell as of a fat one. Volume still governs pressure, which is what the valves and pumps
-        // above read, so a pipe is still a small place that fills quickly.
-        val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy)
-        // Pipes cannot vent to rim (ledger check).
-        require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {
-            "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
+        // ── Fluid ─────────────────────────────────────────────────────────────────
+        // When skipped, fluid state is carried forward from the previous tick.
+        var fluidAir = state.air
+        var pipeAirResult = state.pipeAir
+        var fluidVentedMass = 0L
+        var fluidVentedEnergy = 0L
+        if (shouldRun(state.tick, FLUID_PERIOD)) {
+            val result = diffuseFluid(edges, roomApertures, w.airMass, w.airEnergy)
+            fluidAir = result.air
+            fluidVentedMass = result.ventedMass
+            fluidVentedEnergy = result.ventedEnergy
+            // Pipes: same model, connectivity from player-drawn layout.
+            val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy)
+            pipeAirResult = pipes.air
+            // Pipes cannot vent to rim (ledger check).
+            require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {
+                "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
+            }
         }
 
-        // ── Flight ────────────────────────────────────────────────────────────
+        // ── Flight ────────────────────────────────────────────────────────────────
+        //
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
         val mass = vesselMass(machines, conduits, bridges)
@@ -405,17 +427,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure = structure,
             occupancy = occupancy,
             generatedEnergy = w.generatedEnergy,
-            radiatedEnergy = state.radiatedEnergy + conducted.radiated,
+            radiatedEnergy = state.radiatedEnergy + conductedRadiated,
             insertedEnergy = w.insertedEnergy,
             acquiredEnergy = w.acquiredEnergy,
             // Solid→air energy (see [SolidHeatStep]).
-            solidToAirEnergy = state.solidToAirEnergy + conducted.toAir,
-            air = fluid.air,
-            pipeAir = pipes.air,
+            solidToAirEnergy = state.solidToAirEnergy + conductedToAir,
+            air = fluidAir,
+            pipeAir = pipeAirResult,
             pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
-            airVentedMass = state.airVentedMass + fluid.ventedMass + w.exhaustAirMass,
+            airVentedMass = state.airVentedMass + fluidVentedMass + w.exhaustAirMass,
             // Separate from radiatedEnergy: cleaner ledger.
-            airVentedEnergy = state.airVentedEnergy + fluid.ventedEnergy + w.exhaustAirEnergy,
+            airVentedEnergy = state.airVentedEnergy + fluidVentedEnergy + w.exhaustAirEnergy,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirMass = w.injectedAirMass,
             injectedAirEnergy = w.injectedAirEnergy,
@@ -538,10 +560,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun blocked(vararg outputs: Resource?): Boolean =
         outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
 
-    /** Mass this tick: rate × activation, with carry-over via [Rate]. */
-    private fun throttled(massPerTick: Long, activation: Int, carry: Long): Pair<Long, Long> =
-        if (activation <= 0) 0L to carry
-        else Rate.tick(massPerTick * activation, SignalField.FULL, carry)
+    /**
+     * Mass per machine-tick: rate × activation, with carry-over via [Rate].
+     *
+      * Full rate per machine-tick — unchanged from the old single-rate system. The Rate
+      * accumulator's carry handles fractional activation values.
+      */
+    private fun throttled(massPerMachineTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
+        if (activation <= 0) return 0L to carry
+        return Rate.tick(massPerMachineTick * activation, SignalField.FULL, carry)
+    }
 
     private fun vaporizeToGas(mixture: Mixture): Mixture {
         val out = LongArray(Species.COUNT)
