@@ -45,9 +45,6 @@ data class Bridge(
     }
 
     companion object {
-        /** Ticks between a conduit advancing. At 4 Hz this is 4 tiles a second. */
-        const val STEP_TICKS = 1
-
         /** Tiles a bridge spans, and so how many packets it can have aboard at once. */
         const val SLOTS = 3
     }

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
@@ -216,7 +217,7 @@ class WiringTest {
         joinRow(grid, rails, 4, 7, 3)
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
-        s = run(s, Bridge.STEP_TICKS * 8)
+        s = run(s, RAIL_PERIOD * 8)
         assertEquals(4 * Capacity.PACKET_MASS, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.railAt(grid.index(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }

@@ -35,6 +35,6 @@ data class Storage(
          * room holds, not how it got there. See [MACHINE_BUFFER_CAP] for the same distinction and
          * the bug that taught it.
          */
-        val CAP = 20L * Budget.TONNE
+        const val CAP = 20L * Budget.TONNE
     }
 }

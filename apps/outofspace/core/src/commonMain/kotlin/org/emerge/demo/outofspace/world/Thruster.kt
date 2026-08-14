@@ -48,7 +48,7 @@ data class Thruster(
      * would drink a dedicated supply line dry. A tenth is a rate one line can sustain to several
      * engines, which is the arrangement the machine is for.
      */
-    val massPerTick: Long = Capacity.PACKET_MASS / 10L,
+    val massPerTick: Long = Capacity.PACKET_MASS / 30L,
     override val wiring: Wiring = Wiring.RUNNING,
     override val energy: TileEnergy = ambientEnergy(MachineKind.Thruster),
 ) : Directed {
@@ -72,7 +72,7 @@ data class Thruster(
          * blocked motor dumps is **quadratic**, so doubling it doubles the push and quadruples the
          * damage done by pointing it at your own wall.
          */
-        const val EXHAUST_METRES_PER_SECOND: Long = 700L
+        const val EXHAUST_METRES_PER_SECOND: Long = 3000L
 
         /**
          * How wide a tile is, in millimetres.

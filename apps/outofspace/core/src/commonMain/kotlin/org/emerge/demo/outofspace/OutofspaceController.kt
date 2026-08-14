@@ -225,15 +225,13 @@ class OutofspaceController(
     }
 
     /**
-     * How far the clock has got through the tick that has not happened yet, 0 to 1.
+     * How far the clock has got through the next N ticks that have not happened yet, 0 to [OutofspaceConfig.ticksPerSecond].
      *
-     * This is the whole of what makes the world move smoothly at four ticks a second: the sim's
-     * state is a series of stills, and this says how far between two of them the frame is. Paused
-     * reads 1 rather than freezing mid-step — a stopped world should show where things actually
-     * are, not where they were going.
+     * This is the whole of what makes the world move smoothly at sub-sixty ticks a second: the sim's
+     * state is a series of stills, and this says how far between two of them the frame is.
      */
     val tickAlpha: Float
-        get() = if (paused) 1f else (accumulator / cfg.secondsPerTick).coerceIn(0f, 1f)
+        get() = (((tick-1)%cfg.ticksPerSecond).toFloat() + (accumulator*cfg.ticksPerSecond))
 
     /**
      * Advances by [deltaSeconds] of real time and returns the state to draw.
@@ -242,7 +240,7 @@ class OutofspaceController(
      * the next frame longer still. Dropping the surplus runs the sim slow under load, which is
      * recoverable; the alternative is a freeze.
      */
-    fun tick(deltaSeconds: Float, maxTicksPerFrame: Int = 8): VesselState {
+    fun tick(deltaSeconds: Float, maxTicksPerFrame: Int = 6): VesselState {
         if (!paused) {
             accumulator += deltaSeconds.coerceIn(0f, 0.25f) * speed
             var steps = 0

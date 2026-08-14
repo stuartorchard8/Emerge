@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.LANTHANIDE_SUITE
 import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
@@ -227,19 +228,21 @@ class OutofspaceRenderer {
         return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
     }
 
-    /** Tick progress 0–1 (see [OutofspaceController.tickAlpha]). Defaults to 1 (tests). */
+    /** Tick progress 0–[OutofspaceConfig.ticksPerSecond] (see [OutofspaceController.tickAlpha]). Defaults to 1 (tests). */
     private var alpha: Float = 1f
+    private val railPacketAlpha get() = (alpha%RAIL_PERIOD)/RAIL_PERIOD
 
     fun draw(
         state: VesselState,
         hoveredIndex: Int = -1,
         overlay: Overlay = Overlay.None,
         tickAlpha: Float = 1f,
+        ticksPerSecond: Float = 1f,
         camera: CameraFrame = CameraFrame.Grid,
     ) {
         followAnchor(state, camera)
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
-        alpha = tickAlpha.coerceIn(0f, 1f)
+        alpha = tickAlpha.coerceIn(0f, ticksPerSecond)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
         val starscapeBearing = if (camera == CameraFrame.Grid) state.ang else Coord(0)
@@ -312,6 +315,11 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 drawRail(state, grid.index(x, y), x, y)
+            }
+        }
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                drawRailPacket(state, grid.index(x, y), x, y)
             }
         }
 
@@ -499,6 +507,14 @@ class OutofspaceRenderer {
         // no longer wears a colour, because it no longer names one: what it reports on is the wire
         // beneath it, and that wire says its own value.
         if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
+    }
+
+    private fun drawRailPacket(state: VesselState, tile: Int, x: Int, y: Int) {
+        val segment = state.rails[tile] ?: return
+        // A gauge wears a collar so it reads as an instrument in the line rather than as track. It
+        // no longer wears a colour, because it no longer names one: what it reports on is the wire
+        // beneath it, and that wire says its own value.
+        if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
         val packet = segment.held ?: return
         val motion = state.motion
 
@@ -508,12 +524,12 @@ class OutofspaceRenderer {
         val backY = if (came == null) 0f else -came.dy.toFloat()
 
         // New packet: scales in (no blink).
-        val scale = if (motion.appearedAt(tile)) alpha else 1f
+        val scale = if (motion.appearedAt(tile)) railPacketAlpha else 1f
 
         drawPacket(
-            x + 0.5f + backX * (1f - alpha),
-            y + 0.5f + backY * (1f - alpha),
-            lerp(motion.previousMassAt(tile).toFloat(), packet.mass.toFloat(), alpha),
+            x + 0.5f + backX * (1f - railPacketAlpha),
+            y + 0.5f + backY * (1f - railPacketAlpha),
+            lerp(motion.previousMassAt(tile).toFloat(), packet.mass.toFloat(), railPacketAlpha),
             scale,
             packet.contents,
         )
@@ -547,7 +563,7 @@ class OutofspaceRenderer {
         for ((along, packet, slot) in slots) {
             if (packet == null) continue
             val from = if (state.motion.bridgeSlotIsNew(index, slot)) along - 1f else along
-            val at = lerp(from, along, alpha)
+            val at = lerp(from, along, railPacketAlpha)
             val size = Visual.BRIDGE_PACKET_SIZE * tilePx
             rect(
                 cx + b.facing.dx * at * tilePx,
@@ -570,7 +586,7 @@ class OutofspaceRenderer {
                 state.grid.xOf(d.tile) + 0.5f,
                 state.grid.yOf(d.tile) + 0.5f,
                 d.packet.mass.toFloat(),
-                1f - alpha,
+                1f - railPacketAlpha,
                 d.packet.contents,
             )
         }

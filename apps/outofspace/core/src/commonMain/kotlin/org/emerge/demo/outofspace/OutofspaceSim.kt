@@ -114,10 +114,11 @@ import org.emerge.sim.core.SimReducer
 object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceInput> {
 
     /** Periods (ticks between activations). All must divide [OutofspaceConfig.ticksPerSecond] evenly. */
-    private const val FLUID_PERIOD      = 1
-    private const val HEAT_PERIOD       = 1
-    private const val PUMP_PERIOD       = 1
-    private const val MACHINE_PERIOD    = 1
+    const val FLUID_PERIOD      = 8
+    const val HEAT_PERIOD       = 8
+    const val PUMP_PERIOD       = 8
+    const val MACHINE_PERIOD    = 1
+    const val RAIL_PERIOD       = 32
 
     /** Runs on tick 0 (all periods divide 0). */
     private fun shouldRun(tick: Long, period: Int): Boolean = tick % period == 0L
@@ -191,14 +192,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     else -> m
                 }
             }
+        }
 
+        val motion: Motion
+        if (shouldRun(state.tick, RAIL_PERIOD)) {
             // Rails first: produced output can go on the track after it moves.
             val ports = w.portsByTile(Conduit.Rail)
-            if (state.tick % Bridge.STEP_TICKS == 0L) w.advanceRails(ports)
+            w.advanceRails(ports)
 
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port)
             }
+            motion = w.motion.freeze()
+        } else {
+            // Same motion is still in progress from last time.
+            motion = state.motion
         }
 
         // ── Heat ──────────────────────────────────────────────────────────────────
@@ -471,7 +479,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodies = bodiesDrifted.bodies,
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
-            motion = w.motion.freeze(),
+            motion = motion,
         ).bookedFrameTurn(state.pose).resized(w.fitRequested)
     }
 

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
@@ -182,7 +183,7 @@ class GaugeTest {
         // Conduit steps, not seconds: the line is one packet long and six tiles end to end, so the
         // window where anything is on it at all is a handful of advances wide. `12` used to be two
         // advances and is now twelve, by which time the lone packet is in the far tank.
-        val s = run(line(ore), Bridge.STEP_TICKS * 3)
+        val s = run(line(ore), RAIL_PERIOD * 3)
         val carried = (0 until s.grid.size).mapNotNull { s.railAt(it)?.held }
         assertTrue(carried.isNotEmpty(), "something should be on the line by now")
         assertTrue(carried.all { it is SolidPacket }, "and it is a solid, with a form to name")

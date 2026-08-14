@@ -283,7 +283,7 @@ fun main() {
         val state = controller.tick(delta)
         if (frame.advance(state).moved) lastPainted = -1
 
-        renderer.draw(state, hovered, controller.overlay, controller.tickAlpha, controller.mode.camera)
+        renderer.draw(state, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
 

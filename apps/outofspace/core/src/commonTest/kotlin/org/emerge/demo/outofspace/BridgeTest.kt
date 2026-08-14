@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
@@ -188,19 +189,19 @@ class BridgeTest {
         val at = grid.index(9, 5)
         var s = withLumpAtTheEntrance()
 
-        s = run(s, Bridge.STEP_TICKS)
+        s = run(s, RAIL_PERIOD)
         assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.entry?.mass, "lifted off the track at the input end")
 
-        s = run(s, Bridge.STEP_TICKS)
+        s = run(s, RAIL_PERIOD)
         assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.middle?.mass, "over the tile it hops")
         assertNull(s.bridges[at]?.entry, "and the entrance is free for the next one")
 
-        s = run(s, Bridge.STEP_TICKS)
+        s = run(s, RAIL_PERIOD)
         assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.exit?.mass, "resting on the far end, for a whole step")
         assertNull(s.bridges[at]?.middle, "and the middle is free for the next one")
         assertNull(s.railAt(grid.index(10, 5))?.held, "not yet put down — that is next step's job")
 
-        s = run(s, Bridge.STEP_TICKS)
+        s = run(s, RAIL_PERIOD)
         assertNull(s.bridges[at]?.exit, "and now down onto the track")
         // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
         // setting down there and running on one tile is a single tile of travel, not two. The
@@ -215,7 +216,7 @@ class BridgeTest {
         // statement as "it is a bottleneck": the span had a third of the capacity of the track it
         // replaced, so a bridged line ran at a third of the speed of the line either side of it.
         var s = crossing(bridged = true).withMachine(grid.index(15, 5), null)
-        s = run(s, Bridge.STEP_TICKS * 20)
+        s = run(s, RAIL_PERIOD * 20)
         assertEquals(Bridge.SLOTS, s.bridges[grid.index(9, 5)]?.carried?.size, "all three slots loaded")
     }
 
@@ -230,10 +231,10 @@ class BridgeTest {
         var s = crossing(bridged = true, horizontalSupply = supply)
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.
-        s = run(s, Bridge.STEP_TICKS * 13)
+        s = run(s, RAIL_PERIOD * 13)
         val before = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
         val steps = 15
-        s = run(s, Bridge.STEP_TICKS * steps)
+        s = run(s, RAIL_PERIOD * steps)
         val delivered = ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) - before
         assertEquals(steps * Capacity.PACKET_MASS, delivered, "a packet a step, all the way across")
     }
@@ -279,7 +280,7 @@ class BridgeTest {
     fun `material inside a bridge is still aboard, and comes back out if it is removed`() {
         val at = grid.index(9, 5)
         var s = crossing(bridged = true)
-        s = run(s, Bridge.STEP_TICKS * 4)
+        s = run(s, RAIL_PERIOD * 4)
         val before = s.inTransitMass
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(at))))

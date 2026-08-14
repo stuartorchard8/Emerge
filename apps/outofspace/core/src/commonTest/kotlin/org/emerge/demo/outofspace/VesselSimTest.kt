@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
 import org.emerge.demo.outofspace.chem.Form
@@ -407,7 +408,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)   // its input port
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
-        s = run(s, Bridge.STEP_TICKS)
+        s = run(s, RAIL_PERIOD)
         assertEquals(1_000L, (s[grid.index(4, 2)] as Storage).contents!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
 
@@ -427,7 +428,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.index(3, 2)] = Segment(Conduit.Rail, held = ingot)
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
-        s = run(s, Bridge.STEP_TICKS * 2)
+        s = run(s, RAIL_PERIOD * 2)
         assertNotNull(s.railAt(grid.index(3, 2))?.held, "the ingot should still be waiting on the track")
     }
 
