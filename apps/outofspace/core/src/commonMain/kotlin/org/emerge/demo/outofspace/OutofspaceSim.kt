@@ -72,7 +72,6 @@ import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.massDistribution
 import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.demo.outofspace.world.torqueAbout
-import org.emerge.demo.outofspace.world.experiencedGravity
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
@@ -567,14 +566,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
 
     /**
-     * Mass per machine-tick: rate × activation, with carry-over via [Rate].
-     *
-      * Full rate per machine-tick — unchanged from the old single-rate system. The Rate
-      * accumulator's carry handles fractional activation values.
-      */
-    private fun throttled(massPerMachineTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
+    * Activity per machine-tick: rate × activation, with carry-over via [Rate].
+    *
+    * Full rate per machine-tick — unchanged from the old single-rate system. The Rate
+    * accumulator's carry handles fractional activation values.
+    */
+    private fun throttled(perTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
         if (activation <= 0) return 0L to carry
-        return Rate.tick(massPerMachineTick * activation, SignalField.FULL, carry)
+        return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
     private fun vaporizeToGas(mixture: Mixture): Mixture {
@@ -588,25 +587,47 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
-        val input = m.input ?: return m
-        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-        // Full output blocks the machine (catches tailings too).
-        if (blocked(m.product, m.tailings)) return m.copy(carry = carry)
-        val chunkMass = minOf(mass, input.mass)
-        if (chunkMass <= 0L) return m.copy(carry = carry)
+        val input: Resource?
+        val inProgress: Resource?
 
-        val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, heatOfWorking(chunkMass, m))
-        val r = process(chunk, m.efficiencyPermille)
-        val product = m.product.merged(r.product) ?: return m.copy(carry = carry)
-        val tailings = m.tailings.merged(r.tailings) ?: return m.copy(carry = carry)
+        if (m.inside == null) {
+            inProgress = m.input ?: return m // Nothing to do if there's no input
+            input = null
+            // Apply all heat as soon as new material starts being processed
+            heat(at, heatOfWorking(inProgress.mass, m))
+        } else {
+            input = m.input
+            inProgress = m.inside
+        }
 
-        return m.copy(
-            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
-            product = product.buffer,
-            tailings = tailings.buffer,
-            carry = carry,
-        )
+        val (actionProgress, carry) = throttled(1, activation, m.carry)
+        if (m.progress + actionProgress >= m.ticksPerAction) {
+            // Full output blocks the machine (catches tailings too).
+            if (m.product != null || m.tailings != null) {
+                return m.copy(
+                    input = input,
+                    inside = inProgress,
+                    progress = m.ticksPerAction,
+                    carry = carry,
+                )
+            }
+            val r = process(inProgress, m.efficiencyPermille)
+            return m.copy(
+                input = input,
+                inside = null,
+                product = r.product,
+                tailings = r.tailings,
+                progress = 0,
+                carry = carry,
+            )
+        } else {
+            return m.copy(
+                input = input,
+                inside = inProgress,
+                progress = m.progress + actionProgress.toInt(),
+                carry = carry,
+            )
+        }
     }
 
     private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, at: Int): Smelter {
@@ -1573,11 +1594,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return if (deliver(port.owner, dest, packet)) null else packet
         }
 
-        /** Take whole packets (limit caps to available room). */
+        /** Take packets (limit caps to available room). */
         private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_MASS): Pair<SolidPacket, Resource>? {
             val want = minOf(Capacity.PACKET_MASS, limit)
-            if (want <= 0L || buffer.mass < want) return null
-            val taken = buffer.mixture.take(want)
+            if (want <= 0L || buffer.mass <= 0L) return null
+            val taken = if (buffer.mass < want) buffer.mixture else buffer.mixture.take(want)
             return SolidPacket(Resource(buffer.form, taken)) to Resource(buffer.form, buffer.mixture - taken)
         }
 

@@ -207,10 +207,11 @@ object Save {
             }
             is Processor -> {
                 put("in", m.input?.let { writeResource(it) })
+                put("inside", m.inside?.let { writeResource(it) })
                 put("out", m.product?.let { writeResource(it) })
                 put("waste", m.tailings?.let { writeResource(it) })
                 put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
+                put("progress", m.progress.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
             is Vaporizer -> {
@@ -812,9 +813,9 @@ object Save {
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
-                input = res("in"), product = res("out"), tailings = res("waste"),
+                input = res("in"), inside = res("inside"), product = res("out"), tailings = res("waste"),
                 carry = massNum("carry", 0L),
-                massPerTick = rate(Processor(Direction.Right).massPerTick),
+                progress = num("actionProgress", 0L).toInt(),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(

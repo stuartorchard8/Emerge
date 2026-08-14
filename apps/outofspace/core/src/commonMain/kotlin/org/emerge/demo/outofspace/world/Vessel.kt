@@ -759,7 +759,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     null -> 0L
     is Bridge -> machine.mass
     is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
-    is Processor -> (machine.input?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
+    is Processor -> (machine.input?.mass ?: 0L) + (machine.inside?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
     is Vaporizer -> (machine.input?.mass ?: 0L)
     is Thruster -> (machine.input?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
@@ -812,6 +812,7 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
     is Extractor -> listOfNotNull(machine.input?.let { "CRUSHING" to it }, "BUFFER" to machine.buffer)
     is Processor -> listOfNotNull(
         machine.input?.let { "INPUT" to it },
+        machine.inside?.let { "PROCESSING" to it },
         machine.product?.let { "CONCENTRATE" to it },
         machine.tailings?.let { "TAILINGS" to it },
     )
@@ -836,7 +837,9 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
     is Extractor -> (machine.input?.mixture ?: Mixture.EMPTY) + machine.buffer.mixture
     is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
-        (machine.product?.mixture ?: Mixture.EMPTY) + (machine.tailings?.mixture ?: Mixture.EMPTY)
+            (machine.inside?.mixture ?: Mixture.EMPTY) +
+            (machine.product?.mixture ?: Mixture.EMPTY) +
+            (machine.tailings?.mixture ?: Mixture.EMPTY)
     is Vaporizer -> machine.input?.mixture ?: Mixture.EMPTY
     is Thruster -> machine.input?.mixture ?: Mixture.EMPTY
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +

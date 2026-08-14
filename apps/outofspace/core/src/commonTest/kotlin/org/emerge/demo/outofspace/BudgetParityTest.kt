@@ -67,7 +67,6 @@ class BudgetParityTest {
         for ((what, rate) in listOf(
             "extractor" to Extractor(Direction.Right).massPerTick,
             "smelter" to Smelter(Direction.Right).massPerTick,
-            "processor" to Processor(Direction.Right).massPerTick,
             "vaporizer" to Vaporizer(Direction.Right).massPerTick,
         )) {
             assertEquals(Capacity.PACKET_MASS, rate, "$what must produce exactly one belt-load a tick")
