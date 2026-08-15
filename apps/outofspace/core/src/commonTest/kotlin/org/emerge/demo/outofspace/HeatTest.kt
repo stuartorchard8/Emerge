@@ -176,7 +176,7 @@ class HeatTest {
     fun `a smelter warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0))
         // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
         // slag port at (5,7), so the vents go one tile beyond each.
         val g0 = Grid(12, 12)
@@ -255,7 +255,7 @@ class HeatTest {
         // Roomy enough that the five-tile furnace does not fill it: with nothing but space around
         // it, every face of the thing is exposed.
         val grid = Grid(11, 11)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(5, 5)] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())

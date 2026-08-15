@@ -60,19 +60,19 @@ enum class Material(
     val roughness: Long,
 ) {
     /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Iron to 990L, Species.Carbon to 10L), conductanceCentiTicks = 2_450L, roughness = 400L),
+    Steel("STEEL", Mixture.of(Species.Iron to 990L, Species.Carbon to 10L, energy = Budget.JOULE), conductanceCentiTicks = 2_450L, roughness = 400L),
 
     /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
-    Iron("IRON", Mixture.of(Species.Iron to 1_000L), conductanceCentiTicks = 400L, roughness = 450L),
+    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 400L, roughness = 450L),
 
     /** Pipe and cable. Barely any thermal mass and enormous conductance — a heat pipe by accident. */
-    Copper("COPPER", Mixture.of(Species.Copper to 1_000L), conductanceCentiTicks = 58L, roughness = 500L),
+    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 58L, roughness = 500L),
 
     /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
-    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L), conductanceCentiTicks = 5_200L, roughness = 400L),
+    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 5_200L, roughness = 400L),
 
     /** Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot. */
-    Firebrick("FIREBRICK", Mixture.of(Species.Quartz to 550L, Species.Aluminum to 450L), conductanceCentiTicks = 88_000L, roughness = 700L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Quartz to 550L, Species.Aluminum to 450L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
     /** What a full tile of this stuff weighs, at its real density. */

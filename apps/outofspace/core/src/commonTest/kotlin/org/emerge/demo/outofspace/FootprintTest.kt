@@ -161,7 +161,7 @@ class FootprintTest {
      */
     private fun feed(endX: Int, endY: Int): VesselState {
         val grid = Grid(14, 14)
-        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS))
+        val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)
@@ -199,7 +199,7 @@ class FootprintTest {
     @Test
     fun `a sensor pointed at any tile of a building reads that building`() {
         val grid = Grid(12, 12)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(6, 6)] = Storage(Direction.Right, stored)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.

@@ -99,7 +99,7 @@ class GaugeTest {
 
     @Test
     fun `a gauge puts its purity on the wire beneath it`() {
-        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS))
+        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val s = run(line(pure), 20)
         assertEquals(1000, s.signals.at(s.grid.index(GAUGE_TILE_X, 2)), "pure metal reads 100%")
     }
@@ -110,7 +110,7 @@ class GaugeTest {
      */
     @Test
     fun `a gauge with no wire under it drives nothing`() {
-        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS))
+        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
@@ -161,12 +161,13 @@ class GaugeTest {
     fun `a processor names each of its buffers separately`() {
         val p = Processor(
             Direction.Right,
-            input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS)),
-            product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2)),
-            tailings = Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10)),
+            input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0)),
+            inside = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS * 10, energy = 0)),
+            product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
+            tailings = Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10, energy = 0)),
         )
         val rows = contentsBreakdown(p)
-        assertEquals(listOf("INPUT", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
+        assertEquals(listOf("INPUT", "INSIDE", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
         assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[2].second.mass, "knowing which buffer is stuck is the whole point")
     }
 

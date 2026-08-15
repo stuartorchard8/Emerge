@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.math.abs
 import kotlin.random.Random
@@ -353,7 +354,8 @@ object RockSpawner {
         return Mixture.of(
             *species.mapIndexed {
                 index, species -> species to relativeComposition[index].toLong()*density/totalComposition
-            }.toTypedArray()
+            }.toTypedArray(),
+            energy = Budget.JOULE, // TODO: add energy equivalent to [SPACE_KELVIN] for this composition
         )
     }
 

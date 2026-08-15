@@ -83,7 +83,7 @@ class VaporizerTest {
         machines[grid.index(BAY_X, BAY_Y)] = Vaporizer(
             facing = Direction.Right,
             // A volatile, so what comes out is a gas anybody would recognise as one.
-            input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS)),
+            input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)),
         )
         return VesselState(grid = grid, machines = machines.toList())
     }

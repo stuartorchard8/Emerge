@@ -234,7 +234,7 @@ class RotationTest {
         for (y in bays) {
             machines[grid.index(HULL_RIGHT, y)] = Thruster(
                 facing = Direction.Right,
-                input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT)),
+                input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
             )
         }
         return VesselState(

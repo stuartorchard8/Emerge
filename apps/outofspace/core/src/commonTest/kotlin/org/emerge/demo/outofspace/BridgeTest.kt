@@ -45,7 +45,7 @@ class BridgeTest {
         return s
     }
 
-    private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS))
+    private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
 
     /**
      * Two lines that want the same tile.
@@ -227,7 +227,7 @@ class BridgeTest {
         // the shift wants it and the span stays a pipeline. Drain it after the shift instead and
         // every slot idles a step waiting for the one ahead, halving the throughput while looking
         // perfectly correct tile by tile. Occupancy cannot see that; only throughput can.
-        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS))
+        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0))
         var s = crossing(bridged = true, horizontalSupply = supply)
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.

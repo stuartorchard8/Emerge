@@ -10,12 +10,12 @@ import org.emerge.demo.outofspace.chem.apportion
  * Air: flat LongArray (tiles × species), integers (exact conservation).
  * pressureAt = millimoles (not mass — lets heavy gas sink). densityAt = mass/volume.
  */
-class AirField(private val mass: LongArray, private val energy: LongArray) {
+class AirField(private val masses: LongArray, private val energies: LongArray) {
 
-    fun massOf(tile: Int, species: Species): Long = mass[tile * Species.COUNT + species.ordinal]
+    fun massOf(tile: Int, species: Species): Long = masses[tile * Species.COUNT + species.ordinal]
 
     /** Pressure in millimoles (particle count, not mass — heavy gases sink). */
-    fun pressureAt(tile: Int): Long = millimolesOf(mass, tile)
+    fun pressureAt(tile: Int): Long = millimolesOf(masses, tile)
 
     /**
      * Joules per kelvin held by the air in a tile — what it costs to warm this much gas by a degree.
@@ -23,22 +23,22 @@ class AirField(private val mass: LongArray, private val energy: LongArray) {
      * Here rather than at every call site because a tile's temperature depends on it, and computing
      * it from [copyMass] would allocate the whole field once per tile queried.
      */
-    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(mass, tile)
+    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(masses, tile)
 
     /**
      * How hot the air in a tile is, in kelvin. A tile with no air reads as ambient — see [gasKelvin]
      * for why that is the right placeholder for an absent quantity rather than a dodge.
      */
     fun kelvinAt(tile: Int): Int {
-        val capacity = gasCapacityAt(mass, tile)
-        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energy[tile] / capacity).toInt()
+        val capacity = gasCapacityAt(masses, tile)
+        return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energies[tile] / capacity).toInt()
     }
 
     /** Total gas mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: Int): Long {
         var sum = 0L
         val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += mass[base + s.ordinal]
+        for (s in Species.ALL) sum += masses[base + s.ordinal]
         return sum
     }
 
@@ -59,32 +59,32 @@ class AirField(private val mass: LongArray, private val energy: LongArray) {
     fun mixtureAt(tile: Int): Mixture {
         val out = LongArray(Species.COUNT)
         val base = tile * Species.COUNT
-        for (s in Species.ALL) out[s.ordinal] = mass[base + s.ordinal]
-        return Mixture.ofMass(out)
+        for (s in Species.ALL) out[s.ordinal] = masses[base + s.ordinal]
+        return Mixture.of(out, energies[tile])
     }
 
     val totalMass: Long get() {
         var sum = 0L
-        for (g in mass) sum += g
+        for (g in masses) sum += g
         return sum
     }
 
     /** Total thermal energy of the atmosphere — the ledger quantity, the twin of [totalMass]. */
     val totalEnergy: Long get() {
         var sum = 0L
-        for (j in energy) sum += j
+        for (j in energies) sum += j
         return sum
     }
 
-    fun copyMass(): LongArray = mass.copyOf()
+    fun copyMass(): LongArray = masses.copyOf()
 
-    fun copyEnergy(): LongArray = energy.copyOf()
+    fun copyEnergy(): LongArray = energies.copyOf()
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is AirField && mass.contentEquals(other.mass) && energy.contentEquals(other.energy))
+            (other is AirField && masses.contentEquals(other.masses) && energies.contentEquals(other.energies))
 
-    override fun hashCode(): Int = 31 * mass.contentHashCode() + energy.contentHashCode()
+    override fun hashCode(): Int = 31 * masses.contentHashCode() + energies.contentHashCode()
 
     companion object {
         /**
@@ -116,6 +116,7 @@ class AirField(private val mass: LongArray, private val energy: LongArray) {
             Species.Oxygen to 231L * Budget.GRAM,
             Species.Argon to 13L * Budget.GRAM,
             Species.CarbonDioxide to 1L * Budget.GRAM,
+            energy = Budget.JOULE * 1000, // TODO set ambient energy to 20 degrees C
         )
 
         /**

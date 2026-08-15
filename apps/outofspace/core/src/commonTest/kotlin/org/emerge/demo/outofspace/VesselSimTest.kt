@@ -380,7 +380,7 @@ class VesselSimTest {
     @Test
     fun `a smelter stalls rather than mixing two metals`() {
         val grid = Grid(3, 1)
-        val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L))
+        val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L, energy = 0))
         val smelter = Smelter(Direction.Right, input = ironOre)
         var s = VesselState(grid, listOf(smelter, null, null))
         s = run(s, 20)
@@ -388,7 +388,7 @@ class VesselSimTest {
         assertEquals(Form.IronIngot, assertNotNull(after.refined).form)
 
         // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
-        val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L))
+        val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L, energy = 0))
         var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null))
         val heldBefore = (s2[0] as Smelter).refined!!.mass
         s2 = run(s2, 20)
@@ -400,7 +400,7 @@ class VesselSimTest {
     @Test
     fun `what a storage holds is what the vessel can build with`() {
         val grid = Grid(10, 5)
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val m = arrayOfNulls<Machine>(grid.size)
         // The tank faces open deck beyond it, so it fills rather than draining.
         m[grid.index(4, 2)] = Storage(Direction.Right)
@@ -420,8 +420,8 @@ class VesselSimTest {
     @Test
     fun `machines refuse a second form rather than mixing their input buffer`() {
         val grid = Grid(10, 5)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 500L))
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 500L, energy = 0))
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(4, 2)] = Processor(Direction.Right, input = ore)   // input port at (3, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
@@ -466,7 +466,7 @@ class VesselSimTest {
 
     @Test
     fun `an ingot the processor will not take rides the belt on to the tank`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Processor(Direction.Down), ingot)
 
         assertNull((s[grid43(s)] as Processor).input, "the processor should not have taken an ingot")
@@ -481,7 +481,7 @@ class VesselSimTest {
     fun `ore on the same belt is lifted off in passing`() {
         // The other half, on the identical layout: the belt has not changed shape, so the only thing
         // that decided this packet's fate is what the machine was willing to take.
-        val ore = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 1_000L)))
+        val ore = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Processor(Direction.Down), ore)
         val processor = s[grid43(s)] as Processor
 
@@ -501,7 +501,7 @@ class VesselSimTest {
 
     @Test
     fun `an empty smelter lets an ingot go by`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L)))
+        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Smelter(Direction.Down), ingot)
 
         assertNull((s[grid43(s)] as Smelter).input, "the smelter should not have taken an ingot")
@@ -519,7 +519,7 @@ class VesselSimTest {
     @Test
     fun `placing never overwrites an existing machine`() {
         val grid = Grid(2, 1)
-        val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L)))
+        val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0)))
         var s = VesselState(grid, listOf(store, null))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(0, MachineKind.Sensor, Direction.Right))))
         // Compared with its heat put back, because a tick of conduction has moved it: the machine
@@ -534,7 +534,7 @@ class VesselSimTest {
     @Test
     fun `rotating turns a machine clockwise and leaves its contents alone`() {
         val grid = Grid(10, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(4, 3)] = Storage(Direction.Right, stored)
         var s = VesselState(grid, m.toList())

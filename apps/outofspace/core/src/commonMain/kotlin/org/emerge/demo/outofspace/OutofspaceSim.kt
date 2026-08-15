@@ -580,16 +580,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
-    private fun vaporizeToGas(mixture: Mixture): Mixture {
-        val out = LongArray(Species.COUNT)
-        for (s in Species.ALL) {
-            val g = mixture[s]
-            if (g <= 0L) continue
-            out[s.ordinal] += g
-        }
-        return Mixture.ofMass(out)
-    }
-
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
         val input: Resource?
         val inProgress: Resource?
@@ -707,7 +697,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
         heat(at, heatOfWorking(chunkMass, m))
-        val gas = vaporizeToGas(chunk.mixture)
+        val gas = chunk.mixture
         val base = at * Species.COUNT
         val parcel = LongArray(Species.COUNT)
         for (s in Species.ALL) {
@@ -873,6 +863,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         Species.Quartz to 300L,
         Species.Chalcopyrite to 180L,
         Species.Ilmenite to 110L,
+        energy = 0L,
     )
 
     /** Mutable scratch for one tick (reducer stays pure). */

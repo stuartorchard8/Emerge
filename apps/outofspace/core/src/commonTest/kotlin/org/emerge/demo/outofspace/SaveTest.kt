@@ -356,7 +356,7 @@ class SaveTest {
     fun `a gauge keeps that it is one, and its last reading`() {
         val grid = Grid(6, 4)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L))
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0))
         rails[grid.index(2, 2)] = Segment(org.emerge.demo.outofspace.world.Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
@@ -376,14 +376,14 @@ class SaveTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.index(4, 4)] = Extractor(
             Direction.Right,
-            input = Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L)),
-            buffer = Resource(Form.Ore, Mixture.of(Species.Iron to 123L)),
+            input = Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)),
+            buffer = Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)),
             carry = 37L,
             // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
-        machines[grid.index(7, 4)] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L)))
+        machines[grid.index(7, 4)] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
 
         val state = VesselState(grid, machines.toList())
         val back = Save.read(Save.write(state))

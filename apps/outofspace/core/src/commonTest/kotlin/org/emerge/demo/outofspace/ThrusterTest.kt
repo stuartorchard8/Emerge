@@ -258,7 +258,7 @@ class ThrusterTest {
         val tile = if (at >= 0) at else grid.index(HULL_RIGHT, BAY_Y)
         machines[tile] = Thruster(
             facing = facing,
-            input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT)),
+            input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
         )
         return VesselState(
             grid = grid,

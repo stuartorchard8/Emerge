@@ -1,26 +1,24 @@
 package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.speciesColor
-import org.emerge.render.torus.RgbColor
 
 /**
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
  * Immutable. Splits use apportion() (cumulative). Operations: +, -, take, scaledTo.
  */
-class Mixture private constructor(private val mass: LongArray) {
+class Mixture private constructor(private val masses: LongArray, val energy: Long) {
 
     init {
-        require(mass.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${mass.size}" }
+        require(masses.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${masses.size}" }
     }
 
-    operator fun get(species: Species): Long = mass[species.ordinal]
+    operator fun get(species: Species): Long = masses[species.ordinal]
 
     /** Total mass in mass. */
     val total: Long get() {
         var sum = 0L
-        for (g in mass) sum += g
+        for (g in masses) sum += g
         return sum
     }
 
@@ -34,8 +32,8 @@ class Mixture private constructor(private val mass: LongArray) {
         get() {
             var best = -1
             var bestMass = 0L
-            for (i in mass.indices) {
-                if (mass[i] > bestMass) { bestMass = mass[i]; best = i }
+            for (i in masses.indices) {
+                if (masses[i] > bestMass) { bestMass = masses[i]; best = i }
             }
             return if (best < 0) null else Species.ALL[best]
         }
@@ -47,8 +45,8 @@ class Mixture private constructor(private val mass: LongArray) {
             var b = 0x00
             val a = 0xFF
             val total = total
-            for (i in mass.indices) {
-                val v = mass[i]*0xFF/total
+            for (i in masses.indices) {
+                val v = masses[i]*0xFF/total
                 if (v > 0) {
                     val sc = speciesColor(Species.ALL[i])
                     val scR = sc.shr(24) and 0xFF
@@ -67,9 +65,10 @@ class Mixture private constructor(private val mass: LongArray) {
     val impurities: Long get() = dominant?.let { total - this[it] } ?: 0L
 
     operator fun plus(other: Mixture): Mixture {
-        val out = LongArray(Species.COUNT)
-        for (i in out.indices) out[i] = mass[i] + other.mass[i]
-        return Mixture(out)
+        val outMasses = LongArray(Species.COUNT)
+        for (i in outMasses.indices) outMasses[i] = masses[i] + other.masses[i]
+        val outEnergy = energy+other.energy
+        return Mixture(outMasses, outEnergy)
     }
 
     /**
@@ -78,12 +77,14 @@ class Mixture private constructor(private val mass: LongArray) {
      * silently inventing matter.
      */
     operator fun minus(other: Mixture): Mixture {
-        val out = LongArray(Species.COUNT)
-        for (i in out.indices) {
-            out[i] = mass[i] - other.mass[i]
-            require(out[i] >= 0L) { "subtracting more ${Species.ALL[i]} than present: ${mass[i]} - ${other.mass[i]}" }
+        val outMasses = LongArray(Species.COUNT)
+        for (i in outMasses.indices) {
+            outMasses[i] = masses[i] - other.masses[i]
+            require(outMasses[i] >= 0L) { "subtracting more ${Species.ALL[i]} than present: ${masses[i]} - ${other.masses[i]}" }
         }
-        return Mixture(out)
+        val outEnergy = energy-other.energy
+        require(outEnergy >= 0L) { "subtracting more energy than present: $energy - ${other.energy}" }
+        return Mixture(outMasses, outEnergy)
     }
 
     /**
@@ -96,7 +97,8 @@ class Mixture private constructor(private val mass: LongArray) {
     fun take(amount: Long): Mixture {
         if (amount <= 0L) return EMPTY
         if (amount >= total) return this
-        return Mixture(apportion(mass, amount))
+        val outEnergy = scaledRatio(amount, total, energy)
+        return Mixture(apportion(masses, amount), outEnergy)
     }
 
     /**
@@ -106,11 +108,10 @@ class Mixture private constructor(private val mass: LongArray) {
      */
     fun scaledTo(mass: Long): Mixture {
         if (mass <= 0L || isEmpty) return EMPTY
-        return Mixture(apportion(this.mass, mass))
+        // TODO this function doesn't need temperature if callers only care about species ratios.
+        //  Extract the function outside of mixture as an independent utility function.
+        return Mixture(apportion(this.masses, mass), 0)
     }
-
-    /** This mixture with only [species] kept, at [amount] mass. */
-    fun onlyOf(species: Species, amount: Long): Mixture = of(species to amount)
 
     /** Human-readable, dominant species first — for debug output and test failures. */
     override fun toString(): String {
@@ -120,24 +121,24 @@ class Mixture private constructor(private val mass: LongArray) {
     }
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Mixture && mass.contentEquals(other.mass))
+        this === other || (other is Mixture && masses.contentEquals(other.masses))
 
-    override fun hashCode(): Int = mass.contentHashCode()
+    override fun hashCode(): Int = masses.contentHashCode()
 
     companion object {
-        val EMPTY: Mixture = Mixture(LongArray(Species.COUNT))
+        val EMPTY: Mixture = Mixture(LongArray(Species.COUNT), 0)
 
-        fun of(vararg parts: Pair<Species, Long>): Mixture {
+        fun of(vararg parts: Pair<Species, Long>, energy: Long): Mixture {
             val out = LongArray(Species.COUNT)
             for ((species, mass) in parts) {
                 require(mass >= 0L) { "negative mass for $species: $mass" }
                 out[species.ordinal] += mass
             }
-            return Mixture(out)
+            return Mixture(out, energy)
         }
 
         /** Builds from raw per-species mass, indexed by [Species] ordinal. The array is copied. */
-        fun ofMass(mass: LongArray): Mixture = Mixture(mass.copyOf())
+        fun of(masses: LongArray, energy: Long): Mixture = Mixture(masses.copyOf(), energy)
     }
 }
 

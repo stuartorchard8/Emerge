@@ -136,7 +136,7 @@ class WiringTest {
     /** A tank at 0 and a sensor at 1 looking left at it, with a stub of wire under the sensor. */
     private fun tankAndSensor(fill: Long, wired: Boolean = true): VesselState {
         val grid = Grid(2, 1)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) wires[1] = Segment(Conduit.Signal)
         return VesselState(
@@ -208,7 +208,7 @@ class WiringTest {
         // Track is inert -- it has no wiring and cannot be switched off, because it is plumbing. The
         // thing you switch off is the machine at the end of it, and a shut tank is a shut valve.
         val grid = Grid(12, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
         m[grid.index(8, 3)] = Storage(Direction.Right)
@@ -363,7 +363,7 @@ class WiringTest {
 
     @Test
     fun `a storage releases only while it is told to`() {
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS))
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS, energy = 0))
         val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.

@@ -52,7 +52,7 @@ class TransportTest {
     private fun share(perMille: Int): Long = Capacity.PACKET_MASS * perMille / 1_000L
 
     private fun lump(mass: Long = Capacity.PACKET_MASS): Packet =
-        SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to mass)))
+        SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to mass, energy = 0)))
 
     /**
      * A network under construction: tiles that carry track, and the joins actually drawn between
@@ -615,8 +615,8 @@ class TransportTest {
      */
     @Test
     fun `ore of different purities blends, because that is what powder does`() {
-        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Quartz to share(300))))
-        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Quartz to share(125))))
+        val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Quartz to share(300), energy = 0)))
+        val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Quartz to share(125), energy = 0)))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
         val h = held(n, grid.index(4, 3) to dirty, grid.index(5, 3) to clean)
@@ -633,7 +633,7 @@ class TransportTest {
     fun `ingots stay separate lumps however hard they are pressed together`() {
         // A made thing is a made thing. Two bars on a jammed belt are still two bars, so the run
         // queues rather than bunching, and they can be told apart at the far end.
-        val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to share(400))))
+        val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to share(400), energy = 0)))
         val n = net().row(2, 5, 3)
         val f = n.toward(grid.index(5, 3))
         val h = held(n, grid.index(4, 3) to bar, grid.index(5, 3) to bar)
@@ -645,7 +645,7 @@ class TransportTest {
 
     @Test
     fun `different forms never bunch, however alike their contents`() {
-        val pure = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2)
+        val pure = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)
         val ingot = SolidPacket(Resource(Form.IronIngot, pure))
         val ore = SolidPacket(Resource(Form.Ore, pure))
         val n = net().row(2, 5, 3)

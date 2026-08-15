@@ -65,7 +65,10 @@ fun smelt(input: Resource): SmeltResult {
         )
     }
 
-    val refinedMixture = Mixture.of(dominant to (dominantMass - impurities))
+    val refinedMass = dominantMass-impurities
+    val refinedEnergy = scaledRatio(refinedMass, input.mass, input.mixture.energy)
+
+    val refinedMixture = Mixture.of(dominant to refinedMass, energy=refinedEnergy)
     return SmeltResult(
         refined = Resource(SMELT_PRODUCTS.getValue(dominant), refinedMixture),
         // The remainder, so nothing can go missing: the impurities plus an equal mass of the
@@ -129,7 +132,7 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
         for (i in productMass.indices) if (i != dominant.ordinal) productMass[i] = share[i]
     }
 
-    val productMixture = Mixture.ofMass(productMass)
+    val productMixture = Mixture.of(productMass, input.mixture.energy)
     return ProcessResult(
         product = Resource(input.form, productMixture),
         tailings = Resource(input.form, input.mixture - productMixture),

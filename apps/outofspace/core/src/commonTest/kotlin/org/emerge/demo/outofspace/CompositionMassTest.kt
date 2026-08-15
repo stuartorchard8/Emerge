@@ -35,7 +35,7 @@ class CompositionMassTest {
     private fun rock(composition: Mixture, radius: Int = 2): RigidBody =
         RigidBody.rockBlob(radius = radius, positionX = 0L, positionY = 0L, composition = composition)
 
-    private fun pure(species: Species): Mixture = Mixture.of(species to 1_000L)
+    private fun pure(species: Species): Mixture = Mixture.of(species to 1_000L, energy = 0)
 
     @Test
     fun `a pure rock weighs its species' density`() {
@@ -66,7 +66,7 @@ class CompositionMassTest {
      */
     @Test
     fun `a mixture's density is the harmonic mean, not the arithmetic one`() {
-        val half = Mixture.of(Species.Iron to 500L, Species.Quartz to 500L)
+        val half = Mixture.of(Species.Iron to 500L, Species.Quartz to 500L, energy = 0L)
         val ironDensity = Species.Iron.solidMassPerTile
         val silicaDensity = Species.Quartz.solidMassPerTile
 
@@ -85,7 +85,7 @@ class CompositionMassTest {
     /** Heat capacity averages by mass, unlike density — warming a tile means warming each gram. */
     @Test
     fun `capacity is the mass-weighted specific heat of what is there`() {
-        val mix = Mixture.of(Species.Iron to 700L, Species.Water to 300L)
+        val mix = Mixture.of(Species.Iron to 700L, Species.Water to 300L, energy = 0)
         val perGram = 700L * Species.Iron.specificHeat + 300L * Species.Water.specificHeat
         // Divided last, as the implementation does — dividing the specific heat down to a per-gram
         // integer first throws away a fraction that a whole tile's worth of mass makes visible.
@@ -118,10 +118,10 @@ class CompositionMassTest {
     fun `what a tile costs to warm does not depend on how much of it you were handed`() {
         val recipe = listOf(Species.Water to 1_000L)
         // 1 kg to 10,000 tonnes — comfortably past the 2,900 tonnes where the old product wrapped.
-        val reference = capacityPerTileOf(Mixture.of(*recipe.toTypedArray()))
+        val reference = capacityPerTileOf(Mixture.of(*recipe.toTypedArray(), energy = 0))
         assertTrue(reference > 0L, "the reference capacity itself must be positive, got $reference")
         for (scale in listOf(1L, 1_000L, 1_000_000L, 10_000_000L)) {
-            val scaled = Mixture.of(*recipe.map { (s, g) -> s to g * scale }.toTypedArray())
+            val scaled = Mixture.of(*recipe.map { (s, g) -> s to g * scale }.toTypedArray(), energy = 0)
             val actual = capacityPerTileOf(scaled)
             assertTrue(
                 close(reference, actual),
@@ -153,7 +153,7 @@ class CompositionMassTest {
     /** Eating a rock hollow returns exactly its mass — no crumb minted or lost on the way. */
     @Test
     fun `biting a rock to nothing yields exactly its mass`() {
-        var body: RigidBody? = rock(Mixture.of(Species.Iron to 410L, Species.Quartz to 300L))
+        var body: RigidBody? = rock(Mixture.of(Species.Iron to 410L, Species.Quartz to 300L, energy = 0))
         val whole = body!!.mass
         var taken = 0L
         while (body != null) {

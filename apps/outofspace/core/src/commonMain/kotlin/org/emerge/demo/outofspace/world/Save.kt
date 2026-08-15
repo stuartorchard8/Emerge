@@ -1011,18 +1011,25 @@ object Save {
     private fun readMixture(text: String, scale: Rescale, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY
         val masses = LongArray(Species.COUNT)
+        var energy = 0L
         for (part in text.split(',')) {
             val eq = part.indexOf('=')
             if (eq < 0) fail("expected SPECIES=mass, got '$part'")
             val name = part.substring(0, eq)
-            val species = Species.ALL.firstOrNull { it.name == name }
-                ?: RENAMED_SPECIES[name]
-                ?: fail("unknown species '$name'")
-            val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
-            if (mass < 0L) fail("negative mass in '$part'")
-            masses[species.ordinal] += scale.of(mass)
+            if (name == "energy") {
+                val energyPart = part.substring(eq + 1).toLongOrNull() ?: fail("bad energy in '$part'")
+                if (energyPart < 0L) fail("negative energy in '$part'")
+                energy += energyPart
+            } else {
+                val species = Species.ALL.firstOrNull { it.name == name }
+                    ?: RENAMED_SPECIES[name]
+                    ?: fail("unknown species '$name'")
+                val mass = part.substring(eq + 1).toLongOrNull() ?: fail("bad mass in '$part'")
+                if (mass < 0L) fail("negative mass in '$part'")
+                masses[species.ordinal] += scale.of(mass)
+            }
         }
-        return Mixture.ofMass(masses)
+        return Mixture.of(masses, energy)
     }
 
     private fun readResource(text: String, scale: Rescale, fail: (String) -> Nothing): Resource {
