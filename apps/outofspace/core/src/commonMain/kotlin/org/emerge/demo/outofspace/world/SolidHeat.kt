@@ -62,25 +62,30 @@ fun stepSolidHeat(
             contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
         }
 
+        // ⚠️ An `else` and not an early `continue`. This used to sit inside a `for (tile in
+        // body.tiles)` loop, where `continue` meant "this body has no more to do *on this tile*"
+        // and the track-to-track block below still ran. A body is one tile now, that loop is gone,
+        // and the same `continue` skips to the next *body* — which silently retired the block
+        // below for every fitting, since a fitting is always permeable. Heat stopped running along
+        // rails and pipes at all.
         if (body.permeable) {
             // A fitting reaches the air in its own tile and nothing further.
             contacts.join(b, bodyCount + body.tile.index, seriesConductance(k, Material.AIR_FILM))
-            continue
-        }
-
-        // Impermeable: reaches across tile faces.
-        for (dir in Direction.ALL) {
-            val next = grid.neighbour(body.tile, dir)
-            if (next == TileIndex.NONE) continue
-            if (structure.isImpermeable(next)) {
-                // Once per face, not per pair.
-                for (i in tiles.startOf(next) until tiles.endOf(next)) {
-                    val other = tiles.id(i)
-                    if (other <= b || bodies[other].permeable) continue
-                    contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
+        } else {
+            // Impermeable: reaches across tile faces.
+            for (dir in Direction.ALL) {
+                val next = grid.neighbour(body.tile, dir)
+                if (next == TileIndex.NONE) continue
+                if (structure.isImpermeable(next)) {
+                    // Once per face, not per pair.
+                    for (i in tiles.startOf(next) until tiles.endOf(next)) {
+                        val other = tiles.id(i)
+                        if (other <= b || bodies[other].permeable) continue
+                        contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
+                    }
+                } else if (structure.isContained(next)) {
+                    contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
                 }
-            } else if (structure.isContained(next)) {
-                contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
             }
         }
 
