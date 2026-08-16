@@ -370,11 +370,11 @@ class WiringTest {
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
-        var s = run(twoUp(shut), 20)
+        var s = run(twoUp(shut), 20 * RAIL_PERIOD)
         assertEquals(5 * Capacity.PACKET_MASS, (s[g.tile(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
         assertNull((s[g.tile(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
-        var s2 = run(twoUp(Storage(Direction.Right, stored)), 20)
+        var s2 = run(twoUp(Storage(Direction.Right, stored)), 20 * RAIL_PERIOD)
         assertEquals(5 * Capacity.PACKET_MASS, (s2[g.tile(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
         assertNull((s2[g.tile(3, 3)] as Storage).contents, "and empties itself doing it")
     }
