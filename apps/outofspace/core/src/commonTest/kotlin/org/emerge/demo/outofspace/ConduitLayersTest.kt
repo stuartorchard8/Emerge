@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.Conduits
@@ -143,7 +144,7 @@ class ConduitLayersTest {
                         .also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
                 ),
             )
-            repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+            repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
             val probe = s.conduits.at(Conduit.Pipe, grid.tile(5, pipeFromY))!!
             return (probe.energy / Conduit.Pipe.capacityPerTile).toInt()
@@ -175,7 +176,7 @@ class ConduitLayersTest {
                 s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
             ),
         )
-        repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         val far = s.conduits.at(Conduit.Rail, grid.tile(7, 3))!!
         val kelvin = (far.energy / Conduit.Rail.capacityPerTile).toInt()

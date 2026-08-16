@@ -157,7 +157,7 @@ class BridgeTest {
     fun `a bridge carries one line over the other without them meeting`() {
         // The horizontal line hops the vertical one. Its material has to arrive at the far end
         // having never touched the column, and the column's material has to be unaffected.
-        val s = run(crossing(bridged = true), 160)
+        val s = run(crossing(bridged = true), 160*RAIL_PERIOD)
 
         assertTrue(
             ((s[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.atKelvin
 import org.emerge.demo.outofspace.world.machine.kelvin
@@ -106,7 +107,7 @@ class BodyHeatTest {
         val start = tiles(seeded)
         assertEquals(25, start.size, "a five-by-five smelter stores twenty-five figures, not one")
 
-        val settled = run(seeded, 20)
+        val settled = run(seeded, 20*HEAT_PERIOD)
         val end = tiles(settled)
 
         // The near corner cools and the far one warms: heat crossed the machine's own body, which
@@ -161,7 +162,7 @@ class BodyHeatTest {
         ) { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null }
             .heatMachine(under, 900)
 
-        val settled = run(world, 30)
+        val settled = run(world, 30*HEAT_PERIOD)
         assertTrue(
             settled.railKelvin(under) > Temperature.AMBIENT_KELVIN + 50,
             "the rail under the furnace should have warmed: ${settled.railKelvin(under)}K",
@@ -208,7 +209,7 @@ class BodyHeatTest {
         var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
         s = s.copy(baselineEnergy = s.storedEnergy)
 
-        val settled = run(s, 40)
+        val settled = run(s, 40*HEAT_PERIOD)
         val alongTheRun = settled.railKelvin(g.tile(6, topRow))
         val acrossToTheOther = settled.railKelvin(g.tile(6, nextRow))
 
@@ -226,7 +227,7 @@ class BodyHeatTest {
         val wall = g.tile(4, 1)
         val heated = world.heatMachine(wall, 1_200)
 
-        val settled = run(heated, 40)
+        val settled = run(heated, 40*HEAT_PERIOD)
         val inside = settled.airKelvinAt(g.tile(4, 2))
         assertTrue(
             inside > Temperature.AMBIENT_KELVIN + 5,
