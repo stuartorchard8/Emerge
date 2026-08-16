@@ -274,22 +274,53 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         // ── Pressure ──────────────────────────────────────────────────────────────
-        // Results used by flight below, so computed unconditionally.
-        val roomPressure = tilePressure(
-            state.grid.size, w.masses, gasKelvin(w.energies, heatCapacity(state.grid.size, w.masses)),
-        )
-        val pushed = applyPressureForce(
-            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
-            w.about,
-        )
-        val pipePressure = tilePressure(
-            state.grid.size, w.pipeMass,
-            gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass)), volumes,
-        )
-        val pipePushed = applyPressureForce(
-            edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
-            tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
-        )
+        //
+        // On the fluid's period, and not on every tick. Two [tilePressure] sweeps are the most
+        // expensive thing the sim does — 47% of a 64 Hz tick, measured — and they are a pure
+        // function of the air, which only moves when [diffuseFluid] below fires. Between fluid
+        // ticks the sweep would rebuild a field identical to the one already in the state, so on
+        // those ticks there is simply no push to apply.
+        //
+        // ⚠️ **Zero on a skipped tick, and emphatically not the last tick's push carried forward.**
+        // [applyPressureForce] books both halves of one exchange: the gas takes `+J` on a face it
+        // can cross and the hull takes the complement, and inside a sealed vessel those telescope
+        // to nothing. Carrying the hull's half forward while the gas's half fires once mints
+        // momentum on seven ticks in eight — `momentumBalance` catches it within a few ticks, which
+        // is what that instrument is for. The push is per firing, so it lands per firing.
+        //
+        // This does change the impulse the hull feels per second, and deliberately so — it is the
+        // same "each subsystem moves its full amount when it fires" rule the rest of the periods
+        // follow. Against the pre-64 Hz sim it is a *doubling*, not a cut: this fires 8 times a
+        // second where the old 4 TPS loop fired 4.
+        val pressureImpulseX: Long
+        val pressureImpulseY: Long
+        val pressureTorque: Long
+        if (shouldRun(state.tick, FLUID_PERIOD)) {
+            // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
+            // that exists before the gas has been allowed to answer it.
+            val roomPressure = tilePressure(
+                state.grid.size, w.masses, gasKelvin(w.energies, heatCapacity(state.grid.size, w.masses)),
+            )
+            val pushed = applyPressureForce(
+                edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
+                w.about,
+            )
+            val pipePressure = tilePressure(
+                state.grid.size, w.pipeMass,
+                gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass)), volumes,
+            )
+            val pipePushed = applyPressureForce(
+                edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
+                tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
+            )
+            pressureImpulseX = pushed.vesselX + pipePushed.vesselX
+            pressureImpulseY = pushed.vesselY + pipePushed.vesselY
+            pressureTorque = pushed.torque + pipePushed.torque
+        } else {
+            pressureImpulseX = 0L
+            pressureImpulseY = 0L
+            pressureTorque = 0L
+        }
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         // When skipped, fluid state is carried forward from the previous tick.
@@ -413,8 +444,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // to the overboard store below, which is what makes the pair impossible to unbalance.
         val exhaustX = state.pose.turnedX(w.exhaustMomentumX, w.exhaustMomentumY)
         val exhaustY = state.pose.turnedY(w.exhaustMomentumX, w.exhaustMomentumY)
-        val pressureX = pushed.vesselX + pipePushed.vesselX
-        val pressureY = pushed.vesselY + pipePushed.vesselY
+        val pressureX = pressureImpulseX
+        val pressureY = pressureImpulseY
         val netImpulseX = state.pose.turnedX(pressureX, pressureY) + thrustX - handedX - exhaustX
         val netImpulseY = state.pose.turnedY(pressureX, pressureY) + thrustY - handedY - exhaustY
 
@@ -426,7 +457,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // nozzle bolted anywhere, so the honest place to apply it is the centre of mass, where its
         // lever arm is zero. When a real engine retires it the term goes with it.
         val handedTorque = w.bodyHandedTorque + bodiesDrifted.handedTorque
-        val netTorque = pushed.torque + pipePushed.torque - handedTorque - w.exhaustTorque
+        val netTorque = pressureTorque - handedTorque - w.exhaustTorque
 
         return state.copy(
             machines = machines,
