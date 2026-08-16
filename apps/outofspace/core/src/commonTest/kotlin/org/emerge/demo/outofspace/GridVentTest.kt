@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
@@ -81,7 +81,7 @@ class GridVentTest {
             airMass[MassIndex(tile, Species.Nitrogen)] = 7L * tile.index
             airEnergy[tile] = 5_000L + 3L * tile.index
         }
-        val air = Atmosphere.of(airMass, airEnergy)
+        val air = Stuff.from(airMass, airEnergy)
 
         // Pipe air too: it is inside `atmosphereMass`, so a vent that forgets it breaks the ledger
         // in exactly the way §5 says the air ledger breaks. Deliberately a different profile.
@@ -91,7 +91,7 @@ class GridVentTest {
             pipeMass[MassIndex(tile, Species.Oxygen)] = 11L * tile.index
             pipeEnergy[tile] = 900L + tile.index
         }
-        val pipeAir = Atmosphere.of(pipeMass, pipeEnergy)
+        val pipeAir = Stuff.from(pipeMass, pipeEnergy)
 
         val edges = EdgeGrid(grid)
         // Signed, and asymmetric between the axes: the identity is a signed sum, so a field of

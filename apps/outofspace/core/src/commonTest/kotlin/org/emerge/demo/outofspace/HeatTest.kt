@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
-import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.machine.atKelvin
 import org.emerge.demo.outofspace.world.machine.kelvin
 import org.emerge.demo.outofspace.world.Conduits

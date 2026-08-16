@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
@@ -328,7 +327,7 @@ class FlightTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = Atmosphere.of(MassArray(grid.size)),
+            air = Stuff.gas(MassArray(grid.size)),
         )
     }
 

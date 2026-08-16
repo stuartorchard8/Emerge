@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -237,7 +236,7 @@ class RockTest {
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */
     private fun vacuumHull(): VesselState =
-        bareHull().let { it.copy(air = Atmosphere.of(MassArray(it.grid.size))) }
+        bareHull().let { it.copy(air = Stuff.gas(MassArray(it.grid.size))) }
 
     private companion object {
         val CFG = OutofspaceConfig()

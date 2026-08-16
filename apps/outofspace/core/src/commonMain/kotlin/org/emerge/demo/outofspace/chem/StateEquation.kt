@@ -347,7 +347,7 @@ val MAX_REDUCED_PRESSURE: Long = Long.MAX_VALUE / 4 / CRITICAL.values.maxOf { it
  * How many litres of room a tile is, worked out from what the world already believes rather than
  * declared.
  *
- * [org.emerge.demo.outofspace.world.Atmosphere.AMBIENT_AIR] puts one kilogram of air in a full tile
+ * [org.emerge.demo.outofspace.world.Stuff.AMBIENT_AIR] puts one kilogram of air in a full tile
  * and calls that one atmosphere at room temperature. A kilogram of air is about 34.5 moles, and
  * 34.5 moles at 293 K and one atmosphere occupies about 830 litres. So a tile is a cube a little
  * under a metre on a side — which nothing in the simulation had to know until a critical density

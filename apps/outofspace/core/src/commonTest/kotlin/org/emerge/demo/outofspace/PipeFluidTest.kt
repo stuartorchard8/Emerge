@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -69,11 +69,11 @@ class PipeFluidTest {
         val pipe = s.pipeAir.copyMass()
         pipe[MassIndex(tile, Species.Nitrogen)] = mass
         return s.copy(
-            pipeAir = Atmosphere.of(pipe),
+            pipeAir = Stuff.gas(pipe),
             // Charging by hand puts gas into the world, so the baseline has to move with it or the
             // ledger reads the fixture itself as a leak.
             baselineAirMass = s.baselineAirMass + mass,
-            baselineAirEnergy = Atmosphere.of(pipe).totalEnergy + s.air.totalEnergy,
+            baselineAirEnergy = Stuff.gas(pipe).totalEnergy + s.air.totalEnergy,
         )
     }
 
@@ -157,9 +157,9 @@ class PipeFluidTest {
         val pipe = s.pipeAir.copyMass()
         pipe[MassIndex(grid.tile(3, 4), Species.Nitrogen)] = 400L
         s = s.copy(
-            pipeAir = Atmosphere.of(pipe),
+            pipeAir = Stuff.gas(pipe),
             baselineAirMass = s.baselineAirMass + 400L,
-            baselineAirEnergy = Atmosphere.of(pipe).totalEnergy + s.air.totalEnergy,
+            baselineAirEnergy = Stuff.gas(pipe).totalEnergy + s.air.totalEnergy,
         )
 
         val after = run(s, 200)

@@ -1,8 +1,7 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -277,7 +276,7 @@ class BodyContactTest {
         for (x in 1..WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
         val state = VesselState(grid = grid, machines = machines.toList(), gravity = VesselState.FREEFALL)
-        return state.copy(air = Atmosphere.of(MassArray(grid.size)))
+        return state.copy(air = Stuff.gas(MassArray(grid.size)))
     }
 
     private companion object {

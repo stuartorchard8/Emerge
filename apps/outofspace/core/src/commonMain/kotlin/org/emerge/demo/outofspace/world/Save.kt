@@ -674,8 +674,8 @@ object Save {
             grid.size,
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
         )
-        val air = Atmosphere.of(airMass, airEnergy)
-        val pipeAir = Atmosphere.of(pipeMass, pipeEnergy)
+        val air = Stuff.from(airMass, airEnergy)
+        val pipeAir = Stuff.from(pipeMass, pipeEnergy)
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {

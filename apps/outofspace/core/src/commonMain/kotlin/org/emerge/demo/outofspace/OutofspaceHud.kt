@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
@@ -430,7 +430,7 @@ class OutofspaceHud {
                 return
             }
             // Density beside pressure (gap = weight sorting).
-            keyValue("DENSITY", "${density * 100 / Atmosphere.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
             // Air temperature (fluid acts on this — sets pressure).
             val airK = s.airKelvinAt(tile)
             keyValue(

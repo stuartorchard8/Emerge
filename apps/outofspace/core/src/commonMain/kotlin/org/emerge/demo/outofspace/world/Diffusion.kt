@@ -46,7 +46,7 @@ import org.emerge.demo.outofspace.chem.Species
  * and aperture arithmetic to learn one number.
  */
 class DiffusionStep(
-    val air: Atmosphere,
+    val air: Stuff,
     val ventedMass: Long,
     val ventedEnergy: Long,
     /**
@@ -283,7 +283,7 @@ fun diffuseFluid(
     val endingMass = tileMass(tiles, masses)
 
     return DiffusionStep(
-        air = if (energies == null) Atmosphere.of(masses) else Atmosphere.of(masses, energies),
+        air = if (energies == null) Stuff.gas(masses) else Stuff.from(masses, energies),
         ventedMass = ventedMass,
         ventedEnergy = ventedEnergy,
         edges = edges,

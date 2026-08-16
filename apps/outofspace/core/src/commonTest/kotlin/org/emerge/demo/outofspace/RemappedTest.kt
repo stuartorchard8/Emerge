@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.FlowCursors
@@ -63,7 +63,7 @@ class RemappedTest {
         // Air with uniform mass and energy
         val airMass = MassArray(grid.size) { _,_ -> 100L}
         val airEnergy = EnergyArray(grid.size) { 500L }
-        val air = Atmosphere.of(airMass, airEnergy)
+        val air = Stuff.from(airMass, airEnergy)
         // Momentum with non-zero values
         val xEdges = EdgeGrid(grid).xEdgeCount
         val yEdges = EdgeGrid(grid).yEdgeCount
@@ -71,7 +71,7 @@ class RemappedTest {
         val momY = LongArray(yEdges) { 20L }
         val momentum = MomentumField.of(EdgeGrid(grid), momX, momY)
         // Pipe air: empty
-        val pipeAir = Atmosphere.of(MassArray(grid.size))
+        val pipeAir = Stuff.gas(MassArray(grid.size))
         val pipeMomentum = MomentumField.of(EdgeGrid(grid), LongArray(xEdges), LongArray(yEdges))
         // One body
         val bodies = listOf(

@@ -7,18 +7,22 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
 
 /**
- * Air: flat LongArray (tiles × species), integers (exact conservation).
- * pressureAt = millimoles (not mass — lets heavy gas sink). densityAt = mass/volume.
+ * Stuff: flat arrays of mass and energy stored as integers for exact conservation.
+ * densityAt = mass/volume.
+ * pressureAt = millimoles (not mass — lets heavy gas sink).
  */
-class Atmosphere(private val masses: MassArray, private val energies: EnergyArray) {
+class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
 
     fun massOf(tile: TileIndex, species: Species): Long = masses[MassIndex(tile, species)]
 
-    /** Pressure in millimoles (particle count, not mass — heavy gases sink). */
+    /**
+     * Pressure in millimoles (particle count, not mass — heavy gases sink).
+     * Assumes all species are gaseous. Invalid if any are solid or liquid.
+     */
     fun pressureAt(tile: TileIndex): Long = millimolesOf(masses, tile)
 
     /**
-     * Joules per kelvin held by the air in a tile — what it costs to warm this much gas by a degree.
+     * Joules per kelvin held by the matter in a tile — what it costs to warm this much stuff by a degree.
      *
      * Here rather than at every call site because a tile's temperature depends on it, and computing
      * it from [copyMass] would allocate the whole field once per tile queried.
@@ -26,7 +30,7 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
     fun heatCapacityAt(tile: TileIndex): Long = heatCapacityAt(masses, tile)
 
     /**
-     * How hot the air in a tile is, in kelvin. A tile with no air reads as ambient — see [gasKelvin]
+     * How hot the stuff in a tile is, in kelvin. A tile with no stuff reads as ambient — see [gasKelvin]
      * for why that is the right placeholder for an absent quantity rather than a dodge.
      */
     fun kelvinAt(tile: TileIndex): Int {
@@ -34,7 +38,7 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
         return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energies[tile] / capacity).toInt()
     }
 
-    /** Total gas mass in a tile — its density, since every tile is the same volume. */
+    /** Total mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: TileIndex): Long {
         var sum = 0L
         for (s in Species.ALL) sum += masses[MassIndex(tile, s)]
@@ -44,11 +48,6 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
     /** The tile's air as a [Mixture], for the inspector. Allocates — not for the hot path. */
     /**
      * Everything this field holds at [tile] — **every** species, not a chosen subset.
-     *
-     * It used to walk [Species.GASES], which was invisibly wrong the moment water became a fluid the
-     * solver moves. A field should report what is in it and let the caller decide what that means:
-     * this same function serves the atmosphere, and those two do not agree on
-     * which species are interesting, so any filter here is wrong for one of them.
      *
      * The consequence was not cosmetic. [org.emerge.demo.outofspace.world.Save] serialises the
      * atmosphere through this, so a world with water in it saved fine and **came back without any**,
@@ -80,7 +79,7 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is Atmosphere && masses.contentEquals(other.masses) && energies.contentEquals(other.energies))
+            (other is Stuff && masses.contentEquals(other.masses) && energies.contentEquals(other.energies))
 
     override fun hashCode(): Int = 31 * masses.contentHashCode() + energies.contentHashCode()
 
@@ -123,7 +122,7 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
          * Air at room temperature.
          *
          * The energy is **derived from the mass** rather than defaulted to zero, and that default is
-         * what makes this whole design safe. Heat lives inside [Atmosphere] precisely because it must
+         * what makes this whole design safe. Heat lives inside [Stuff] precisely because it must
          * not be possible to replace a world's air and leave its temperature behind: on a
          * `data class`, `copy(air = …)` does not re-evaluate other properties' defaults, so a
          * parallel `airEnergy` array would silently keep describing gas that is no longer there. Ten
@@ -132,21 +131,27 @@ class Atmosphere(private val masses: MassArray, private val energies: EnergyArra
          *
          * One value, so the two cannot disagree.
          */
-        fun of(mass: MassArray): Atmosphere =
-            Atmosphere(mass.copyOf(), ambientGasEnergy(mass.size / Species.COUNT, mass))
+        fun gas(mass: MassArray): Stuff =
+            Stuff(mass.copyOf(), ambientGasEnergy(mass.size / Species.COUNT, mass))
 
-        /** Air at a temperature somebody has an opinion about. Both arrays are copied. */
-        fun of(mass: MassArray, energy: EnergyArray): Atmosphere =
-            Atmosphere(mass.copyOf(), energy.copyOf())
+        /**
+         * Empty space to put stuff later.
+         */
+        fun empty(size: Int): Stuff =
+            Stuff(MassArray(size), EnergyArray(size))
+
+        /** Stuff at a temperature somebody has an opinion about. Both arrays are copied. */
+        fun from(mass: MassArray, energy: EnergyArray): Stuff =
+            Stuff(mass.copyOf(), energy.copyOf())
 
         /** Every enclosed tile filled with [AMBIENT_AIR]; vacuum left empty. */
-        fun ambient(grid: Grid, structure: StructureMap): Atmosphere {
+        fun ambientAir(grid: Grid, structure: StructureMap): Stuff {
             val mass = MassArray(grid.size)
             for (tile in grid.tiles) {
                 if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
                 for (s in Species.ALL) mass[MassIndex(tile, s)] = AMBIENT_AIR[s]
             }
-            return of(mass)
+            return gas(mass)
         }
     }
 }

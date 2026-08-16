@@ -232,7 +232,7 @@ data class VesselState(
     val structure: StructureMap = StructureMap.derive(grid, machines),
     /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
     val occupancy: Occupancy = Occupancy.derive(grid, machines),
-    val air: Atmosphere = Atmosphere.ambient(grid, StructureMap.derive(grid, machines)),
+    val air: Stuff = Stuff.ambientAir(grid, StructureMap.derive(grid, machines)),
     /**
      * What is inside the pipes — a **second fluid field**, on the same lattice and run by the same
      * solver, holding its own gas at its own pressure and temperature.
@@ -246,17 +246,19 @@ data class VesselState(
      * evacuated; the alternative — filling it with whatever room it was built in — would mint
      * atmosphere on every placement and is a ledger problem for no gain.
      *
-     * Its heat lives inside it, for the reason [Atmosphere.of] gives at length.
+     * Its heat lives inside it, for the reason [Stuff.gas] gives at length.
      */
-    val pipeAir: Atmosphere = Atmosphere.of(MassArray(grid.size)),
+    val pipeAir: Stuff = Stuff.empty(grid.size),
     /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
     val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
+    /** Matter and energy storage for all the machines that have a deck footprint. */
+    val deck: Stuff = Stuff.empty(grid.size),
     /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
      * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
      *
-     * The air's heat lives inside [Atmosphere] rather than beside it here, and deliberately — see
-     * [Atmosphere.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
+     * The air's heat lives inside [Stuff] rather than beside it here, and deliberately — see
+     * [Stuff.gas]. It is the one arrangement `copy(air = …)` cannot desynchronise.
      */
     val baselineAirEnergy: Long = air.totalEnergy + pipeAir.totalEnergy,
     /** Cumulative energy blown overboard with escaping gas. */
@@ -969,7 +971,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     val newDiverters = FlowCursors(remapCursors(diverters.snapshot()), remapCursors(diverters.mergeSnapshot()))
 
     // ── 4. Dense field arrays: air / pipeAir (mass + energy) ────────────
-    fun remapAirField(src: Atmosphere): Atmosphere {
+    fun remapAirField(src: Stuff): Stuff {
         val newMass = MassArray(newGrid.size)
         val oldEnergy = src.copyEnergy()
         val newEnergy = EnergyArray(newGrid.size)
@@ -981,7 +983,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
             }
             newEnergy[newTile] = oldEnergy[oldTile]
         }
-        return Atmosphere.of(newMass, newEnergy)
+        return Stuff.from(newMass, newEnergy)
     }
     val newAir = remapAirField(air)
     val newPipeAir = remapAirField(pipeAir)

@@ -76,7 +76,7 @@ import org.emerge.demo.outofspace.world.torqueAbout
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -324,7 +324,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         // When skipped, fluid state is carried forward from the previous tick.
-        var fluidAir = Atmosphere(w.masses, w.energies)
+        var fluidAir = Stuff(w.masses, w.energies)
         var pipeAirResult = state.pipeAir
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
@@ -1281,7 +1281,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (tile.index !in 0 until grid.size || mass <= 0L) return
             if (originOf[tile] != TileIndex.NONE && machines[originOf[tile].index]?.kind?.isPermeable == false) return
             if (water) { injectWater(tile, mass); return }
-            val shares = Atmosphere.AMBIENT_AIR.scaledTo(mass)
+            val shares = Stuff.AMBIENT_AIR.scaledTo(mass)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather
             // than from the tile it is arriving in — that gas is already at its own temperature.
             val parcel = MassArray(1)

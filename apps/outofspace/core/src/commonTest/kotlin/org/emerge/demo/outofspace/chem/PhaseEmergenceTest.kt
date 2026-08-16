@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.num.Budget
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.TileIndex
@@ -37,7 +37,7 @@ class PhaseEmergenceTest {
         // agree — and the old value is the oracle, computed the way the solver has always computed
         // it rather than copied out of a run.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val mass = Atmosphere.AMBIENT_AIR[species]
+            val mass = Stuff.AMBIENT_AIR[species]
             val ideal = millimolesOf(massFieldOf(species to mass), tile = TileIndex(0))
             val real = partialPressure(mass, species, room, full, full)!!
 

@@ -45,7 +45,7 @@ private val MOLAR_DIVISOR: Long = MILLI * Budget.GRAM
  *
  * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.
  */
-internal val AMBIENT_TILE_MASS: Long = Atmosphere.AMBIENT_AIR.total
+internal val AMBIENT_TILE_MASS: Long = Stuff.AMBIENT_AIR.total
 
 /** Denominator of [AMBIENT_SHARE]: air's composition in billionths. */
 private const val SHARE_ONE: Long = 1_000_000_000L
@@ -66,7 +66,7 @@ private const val SHARE_ONE: Long = 1_000_000_000L
  * constant against a constant has no such problem, because nothing is reduced at all.
  */
 private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
-    scaledRatio(Atmosphere.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_MASS, SHARE_ONE)
+    scaledRatio(Stuff.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_MASS, SHARE_ONE)
 }
 
 /**
@@ -160,7 +160,7 @@ private fun leastRoomFor(mass: Long, species: Species): Int {
  * The pressure a mass of ordinary air would exert on its own, at [kelvin] in a cell holding
  * [volume] — the reference curve [ambientMassAtPressure] inverts.
  *
- * The mass is split across the species in [Atmosphere.AMBIENT_AIR]'s proportions, because the question
+ * The mass is split across the species in [Stuff.AMBIENT_AIR]'s proportions, because the question
  * being asked of it is always "what would *air* do here", never "what would this particular gas do".
  */
 internal fun ambientPressureOf(mass: Long, kelvin: Int, volume: Int): Long {
@@ -226,7 +226,7 @@ internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long
 private fun closePackedAirMass(volume: Int): Long {
     var limit = Long.MAX_VALUE
     for (s in Species.ALL) {
-        val share = Atmosphere.AMBIENT_AIR[s]
+        val share = Stuff.AMBIENT_AIR[s]
         if (share <= 0L) continue
         // Invert reducedDensity: the total air mass whose share of species s just reaches close
         // packing in this volume.
@@ -284,7 +284,7 @@ fun millimolesOf(masses: MassArray, tile: TileIndex): Long {
 val AMBIENT_PRESSURE: Long = run {
     var sum = 0L
     for (s in Species.ALL) {
-        val mass = Atmosphere.AMBIENT_AIR[s]
+        val mass = Stuff.AMBIENT_AIR[s]
         sum += partialPressure(mass, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
             ?: (mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
     }

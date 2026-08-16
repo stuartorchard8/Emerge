@@ -9,7 +9,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Machine
@@ -246,7 +246,7 @@ class SaveTest {
         val energy = start.air.copyEnergy()
         val hot = cfg.initialGrid.tile(cfg.initialGrid.width / 2, cfg.initialGrid.height / 2)
         energy[hot] *= 3
-        val played = run(start.copy(air = Atmosphere.of(start.air.copyMass(), energy)), 60)
+        val played = run(start.copy(air = Stuff.from(start.air.copyMass(), energy)), 60)
 
         val reloaded = Save.read(Save.write(played))
         assertEquals(played.air.kelvinAt(hot), reloaded.air.kelvinAt(hot), "the air reloaded at a different temperature")

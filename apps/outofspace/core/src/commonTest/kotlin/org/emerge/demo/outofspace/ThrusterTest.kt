@@ -5,7 +5,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
@@ -265,7 +265,7 @@ class ThrusterTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = Atmosphere.of(MassArray(grid.size)),
+            air = Stuff.gas(MassArray(grid.size)),
         )
     }
 

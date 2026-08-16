@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_PERIOD
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -241,7 +241,7 @@ class ValveTest {
         // the test measures the valve and not the smelter.
         val energy = s.air.copyEnergy()
         for (i in 0 until energy.size) energy[TileIndex(i)] = energy[TileIndex(i)] * 3 / 2
-        val warmed = Atmosphere.of(s.air.copyMass(), energy)
+        val warmed = Stuff.from(s.air.copyMass(), energy)
         // The baseline moves by what the fixture ADDED, rather than being restated from the room
         // field. Restating it is the obvious version and it is wrong twice over: it drops the energy
         // already in the pipes, and it discards the `solidToAirEnergy` the world has booked so far.

@@ -1,8 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Contact
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
@@ -409,7 +408,7 @@ class ContactTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = Atmosphere.of(MassArray(grid.size)),
+            air = Stuff.gas(MassArray(grid.size)),
         )
     }
 

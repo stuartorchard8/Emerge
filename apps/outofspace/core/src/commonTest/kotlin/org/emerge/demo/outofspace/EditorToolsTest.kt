@@ -158,7 +158,7 @@ class EditorToolsTest {
     /**
      * The gas arrives at room temperature, not at absolute zero.
      *
-     * [org.emerge.demo.outofspace.world.Atmosphere.of]'s rule, and the one mistake this is most likely
+     * [org.emerge.demo.outofspace.world.Stuff.gas]'s rule, and the one mistake this is most likely
      * to make: energy derived from the mass rather than defaulted, or the room chills every time
      * somebody uses the tool.
      */

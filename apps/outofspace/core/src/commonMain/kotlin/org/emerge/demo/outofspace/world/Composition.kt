@@ -23,7 +23,7 @@ private const val VOLUME_UNIT: Long = 1_000_000_000L
  *
  * A tile is [TILE_LITRES] of room — a cube a little under a metre on a side — and a tile of iron is
  * what that much iron weighs, six and a half tonnes. Everything solid in the vessel is stated at
- * this scale, which is the scale the *gas* was always at: [Atmosphere.AMBIENT_AIR] puts a real
+ * this scale, which is the scale the *gas* was always at: [Stuff.AMBIENT_AIR] puts a real
  * kilogram of air in a tile. Before that the solids were three orders under, and the visible
  * consequence was a steel ship that weighed about as much as the air inside it.
  *

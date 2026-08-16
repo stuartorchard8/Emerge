@@ -13,7 +13,7 @@ import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -353,7 +353,7 @@ class OutofspaceRenderer {
                         }
                         Overlay.Density -> state.air.densityAt(tile).let {
                             if (Negligible.gas(it)) Colors.OVERLAY_VACUUM
-                            else divergingColor(it.toFloat() / Atmosphere.AMBIENT_AIR.total)
+                            else divergingColor(it.toFloat() / Stuff.AMBIENT_AIR.total)
                         }
                         Overlay.Flow -> Colors.FLOW_BACKDROP
                         Overlay.None -> 0L

@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.machine.MachineKind
@@ -104,7 +104,7 @@ class AtmosphereTest {
         val mass = MassArray(grid.size)
         for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram
         for (x in 5..6) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 500L * gram
-        val field = Atmosphere.of(mass)
+        val field = Stuff.gas(mass)
         s = s.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 40)
@@ -130,7 +130,7 @@ class AtmosphereTest {
         val g = room.grid
         val mass = MassArray(g.size)
         mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 6_000L * gram
-        val field = Atmosphere.of(mass)
+        val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         fun interior() = g.tiles.filter {
@@ -178,7 +178,7 @@ class AtmosphereTest {
         val g = room.grid
         val mass = MassArray(g.size)
         mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 10_000L * gram
-        val field = Atmosphere.of(mass)
+        val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         // The old assertion was that the peak never rises, which is true of diffusion and false of
@@ -204,7 +204,7 @@ class AtmosphereTest {
         val tile = g.tile(2, 2)
         mass[MassIndex(tile, Species.Oxygen)] = 2_000L * gram
         mass[MassIndex(tile, Species.Nitrogen)] = 6_000L * gram
-        val field = Atmosphere.of(mass)
+        val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 30)   // part-way through equalising
@@ -222,7 +222,7 @@ class AtmosphereTest {
         val room = sealedRoom(4, 4)
         val g = room.grid
         val emptied = room.copy(
-            air = Atmosphere.of(MassArray(g.size)),
+            air = Stuff.gas(MassArray(g.size)),
             baselineAirMass = 0L,
         )
         val s = run(emptied, 4)
