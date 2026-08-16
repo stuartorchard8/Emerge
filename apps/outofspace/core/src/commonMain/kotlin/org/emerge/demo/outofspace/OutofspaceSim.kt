@@ -833,7 +833,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             )
         } else {
             val destination = path.destination
-            for (s in Species.ALL) masses[MassIndex(tile,s)] += parcel[MassIndex(TileIndex(0),s)]
+            // ⚠️ [destination] and not [tile] — the gas and its heat land in the *same* place, and
+            // splitting them is not a rounding error but a category one. Sent home while the energy
+            // went down the plume, the destination gained joules and no gas at all: capacity stayed
+            // zero, and [gasKelvin] reads a zero capacity as ambient, so a tile with a rocket firing
+            // into it reported room temperature however long the burn ran.
+            for (s in Species.ALL) masses[MassIndex(destination,s)] += parcel[MassIndex(TileIndex(0),s)]
             // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
             // your own bulkhead expensive rather than merely useless.
             val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
