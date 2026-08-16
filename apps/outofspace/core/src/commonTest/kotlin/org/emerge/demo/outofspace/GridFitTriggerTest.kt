@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
@@ -83,14 +84,14 @@ class GridFitTriggerTest {
             if (y + reach > maxY) maxY = y + reach
         }
 
-        for (i in s.machines.indices) {
-            val m = s.machines[i] ?: continue
-            cover(s.grid.xOf(i), s.grid.yOf(i), m.kind.size / 2)
+        for (tile in s.grid.tiles) {
+            val m = s[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
-        for (i in s.bridges.indices) if (s.bridges[i] != null) cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+        for (tile in s.grid.tiles) if (s.bridges[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         for (c in Conduit.entries) {
             val layer = s.conduits[c]
-            for (i in layer.indices) if (layer[i] != null) cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+            for (tile in s.grid.tiles) if (layer[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
 
         return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
@@ -104,7 +105,7 @@ class GridFitTriggerTest {
 
     /** Every machine's position as `(x, y)`, row-major — an order a translation cannot disturb. */
     private fun positions(s: VesselState): List<Pair<Int, Int>> =
-        s.machines.indices.filter { s.machines[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
+        s.grid.tiles.filter { s[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
 
     /**
      * A world that has grown past its fit: built one tile in from the left edge and one in from the
@@ -116,16 +117,16 @@ class GridFitTriggerTest {
      */
     private fun sprawled(): VesselState {
         var s = fitted()
-        val leftTile = s.grid.index(1, s.grid.height / 2)
+        val leftTile = s.grid.tile(1, s.grid.height / 2)
         s = edit(s, Edit.Place(leftTile, MachineKind.Hull, Direction.Right))
         s = run(s, 1)
-        val rightTile = s.grid.index(s.grid.width - 2, s.grid.height / 2)
+        val rightTile = s.grid.tile(s.grid.width - 2, s.grid.height / 2)
         s = edit(s, Edit.Place(rightTile, MachineKind.Hull, Direction.Right))
         s = run(s, 1)
         // Take both back off. The grid does not follow — P3 only grows — so the world is now
         // carrying padding it does not need, which is the whole situation P4 exists for.
-        s = edit(s, Edit.Remove(s.grid.index(4, s.grid.height / 2)))
-        s = edit(s, Edit.Remove(s.grid.index(s.grid.width - 5, s.grid.height / 2)))
+        s = edit(s, Edit.Remove(s.grid.tile(4, s.grid.height / 2)))
+        s = edit(s, Edit.Remove(s.grid.tile(s.grid.width - 5, s.grid.height / 2)))
         return run(s, 1)
     }
 
@@ -226,9 +227,9 @@ class GridFitTriggerTest {
         // behind it, so the discarded padding is genuinely carrying something.
         var s = fitted()
         s = run(s, 50)
-        val leftTile = s.grid.index(1, s.grid.height / 2)
+        val leftTile = s.grid.tile(1, s.grid.height / 2)
         s = run(edit(s, Edit.Place(leftTile, MachineKind.Hull, Direction.Right)), 1)
-        s = run(edit(s, Edit.Remove(s.grid.index(4, s.grid.height / 2))), 50)
+        s = run(edit(s, Edit.Remove(s.grid.tile(4, s.grid.height / 2))), 50)
         assertBalanced(s, "before the fit — the fixture itself")
 
         val after = edit(s, Edit.Fit)
@@ -268,7 +269,7 @@ class GridFitTriggerTest {
 
         // Any real machine will do; found rather than named, because a fit is exactly the moment a
         // written-down tile stops meaning what it meant.
-        val target = controller.state.machines.indices.first { controller.state.machines[it] != null }
+        val target = controller.state.grid.tiles.first { controller.state[it] != null }
         controller.tool = Tool.Wire
         controller.apply(target)
         assertEquals(target, controller.selected, "the fixture did not select anything")
@@ -285,15 +286,15 @@ class GridFitTriggerTest {
         controller.fit()
         controller.stepOnce()
 
-        assertNotEquals(-1, controller.selected, "the selection was dropped by the fit")
+        assertNotEquals(TileIndex.NONE, controller.selected, "the selection was dropped by the fit")
         assertEquals(
-            controller.state.grid.index(x + expected.dx, y + expected.dy),
+            controller.state.grid.tile(x + expected.dx, y + expected.dy),
             controller.selected,
             "the selection followed the fit to the wrong tile",
         )
         assertNotEquals(
             null,
-            controller.state.machines[controller.selected],
+            controller.state.machines[controller.selected.index],
             "the selection landed on an empty tile",
         )
     }

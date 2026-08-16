@@ -82,8 +82,8 @@ fun applyPressureForce(
 }
 
 /** A tile's potential, or zero off the grid — space pushes back with nothing. */
-private fun beyond(potential: LongArray, tile: Int): Long =
-    if (tile < 0) 0L else potential[tile]
+private fun beyond(potential: LongArray, tile: TileIndex): Long =
+    if (tile == TileIndex.NONE) 0L else potential[tile.index]
 
 /**
  * Pressure in impulse units, converted before differencing.

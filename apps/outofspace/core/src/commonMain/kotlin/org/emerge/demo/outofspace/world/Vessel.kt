@@ -62,7 +62,7 @@ data class VesselState(
      */
     val conduits: Conduits = Conduits.empty(machines.size),
     /** Bridges, stored at their middle tile. They occupy nothing, so they are not in [occupancy]. */
-    val bridges: List<Bridge?> = List(machines.size) { null },
+    val bridges: List<Bridge?> = List(grid.size) { null },
     /** Which way each fork last sent material — see [FlowCursors]. */
     val diverters: FlowCursors = FlowCursors(),
     /**
@@ -232,7 +232,7 @@ data class VesselState(
     val structure: StructureMap = StructureMap.derive(grid, machines),
     /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
     val occupancy: Occupancy = Occupancy.derive(grid, machines),
-    val air: AirField = AirField.ambient(grid, StructureMap.derive(grid, machines)),
+    val air: Atmosphere = Atmosphere.ambient(grid, StructureMap.derive(grid, machines)),
     /**
      * What is inside the pipes — a **second fluid field**, on the same lattice and run by the same
      * solver, holding its own gas at its own pressure and temperature.
@@ -246,17 +246,17 @@ data class VesselState(
      * evacuated; the alternative — filling it with whatever room it was built in — would mint
      * atmosphere on every placement and is a ledger problem for no gain.
      *
-     * Its heat lives inside it, for the reason [AirField.of] gives at length.
+     * Its heat lives inside it, for the reason [Atmosphere.of] gives at length.
      */
-    val pipeAir: AirField = AirField.of(LongArray(grid.size * Species.COUNT)),
+    val pipeAir: Atmosphere = Atmosphere.of(MassArray(grid.size)),
     /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
     val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
     /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
      * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
      *
-     * The air's heat lives inside [AirField] rather than beside it here, and deliberately — see
-     * [AirField.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
+     * The air's heat lives inside [Atmosphere] rather than beside it here, and deliberately — see
+     * [Atmosphere.of]. It is the one arrangement `copy(air = …)` cannot desynchronise.
      */
     val baselineAirEnergy: Long = air.totalEnergy + pipeAir.totalEnergy,
     /** Cumulative energy blown overboard with escaping gas. */
@@ -470,7 +470,7 @@ data class VesselState(
      * Ambient where nothing is standing there at all: an empty tile has no fabric to have a
      * temperature, and its air's is [airKelvinAt].
      */
-    fun kelvinAt(index: Int): Int = if (fabricKelvin[index] > 0) fabricKelvin[index] else air.kelvinAt(index)
+    fun kelvinAt(tile: TileIndex): Int = if (fabricKelvin[tile.index] > 0) fabricKelvin[tile.index] else air.kelvinAt(tile)
 
     /**
      * The hottest body on each tile, folded once. The heat overlay asks for every tile every frame,
@@ -482,10 +482,8 @@ data class VesselState(
         val seen = BooleanArray(grid.size)
         for (body in solids) {
             val k = body.kelvin
-            for (t in body.tiles) {
-                if (!seen[t] || k > out[t]) out[t] = k
-                seen[t] = true
-            }
+            if (!seen[body.tile.index] || k > out[body.tile.index]) out[body.tile.index] = k
+            seen[body.tile.index] = true
         }
         out
     }
@@ -498,13 +496,13 @@ data class VesselState(
      * room it is heating is the whole content of that coupling. This is the one the fluid acts on —
      * it sets pressure, and therefore what makes a warm parcel rise.
      */
-    fun airKelvinAt(index: Int): Int = air.kelvinAt(index)
+    fun airKelvinAt(tile: TileIndex): Int = air.kelvinAt(tile)
 
     /** The machine covering a tile, wherever its centre happens to be. */
-    fun machineCovering(index: Int): Machine? = machines.getOrNull(occupancy[index])
+    fun machineCovering(tile: TileIndex): Machine? = machines.getOrNull(occupancy[tile].index)
 
     /** The rail segment on a tile, if the layer has one there. */
-    fun railAt(index: Int): Segment? = rails.getOrNull(index)
+    fun railAt(tile: TileIndex): Segment? = rails.getOrNull(tile.index)
 
     /**
      * Every port any building or bridge exposes, keyed by the tile it sits on.
@@ -513,26 +511,26 @@ data class VesselState(
      * than handled separately, which is the whole reason they need no special case: to the network a
      * bridge is a thing with an input port and an output port, exactly like a smelter.
      */
-    fun portsByTile(conduit: Conduit): Map<Int, List<Port>> {
-        val out = HashMap<Int, MutableList<Port>>()
+    fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
+        val out = HashMap<TileIndex, MutableList<Port>>()
         fun add(port: Port) {
             if (port.conduit == conduit) out.getOrPut(port.tile) { mutableListOf() }.add(port)
         }
-        for (i in machines.indices) {
-            val m = machines[i] ?: continue
-            for (port in portsOf(grid, m, i)) add(port)
+        for (tile in grid.tiles) {
+            val m = machines[tile.index] ?: continue
+            for (port in portsOf(grid, m, tile)) add(port)
         }
-        for (i in bridges.indices) {
-            val b = bridges[i] ?: continue
-            for (port in portsOf(grid, b, i)) add(port)
+        for (tile in grid.tiles) {
+            val b = bridges[tile.index] ?: continue
+            for (port in portsOf(grid, b, tile)) add(port)
         }
         return out
     }
 
-    /** Every connection point of the machine stored at [index]. */
-    fun portsAt(index: Int): List<Port> {
-        val m = machines.getOrNull(index) ?: return emptyList()
-        return portsOf(grid, m, index)
+    /** Every connection point of the machine stored at [tile]. */
+    fun portsAt(tile: TileIndex): List<Port> {
+        val m = machines.getOrNull(tile.index) ?: return emptyList()
+        return portsOf(grid, m, tile)
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
@@ -613,11 +611,11 @@ data class VesselState(
             generatedEnergy - insertedEnergy - acquiredEnergy - baselineEnergy
 
     /** Pressure of a tile as a percentage of one atmosphere, for readouts. */
-    fun pressurePercentAt(index: Int): Int =
-        (air.pressureAt(index) * 100 / AMBIENT_PRESSURE).toInt()
+    fun pressurePercentAt(tile: TileIndex): Int =
+        (air.pressureAt(tile) * 100 / AMBIENT_PRESSURE).toInt()
 
-    operator fun get(index: Int): Machine? = machines.getOrNull(index)
-    operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.index(x, y)] else null
+    operator fun get(tile: TileIndex): Machine? = machines.getOrNull(tile.index)
+    operator fun get(x: Int, y: Int): Machine? = if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] else null
 
     /**
      * Every gram still aboard: in belts or machine buffers.
@@ -893,23 +891,26 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     require(newGrid.size > 0) { "new grid must be non-empty" }
 
     for (i in machines.indices) {
+        val tile = TileIndex(i)
         if (machines[i] == null) continue
-        val ox = grid.xOf(i); val oy = grid.yOf(i)
+        val ox = grid.xOf(tile); val oy = grid.yOf(tile)
         require(newGrid.inBounds(ox + dx, oy + dy)) {
             "remap would discard a machine at ($ox, $oy)"
         }
     }
     for (i in bridges.indices) {
+        val tile = TileIndex(i)
         if (bridges[i] == null) continue
-        val ox = grid.xOf(i); val oy = grid.yOf(i)
+        val ox = grid.xOf(tile); val oy = grid.yOf(tile)
         require(newGrid.inBounds(ox + dx, oy + dy)) {
             "remap would discard a bridge at ($ox, $oy)"
         }
     }
     for (c in Conduit.entries) {
         for (i in conduits[c].indices) {
+            val tile = TileIndex(i)
             if (conduits[c][i] == null) continue
-            val ox = grid.xOf(i); val oy = grid.yOf(i)
+            val ox = grid.xOf(tile); val oy = grid.yOf(tile)
             require(newGrid.inBounds(ox + dx, oy + dy)) {
                 "remap would discard a ${c.label} conduit at ($ox, $oy)"
             }
@@ -921,24 +922,24 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     val oldSize = grid.size
 
     // ── helpers ───────────────────────────────────────────────────────────
-    fun remapTile(ox: Int, oy: Int): Int? {
+    fun remapTile(ox: Int, oy: Int): TileIndex? {
         val nx = ox + dx
         val ny = oy + dy
-        return if (newGrid.inBounds(nx, ny)) newGrid.index(nx, ny) else null
+        return if (newGrid.inBounds(nx, ny)) newGrid.tile(nx, ny) else null
     }
 
     // ── 1. Tile-indexed lists: machines, bridges ─────────────────────────
     val newMachines = MutableList(newGrid.size) { null as Machine? }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue
-        val oi = grid.index(ox, oy)
-        newMachines[ni] = machines[oi]
+        val oi = grid.tile(ox, oy)
+        newMachines[ni.index] = machines[oi.index]
     }
     val newBridges = MutableList(newGrid.size) { null as Bridge? }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue
-        val oi = grid.index(ox, oy)
-        newBridges[ni] = bridges[oi]
+        val oi = grid.tile(ox, oy)
+        newBridges[ni.index] = bridges[oi.index]
     }
 
     // ── 2. Conduits: remap each layer ────────────────────────────────────
@@ -948,15 +949,15 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         val newLayer = MutableList(newGrid.size) { null as Segment? }
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
             val ni = remapTile(ox, oy) ?: continue
-            val oi = grid.index(ox, oy)
-            newLayer[ni] = oldLayer[oi]
+            val oi = grid.tile(ox, oy)
+            newLayer[ni.index] = oldLayer[oi.index]
         }
         newConduits = newConduits.with(c, newLayer)
     }
 
     // ── 3. Sparse map for diverters ──────────────────────────────────────
-    fun remapCursors(src: Map<Int, Int>): HashMap<Int, Int> {
-        val out = HashMap<Int, Int>()
+    fun remapCursors(src: Map<TileIndex, Int>): HashMap<TileIndex, Int> {
+        val out = HashMap<TileIndex, Int>()
         for ((oldTile, cursor) in src) {
             val ox = grid.xOf(oldTile)
             val oy = grid.yOf(oldTile)
@@ -968,21 +969,19 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     val newDiverters = FlowCursors(remapCursors(diverters.snapshot()), remapCursors(diverters.mergeSnapshot()))
 
     // ── 4. Dense field arrays: air / pipeAir (mass + energy) ────────────
-    fun remapAirField(src: AirField): AirField {
-        val newMass = LongArray(newGrid.size * Species.COUNT)
+    fun remapAirField(src: Atmosphere): Atmosphere {
+        val newMass = MassArray(newGrid.size * Species.COUNT)
         val oldEnergy = src.copyEnergy()
-        val newEnergy = LongArray(newGrid.size)
+        val newEnergy = EnergyArray(newGrid.size)
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
-            val ni = remapTile(ox, oy) ?: continue
-            val oi = grid.index(ox, oy)
-            val baseN = ni * Species.COUNT
-            val baseO = oi * Species.COUNT
+            val newTile = remapTile(ox, oy) ?: continue
+            val oldTile = grid.tile(ox, oy)
             for (s in Species.entries) {
-                newMass[baseN + s.ordinal] = src.massOf(oi, Species.entries[s.ordinal])
+                newMass[MassIndex(newTile, s)] = src.massOf(oldTile, s)
             }
-            newEnergy[ni] = oldEnergy[oi]
+            newEnergy[newTile] = oldEnergy[oldTile]
         }
-        return AirField.of(newMass, newEnergy)
+        return Atmosphere.of(newMass, newEnergy)
     }
     val newAir = remapAirField(air)
     val newPipeAir = remapAirField(pipeAir)

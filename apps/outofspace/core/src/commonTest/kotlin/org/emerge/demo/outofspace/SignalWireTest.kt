@@ -38,12 +38,12 @@ class SignalWireTest {
     private fun drag(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
         for (x in fromX until toX) {
-            s = edit(s, Edit.Lay(grid.index(x, y), grid.index(x + 1, y), Conduit.Signal))
+            s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
         }
         return s
     }
 
-    private fun wireAt(s: VesselState, x: Int, y: Int) = s.conduits.at(Conduit.Signal, grid.index(x, y))
+    private fun wireAt(s: VesselState, x: Int, y: Int) = s.conduits.at(Conduit.Signal, grid.tile(x, y))
 
     // ── Laying ────────────────────────────────────────────────────────────────
 
@@ -75,7 +75,7 @@ class SignalWireTest {
 
     @Test
     fun `a single tile can be placed on its own`() {
-        val s = edit(empty(), Edit.Place(grid.index(6, 2), MachineKind.Wire, Direction.Right))
+        val s = edit(empty(), Edit.Place(grid.tile(6, 2), MachineKind.Wire, Direction.Right))
         val stub = wireAt(s, 6, 2)
 
         assertNotNull(stub, "placing the wire brush on one tile should leave a stub")
@@ -86,7 +86,7 @@ class SignalWireTest {
     @Test
     fun `wire comes off again`() {
         var s = drag(empty(), y = 3, fromX = 2, toX = 4)
-        s = edit(s, Edit.Remove(grid.index(3, 3), DeleteLayer.Top))
+        s = edit(s, Edit.Remove(grid.tile(3, 3), DeleteLayer.Top))
 
         assertNull(wireAt(s, 3, 3), "the wire should be gone")
         assertFalse(
@@ -104,8 +104,8 @@ class SignalWireTest {
 
         for (x in 2..5) {
             assertEquals(
-                s.conduits.at(Conduit.Signal, grid.index(x, 3)),
-                reloaded.conduits.at(Conduit.Signal, grid.index(x, 3)),
+                s.conduits.at(Conduit.Signal, grid.tile(x, 3)),
+                reloaded.conduits.at(Conduit.Signal, grid.tile(x, 3)),
                 "wire at x=$x did not survive the trip",
             )
         }
@@ -124,12 +124,12 @@ class SignalWireTest {
         fun room(): VesselState {
             val machines = arrayOfNulls<Machine>(grid.size)
             for (x in 1 until grid.width - 1) {
-                machines[grid.index(x, 1)] = Hull()
-                machines[grid.index(x, grid.height - 2)] = Hull()
+                machines[grid.tile(x, 1).index] = Hull()
+                machines[grid.tile(x, grid.height - 2).index] = Hull()
             }
             for (y in 1 until grid.height - 1) {
-                machines[grid.index(1, y)] = Hull()
-                machines[grid.index(grid.width - 2, y)] = Hull()
+                machines[grid.tile(1, y).index] = Hull()
+                machines[grid.tile(grid.width - 2, y).index] = Hull()
             }
             return VesselState(grid, machines.toList())
         }

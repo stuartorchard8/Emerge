@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.render.torus.ui.Ui
@@ -198,7 +199,7 @@ object OutofspaceAgentHarness {
                         DeleteLayer.entries.firstOrNull { it.name.equals(name, true) }
                             ?: error("unknown layer '$name' (have ${DeleteLayer.entries.map { it.label }})")
                     } ?: DeleteLayer.Top
-                    controller.remove(index(t[1], t[2]), layer)
+                    controller.removeAt(index(t[1], t[2]), layer)
                     settle()
                 }
                 // One tick of the debug bellows per `inject`, which is what holding the button for
@@ -210,7 +211,7 @@ object OutofspaceAgentHarness {
                         controller.injectTile = at
                         controller.stepOnce()
                     }
-                    controller.injectTile = -1
+                    controller.injectTile = TileIndex.NONE
                     println("[agent] injected ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
                         "${fmt(grams(state.injectedAirMass))}g admitted, airBalance ${fmt(grams(state.airBalance))}")
                 }
@@ -225,7 +226,7 @@ object OutofspaceAgentHarness {
                         controller.injectTile = at
                         controller.stepOnce()
                     }
-                    controller.injectTile = -1
+                    controller.injectTile = TileIndex.NONE
                     controller.tool = was
                     println("[agent] watered ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
                         "${fmt(grams(state.injectedAirMass))}g admitted, airBalance ${fmt(grams(state.airBalance))}")
@@ -349,11 +350,11 @@ object OutofspaceAgentHarness {
             return ix to iy
         }
 
-        private fun index(x: String, y: String): Int {
+        private fun index(x: String, y: String): TileIndex {
             val (ix, iy) = coordinates(x, y)
             val grid = state.grid
             require(grid.inBounds(ix, iy)) { "($ix,$iy) is outside the ${grid.width}x${grid.height} grid" }
-            return grid.index(ix, iy)
+            return grid.tile(ix, iy)
         }
 
         private fun parseCoord(token: String, grid: Grid, isXAxis: Boolean): Int {
@@ -391,10 +392,10 @@ object OutofspaceAgentHarness {
         private fun hullCorner(grid: Grid): Pair<Int, Int>? {
             var minX = Int.MAX_VALUE
             var minY = Int.MAX_VALUE
-            for (i in state.machines.indices) {
-                if (state.machines[i] == null) continue
-                val x = grid.xOf(i)
-                val y = grid.yOf(i)
+            for (tile in grid.tiles) {
+                if (state[tile] == null) continue
+                val x = grid.xOf(tile)
+                val y = grid.yOf(tile)
                 if (x < minX) minX = x
                 if (y < minY) minY = y
             }
@@ -402,8 +403,8 @@ object OutofspaceAgentHarness {
         }
 
         /** The first tile holding a machine of this kind, in row-major order, or null. */
-        private fun anchorOf(kind: MachineKind): Int? =
-            state.machines.indices.firstOrNull { state.machines[it]?.kind == kind }
+        private fun anchorOf(kind: MachineKind): TileIndex? =
+            state.grid.tiles.firstOrNull { state[it]?.kind == kind }
 
         private fun resolveLandmark(name: String, grid: Grid, isXAxis: Boolean): Int {
             if (name == "origin") {
@@ -489,7 +490,7 @@ object OutofspaceAgentHarness {
                 return
             }
 
-            val value: (Int) -> Double = when (what.lowercase()) {
+            val value: (TileIndex) -> Double = when (what.lowercase()) {
                 "pressure" -> { tile -> state.air.pressureAt(tile).toDouble() }
                 "density" -> { tile -> state.air.densityAt(tile).toDouble() }
                 "speed" -> { tile -> flow.speedAt(tile).toDouble() }
@@ -512,7 +513,7 @@ object OutofspaceAgentHarness {
                     val name = what.substringAfter(':')
                     val sp = Species.ALL.firstOrNull { it.name.equals(name, true) }
                         ?: error("unknown species '$name' (have ${Species.ALL.map { it.name }})")
-                    ({ tile: Int -> grams(state.air.massOf(tile, sp)) })
+                    ({ tile: TileIndex -> grams(state.air.massOf(tile, sp)) })
                 } else error(
                     "field pressure|density|speed|heat|airtemp|air|pipe|pipetemp|pipepressure|" +
                         "species:<Name>|flow|build"
@@ -522,7 +523,7 @@ object OutofspaceAgentHarness {
             var lo = Double.MAX_VALUE
             var hi = -Double.MAX_VALUE
             for (y in y0..y1) for (x in x0..x1) {
-                val v = value(grid.index(x, y))
+                val v = value(grid.tile(x, y))
                 lo = min(lo, v); hi = max(hi, v)
             }
             val span = (hi - lo).takeIf { it > 0.0 } ?: 1.0
@@ -533,7 +534,7 @@ object OutofspaceAgentHarness {
         }
 
         /** For `air`, the dominant species is more use than the total — that is what "which gas" means. */
-        private fun printGrid(what: String, x0: Int, y0: Int, x1: Int, y1: Int, glyph: (Int) -> Char) {
+        private fun printGrid(what: String, x0: Int, y0: Int, x1: Int, y1: Int, glyph: (TileIndex) -> Char) {
             val grid = state.grid
             println("[agent] field $what  x $x0..$x1  y $y0..$y1  tick ${controller.tick}")
             // A ruler every ten columns, so a tile can be located without counting.
@@ -543,14 +544,14 @@ object OutofspaceAgentHarness {
             for (y in y0..y1) {
                 val row = StringBuilder()
                 row.append("%4d  ".format(y))
-                for (x in x0..x1) row.append(glyph(grid.index(x, y)))
+                for (x in x0..x1) row.append(glyph(grid.tile(x, y)))
                 println(row)
             }
         }
 
-        private fun buildGlyph(tile: Int): Char {
-            state.bridges[tile]?.let { return 'B' }
-            state.rails[tile]?.let { return '=' }
+        private fun buildGlyph(tile: TileIndex): Char {
+            state.bridges[tile.index]?.let { return 'B' }
+            state.railAt(tile)?.let { return '=' }
             val m = state.machineCovering(tile)
             if (m != null) return if (m::class.simpleName == "Hull") 'H' else '#'
             return '.'
@@ -583,9 +584,9 @@ object OutofspaceAgentHarness {
             )
             var minX = Int.MAX_VALUE; var minY = Int.MAX_VALUE
             var maxX = Int.MIN_VALUE; var maxY = Int.MIN_VALUE
-            for (i in state.machines.indices) {
-                if (state.machines[i] == null && state.rails[i] == null) continue
-                val x = grid.xOf(i); val y = grid.yOf(i)
+            for (tile in grid.tiles) {
+                if (state[tile] == null && state.railAt(tile) == null) continue
+                val x = grid.xOf(tile); val y = grid.yOf(tile)
                 minX = min(minX, x); maxX = max(maxX, x)
                 minY = min(minY, y); maxY = max(maxY, y)
             }
@@ -609,14 +610,14 @@ object OutofspaceAgentHarness {
          * All four fluid quantities together, deliberately — pressure and density disagreeing is the
          * observation that has paid for itself most often (it is why `stratifyColumns` could go).
          */
-        private fun probe(tile: Int) {
+        private fun probe(tile: TileIndex) {
             val grid = state.grid
             val x = grid.xOf(tile); val y = grid.yOf(tile)
             val air = state.air.mixtureAt(tile)
             println("[agent] probe ($x,$y) tile $tile @ tick ${controller.tick}")
             println("[agent]   machine   ${state.machineCovering(tile)?.let { it::class.simpleName } ?: "-"}" +
-                "  rail ${state.rails[tile]?.let { "yes held=${it.held != null}" } ?: "-"}" +
-                "  bridge ${if (state.bridges[tile] != null) "yes" else "-"}")
+                "  rail ${state.railAt(tile)?.let { "yes held=${it.held != null}" } ?: "-"}" +
+                "  bridge ${if (state.bridges[tile.index] != null) "yes" else "-"}")
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
@@ -726,7 +727,7 @@ object OutofspaceAgentHarness {
             "rockVX" -> (state.bodies.firstOrNull()?.velocityX ?: 0L).toDouble() / Flight.PER_TILE
             "rockVY" -> (state.bodies.firstOrNull()?.velocityY ?: 0L).toDouble() / Flight.PER_TILE
             "hottestSolidK" -> (state.bodies.maxOfOrNull { it.kelvin } ?: 0).toDouble()
-            "hottestAirK" -> (0 until state.grid.size).maxOf { state.airKelvinAt(it) }.toDouble()
+            "hottestAirK" -> (state.grid.tiles).maxOf { state.airKelvinAt(it) }.toDouble()
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
             "impulseX" -> grams(state.vesselImpulseX)
             "impulseY" -> grams(state.vesselImpulseY)
@@ -854,8 +855,8 @@ object OutofspaceAgentHarness {
             glViewport(0, 0, RES_W, RES_H)
             // tickAlpha 1: the tick has landed. A capture must show where things ARE, not an
             // interpolated position that corresponds to no state the sim was ever in.
-            r.draw(state, -1, overlay, 1f, 1f, controller.mode.camera)
-            h.build(u, controller, fps = 0f, hovered = -1)
+            r.draw(state, TileIndex.NONE, overlay, 1f, 1f, controller.mode.camera)
+            h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
             u.draw()
             glFinish()
 

@@ -127,7 +127,7 @@ fun collectHullContacts(
                 if (ty < 0 || ty >= grid.height) continue
                 for (tx in tx0..tx1) {
                     if (tx < 0 || tx >= grid.width) continue
-                    val tile = grid.index(tx.toInt(), ty.toInt())
+                    val tile = grid.tile(tx.toInt(), ty.toInt())
                     if (!structure.isImpermeable(tile)) continue
                     contactBetween(
                         a = shape, ax = centreX, ay = centreY,
@@ -135,7 +135,7 @@ fun collectHullContacts(
                         bx = tx * Flight.PER_TILE + half, by = ty * Flight.PER_TILE + half,
                         body = index,
                         restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
-                        friction = frictionBetween(body, cell, machines?.get(tile)),
+                        friction = frictionBetween(body, cell, machines?.get(tile.index)),
                         into = into,
                     )
                 }

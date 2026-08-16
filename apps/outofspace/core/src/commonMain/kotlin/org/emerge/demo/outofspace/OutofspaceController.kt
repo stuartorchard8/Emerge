@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
@@ -72,7 +73,7 @@ class OutofspaceController(
      * dragging while injecting lays gas along the drag. One edit per tick regardless, so a 144 Hz
      * machine and a 30 Hz one fill a room at the same rate.
      */
-    var injectTile: Int = -1
+    var injectTile: TileIndex = TileIndex.NONE
 
     /**
      * Which keys the pilot is holding, as an [InputKey] bitmask — held state, for [thrustX]'s reason
@@ -102,13 +103,13 @@ class OutofspaceController(
         }
 
     /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
-    var selected: Int = -1
+    var selected: TileIndex = TileIndex.NONE
         private set
 
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
-    fun place(index: Int) = pending.add(Edit.Place(index, brush, brushFacing))
+    fun place(tile: TileIndex) = pending.add(Edit.Place(tile, brush, brushFacing))
 
     /**
      * The tile the current drag last reached, or -1 when nothing is being dragged.
@@ -116,19 +117,19 @@ class OutofspaceController(
      * Conduit is laid by dragging, and connection follows the gesture rather than the geometry: two
      * runs can touch without joining, so a line is only a line where the player actually drew one.
      */
-    private var dragFrom: Int = -1
+    private var dragFrom: TileIndex = TileIndex.NONE
 
     /** Left-click behaviour, which depends on the tool. */
-    fun apply(index: Int) {
+    fun apply(tile: TileIndex) {
         when (tool) {
             Tool.Build -> {
-                place(index)
-                if (brush.conduit != null) dragFrom = index
+                place(tile)
+                if (brush.conduit != null) dragFrom = tile
             }
             // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
             // selects the furnace rather than nothing.
-            Tool.Wire -> selected = state.occupancy[index]
-            Tool.Delete -> remove(index)
+            Tool.Wire -> selected = state.occupancy[tile]
+            Tool.Delete -> removeAt(tile)
             // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
             // pushed one edit here would inject twice on the tick the button went down.
             Tool.Inject, Tool.InjectWater -> {}
@@ -136,26 +137,26 @@ class OutofspaceController(
     }
 
     /**
-     * Continues a conduit drag to [index], laying and joining every tile along the way.
+     * Continues a conduit drag to [tile], laying and joining every tile along the way.
      *
      * The path is stepped out rather than trusting the pointer to visit every tile: a fast drag skips
      * tiles, and a run with a hole in it is not a run. Horizontal first, then vertical — an L, which
      * is both what the player drew if they dragged along an axis and a predictable answer if they
      * did not.
      */
-    fun dragTo(index: Int) {
-        if (dragFrom < 0 || index == dragFrom || tool != Tool.Build) return
+    fun dragTo(tile: TileIndex) {
+        if (dragFrom == TileIndex.NONE || tile == dragFrom || tool != Tool.Build) return
         val grid = state.grid
-        if (index !in 0 until grid.size) return
+        if (tile == TileIndex.NONE) return
         var at = dragFrom
-        while (at != index) {
+        while (at != tile) {
             val dir = when {
-                grid.xOf(at) != grid.xOf(index) ->
-                    if (grid.xOf(index) > grid.xOf(at)) Direction.Right else Direction.Left
-                else -> if (grid.yOf(index) > grid.yOf(at)) Direction.Down else Direction.Up
+                grid.xOf(at) != grid.xOf(tile) ->
+                    if (grid.xOf(tile) > grid.xOf(at)) Direction.Right else Direction.Left
+                else -> if (grid.yOf(tile) > grid.yOf(at)) Direction.Down else Direction.Up
             }
             val next = grid.neighbour(at, dir)
-            if (next < 0) break
+            if (next == TileIndex.NONE) break
             place(next)
             pending.add(Edit.Lay(at, next, brush.conduit ?: Conduit.Rail))
             at = next
@@ -165,43 +166,43 @@ class OutofspaceController(
 
     /** Ends a conduit drag. The next click starts a new one, unjoined to this. */
     fun endDrag() {
-        dragFrom = -1
+        dragFrom = TileIndex.NONE
     }
 
-    fun wire(index: Int, action: Action, slot: Int, trigger: Trigger?) =
-        pending.add(Edit.Wire(index, action, slot, trigger))
+    fun wire(tile: TileIndex, action: Action, slot: Int, trigger: Trigger?) =
+        pending.add(Edit.Wire(tile, action, slot, trigger))
 
     /** Binds a button to [key]. */
-    fun bindKey(index: Int, key: InputKey) = pending.add(Edit.BindKey(index, key))
+    fun bindKey(tile: TileIndex, key: InputKey) = pending.add(Edit.BindKey(tile, key))
 
     /** Cycles which key a button answers to. */
-    fun cycleInputKey(index: Int, delta: Int) {
-        val current = state.machineCovering(index) as? WireButton ?: return
+    fun cycleInputKey(tile: TileIndex, delta: Int) {
+        val current = state.machineCovering(tile) as? WireButton ?: return
         val all = InputKey.ALL
         val next = all[((all.indexOf(current.key) + delta) % all.size + all.size) % all.size]
-        bindKey(index, next)
+        bindKey(tile, next)
     }
 
     /** Cycles a trigger between the constant and the wire under the machine. */
-    fun cycleTriggerSource(index: Int, action: Action, slot: Int, delta: Int) {
-        val current = state.machineCovering(index)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+    fun cycleTriggerSource(tile: TileIndex, action: Action, slot: Int, delta: Int) {
+        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
         val all = SignalSource.ALL
         val next = all[((all.indexOf(current.source) + delta) % all.size + all.size) % all.size]
-        wire(index, action, slot, current.copy(source = next))
+        wire(tile, action, slot, current.copy(source = next))
     }
 
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
-    fun cycleTriggerWeight(index: Int, action: Action, slot: Int, delta: Int) {
-        val current = state.machineCovering(index)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+    fun cycleTriggerWeight(tile: TileIndex, action: Action, slot: Int, delta: Int) {
+        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
         val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
         val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
-        wire(index, action, slot, current.copy(weightPermille = next))
+        wire(tile, action, slot, current.copy(weightPermille = next))
     }
 
     /** Drops a rock centred on ([x], [y]) — the stand-in for capture, see [Edit.DropRock]. */
     fun dropRock(x: Float, y: Float) = pending.add(Edit.DropRock(x, y))
 
-    fun rotate(index: Int) = pending.add(Edit.Rotate(index))
+    fun rotate(tile: TileIndex) = pending.add(Edit.Rotate(tile))
 
     /**
      * Queues the grid back to the ship plus its pad. [followFrame] carries the selection across it.
@@ -209,9 +210,9 @@ class OutofspaceController(
     fun fit() = pending.add(Edit.Fit)
 
     /** Takes [deleteLayer] off a tile. Named explicitly by callers that mean a specific layer. */
-    fun remove(index: Int, layer: DeleteLayer = deleteLayer) {
-        if (index == selected) selected = -1
-        pending.add(Edit.Remove(index, layer))
+    fun removeAt(tile: TileIndex, layer: DeleteLayer = deleteLayer) {
+        if (tile == selected) selected = TileIndex.NONE
+        pending.add(Edit.Remove(tile, layer))
     }
 
     fun cycleBrush(delta: Int) {
@@ -291,7 +292,7 @@ class OutofspaceController(
         // [thrustX]. It goes on the *end*, after this tick's builds, which is the order the reducer
         // wants anyway: the impulse is worked out against the mass the edits leave behind.
         val firing = thrustX != 0 || thrustY != 0
-        val injecting = injectTile >= 0
+        val injecting = injectTile != TileIndex.NONE
         val held = if (mode == Mode.Flight) heldKeys else 0
         if (pending.isEmpty() && !firing && !injecting && held == 0) return OutofspaceInput.EMPTY
         val edits = ArrayList<Edit>(pending)
@@ -308,12 +309,12 @@ class OutofspaceController(
 
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterVessel(cfg.initialGrid)) {
-        selected = -1
+        selected = TileIndex.NONE
         pending.clear()
         thrustX = 0
         thrustY = 0
         heldKeys = 0
-        injectTile = -1
+        injectTile = TileIndex.NONE
         accumulator = 0f
         stepper.reset(newState, Tick(0))
         frame.reset(newState)

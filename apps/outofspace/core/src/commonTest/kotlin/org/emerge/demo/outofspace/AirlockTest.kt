@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Structure
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
@@ -57,19 +58,19 @@ class AirlockTest {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1..w) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h).index] = Hull()
         }
         for (y in 1..h) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w, y).index] = Hull()
         }
-        if (door != null) machines[grid.index(w, h / 2)] = door
+        if (door != null) machines[grid.tile(w, h / 2).index] = door
         return VesselState(grid, machines.toList())
     }
 
     /** The tile just inside the door — the one whose containment the flood fill has to get right. */
-    private fun insideTheDoor(s: VesselState): Int = s.grid.index(s.grid.width - 3, (s.grid.height - 2) / 2)
+    private fun insideTheDoor(s: VesselState): TileIndex = s.grid.tile(s.grid.width - 3, (s.grid.height - 2) / 2)
 
     // ── Sealed ────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,7 @@ class AirlockTest {
     @Test
     fun `a shut airlock keeps the room inside`() {
         val s = run(roomWithDoor(Airlock()), 1)
-        assertEquals(Structure.Interior, s.structure[insideTheDoor(s)])
+        assertEquals(Structure.Interior, s.structure[insideTheDoor(s).index])
     }
 
     // ── Open ──────────────────────────────────────────────────────────────────
@@ -135,7 +136,7 @@ class AirlockTest {
     @Test
     fun `an open airlock puts the room outside`() {
         val s = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 1)
-        assertEquals(Structure.Vacuum, s.structure[insideTheDoor(s)])
+        assertEquals(Structure.Vacuum, s.structure[insideTheDoor(s).index])
     }
 
     // ── Graded ────────────────────────────────────────────────────────────────

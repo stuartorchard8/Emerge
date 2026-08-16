@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.ui.Ui
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
@@ -76,7 +77,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         ui.advanceClock(delta)
         renderer.draw(
             controller.tick(delta),
-            -1,
+            TileIndex.NONE,
             controller.overlay,
             controller.tickAlpha,
             controller.cfg.ticksPerSecond.toFloat(),
@@ -129,7 +130,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
                         ui.releaseHold()
                     } else if (!dragged) {
                         val tile = renderer.tileIndexAt(x, y, controller.state)
-                        if (tile >= 0) controller.apply(tile)
+                        if (tile != TileIndex.NONE) controller.apply(tile)
                     }
                     uiConsumed = false
                     pinchDist = 0f

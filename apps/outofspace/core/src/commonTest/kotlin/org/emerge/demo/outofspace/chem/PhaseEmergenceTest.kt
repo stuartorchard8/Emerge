@@ -1,9 +1,10 @@
 package org.emerge.demo.outofspace.chem
 
 import org.emerge.demo.outofspace.num.Budget
-import org.emerge.demo.outofspace.chem.massAtReducedDensity
-import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
@@ -36,8 +37,8 @@ class PhaseEmergenceTest {
         // agree — and the old value is the oracle, computed the way the solver has always computed
         // it rather than copied out of a run.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val mass = AirField.AMBIENT_AIR[species]
-            val ideal = millimolesOf(massFieldOf(species to mass), tile = 0)
+            val mass = Atmosphere.AMBIENT_AIR[species]
+            val ideal = millimolesOf(massFieldOf(species to mass), tile = TileIndex(0))
             val real = partialPressure(mass, species, room, full, full)!!
 
             val driftPerMille = (real - ideal) * 1000 / ideal
@@ -185,9 +186,9 @@ class PhaseEmergenceTest {
         mix.entries.sumOf { (s, g) -> partialPressure(g, s, kelvin, full, full) ?: 0L }
 
     /** A one-tile mass field, so the ideal-gas oracle can be asked the way the solver asks it. */
-    private fun massFieldOf(vararg amounts: Pair<Species, Long>): LongArray {
-        val out = LongArray(Species.COUNT)
-        for ((s, g) in amounts) out[s.ordinal] = g
+    private fun massFieldOf(vararg amounts: Pair<Species, Long>): MassArray {
+        val out = MassArray(1)
+        for ((s, g) in amounts) out[MassIndex(TileIndex(0),s)] = g
         return out
     }
 }

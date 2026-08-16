@@ -5,10 +5,11 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
@@ -228,11 +229,11 @@ class RotationTest {
      */
     private fun box(grid: Grid, vararg bays: Int): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         for (y in bays) {
-            machines[grid.index(HULL_RIGHT, y)] = Thruster(
+            machines[grid.tile(HULL_RIGHT, y).index] = Thruster(
                 facing = Direction.Right,
                 input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
             )
@@ -240,7 +241,7 @@ class RotationTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = AirField.of(LongArray(grid.size * Species.COUNT)),
+            air = Atmosphere.of(MassArray(grid.size)),
         )
     }
 

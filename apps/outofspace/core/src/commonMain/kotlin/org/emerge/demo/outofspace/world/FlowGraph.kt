@@ -19,15 +19,15 @@ package org.emerge.demo.outofspace.world
 class FlowGraph internal constructor(
     /** Per tile, a bit per [Direction.ordinal]: may a packet here leave that way? */
     private val allowed: ByteArray,
-    private val _tiles: Set<Int>,
-    private val _sinks: Set<Int>,
-    private val _order: List<Int>,
-    private val _feeders: Map<Int, List<Int>>,
+    private val _tiles: Set<TileIndex>,
+    private val _sinks: Set<TileIndex>,
+    private val _order: List<TileIndex>,
+    private val _feeders: Map<TileIndex, List<TileIndex>>,
     private val grid: Grid,
 ) {
-    val tiles: Set<Int> get() = _tiles
+    val tiles: Set<TileIndex> get() = _tiles
 
-    val sinks: Set<Int> get() = _sinks
+    val sinks: Set<TileIndex> get() = _sinks
 
     /**
      * Every tile that takes part in the flow, downstream first.
@@ -36,14 +36,14 @@ class FlowGraph internal constructor(
      * [advanceSegments] empty a packed run in a single pass: each tile is vacated before the one
      * behind it is asked to move.
      */
-    val order: List<Int> get() = _order
+    val order: List<TileIndex> get() = _order
 
     /** True when [tile] has somewhere to send material, or is itself a destination. */
-    fun isFed(tile: Int): Boolean =
-        (tile in _tiles) && (allowed.getOrElse(tile) { 0 }.toInt() != 0 || tile in _sinks)
+    fun isFed(tile: TileIndex): Boolean =
+        (tile in _tiles) && (allowed.getOrElse(tile.index) { 0 }.toInt() != 0 || tile in _sinks)
 
-    fun allows(tile: Int, dir: Direction): Boolean =
-        tile in _tiles && (allowed[tile].toInt() and (1 shl dir.ordinal)) != 0
+    fun allows(tile: TileIndex, dir: Direction): Boolean =
+        tile in _tiles && (allowed[tile.index].toInt() and (1 shl dir.ordinal)) != 0
 
     /**
      * The directions [tile] may send material, ordered by the index of the tile they lead to.
@@ -52,11 +52,11 @@ class FlowGraph internal constructor(
      * declaration order: every other tie-break in the transport layer is by ascending tile index, and
      * one less arbitrary ordering to remember is worth the constant below.
      */
-    fun successorDirections(tile: Int): List<Direction> =
+    fun successorDirections(tile: TileIndex): List<Direction> =
         if (tile !in _tiles) emptyList() else BY_TILE.filter { allows(tile, it) }
 
     /** The tiles [tile] may send material to, ascending. */
-    fun successorTiles(tile: Int): List<Int> =
+    fun successorTiles(tile: TileIndex): List<TileIndex> =
         successorDirections(tile).map { grid.neighbour(tile, it) }
 
     /**
@@ -66,9 +66,9 @@ class FlowGraph internal constructor(
      * runs joining have to take turns, or the one that happens to sort first starves the other
      * outright. Ascending order is arbitrary but fixed, so the turn-taking is reproducible.
      */
-    fun feeders(tile: Int): List<Int> = _feeders[tile] ?: emptyList()
+    fun feeders(tile: TileIndex): List<TileIndex> = _feeders[tile] ?: emptyList()
 
-    fun neighbour(tile: Int, dir: Direction): Int = grid.neighbour(tile, dir)
+    fun neighbour(tile: TileIndex, dir: Direction): TileIndex = grid.neighbour(tile, dir)
 
     companion object {
         /** Directions in ascending destination-tile order: up, left, right, down. */
@@ -123,10 +123,10 @@ class FlowGraph internal constructor(
          * the next one is forbidden to disturb.
          */
         fun build(
-            tileSet: Set<Int>,
-            sources: Set<Int>,
-            sinks: Set<Int>,
-            linked: (Int, Direction) -> Boolean,
+            tileSet: Set<TileIndex>,
+            sources: Set<TileIndex>,
+            sinks: Set<TileIndex>,
+            linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
@@ -139,7 +139,7 @@ class FlowGraph internal constructor(
             // Traversed in tile order, not set order, and one at a time. Where two sinks contend for
             // the same stretch of track the order is part of the result, and a [Set]'s order is not
             // something a replay can rely on.
-            for (sink in sinks.sorted()) {
+            for (sink in sinks.sortedBy { it.index }) {
                 if (sink in tileSet) {
                     traverse(sink, allowed, leading, tileSet, sources, linked, grid)
                 }
@@ -163,12 +163,12 @@ class FlowGraph internal constructor(
          * consumer, or a tile that becomes leading late would never pass the mark on.
          */
         private fun traverse(
-            seed: Int,
+            seed: TileIndex,
             allowed: ByteArray,
             leading: BooleanArray,
-            tileSet: Set<Int>,
-            sources: Set<Int>,
-            linked: (Int, Direction) -> Boolean,
+            tileSet: Set<TileIndex>,
+            sources: Set<TileIndex>,
+            linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
         ) {
             // Steps already taken, keyed by tile and the direction it was reached from. A tile
@@ -182,19 +182,19 @@ class FlowGraph internal constructor(
 
             while (queue.isNotEmpty()) {
                 val step = queue.removeFirst()
-                val at = step / 5
+                val at = TileIndex(step / 5)
                 val cameFrom = Direction.ALL.getOrNull(step % 5)
 
                 // Landing on a leading tile does this *instead of* looking forward. A justified
                 // route is not re-litigated by a walk that happens to arrive later.
-                if (leading[at]) {
-                    if (propagated[at]) continue
-                    propagated[at] = true
+                if (leading[at.index]) {
+                    if (propagated[at.index]) continue
+                    propagated[at.index] = true
                     for (dir in Direction.ALL) {
                         if (!bit(allowed, at, dir)) continue
                         val next = grid.neighbour(at, dir)
-                        if (next < 0 || next !in tileSet || leading[next]) continue
-                        leading[next] = true
+                        if (next == TileIndex.NONE || next !in tileSet || leading[next.index]) continue
+                        leading[next.index] = true
                         queue.addLast(encode(next, dir.opposite))
                     }
                     continue
@@ -207,7 +207,7 @@ class FlowGraph internal constructor(
                     if (dir == cameFrom) continue
                     if (!linked(at, dir)) continue
                     val next = grid.neighbour(at, dir)
-                    if (next < 0 || next !in tileSet) continue
+                    if (next == TileIndex.NONE || next !in tileSet) continue
 
                     // Already pointing at us: nothing to claim, and nothing new to say to it.
                     if (bit(allowed, next, dir.opposite)) continue
@@ -227,8 +227,8 @@ class FlowGraph internal constructor(
                     for (dir in Direction.ALL) {
                         if (!bit(allowed, at, dir)) continue
                         val next = grid.neighbour(at, dir)
-                        if (next < 0 || next !in tileSet || leading[next]) continue
-                        leading[next] = true
+                        if (next == TileIndex.NONE || next !in tileSet || leading[next.index]) continue
+                        leading[next.index] = true
                         queue.addLast(encode(next, dir.opposite))
                     }
                 }
@@ -236,17 +236,17 @@ class FlowGraph internal constructor(
         }
 
         /** A walk step: a tile plus the direction it was reached from (4 = a sink, reached from nowhere). */
-        private fun encode(tile: Int, cameFrom: Direction?): Int = tile * 5 + (cameFrom?.ordinal ?: 4)
+        private fun encode(tile: TileIndex, cameFrom: Direction?): Int = tile.index * 5 + (cameFrom?.ordinal ?: 4)
 
-        private fun bit(allowed: ByteArray, tile: Int, dir: Direction): Boolean =
-            (allowed[tile].toInt() and (1 shl dir.ordinal)) != 0
+        private fun bit(allowed: ByteArray, tile: TileIndex, dir: Direction): Boolean =
+            (allowed[tile.index].toInt() and (1 shl dir.ordinal)) != 0
 
-        private fun revoke(allowed: ByteArray, tile: Int, dir: Direction) {
-            allowed[tile] = (allowed[tile].toInt() and (1 shl dir.ordinal).inv()).toByte()
+        private fun revoke(allowed: ByteArray, tile: TileIndex, dir: Direction) {
+            allowed[tile.index] = (allowed[tile.index].toInt() and (1 shl dir.ordinal).inv()).toByte()
         }
 
-        private fun grant(allowed: ByteArray, tile: Int, dir: Direction) {
-            allowed[tile] = (allowed[tile].toInt() or (1 shl dir.ordinal)).toByte()
+        private fun grant(allowed: ByteArray, tile: TileIndex, dir: Direction) {
+            allowed[tile.index] = (allowed[tile.index].toInt() or (1 shl dir.ordinal)).toByte()
         }
 
         /**
@@ -264,15 +264,15 @@ class FlowGraph internal constructor(
          * A loop has no topological order at all, and that is not a failure — its tiles come last,
          * in tile order, and `arrived` is what keeps a packet on a cycle to one tile per advance.
          */
-        private fun walkOrder(allowed: ByteArray, tileSet: Set<Int>, sinks: Set<Int>, grid: Grid): List<Int> {
-            val remaining = HashMap<Int, Int>()
-            val feeders = HashMap<Int, MutableList<Int>>()
+        private fun walkOrder(allowed: ByteArray, tileSet: Set<TileIndex>, sinks: Set<TileIndex>, grid: Grid): List<TileIndex> {
+            val remaining = HashMap<TileIndex, Int>()
+            val feeders = HashMap<TileIndex, MutableList<TileIndex>>()
             for (tile in tileSet) {
                 var outgoing = 0
                 for (dir in Direction.ALL) {
                     if (!bit(allowed, tile, dir)) continue
                     val next = grid.neighbour(tile, dir)
-                    if (next < 0 || next !in tileSet) continue
+                    if (next == TileIndex.NONE || next !in tileSet) continue
                     outgoing++
                     feeders.getOrPut(next) { mutableListOf() }.add(tile)
                 }
@@ -281,11 +281,11 @@ class FlowGraph internal constructor(
 
             // Taken in waves, each wave sorted, so the result is a total order that does not depend
             // on sort stability or on the iteration order of a set.
-            val order = ArrayList<Int>(tileSet.size)
-            val placed = HashSet<Int>()
-            var wave = tileSet.filter { remaining.getValue(it) == 0 }.sorted()
+            val order = ArrayList<TileIndex>(tileSet.size)
+            val placed = HashSet<TileIndex>()
+            var wave = tileSet.filter { remaining.getValue(it) == 0 }.sortedBy { it.index }
             while (wave.isNotEmpty()) {
-                val next = mutableListOf<Int>()
+                val next = mutableListOf<TileIndex>()
                 for (tile in wave) {
                     if (!placed.add(tile)) continue
                     order.add(tile)
@@ -295,23 +295,23 @@ class FlowGraph internal constructor(
                         if (left == 0) next.add(feeder)
                     }
                 }
-                wave = next.sorted()
+                wave = next.sortedBy { it.index }
             }
             // Whatever is left is on a cycle.
-            if (order.size < tileSet.size) order.addAll(tileSet.filter { it !in placed }.sorted())
+            if (order.size < tileSet.size) order.addAll(tileSet.filter { it !in placed }.sortedBy { it.index })
 
             // Only tiles that take part: somewhere to send material, or somewhere to be consumed.
-            return order.filter { allowed[it].toInt() != 0 || it in sinks }
+            return order.filter { allowed[it.index].toInt() != 0 || it in sinks }
         }
 
         /** Inverts the permission bits: for each tile, who may send material to it. */
-        private fun feedersOf(allowed: ByteArray, tileSet: Set<Int>, grid: Grid): Map<Int, List<Int>> {
-            val feeders = HashMap<Int, MutableList<Int>>()
-            for (tile in tileSet.sorted()) {
+        private fun feedersOf(allowed: ByteArray, tileSet: Set<TileIndex>, grid: Grid): Map<TileIndex, List<TileIndex>> {
+            val feeders = HashMap<TileIndex, MutableList<TileIndex>>()
+            for (tile in tileSet.sortedBy { it.index }) {
                 for (dir in Direction.ALL) {
                     if (!bit(allowed, tile, dir)) continue
                     val next = grid.neighbour(tile, dir)
-                    if (next < 0 || next !in tileSet) continue
+                    if (next == TileIndex.NONE || next !in tileSet) continue
                     feeders.getOrPut(next) { mutableListOf() }.add(tile)
                 }
             }
@@ -333,10 +333,10 @@ class FlowGraph internal constructor(
  * halve the throughput of the other.
  */
 class FlowCursors(
-    initial: Map<Int, Int> = emptyMap(),
-    merges: Map<Int, Int> = emptyMap(),
+    initial: Map<TileIndex, Int> = emptyMap(),
+    merges: Map<TileIndex, Int> = emptyMap(),
 ) {
-    internal val cursors = HashMap<Int, Int>(initial)
+    internal val cursors = HashMap(initial)
 
     /**
      * Which feeder each merge should take from next, keyed by the tile being fed into.
@@ -344,13 +344,13 @@ class FlowCursors(
      * A separate map from [cursors] because a tile can be a fork *and* a merge at once — several
      * ways in and several ways out — and the two turns have nothing to do with each other.
      */
-    internal val merges = HashMap<Int, Int>(merges)
+    internal val merges = HashMap(merges)
 
     /** Read-only view of fork cursor state. */
-    val forkCursors: Map<Int, Int> get() = cursors
+    val forkCursors: Map<TileIndex, Int> get() = cursors
 
     /** Read-only view of merge cursor state. */
-    val mergeCursors: Map<Int, Int> get() = merges
+    val mergeCursors: Map<TileIndex, Int> get() = merges
 
     /**
      * Which of [feeders] may move into [target] this pass, or -1 if none can.
@@ -359,19 +359,19 @@ class FlowCursors(
      * whose turn falls on an empty run passes it straight on rather than idling — the same rule the
      * fork follows, where a blocked branch must not consume its turn.
      */
-    fun preferredFeeder(feeders: List<Int>, target: Int, ready: (Int) -> Boolean): Int {
-        if (feeders.isEmpty()) return -1
-        if (feeders.size == 1) return if (ready(feeders[0])) feeders[0] else -1
+    fun preferredFeeder(feeders: List<TileIndex>, target: TileIndex, ready: (TileIndex) -> Boolean): TileIndex {
+        if (feeders.isEmpty()) return TileIndex.NONE
+        if (feeders.size == 1) return if (ready(feeders[0])) feeders[0] else TileIndex.NONE
         val start = merges[target] ?: 0
         for (step in feeders.indices) {
             val pick = feeders[(start + step) % feeders.size]
             if (ready(pick)) return pick
         }
-        return -1
+        return TileIndex.NONE
     }
 
     /** Records that [from] took its turn into [target], so the next turn falls to the one after it. */
-    fun mergeUsed(feeders: List<Int>, target: Int, from: Int) {
+    fun mergeUsed(feeders: List<TileIndex>, target: TileIndex, from: TileIndex) {
         if (feeders.size <= 1) return
         val index = feeders.indexOf(from)
         if (index >= 0) merges[target] = (index + 1) % feeders.size
@@ -381,7 +381,7 @@ class FlowCursors(
      * Pick a way out of [tile], preferring one that is free, and alternating between them so a fork
      * splits its throughput rather than favouring a branch. Null when there is nowhere to go.
      */
-    fun choose(graph: FlowGraph, tile: Int, isFree: (Int) -> Boolean): Direction? {
+    fun choose(graph: FlowGraph, tile: TileIndex, isFree: (TileIndex) -> Boolean): Direction? {
         val options = graph.successorDirections(tile)
         if (options.isEmpty()) return null
         if (options.size == 1) {
@@ -401,10 +401,10 @@ class FlowCursors(
     }
 
     /** Snapshot the fork cursor state for persistence across ticks. */
-    fun snapshot(): Map<Int, Int> = cursors.toMap()
+    fun snapshot(): Map<TileIndex, Int> = cursors.toMap()
 
     /** Snapshot the merge cursor state for persistence across ticks. */
-    fun mergeSnapshot(): Map<Int, Int> = merges.toMap()
+    fun mergeSnapshot(): Map<TileIndex, Int> = merges.toMap()
 
     // By value, not by identity. This lives in [VesselState], which is compared and digested to
     // check that a replay came out the same — and a mutable object with the default identity
@@ -415,12 +415,12 @@ class FlowCursors(
     override fun hashCode(): Int = 31 * cursors.hashCode() + merges.hashCode()
 
     override fun toString(): String {
-        fun show(m: Map<Int, Int>) = m.entries.sortedBy { it.key }.joinToString { "${it.key}=${it.value}" }
+        fun show(m: Map<TileIndex, Int>) = m.entries.sortedBy { it.key.index }.joinToString { "${it.key}=${it.value}" }
         return "FlowCursors(forks[${show(cursors)}] merges[${show(merges)}])"
     }
 
     /** Restore from a previously snapshot state. */
-    fun restore(map: Map<Int, Int>, mergeMap: Map<Int, Int> = emptyMap()) {
+    fun restore(map: Map<TileIndex, Int>, mergeMap: Map<TileIndex, Int> = emptyMap()) {
         cursors.clear()
         cursors.putAll(map)
         merges.clear()

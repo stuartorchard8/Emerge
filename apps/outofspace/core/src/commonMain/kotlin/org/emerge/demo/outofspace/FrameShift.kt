@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 
 /**
@@ -62,11 +63,11 @@ class Move(val dx: Int, val dy: Int, val from: Grid, val to: Grid) {
      * A tile index from the old frame, as an index in the new one — or `-1` if that tile is not on
      * the new grid, which is also what an already-`-1` "nothing" stays.
      */
-    fun reindex(tile: Int): Int {
-        if (tile < 0 || tile >= from.size) return -1
+    fun reindex(tile: TileIndex): TileIndex {
+        if (tile.index < 0 || tile.index >= from.size) return TileIndex.NONE
         if (!moved) return tile
         val x = from.xOf(tile) + dx
         val y = from.yOf(tile) + dy
-        return if (to.inBounds(x, y)) to.index(x, y) else -1
+        return if (to.inBounds(x, y)) to.tile(x, y) else TileIndex.NONE
     }
 }

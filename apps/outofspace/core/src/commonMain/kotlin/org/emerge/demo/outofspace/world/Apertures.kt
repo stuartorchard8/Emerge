@@ -44,7 +44,7 @@ fun airlockOpenness(machines: List<Machine?>, signals: SignalField): IntArray? {
     for (i in machines.indices) {
         val m = machines[i]
         if (m !is Airlock) continue
-        val activation = m.wiring.activation(Action.Run, signals.at(i))
+        val activation = m.wiring.activation(Action.Run, signals.at(TileIndex(i)))
         if (activation <= 0) continue
         val array = openness ?: IntArray(machines.size).also { openness = it }
         array[i] = activation * ApertureField.OPEN / SignalField.FULL
@@ -131,8 +131,8 @@ class ApertureField(
         private fun apertureBetween(
             structure: StructureMap,
             openness: IntArray?,
-            before: Int,
-            after: Int,
+            before: TileIndex,
+            after: TileIndex,
         ): Int = minOf(
             sideAperture(structure, openness, before),
             sideAperture(structure, openness, after),
@@ -146,9 +146,9 @@ class ApertureField(
          * and would otherwise come back fully [OPEN], losing the grading. A shut one is not in the
          * array at all and falls through to the wall it is.
          */
-        private fun sideAperture(structure: StructureMap, openness: IntArray?, tile: Int): Int {
-            if (tile < 0) return OPEN
-            val open = openness?.get(tile) ?: 0
+        private fun sideAperture(structure: StructureMap, openness: IntArray?, tile: TileIndex): Int {
+            if (tile == TileIndex.NONE) return OPEN
+            val open = openness?.get(tile.index) ?: 0
             if (open > 0) return open
             return if (structure.isImpermeable(tile)) CLOSED else OPEN
         }

@@ -13,7 +13,7 @@ import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -39,6 +39,7 @@ import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
@@ -179,10 +180,10 @@ class OutofspaceRenderer {
         var minY = Int.MAX_VALUE
         var maxX = Int.MIN_VALUE
         var maxY = Int.MIN_VALUE
-        for (i in state.machines.indices) {
-            if (state.machines[i] == null) continue
-            val x = state.grid.xOf(i)
-            val y = state.grid.yOf(i)
+        for (tile in state.grid.tiles) {
+            if (state[tile] == null) continue
+            val x = state.grid.xOf(tile)
+            val y = state.grid.yOf(tile)
             if (x < minX) minX = x
             if (x > maxX) maxX = x
             if (y < minY) minY = y
@@ -221,11 +222,11 @@ class OutofspaceRenderer {
     private fun unturnY(dx: Float, dy: Float): Float = ViewTurn.unturnY(viewCos, viewSin, dx, dy)
 
     /** Framebuffer pixel → tile index, or -1 when the pointer is off the grid. */
-    fun tileIndexAt(px: Float, py: Float, state: VesselState): Int {
+    fun tileIndexAt(px: Float, py: Float, state: VesselState): TileIndex {
         val t = screenToTile(px, py)
         val x = floor(t[0]).toInt()
         val y = floor(t[1]).toInt()
-        return if (state.grid.inBounds(x, y)) state.grid.index(x, y) else -1
+        return if (state.grid.inBounds(x, y)) state.grid.tile(x, y) else TileIndex.NONE
     }
 
     /** Tick progress 0–[OutofspaceConfig.ticksPerSecond] (see [OutofspaceController.tickAlpha]). Defaults to 1 (tests). */
@@ -234,7 +235,7 @@ class OutofspaceRenderer {
 
     fun draw(
         state: VesselState,
-        hoveredIndex: Int = -1,
+        hoveredTile: TileIndex = TileIndex.NONE,
         overlay: Overlay = Overlay.None,
         tickAlpha: Float = 1f,
         ticksPerSecond: Float = 1f,
@@ -274,7 +275,7 @@ class OutofspaceRenderer {
             // underlay air
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
-                    val index = grid.index(x, y)
+                    val index = grid.tile(x, y)
                     val tint = mixtureColor(state, index)
                     tileRect(x, y, 1f, tint)
                 }
@@ -291,8 +292,8 @@ class OutofspaceRenderer {
 
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                val index = grid.index(x, y)
-                drawMachine(state, index, x, y, state.machines[index] ?: continue)
+                val tile = grid.tile(x, y)
+                drawMachine(state, tile, x, y, state[tile] ?: continue)
             }
         }
 
@@ -300,34 +301,34 @@ class OutofspaceRenderer {
         // beneath a machine to reach it, so anything it passes under should still read clearly.
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawWire(state, grid.index(x, y), x, y)
+                drawWire(state, grid.tile(x, y), x, y)
             }
         }
 
         // Pipes under track (thinner, different depth).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawPipe(state, grid.index(x, y), x, y)
+                drawPipe(state, grid.tile(x, y), x, y)
             }
         }
 
         // Track over buildings (on deck).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawRail(state, grid.index(x, y), x, y)
+                drawRail(state, grid.tile(x, y), x, y)
             }
         }
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawRailPacket(state, grid.index(x, y), x, y)
+                drawRailPacket(state, grid.tile(x, y), x, y)
             }
         }
 
         // Bridges last (above track).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                val index = grid.index(x, y)
-                drawBridge(state, index, state.bridges[index] ?: continue, x, y)
+                val tile = grid.tile(x, y)
+                drawBridge(state, tile, state.bridges[tile.index] ?: continue, x, y)
             }
         }
 
@@ -341,18 +342,18 @@ class OutofspaceRenderer {
         if (overlay != Overlay.None) {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
-                    val index = grid.index(x, y)
+                    val tile = grid.tile(x, y)
                     val tint = when (overlay) {
-                        Overlay.Heat -> temperatureColor(state.kelvinAt(index))
-                        Overlay.Air -> mixtureColor(state, index)
+                        Overlay.Heat -> temperatureColor(state.kelvinAt(tile))
+                        Overlay.Air -> mixtureColor(state, tile)
                         // A trace reads as vacuum rather than as "very thin air": see [Negligible].
-                        Overlay.Pressure -> state.air.pressureAt(index).let {
+                        Overlay.Pressure -> state.air.pressureAt(tile).let {
                             if (Negligible.pressure(it)) Colors.OVERLAY_VACUUM
                             else divergingColor(it.toFloat() / AMBIENT_PRESSURE)
                         }
-                        Overlay.Density -> state.air.densityAt(index).let {
+                        Overlay.Density -> state.air.densityAt(tile).let {
                             if (Negligible.gas(it)) Colors.OVERLAY_VACUUM
-                            else divergingColor(it.toFloat() / AirField.AMBIENT_AIR.total)
+                            else divergingColor(it.toFloat() / Atmosphere.AMBIENT_AIR.total)
                         }
                         Overlay.Flow -> Colors.FLOW_BACKDROP
                         Overlay.None -> 0L
@@ -370,7 +371,7 @@ class OutofspaceRenderer {
             var peak = 0f
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
-                    val index = grid.index(x, y)
+                    val index = grid.tile(x, y)
                     if (negligibleFlow(state, index)) continue
                     val s = state.flow.speedAt(index)
                     if (s > peak) peak = s
@@ -379,14 +380,14 @@ class OutofspaceRenderer {
             if (peak > 0f) {
                 for (y in minY..maxY) {
                     for (x in minX..maxX) {
-                        drawFlow(state, grid.index(x, y), x, y, peak)
+                        drawFlow(state, grid.tile(x, y), x, y, peak)
                     }
                 }
             }
         }
 
-        if (hoveredIndex >= 0) {
-            tileRect(grid.xOf(hoveredIndex), grid.yOf(hoveredIndex), 1f, Colors.HOVER)
+        if (hoveredTile != TileIndex.NONE) {
+            tileRect(grid.xOf(hoveredTile), grid.yOf(hoveredTile), 1f, Colors.HOVER)
         }
 
         rects.drawInstanced(count, matrices, colors)
@@ -448,7 +449,7 @@ class OutofspaceRenderer {
      * mass. Its colour is the value on it (Increment C); until something transmits, that is the dull
      * end of the ramp, which is the honest picture of a wire nobody is driving.
      */
-    private fun drawWire(state: VesselState, tile: Int, x: Int, y: Int) {
+    private fun drawWire(state: VesselState, tile: TileIndex, x: Int, y: Int) {
         val segment = state.conduits.at(Conduit.Signal, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
@@ -465,7 +466,7 @@ class OutofspaceRenderer {
         rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, color)
     }
 
-    private fun drawPipe(state: VesselState, tile: Int, x: Int, y: Int) {
+    private fun drawPipe(state: VesselState, tile: TileIndex, x: Int, y: Int) {
         val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
@@ -487,8 +488,8 @@ class OutofspaceRenderer {
     }
 
     /** Track tile + packet (thin spine, gauge collar). */
-    private fun drawRail(state: VesselState, tile: Int, x: Int, y: Int) {
-        val segment = state.rails[tile] ?: return
+    private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int) {
+        val segment = state.railAt(tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
         // Only joined arms (not touching — two lines side by side stay separate).
@@ -509,8 +510,8 @@ class OutofspaceRenderer {
         if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
     }
 
-    private fun drawRailPacket(state: VesselState, tile: Int, x: Int, y: Int) {
-        val segment = state.rails[tile] ?: return
+    private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
+        val segment = state.railAt(tile) ?: return
         // A gauge wears a collar so it reads as an instrument in the line rather than as track. It
         // no longer wears a colour, because it no longer names one: what it reports on is the wire
         // beneath it, and that wire says its own value.
@@ -546,13 +547,13 @@ class OutofspaceRenderer {
     private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
 
     /** Bridge: elevated track (off-color, not part of lower track). */
-    private fun drawBridge(state: VesselState, index: Int, b: Bridge, x: Int, y: Int) {
+    private fun drawBridge(state: VesselState, tile: TileIndex, b: Bridge, x: Int, y: Int) {
         val horizontal = b.facing.dx != 0
         val long = if (horizontal) Visual.BRIDGE_SPAN_X else Visual.BRIDGE_SPAN_Y
         val across = if (horizontal) Visual.BRIDGE_SPAN_Y else Visual.BRIDGE_SPAN_X
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        drawPorts(state, index, b)
+        drawPorts(state, tile, b)
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(MachineKind.Bridge))
         // One slot per tile (entry fixed, middle+exit slide along span).
         val slots = listOf(
@@ -562,7 +563,7 @@ class OutofspaceRenderer {
         )
         for ((along, packet, slot) in slots) {
             if (packet == null) continue
-            val from = if (state.motion.bridgeSlotIsNew(index, slot)) along - 1f else along
+            val from = if (state.motion.bridgeSlotIsNew(tile, slot)) along - 1f else along
             val at = lerp(from, along, railPacketAlpha)
             val size = Visual.BRIDGE_PACKET_SIZE * tilePx
             rect(
@@ -594,14 +595,14 @@ class OutofspaceRenderer {
 
     // ── Machine drawing ───────────────────────────────────────────────────────
 
-    private fun drawMachine(state: VesselState, index: Int, x: Int, y: Int, m: Machine) {
+    private fun drawMachine(state: VesselState, tile: TileIndex, x: Int, y: Int, m: Machine) {
         val n = m.kind.size
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
-        if (m !is Sensor && m !is WireButton && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(index)) <= 0) {
+        if (m !is Sensor && m !is WireButton && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
-            drawPorts(state, index, m)
+            drawPorts(state, tile, m)
             return
         }
         when (m) {
@@ -650,7 +651,7 @@ class OutofspaceRenderer {
             // and the player should read them as the same kind of thing.
             is Airlock -> {
                 tileRect(x, y, 1f, kindColor(MachineKind.Airlock))
-                val open = m.wiring.activation(Action.Run, state.signals.at(index))
+                val open = m.wiring.activation(Action.Run, state.signals.at(tile))
                     .coerceIn(0, SignalField.FULL) / SignalField.FULL.toFloat()
                 if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
             }
@@ -658,14 +659,14 @@ class OutofspaceRenderer {
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
             is WireButton -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.KeyInput))
-                val pressed = state.signals.at(index) / SignalField.FULL.toFloat()
+                val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
                 tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
             }
             is Sensor -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Sensor))
                 // Faces its target, and its eye glows with whatever it is putting on the wire — the
                 // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
-                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(index) / SignalField.FULL.toFloat())
+                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
                 edgeMark(x, y, m.facing, emitting)
                 tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
             }
@@ -685,7 +686,7 @@ class OutofspaceRenderer {
                 edgeMark(x, y, m.facing, Colors.VENT_CORE)
             }
         }
-        drawPorts(state, index, m)
+        drawPorts(state, tile, m)
     }
 
     /**
@@ -710,8 +711,8 @@ class OutofspaceRenderer {
      * A port is drawn as a stub straddling the machine's boundary, so it reads as a fitting on the
      * wall rather than as cargo sitting inside.
      */
-    private fun drawPorts(state: VesselState, index: Int, m: Machine) {
-        for (port in portsOf(state.grid, m, index)) {
+    private fun drawPorts(state: VesselState, tile: TileIndex, m: Machine) {
+        for (port in portsOf(state.grid, m, tile)) {
             val px = state.grid.xOf(port.tile)
             val py = state.grid.yOf(port.tile)
             val color = if (port.kind == PortKind.Input) Colors.PORT_IN else Colors.PORT_OUT
@@ -815,11 +816,11 @@ class OutofspaceRenderer {
      * wrong gas or short of the right one, and either is a problem you want to spot from across the
      * vessel rather than by pointing at tiles one at a time.
      */
-    private fun mixtureColor(state: VesselState, index: Int): Long {
-        val pressure = state.air.pressureAt(index)
+    private fun mixtureColor(state: VesselState, tile: TileIndex): Long {
+        val pressure = state.air.pressureAt(tile)
         if (Negligible.pressure(pressure)) return Colors.OVERLAY_EMPTY
         val f = (pressure.toFloat() / AMBIENT_PRESSURE).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
-        val base = state.air.mixtureAt(index).color
+        val base = state.air.mixtureAt(tile).color
         val scale = (f / Visual.PRESSURE_MAX_F).coerceIn(Visual.PRESSURE_MIN_SCALE, Visual.PRESSURE_MAX_SCALE)
         return rgba(
             (((base shr 24) and 0xFF) * scale).toInt(),
@@ -830,7 +831,7 @@ class OutofspaceRenderer {
     }
 
     /** Whether this tile's flow is beneath notice — asked by both the scaling pass and the drawing. */
-    private fun negligibleFlow(state: VesselState, tile: Int): Boolean =
+    private fun negligibleFlow(state: VesselState, tile: TileIndex): Boolean =
         Negligible.flow(state.flow.xAt(tile), state.flow.yAt(tile), state.air.densityAt(tile))
 
     /**
@@ -893,7 +894,7 @@ class OutofspaceRenderer {
      * that goes blank whenever the vessel is calm answers it for exactly the cases that do not need
      * answering.
      */
-    private fun drawFlow(state: VesselState, tile: Int, x: Int, y: Int, peak: Float) {
+    private fun drawFlow(state: VesselState, tile: TileIndex, x: Int, y: Int, peak: Float) {
         val speed = state.flow.speedAt(tile)
         // Still air guard (0/0), and trace air, which can report any speed at all. Visibility
         // threshold among the flows that survive is FLOW_MIN_FRACTION.

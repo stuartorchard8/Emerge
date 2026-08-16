@@ -50,8 +50,8 @@ class GaugeTest {
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(3, 2)] = Storage(Direction.Right, carrying)
-        m[grid.index(10, 2)] = Storage(Direction.Right)
+        m[grid.tile(3, 2).index] = Storage(Direction.Right, carrying)
+        m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
         // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
@@ -67,7 +67,7 @@ class GaugeTest {
     /** Where [line] puts its gauge, so a test can ask what that tile's circuit reads. */
     private val GAUGE_TILE_X = 6
 
-    private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.index(6, 2))!!
+    private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.tile(6, 2))!!
 
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
@@ -101,7 +101,7 @@ class GaugeTest {
     fun `a gauge puts its purity on the wire beneath it`() {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val s = run(line(pure), 20)
-        assertEquals(1000, s.signals.at(s.grid.index(GAUGE_TILE_X, 2)), "pure metal reads 100%")
+        assertEquals(1000, s.signals.at(s.grid.tile(GAUGE_TILE_X, 2)), "pure metal reads 100%")
     }
 
     /**
@@ -114,14 +114,14 @@ class GaugeTest {
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(3, 2)] = Storage(Direction.Right, pure)
-        m[grid.index(10, 2)] = Storage(Direction.Right)
+        m[grid.tile(3, 2).index] = Storage(Direction.Right, pure)
+        m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
         val bare = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         val s = run(bare, 20)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")
-        assertTrue(s.railAt(grid.index(6, 2))!!.lastPurity > 0, "though the gauge still took its reading")
+        assertTrue(s.railAt(grid.tile(6, 2))!!.lastPurity > 0, "though the gauge still took its reading")
     }
 
     @Test
@@ -134,7 +134,7 @@ class GaugeTest {
         // Found by scanning rather than by coordinates: the vessel is fitted to its own contents on
         // construction, so a tile index written down here would be a hostage to its layout. The two
         // gauges on the main line are the first two in tile order, and that order is left-to-right.
-        val readings = (0 until s.grid.size)
+        val readings = s.grid.tiles
             .mapNotNull { t -> s.railAt(t)?.takeIf { it.isGauge }?.let { t to it.lastPurity } }
         assertTrue(readings.size >= 2, "the starter plant should ship two gauges, found ${readings.size}")
         val raw = readings[0].second
@@ -184,7 +184,7 @@ class GaugeTest {
         // window where anything is on it at all is a handful of advances wide. `12` used to be two
         // advances and is now twelve, by which time the lone packet is in the far tank.
         val s = run(line(ore), RAIL_PERIOD * 3)
-        val carried = (0 until s.grid.size).mapNotNull { s.railAt(it)?.held }
+        val carried = s.grid.tiles.mapNotNull { s.railAt(it)?.held }
         assertTrue(carried.isNotEmpty(), "something should be on the line by now")
         assertTrue(carried.all { it is SolidPacket }, "and it is a solid, with a form to name")
     }

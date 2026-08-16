@@ -10,8 +10,6 @@ import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.chem.liquidVolumeFraction
 import org.emerge.demo.outofspace.chem.partialPressure
-import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Temperature
 
 /**
  * Pressure (moles × T / T_ambient) vs. density (mass): separate so heavy gases sink naturally.
@@ -47,7 +45,7 @@ private val MOLAR_DIVISOR: Long = MILLI * Budget.GRAM
  *
  * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.
  */
-internal val AMBIENT_TILE_MASS: Long = AirField.AMBIENT_AIR.total
+internal val AMBIENT_TILE_MASS: Long = Atmosphere.AMBIENT_AIR.total
 
 /** Denominator of [AMBIENT_SHARE]: air's composition in billionths. */
 private const val SHARE_ONE: Long = 1_000_000_000L
@@ -68,7 +66,7 @@ private const val SHARE_ONE: Long = 1_000_000_000L
  * constant against a constant has no such problem, because nothing is reduced at all.
  */
 private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
-    scaledRatio(AirField.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_MASS, SHARE_ONE)
+    scaledRatio(Atmosphere.AMBIENT_AIR[Species.ALL[it]], AMBIENT_TILE_MASS, SHARE_ONE)
 }
 
 /**
@@ -91,12 +89,13 @@ private val AMBIENT_SHARE: LongArray = LongArray(Species.COUNT) {
  */
 fun tilePressure(
     tileCount: Int,
-    mass: LongArray,
+    masses: MassArray,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
 ): LongArray =
-    LongArray(tileCount) { tile ->
-        val hot = kelvin?.get(tile) ?: Temperature.AMBIENT_KELVIN
+    LongArray(tileCount) { i ->
+        val tile = TileIndex(i)
+        val hot = kelvin?.get(tile.index) ?: Temperature.AMBIENT_KELVIN
         val room = volumes?.at(tile) ?: VolumeField.FULL
 
         // First pass: how much of the cell is taken up by liquid, and so is not room for gas. Zero
@@ -105,7 +104,7 @@ fun tilePressure(
         // at all.
         var liquidShare = 0L
         for (s in Species.ALL) {
-            val g = mass[tile * Species.COUNT + s.ordinal]
+            val g = masses[MassIndex(tile,s)]
             if (g <= 0L) continue
             liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
         }
@@ -117,7 +116,7 @@ fun tilePressure(
 
         var sum = 0L
         for (s in Species.ALL) {
-            val g = mass[tile * Species.COUNT + s.ordinal]
+            val g = masses[MassIndex(tile,s)]
             // A condensing species is measured against the whole cell, because the lever rule has
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
@@ -161,7 +160,7 @@ private fun leastRoomFor(mass: Long, species: Species): Int {
  * The pressure a mass of ordinary air would exert on its own, at [kelvin] in a cell holding
  * [volume] — the reference curve [ambientMassAtPressure] inverts.
  *
- * The mass is split across the species in [AirField.AMBIENT_AIR]'s proportions, because the question
+ * The mass is split across the species in [Atmosphere.AMBIENT_AIR]'s proportions, because the question
  * being asked of it is always "what would *air* do here", never "what would this particular gas do".
  */
 internal fun ambientPressureOf(mass: Long, kelvin: Int, volume: Int): Long {
@@ -227,7 +226,7 @@ internal fun ambientMassAtPressure(target: Long, kelvin: Int, volume: Int): Long
 private fun closePackedAirMass(volume: Int): Long {
     var limit = Long.MAX_VALUE
     for (s in Species.ALL) {
-        val share = AirField.AMBIENT_AIR[s]
+        val share = Atmosphere.AMBIENT_AIR[s]
         if (share <= 0L) continue
         // Invert reducedDensity: the total air mass whose share of species s just reaches close
         // packing in this volume.
@@ -268,10 +267,9 @@ private fun idealPressure(mass: Long, species: Species, kelvin: Int, volume: Int
 private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
-fun millimolesOf(mass: LongArray, tile: Int): Long {
-    val base = tile * Species.COUNT
+fun millimolesOf(masses: MassArray, tile: TileIndex): Long {
     var sum = 0L
-    for (s in Species.ALL) sum += mass[base + s.ordinal] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
+    for (s in Species.ALL) sum += masses[MassIndex(tile, s)] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
     return sum
 }
 
@@ -286,7 +284,7 @@ fun millimolesOf(mass: LongArray, tile: Int): Long {
 val AMBIENT_PRESSURE: Long = run {
     var sum = 0L
     for (s in Species.ALL) {
-        val mass = AirField.AMBIENT_AIR[s]
+        val mass = Atmosphere.AMBIENT_AIR[s]
         sum += partialPressure(mass, s, Temperature.AMBIENT_KELVIN, VolumeField.FULL, VolumeField.FULL)
             ?: (mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MILLI)
     }

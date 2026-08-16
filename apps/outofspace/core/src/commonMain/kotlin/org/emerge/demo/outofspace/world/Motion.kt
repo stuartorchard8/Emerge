@@ -30,26 +30,26 @@ class Motion(
      */
     private val previousMass: LongArray,
     /** Per bridge tile, a bitmask of which slots are newly filled — see the `SLOT_` bits. */
-    private val bridgeSlots: Map<Int, Int>,
+    private val bridgeSlots: Map<TileIndex, Int>,
     /** Things that left the layer this tick, drawn shrinking away as they go. */
     val departures: List<Departure>,
 ) {
     /** Whether [tile]'s packet arrived from a neighbour, and if so which way it was travelling. */
-    fun arrivedFrom(tile: Int): Direction? {
-        if (tile < 0 || tile >= arrivals.size) return null
-        val code = arrivals[tile].toInt()
+    fun arrivedFrom(tile: TileIndex): Direction? {
+        if (tile == TileIndex.NONE || tile.index >= arrivals.size) return null
+        val code = arrivals[tile.index].toInt()
         return if (code in 1..Direction.ALL.size) Direction.ALL[code - 1] else null
     }
 
     /** True when [tile]'s packet was put there by a machine's output port, and should grow in. */
-    fun appearedAt(tile: Int): Boolean =
-        tile in arrivals.indices && arrivals[tile].toInt() == FROM_PORT
+    fun appearedAt(tile: TileIndex): Boolean =
+        tile.index in arrivals.indices && arrivals[tile.index].toInt() == FROM_PORT
 
     /** The mass [tile]'s packet had at the start of the tick. */
-    fun previousMassAt(tile: Int): Long =
-        if (tile in previousMass.indices) previousMass[tile] else 0L
+    fun previousMassAt(tile: TileIndex): Long =
+        if (tile.index in previousMass.indices) previousMass[tile.index] else 0L
 
-    fun bridgeSlotIsNew(tile: Int, slot: Int): Boolean =
+    fun bridgeSlotIsNew(tile: TileIndex, slot: Int): Boolean =
         (bridgeSlots[tile] ?: 0) and (1 shl slot) != 0
 
     override fun equals(other: Any?): Boolean =

@@ -8,7 +8,7 @@ package org.emerge.demo.outofspace.world
  */
 class VolumeField(private val v: IntArray) {
 
-    fun at(tile: Int): Int = v[tile]
+    fun at(tile: TileIndex): Int = v[tile.index]
 
     fun copy(): IntArray = v.copyOf()
 

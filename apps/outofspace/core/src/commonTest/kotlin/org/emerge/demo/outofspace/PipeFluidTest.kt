@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -9,7 +9,9 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
@@ -37,17 +39,17 @@ class PipeFluidTest {
     private fun hulled(): List<Machine?> {
         val m = arrayOfNulls<Machine>(grid.size)
         for (x in 0 until grid.width) {
-            m[grid.index(x, 0)] = Hull()
-            m[grid.index(x, grid.height - 1)] = Hull()
+            m[grid.tile(x, 0).index] = Hull()
+            m[grid.tile(x, grid.height - 1).index] = Hull()
         }
         for (y in 0 until grid.height) {
-            m[grid.index(0, y)] = Hull()
-            m[grid.index(grid.width - 1, y)] = Hull()
+            m[grid.tile(0, y).index] = Hull()
+            m[grid.tile(grid.width - 1, y).index] = Hull()
         }
         return m.toList()
     }
 
-    private fun lay(state: VesselState, from: Int, to: Int): VesselState =
+    private fun lay(state: VesselState, from: TileIndex, to: TileIndex): VesselState =
         OutofspaceReducer.reduce(
             cfg, state, mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Lay(from, to, Conduit.Pipe)))),
         )
@@ -61,21 +63,21 @@ class PipeFluidTest {
     /** A pipe run along row [y] from [fromX] to [toX], with gas put into its first cell. */
     private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, mass: Long = 400L): VesselState {
         var s = VesselState(grid, hulled())
-        for (x in fromX until toX) s = lay(s, grid.index(x, y), grid.index(x + 1, y))
+        for (x in fromX until toX) s = lay(s, grid.tile(x, y), grid.tile(x + 1, y))
 
-        val head = grid.index(fromX, y)
+        val tile = grid.tile(fromX, y)
         val pipe = s.pipeAir.copyMass()
-        pipe[head * Species.COUNT + Species.Nitrogen.ordinal] = mass
+        pipe[MassIndex(tile, Species.Nitrogen)] = mass
         return s.copy(
-            pipeAir = AirField.of(pipe),
+            pipeAir = Atmosphere.of(pipe),
             // Charging by hand puts gas into the world, so the baseline has to move with it or the
             // ledger reads the fixture itself as a leak.
             baselineAirMass = s.baselineAirMass + mass,
-            baselineAirEnergy = AirField.of(pipe).totalEnergy + s.air.totalEnergy,
+            baselineAirEnergy = Atmosphere.of(pipe).totalEnergy + s.air.totalEnergy,
         )
     }
 
-    private fun pipeMass(s: VesselState, tile: Int): Long {
+    private fun pipeMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
         for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
@@ -86,7 +88,7 @@ class PipeFluidTest {
         val start = charged()
         val after = run(start, 200)
 
-        assertTrue(pipeMass(after, grid.index(10, 4)) > 0L, "nothing reached the far end of the run")
+        assertTrue(pipeMass(after, grid.tile(10, 4)) > 0L, "nothing reached the far end of the run")
         assertEquals(
             start.pipeAir.totalMass,
             after.pipeAir.totalMass,
@@ -129,10 +131,10 @@ class PipeFluidTest {
         val s = charged()
         val volumes = pipeVolumes(grid, s.conduits)
 
-        assertEquals(PIPE_VOLUME, volumes.at(grid.index(3, 4)), "the head of the run is not narrow")
-        assertEquals(PIPE_VOLUME, volumes.at(grid.index(11, 4)), "the far end of the run is not narrow")
+        assertEquals(PIPE_VOLUME, volumes.at(grid.tile(3, 4)), "the head of the run is not narrow")
+        assertEquals(PIPE_VOLUME, volumes.at(grid.tile(11, 4)), "the far end of the run is not narrow")
         assertTrue(PIPE_VOLUME < VolumeField.FULL, "a pipe cell is not actually smaller than a tile")
-        assertEquals(VolumeField.FULL, volumes.at(grid.index(3, 7)), "a tile with no pipe was narrowed")
+        assertEquals(VolumeField.FULL, volumes.at(grid.tile(3, 7)), "a tile with no pipe was narrowed")
     }
 
     @Test
@@ -149,28 +151,28 @@ class PipeFluidTest {
     fun `pipes laid side by side without being drawn together stay separate`() {
         var s = VesselState(grid, hulled())
         // Two parallel runs one tile apart, each drawn on its own.
-        for (x in 3 until 8) s = lay(s, grid.index(x, 4), grid.index(x + 1, 4))
-        for (x in 3 until 8) s = lay(s, grid.index(x, 5), grid.index(x + 1, 5))
+        for (x in 3 until 8) s = lay(s, grid.tile(x, 4), grid.tile(x + 1, 4))
+        for (x in 3 until 8) s = lay(s, grid.tile(x, 5), grid.tile(x + 1, 5))
 
         val pipe = s.pipeAir.copyMass()
-        pipe[grid.index(3, 4) * Species.COUNT + Species.Nitrogen.ordinal] = 400L
+        pipe[MassIndex(grid.tile(3, 4), Species.Nitrogen)] = 400L
         s = s.copy(
-            pipeAir = AirField.of(pipe),
+            pipeAir = Atmosphere.of(pipe),
             baselineAirMass = s.baselineAirMass + 400L,
-            baselineAirEnergy = AirField.of(pipe).totalEnergy + s.air.totalEnergy,
+            baselineAirEnergy = Atmosphere.of(pipe).totalEnergy + s.air.totalEnergy,
         )
 
         val after = run(s, 200)
 
         var lower = 0L
-        for (x in 3..8) lower += pipeMass(after, grid.index(x, 5))
+        for (x in 3..8) lower += pipeMass(after, grid.tile(x, 5))
         assertEquals(0L, lower, "gas crossed into a run the player never drew a join to")
     }
 
     @Test
     fun `cutting a pipe lets what was in it out into the room`() {
         val start = charged()
-        val head = grid.index(3, 4)
+        val head = grid.tile(3, 4)
         val roomBefore = start.air.totalMass
         val inPipe = pipeMass(start, head)
         assertTrue(inPipe > 0L, "the fixture put nothing in the pipe")

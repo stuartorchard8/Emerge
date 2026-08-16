@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.TileIndex
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -21,20 +22,20 @@ class FlowLeadingTest {
 
     /** A network drawn as a set of joined tiles, with the flow read back as a picture. */
     private inner class Net {
-        val tiles = mutableSetOf<Int>()
-        private val links = mutableSetOf<Pair<Int, Direction>>()
+        val tiles = mutableSetOf<TileIndex>()
+        private val links = mutableSetOf<Pair<TileIndex, Direction>>()
 
-        fun join(a: Int, dir: Direction): Net = apply {
+        fun join(a: TileIndex, dir: Direction): Net = apply {
             val b = grid.neighbour(a, dir)
-            require(b >= 0)
+            require(b != TileIndex.NONE)
             tiles.add(a); tiles.add(b)
             links.add(a to dir)
             links.add(b to dir.opposite)
         }
 
-        fun linked(tile: Int, dir: Direction): Boolean = (tile to dir) in links
+        fun linked(tile: TileIndex, dir: Direction): Boolean = (tile to dir) in links
 
-        fun flow(sources: Set<Int>, sinks: Set<Int>): FlowGraph =
+        fun flow(sources: Set<TileIndex>, sinks: Set<TileIndex>): FlowGraph =
             FlowGraph.build(tiles, sources, sinks, ::linked, grid)
     }
 
@@ -42,7 +43,7 @@ class FlowLeadingTest {
      * Reads a horizontal run back as the arrows used while working these cases out: `A>B` for a tile
      * that may move right into its neighbour, `A<B` for one that may move left.
      */
-    private fun picture(f: FlowGraph, names: List<Pair<String, Int>>): String = buildString {
+    private fun picture(f: FlowGraph, names: List<Pair<String, TileIndex>>): String = buildString {
         for ((i, entry) in names.withIndex()) {
             val (name, tile) = entry
             append(name)
@@ -64,11 +65,11 @@ class FlowLeadingTest {
      */
     @Test
     fun `a consumer partway along a line does not seize the track behind it`() {
-        val z = grid.index(1, 3); val s = grid.index(2, 3); val a = grid.index(3, 3)
-        val b = grid.index(4, 3); val c = grid.index(5, 3); val d = grid.index(6, 3)
-        val e = grid.index(7, 3)
+        val z = grid.tile(1, 3); val s = grid.tile(2, 3); val a = grid.tile(3, 3)
+        val b = grid.tile(4, 3); val c = grid.tile(5, 3); val d = grid.tile(6, 3)
+        val e = grid.tile(7, 3)
         val n = Net()
-        for (x in 1 until 7) n.join(grid.index(x, 3), Direction.Right)
+        for (x in 1 until 7) n.join(grid.tile(x, 3), Direction.Right)
         val names = listOf("Z" to z, "S" to s, "A" to a, "B" to b, "C" to c, "D" to d, "E" to e)
 
         assertEquals("Z>S>A>B>C>D<E", picture(n.flow(sources = setOf(s), sinks = setOf(b, d)), names))
@@ -78,11 +79,11 @@ class FlowLeadingTest {
     fun `and it comes out the same whichever consumer is traversed first`() {
         // Seeding is by ascending tile index, so the only way to swap the order is to lay the same
         // line out reversed. Mirrored, the answer must mirror too and nothing else may change.
-        val z = grid.index(1, 3); val s = grid.index(2, 3); val a = grid.index(3, 3)
-        val b = grid.index(4, 3); val c = grid.index(5, 3); val d = grid.index(6, 3)
-        val e = grid.index(7, 3)
+        val z = grid.tile(1, 3); val s = grid.tile(2, 3); val a = grid.tile(3, 3)
+        val b = grid.tile(4, 3); val c = grid.tile(5, 3); val d = grid.tile(6, 3)
+        val e = grid.tile(7, 3)
         val n = Net()
-        for (x in 1 until 7) n.join(grid.index(x, 3), Direction.Right)
+        for (x in 1 until 7) n.join(grid.tile(x, 3), Direction.Right)
         // E-D-C-B-A-S-Z read right to left: the same network, traversed in the other order.
         val mirrored = listOf("E" to e, "D" to d, "C" to c, "B" to b, "A" to a, "S" to s, "Z" to z)
 
@@ -104,11 +105,11 @@ class FlowLeadingTest {
      */
     @Test
     fun `a consumer starved by a claim made past a producer takes the edge back`() {
-        val aT = grid.index(2, 3)
-        val bT = grid.index(3, 3)
-        val cT = grid.index(4, 3)
-        val dT = grid.index(5, 3)
-        val xT = grid.index(3, 2)
+        val aT = grid.tile(2, 3)
+        val bT = grid.tile(3, 3)
+        val cT = grid.tile(4, 3)
+        val dT = grid.tile(5, 3)
+        val xT = grid.tile(3, 2)
         val n = Net()
             .join(aT, Direction.Right)
             .join(bT, Direction.Right)

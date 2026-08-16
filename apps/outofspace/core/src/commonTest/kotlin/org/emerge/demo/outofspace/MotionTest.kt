@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
@@ -43,7 +44,7 @@ class MotionTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
-        m[grid.index(tankX, 3)] = Storage(Direction.Right)
+        m[grid.tile(tankX, 3).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
         return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
     }
@@ -56,12 +57,12 @@ class MotionTest {
         // Long enough that the run is carrying material but not yet backed up against the tank.
         s = run(s, 12)
 
-        val moving = (3..8).filter { s.rails[cfg.initialGrid.index(it, 3)]?.held != null }
+        val moving = (3..8).filter { s.railAt(cfg.initialGrid.tile(it, 3))?.held != null }
         assertTrue(moving.isNotEmpty(), "the line should be carrying something by now")
         // Everything on this run came from its left-hand neighbour, because that is the only way
         // material can be moving: the extractor is at the left end and the tank at the right.
         for (x in moving) {
-            val came = s.motion.arrivedFrom(cfg.initialGrid.index(x, 3))
+            val came = s.motion.arrivedFrom(cfg.initialGrid.tile(x, 3))
             assertTrue(
                 came == null || came == Direction.Right,
                 "the lump at ($x, 3) claims to have arrived heading $came",
@@ -74,8 +75,8 @@ class MotionTest {
         var s = line()
         s = run(s, 12)
         for (x in 3..8) {
-            val tile = cfg.initialGrid.index(x, 3)
-            if (s.rails[tile]?.held != null) continue
+            val tile = cfg.initialGrid.tile(x, 3)
+            if (s.railAt(tile)?.held != null) continue
             assertEquals(0L, s.motion.previousMassAt(tile), "($x, 3) is empty but claims a mass")
         }
     }
@@ -86,18 +87,18 @@ class MotionTest {
     fun `a packet a machine put on the track is marked as having appeared`() {
         // One tick at a time until the extractor ejects, which is the moment being tested.
         var s = line()
-        var appeared = -1
+        var appeared = TileIndex.NONE
         // `run`, not `repeat`: `return@repeat` is a *continue*, so the old loop ran all forty ticks
         // and read whatever the last one said — which is only the ejection tick by luck of timing.
         run {
             repeat(40) {
                 s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-                val tile = cfg.initialGrid.index(4, 3)
+                val tile = cfg.initialGrid.tile(4, 3)
                 if (s.motion.appearedAt(tile)) { appeared = tile; return@run }
             }
         }
-        assertTrue(appeared >= 0, "the extractor never put anything on the track")
-        assertNotNull(s.rails[appeared]?.held, "and what appeared should actually be there")
+        assertTrue(appeared != TileIndex.NONE, "the extractor never put anything on the track")
+        assertNotNull(s.railAt(appeared)?.held, "and what appeared should actually be there")
         assertEquals(0L, s.motion.previousMassAt(appeared), "a thing that appeared had no mass before")
         assertNull(s.motion.arrivedFrom(appeared), "it came from a port, not from a neighbour")
     }
@@ -109,7 +110,7 @@ class MotionTest {
         repeat(60) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             val d = s.motion.departures.firstOrNull() ?: return@repeat
-            assertEquals(cfg.initialGrid.index(8, 3), d.tile, "the tank's input port is at (8, 3)")
+            assertEquals(cfg.initialGrid.tile(8, 3), d.tile, "the tank's input port is at (8, 3)")
             assertTrue(d.packet.mass > 0L, "and something real went into it")
             // Not the *same* packet, rather than no packet at all. Those were the same statement
             // while a belt was starved: a machine produced a fraction of a packet per tick, so the
@@ -118,7 +119,7 @@ class MotionTest {
             // is refilled from behind on the very tick it is emptied. Emptiness stopped being
             // evidence of departure; identity still is.
             assertTrue(
-                s.rails[d.tile]?.held !== d.packet,
+                s.railAt(d.tile)?.held !== d.packet,
                 "the packet that departed is still sitting on the tile it left",
             )
             seen = true
@@ -135,8 +136,8 @@ class MotionTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
-        m[grid.index(11, 3)] = Storage(Direction.Right)
-        bridges[grid.index(6, 3)] = Bridge(Direction.Right)
+        m[grid.tile(11, 3).index] = Storage(Direction.Right)
+        bridges[grid.tile(6, 3).index] = Bridge(Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         return VesselState(
@@ -150,12 +151,12 @@ class MotionTest {
     @Test
     fun `a bridge slot that just took delivery says so`() {
         var s = bridged()
-        val at = cfg.initialGrid.index(6, 3)
+        val tile = cfg.initialGrid.tile(6, 3)
         var sawNewMiddle = false
         repeat(60) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            val b = s.bridges[at] ?: return@repeat
-            if (b.middle != null && s.motion.bridgeSlotIsNew(at, Motion.SLOT_MIDDLE)) sawNewMiddle = true
+            val b = s.bridges[tile.index] ?: return@repeat
+            if (b.middle != null && s.motion.bridgeSlotIsNew(tile, Motion.SLOT_MIDDLE)) sawNewMiddle = true
         }
         assertTrue(sawNewMiddle, "nothing ever moved onto the middle of the bridge")
     }
@@ -171,11 +172,11 @@ class MotionTest {
     fun `a jammed bridge is not reported as moving`() {
         // Long enough to fill the 20 kg tank and pack the line solid all the way back.
         val s = run(bridged(), 500)
-        val at = cfg.initialGrid.index(6, 3)
-        val b = assertNotNull(s.bridges[at])
+        val tile = cfg.initialGrid.tile(6, 3)
+        val b = assertNotNull(s.bridges[tile.index])
         assertEquals(Bridge.SLOTS, b.carried.size, "the bridge should be packed by now")
         for (slot in listOf(Motion.SLOT_ENTRY, Motion.SLOT_MIDDLE, Motion.SLOT_EXIT)) {
-            assertTrue(!s.motion.bridgeSlotIsNew(at, slot), "slot $slot claims to have just moved")
+            assertTrue(!s.motion.bridgeSlotIsNew(tile, slot), "slot $slot claims to have just moved")
         }
     }
 
@@ -190,8 +191,8 @@ class MotionTest {
     @Test
     fun `stepping on and off a bridge is not recorded as coming or going`() {
         var s = bridged()
-        val near = cfg.initialGrid.index(5, 3)     // the track tile under the bridge's input port
-        val far = cfg.initialGrid.index(7, 3)      // and under its output port
+        val near = cfg.initialGrid.tile(5, 3)     // the track tile under the bridge's input port
+        val far = cfg.initialGrid.tile(7, 3)      // and under its output port
         var crossed = false
         repeat(80) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
@@ -205,7 +206,7 @@ class MotionTest {
             )
             // Checked at the far end of the span rather than on the port tile: a packet set down
             // there is carried on in the same step, so the port tile is empty every time you look.
-            if (s.bridges[cfg.initialGrid.index(6, 3)]?.exit != null) crossed = true
+            if (s.bridges[cfg.initialGrid.tile(6, 3).index]?.exit != null) crossed = true
         }
         assertTrue(crossed, "nothing ever crossed the bridge, so this proved nothing")
     }
@@ -229,6 +230,6 @@ class MotionTest {
         assertEquals(Motion.NONE, loaded.motion, "a load has no previous tick to have moved during")
         // And it animates again immediately, rather than being still for good.
         assertTrue(run(loaded, 20).motion.departures.isNotEmpty() ||
-            run(loaded, 20).motion.previousMassAt(0) == 0L)
+            run(loaded, 20).motion.previousMassAt(TileIndex(0)) == 0L)
     }
 }

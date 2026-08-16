@@ -124,17 +124,17 @@ internal fun VesselState.placedBounds(): IntArray? {
         if (y + reach > maxY) maxY = y + reach
     }
 
-    for (i in machines.indices) {
-        val m = machines[i] ?: continue
-        cover(grid.xOf(i), grid.yOf(i), m.kind.size / 2)
+    for (tile in grid.tiles) {
+        val m = machines[tile.index] ?: continue
+        cover(grid.xOf(tile), grid.yOf(tile), m.kind.size / 2)
     }
-    for (i in bridges.indices) {
-        if (bridges[i] == null) continue
-        cover(grid.xOf(i), grid.yOf(i), 0)
+    for (tile in grid.tiles) {
+        if (bridges[tile.index] == null) continue
+        cover(grid.xOf(tile), grid.yOf(tile), 0)
     }
     for (c in Conduit.entries) {
         val layer = conduits[c]
-        for (i in layer.indices) if (layer[i] != null) cover(grid.xOf(i), grid.yOf(i), 0)
+        for (tile in grid.tiles) if (layer[tile.index] != null) cover(grid.xOf(tile), grid.yOf(tile), 0)
     }
 
     return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)

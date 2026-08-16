@@ -63,19 +63,19 @@ class ProcessorChainTest {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(3, 3)] = Processor(Direction.Right, input = ore)   // covers x 2..4
+        m[grid.tile(3, 3).index] = Processor(Direction.Right, input = ore)   // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
-        m[grid.index(7, 3)] = Storage(Direction.Right)                 // input port at (6, 3)
+        m[grid.tile(7, 3).index] = Storage(Direction.Right)                 // input port at (6, 3)
         // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
         // A tank has one input now, not two, so which way it faces is the whole of how you feed it.
-        m[grid.index(3, 8)] = Storage(Direction.Down)
+        m[grid.tile(3, 8).index] = Storage(Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 800)
 
-        val forward = (s[grid.index(7, 3)] as Storage).contents
-        val below = (s[grid.index(3, 8)] as Storage).contents
+        val forward = (s[grid.tile(7, 3)] as Storage).contents
+        val below = (s[grid.tile(3, 8)] as Storage).contents
 
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         // Against the *feed*, which is the claim: 41% ore in, appreciably richer out.
@@ -108,11 +108,11 @@ class ProcessorChainTest {
         val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) {
-            m[grid.index(x, 3)] = Processor(Direction.Right)
-            m[grid.index(x, 7)] = Vent()
+            m[grid.tile(x, 3).index] = Processor(Direction.Right)
+            m[grid.tile(x, 7).index] = Vent()
             joinCol(grid, rails, x, 4, 7)   // its tailings run
         }
-        m[grid.index(21, 3)] = Storage(Direction.Right)
+        m[grid.tile(21, 3).index] = Storage(Direction.Right)
         // One short run per stage, from an output port to the next input port.
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
@@ -133,7 +133,7 @@ class ProcessorChainTest {
         repeat(HANDOVER_WINDOW) {
             s = run(s, 1)
             for ((i, x) in stages.withIndex()) {
-                val p = purity((s[grid.index(x, 3)] as Processor).product)
+                val p = purity((s[grid.tile(x, 3)] as Processor).product)
                 if (p > 0) purities[i] = p
             }
         }
@@ -151,7 +151,7 @@ class ProcessorChainTest {
         assertEquals(threeStagePurity(), purities.last(), "the last stage matches the chemistry: $purities")
         assertEquals(
             threeStagePurity(),
-            purity((s[grid.index(21, 3)] as Storage).contents),
+            purity((s[grid.tile(21, 3)] as Storage).contents),
             "and the far end holds what the last stage made",
         )
     }
@@ -179,8 +179,8 @@ class ProcessorChainTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
-        for (x in stages) m[grid.index(x, 3)] = Processor(Direction.Right)   // no waste runs anywhere
-        m[grid.index(21, 3)] = Storage(Direction.Right)
+        for (x in stages) m[grid.tile(x, 3).index] = Processor(Direction.Right)   // no waste runs anywhere
+        m[grid.tile(21, 3).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
@@ -191,7 +191,7 @@ class ProcessorChainTest {
         s = run(s, 1800)
 
         for (x in stages) {
-            val held = (s[grid.index(x, 3)] as Processor).tailings?.mass ?: 0L
+            val held = (s[grid.tile(x, 3)] as Processor).tailings?.mass ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",

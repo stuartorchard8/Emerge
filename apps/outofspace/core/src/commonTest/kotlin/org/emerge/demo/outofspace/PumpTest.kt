@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
@@ -32,12 +33,12 @@ class PumpTest {
     private fun hulled(): List<Machine?> {
         val m = arrayOfNulls<Machine>(grid.size)
         for (x in 0 until grid.width) {
-            m[grid.index(x, 0)] = Hull()
-            m[grid.index(x, grid.height - 1)] = Hull()
+            m[grid.tile(x, 0).index] = Hull()
+            m[grid.tile(x, grid.height - 1).index] = Hull()
         }
         for (y in 0 until grid.height) {
-            m[grid.index(0, y)] = Hull()
-            m[grid.index(grid.width - 1, y)] = Hull()
+            m[grid.tile(0, y).index] = Hull()
+            m[grid.tile(grid.width - 1, y).index] = Hull()
         }
         return m.toList()
     }
@@ -53,17 +54,17 @@ class PumpTest {
 
     private fun pipeRun(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
-        for (x in fromX until toX) s = edit(s, Edit.Lay(grid.index(x, y), grid.index(x + 1, y), Conduit.Pipe))
+        for (x in fromX until toX) s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Pipe))
         return s
     }
 
-    private fun pipeMass(s: VesselState, tile: Int): Long {
+    private fun pipeMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
         for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
     }
 
-    private fun roomMass(s: VesselState, tile: Int): Long {
+    private fun roomMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
         for (sp in Species.ALL) sum += s.air.massOf(tile, sp)
         return sum
@@ -83,7 +84,7 @@ class PumpTest {
     private fun pumped(pumpX: Int = 6, y: Int = 6, facing: Direction = Direction.Up): VesselState {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
         s = pipeRun(s, y, 4, 15)
-        return edit(s, Edit.Place(grid.index(pumpX, y), MachineKind.Pump, facing))
+        return edit(s, Edit.Place(grid.tile(pumpX, y), MachineKind.Pump, facing))
     }
 
     @Test
@@ -92,7 +93,7 @@ class PumpTest {
         val after = run(start, 200)
 
         assertTrue(after.pipeAir.totalMass > 0L, "the pump moved nothing")
-        assertTrue(pipeMass(after, grid.index(13, 6)) > 0L, "gas was pumped in but never ran along the pipe")
+        assertTrue(pipeMass(after, grid.tile(13, 6)) > 0L, "gas was pumped in but never ran along the pipe")
         assertBalanced(after, "a pump filling a pipe")
     }
 
@@ -108,8 +109,8 @@ class PumpTest {
     fun `a pump pushes past the pressure a valve would stop at`() {
         val after = run(pumped(), 600)
 
-        val intake = grid.index(6, 5)
-        val pipe = grid.index(6, 6)
+        val intake = grid.tile(6, 5)
+        val pipe = grid.tile(6, 6)
         val room = roomMass(after, intake)
         val held = pipeMass(after, pipe)
         assertTrue(room > 0L, "the pump emptied the room entirely, which is not what this measures")
@@ -138,12 +139,12 @@ class PumpTest {
         // keeps working until the whole run is full. That is the machine behaving correctly, and it
         // is also indistinguishable from a stall that does nothing.
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
-        s = edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pipe, Direction.Right))
-        s = edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
+        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
         val early = run(s, 400)
         val late = run(early, 1_200)
 
-        val pipe = grid.index(6, 6)
+        val pipe = grid.tile(6, 6)
         val a = pipeMass(early, pipe)
         val b = pipeMass(late, pipe)
         assertTrue(a > 0L, "nothing was pumped at all")
@@ -158,7 +159,7 @@ class PumpTest {
     @Test
     fun `a pump with no pipe beneath it has nowhere to push`() {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
-        s = edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
         val roomBefore = s.air.totalMass
 
         val after = run(s, 200)
@@ -189,15 +190,15 @@ class PumpTest {
             var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
             for (x in 1 until grid.width - 1) {
                 if (x == 6) continue
-                s = edit(s, Edit.Place(grid.index(x, 6), MachineKind.Hull, Direction.Right))
+                s = edit(s, Edit.Place(grid.tile(x, 6), MachineKind.Hull, Direction.Right))
             }
-            s = edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pipe, Direction.Right))
-            return run(edit(s, Edit.Place(grid.index(6, 6), MachineKind.Pump, facing)), 400)
+            s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
+            return run(edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, facing)), 400)
         }
 
         fun chamber(s: VesselState, rows: IntRange): Long {
             var sum = 0L
-            for (y in rows) for (x in 1 until grid.width - 1) sum += roomMass(s, grid.index(x, y))
+            for (y in rows) for (x in 1 until grid.width - 1) sum += roomMass(s, grid.tile(x, y))
             return sum
         }
 
@@ -224,7 +225,7 @@ class PumpTest {
         val after = run(pumped(facing = Direction.Down), 50)
         val back = Save.read(Save.write(after))
 
-        val pump = back.machines[grid.index(6, 6)] as? Pump
+        val pump = back.machines[grid.tile(6, 6).index] as? Pump
         assertTrue(pump != null, "the pump did not come back")
         assertEquals(Direction.Down, pump.facing, "it came back facing somewhere else")
         assertEquals(after.pipeAir, back.pipeAir, "what it had pumped came back as something else")

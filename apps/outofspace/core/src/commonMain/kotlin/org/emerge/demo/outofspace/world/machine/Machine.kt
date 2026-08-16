@@ -104,7 +104,7 @@ class TileEnergy private constructor(private val perTile: LongArray) {
      * another. The remainder goes to the first tiles rather than being dropped, so that repeatedly
      * adding less than one joule per tile still warms the machine instead of vanishing.
      */
-    fun plusSpread(added: Long): TileEnergy {
+    fun plusEnergySpread(added: Long): TileEnergy {
         if (perTile.isEmpty()) return this
         val next = perTile.copyOf()
         val each = added / perTile.size

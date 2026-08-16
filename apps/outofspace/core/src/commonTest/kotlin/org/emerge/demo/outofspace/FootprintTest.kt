@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Stream
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -47,66 +48,66 @@ class FootprintTest {
         return s
     }
 
-    private fun place(grid: Grid, at: Int, kind: MachineKind, facing: Direction = Direction.Right): VesselState =
-        run(VesselState(grid, List(grid.size) { null }), 1, OutofspaceInput(listOf(Edit.Place(at, kind, facing))))
+    private fun place(grid: Grid, tile: TileIndex, kind: MachineKind, facing: Direction = Direction.Right): VesselState =
+        run(VesselState(grid, List(grid.size) { null }), 1, OutofspaceInput(listOf(Edit.Place(tile, kind, facing))))
 
     // ── Occupancy ─────────────────────────────────────────────────────────────
 
     @Test
     fun `a machine is stored once and covers the tiles around it`() {
         val grid = Grid(12, 12)
-        val at = grid.index(5, 5)
-        val s = place(grid, at, MachineKind.Smelter)
+        val tile = grid.tile(5, 5)
+        val s = place(grid, tile, MachineKind.Smelter)
 
-        assertNotNull(s[at], "the smelter lives at the tile it was placed on")
-        assertNull(s[grid.index(4, 5)], "and nowhere else -- one machine, one copy")
+        assertNotNull(s[tile], "the smelter lives at the tile it was placed on")
+        assertNull(s[grid.tile(4, 5)], "and nowhere else -- one machine, one copy")
         // But every tile of the five-by-five reports it.
         for (y in 3..7) for (x in 3..7) {
-            assertEquals(at, s.occupancy[grid.index(x, y)], "($x,$y) should belong to the smelter")
+            assertEquals(tile, s.occupancy[grid.tile(x, y)], "($x,$y) should belong to the smelter")
         }
-        assertTrue(s.occupancy.isFree(grid.index(2, 5)), "and the tile beyond it should not")
+        assertTrue(s.occupancy.isFree(grid.tile(2, 5)), "and the tile beyond it should not")
     }
 
     @Test
     fun `placing is refused when anything already occupies the footprint`() {
         val grid = Grid(12, 12)
-        var s = place(grid, grid.index(5, 5), MachineKind.Smelter)
+        var s = place(grid, grid.tile(5, 5), MachineKind.Smelter)
         // Two tiles away: outside the *centre* but well inside the footprint.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(7, 5), MachineKind.Sensor, Direction.Right))))
-        assertNull(s[grid.index(7, 5)], "a sensor cannot be dropped inside a furnace")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(7, 5), MachineKind.Sensor, Direction.Right))))
+        assertNull(s[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
     }
 
     @Test
     fun `placing is refused when the footprint would hang off the grid`() {
         val grid = Grid(12, 12)
-        val s = place(grid, grid.index(1, 5), MachineKind.Smelter)
-        assertNull(s[grid.index(1, 5)], "a five-tile machine needs two tiles of clearance")
+        val s = place(grid, grid.tile(1, 5), MachineKind.Smelter)
+        assertNull(s[grid.tile(1, 5)], "a five-tile machine needs two tiles of clearance")
         assertTrue(s.machines.all { it == null }, "and nothing partial is left behind")
     }
 
     @Test
     fun `clicking any tile of a machine edits the whole machine`() {
         val grid = Grid(12, 12)
-        val at = grid.index(5, 5)
+        val at = grid.tile(5, 5)
         var s = place(grid, at, MachineKind.Smelter)
 
         // A corner of the footprint, as far from the centre as it gets.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.index(7, 7)))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(7, 7)))))
         assertTrue(s.machines.all { it == null }, "the whole furnace goes, not a slice of it")
-        assertTrue((0 until grid.size).all { s.occupancy.isFree(it) }, "and it releases every tile")
+        assertTrue(grid.tiles.all { s.occupancy.isFree(it) }, "and it releases every tile")
     }
 
     @Test
     fun `rotating leaves the footprint where it was and moves only the ports`() {
         val grid = Grid(12, 12)
-        val at = grid.index(5, 5)
-        var s = place(grid, at, MachineKind.Processor)
-        val before = (0 until grid.size).filter { !s.occupancy.isFree(it) }.toSet()
+        val tile = grid.tile(5, 5)
+        var s = place(grid, tile, MachineKind.Processor)
+        val before = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.index(6, 6)))))
-        val after = (0 until grid.size).filter { !s.occupancy.isFree(it) }.toSet()
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(6, 6)))))
+        val after = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
         assertEquals(before, after, "anchoring at the centre is what makes a rotate not also a move")
-        assertEquals(Direction.Down, (s[at] as Processor).facing)
+        assertEquals(Direction.Down, (s[tile] as Processor).facing)
     }
 
     // ── Ports ─────────────────────────────────────────────────────────────────
@@ -114,42 +115,42 @@ class FootprintTest {
     @Test
     fun `a processor's three ports are three different tiles`() {
         val grid = Grid(12, 12)
-        val at = grid.index(5, 5)
+        val at = grid.tile(5, 5)
         val ports = portsOf(grid, Processor(Direction.Right), at)
 
         val input = ports.single { it.kind == PortKind.Input }
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
         val waste = ports.single { it.kind == PortKind.Output && it.stream == Stream.Waste }
 
-        assertEquals(grid.index(4, 5), input.tile, "in at the back")
-        assertEquals(grid.index(6, 5), product.tile, "concentrate out the front")
-        assertEquals(grid.index(5, 6), waste.tile, "tailings out of the floor")
+        assertEquals(grid.tile(4, 5), input.tile, "in at the back")
+        assertEquals(grid.tile(6, 5), product.tile, "concentrate out the front")
+        assertEquals(grid.tile(5, 6), waste.tile, "tailings out of the floor")
         assertEquals(3, setOf(input.tile, product.tile, waste.tile).size)
     }
 
     @Test
     fun `rotating a machine carries its ports round with it`() {
         val grid = Grid(12, 12)
-        val at = grid.index(5, 5)
+        val at = grid.tile(5, 5)
         val ports = portsOf(grid, Processor(Direction.Down), at)
 
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
         val waste = ports.single { it.kind == PortKind.Output && it.stream == Stream.Waste }
-        assertEquals(grid.index(5, 6), product.tile, "facing down, the product leaves downward")
+        assertEquals(grid.tile(5, 6), product.tile, "facing down, the product leaves downward")
         assertEquals(Direction.Down, product.side)
         // Waste is a quarter turn clockwise of the product in the machine's own frame, and stays so.
-        assertEquals(grid.index(4, 5), waste.tile)
+        assertEquals(grid.tile(4, 5), waste.tile)
         assertEquals(Direction.Left, waste.side)
     }
 
     @Test
     fun `a smelter's ports sit on the edge of its footprint, not beside its centre`() {
         val grid = Grid(16, 16)
-        val at = grid.index(8, 8)
+        val at = grid.tile(8, 8)
         val ports = portsOf(grid, Smelter(Direction.Right), at)
-        assertEquals(grid.index(6, 8), ports.single { it.kind == PortKind.Input }.tile)
+        assertEquals(grid.tile(6, 8), ports.single { it.kind == PortKind.Input }.tile)
         assertEquals(
-            grid.index(10, 8),
+            grid.tile(10, 8),
             ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }.tile,
         )
         assertEquals(5, MachineKind.Smelter.size, "and it really is five across")
@@ -164,8 +165,8 @@ class FootprintTest {
         val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.index(2, 6)] = Storage(Direction.Right, ingots)   // output port at (3, 6)
-        m[grid.index(6, 6)] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
+        m[grid.tile(2, 6).index] = Storage(Direction.Right, ingots)   // output port at (3, 6)
+        m[grid.tile(6, 6).index] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
@@ -180,18 +181,18 @@ class FootprintTest {
         val s = run(feed(endX = 7, endY = 6).let { st ->
             // Remove the run's own input-port tile so the only contact is a covered, portless tile.
             val rails = st.rails.toMutableList()
-            rails[st.grid.index(5, 6)] = null
+            rails[st.grid.tile(5, 6).index] = null
             st.copy(conduits = Conduits.ofRails(rails))
         }, 40)
 
-        assertNull((s[s.grid.index(6, 6)] as Storage).contents, "no port on the tiles it crosses")
+        assertNull((s[s.grid.tile(6, 6)] as Storage).contents, "no port on the tiles it crosses")
     }
 
     @Test
     fun `track reaching a port delivers into the building`() {
         val s = run(feed(endX = 5, endY = 6), 40)
         assertTrue(
-            ((s[s.grid.index(6, 6)] as Storage).contents?.mass ?: 0L) > 0L,
+            ((s[s.grid.tile(6, 6)] as Storage).contents?.mass ?: 0L) > 0L,
             "it went in the front door, from underneath",
         )
     }
@@ -201,12 +202,12 @@ class FootprintTest {
         val grid = Grid(12, 12)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
-        m[grid.index(6, 6)] = Storage(Direction.Right, stored)
+        m[grid.tile(6, 6).index] = Storage(Direction.Right, stored)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
-        m[grid.index(7, 8)] = Sensor(Direction.Up)
+        m[grid.tile(7, 8).index] = Sensor(Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
-        val wires = arrayOfNulls<org.emerge.demo.outofspace.world.Segment>(grid.size)
-        wires[grid.index(7, 8)] = org.emerge.demo.outofspace.world.Segment(org.emerge.demo.outofspace.world.Conduit.Signal)
+        val wires = arrayOfNulls<Segment>(grid.size)
+        wires[grid.tile(7, 8).index] = Segment(org.emerge.demo.outofspace.world.Conduit.Signal)
         val s = run(
             VesselState(
                 grid,
@@ -218,7 +219,7 @@ class FootprintTest {
             ),
             2,
         )
-        assertEquals(1000, s.signals.at(grid.index(7, 8)), "a full tank reads full")
+        assertEquals(1000, s.signals.at(grid.tile(7, 8)), "a full tank reads full")
     }
 
     // ── The world still holds together ────────────────────────────────────────
@@ -230,12 +231,12 @@ class FootprintTest {
         fun room(kind: MachineKind): VesselState {
             val m = arrayOfNulls<Machine>(grid.size)
             for (i in 1..14) {
-                m[grid.index(i, 1)] = Hull()
-                m[grid.index(i, 14)] = Hull()
-                m[grid.index(1, i)] = Hull()
-                m[grid.index(14, i)] = Hull()
+                m[grid.tile(i, 1).index] = Hull()
+                m[grid.tile(i, 14).index] = Hull()
+                m[grid.tile(1, i).index] = Hull()
+                m[grid.tile(14, i).index] = Hull()
             }
-            m[grid.index(8, 8)] = OutofspaceReducer.let { _ ->
+            m[grid.tile(8, 8).index] = OutofspaceReducer.let { _ ->
                 when (kind) {
                     MachineKind.Processor -> Processor(Direction.Right)
                     else -> Smelter(Direction.Right)

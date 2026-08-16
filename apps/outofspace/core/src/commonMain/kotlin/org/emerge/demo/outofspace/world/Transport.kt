@@ -17,7 +17,7 @@ fun advanceSegments(
     held: Array<Packet?>,
     cursors: FlowCursors,
     log: MotionLog? = null,
-    absorb: (tile: Int, packet: Packet) -> Packet?,
+    absorb: (tile: TileIndex, packet: Packet) -> Packet?,
 ): Int {
     var moved = 0
     /**
@@ -41,26 +41,26 @@ fun advanceSegments(
     val walked = BooleanArray(held.size)
 
     for (tile in flow.order) {
-        walked[tile] = true
-        if (arrived[tile]) continue
-        val packet = held[tile] ?: continue
+        walked[tile.index] = true
+        if (arrived[tile.index]) continue
+        val packet = held[tile.index] ?: continue
 
         val leftover = absorb(tile, packet)
-        held[tile] = leftover
+        held[tile.index] = leftover
         if (leftover == null) {
             log?.takenFromRail(tile, packet)
             continue
         }
 
         val way = cursors.choose(flow, tile) { target ->
-            held[target] == null && mayMerge(flow, cursors, held, walked, tile, target)
+            held[target.index] == null && mayMerge(flow, cursors, held, walked, tile, target)
         }
         if (way != null) {
             val target = flow.neighbour(tile, way)
             cursors.mergeUsed(flow.feeders(target), target, tile)
-            held[target] = leftover
-            held[tile] = null
-            arrived[target] = true
+            held[target.index] = leftover
+            held[tile.index] = null
+            arrived[target.index] = true
             log?.moved(tile, target, way)
             moved++
             continue
@@ -69,11 +69,11 @@ fun advanceSegments(
         // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
         // in the successors' own order so a fork behaves the same way it would when moving.
         for (option in flow.successorTiles(tile)) {
-            val ahead = held[option] ?: continue
+            val ahead = held[option.index] ?: continue
             val squashed = squashOnto(ahead, leftover) ?: continue
-            held[option] = squashed.merged
-            held[tile] = squashed.rejected
-            arrived[option] = true
+            held[option.index] = squashed.merged
+            held[tile.index] = squashed.rejected
+            arrived[option.index] = true
             moved++
             break
         }
@@ -97,13 +97,13 @@ private fun mayMerge(
     cursors: FlowCursors,
     held: Array<Packet?>,
     walked: BooleanArray,
-    from: Int,
-    target: Int,
+    from: TileIndex,
+    target: TileIndex,
 ): Boolean {
     val feeders = flow.feeders(target)
     if (feeders.size <= 1) return true
     val turn = cursors.preferredFeeder(feeders, target) { feeder ->
-        held[feeder] != null && (feeder == from || !walked[feeder])
+        held[feeder.index] != null && (feeder == from || !walked[feeder.index])
     }
     return turn == from
 }

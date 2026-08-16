@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.RockSpawner
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -76,17 +77,17 @@ class GridGrowTest {
             if (y + reach > maxY) maxY = y + reach
         }
 
-        for (i in s.machines.indices) {
-            val m = s.machines[i] ?: continue
-            cover(s.grid.xOf(i), s.grid.yOf(i), m.kind.size / 2)
+        for (tile in s.grid.tiles) {
+            val m = s[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
-        for (i in s.bridges.indices) {
-            if (s.bridges[i] == null) continue
-            cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+        for (tile in s.grid.tiles) {
+            if (s.bridges[tile.index] == null) continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
         for (c in Conduit.entries) {
             val layer = s.conduits[c]
-            for (i in layer.indices) if (layer[i] != null) cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+            for (tile in s.grid.tiles) if (layer[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
 
         return if (minX > maxX) null else intArrayOf(minX, minY, maxX, maxY)
@@ -105,16 +106,16 @@ class GridGrowTest {
      * the point: if they stop lining up, something moved that should not have.
      */
     private fun positions(s: VesselState): List<Pair<Int, Int>> =
-        s.machines.indices.filter { s.machines[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
+        s.grid.tiles.filter { s[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
 
     /** The tiles a layer occupies, as `(x, y)` in the grid that holds them. */
     private fun occupied(s: VesselState, of: (VesselState) -> List<Int>): Set<Pair<Int, Int>> =
-        of(s).map { s.grid.xOf(it) to s.grid.yOf(it) }.toSet()
+        of(s).map { s.grid.xOf(TileIndex(it)) to s.grid.yOf(TileIndex(it)) }.toSet()
 
     /** [state] with a hull dropped straight into the tile list — a placement with no reducer. */
     private fun withHullAt(state: VesselState, x: Int, y: Int): VesselState {
         val machines = state.machines.toMutableList()
-        machines[state.grid.index(x, y)] = Hull()
+        machines[state.grid.tile(x, y).index] = Hull()
         return state.copy(machines = machines)
     }
 
@@ -210,7 +211,7 @@ class GridGrowTest {
                     add("conduit $c" to { s: VesselState -> s.conduits[c].indices.filter { s.conduits[c][it] != null } })
                 }
                 add("bridges" to { s: VesselState -> s.bridges.indices.filter { s.bridges[it] != null } })
-                add("diverters" to { s: VesselState -> s.diverters.forkCursors.keys.toList() })
+                add("diverters" to { s: VesselState -> s.diverters.forkCursors.keys.map { it.index }.toList() })
             }
             for ((what, sel) in layers) {
                 assertEquals(
@@ -236,7 +237,7 @@ class GridGrowTest {
 
             val grown = edit(
                 before,
-                Edit.Place(before.grid.index(at.first, at.second), MachineKind.Hull, Direction.Right),
+                Edit.Place(before.grid.tile(at.first, at.second), MachineKind.Hull, Direction.Right),
             )
             assertNotEquals(before.grid, grown.grid, "$name: the reducer did not grow the grid")
             assertBalanced(grown, "straight after growing $name")
@@ -274,7 +275,7 @@ class GridGrowTest {
             ),
         )
         val after = before.growToFit(pad).state
-        for (tile in 0 until after.grid.size) {
+        for (tile in after.grid.tiles) {
             assertEquals(null, after.motion.arrivedFrom(tile), "stale arrival at $tile")
             assertEquals(0L, after.motion.previousMassAt(tile), "stale mass at $tile")
         }
@@ -325,7 +326,7 @@ class GridGrowTest {
         assertEquals(start.first + grown.dx, after.frameShiftX, "frameShiftX is cumulative")
 
         // A tile index held across the growth still names the same tile.
-        val held = s.grid.index(20, 12)
+        val held = s.grid.tile(20, 12)
         assertEquals(
             20 + grown.dx to 12 + grown.dy,
             after.grid.xOf(move.reindex(held)) to after.grid.yOf(move.reindex(held)),
@@ -344,7 +345,7 @@ class GridGrowTest {
         // and the wiring tool would select nothing.
         controller.stepOnce()
         val before = controller.state
-        val extractor = before.machines.indices.first { before.machines[it]?.kind == MachineKind.Extractor }
+        val extractor = before.grid.tiles.first { before[it]?.kind == MachineKind.Extractor }
         controller.tool = Tool.Wire
         controller.apply(extractor)
         assertEquals(extractor, controller.selected, "the fixture did not select the extractor")
@@ -352,14 +353,14 @@ class GridGrowTest {
 
         // Build into the left pad: the near edge, so the origin moves.
         controller.brush = MachineKind.Hull
-        controller.place(before.grid.index(1, before.grid.height / 2))
+        controller.place(before.grid.tile(1, before.grid.height / 2))
         val after = controller.stepOnce()
 
         assertNotEquals(before.grid, after.grid, "the reducer did not grow the grid")
-        assertTrue(controller.selected >= 0, "the selection was thrown away")
+        assertTrue(controller.selected != TileIndex.NONE, "the selection was thrown away")
         assertEquals(
             MachineKind.Extractor,
-            after.machines[controller.selected]?.kind,
+            after.machines[controller.selected.index]?.kind,
             "the selection now names a different tile",
         )
         assertEquals(
@@ -376,7 +377,7 @@ class GridGrowTest {
         for ((name, at, near) in edgeCases(fitted())) {
             // A: grows during the tick the edit lands.
             val a0 = fitted()
-            val target = a0.grid.index(at.first, at.second)
+            val target = a0.grid.tile(at.first, at.second)
             val a1 = edit(a0, Edit.Place(target, MachineKind.Hull, Direction.Right))
 
             // B: the same world, already the size A will grow to, with the same edit at the tile it
@@ -386,7 +387,7 @@ class GridGrowTest {
             val b0 = a0.remapped(shape.state.grid, shape.dx, shape.dy)
             val b1 = edit(
                 b0,
-                Edit.Place(b0.grid.index(at.first + shape.dx, at.second + shape.dy), MachineKind.Hull, Direction.Right),
+                Edit.Place(b0.grid.tile(at.first + shape.dx, at.second + shape.dy), MachineKind.Hull, Direction.Right),
             )
 
             assertEquals(a1.grid, b1.grid, "$name: A did not reach B's shape")
@@ -411,7 +412,7 @@ class GridGrowTest {
         for (m in s.machines) append('|').append(m?.toString() ?: "-")
         for (b in s.bridges) append('|').append(b?.toString() ?: "-")
         for (c in Conduit.entries) for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
-        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
+        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key.index }) {
             append('|').append(tile).append(':').append(cursor)
         }
         append('|').append(s.atmosphereMass).append('|').append(s.atmosphereEnergy)

@@ -12,12 +12,12 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.capacityPerTileOf
-import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.billOfMaterials
 import org.emerge.demo.outofspace.chem.TILE_LITRES
+import org.emerge.demo.outofspace.world.machine.TileEnergy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue

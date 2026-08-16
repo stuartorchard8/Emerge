@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.advanceSegments
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,17 +61,17 @@ class TransportTest {
      * two tiles of track next to each other are not a run.
      */
     private inner class Net {
-        val tiles = mutableSetOf<Int>()
-        private val links = mutableSetOf<Pair<Int, Direction>>()
+        val tiles = mutableSetOf<TileIndex>()
+        private val links = mutableSetOf<Pair<TileIndex, Direction>>()
 
-        fun linked(tile: Int, dir: Direction): Boolean = (tile to dir) in links
+        fun linked(tile: TileIndex, dir: Direction): Boolean = (tile to dir) in links
 
         /** Lays track without joining it to anything — a stub. */
-        fun lay(tile: Int): Net = apply { tiles.add(tile) }
+        fun lay(tile: TileIndex): Net = apply { tiles.add(tile) }
 
-        fun join(a: Int, dir: Direction): Net = apply {
+        fun join(a: TileIndex, dir: Direction): Net = apply {
             val b = grid.neighbour(a, dir)
-            require(b >= 0)
+            require(b != TileIndex.NONE)
             tiles.add(a); tiles.add(b)
             links.add(a to dir)
             links.add(b to dir.opposite)
@@ -78,14 +79,14 @@ class TransportTest {
 
         /** A horizontal run on row [y], laid and joined end to end. */
         fun row(fromX: Int, toX: Int, y: Int): Net = apply {
-            for (x in minOf(fromX, toX)..maxOf(fromX, toX)) lay(grid.index(x, y))
-            for (x in minOf(fromX, toX) until maxOf(fromX, toX)) join(grid.index(x, y), Direction.Right)
+            for (x in minOf(fromX, toX)..maxOf(fromX, toX)) lay(grid.tile(x, y))
+            for (x in minOf(fromX, toX) until maxOf(fromX, toX)) join(grid.tile(x, y), Direction.Right)
         }
 
         /** A vertical run on column [x]. */
         fun col(x: Int, fromY: Int, toY: Int): Net = apply {
-            for (y in minOf(fromY, toY)..maxOf(fromY, toY)) lay(grid.index(x, y))
-            for (y in minOf(fromY, toY) until maxOf(fromY, toY)) join(grid.index(x, y), Direction.Down)
+            for (y in minOf(fromY, toY)..maxOf(fromY, toY)) lay(grid.tile(x, y))
+            for (y in minOf(fromY, toY) until maxOf(fromY, toY)) join(grid.tile(x, y), Direction.Down)
         }
 
         /**
@@ -99,19 +100,19 @@ class TransportTest {
          * at a junction is a fact about where material entered.
          */
         fun toward(vararg sinks: Int): FlowGraph =
-            FlowGraph.build(tiles, emptySet(), sinks.toSet(), ::linked, grid)
+            FlowGraph.build(tiles, emptySet(), sinks.map { TileIndex(it) }.toSet(), ::linked, grid)
 
-        fun toward(accepting: List<Int>, from: List<Int> = emptyList()): FlowGraph =
+        fun toward(accepting: List<TileIndex>, from: List<TileIndex> = emptyList()): FlowGraph =
             FlowGraph.build(tiles, from.toSet(), accepting.toSet(), ::linked, grid)
     }
 
     private fun net(): Net = Net()
 
-    private fun held(net: Net, vararg placed: Pair<Int, Packet>): Array<Packet?> {
+    private fun held(net: Net, vararg placed: Pair<TileIndex, Packet>): Array<Packet?> {
         val out = arrayOfNulls<Packet>(grid.size)
         for ((tile, packet) in placed) {
             require(tile in net.tiles) { "packet placed off the run" }
-            out[tile] = packet
+            out[tile.index] = packet
         }
         return out
     }
@@ -121,7 +122,7 @@ class TransportTest {
         held: Array<Packet?>,
         cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
-        absorb: (Int, Packet) -> Packet? = { _, p -> p },
+        absorb: (TileIndex, Packet) -> Packet? = { _, p -> p },
     ): Int = advanceSegments(flow, held, cursors, log, absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
@@ -130,18 +131,18 @@ class TransportTest {
     fun `material flows toward the consumer, whichever end of the run it is on`() {
         val n = net().row(2, 8, 3)
 
-        val toRight = n.toward(grid.index(8, 3))
+        val toRight = n.toward(grid.tile(8, 3).index)
         for (x in 2..7) {
-            assertEquals(listOf(grid.index(x + 1, 3)), toRight.successorTiles(grid.index(x, 3)), "($x, 3) points the wrong way")
+            assertEquals(listOf(grid.tile(x + 1, 3)), toRight.successorTiles(grid.tile(x, 3)), "($x, 3) points the wrong way")
         }
-        assertEquals(emptyList(), toRight.successorTiles(grid.index(8, 3)), "the sink is the end of the line")
+        assertEquals(emptyList(), toRight.successorTiles(grid.tile(8, 3)), "the sink is the end of the line")
 
         // The identical run, consumed at the other end. Nothing about the tiles changed.
-        val toLeft = n.toward(grid.index(2, 3))
+        val toLeft = n.toward(grid.tile(2, 3).index)
         for (x in 3..8) {
-            assertEquals(listOf(grid.index(x - 1, 3)), toLeft.successorTiles(grid.index(x, 3)), "($x, 3) points the wrong way")
+            assertEquals(listOf(grid.tile(x - 1, 3)), toLeft.successorTiles(grid.tile(x, 3)), "($x, 3) points the wrong way")
         }
-        assertEquals(emptyList(), toLeft.successorTiles(grid.index(2, 3)))
+        assertEquals(emptyList(), toLeft.successorTiles(grid.tile(2, 3)))
     }
 
     @Test
@@ -151,21 +152,21 @@ class TransportTest {
         // with stock you then had to dig back out. With nothing to pull, nothing moves.
         val n = net().row(2, 8, 3)
         val f = n.toward()      // no sinks anywhere
-        val h = held(n, grid.index(2, 3) to lump())
+        val h = held(n, grid.tile(2, 3) to lump())
 
         repeat(10) { step(f, h) }
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(2, 3)]?.mass, "it stayed exactly where it was put")
-        assertFalse(f.isFed(grid.index(5, 3)))
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(2, 3).index]?.mass, "it stayed exactly where it was put")
+        assertFalse(f.isFed(grid.tile(5, 3)))
     }
 
     @Test
     fun `a segment that cannot reach a consumer carries nothing`() {
         val n = net().row(2, 5, 3).row(8, 10, 3)     // same row, but with a gap at 6..7
-        val f = n.toward(grid.index(2, 3))
+        val f = n.toward(grid.tile(2, 3).index)
 
-        assertTrue(f.isFed(grid.index(5, 3)))
-        assertFalse(f.isFed(grid.index(8, 3)), "no route to a consumer, so no upstream")
-        assertEquals(0, f.successorTiles(grid.index(8, 3)).size)
+        assertTrue(f.isFed(grid.tile(5, 3)))
+        assertFalse(f.isFed(grid.tile(8, 3)), "no route to a consumer, so no upstream")
+        assertEquals(0, f.successorTiles(grid.tile(8, 3)).size)
     }
 
     /**
@@ -177,31 +178,31 @@ class TransportTest {
      */
     @Test
     fun `a branch with nothing on the end of it never receives anything`() {
-        val n = net().row(2, 5, 3).col(5, 3, 5).lay(grid.index(5, 2)).join(grid.index(5, 3), Direction.Up)
-        val sink = grid.index(5, 5)
-        val deadEnd = grid.index(5, 2)
-        val f = n.toward(sink)
+        val n = net().row(2, 5, 3).col(5, 3, 5).lay(grid.tile(5, 2)).join(grid.tile(5, 3), Direction.Up)
+        val sink = grid.tile(5, 5)
+        val deadEnd = grid.tile(5, 2)
+        val f = n.toward(sink.index)
 
         // Note what is *not* claimed: the stub is not cut out of the graph. It has a way *out* —
         // back down to the junction — because material stranded on it should drain rather than sit
         // there for ever. Having a way out is not the same as being sent anything: permission is
         // per direction, and the junction below simply has no permission pointing up.
         assertEquals(
-            listOf(grid.index(5, 3)),
+            listOf(grid.tile(5, 3)),
             f.successorTiles(deadEnd),
             "the stub drains back toward the consumer",
         )
         assertEquals(
-            listOf(grid.index(5, 4)),
-            f.successorTiles(grid.index(5, 3)).toList(),
+            listOf(grid.tile(5, 4)),
+            f.successorTiles(grid.tile(5, 3)).toList(),
             "the junction is not a junction: only one way leads anywhere",
         )
 
         var delivered = 0L
-        val h = held(n, grid.index(2, 3) to lump())
+        val h = held(n, grid.tile(2, 3) to lump())
         repeat(10) { step(f, h) { tile, p -> if (tile == sink) { delivered += p.mass; null } else p } }
         assertEquals(Capacity.PACKET_MASS, delivered, "all of it reached the building")
-        assertNull(h[deadEnd], "and none of it went up the stub")
+        assertNull(h[deadEnd.index], "and none of it went up the stub")
     }
 
     @Test
@@ -215,15 +216,15 @@ class TransportTest {
         // A belt whose extractor was just torn out is exactly this, and draining wholly to one end
         // is the better answer — a midpoint free to go either way dithers, committing to neither.
         val n = net().row(2, 10, 3)
-        val f = n.toward(grid.index(2, 3), grid.index(10, 3))
+        val f = n.toward(grid.tile(2, 3).index, grid.tile(10, 3).index)
         for (x in 2..9) {
             assertEquals(
-                listOf(grid.index(x + 1, 3)),
-                f.successorTiles(grid.index(x, 3)),
+                listOf(grid.tile(x + 1, 3)),
+                f.successorTiles(grid.tile(x, 3)),
                 "($x, 3) should have joined the drain",
             )
         }
-        assertEquals(emptyList(), f.successorTiles(grid.index(10, 3)), "which ends at the far consumer")
+        assertEquals(emptyList(), f.successorTiles(grid.tile(10, 3)), "which ends at the far consumer")
     }
 
     // ── Explicit connection ───────────────────────────────────────────────────
@@ -233,11 +234,11 @@ class TransportTest {
         // Touching is not joining. Without this, every parallel line needs a tile of clearance and a
         // factory sprawls for reasons the player cannot see.
         val n = net().row(2, 8, 3).row(2, 8, 4)
-        val f = n.toward(grid.index(8, 3))
+        val f = n.toward(grid.tile(8, 3).index)
 
-        assertTrue(f.isFed(grid.index(2, 3)), "its own row is fed")
-        assertFalse(f.isFed(grid.index(2, 4)), "the row beneath is a different run")
-        assertFalse(f.isFed(grid.index(8, 4)), "even the tile directly under the consumer")
+        assertTrue(f.isFed(grid.tile(2, 3)), "its own row is fed")
+        assertFalse(f.isFed(grid.tile(2, 4)), "the row beneath is a different run")
+        assertFalse(f.isFed(grid.tile(8, 4)), "even the tile directly under the consumer")
     }
 
     @Test
@@ -245,23 +246,23 @@ class TransportTest {
         // The bridge case, in the flow model: a horizontal line and a vertical line sharing tile
         // (5,3) is impossible, so they pass on either side of it and neither knows about the other.
         val n = net().row(2, 8, 3).col(5, 0, 2).col(5, 4, 5)
-        val f = n.toward(grid.index(8, 3))
+        val f = n.toward(grid.tile(8, 3).index)
 
-        assertTrue(f.isFed(grid.index(4, 3)) && f.isFed(grid.index(6, 3)), "the horizontal run is whole")
-        assertFalse(f.isFed(grid.index(5, 2)), "the vertical run above is not connected to it")
-        assertFalse(f.isFed(grid.index(5, 4)), "nor the part below")
+        assertTrue(f.isFed(grid.tile(4, 3)) && f.isFed(grid.tile(6, 3)), "the horizontal run is whole")
+        assertFalse(f.isFed(grid.tile(5, 2)), "the vertical run above is not connected to it")
+        assertFalse(f.isFed(grid.tile(5, 4)), "nor the part below")
     }
 
     @Test
     fun `laid track that was never joined moves nothing`() {
-        val n = net().row(2, 5, 3).lay(grid.index(6, 3))   // 6 is adjacent to 5, but unjoined
-        val f = n.toward(grid.index(6, 3))
+        val n = net().row(2, 5, 3).lay(grid.tile(6, 3))   // 6 is adjacent to 5, but unjoined
+        val f = n.toward(grid.tile(6, 3).index)
 
-        assertTrue(f.isFed(grid.index(6, 3)), "the stub is the sink, so it is trivially part of the flow")
-        assertFalse(f.isFed(grid.index(5, 3)), "but nothing reaches it")
-        val h = held(n, grid.index(5, 3) to lump())
+        assertTrue(f.isFed(grid.tile(6, 3)), "the stub is the sink, so it is trivially part of the flow")
+        assertFalse(f.isFed(grid.tile(5, 3)), "but nothing reaches it")
+        val h = held(n, grid.tile(5, 3) to lump())
         step(f, h)
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(5, 3)]?.mass, "the gap in the graph is a real gap")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(5, 3).index]?.mass, "the gap in the graph is a real gap")
     }
 
     // ── Order of absorption ───────────────────────────────────────────────────
@@ -271,13 +272,13 @@ class TransportTest {
         // Two buildings tapping the same run at 5 and 7, with the consumer end at 8. Material
         // travelling right meets 5 first, and 5 wins.
         val n = net().row(2, 8, 3)
-        val f = n.toward(grid.index(8, 3))
-        val h = held(n, grid.index(2, 3) to lump())
+        val f = n.toward(grid.tile(8, 3).index)
+        val h = held(n, grid.tile(2, 3) to lump())
 
         val taken = mutableListOf<Int>()
         repeat(10) {
             step(f, h) { tile, packet ->
-                if (tile == grid.index(5, 3) || tile == grid.index(7, 3)) {
+                if (tile == grid.tile(5, 3) || tile == grid.tile(7, 3)) {
                     taken.add(grid.xOf(tile)); null
                 } else packet
             }
@@ -288,14 +289,14 @@ class TransportTest {
     @Test
     fun `a full building lets the packet carry on to the next one`() {
         val n = net().row(2, 8, 3)
-        val f = n.toward(grid.index(8, 3))
-        val h = held(n, grid.index(2, 3) to lump())
+        val f = n.toward(grid.tile(8, 3).index)
+        val h = held(n, grid.tile(2, 3) to lump())
 
         val taken = mutableListOf<Int>()
         repeat(10) {
             step(f, h) { tile, packet ->
                 // The near building is full and refuses; the far one takes it.
-                if (tile == grid.index(7, 3)) { taken.add(grid.xOf(tile)); null } else packet
+                if (tile == grid.tile(7, 3)) { taken.add(grid.xOf(tile)); null } else packet
             }
         }
         assertEquals(listOf(7), taken)
@@ -317,18 +318,18 @@ class TransportTest {
     @Test
     fun `a fork alternates even when one branch reaches its consumer sooner`() {
         // In from the left; up is two tiles to a consumer, down-then-along is five.
-        val fork = grid.index(5, 3)
+        val fork = grid.tile(5, 3)
         val n = net().row(2, 5, 3)
             .col(5, 1, 3)        // the short branch, consumer at (5, 1)
             .col(5, 3, 4).row(5, 9, 4)   // the long one, consumer at (9, 4)
         val f = n.toward(
-            accepting = listOf(grid.index(5, 1), grid.index(9, 4)),
-            from = listOf(grid.index(2, 3)),
+            accepting = listOf(grid.tile(5, 1), grid.tile(9, 4)),
+            from = listOf(grid.tile(2, 3)),
         )
 
         assertEquals(
-            listOf(grid.index(5, 2), grid.index(5, 4)),
-            f.successorTiles(fork).sorted(),
+            listOf(grid.tile(5, 2), grid.tile(5, 4)),
+            f.successorTiles(fork).sortedBy { it.index },
             "both branches are live, however unequal",
         )
 
@@ -338,8 +339,8 @@ class TransportTest {
         repeat(8) {
             val h = held(n, fork to lump())
             step(f, h, cursors)
-            if (h[grid.index(5, 2)] != null) up++
-            if (h[grid.index(5, 4)] != null) down++
+            if (h[grid.tile(5, 2).index] != null) up++
+            if (h[grid.tile(5, 4).index] != null) down++
         }
         assertEquals(4, up, "half went the short way")
         assertEquals(4, down, "and half the long way")
@@ -349,24 +350,24 @@ class TransportTest {
     fun `a fork still refuses the branch that leads nowhere`() {
         // The other half of the same rule. Being one step further from the source is not enough —
         // a branch also has to lead to something, or a dead end would fill up like it used to.
-        val fork = grid.index(5, 3)
+        val fork = grid.tile(5, 3)
         val n = net().row(2, 5, 3)
             .col(5, 1, 3)                // to a consumer
             .col(5, 3, 4).row(5, 9, 4)   // to nothing at all
-        val f = n.toward(accepting = listOf(grid.index(5, 1)), from = listOf(grid.index(2, 3)))
+        val f = n.toward(accepting = listOf(grid.tile(5, 1)), from = listOf(grid.tile(2, 3)))
 
-        assertEquals(listOf(grid.index(5, 2)), f.successorTiles(fork))
+        assertEquals(listOf(grid.tile(5, 2)), f.successorTiles(fork))
 
         // The dead branch does now have a way *out* — anything stranded on it drains back toward
         // the consumer rather than sitting there for ever, which is the same courtesy a run whose
         // producer was dismantled gets. That is a change from when nothing entered *or* left a dead
         // end, and it is the safe half: what must never happen is material being sent down it.
-        val stranded = grid.index(8, 4)
+        val stranded = grid.tile(8, 4)
         val held = held(n, stranded to lump())
         val cursors = FlowCursors()
-        repeat(20) { advanceSegments(f, held, cursors) { tile, packet -> if (tile == grid.index(5, 1)) null else packet } }
+        repeat(20) { advanceSegments(f, held, cursors) { tile, packet -> if (tile == grid.tile(5, 1)) null else packet } }
         assertTrue(held.all { it == null }, "material stranded on a dead branch never got off it")
-        assertNull(held[grid.index(9, 4)], "and nothing was pushed further into the dead end")
+        assertNull(held[grid.tile(9, 4).index], "and nothing was pushed further into the dead end")
     }
 
     // ── Two things feeding one line ──────────────────────────────────────────
@@ -388,18 +389,18 @@ class TransportTest {
      */
     @Test
     fun `a second producer joining a line does not strand the first`() {
-        val sink = grid.index(1, 1)
-        val far = grid.index(10, 1)
-        val joining = grid.index(3, 1)
+        val sink = grid.tile(1, 1)
+        val far = grid.tile(10, 1)
+        val joining = grid.tile(3, 1)
         val n = net().row(1, 10, 1)
         val f = n.toward(accepting = listOf(sink), from = listOf(far, joining))
 
         // Every tile between the far producer and the sink still has somewhere to send material,
         // and it is always the next tile towards the sink.
         for (x in 2..10) {
-            val tile = grid.index(x, 1)
+            val tile = grid.tile(x, 1)
             assertEquals(
-                listOf(grid.index(x - 1, 1)),
+                listOf(grid.tile(x - 1, 1)),
                 f.successorTiles(tile).toList(),
                 "(${x}, 1) has lost its way to the consumer",
             )
@@ -408,10 +409,10 @@ class TransportTest {
 
     @Test
     fun `material from the far end of a merged line actually arrives`() {
-        val sink = grid.index(1, 1)
-        val far = grid.index(10, 1)
+        val sink = grid.tile(1, 1)
+        val far = grid.tile(10, 1)
         val n = net().row(1, 10, 1)
-        val f = n.toward(accepting = listOf(sink), from = listOf(far, grid.index(3, 1)))
+        val f = n.toward(accepting = listOf(sink), from = listOf(far, grid.tile(3, 1)))
 
         val held = held(n, far to lump())
         val cursors = FlowCursors()
@@ -449,19 +450,19 @@ class TransportTest {
     @Test
     fun `material runs past a consumer that refuses it to one that will take it`() {
         val n = net().row(2, 8, 3)
-        val refuses = grid.index(5, 3)
-        val end = grid.index(8, 3)
+        val refuses = grid.tile(5, 3)
+        val end = grid.tile(8, 3)
         // Both machines are destinations as far as the graph is concerned. Nothing here says which
         // of them has room.
-        val f = n.toward(accepting = listOf(refuses, end), from = listOf(grid.index(2, 3)))
+        val f = n.toward(accepting = listOf(refuses, end), from = listOf(grid.tile(2, 3)))
 
         // A destination partway along is an ordinary transit tile too: it still points onward.
-        assertEquals(listOf(grid.index(6, 3)), f.successorTiles(refuses), "a consumer is not a wall")
+        assertEquals(listOf(grid.tile(6, 3)), f.successorTiles(refuses), "a consumer is not a wall")
 
         // The stretch between two consumers is a two-way street — either end is a real destination —
         // so the packet is free to hesitate there. The cursor is what carries it through, and it has
         // to persist across ticks to do that.
-        val h = held(n, grid.index(2, 3) to lump())
+        val h = held(n, grid.tile(2, 3) to lump())
         val cursors = FlowCursors()
         val taken = mutableListOf<Int>()
         repeat(20) {
@@ -487,17 +488,17 @@ class TransportTest {
     @Test
     fun `when the only consumer refuses, material still queues up against it`() {
         val n = net().row(2, 8, 3)
-        val end = grid.index(8, 3)
-        val f = n.toward(accepting = listOf(end), from = listOf(grid.index(2, 3)))
+        val end = grid.tile(8, 3)
+        val f = n.toward(accepting = listOf(end), from = listOf(grid.tile(2, 3)))
 
-        assertTrue(f.isFed(grid.index(2, 3)), "the run still has a direction")
-        assertEquals(listOf(grid.index(7, 3)), f.successorTiles(grid.index(6, 3)))
+        assertTrue(f.isFed(grid.tile(2, 3)), "the run still has a direction")
+        assertEquals(listOf(grid.tile(7, 3)), f.successorTiles(grid.tile(6, 3)))
 
-        val h = held(n, grid.index(2, 3) to lump(), grid.index(3, 3) to lump())
+        val h = held(n, grid.tile(2, 3) to lump(), grid.tile(3, 3) to lump())
         // Nobody takes anything: the absorb callback hands every packet straight back.
         repeat(12) { step(f, h) }
-        assertEquals(Capacity.PACKET_MASS, h[end]?.mass, "the leader is against the blockage")
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(7, 3)]?.mass, "and the next one is right behind it")
+        assertEquals(Capacity.PACKET_MASS, h[end.index]?.mass, "the leader is against the blockage")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(7, 3).index]?.mass, "and the next one is right behind it")
     }
 
     // There is deliberately no test that the graph is unchanged when a machine fills up. Under the
@@ -515,13 +516,13 @@ class TransportTest {
     @Test
     fun `priority follows the flow, not the array`() {
         val n = net().row(2, 8, 3)
-        val f = n.toward(grid.index(2, 3))          // consumed at the left
-        val h = held(n, grid.index(8, 3) to lump())
+        val f = n.toward(grid.tile(2, 3).index)          // consumed at the left
+        val h = held(n, grid.tile(8, 3) to lump())
 
         val taken = mutableListOf<Int>()
         repeat(10) {
             step(f, h) { tile, packet ->
-                if (tile == grid.index(5, 3) || tile == grid.index(7, 3)) {
+                if (tile == grid.tile(5, 3) || tile == grid.tile(7, 3)) {
                     taken.add(grid.xOf(tile)); null
                 } else packet
             }
@@ -535,17 +536,17 @@ class TransportTest {
     fun `a packed run advances along its whole length in one pass`() {
         // Nearest-to-sink first: each tile is emptied before the one behind moves into it.
         val n = net().row(2, 6, 3)
-        val f = n.toward(grid.index(6, 3))
+        val f = n.toward(grid.tile(6, 3).index)
         val h = held(
             n,
-            grid.index(2, 3) to lump(),
-            grid.index(3, 3) to lump(),
-            grid.index(4, 3) to lump(),
+            grid.tile(2, 3) to lump(),
+            grid.tile(3, 3) to lump(),
+            grid.tile(4, 3) to lump(),
         )
         val moved = step(f, h)
         assertEquals(3, moved, "all three moved, not just the leading one")
-        assertNull(h[grid.index(2, 3)])
-        assertEquals(3, (3..5).count { h[grid.index(it, 3)] != null })
+        assertNull(h[grid.tile(2, 3).index])
+        assertEquals(3, (3..5).count { h[grid.tile(it, 3).index] != null })
     }
 
     @Test
@@ -559,24 +560,24 @@ class TransportTest {
         //
         // One tile per advance is a fact about the packet, not about the walk.
         val n = net().row(2, 10, 3)
-        val sink = grid.index(10, 3)
-        val midOutput = grid.index(6, 3)
-        val f = n.toward(accepting = listOf(sink), from = listOf(grid.index(2, 3), midOutput))
+        val sink = grid.tile(10, 3)
+        val midOutput = grid.tile(6, 3)
+        val f = n.toward(accepting = listOf(sink), from = listOf(grid.tile(2, 3), midOutput))
 
-        val h = held(n, grid.index(5, 3) to lump())
+        val h = held(n, grid.tile(5, 3) to lump())
         step(f, h)
-        assertNull(h[grid.index(5, 3)], "it left the tile behind the port")
-        assertEquals(Capacity.PACKET_MASS, h[midOutput]?.mass, "and stopped on the port's own tile")
-        assertNull(h[grid.index(7, 3)], "rather than carrying straight over it")
+        assertNull(h[grid.tile(5, 3).index], "it left the tile behind the port")
+        assertEquals(Capacity.PACKET_MASS, h[midOutput.index]?.mass, "and stopped on the port's own tile")
+        assertNull(h[grid.tile(7, 3).index], "rather than carrying straight over it")
     }
 
     @Test
     fun `a packet sitting on the consumer stays put rather than falling off the end`() {
         val n = net().row(2, 4, 3)
-        val f = n.toward(grid.index(4, 3))
-        val h = held(n, grid.index(4, 3) to lump())
+        val f = n.toward(grid.tile(4, 3).index)
+        val h = held(n, grid.tile(4, 3) to lump())
         step(f, h)
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(4, 3)]?.mass, "still there, waiting to be taken")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(4, 3).index]?.mass, "still there, waiting to be taken")
     }
 
     // ── Bunching up against a blockage ────────────────────────────────────────
@@ -584,25 +585,25 @@ class TransportTest {
     @Test
     fun `identical lumps squash together against a blockage`() {
         val n = net().row(2, 5, 3)
-        val f = n.toward(grid.index(5, 3))
+        val f = n.toward(grid.tile(5, 3).index)
         val h = held(
             n,
-            grid.index(4, 3) to lump(share(400)),
-            grid.index(5, 3) to lump(share(400)),   // on the consumer, which is refusing
+            grid.tile(4, 3) to lump(share(400)),
+            grid.tile(5, 3) to lump(share(400)),   // on the consumer, which is refusing
         )
         step(f, h)
-        assertEquals(share(800), h[grid.index(5, 3)]?.mass, "the one behind squashed into the one ahead")
-        assertNull(h[grid.index(4, 3)], "leaving its tile free")
+        assertEquals(share(800), h[grid.tile(5, 3).index]?.mass, "the one behind squashed into the one ahead")
+        assertNull(h[grid.tile(4, 3).index], "leaving its tile free")
     }
 
     @Test
     fun `squashing stops at a full packet and the rest queues behind it`() {
         val n = net().row(2, 5, 3)
-        val f = n.toward(grid.index(5, 3))
-        val h = held(n, grid.index(4, 3) to lump(share(600)), grid.index(5, 3) to lump(share(700)))
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to lump(share(600)), grid.tile(5, 3) to lump(share(700)))
         step(f, h)
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(5, 3)]?.mass, "filled to capacity")
-        assertEquals(share(300), h[grid.index(4, 3)]?.mass, "and the overflow stayed put")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(5, 3).index]?.mass, "filled to capacity")
+        assertEquals(share(300), h[grid.tile(4, 3).index]?.mass, "and the overflow stayed put")
     }
 
     /**
@@ -618,12 +619,12 @@ class TransportTest {
         val dirty = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(200), Species.Quartz to share(300), energy = 0)))
         val clean = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to share(375), Species.Quartz to share(125), energy = 0)))
         val n = net().row(2, 5, 3)
-        val f = n.toward(grid.index(5, 3))
-        val h = held(n, grid.index(4, 3) to dirty, grid.index(5, 3) to clean)
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to dirty, grid.tile(5, 3) to clean)
 
         step(f, h)
-        val merged = h[grid.index(5, 3)]!!
-        assertNull(h[grid.index(4, 3)], "the two piles became one")
+        val merged = h[grid.tile(5, 3).index]!!
+        assertNull(h[grid.tile(4, 3).index], "the two piles became one")
         assertEquals(Capacity.PACKET_MASS, merged.mass, "and nothing was lost doing it")
         // 375g + 200g of iron in a kilogram: the concentrate has been spoiled, and deservedly.
         assertEquals(share(575), merged.contents[Species.Iron], "purity is now somewhere in between")
@@ -635,12 +636,12 @@ class TransportTest {
         // queues rather than bunching, and they can be told apart at the far end.
         val bar = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to share(400), energy = 0)))
         val n = net().row(2, 5, 3)
-        val f = n.toward(grid.index(5, 3))
-        val h = held(n, grid.index(4, 3) to bar, grid.index(5, 3) to bar)
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to bar, grid.tile(5, 3) to bar)
 
         step(f, h)
-        assertEquals(share(400), h[grid.index(5, 3)]?.mass, "still one bar")
-        assertEquals(share(400), h[grid.index(4, 3)]?.mass, "and the other queued behind it")
+        assertEquals(share(400), h[grid.tile(5, 3).index]?.mass, "still one bar")
+        assertEquals(share(400), h[grid.tile(4, 3).index]?.mass, "and the other queued behind it")
     }
 
     @Test
@@ -649,28 +650,28 @@ class TransportTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, pure))
         val ore = SolidPacket(Resource(Form.Ore, pure))
         val n = net().row(2, 5, 3)
-        val f = n.toward(grid.index(5, 3))
-        val h = held(n, grid.index(4, 3) to ore, grid.index(5, 3) to ingot)
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to ore, grid.tile(5, 3) to ingot)
 
         step(f, h)
-        assertEquals(Capacity.PACKET_MASS / 2, h[grid.index(5, 3)]?.mass, "an ingot is not a lump of ore")
-        assertEquals(Capacity.PACKET_MASS / 2, h[grid.index(4, 3)]?.mass)
+        assertEquals(Capacity.PACKET_MASS / 2, h[grid.tile(5, 3).index]?.mass, "an ingot is not a lump of ore")
+        assertEquals(Capacity.PACKET_MASS / 2, h[grid.tile(4, 3).index]?.mass)
     }
 
     @Test
     fun `a jammed run bunches toward its destination over several ticks`() {
         val n = net().row(2, 8, 3)
-        val f = n.toward(grid.index(8, 3))
+        val f = n.toward(grid.tile(8, 3).index)
         val h = held(
             n,
-            grid.index(5, 3) to lump(share(250)),
-            grid.index(6, 3) to lump(share(250)),
-            grid.index(7, 3) to lump(share(250)),
-            grid.index(8, 3) to lump(share(250)),
+            grid.tile(5, 3) to lump(share(250)),
+            grid.tile(6, 3) to lump(share(250)),
+            grid.tile(7, 3) to lump(share(250)),
+            grid.tile(8, 3) to lump(share(250)),
         )
         repeat(8) { step(f, h) }
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(8, 3)]?.mass, "all of it ended up in one lump at the end")
-        assertEquals(1, (2..8).count { h[grid.index(it, 3)] != null }, "and the rest of the run is clear")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(8, 3).index]?.mass, "all of it ended up in one lump at the end")
+        assertEquals(1, (2..8).count { h[grid.tile(it, 3).index] != null }, "and the rest of the run is clear")
     }
 
     // ── Forks ─────────────────────────────────────────────────────────────────
@@ -689,11 +690,11 @@ class TransportTest {
      */
     private fun why(): Pair<Net, FlowGraph> {
         val n = net().row(2, 5, 3)
-            .lay(grid.index(5, 2)).join(grid.index(5, 3), Direction.Up)
-            .lay(grid.index(5, 4)).join(grid.index(5, 3), Direction.Down)
+            .lay(grid.tile(5, 2)).join(grid.tile(5, 3), Direction.Up)
+            .lay(grid.tile(5, 4)).join(grid.tile(5, 3), Direction.Down)
         return n to n.toward(
-            accepting = listOf(grid.index(5, 2), grid.index(5, 4)),
-            from = listOf(grid.index(2, 3)),
+            accepting = listOf(grid.tile(5, 2), grid.tile(5, 4)),
+            from = listOf(grid.tile(2, 3)),
         )
     }
 
@@ -701,15 +702,15 @@ class TransportTest {
     fun `a fork alternates instead of favouring a branch`() {
         val (n, f) = why()
         val cursors = FlowCursors()
-        val up = grid.index(5, 2)
-        val down = grid.index(5, 4)
+        val up = grid.tile(5, 2)
+        val down = grid.tile(5, 4)
 
         val sent = mutableListOf<Int>()
         repeat(6) {
-            val h = held(n, grid.index(5, 3) to lump())
+            val h = held(n, grid.tile(5, 3) to lump())
             step(f, h, cursors)
-            if (h[up] != null) sent.add(2)
-            if (h[down] != null) sent.add(4)
+            if (h[up.index] != null) sent.add(2)
+            if (h[down.index] != null) sent.add(4)
         }
         // Which branch goes first follows ascending tile index (up, then down) — arbitrary, but
         // fixed, and the alternation after it is the part that matters. It used to follow
@@ -724,15 +725,15 @@ class TransportTest {
         // cursor advanced past a branch it could not use, every other packet would be lost to it.
         val (n, f) = why()
         val cursors = FlowCursors()
-        val up = grid.index(5, 2)
-        val down = grid.index(5, 4)
+        val up = grid.tile(5, 2)
+        val down = grid.tile(5, 4)
 
         var reachedDown = 0
         repeat(6) {
             // The upward branch is permanently occupied, so it can never accept.
-            val h = held(n, grid.index(5, 3) to lump(), up to lump())
+            val h = held(n, grid.tile(5, 3) to lump(), up to lump())
             step(f, h, cursors)
-            if (h[down] != null) reachedDown++
+            if (h[down.index] != null) reachedDown++
         }
         assertEquals(6, reachedDown, "every packet should have taken the branch that was open")
     }
@@ -741,17 +742,17 @@ class TransportTest {
     fun `cursor state survives a round trip`() {
         val (n, f) = why()
         val cursors1 = FlowCursors()
-        step(f, held(n, grid.index(5, 3) to lump()), cursors1)
-        val saved: Map<Int, Int> = cursors1.snapshot()
+        step(f, held(n, grid.tile(5, 3) to lump()), cursors1)
+        val saved: Map<TileIndex, Int> = cursors1.snapshot()
         assertTrue(saved.isNotEmpty(), "a fork that has sent something remembers which way")
 
         // Resuming from the snapshot continues the alternation rather than starting over.
         val cursors2 = FlowCursors()
         cursors2.restore(saved)
-        val h = held(n, grid.index(5, 3) to lump())
+        val h = held(n, grid.tile(5, 3) to lump())
         step(f, h, cursors2)
-        assertEquals(1, listOf(grid.index(5, 2), grid.index(5, 4)).count { h[it] != null })
-        assertEquals(saved, mapOf(grid.index(5, 3) to 1), "and it is the state it looks like")
+        assertEquals(1, listOf(grid.tile(5, 2), grid.tile(5, 4)).count { h[it.index] != null })
+        assertEquals(saved, mapOf(grid.tile(5, 3) to 1), "and it is the state it looks like")
     }
 
     // ── Merges ────────────────────────────────────────────────────────────────
@@ -765,23 +766,23 @@ class TransportTest {
      * settled by whichever feeder happened to sort earlier in the traversal order, which never
      * changes. A merge takes turns now, exactly as a fork does.
      */
-    private fun merging(): Triple<Net, FlowGraph, Pair<Int, Int>> {
-        val n = net().row(2, 6, 3).lay(grid.index(5, 4)).join(grid.index(5, 3), Direction.Down)
+    private fun merging(): Triple<Net, FlowGraph, Pair<TileIndex, TileIndex>> {
+        val n = net().row(2, 6, 3).lay(grid.tile(5, 4)).join(grid.tile(5, 3), Direction.Down)
         val f = n.toward(
-            accepting = listOf(grid.index(2, 3)),
-            from = listOf(grid.index(6, 3), grid.index(5, 4)),
+            accepting = listOf(grid.tile(2, 3)),
+            from = listOf(grid.tile(6, 3), grid.tile(5, 4)),
         )
-        return Triple(n, f, grid.index(6, 3) to grid.index(5, 4))
+        return Triple(n, f, grid.tile(6, 3) to grid.tile(5, 4))
     }
 
     @Test
     fun `a merge alternates instead of starving one of its feeders`() {
         val (n, f, feeders) = merging()
         val (fromRight, fromBelow) = feeders
-        val junction = grid.index(5, 3)
+        val junction = grid.tile(5, 3)
         assertEquals(
-            listOf(fromBelow, fromRight).sorted(),
-            f.feeders(junction).sorted(),
+            listOf(fromBelow, fromRight).sortedBy { it.index },
+            f.feeders(junction).sortedBy { it.index },
             "the junction is fed from both",
         )
 
@@ -790,8 +791,8 @@ class TransportTest {
         repeat(6) {
             val h = held(n, fromRight to lump(), fromBelow to lump())
             step(f, h, cursors)
-            if (h[fromRight] == null) sent.add("right")
-            if (h[fromBelow] == null) sent.add("below")
+            if (h[fromRight.index] == null) sent.add("right")
+            if (h[fromBelow.index] == null) sent.add("below")
         }
         assertEquals(
             listOf("right", "below", "right", "below", "right", "below"),
@@ -814,10 +815,10 @@ class TransportTest {
             // Only ever the one feeder loaded; the other is bare track.
             val h = held(n, fromBelow to lump())
             step(f, h, cursors)
-            if (h[fromBelow] == null) delivered++
+            if (h[fromBelow.index] == null) delivered++
         }
         assertEquals(6, delivered, "every packet should have got away")
-        assertNull(f.feeders(grid.index(5, 3)).firstOrNull { it !in setOf(fromRight, fromBelow) })
+        assertNull(f.feeders(grid.tile(5, 3)).firstOrNull { it !in setOf(fromRight, fromBelow) })
     }
 
     @Test
@@ -832,7 +833,7 @@ class TransportTest {
         val resumed = FlowCursors(cursors.snapshot(), saved)
         val h = held(n, fromRight to lump(), fromBelow to lump())
         step(f, h, resumed)
-        assertNull(h[fromBelow], "resuming continues the alternation rather than starting over")
+        assertNull(h[fromBelow.index], "resuming continues the alternation rather than starting over")
     }
 
     // ── Determinism ───────────────────────────────────────────────────────────
@@ -842,7 +843,7 @@ class TransportTest {
         fun digest(): String {
             val (n, f) = why()
             val cursors = FlowCursors()
-            val h = held(n, grid.index(2, 3) to lump())
+            val h = held(n, grid.tile(2, 3) to lump())
             repeat(20) { step(f, h, cursors) }
             return (0 until grid.size).joinToString(",") { h[it]?.mass?.toString() ?: "-" } +
                 "|" + cursors.snapshot()
@@ -864,8 +865,8 @@ class TransportTest {
     @Test
     fun `a consumer partway along a run does not halve what gets past it`() {
         val n = net().row(2, 10, 3)
-        val partway = grid.index(5, 3)
-        val f = n.toward(accepting = listOf(partway, grid.index(10, 3)), from = listOf(grid.index(2, 3)))
+        val partway = grid.tile(5, 3)
+        val f = n.toward(accepting = listOf(partway, grid.tile(10, 3)), from = listOf(grid.tile(2, 3)))
 
         val position = f.order.withIndex().associate { (i, tile) -> tile to i }
         for (tile in f.order) {
@@ -878,24 +879,24 @@ class TransportTest {
         }
 
         // And the throughput that followed from it: a packet a tick, with the run kept full behind.
-        val h = held(n, grid.index(2, 3) to lump())
+        val h = held(n, grid.tile(2, 3) to lump())
         val cursors = FlowCursors()
         var arrived = 0
         repeat(8) {
             step(f, h, cursors) { tile, packet ->
                 // The near consumer refuses everything; only the far one takes delivery.
-                if (tile == grid.index(10, 3)) { arrived++; null } else packet
+                if (tile == grid.tile(10, 3)) { arrived++; null } else packet
             }
-            if (h[grid.index(2, 3)] == null) h[grid.index(2, 3)] = lump()
+            if (h[grid.tile(2, 3).index] == null) h[grid.tile(2, 3).index] = lump()
         }
-        assertEquals(Capacity.PACKET_MASS, h[partway]?.mass, "the run is packed right through the near consumer")
-        assertEquals(Capacity.PACKET_MASS, h[grid.index(6, 3)]?.mass, "including the tile just past it")
+        assertEquals(Capacity.PACKET_MASS, h[partway.index]?.mass, "the run is packed right through the near consumer")
+        assertEquals(Capacity.PACKET_MASS, h[grid.tile(6, 3).index]?.mass, "including the tile just past it")
     }
 
     @Test
     fun `the traversal order is total, so nothing depends on sort stability`() {
         val n = net().row(2, 6, 3).row(2, 6, 4)
-        val f = n.toward(grid.index(6, 3), grid.index(6, 4))
+        val f = n.toward(grid.tile(6, 3).index, grid.tile(6, 4).index)
         val order = f.order.toList()
         assertEquals(order.size, order.toSet().size, "every fed tile appears exactly once")
         // The property advancing actually relies on, asserted directly rather than through a proxy:

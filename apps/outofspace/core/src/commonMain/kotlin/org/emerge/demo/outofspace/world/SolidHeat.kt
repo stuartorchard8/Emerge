@@ -26,8 +26,8 @@ fun stepSolidHeat(
     grid: Grid,
     bodies: List<Body>,
     structure: StructureMap,
-    airEnergy: LongArray,
-    airCapacity: LongArray,
+    airEnergy: EnergyArray,
+    heatCapacity: LongArray,
 ): SolidHeatStep {
     val bodyCount = bodies.size
     val tileCount = grid.size
@@ -41,11 +41,12 @@ fun stepSolidHeat(
         capacity[b] = bodies[b].capacity
         kelvin[b] = bodies[b].kelvin
     }
-    for (t in 0 until tileCount) {
-        val c = airCapacity[t]
-        capacity[bodyCount + t] = c
-        kelvin[bodyCount + t] =
-            if (c <= 0L) Temperature.AMBIENT_KELVIN else (airEnergy[t] / c).toInt()
+    for (i in 0 until tileCount) {
+        val c = heatCapacity[i]
+        val tile = TileIndex(i)
+        capacity[bodyCount + i] = c
+        kelvin[bodyCount + i] =
+            if (c <= 0L) Temperature.AMBIENT_KELVIN else (airEnergy[tile] / c).toInt()
     }
 
     val tiles = TileBodies(grid.size, bodies)
@@ -55,33 +56,31 @@ fun stepSolidHeat(
         val body = bodies[b]
         val k = body.conductance
 
-        for (tile in body.tiles) {
-            for (i in tiles.startOf(tile) until tiles.endOf(tile)) {
-                val other = tiles.id(i)
-                if (other <= b) continue // each unordered pair once
-                contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
-            }
+        for (i in tiles.startOf(body.tile) until tiles.endOf(body.tile)) {
+            val other = tiles.id(i)
+            if (other <= b) continue // each unordered pair once
+            contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
+        }
 
-            if (body.permeable) {
-                // A fitting reaches the air in its own tile and nothing further.
-                contacts.join(b, bodyCount + tile, seriesConductance(k, Material.AIR_FILM))
-                continue
-            }
+        if (body.permeable) {
+            // A fitting reaches the air in its own tile and nothing further.
+            contacts.join(b, bodyCount + body.tile.index, seriesConductance(k, Material.AIR_FILM))
+            continue
+        }
 
-            // Impermeable: reaches across tile faces.
-            for (dir in Direction.ALL) {
-                val next = grid.neighbour(tile, dir)
-                if (next < 0) continue
-                if (structure.isImpermeable(next)) {
-                    // Once per face, not per pair.
-                    for (i in tiles.startOf(next) until tiles.endOf(next)) {
-                        val other = tiles.id(i)
-                        if (other <= b || bodies[other].permeable) continue
-                        contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
-                    }
-                } else if (structure.isContained(next)) {
-                    contacts.join(b, bodyCount + next, seriesConductance(k, Material.AIR_FILM))
+        // Impermeable: reaches across tile faces.
+        for (dir in Direction.ALL) {
+            val next = grid.neighbour(body.tile, dir)
+            if (next == TileIndex.NONE) continue
+            if (structure.isImpermeable(next)) {
+                // Once per face, not per pair.
+                for (i in tiles.startOf(next) until tiles.endOf(next)) {
+                    val other = tiles.id(i)
+                    if (other <= b || bodies[other].permeable) continue
+                    contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
                 }
+            } else if (structure.isContained(next)) {
+                contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
             }
         }
 
@@ -90,8 +89,8 @@ fun stepSolidHeat(
         if (body.slot == BodySlot.Fitting && body.conduit != null) {
             for (dir in Direction.ALL) {
                 if (!body.linkedTo(dir)) continue
-                val next = grid.neighbour(body.at, dir)
-                if (next < 0) continue
+                val next = grid.neighbour(body.tile, dir)
+                if (next == TileIndex.NONE) continue
                 val other = tiles.fittingAt(body.conduit, next)
                 if (other < 0 || other <= b) continue
                 contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
@@ -126,16 +125,14 @@ fun stepSolidHeat(
     for (b in bodies.indices) {
         val body = bodies[b]
         var exposure = 0
-        for (tile in body.tiles) {
-            if (body.permeable) {
-                if (!structure.isContained(tile)) exposure++
-                continue
-            }
-            for (dir in Direction.ALL) {
-                val next = grid.neighbour(tile, dir)
-                // Off the grid counts: the rim opens onto space like any breach does.
-                if (next < 0 || !structure.isContained(next)) exposure++
-            }
+        if (body.permeable) {
+            if (!structure.isContained(body.tile)) exposure++
+            continue
+        }
+        for (dir in Direction.ALL) {
+            val next = grid.neighbour(body.tile, dir)
+            // Off the grid counts: the rim opens onto space like any breach does.
+            if (next == TileIndex.NONE || !structure.isContained(next)) exposure++
         }
         if (exposure == 0) continue
         val gap = kelvin[b] - Temperature.SPACE_KELVIN
@@ -154,10 +151,10 @@ fun stepSolidHeat(
     val radiated = transfers.settle(delta)
 
     var toAir = 0L
-    for (t in 0 until tileCount) {
-        val d = delta[bodyCount + t]
+    for (tile in grid.tiles) {
+        val d = delta[bodyCount + tile.index]
         if (d == 0L) continue
-        airEnergy[t] += d
+        airEnergy[tile] += d
         toAir += d
     }
     val energy = LongArray(bodyCount) { bodies[it].energy + delta[it] }
@@ -176,25 +173,25 @@ private class TileBodies(tileCount: Int, bodies: List<Body>) {
     private val fitting = IntArray(tileCount * Conduit.entries.size) { -1 }
 
     init {
-        for (b in bodies) for (t in b.tiles) start[t + 1]++
+        for (b in bodies) start[b.tile.index + 1]++
         for (t in 1..tileCount) start[t] += start[t - 1]
         ids = IntArray(start[tileCount])
         val cursor = start.copyOf()
         for (i in bodies.indices) {
-            for (t in bodies[i].tiles) ids[cursor[t]++] = i
+            ids[cursor[bodies[i].tile.index]++] = i
             val conduit = bodies[i].conduit
             if (bodies[i].slot == BodySlot.Fitting && conduit != null) {
-                fitting[conduit.ordinal * tileCount + bodies[i].at] = i
+                fitting[conduit.ordinal * tileCount + bodies[i].tile.index] = i
             }
         }
     }
 
-    fun startOf(tile: Int): Int = start[tile]
-    fun endOf(tile: Int): Int = start[tile + 1]
+    fun startOf(tile: TileIndex): Int = start[tile.index]
+    fun endOf(tile: TileIndex): Int = start[tile.index + 1]
     fun id(slot: Int): Int = ids[slot]
 
     /** Fitting of a layer on a tile, or -1. */
-    fun fittingAt(conduit: Conduit, tile: Int): Int = fitting[conduit.ordinal * tileCount + tile]
+    fun fittingAt(conduit: Conduit, tile: TileIndex): Int = fitting[conduit.ordinal * tileCount + tile.index]
 }
 
 /** The contact graph, as parallel arrays that grow. Pairs may repeat; their conductances add. */

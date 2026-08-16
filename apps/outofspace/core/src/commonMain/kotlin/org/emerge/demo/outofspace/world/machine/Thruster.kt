@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.StructureMap
+import org.emerge.demo.outofspace.world.TileArray
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -144,23 +146,23 @@ data class Thruster(
  * same reason: a cache here would be wrong for exactly one tick after a wall moved, which is the
  * tick a player is watching.
  */
-class ExhaustPath(val path: IntArray, val blocker: Int, val destination: Int) {
+class ExhaustPath(val path: Array<TileIndex>, val blocker: TileIndex, val destination: TileIndex) {
 
     /** True when the exhaust leaves the world — the only case that pushes the ship directly. */
-    val isClear: Boolean get() = blocker < 0
+    val isClear: Boolean get() = blocker == TileIndex.NONE
 }
 
 /** The exhaust path of the thruster stored at [tile] — see [ExhaustPath]. */
-fun exhaustPath(grid: Grid, structure: StructureMap, tile: Int, facing: Direction): ExhaustPath {
-    val crossed = ArrayList<Int>(grid.width + grid.height)
+fun exhaustPath(grid: Grid, structure: StructureMap, tile: TileIndex, facing: Direction): ExhaustPath {
+    val crossed = ArrayList<TileIndex>(grid.width + grid.height)
     var at = tile
     while (true) {
         val next = grid.neighbour(at, facing)
         // Off the edge of the world: nothing ever stopped it.
-        if (next < 0) return ExhaustPath(crossed.toIntArray(), blocker = -1, destination = crossed.lastOrNull() ?: tile)
+        if (next == TileIndex.NONE) return ExhaustPath(crossed.toTypedArray(), blocker = TileIndex.NONE, destination = crossed.lastOrNull() ?: tile)
         if (structure.isImpermeable(next)) {
             // Nothing crossed means the wall is against the nozzle, and the exhaust stays home.
-            return ExhaustPath(crossed.toIntArray(), blocker = next, destination = crossed.lastOrNull() ?: tile)
+            return ExhaustPath(crossed.toTypedArray(), blocker = next, destination = crossed.lastOrNull() ?: tile)
         }
         crossed.add(next)
         at = next

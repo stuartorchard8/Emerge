@@ -4,7 +4,11 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.EnergyArray
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.SLOTS
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.diffuseFluid
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,15 +36,15 @@ class RapidDiffusionTest {
         return ApertureField(edges, x, y)
     }
 
-    private fun emptyAir() = LongArray(grid.size * Species.COUNT)
+    private fun emptyAir() = MassArray(grid.size)
 
-    private fun put(masses: LongArray, tile: Int, species: Species, mass: Long) {
-        masses[tile * Species.COUNT + species.ordinal] += mass
+    private fun put(masses: MassArray, tile: TileIndex, species: Species, mass: Long) {
+        masses[MassIndex(tile, species)] += mass
     }
 
-    private fun massAt(masses: LongArray, tile: Int): Long {
+    private fun massAt(masses: MassArray, tile: TileIndex): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += masses[tile * Species.COUNT + s.ordinal]
+        for (s in Species.ALL) sum += masses[MassIndex(tile, s)]
         return sum
     }
 
@@ -59,24 +63,24 @@ class RapidDiffusionTest {
     fun `a sealed box conserves every unit of mass and energy`() {
         val mass = emptyAir()
         // Lumpy on purpose: one heavy corner, one light one, two species that do not mix evenly.
-        put(mass, grid.index(0, 0), Species.Oxygen, 100_000L)
-        put(mass, grid.index(5, 4), Species.Nitrogen, 37L)
-        put(mass, grid.index(3, 2), Species.Oxygen, 4_321L)
-        val energy = LongArray(grid.size)
-        energy[grid.index(0, 0)] = 90_000_000L
-        energy[grid.index(3, 2)] = 1_234_567L
+        put(mass, grid.tile(0, 0), Species.Oxygen, 100_000L)
+        put(mass, grid.tile(5, 4), Species.Nitrogen, 37L)
+        put(mass, grid.tile(3, 2), Species.Oxygen, 4_321L)
+        val energy = EnergyArray(grid.size)
+        energy[grid.tile(0, 0)] = 90_000_000L
+        energy[grid.tile(3, 2)] = 1_234_567L
 
-        val startMass = total(mass)
-        val startEnergy = total(energy)
+        val startMass = total(mass.data)
+        val startEnergy = total(energy.data)
         val apertures = sealed()
 
         repeat(120) { tick ->
             val step = diffuseFluid(edges, apertures, mass, energy)
             assertEquals(0L, step.ventedMass, "a sealed box vented at tick $tick")
             assertEquals(0L, step.ventedEnergy, "a sealed box vented energy at tick $tick")
-            assertEquals(startMass, total(mass), "mass drifted at tick $tick")
-            assertEquals(startEnergy, total(energy), "energy drifted at tick $tick")
-            assertNothingNegative(mass, energy)
+            assertEquals(startMass, total(mass.data), "mass drifted at tick $tick")
+            assertEquals(startEnergy, total(energy.data), "energy drifted at tick $tick")
+            assertNothingNegative(mass.data, energy.data)
         }
     }
 
@@ -91,13 +95,13 @@ class RapidDiffusionTest {
         // this is not a figure anyone will have to tune.
         val mass = emptyAir()
         val perTile = 8_000L
-        put(mass, grid.index(0, 0), Species.Oxygen, perTile * grid.size)
+        put(mass, grid.tile(0, 0), Species.Oxygen, perTile * grid.size)
         val apertures = sealed()
 
         repeat(400) { diffuseFluid(edges, apertures, mass, null) }
 
         val slack = perTile / 100
-        for (tile in 0 until grid.size) {
+        for (tile in grid.tiles) {
             val held = massAt(mass, tile)
             assertTrue(
                 held in (perTile - slack)..(perTile + slack),
@@ -111,19 +115,19 @@ class RapidDiffusionTest {
         // Half the box hot, half cold, nothing free to leave: energy per gram has to end up the same
         // everywhere, because that is what "the energy goes where the mass goes" means over enough ticks.
         val mass = emptyAir()
-        val energy = LongArray(grid.size)
-        for (tile in 0 until grid.size) {
+        val energy = EnergyArray(grid.size)
+        for (tile in grid.tiles) {
             put(mass, tile, Species.Oxygen, 1_000L)
             energy[tile] = if (grid.xOf(tile) < 3) 2_000_000L else 1_000_000L
         }
-        val startEnergy = total(energy)
+        val startEnergy = total(energy.data)
         val apertures = sealed()
 
         repeat(400) { diffuseFluid(edges, apertures, mass, energy) }
 
-        assertEquals(startEnergy, total(energy))
-        val hottest = energy.max()
-        val coldest = energy.min()
+        assertEquals(startEnergy, total(energy.data))
+        val hottest = energy.data.max()
+        val coldest = energy.data.min()
         // Floor residue is the only thing allowed to separate them: a gram of air is a few joules per
         // kelvin, so a handful of energy is far below a kelvin and cannot be a gradient anyone sees.
         assertTrue(hottest - coldest <= grid.size, "heat stayed stratified: $coldest..$hottest")
@@ -134,18 +138,18 @@ class RapidDiffusionTest {
         // Sealed but for one face on the rim: the room plus the ledger has to equal what was there.
         val x = IntArray(edges.xEdgeCount) { if (edges.isXBoundary(it)) ApertureField.CLOSED else ApertureField.OPEN }
         val y = IntArray(edges.yEdgeCount) { if (edges.isYBoundary(it)) ApertureField.CLOSED else ApertureField.OPEN }
-        y[edges.upEdgeOf(grid.index(2, 0))] = ApertureField.OPEN
+        y[edges.upEdgeOf(grid.tile(2, 0))] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
         val mass = emptyAir()
-        val energy = LongArray(grid.size)
-        for (tile in 0 until grid.size) {
+        val energy = EnergyArray(grid.size)
+        for (tile in grid.tiles) {
             put(mass, tile, Species.Oxygen, 900L)
             put(mass, tile, Species.Nitrogen, 2_100L)
             energy[tile] = 3_000_000L
         }
-        val startMass = total(mass)
-        val startEnergy = total(energy)
+        val startMass = total(mass.data)
+        val startEnergy = total(energy.data)
 
         var ventedMass = 0L
         var ventedEnergy = 0L
@@ -153,9 +157,9 @@ class RapidDiffusionTest {
             val step = diffuseFluid(edges, apertures, mass, energy)
             ventedMass += step.ventedMass
             ventedEnergy += step.ventedEnergy
-            assertEquals(startMass, total(mass) + ventedMass, "mass unaccounted for at tick $tick")
-            assertEquals(startEnergy, total(energy) + ventedEnergy, "energy unaccounted for at tick $tick")
-            assertNothingNegative(mass, energy)
+            assertEquals(startMass, total(mass.data) + ventedMass, "mass unaccounted for at tick $tick")
+            assertEquals(startEnergy, total(energy.data) + ventedEnergy, "energy unaccounted for at tick $tick")
+            assertNothingNegative(mass.data, energy.data)
         }
         assertTrue(ventedMass > 0L, "a hole in the hull vented nothing")
         assertTrue(ventedEnergy > 0L, "the gas that left took no heat with it")
@@ -169,7 +173,7 @@ class RapidDiffusionTest {
         // passing, the model gained a way to move trace gas and the doc comment needs revisiting.
         val x = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
         val y = IntArray(edges.yEdgeCount) { ApertureField.CLOSED }
-        val leaking = grid.index(2, 0)
+        val leaking = grid.tile(2, 0)
         y[edges.upEdgeOf(leaking)] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
@@ -191,14 +195,14 @@ class RapidDiffusionTest {
         // being expressible when the remainder began staying home — nothing empties completely now.
         val x = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
         val y = IntArray(edges.yEdgeCount) { ApertureField.CLOSED }
-        val source = grid.index(2, 0)
+        val source = grid.tile(2, 0)
         y[edges.upEdgeOf(source)] = ApertureField.OPEN
         val apertures = ApertureField(edges, x, y)
 
         val mass = emptyAir()
         val startMass = 5_000L
         put(mass, source, Species.Oxygen, startMass)
-        val energy = LongArray(grid.size)
+        val energy = EnergyArray(grid.size)
         val startEnergy = 40_000_000L
         energy[source] = startEnergy
 
@@ -224,13 +228,13 @@ class RapidDiffusionTest {
         fun crossedIn(aperture: Int): Long {
             val x = IntArray(edges.xEdgeCount) { ApertureField.CLOSED }
             val y = IntArray(edges.yEdgeCount) { ApertureField.CLOSED }
-            x[edges.rightEdgeOf(grid.index(1, 2))] = aperture
+            x[edges.rightEdgeOf(grid.tile(1, 2))] = aperture
             val mass = emptyAir()
-            put(mass, grid.index(1, 2), Species.Oxygen, 100_000L)
+            put(mass, grid.tile(1, 2), Species.Oxygen, 100_000L)
             // One pass: the claim is that a half-open face passes half a *share*, which is arithmetic
             // on one transfer. Over several passes the source drains and the ratio drifts off a half.
             diffuseFluid(edges, ApertureField(edges, x, y), mass, null, subSteps = 1)
-            return massAt(mass, grid.index(2, 2))
+            return massAt(mass, grid.tile(2, 2))
         }
 
         assertEquals(0L, crossedIn(ApertureField.CLOSED))

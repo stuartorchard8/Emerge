@@ -2,13 +2,17 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Structure
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.tryDisplaceAir
@@ -37,6 +41,7 @@ class AtmosphereTest {
      * 0 against a spread of 0 and failed with nothing visibly wrong in them.
      */
     private val gram = Budget.GRAM
+    private val joule = Budget.JOULE
 
     private fun cfgFor(grid: Grid) = OutofspaceConfig(initialGrid = grid)
 
@@ -61,12 +66,12 @@ class AtmosphereTest {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1..w) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h).index] = Hull()
         }
         for (y in 1..h) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w, y).index] = Hull()
         }
         return VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
     }
@@ -91,15 +96,15 @@ class AtmosphereTest {
         // Two 3-wide rooms sharing a wall, one at double pressure.
         val grid = Grid(9, 5)
         val machines = arrayOfNulls<Machine>(grid.size)
-        for (x in 1..7) { machines[grid.index(x, 1)] = Hull(); machines[grid.index(x, 3)] = Hull() }
-        for (y in 1..3) { machines[grid.index(1, y)] = Hull(); machines[grid.index(7, y)] = Hull() }
-        machines[grid.index(4, 2)] = Hull()   // the dividing wall
+        for (x in 1..7) { machines[grid.tile(x, 1).index] = Hull(); machines[grid.tile(x, 3).index] = Hull() }
+        for (y in 1..3) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(7, y).index] = Hull() }
+        machines[grid.tile(4, 2).index] = Hull()   // the dividing wall
         var s = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
 
-        val mass = LongArray(grid.size * Species.COUNT)
-        for (x in 2..3) mass[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 2_000L * gram
-        for (x in 5..6) mass[grid.index(x, 2) * Species.COUNT + Species.Oxygen.ordinal] = 500L * gram
-        val field = AirField.of(mass)
+        val mass = MassArray(grid.size)
+        for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram
+        for (x in 5..6) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 500L * gram
+        val field = Atmosphere.of(mass)
         s = s.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 40)
@@ -111,7 +116,7 @@ class AtmosphereTest {
         // different and much stronger claim than the one in its name, and a false one.
         //
         // Pressure reads in millimoles now, not mass -- see [AirField.pressureAt].
-        fun roomMass(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.index(it, 2)) }
+        fun roomMass(xs: IntRange) = xs.sumOf { s.air.densityAt(grid.tile(it, 2)) }
         assertEquals(4_000L * gram, roomMass(2..3), "the high side stayed high")
         assertEquals(1_000L * gram, roomMass(5..6), "and the low side stayed low")
         assertAirBalanced(s, "divided rooms")
@@ -123,12 +128,12 @@ class AtmosphereTest {
     fun `pressure equalises across a connected room`() {
         val room = sealedRoom(8, 4)
         val g = room.grid
-        val mass = LongArray(g.size * Species.COUNT)
-        mass[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 6_000L * gram
-        val field = AirField.of(mass)
+        val mass = MassArray(g.size)
+        mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 6_000L * gram
+        val field = Atmosphere.of(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
-        fun interior() = (0 until g.size).filter {
+        fun interior() = g.tiles.filter {
             s.structure.isContained(it) && !s.structure.isImpermeable(it)
         }
         val startSpread = interior().let { t ->
@@ -156,7 +161,7 @@ class AtmosphereTest {
         )
         for (tile in interior()) {
             val right = g.neighbour(tile, org.emerge.demo.outofspace.world.Direction.Right)
-            if (right < 0 || right !in interior()) continue
+            if (right == TileIndex.NONE || right !in interior()) continue
             val gap = s.air.pressureAt(tile) - s.air.pressureAt(right)
             val tolerance = s.air.pressureAt(tile) / 5L + 1L
             assertTrue(
@@ -171,20 +176,20 @@ class AtmosphereTest {
     fun `flow settles rather than running away`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
-        val mass = LongArray(g.size * Species.COUNT)
-        mass[g.index(2, 2) * Species.COUNT + Species.Oxygen.ordinal] = 10_000L * gram
-        val field = AirField.of(mass)
+        val mass = MassArray(g.size * Species.COUNT)
+        mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 10_000L * gram
+        val field = Atmosphere.of(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         // The old assertion was that the peak never rises, which is true of diffusion and false of
         // any solver that carries momentum: gas that has been accelerated has to arrive somewhere,
         // and a pressure wave can genuinely re-concentrate for a tick on the way to settling. What
         // must hold is that it settles -- the peak trends down and never runs away.
-        val start = (0 until g.size).maxOf { s.air.pressureAt(it) }
+        val start = g.tiles.maxOf { s.air.pressureAt(it) }
         var peak = start
         repeat(300) {
             s = OutofspaceReducer.reduce(cfgFor(g), s, emptyMap())
-            peak = (0 until g.size).maxOf { s.air.pressureAt(it) }
+            peak = g.tiles.maxOf { s.air.pressureAt(it) }
             assertTrue(peak <= start, "the densest tile ran away from where it began: $peak > $start")
         }
         assertTrue(peak < start / 2, "and it should have spread out by now: $peak vs $start")
@@ -195,15 +200,15 @@ class AtmosphereTest {
     fun `a draught carries the room's mix rather than skimming one gas`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
-        val mass = LongArray(g.size * Species.COUNT)
-        val source = g.index(2, 2) * Species.COUNT
-        mass[source + Species.Oxygen.ordinal] = 2_000L * gram
-        mass[source + Species.Nitrogen.ordinal] = 6_000L * gram
-        val field = AirField.of(mass)
+        val mass = MassArray(g.size)
+        val tile = g.tile(2, 2)
+        mass[MassIndex(tile, Species.Oxygen)] = 2_000L * gram
+        mass[MassIndex(tile, Species.Nitrogen)] = 6_000L * gram
+        val field = Atmosphere.of(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         s = run(s, 30)   // part-way through equalising
-        val neighbour = g.index(3, 2)
+        val neighbour = g.tile(3, 2)
         val o2 = s.air.massOf(neighbour, Species.Oxygen)
         val n2 = s.air.massOf(neighbour, Species.Nitrogen)
         assertTrue(o2 > 0L && n2 > 0L, "both gases should have moved: O2=$o2 N2=$n2")
@@ -217,19 +222,19 @@ class AtmosphereTest {
         val room = sealedRoom(4, 4)
         val g = room.grid
         val emptied = room.copy(
-            air = AirField.of(LongArray(g.size * Species.COUNT)),
+            air = Atmosphere.of(MassArray(g.size)),
             baselineAirMass = 0L,
         )
         val s = run(emptied, 4)
-        assertEquals(Structure.Interior, s.structure[g.index(2, 2)], "it is still a room")
-        assertEquals(0, s.pressurePercentAt(g.index(2, 2)), "it just has nothing in it")
+        assertEquals(Structure.Interior, s.structure[g.tile(2, 2).index], "it is still a room")
+        assertEquals(0, s.pressurePercentAt(g.tile(2, 2)), "it just has nothing in it")
     }
 
     @Test
     fun `building a wall through a room pushes its air aside rather than swallowing it`() {
         val room = sealedRoom(8, 4)
         val g = room.grid
-        val wall = g.index(4, 3)
+        val wall = g.tile(4, 3)
         var s = run(room, 20)   // settle first, so the wall tile is holding a known amount
         val aboard = s.atmosphereMass
         assertTrue(s.air.pressureAt(wall) > 0L, "the tile we are about to wall off had air in it")
@@ -245,15 +250,15 @@ class AtmosphereTest {
         // A one-tile pocket: hull all round bar the tile itself, which the player then tries to fill.
         val room = sealedRoom(5, 5)
         val g = room.grid
-        val pocket = g.index(3, 3)
+        val pocket = g.tile(3, 3)
         val machines = room.machines.toMutableList()
-        for (dir in Direction.ALL) machines[g.neighbour(pocket, dir)] = Hull()
+        for (dir in Direction.ALL) machines[g.neighbour(pocket, dir).index] = Hull()
         var s = run(room.copy(machines = machines.toList()), 4)
         val trapped = s.air.pressureAt(pocket)
         assertTrue(trapped > 0L, "the pocket has air in it to begin with")
 
         s = run(s, 2, OutofspaceInput(listOf(Edit.Place(pocket, MachineKind.Hull, Direction.Up))))
-        assertEquals(null, s.machines[pocket], "the build had nowhere to put the air, so it did not happen")
+        assertEquals(null, s[pocket], "the build had nowhere to put the air, so it did not happen")
         assertEquals(trapped, s.air.pressureAt(pocket), "and the air is untouched")
         assertAirBalanced(s, "after the refusal")
     }
@@ -262,14 +267,14 @@ class AtmosphereTest {
     fun `a footprint displaces the air under all of it at once`() {
         val room = sealedRoom(9, 5)   // a 7x3 interior, room for a 3x3 with a column either side
         val g = room.grid
-        val at = g.index(5, 3)
+        val tile = g.tile(5, 3)
         var s = run(room, 20)
         val aboard = s.atmosphereMass
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Storage, Direction.Right))))
-        assertTrue(s.machines[at] != null, "the storage went down")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(tile, MachineKind.Storage, Direction.Right))))
+        assertTrue(s[tile] != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {
-            assertEquals(0L, s.air.pressureAt(g.index(x, y)), "($x,$y) is under the machine")
+            assertEquals(0L, s.air.pressureAt(g.tile(x, y)), "($x,$y) is under the machine")
         }
         assertEquals(aboard, s.atmosphereMass, "every gram of it moved rather than vanishing")
         assertAirBalanced(s, "after a footprint landed")
@@ -280,36 +285,45 @@ class AtmosphereTest {
         // A five-tile strip with one way out at each end, and air in a tile twice as far from the
         // right one as the left: it should leave two-to-one in favour of the near door.
         val g = Grid(9, 3)
-        val strip = (2..6).map { g.index(it, 1) }
-        val exits = setOf(g.index(1, 1), g.index(7, 1))
-        val mass = LongArray(g.size * Species.COUNT)
-        mass[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
+        val strip = (2..6).map { g.tile(it, 1) }
+        val exits = setOf(g.tile(1, 1), g.tile(7, 1))
+        val masses = MassArray(g.size)
+        val energies = EnergyArray(g.size)
+        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
+        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
+        energies[g.tile(3, 1)] = 3_000L * joule
+        energies[g.tile(3, 1)] = 3_000L * joule
 
-        assertTrue(tryDisplaceAir(g, mass, strip) { it in exits }, "both ends are open")
+        assertTrue(tryDisplaceAir(g, masses, energies, strip) { it in exits }, "both ends are open")
         for (tile in strip) {
-            assertEquals(0L, mass[tile * Species.COUNT + Species.Oxygen.ordinal], "the strip is empty")
+            assertEquals(0L, masses[MassIndex(tile, Species.Oxygen)], "the strip is empty")
+            assertEquals(0L, energies[tile], "the strip has no energy")
         }
-        assertEquals(2_000L * gram, mass[g.index(1, 1) * Species.COUNT + Species.Oxygen.ordinal], "near door")
-        assertEquals(1_000L * gram, mass[g.index(7, 1) * Species.COUNT + Species.Oxygen.ordinal], "far door")
+        assertEquals(2_000L * gram, masses[MassIndex(g.tile(1, 1), Species.Oxygen)], "near door")
+        assertEquals(1_000L * gram, masses[MassIndex(g.tile(7, 1), Species.Oxygen)], "far door")
     }
 
     @Test
     fun `a sealed area displaces nothing and reports failure`() {
         val g = Grid(9, 3)
-        val strip = (2..6).map { g.index(it, 1) }
-        val mass = LongArray(g.size * Species.COUNT)
-        mass[g.index(3, 1) * Species.COUNT + Species.Oxygen.ordinal] = 3_000L * gram
-        val before = mass.copyOf()
+        val strip = (2..6).map { g.tile(it, 1) }
+        val masses = MassArray(g.size)
+        val energies = EnergyArray(g.size)
+        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
+        energies[g.tile(3, 1)] = 3_000L * gram
+        val massesBefore = masses.copyOf()
+        val energiesBefore = energies.copyOf()
 
-        assertTrue(!tryDisplaceAir(g, mass, strip) { false }, "there is no way out")
-        assertTrue(mass.contentEquals(before), "a refusal leaves the field exactly as it found it")
+        assertTrue(!tryDisplaceAir(g, masses, energies, strip) { false }, "there is no way out")
+        assertTrue(masses.contentEquals(massesBefore), "a refusal leaves the field exactly as it found it")
+        assertTrue(energies.contentEquals(energiesBefore), "a refusal leaves the field exactly as it found it")
     }
 
     @Test
     fun `knocking a wall out lets air back into the tile`() {
         val room = sealedRoom(8, 4)
         val g = room.grid
-        val wall = g.index(4, 3)
+        val wall = g.tile(4, 3)
         var s = run(room, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
         s = run(s, 20)
         val aboard = s.atmosphereMass
@@ -323,7 +337,7 @@ class AtmosphereTest {
     fun `two runs of a breathing world are identical`() {
         fun digest(s: VesselState) = buildString {
             append(s.atmosphereMass).append('|').append(s.airVentedMass)
-            for (i in 0 until s.grid.size) append(s.air.pressureAt(i)).append(',')
+            for (tile in s.grid.tiles) append(s.air.pressureAt(tile)).append(',')
         }
         val grid = Grid(40, 28)
         // 500 ticks, twice, which measures 2.8s. It was 900 and measured 5.06s the moment the

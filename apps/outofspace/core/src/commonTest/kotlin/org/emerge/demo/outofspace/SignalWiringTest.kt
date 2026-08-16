@@ -46,12 +46,12 @@ class SignalWiringTest {
     }
 
     private fun signalRow(wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
-        for (x in fromX..toX) if (wires[grid.index(x, y)] == null) wires[grid.index(x, y)] = Segment(Conduit.Signal)
+        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
         for (x in fromX until toX) {
-            val a = grid.index(x, y)
-            val b = grid.index(x + 1, y)
-            wires[a] = wires[a]!!.joinedTo(Direction.Right)
-            wires[b] = wires[b]!!.joinedTo(Direction.Left)
+            val a = grid.tile(x, y)
+            val b = grid.tile(x + 1, y)
+            wires[a.index] = wires[a.index]!!.joinedTo(Direction.Right)
+            wires[b.index] = wires[b.index]!!.joinedTo(Direction.Left)
         }
     }
 
@@ -78,11 +78,11 @@ class SignalWiringTest {
     private fun rig(fill: Long, wired: Boolean = true): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
-        machines[grid.index(extractorAt.first, extractorAt.second)] =
+        machines[grid.tile(extractorAt.first, extractorAt.second).index] =
             Extractor(Direction.Right).withWiring(stopWhenFull)
-        machines[grid.index(13, 5)] = Storage(Direction.Right, stored)
+        machines[grid.tile(13, 5).index] = Storage(Direction.Right, stored)
         // Looking up at the tank, which sits below the run.
-        machines[grid.index(sensorAt.first, sensorAt.second)] = Sensor(Direction.Down)
+        machines[grid.tile(sensorAt.first, sensorAt.second).index] = Sensor(Direction.Down)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) signalRow(wires, extractorAt.first, sensorAt.first, 3)
@@ -95,7 +95,7 @@ class SignalWiringTest {
         )
     }
 
-    private fun extractor(s: VesselState) = s[grid.index(extractorAt.first, extractorAt.second)] as Extractor
+    private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as Extractor
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
     private fun ground(s: VesselState): Long = s.extractedMass - (extractor(s).input?.mass ?: 0L)
@@ -108,10 +108,10 @@ class SignalWiringTest {
 
         assertEquals(
             SignalField.FULL,
-            s.signals.at(grid.index(extractorAt.first, extractorAt.second)),
+            s.signals.at(grid.tile(extractorAt.first, extractorAt.second)),
             "a full tank should be driving the whole run, including the far end",
         )
-        assertEquals(0, extractor(s).wiring.activation(Action.Run, s.signals.at(grid.index(extractorAt.first, extractorAt.second))))
+        assertEquals(0, extractor(s).wiring.activation(Action.Run, s.signals.at(grid.tile(extractorAt.first, extractorAt.second))))
     }
 
     /**
@@ -126,7 +126,7 @@ class SignalWiringTest {
         // One link severed, in the middle of the run.
         val cut = run(
             joined, 40,
-            OutofspaceInput(listOf(Edit.Cut(grid.index(7, 3), grid.index(8, 3), Conduit.Signal))),
+            OutofspaceInput(listOf(Edit.Cut(grid.tile(7, 3), grid.tile(8, 3), Conduit.Signal))),
         )
 
         assertTrue(before == 0L, "joined, the full tank should have stopped it dead: ${before}g")
@@ -163,8 +163,8 @@ class SignalWiringTest {
     fun `two machines on one run see the same value`() {
         val machines = arrayOfNulls<Machine>(grid.size)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
-        machines[grid.index(13, 5)] = Storage(Direction.Right, stored)
-        machines[grid.index(12, 3)] = Sensor(Direction.Down)
+        machines[grid.tile(13, 5).index] = Storage(Direction.Right, stored)
+        machines[grid.tile(12, 3).index] = Sensor(Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 12, 3)
 
@@ -172,7 +172,7 @@ class SignalWiringTest {
             VesselState(grid, machines.toList(), conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
             2,
         )
-        assertEquals(s.signals.at(grid.index(2, 3)), s.signals.at(grid.index(10, 3)))
+        assertEquals(s.signals.at(grid.tile(2, 3)), s.signals.at(grid.tile(10, 3)))
     }
 
     // ── Old worlds ────────────────────────────────────────────────────────────
@@ -188,11 +188,11 @@ class SignalWiringTest {
             """
             outofspace 10
             grid 16 8
-            machine ${grid.index(3, 3)} Extractor facing=Right wire=Run:ALWAYS@1000,Red@-1000
+            machine ${grid.tile(3, 3)} Extractor facing=Right wire=Run:ALWAYS@1000,Red@-1000
             """.trimIndent(),
         )
 
-        val terms = old[grid.index(3, 3)]!!.wiring.triggers(Action.Run)
+        val terms = old[grid.tile(3, 3)]!!.wiring.triggers(Action.Run)
         assertEquals(
             listOf(Trigger(SignalSource.Always, 1000), Trigger(SignalSource.Wire, -1000)),
             terms,
@@ -201,7 +201,7 @@ class SignalWiringTest {
 
         // No wire was laid in that file and none could have been, so the machine runs at full — which
         // is exactly what it did when RED was a channel nobody was emitting on.
-        assertEquals(1000, old[grid.index(3, 3)]!!.wiring.activation(Action.Run, old.signals.at(grid.index(3, 3))))
+        assertEquals(1000, old[grid.tile(3, 3)]!!.wiring.activation(Action.Run, old.signals.at(grid.tile(3, 3))))
     }
 
     @Test
@@ -210,8 +210,8 @@ class SignalWiringTest {
         val reloaded = Save.read(Save.write(played))
 
         assertEquals(
-            played.signals.at(grid.index(extractorAt.first, extractorAt.second)),
-            run(reloaded, 1).signals.at(grid.index(extractorAt.first, extractorAt.second)),
+            played.signals.at(grid.tile(extractorAt.first, extractorAt.second)),
+            run(reloaded, 1).signals.at(grid.tile(extractorAt.first, extractorAt.second)),
             "the circuit should come back carrying what it carried",
         )
     }

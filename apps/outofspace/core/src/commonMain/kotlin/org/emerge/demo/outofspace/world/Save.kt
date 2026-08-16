@@ -109,44 +109,44 @@ object Save {
         // unreadable to a person and the whole point of the format is that a person can read it. So
         // every placed thing carries its coordinates in a comment, and track spells its links out —
         // `links=5` says nothing, `R-L-` says the run goes left to right through this tile.
-        for (i in state.machines.indices) {
-            val m = state.machines[i] ?: continue
-            out.append("machine ").append(i).append(' ').append(writeMachine(m))
-            out.append("   # ").append(where(state.grid, i)).append('\n')
+        for (tile in state.grid.tiles) {
+            val m = state[tile] ?: continue
+            out.append("machine ").append(tile).append(' ').append(writeMachine(m))
+            out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
         // record always named its own network, but while there was one list per tile the keyword
         // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
-        state.conduits.all { _, i, r ->
-            out.append("conduit ").append(i).append(' ').append(writeSegment(r))
-            out.append("   # ").append(where(state.grid, i)).append(' ').append(linkLetters(r)).append('\n')
+        state.conduits.all { _, tile, r ->
+            out.append("conduit ").append(tile).append(' ').append(writeSegment(r))
+            out.append("   # ").append(where(state.grid, tile)).append(' ').append(linkLetters(r)).append('\n')
         }
-        for (i in state.bridges.indices) {
-            val b = state.bridges[i] ?: continue
-            out.append("bridge ").append(i).append(' ').append(writeMachine(b))
-            out.append("   # ").append(where(state.grid, i)).append('\n')
+        for (tile in state.grid.tiles) {
+            val b = state.bridges[tile.index] ?: continue
+            out.append("bridge ").append(tile).append(' ').append(writeMachine(b))
+            out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
-        for (tile in 0 until state.grid.size) {
+        for (tile in state.grid.tiles) {
             val cursor = state.diverters.forkCursors[tile] ?: 0
             if (cursor != 0) out.append("diverter ").append(tile).append(' ').append(cursor).append('\n')
         }
         // Which feeder a merge takes from next. A separate line from `diverter` because a tile can
         // be both, and an older save simply has none of these.
-        for (tile in 0 until state.grid.size) {
+        for (tile in state.grid.tiles) {
             val cursor = state.diverters.mergeCursors[tile] ?: 0
             if (cursor != 0) out.append("merge ").append(tile).append(' ').append(cursor).append('\n')
         }
 
         // Solid heat lives on machines/segments (their `k=` field), not a separate per-tile block.
         // Air per tile: mixture is wordy but readable/editable.
-        for (tile in 0 until state.grid.size) {
+        for (tile in state.grid.tiles) {
             val mix = state.air.mixtureAt(tile)
             if (mix.isEmpty) continue
             out.append("air ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
-        writeSparse(out, "airheat", state.air.copyEnergy())
+        writeSparse(out, "airheat", state.air.copyEnergy().data)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
@@ -156,12 +156,12 @@ object Save {
 
         // Packed like heat. Momentum saved because reloading without it resumes becalmed.
         // Pipes: same format, empty network = zero cost.
-        for (tile in 0 until state.grid.size) {
+        for (tile in state.grid.tiles) {
             val mix = state.pipeAir.mixtureAt(tile)
             if (mix.isEmpty) continue
             out.append("pipeair ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
         }
-        writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy())
+        writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy().data)
         writeSparse(out, "pipemomx", state.pipeMomentum.copyX())
         writeSparse(out, "pipemomy", state.pipeMomentum.copyY())
 
@@ -201,7 +201,7 @@ object Save {
         if (onLine != 0) out.append('\n')
     }
 
-    private fun where(grid: Grid, tile: Int): String = "(${grid.xOf(tile)}, ${grid.yOf(tile)})"
+    private fun where(grid: Grid, tile: TileIndex): String = "(${grid.xOf(tile)}, ${grid.yOf(tile)})"
 
     /** A segment's links as `RDLU`, with a dash for each direction it is not joined to. */
     private fun linkLetters(s: Segment): String =
@@ -302,7 +302,7 @@ object Save {
      * approximated, it is being written out in full. What the file cannot tell us is a gradient it
      * was never able to express, and a saved smelter will now develop one as it runs.
      *
-     * The remainder is not dropped: [TileEnergy.plusSpread] hands it to the first tiles, so a
+     * The remainder is not dropped: [TileMixture.plusSpread] hands it to the first tiles, so a
      * reloaded machine holds exactly what it held before, to the joule. Anything else would make
      * save/load a slow leak, and the energy ledger would eventually notice.
      */
@@ -321,7 +321,7 @@ object Save {
     ): TileEnergy {
         if (',' !in field) {
             val total = scale.of(field.toLongOrNull() ?: fail("bad body energy '$field'"))
-            return TileEnergy.uniform(cells, 0L).plusSpread(total)
+            return TileEnergy.uniform(cells, 0L).plusEnergySpread(total)
         }
         val parts = field.split(',')
         if (parts.size != cells) fail("a $cells-cell body has ${parts.size} per-cell energy")
@@ -338,7 +338,7 @@ object Save {
         val tiles = machine.kind.thermalTiles
         if (version < 12) {
             val total = scale.of(field.toLongOrNull() ?: fail("bad energy '$field'"))
-            return TileEnergy.uniform(tiles, 0L).plusSpread(total)
+            return TileEnergy.uniform(tiles, 0L).plusEnergySpread(total)
         }
         val parts = field.split(',')
         if (parts.size != tiles) fail("expected $tiles per-tile energy for ${machine.kind}, got ${parts.size}")
@@ -478,16 +478,15 @@ object Save {
         val machines = arrayOfNulls<Machine>(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
-        val diverters = HashMap<Int, Int>()
-        val merges = HashMap<Int, Int>()
-        val piles = HashMap<Int, MutableList<Resource>>()
-        val airMass = LongArray(grid.size * Species.COUNT)
-        val airEnergy = LongArray(grid.size)
+        val diverters = HashMap<TileIndex, Int>()
+        val merges = HashMap<TileIndex, Int>()
+        val airMass = MassArray(grid.size)
+        val airEnergy = EnergyArray(grid.size)
         val edges = EdgeGrid(grid)
         val momentumX = LongArray(edges.xEdgeCount)
         val momentumY = LongArray(edges.yEdgeCount)
-        val pipeMass = LongArray(grid.size * Species.COUNT)
-        val pipeEnergy = LongArray(grid.size)
+        val pipeMass = MassArray(grid.size)
+        val pipeEnergy = EnergyArray(grid.size)
         val pipeMomentumX = LongArray(edges.xEdgeCount)
         val pipeMomentumY = LongArray(edges.yEdgeCount)
         var impulseX = 0L
@@ -597,8 +596,8 @@ object Save {
                     if (bridges[t] != null) fail("two bridges at tile $t")
                     bridges[t] = readMachine(tokens.drop(2), version, scale, energyScale, ::fail) as? Bridge ?: fail("not a bridge")
                 }
-                "diverter" -> diverters[tile(1)] = long(2).toInt()
-                "merge" -> merges[tile(1)] = long(2).toInt()
+                "diverter" -> diverters[TileIndex(tile(1))] = long(2).toInt()
+                "merge" -> merges[TileIndex(tile(1))] = long(2).toInt()
                 // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
@@ -607,13 +606,13 @@ object Save {
                     if (t !in 0 until grid.size) fail("tile $t is outside the grid")
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
-                "airheat" -> readSparse(tokens, airEnergy, energyScale, ::fail)
+                "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) pipeMass[t * Species.COUNT + s.ordinal] = mix[s]
+                    for (s in Species.ALL) pipeMass[MassIndex(TileIndex(t), s)] = mix[s]
                 }
-                "pipeairheat" -> readSparse(tokens, pipeEnergy, energyScale, ::fail)
+                "pipeairheat" -> readSparse(tokens, pipeEnergy.data, energyScale, ::fail)
                 "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
                 "pipemomy" -> readSparse(tokens, pipeMomentumY, scale, ::fail)
                 "momx" -> readSparse(tokens, momentumX, scale, ::fail)
@@ -663,7 +662,7 @@ object Save {
                 "air" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) airMass[t * Species.COUNT + s.ordinal] = mix[s]
+                    for (s in Species.ALL) airMass[MassIndex(TileIndex(t), s)] = mix[s]
                 }
                 else -> fail("unknown entry '${tokens[0]}'")
             }
@@ -675,12 +674,8 @@ object Save {
             grid.size,
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
         )
-        // Built from both arrays together: save with temp keeps it, older gets ambient (not absolute zero).
-        val air = if (airEnergy.any { it != 0L }) AirField.of(airMass, airEnergy) else AirField.of(airMass)
-        // Same rule as the room air, and it matters more here: a version 6 file has no pipe lines at
-        // all, so the network loads empty rather than at some temperature nothing was ever at.
-        val pipeAir =
-            if (pipeEnergy.any { it != 0L }) AirField.of(pipeMass, pipeEnergy) else AirField.of(pipeMass)
+        val air = Atmosphere.of(airMass, airEnergy)
+        val pipeAir = Atmosphere.of(pipeMass, pipeEnergy)
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {

@@ -1,6 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.VolumeField
 import kotlin.math.abs
 import kotlin.math.ln
@@ -171,7 +171,7 @@ class SaturationTest {
         // correction must be invisible to it — otherwise adopting this would have silently shifted
         // every pressure in the game.
         for (species in listOf(Species.Nitrogen, Species.Oxygen, Species.CarbonDioxide)) {
-            val mass = AirField.AMBIENT_AIR[species]
+            val mass = Atmosphere.AMBIENT_AIR[species]
             val densityR = reducedDensity(mass, species, full, full)!!
             val temperatureR = reducedTemperature(293, species)!!
             assertEquals(

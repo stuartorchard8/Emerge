@@ -13,15 +13,15 @@ import org.emerge.demo.outofspace.world.machine.Machine
  * Derived every tick alongside [StructureMap], and for the same reason: a cache with an invalidation
  * rule is a bug waiting for an edit case nobody thought of.
  */
-class Occupancy(private val originOf: IntArray) {
+class Occupancy(private val originOf: TileArray) {
 
     /** The index the machine covering this tile is stored at, or -1 if the tile is free. */
-    operator fun get(tile: Int): Int = if (tile in originOf.indices) originOf[tile] else -1
+    operator fun get(tile: TileIndex): TileIndex = if (tile.index in originOf.data.indices) originOf[tile] else TileIndex.NONE
 
-    fun isFree(tile: Int): Boolean = get(tile) < 0
+    fun isFree(tile: TileIndex): Boolean = get(tile) == TileIndex.NONE
 
     /** True when this tile is where its machine actually lives, rather than a tile it merely covers. */
-    fun isOrigin(tile: Int): Boolean = get(tile) == tile
+    fun isOrigin(tile: TileIndex): Boolean = get(tile) == tile
 
     override fun equals(other: Any?): Boolean =
         this === other || (other is Occupancy && originOf.contentEquals(other.originOf))
@@ -30,10 +30,11 @@ class Occupancy(private val originOf: IntArray) {
 
     companion object {
         fun derive(grid: Grid, machines: List<Machine?>): Occupancy {
-            val originOf = IntArray(grid.size) { -1 }
+            val originOf = TileArray(grid.size) { TileIndex.NONE }
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
-                for (tile in coveredTiles(grid, i, m.kind.size)) originOf[tile] = i
+                val tile = TileIndex(i)
+                for (tile in coveredTiles(grid, tile, m.kind.size)) originOf[tile] = tile
             }
             return Occupancy(originOf)
         }
@@ -41,30 +42,30 @@ class Occupancy(private val originOf: IntArray) {
 }
 
 /**
- * Every tile a machine of [size] centred on [centre] covers, clipped to the grid.
+ * Every tile a machine of [size] centred on [tile] covers, clipped to the grid.
  *
  * Row-major order, which is arbitrary but fixed — the only property anything downstream relies on.
  */
-fun coveredTiles(grid: Grid, centre: Int, size: Int): List<Int> {
-    if (size <= 1) return listOf(centre)
+fun coveredTiles(grid: Grid, tile: TileIndex, size: Int): List<TileIndex> {
+    if (size <= 1) return listOf(tile)
     val reach = size / 2
-    val cx = grid.xOf(centre)
-    val cy = grid.yOf(centre)
-    val out = ArrayList<Int>(size * size)
+    val cx = grid.xOf(tile)
+    val cy = grid.yOf(tile)
+    val out = ArrayList<TileIndex>(size * size)
     for (dy in -reach..reach) {
         for (dx in -reach..reach) {
             val x = cx + dx
             val y = cy + dy
-            if (grid.inBounds(x, y)) out.add(grid.index(x, y))
+            if (grid.inBounds(x, y)) out.add(grid.tile(x, y))
         }
     }
     return out
 }
 
 /** True when a machine of [size] centred here would fit entirely on the grid. */
-fun footprintFits(grid: Grid, centre: Int, size: Int): Boolean {
+fun footprintFits(grid: Grid, tile: TileIndex, size: Int): Boolean {
     val reach = size / 2
-    val cx = grid.xOf(centre)
-    val cy = grid.yOf(centre)
+    val cx = grid.xOf(tile)
+    val cy = grid.yOf(tile)
     return grid.inBounds(cx - reach, cy - reach) && grid.inBounds(cx + reach, cy + reach)
 }

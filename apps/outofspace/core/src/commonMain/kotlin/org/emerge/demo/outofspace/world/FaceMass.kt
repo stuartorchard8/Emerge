@@ -26,19 +26,18 @@ internal fun xFaceMass(edges: EdgeGrid, tileMasses: LongArray, edge: Int): Long 
 internal fun yFaceMass(edges: EdgeGrid, tileMasses: LongArray, edge: Int): Long =
     meanOf(tileMasses, edges.yEdgeBefore(edge), edges.yEdgeAfter(edge))
 
-private fun meanOf(tileMasses: LongArray, before: Int, after: Int): Long {
+private fun meanOf(tileMasses: LongArray, before: TileIndex, after: TileIndex): Long {
     var sum = 0L
     var count = 0
-    if (before >= 0) { sum += tileMasses[before]; count++ }
-    if (after >= 0) { sum += tileMasses[after]; count++ }
+    if (before != TileIndex.NONE) { sum += tileMasses[before.index]; count++ }
+    if (after != TileIndex.NONE) { sum += tileMasses[after.index]; count++ }
     return if (count == 0) 0L else sum / count
 }
 
 /** Total mass of the given all species in each tile — the density field everything else reads. */
-fun tileMass(tileCount: Int, mass: LongArray): LongArray =
-    LongArray(tileCount) { tile ->
+fun tileMass(tileCount: Int, masses: MassArray): LongArray =
+    LongArray(tileCount) {
         var sum = 0L
-        val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += mass[base + s.ordinal]
+        for (s in Species.ALL) sum += masses[MassIndex(TileIndex(it), s)]
         sum
     }

@@ -11,7 +11,7 @@ class Conduits private constructor(private val layers: Array<List<Segment?>>) {
     /** One layer, tile by tile. Always [tileCount] long, with nulls where nothing is laid. */
     operator fun get(conduit: Conduit): List<Segment?> = layers[conduit.ordinal]
 
-    fun at(conduit: Conduit, tile: Int): Segment? = layers[conduit.ordinal][tile]
+    fun at(conduit: Conduit, tile: TileIndex): Segment? = layers[conduit.ordinal][tile.index]
 
     val tileCount: Int get() = layers[0].size
 
@@ -30,10 +30,10 @@ class Conduits private constructor(private val layers: Array<List<Segment?>>) {
      * thermal ledger sums over this, and a sum whose order can change is a sum that can disagree with
      * itself across a save.
      */
-    inline fun all(action: (Conduit, Int, Segment) -> Unit) {
+    inline fun all(action: (Conduit, TileIndex, Segment) -> Unit) {
         for (conduit in Conduit.entries) {
             val layer = this[conduit]
-            for (tile in layer.indices) action(conduit, tile, layer[tile] ?: continue)
+            for (tile in layer.indices) action(conduit, TileIndex(tile), layer[tile] ?: continue)
         }
     }
 

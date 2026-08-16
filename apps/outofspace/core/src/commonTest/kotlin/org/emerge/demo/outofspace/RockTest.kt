@@ -1,8 +1,9 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
@@ -228,7 +229,7 @@ class RockTest {
     private fun bareHull(): VesselState {
         val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
         return VesselState(grid = grid, machines = machines.toList(), gravity = VesselState.PLATING_ONE_G)
@@ -236,7 +237,7 @@ class RockTest {
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */
     private fun vacuumHull(): VesselState =
-        bareHull().let { it.copy(air = AirField.of(LongArray(it.grid.size * Species.COUNT))) }
+        bareHull().let { it.copy(air = Atmosphere.of(MassArray(it.grid.size))) }
 
     private companion object {
         val CFG = OutofspaceConfig()

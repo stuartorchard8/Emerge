@@ -1,12 +1,15 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.EnergyArray
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.remapped
 import kotlin.test.Ignore
@@ -61,34 +64,34 @@ class GridVentTest {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 6..10) {
-            machines[grid.index(x, 4)] = Hull()
-            machines[grid.index(x, 8)] = Hull()
+            machines[grid.tile(x, 4).index] = Hull()
+            machines[grid.tile(x, 8).index] = Hull()
         }
         for (y in 4..8) {
-            machines[grid.index(6, y)] = Hull()
-            machines[grid.index(10, y)] = Hull()
+            machines[grid.tile(6, y).index] = Hull()
+            machines[grid.tile(10, y).index] = Hull()
         }
 
         // Air everywhere, different in every tile, and in two species so a per-species stride bug
         // shows up as a mass change rather than cancelling out.
-        val airMass = LongArray(grid.size * Species.COUNT)
-        val airEnergy = LongArray(grid.size)
-        for (t in 0 until grid.size) {
-            airMass[t * Species.COUNT + Species.Oxygen.ordinal] = 100L + t
-            airMass[t * Species.COUNT + Species.Nitrogen.ordinal] = 7L * t
-            airEnergy[t] = 5_000L + 3L * t
+        val airMass = MassArray(grid.size)
+        val airEnergy = EnergyArray(grid.size)
+        for (tile in grid.tiles) {
+            airMass[MassIndex(tile, Species.Oxygen)] = 100L + tile.index
+            airMass[MassIndex(tile, Species.Nitrogen)] = 7L * tile.index
+            airEnergy[tile] = 5_000L + 3L * tile.index
         }
-        val air = AirField.of(airMass, airEnergy)
+        val air = Atmosphere.of(airMass, airEnergy)
 
         // Pipe air too: it is inside `atmosphereMass`, so a vent that forgets it breaks the ledger
         // in exactly the way §5 says the air ledger breaks. Deliberately a different profile.
-        val pipeMass = LongArray(grid.size * Species.COUNT)
-        val pipeEnergy = LongArray(grid.size)
-        for (t in 0 until grid.size) {
-            pipeMass[t * Species.COUNT + Species.Oxygen.ordinal] = 11L * t
-            pipeEnergy[t] = 900L + t
+        val pipeMass = MassArray(grid.size)
+        val pipeEnergy = EnergyArray(grid.size)
+        for (tile in grid.tiles) {
+            pipeMass[MassIndex(tile, Species.Oxygen)] = 11L * tile.index
+            pipeEnergy[tile] = 900L + tile.index
         }
-        val pipeAir = AirField.of(pipeMass, pipeEnergy)
+        val pipeAir = Atmosphere.of(pipeMass, pipeEnergy)
 
         val edges = EdgeGrid(grid)
         // Signed, and asymmetric between the axes: the identity is a signed sum, so a field of

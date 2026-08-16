@@ -2,10 +2,11 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Contact
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
@@ -404,11 +405,11 @@ class ContactTest {
     private fun wall(): VesselState {
         val grid = Grid(12, 12)
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(WALL.toInt(), ROW.toInt())] = Hull()
+        machines[grid.tile(WALL.toInt(), ROW.toInt()).index] = Hull()
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = AirField.of(LongArray(grid.size * Species.COUNT)),
+            air = Atmosphere.of(MassArray(grid.size)),
         )
     }
 

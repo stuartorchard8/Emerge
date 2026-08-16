@@ -9,24 +9,25 @@ package org.emerge.demo.outofspace.world
  */
 data class Grid(val width: Int, val height: Int) {
     val size: Int get() = width * height
+    val tiles: Array<TileIndex> get() = Array(width*height) { TileIndex(it) }
 
-    fun index(x: Int, y: Int): Int = y * width + x
-    fun xOf(index: Int): Int = index % width
-    fun yOf(index: Int): Int = index / width
+    fun tile(x: Int, y: Int): TileIndex = TileIndex(y * width + x)
+    fun xOf(tile: TileIndex): Int = tile.index % width
+    fun yOf(tile: TileIndex): Int = tile.index / width
 
     fun inBounds(x: Int, y: Int): Boolean = x in 0 until width && y in 0 until height
 
-    /** Index of the neighbour of [index] in [dir], or -1 if that would leave the grid. */
-    fun neighbour(index: Int, dir: Direction): Int {
-        val x = xOf(index) + dir.dx
-        val y = yOf(index) + dir.dy
-        return if (inBounds(x, y)) index(x, y) else -1
+    /** Index of the neighbour of [tile] in [dir], or [TileIndex.NONE] if that would leave the grid. */
+    fun neighbour(tile: TileIndex, dir: Direction): TileIndex {
+        val x = xOf(tile) + dir.dx
+        val y = yOf(tile) + dir.dy
+        return if (inBounds(x, y)) tile(x, y) else TileIndex.NONE
     }
 
-    fun isEdge(tile: Int) : Boolean {
+    fun isEdge(tile: TileIndex) : Boolean {
         // TODO: derive exposure from grid index directly for efficiency
         for (dir in Direction.ALL) {
-            if (neighbour(tile, dir) < 0) {
+            if (neighbour(tile, dir) == TileIndex.NONE) {
                 return true
             }
         }

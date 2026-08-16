@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.Temperature
 
 /**
  * What crossed between room and pipe.
@@ -26,18 +25,19 @@ class InterlayerStep(
  */
 fun exchangeLayers(
     openings: IntArray,
-    roomMass: LongArray,
-    roomEnergy: LongArray?,
-    pipeMass: LongArray,
-    pipeEnergy: LongArray?,
+    roomMass: MassArray,
+    roomEnergy: EnergyArray?,
+    pipeMass: MassArray,
+    pipeEnergy: EnergyArray?,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
     var movedMass = 0L
     var movedEnergy = 0L
 
-    for (tile in openings.indices) {
-        val opening = openings[tile]
+    for (i in openings.indices) {
+        val opening = openings[i]
         if (opening <= 0) continue
+        val tile = TileIndex(i)
 
         val roomMoles = millimolesOf(roomMass, tile)
         val pipeMoles = millimolesOf(pipeMass, tile)
@@ -112,22 +112,21 @@ internal class Moved(val mass: Long, val energy: Long)
  */
 internal fun handOver(
     share: Share,
-    donorTile: Int,
-    acceptorTile: Int,
-    donorMass: LongArray,
-    donorEnergy: LongArray?,
-    acceptorMass: LongArray,
-    acceptorEnergy: LongArray?,
+    donorTile: TileIndex,
+    acceptorTile: TileIndex,
+    donorMass: MassArray,
+    donorEnergy: EnergyArray?,
+    acceptorMass: MassArray,
+    acceptorEnergy: EnergyArray?,
 ): Moved {
-    val base = donorTile * Species.COUNT
-    val target = acceptorTile * Species.COUNT
     var mass = 0L
     for (s in Species.ALL) {
-        val i = base + s.ordinal
-        val take = share.of(donorMass[i])
+        val donorMassIndex = MassIndex(donorTile, s)
+        val acceptorMassIndex = MassIndex(acceptorTile, s)
+        val take = share.of(donorMass[donorMassIndex])
         if (take == 0L) continue
-        donorMass[i] -= take
-        acceptorMass[target + s.ordinal] += take
+        donorMass[donorMassIndex] -= take
+        acceptorMass[acceptorMassIndex] += take
         mass += take
     }
 
@@ -148,8 +147,8 @@ internal fun pressureCapacity(volume: Int, kelvin: Int): Long =
     volume.toLong() * Temperature.AMBIENT_KELVIN / maxOf(kelvin, 1)
 
 /** Cell gas temperature. No gas → ambient (same convention as [gasKelvin]). */
-internal fun kelvinAt(mass: LongArray, gasEnergy: LongArray?, tile: Int): Int {
+internal fun kelvinAt(mass: MassArray, gasEnergy: EnergyArray?, tile: TileIndex): Int {
     if (gasEnergy == null) return Temperature.AMBIENT_KELVIN
-    val capacity = gasCapacityAt(mass, tile)
+    val capacity = heatCapacityAt(mass, tile)
     return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (gasEnergy[tile] / capacity).toInt()
 }

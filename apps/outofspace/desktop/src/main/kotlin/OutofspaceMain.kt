@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.Mode
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
@@ -66,9 +67,9 @@ fun main() {
     var uiConsumed = false
     var lastX = 0f
     var lastY = 0f
-    var hovered = -1
+    var hovered = TileIndex.NONE
     // So a drag paints each tile once rather than re-issuing the same edit every frame.
-    var lastPainted = -1
+    var lastPainted = TileIndex.NONE
     // `hovered` is recomputed from the pointer every time it moves, so it heals itself; `lastPainted`
     // persists across frames and would dedupe against a tile that has moved. Dropped when the grid
     // grows — one repainted tile is harmless, a missed one is not.
@@ -83,7 +84,7 @@ fun main() {
                 uiConsumed = ui.hitTestDown(px, py)
                 if (!uiConsumed) {
                     val tile = renderer.tileIndexAt(px, py, controller.state)
-                    if (tile >= 0) {
+                    if (tile != TileIndex.NONE) {
                         controller.apply(tile)
                         lastPainted = tile
                         // The bellows is a hold, so pressing merely opens the valve — the
@@ -93,9 +94,9 @@ fun main() {
                 }
             } else {
                 leftDown = false
-                lastPainted = -1
+                lastPainted = TileIndex.NONE
                 controller.endDrag()
-                controller.injectTile = -1
+                controller.injectTile = TileIndex.NONE
                 if (uiConsumed) { ui.hitTestUp(px, py); ui.releaseHold() }
                 uiConsumed = false
             }
@@ -126,8 +127,8 @@ fun main() {
             // A held bellows follows the pointer, so gas is laid along the drag.
             leftDown && (controller.tool == Tool.Inject || controller.tool == Tool.InjectWater) -> controller.injectTile = hovered
             // Deleting drags like building does — a run of track comes up in one gesture.
-            leftDown && controller.tool == Tool.Delete -> if (hovered >= 0 && hovered != lastPainted) {
-                controller.remove(hovered)
+            leftDown && controller.tool == Tool.Delete -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
+                controller.removeAt(hovered)
                 lastPainted = hovered
             }
             // Painting a run of machines is a Build-tool gesture; a wire drag would just thrash
@@ -135,7 +136,7 @@ fun main() {
             // Painting a run of machines is a Build-tool gesture. For conduit it is more than that:
             // the drag is what *connects* the tiles, since track no longer joins by touching, so the
             // gesture is handed to the controller whole rather than replayed as isolated placements.
-            leftDown && controller.tool == Tool.Build -> if (hovered >= 0 && hovered != lastPainted) {
+            leftDown && controller.tool == Tool.Build -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
                 if (controller.brush.conduit != null) controller.dragTo(hovered) else controller.place(hovered)
                 lastPainted = hovered
             }
@@ -281,7 +282,7 @@ fun main() {
         }
 
         val state = controller.tick(delta)
-        if (frame.advance(state).moved) lastPainted = -1
+        if (frame.advance(state).moved) lastPainted = TileIndex.NONE
 
         renderer.draw(state, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
         hud.build(ui, controller, fps, hovered)

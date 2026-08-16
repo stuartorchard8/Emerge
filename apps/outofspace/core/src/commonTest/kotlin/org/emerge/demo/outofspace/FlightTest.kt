@@ -1,10 +1,11 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
@@ -93,7 +94,7 @@ class FlightTest {
     fun `a breached vessel accelerates away from the hole and keeps going`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
-        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
+        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
 
         var opening = 0L
         var previousPosition = 0L
@@ -150,7 +151,7 @@ class FlightTest {
     fun `thrust arrives before the exhaust does`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
-        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
+        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
         controller.stepOnce()
 
         val s = controller.state
@@ -169,7 +170,7 @@ class FlightTest {
         // non-zero one to be about anything. It reads as a fixture saying what it is testing, which
         // is what dropping the default bought.
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid).copy(gravity = VesselState.PLATING_ONE_G))
-        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
+        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
 
         var leanX = 0L
         var leanY = 0L
@@ -208,7 +209,7 @@ class FlightTest {
     fun `a save remembers the voyage`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
-        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
+        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
         repeat(TICKS) { controller.stepOnce() }
 
         val played = controller.state
@@ -320,21 +321,21 @@ class FlightTest {
     /** A hull with no air in it, so a burn is arithmetic rather than a measurement. */
     private fun vacuumHull(grid: Grid, ballast: Boolean): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         if (ballast) for (x in HULL_LEFT..HULL_RIGHT) for (y in HULL_TOP + 1 until BREACH_Y) put(x, y)
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = AirField.of(LongArray(grid.size * Species.COUNT)),
+            air = Atmosphere.of(MassArray(grid.size)),
         )
     }
 
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
     private fun bareHull(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         return VesselState(grid = grid, machines = machines.toList())
@@ -388,7 +389,7 @@ class FlightTest {
     fun `the momentum ledger still balances while the ship is under way`() {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
-        controller.remove(cfg.initialGrid.index(HULL_LEFT, BREACH_Y))
+        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
 
         repeat(TICKS) {
             controller.stepOnce()

@@ -77,18 +77,18 @@ inline fun forEachVesselMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
-    action: (tile: Int, fabric: Long, cargo: Long) -> Unit,
+    action: (tile: TileIndex, fabric: Long, cargo: Long) -> Unit,
 ) {
     for (t in machines.indices) {
         val m = machines[t] ?: continue
-        action(t, m.kind.massPerTile * m.kind.thermalTiles, massIn(m))
+        action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m))
     }
     conduits.all { conduit, tile, segment ->
         action(tile, conduit.massPerTile, if (conduit == Conduit.Rail) segment.held?.mass ?: 0L else 0L)
     }
     for (t in bridges.indices) {
         val b = bridges[t] ?: continue
-        action(t, b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b))
+        action(TileIndex(t), b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b))
     }
 }
 

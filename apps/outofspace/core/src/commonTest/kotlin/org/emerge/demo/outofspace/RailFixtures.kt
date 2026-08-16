@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.TileIndex
 
 /**
  * Track for a test world, laid **and joined**, the way a drag lays it.
@@ -41,19 +42,19 @@ class RailPlan(private val grid: Grid) {
      */
     fun lay(x: Int, y: Int, gauge: Boolean = false): RailPlan = apply {
         if (!grid.inBounds(x, y)) return@apply
-        val at = grid.index(x, y)
-        val existing = rails[at]
-        rails[at] = existing?.copy(isGauge = gauge || existing.isGauge)
+        val tile = grid.tile(x, y)
+        val existing = rails[tile.index]
+        rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
             ?: Segment(Conduit.Rail, isGauge = gauge)
     }
 
     /** Joins two adjacent tiles, both halves, exactly as [Edit.Lay] does. */
     fun join(x: Int, y: Int, dir: Direction): RailPlan = apply {
-        val a = grid.index(x, y)
+        val a = grid.tile(x, y)
         val b = grid.neighbour(a, dir)
-        if (b < 0) return@apply
-        rails[a] = (rails[a] ?: Segment(Conduit.Rail)).joinedTo(dir)
-        rails[b] = (rails[b] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
+        if (b == TileIndex.NONE) return@apply
+        rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail)).joinedTo(dir)
+        rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
     }
 
     /** A horizontal run on row [y], inclusive, with optional gauges at given x positions. */
@@ -87,30 +88,30 @@ fun joinRow(grid: Grid, rails: Array<Segment?>, fromX: Int, toX: Int, y: Int, ga
     val lo = minOf(fromX, toX)
     val hi = maxOf(fromX, toX)
     for (x in lo..hi) layInto(grid, rails, x, y, x in gaugeAt)
-    for (x in lo until hi) linkPair(grid, rails, grid.index(x, y), Direction.Right)
+    for (x in lo until hi) linkPair(grid, rails, grid.tile(x, y), Direction.Right)
 }
 
 fun joinCol(grid: Grid, rails: Array<Segment?>, x: Int, fromY: Int, toY: Int) {
     val lo = minOf(fromY, toY)
     val hi = maxOf(fromY, toY)
     for (y in lo..hi) layInto(grid, rails, x, y, false)
-    for (y in lo until hi) linkPair(grid, rails, grid.index(x, y), Direction.Down)
+    for (y in lo until hi) linkPair(grid, rails, grid.tile(x, y), Direction.Down)
 }
 
 /** Lays track, preserving the joins of anything already at that tile. See [RailPlan.lay]. */
 private fun layInto(grid: Grid, rails: Array<Segment?>, x: Int, y: Int, gauge: Boolean) {
     if (!grid.inBounds(x, y)) return
-    val at = grid.index(x, y)
-    val existing = rails[at]
-    rails[at] = existing?.copy(isGauge = gauge || existing.isGauge)
+    val tile = grid.tile(x, y)
+    val existing = rails[tile.index]
+    rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
         ?: Segment(Conduit.Rail, isGauge = gauge)
 }
 
-private fun linkPair(grid: Grid, rails: Array<Segment?>, a: Int, dir: Direction) {
+private fun linkPair(grid: Grid, rails: Array<Segment?>, a: TileIndex, dir: Direction) {
     val b = grid.neighbour(a, dir)
-    if (b < 0) return
-    rails[a] = (rails[a] ?: Segment(Conduit.Rail)).joinedTo(dir)
-    rails[b] = (rails[b] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
+    if (b == TileIndex.NONE) return
+    rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail)).joinedTo(dir)
+    rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
 }
 
 // ── Ore, since there is no longer anywhere it comes from for free ─────────────
@@ -139,7 +140,7 @@ fun feedExtractor(
     wiring: Wiring = Wiring.RUNNING,
     bodies: Int = 1,
 ): List<RigidBody> {
-    machines[grid.index(x, y)] = Extractor(facing).withWiring(wiring)
+    machines[grid.tile(x, y).index] = Extractor(facing).withWiring(wiring)
     return rockOnPlate(x, y, bodies)
 }
 

@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.RockSpawner
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,19 +65,19 @@ class GridFitTest {
             if (y + reach > maxY) maxY = y + reach
         }
 
-        for (i in s.machines.indices) {
-            val m = s.machines[i] ?: continue
-            cover(s.grid.xOf(i), s.grid.yOf(i), m.kind.size / 2)
+        for (tile in s.grid.tiles) {
+            val m = s[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
-        for (i in s.bridges.indices) {
-            if (s.bridges[i] == null) continue
-            cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+        for (tile in s.grid.tiles) {
+            if (s.bridges[tile.index] == null) continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             val layer = s.conduits[c]
-            for (i in layer.indices) {
-                if (layer[i] == null) continue
-                cover(s.grid.xOf(i), s.grid.yOf(i), 0)
+            for (tile in s.grid.tiles) {
+                if (layer[tile.index] == null) continue
+                cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
             }
         }
 
@@ -101,10 +102,10 @@ class GridFitTest {
         // §1.3: StructureMap floods inward from the boundary, so a hull flush against it reads as
         // interior and the whole ship is inside-out. The pad is what makes that unrepresentable.
         val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
-        for (i in fitted.machines.indices) {
-            if (fitted.machines[i] == null) continue
-            val x = fitted.grid.xOf(i)
-            val y = fitted.grid.yOf(i)
+        for (tile in fitted.grid.tiles) {
+            if (fitted[tile] == null) continue
+            val x = fitted.grid.xOf(tile)
+            val y = fitted.grid.yOf(tile)
             assertTrue(
                 x > 0 && y > 0 && x < fitted.grid.width - 1 && y < fitted.grid.height - 1,
                 "a machine sits on the grid edge at ($x, $y)",
@@ -170,11 +171,11 @@ class GridFitTest {
         assertEquals(41, fitted.grid.width, "fitted width")
         assertEquals(26, fitted.grid.height, "fitted height")
 
-        val anchor = fitted.machines.indices.firstOrNull {
-            fitted.machines[it]?.kind == MachineKind.Extractor
-        }
-        assertTrue(anchor != null, "the starter vessel has an extractor")
-        assertEquals(STARTER_PLATE_X + 3, fitted.grid.xOf(anchor!!), "extractor x in the fitted frame")
+        val anchor = fitted.grid.tiles.firstOrNull {
+            fitted[it]?.kind == MachineKind.Extractor
+        } ?: TileIndex.NONE
+        assertTrue(anchor != TileIndex.NONE, "the starter vessel has an extractor")
+        assertEquals(STARTER_PLATE_X + 3, fitted.grid.xOf(anchor), "extractor x in the fitted frame")
         assertEquals(STARTER_PLATE_Y - 3, fitted.grid.yOf(anchor), "extractor y in the fitted frame")
     }
 
@@ -244,7 +245,7 @@ class GridFitTest {
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
         }
-        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key }) {
+        for ((tile, cursor) in s.diverters.forkCursors.entries.sortedBy { it.key.index }) {
             append('|').append(tile).append(':').append(cursor)
         }
         append('|').append(s.atmosphereMass).append('|').append(s.atmosphereEnergy)

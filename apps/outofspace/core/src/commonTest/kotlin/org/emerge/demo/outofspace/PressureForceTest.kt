@@ -1,13 +1,16 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.applyPressureForce
 import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
@@ -32,30 +35,30 @@ class PressureForceTest {
         val grid = Grid(w + 2, h + 2)
         val edges = EdgeGrid(grid)
         val apertures: ApertureField
-        val mass = LongArray(grid.size * Species.COUNT)
+        val masses = MassArray(grid.size)
         val mx = LongArray(edges.xEdgeCount)
         val my = LongArray(edges.yEdgeCount)
 
         init {
             val machines = arrayOfNulls<Machine>(grid.size)
-            for (x in 1..w) { machines[grid.index(x, 1)] = Hull(); machines[grid.index(x, h)] = Hull() }
-            for (y in 1..h) { machines[grid.index(1, y)] = Hull(); machines[grid.index(w, y)] = Hull() }
+            for (x in 1..w) { machines[grid.tile(x, 1).index] = Hull(); machines[grid.tile(x, h).index] = Hull() }
+            for (y in 1..h) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(w, y).index] = Hull() }
             apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines.toList()))
-            for (x in 2 until w) for (y in 2 until h) air(grid.index(x, y))
+            for (x in 2 until w) for (y in 2 until h) air(grid.tile(x, y))
         }
 
-        fun air(tile: Int, share: Long = 1L) {
-            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = AirField.AMBIENT_AIR[s] * share
+        fun air(tile: TileIndex, share: Long = 1L) {
+            for (s in Species.ALL) masses[MassIndex(tile, s)] = Atmosphere.AMBIENT_AIR[s] * share
         }
 
-        fun empty(tile: Int) {
-            for (s in Species.ALL) mass[tile * Species.COUNT + s.ordinal] = 0L
+        fun empty(tile: TileIndex) {
+            for (s in Species.ALL) masses[MassIndex(tile, s)] = 0L
         }
 
         fun run() = applyPressureForce(
             edges, apertures, mx, my,
-            tileMass(grid.size, mass),
-            tilePressure(grid.size, mass),
+            tileMass(grid.size, masses),
+            tilePressure(grid.size, masses),
         )
 
         fun totalX(): Long = mx.sum()
@@ -77,9 +80,9 @@ class PressureForceTest {
     fun `a sealed vessel cannot push itself however its pressure is arranged`() {
         val room = Room(8, 8)
         // A thoroughly uneven interior: a dense knot in one corner, a thin patch in the other.
-        room.air(room.grid.index(3, 3), share = 3)
-        room.air(room.grid.index(4, 3), share = 2)
-        room.air(room.grid.index(6, 6), share = 0)
+        room.air(room.grid.tile(3, 3), share = 3)
+        room.air(room.grid.tile(4, 3), share = 2)
+        room.air(room.grid.tile(6, 6), share = 0)
 
         val result = room.run()
 
@@ -95,7 +98,7 @@ class PressureForceTest {
     @Test
     fun `gas beside a vacuum is pushed into it`() {
         val room = Room(8, 8)
-        for (y in 2 until 8) room.empty(room.grid.index(6, y))
+        for (y in 2 until 8) room.empty(room.grid.tile(6, y))
 
         room.run()
 
@@ -119,8 +122,8 @@ class PressureForceTest {
 
         val result = applyPressureForce(
             room.edges, breached, room.mx, room.my,
-            tileMass(room.grid.size, room.mass),
-            tilePressure(room.grid.size, room.mass),
+            tileMass(room.grid.size, room.masses),
+            tilePressure(room.grid.size, room.masses),
         )
 
         // Gas heads for the hole, which is toward -x.

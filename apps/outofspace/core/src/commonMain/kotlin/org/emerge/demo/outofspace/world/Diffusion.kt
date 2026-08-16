@@ -2,9 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
-import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.StructureMap
 
 /**
  * Rapid diffusion: the replacement for the momentum solver.
@@ -49,7 +46,7 @@ import org.emerge.demo.outofspace.world.StructureMap
  * and aperture arithmetic to learn one number.
  */
 class DiffusionStep(
-    val air: AirField,
+    val air: Atmosphere,
     val ventedMass: Long,
     val ventedEnergy: Long,
     /**
@@ -129,8 +126,9 @@ private const val FACES = 4
 fun diffuseFluid(
     grid: Grid,
     structure: StructureMap,
-    masses: LongArray,
-    energies: LongArray? = null,
+    entities: TileArray,
+    masses: MassArray,
+    energies: EnergyArray? = null,
 ): DiffusionStep {
     val edges = EdgeGrid(grid)
     return diffuseFluid(edges, ApertureField.derive(edges, structure), masses, energies)
@@ -158,17 +156,16 @@ fun diffuseFluid(
 fun diffuseFluid(
     edges: EdgeGrid,
     apertures: ApertureField,
-    masses: LongArray,
-    energies: LongArray? = null,
+    masses: MassArray,
+    energies: EnergyArray? = null,
     subSteps: Int = SUB_STEPS,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
-    val species = Species.COUNT
 
     val startingMass = tileMass(tiles, masses)
-    val deltaMass = LongArray(masses.size)
-    val deltaEnergy = if (energies == null) null else LongArray(tiles)
+    val deltaMass = MassArray(tiles)
+    val deltaEnergy = if (energies == null) null else EnergyArray(tiles)
 
     var ventedMass = 0L
     var ventedEnergy = 0L
@@ -182,121 +179,111 @@ fun diffuseFluid(
 
     // Reused across tiles: what actually crossed each of the four faces, and who was on the far side.
     val faceAperture = IntArray(FACES)
-    val faceNeighbour = IntArray(FACES)
+    val faceNeighbour = Array(FACES) { TileIndex.NONE }
     val faceOut = LongArray(FACES)
     val faceEdge = IntArray(FACES)
 
-    repeat(subSteps) { pass ->
-        // Each pass reads a settled field: deltas are applied at the end of the pass that made them,
-        // so a sub-step never sees another sub-step's half-finished arithmetic.
-        val mass = if (pass == 0) startingMass else tileMass(tiles, masses)
-        if (pass > 0) {
-            deltaMass.fill(0L)
-            deltaEnergy?.fill(0L)
-        }
+    for (i in 0 until tiles) {
+        val tile = TileIndex(i)
+        val ownMass = startingMass[tile.index]
+        if (ownMass <= 0L) continue
 
-        for (tile in 0 until tiles) {
-            val ownMass = mass[tile]
-            if (ownMass <= 0L) continue
-            val base = tile * species
+        val left = edges.leftEdgeOf(tile)
+        val right = edges.rightEdgeOf(tile)
+        val up = edges.upEdgeOf(tile)
+        val down = edges.downEdgeOf(tile)
+        faceAperture[0] = apertures.yAt(up); faceNeighbour[0] = edges.yEdgeBefore(up)
+        faceAperture[1] = apertures.yAt(down); faceNeighbour[1] = edges.yEdgeAfter(down)
+        faceAperture[2] = apertures.xAt(left); faceNeighbour[2] = edges.xEdgeBefore(left)
+        faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
+        faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
+        faceOut.fill(0L)
 
-            val left = edges.leftEdgeOf(tile)
-            val right = edges.rightEdgeOf(tile)
-            val up = edges.upEdgeOf(tile)
-            val down = edges.downEdgeOf(tile)
-            faceAperture[0] = apertures.yAt(up); faceNeighbour[0] = edges.yEdgeBefore(up)
-            faceAperture[1] = apertures.yAt(down); faceNeighbour[1] = edges.yEdgeAfter(down)
-            faceAperture[2] = apertures.xAt(left); faceNeighbour[2] = edges.xEdgeBefore(left)
-            faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
-            faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
-            faceOut.fill(0L)
+        var outMass = 0L
+        for (s in Species.ALL) {
+            val count = masses[MassIndex(tile, s)]
+            if (count <= 0L) continue
+            val share = count * FACE_SHARE / SLOTS
+            if (share <= 0L) continue
 
-            var outMass = 0L
-            for (s in 0 until species) {
-                val count = masses[base + s]
-                if (count <= 0L) continue
-                val share = count * FACE_SHARE / SLOTS
-                if (share <= 0L) continue
+            for (f in 0 until FACES) {
+                val aperture = faceAperture[f]
+                if (aperture <= 0) continue
 
-                for (f in 0 until FACES) {
-                    val aperture = faceAperture[f]
-                    if (aperture <= 0) continue
+                // A partly-open face passes its share in proportion to how open it is; what will not
+                // fit stays home, which is the same thing a shut face does. Full openness is the
+                // overwhelmingly common case and is exact — the rounding here is confined to valves
+                // and doors mid-cycle, where a stranded gram is a gram behind a nearly-shut door.
+                val out =
+                    if (aperture >= ApertureField.OPEN) share
+                    else share * aperture / ApertureField.OPEN
+                if (out <= 0L) continue
 
-                    // A partly-open face passes its share in proportion to how open it is; what will not
-                    // fit stays home, which is the same thing a shut face does. Full openness is the
-                    // overwhelmingly common case and is exact — the rounding here is confined to valves
-                    // and doors mid-cycle, where a stranded gram is a gram behind a nearly-shut door.
-                    val out =
-                        if (aperture >= ApertureField.OPEN) share
-                        else share * aperture / ApertureField.OPEN
-                    if (out <= 0L) continue
-
-                    deltaMass[base + s] -= out
-                    val neighbour = faceNeighbour[f]
-                    if (neighbour < 0) ventedMass += out else deltaMass[neighbour * species + s] += out
-                    faceOut[f] += out
-                    outMass += out
-                }
-            }
-
-            // ── Which way that gas went ──
-            //
-            // Signed toward +x and +y, so the neighbour on the other side of the face will subtract what
-            // it sends back through the same slot. Gas shed into space over the rim counts too: a breach
-            // is the clearest flow in the vessel and the arrows should say so.
-            fluxY[faceEdge[0]] -= faceOut[0]
-            fluxY[faceEdge[1]] += faceOut[1]
-            fluxX[faceEdge[2]] -= faceOut[2]
-            fluxX[faceEdge[3]] += faceOut[3]
-
-            // ── The energy on the gas that just left ──
-            //
-            // Telescoped: each face is handed the difference between two running totals of
-            // `energy × massSoFar / ownMass`, so the shares sum to exactly `energy × outMass / ownMass`
-            // and, when everything leaves, to exactly `energy`. Giving each face its own floored fraction
-            // instead would leave a few units of energy behind every time, and behind in an empty cell they are
-            // heat with nothing to hold it.
-            //
-            // The running total goes through [scaledRatio] for exactly the reason
-            // [org.emerge.demo.outofspace.chem.apportion] does, and this is the same construction:
-            // `energy × carried` multiplies an energy by a mass, so it is **quadratic in the mass
-            // unit** and reaches 2.9e22 for an ambient tile at one microgram per unit. The wrap does
-            // not merely lose precision — it hands a face more energy than the tile has, and the
-            // cell is left holding negative energy, a negative kelvin, and eventually a negative
-            // reduced temperature that indexes a saturation table at −1.
-            //
-            // Telescoping survives the reduction because it rests on [scaledRatio]'s two documented
-            // properties and on nothing else: monotonic in the numerator, so no face can be handed a
-            // negative share, and exact at the ends, so a tile that empties completely hands over
-            // precisely `energy` and keeps nothing back.
-            if (energies != null && deltaEnergy != null && outMass > 0L) {
-                val energy = energies[tile]
-                var carried = 0L
-                var assigned = 0L
-                for (f in 0 until FACES) {
-                    if (faceOut[f] <= 0L) continue
-                    carried += faceOut[f]
-                    val upTo = scaledRatio(carried, ownMass, energy)
-                    val out = upTo - assigned
-                    assigned = upTo
-                    if (out == 0L) continue
-                    deltaEnergy[tile] -= out
-                    val neighbour = faceNeighbour[f]
-                    if (neighbour < 0) ventedEnergy += out else deltaEnergy[neighbour] += out
-                }
+                deltaMass[MassIndex(tile, s)] -= out
+                val neighbour = faceNeighbour[f]
+                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass[MassIndex(neighbour, s)] += out
+                faceOut[f] += out
+                outMass += out
             }
         }
 
-        for (i in masses.indices) masses[i] += deltaMass[i]
-        if (energies != null && deltaEnergy != null) for (t in 0 until tiles) energies[t] += deltaEnergy[t]
+        // ── Which way that gas went ──
+        //
+        // Signed toward +x and +y, so the neighbour on the other side of the face will subtract what
+        // it sends back through the same slot. Gas shed into space over the rim counts too: a breach
+        // is the clearest flow in the vessel and the arrows should say so.
+        fluxY[faceEdge[0]] -= faceOut[0]
+        fluxY[faceEdge[1]] += faceOut[1]
+        fluxX[faceEdge[2]] -= faceOut[2]
+        fluxX[faceEdge[3]] += faceOut[3]
+
+        // ── The energy on the gas that just left ──
+        //
+        // Telescoped: each face is handed the difference between two running totals of
+        // `energy × massSoFar / ownMass`, so the shares sum to exactly `energy × outMass / ownMass`
+        // and, when everything leaves, to exactly `energy`. Giving each face its own floored fraction
+        // instead would leave a few units of energy behind every time, and behind in an empty cell they are
+        // heat with nothing to hold it.
+        //
+        // The running total goes through [scaledRatio] for exactly the reason
+        // [org.emerge.demo.outofspace.chem.apportion] does, and this is the same construction:
+        // `energy × carried` multiplies an energy by a mass, so it is **quadratic in the mass
+        // unit** and reaches 2.9e22 for an ambient tile at one microgram per unit. The wrap does
+        // not merely lose precision — it hands a face more energy than the tile has, and the
+        // cell is left holding negative energy, a negative kelvin, and eventually a negative
+        // reduced temperature that indexes a saturation table at −1.
+        //
+        // Telescoping survives the reduction because it rests on [scaledRatio]'s two documented
+        // properties and on nothing else: monotonic in the numerator, so no face can be handed a
+        // negative share, and exact at the ends, so a tile that empties completely hands over
+        // precisely `energy` and keeps nothing back.
+        if (energies != null && deltaEnergy != null && outMass > 0L) {
+            val energy = energies[tile]
+            var carried = 0L
+            var assigned = 0L
+            for (f in 0 until FACES) {
+                if (faceOut[f] <= 0L) continue
+                carried += faceOut[f]
+                val upTo = scaledRatio(carried, ownMass, energy)
+                val out = upTo - assigned
+                assigned = upTo
+                if (out == 0L) continue
+                deltaEnergy[tile] -= out
+                val neighbour = faceNeighbour[f]
+                if (neighbour == TileIndex.NONE) ventedEnergy += out else deltaEnergy[neighbour] += out
+            }
+        }
     }
+
+    for (t in grid.tiles) for (s in Species.ALL) masses[MassIndex(t,s)] += deltaMass[MassIndex(t,s)]
+    if (energies != null && deltaEnergy != null) for (t in grid.tiles) energies[t] += deltaEnergy[t]
 
     // Snapshotted rather than folded on demand: [masses] belongs to the caller, which goes on editing
     // it after the pass, and a mass read later would not be the mass this flux came out of.
     val endingMass = tileMass(tiles, masses)
 
     return DiffusionStep(
-        air = if (energies == null) AirField.of(masses) else AirField.of(masses, energies),
+        air = if (energies == null) Atmosphere.of(masses) else Atmosphere.of(masses, energies),
         ventedMass = ventedMass,
         ventedEnergy = ventedEnergy,
         edges = edges,

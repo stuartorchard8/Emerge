@@ -11,7 +11,7 @@ import org.emerge.demo.outofspace.world.machine.Pump
  * where the rest of the machine behaviour lives, and leaves this file with nothing to know except
  * how gas moves.
  */
-class PumpDemand(val from: Int, val into: Int, val millimoles: Long)
+class PumpDemand(val from: TileIndex, val into: TileIndex, val millimoles: Long)
 
 /**
  * Apply pumps: gas from room→pipe, against pressure gradient (stalls at STALL_RATIO× intake pressure).
@@ -19,10 +19,10 @@ class PumpDemand(val from: Int, val into: Int, val millimoles: Long)
  */
 fun applyPumps(
     demands: List<PumpDemand>,
-    roomMass: LongArray,
-    roomEnergy: LongArray?,
-    pipeMass: LongArray,
-    pipeEnergy: LongArray?,
+    roomMass: MassArray,
+    roomEnergy: EnergyArray?,
+    pipeMass: MassArray,
+    pipeEnergy: EnergyArray?,
     pipeVolumes: VolumeField,
 ): InterlayerStep {
     if (demands.isEmpty()) return InterlayerStep(0L, 0L)

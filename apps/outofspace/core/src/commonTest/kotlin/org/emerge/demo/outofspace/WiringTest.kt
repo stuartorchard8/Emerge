@@ -21,6 +21,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
@@ -61,24 +62,24 @@ class WiringTest {
     private fun signalRow(grid: Grid, wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
         val lo = minOf(fromX, toX)
         val hi = maxOf(fromX, toX)
-        for (x in lo..hi) if (wires[grid.index(x, y)] == null) wires[grid.index(x, y)] = Segment(Conduit.Signal)
+        for (x in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
         for (x in lo until hi) {
-            val a = grid.index(x, y)
-            val b = grid.index(x + 1, y)
-            wires[a] = wires[a]!!.joinedTo(Direction.Right)
-            wires[b] = wires[b]!!.joinedTo(Direction.Left)
+            val a = grid.tile(x, y)
+            val b = grid.tile(x + 1, y)
+            wires[a.index] = wires[a.index]!!.joinedTo(Direction.Right)
+            wires[b.index] = wires[b.index]!!.joinedTo(Direction.Left)
         }
     }
 
     private fun signalCol(grid: Grid, wires: Array<Segment?>, x: Int, fromY: Int, toY: Int) {
         val lo = minOf(fromY, toY)
         val hi = maxOf(fromY, toY)
-        for (y in lo..hi) if (wires[grid.index(x, y)] == null) wires[grid.index(x, y)] = Segment(Conduit.Signal)
+        for (y in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
         for (y in lo until hi) {
-            val a = grid.index(x, y)
-            val b = grid.index(x, y + 1)
-            wires[a] = wires[a]!!.joinedTo(Direction.Down)
-            wires[b] = wires[b]!!.joinedTo(Direction.Up)
+            val a = grid.tile(x, y)
+            val b = grid.tile(x, y + 1)
+            wires[a.index] = wires[a.index]!!.joinedTo(Direction.Down)
+            wires[b.index] = wires[b.index]!!.joinedTo(Direction.Up)
         }
     }
 
@@ -124,11 +125,11 @@ class WiringTest {
         val networks = SignalNetworks.derive(grid, Conduits.of(grid.size, Conduit.Signal to wires.toList()))
 
         val field = SignalField.build(networks) { raise ->
-            raise(grid.index(0, 0), 200)
-            raise(grid.index(3, 0), 900)
-            raise(grid.index(5, 0), 400)
+            raise(grid.tile(0, 0), 200)
+            raise(grid.tile(3, 0), 900)
+            raise(grid.tile(5, 0), 400)
         }
-        assertEquals(900, field.at(grid.index(1, 0)), "the run carries the loudest of the three, everywhere")
+        assertEquals(900, field.at(grid.tile(1, 0)), "the run carries the loudest of the three, everywhere")
     }
 
     // ── Sensors ───────────────────────────────────────────────────────────────
@@ -149,7 +150,7 @@ class WiringTest {
     @Test
     fun `a sensor reports the fullness of the tile it faces`() {
         val s = run(tankAndSensor(Storage.CAP / 2), 1)
-        assertEquals(500, s.signals.at(1), "a half-full tank should read 50%")
+        assertEquals(500, s.signals.at(TileIndex(1)), "a half-full tank should read 50%")
     }
 
     @Test
@@ -163,7 +164,7 @@ class WiringTest {
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
         )
         s = run(s, 1)
-        assertEquals(0, s.signals.at(1))
+        assertEquals(0, s.signals.at(TileIndex(1)))
     }
 
     /**
@@ -175,7 +176,7 @@ class WiringTest {
     fun `a sensor with no wire beneath it drives nothing, and that is not an error`() {
         val s = run(tankAndSensor(Storage.CAP, wired = false), 1)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits at all")
-        assertEquals(0, s.signals.at(1))
+        assertEquals(0, s.signals.at(TileIndex(1)))
     }
 
     // ── Throttling, not switching ─────────────────────────────────────────────
@@ -190,7 +191,7 @@ class WiringTest {
             val machines = arrayOfNulls<Machine>(grid.size)
             val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
             val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
-            return (s[grid.index(2, 2)] as Extractor).buffer.mass
+            return (s[grid.tile(2, 2)] as Extractor).buffer.mass
         }
         // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_MASS`, which was
         // the same number only by the coincidence that a packet was four ticks' output — a
@@ -210,15 +211,15 @@ class WiringTest {
         val grid = Grid(12, 6)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
-        m[grid.index(3, 3)] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
-        m[grid.index(8, 3)] = Storage(Direction.Right)
+        m[grid.tile(3, 3).index] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
+        m[grid.tile(8, 3).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
         var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, RAIL_PERIOD * 8)
-        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.index(3, 3)] as Storage).contents?.mass, "it let go of nothing")
-        assertEquals(0L, (4..7).sumOf { s.railAt(grid.index(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
+        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.tile(3, 3)] as Storage).contents?.mass, "it let go of nothing")
+        assertEquals(0L, (4..7).sumOf { s.railAt(grid.tile(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
     // ── The loop that makes wiring worth having ───────────────────────────────
@@ -244,8 +245,8 @@ class WiringTest {
             wiring = wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000),
             bodies = 4,
         )
-        machines[grid.index(6, 3)] = Storage(Direction.Right)   // input port at (5, 3)
-        machines[grid.index(6, 5)] = Sensor(Direction.Up)
+        machines[grid.tile(6, 3).index] = Storage(Direction.Right)   // input port at (5, 3)
+        machines[grid.tile(6, 5).index] = Sensor(Direction.Up)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 5, 3)
         // The run that joins the sensor to the extractor. Without it the two are strangers, which is
@@ -271,7 +272,7 @@ class WiringTest {
         // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
         // lurches that say nothing about a rate.
         fun ground(w: VesselState): Long =
-            w.extractedMass - ((w[grid.index(2, 3)] as Extractor).input?.mass ?: 0L)
+            w.extractedMass - ((w[grid.tile(2, 3)] as Extractor).input?.mass ?: 0L)
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
@@ -279,7 +280,7 @@ class WiringTest {
         // slows the last of it down. Derived rather than typed: filling a tank takes as many ticks
         // as it takes packets, and how big a packet is is a tuning dial.
         s = run(s, ticksToMove(Storage.CAP) * 3 / 2)
-        val onTheWire = s.signals.at(grid.index(2, 3))
+        val onTheWire = s.signals.at(grid.tile(2, 3))
         assertTrue(onTheWire > 800, "the tank should be reading nearly full, got $onTheWire")
 
         val lateRate = ground(run(s, 40)) - ground(s)
@@ -287,7 +288,7 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue((s[grid.index(6, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue((s[grid.tile(6, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
     }
 
     @Test
@@ -296,7 +297,7 @@ class WiringTest {
         // Found by its wiring rather than by coordinates — the vessel is fitted to its contents on
         // construction, so a written-down tile index would be a hostage to its layout. There is
         // exactly one machine aboard that reads a wire, and it is the demonstration extractor.
-        val throttled = (0 until s.grid.size).filter { t ->
+        val throttled = s.grid.tiles.filter { t ->
             s[t]?.wiring?.triggers(Action.Run)?.any { it.source == SignalSource.Wire } == true
         }
         assertEquals(1, throttled.size, "expected one wire-driven machine aboard, found ${throttled.size}")
@@ -313,21 +314,21 @@ class WiringTest {
         val grid = Grid(2, 1)
         val base = VesselState(grid, listOf(Extractor(Direction.Right), null))
 
-        val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(0, Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
-        assertEquals(2, added[0]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
+        val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(TileIndex(0), Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
+        assertEquals(2, added[TileIndex(0)]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
 
-        val changed = run(added, 1, OutofspaceInput(listOf(Edit.Wire(0, Action.Run, 1, Trigger(SignalSource.Wire, 500)))))
-        assertEquals(Trigger(SignalSource.Wire, 500), changed[0]!!.wiring.triggers(Action.Run)[1])
+        val changed = run(added, 1, OutofspaceInput(listOf(Edit.Wire(TileIndex(0), Action.Run, 1, Trigger(SignalSource.Wire, 500)))))
+        assertEquals(Trigger(SignalSource.Wire, 500), changed[TileIndex(0)]!!.wiring.triggers(Action.Run)[1])
 
-        val removed = run(changed, 1, OutofspaceInput(listOf(Edit.Wire(0, Action.Run, 1, null))))
-        assertEquals(1, removed[0]!!.wiring.triggers(Action.Run).size)
+        val removed = run(changed, 1, OutofspaceInput(listOf(Edit.Wire(TileIndex(0), Action.Run, 1, null))))
+        assertEquals(1, removed[TileIndex(0)]!!.wiring.triggers(Action.Run).size)
     }
 
     @Test
     fun `a freshly placed machine is wired to ALWAYS so it simply works`() {
         // Room for the whole footprint: a place that would hang off the grid is refused outright.
         val grid = Grid(8, 6)
-        val at = grid.index(3, 3)
+        val at = grid.tile(3, 3)
         var s = VesselState(grid, List(grid.size) { null })
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Extractor, Direction.Right))))
         assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s[at]!!.wiring.triggers(Action.Run))
@@ -338,9 +339,9 @@ class WiringTest {
         val grid = Grid(2, 1)
         val wired = Extractor(Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
         var s = VesselState(grid, listOf(wired, null))
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(0))))
-        assertEquals(Direction.Down, (s[0] as Extractor).facing)
-        assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s[0]!!.wiring.triggers(Action.Run))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(TileIndex(0)))))
+        assertEquals(Direction.Down, (s[TileIndex(0)] as Extractor).facing)
+        assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s[TileIndex(0)]!!.wiring.triggers(Action.Run))
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────
@@ -355,8 +356,8 @@ class WiringTest {
         val g = Grid(12, 6)
         val m = arrayOfNulls<Machine>(g.size)
         val rails = arrayOfNulls<Segment>(g.size)
-        m[g.index(3, 3)] = upstream                  // output port at (4, 3)
-        m[g.index(7, 3)] = Storage(Direction.Right)  // input port at (6, 3)
+        m[g.tile(3, 3).index] = upstream                  // output port at (4, 3)
+        m[g.tile(7, 3).index] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
         return VesselState(g, m.toList(), conduits = Conduits.ofRails(rails.toList()))
     }
@@ -369,12 +370,12 @@ class WiringTest {
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
         var s = run(twoUp(shut), 20)
-        assertEquals(5 * Capacity.PACKET_MASS, (s[g.index(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
-        assertNull((s[g.index(7, 3)] as Storage).contents, "so nothing arrives downstream")
+        assertEquals(5 * Capacity.PACKET_MASS, (s[g.tile(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
+        assertNull((s[g.tile(7, 3)] as Storage).contents, "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(Direction.Right, stored)), 20)
-        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.index(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
-        assertNull((s2[g.index(3, 3)] as Storage).contents, "and empties itself doing it")
+        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.tile(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
+        assertNull((s2[g.tile(3, 3)] as Storage).contents, "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────

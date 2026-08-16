@@ -5,9 +5,10 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.diffuseFluid
-import org.emerge.demo.outofspace.world.gasCapacity
+import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.gasKelvin
 import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.starterVessel
@@ -78,10 +79,10 @@ object OutofspaceBench {
         }
         share("diffuseFluid (air)", diffuse, innerReps, tickNanos, ticks)
 
-        val capacity = gasCapacity(tiles, mass)
+        val capacity = heatCapacity(tiles, mass)
         val kelvin = gasKelvin(energy, capacity)
         share("tilePressure", time(innerReps) { tilePressure(tiles, mass, kelvin) }, innerReps, tickNanos, ticks)
-        share("gasCapacity", time(innerReps) { gasCapacity(tiles, mass) }, innerReps, tickNanos, ticks)
+        share("gasCapacity", time(innerReps) { heatCapacity(tiles, mass) }, innerReps, tickNanos, ticks)
         share("tileMass", time(innerReps) { tileMass(tiles, mass) }, innerReps, tickNanos, ticks)
 
         // ── The same sweeps, with every species actually present ──
@@ -91,12 +92,12 @@ object OutofspaceBench {
         // dense array is fine right up until the world fills one. Every inner loop in the sim skips
         // zero, so the block above is largely measuring branches — this is the real per-species cost.
         val full = mass.copyOf()
-        for (tile in 0 until tiles) {
-            val base = tile * Species.COUNT
+        for (tile in grid.tiles) {
+            val base = tile.index * Species.COUNT
             // Only where there is already air: filling vacuum would change which tiles are worked at
             // all, and then this would measure a different world rather than a fuller one.
-            if (full.sliceOfIsEmpty(base)) continue
-            for (s in 0 until Species.COUNT) if (full[base + s] == 0L) full[base + s] = 1_000L
+            if (full.data.sliceOfIsEmpty(base)) continue
+            for (s in Species.ALL) if (full[MassIndex(tile, s)] == 0L) full[MassIndex(tile, s)] = 1_000L
         }
         val fullEnergy = energy.copyOf()
         println()
@@ -104,9 +105,9 @@ object OutofspaceBench {
         share("diffuseFluid (air)", time(innerReps) {
             diffuseFluid(edges, apertures, full.copyOf(), fullEnergy.copyOf())
         }, innerReps, tickNanos, ticks)
-        val fullKelvin = gasKelvin(fullEnergy, gasCapacity(tiles, full))
+        val fullKelvin = gasKelvin(fullEnergy, heatCapacity(tiles, full))
         share("tilePressure", time(innerReps) { tilePressure(tiles, full, fullKelvin) }, innerReps, tickNanos, ticks)
-        share("gasCapacity", time(innerReps) { gasCapacity(tiles, full) }, innerReps, tickNanos, ticks)
+        share("gasCapacity", time(innerReps) { heatCapacity(tiles, full) }, innerReps, tickNanos, ticks)
         share("tileMass", time(innerReps) { tileMass(tiles, full) }, innerReps, tickNanos, ticks)
 
         println()

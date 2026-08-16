@@ -7,9 +7,9 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.bodiesOf
-import org.emerge.demo.outofspace.world.material
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,7 +33,7 @@ class ConduitLayersTest {
     private fun empty(): VesselState =
         VesselState(grid, List(grid.size) { null })
 
-    private fun lay(state: VesselState, conduit: Conduit, from: Int, to: Int): VesselState =
+    private fun lay(state: VesselState, conduit: Conduit, from: TileIndex, to: TileIndex): VesselState =
         OutofspaceReducer.reduce(
             cfg,
             state,
@@ -43,13 +43,13 @@ class ConduitLayersTest {
     /** Drag a straight run, one step at a time, the way the controller emits it. */
     private fun drag(state: VesselState, conduit: Conduit, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
-        for (x in fromX until toX) s = lay(s, conduit, grid.index(x, y), grid.index(x + 1, y))
+        for (x in fromX until toX) s = lay(s, conduit, grid.tile(x, y), grid.tile(x + 1, y))
         return s
     }
 
     private fun dragDown(state: VesselState, conduit: Conduit, x: Int, fromY: Int, toY: Int): VesselState {
         var s = state
-        for (y in fromY until toY) s = lay(s, conduit, grid.index(x, y), grid.index(x, y + 1))
+        for (y in fromY until toY) s = lay(s, conduit, grid.tile(x, y), grid.tile(x, y + 1))
         return s
     }
 
@@ -59,7 +59,7 @@ class ConduitLayersTest {
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
         s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
 
-        val crossing = grid.index(5, 3)
+        val crossing = grid.tile(5, 3)
         val rail = s.conduits.at(Conduit.Rail, crossing)
         val pipe = s.conduits.at(Conduit.Pipe, crossing)
 
@@ -75,7 +75,7 @@ class ConduitLayersTest {
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
         s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
 
-        val crossing = grid.index(5, 3)
+        val crossing = grid.tile(5, 3)
         val rail = s.conduits.at(Conduit.Rail, crossing)!!
         val pipe = s.conduits.at(Conduit.Pipe, crossing)!!
 
@@ -89,9 +89,9 @@ class ConduitLayersTest {
     fun `two fittings on one tile are two bodies with their own temperatures`() {
         val rails = arrayOfNulls<Segment>(grid.size)
         val pipes = arrayOfNulls<Segment>(grid.size)
-        val tile = grid.index(5, 3)
-        rails[tile] = Segment(Conduit.Rail)
-        pipes[tile] = Segment(Conduit.Pipe)
+        val tile = grid.tile(5, 3)
+        rails[tile.index] = Segment(Conduit.Rail)
+        pipes[tile.index] = Segment(Conduit.Pipe)
         val conduits = Conduits.of(
             grid.size,
             Conduit.Rail to rails.toList(),
@@ -134,18 +134,18 @@ class ConduitLayersTest {
             s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
             s = dragDown(s, Conduit.Pipe, x = 5, fromY = pipeFromY, toY = pipeToY)
 
-            val hotEnd = grid.index(2, 3)
+            val hotEnd = grid.tile(2, 3)
             val hot = s.conduits.at(Conduit.Rail, hotEnd)!!
             s = s.copy(
                 conduits = s.conduits.with(
                     Conduit.Rail,
                     s.conduits[Conduit.Rail].toMutableList()
-                        .also { it[hotEnd] = hot.copy(energy = hot.energy * 3) },
+                        .also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
                 ),
             )
             repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
-            val probe = s.conduits.at(Conduit.Pipe, grid.index(5, pipeFromY))!!
+            val probe = s.conduits.at(Conduit.Pipe, grid.tile(5, pipeFromY))!!
             return (probe.energy / Conduit.Pipe.capacityPerTile).toInt()
         }
 
@@ -167,17 +167,17 @@ class ConduitLayersTest {
         var s = VesselState(grid, List(grid.size) { null })
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
 
-        val hotEnd = grid.index(2, 3)
+        val hotEnd = grid.tile(2, 3)
         val hot = s.conduits.at(Conduit.Rail, hotEnd)!!
         s = s.copy(
             conduits = s.conduits.with(
                 Conduit.Rail,
-                s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd] = hot.copy(energy = hot.energy * 3) },
+                s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
             ),
         )
         repeat(20) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
-        val far = s.conduits.at(Conduit.Rail, grid.index(7, 3))!!
+        val far = s.conduits.at(Conduit.Rail, grid.tile(7, 3))!!
         val kelvin = (far.energy / Conduit.Rail.capacityPerTile).toInt()
         assertTrue(kelvin > Temperature.AMBIENT_KELVIN, "heat did not travel along the run (${kelvin}K)")
     }

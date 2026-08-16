@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MachineKind
@@ -239,7 +239,7 @@ class NumericLimitsTest {
     private val volumeUnit = 1_000_000_000L
 
     /** `PressureForce.SOUND_IMPULSE`, likewise private, and derived from ambient rather than fixed. */
-    private val soundImpulse: Long = AirField.AMBIENT_AIR.total / 4
+    private val soundImpulse: Long = Atmosphere.AMBIENT_AIR.total / 4
 
     private val rows = mutableListOf<String>()
     private val failures = mutableListOf<String>()
@@ -458,7 +458,7 @@ class NumericLimitsTest {
         // and the one a rescale has to keep representable no matter how big the map gets.
         budget(
             "tile joules: densest deck tile + its air at max kelvin",
-            (densestTileCapacity + capacityOf(AirField.AMBIENT_AIR.total, Species.Water.specificHeat.toLong())) *
+            (densestTileCapacity + capacityOf(Atmosphere.AMBIENT_AIR.total, Species.Water.specificHeat.toLong())) *
                 designMaxKelvin,
             1, Dim.ENERGY,
         )
@@ -507,7 +507,7 @@ class NumericLimitsTest {
         )
         budget(
             "atmosphere joules: ambient air across the whole grid",
-            capacityOf(AirField.AMBIENT_AIR.total, Species.Water.specificHeat.toLong()) *
+            capacityOf(Atmosphere.AMBIENT_AIR.total, Species.Water.specificHeat.toLong()) *
                 Temperature.AMBIENT_KELVIN.toLong() * gridTiles, 1, Dim.ENERGY,
         )
 
@@ -636,7 +636,7 @@ class NumericLimitsTest {
      * ### The two floors
      *
      * `Negligible` is what a *player* can see: the readouts say nothing below half a percent of a
-     * tile of ordinary air. It is written as a fraction of [AirField.AMBIENT_AIR], so it is a
+     * tile of ordinary air. It is written as a fraction of [Atmosphere.AMBIENT_AIR], so it is a
      * **physical** floor — about six grams of gas, whatever one integer happens to be worth. That is
      * the property this pins, and it is why step 9 needed no numeric change to `Negligible` at all:
      * a floor defined against the thing it is a fraction of follows the unit down on its own.

@@ -32,7 +32,7 @@ class SignalNetworkTest {
     private fun drag(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
         for (x in fromX until toX) {
-            s = edit(s, Edit.Lay(grid.index(x, y), grid.index(x + 1, y), Conduit.Signal))
+            s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
         }
         return s
     }
@@ -48,9 +48,9 @@ class SignalNetworkTest {
         val n = networks(s)
 
         assertEquals(2, n.count)
-        assertNotEquals(n[grid.index(1, 2)], n[grid.index(1, 6)], "two separate runs shared a network")
+        assertNotEquals(n[grid.tile(1, 2)], n[grid.tile(1, 6)], "two separate runs shared a network")
         for (x in 1..4) {
-            assertEquals(n[grid.index(1, 2)], n[grid.index(x, 2)], "the top run broke at x=$x")
+            assertEquals(n[grid.tile(1, 2)], n[grid.tile(x, 2)], "the top run broke at x=$x")
         }
     }
 
@@ -74,12 +74,12 @@ class SignalNetworkTest {
         assertEquals(2, networks(s).count)
 
         // The link that makes them one circuit, laid down the gap between them.
-        s = edit(s, Edit.Lay(grid.index(1, 2), grid.index(1, 3), Conduit.Signal))
-        s = edit(s, Edit.Lay(grid.index(1, 3), grid.index(1, 4), Conduit.Signal))
+        s = edit(s, Edit.Lay(grid.tile(1, 2), grid.tile(1, 3), Conduit.Signal))
+        s = edit(s, Edit.Lay(grid.tile(1, 3), grid.tile(1, 4), Conduit.Signal))
 
         val n = networks(s)
         assertEquals(1, n.count)
-        assertEquals(n[grid.index(4, 2)], n[grid.index(4, 4)], "the far ends should now agree")
+        assertEquals(n[grid.tile(4, 2)], n[grid.tile(4, 4)], "the far ends should now agree")
     }
 
     @Test
@@ -87,26 +87,26 @@ class SignalNetworkTest {
         val s = drag(empty(), y = 2, fromX = 1, toX = 6)
         assertEquals(1, networks(s).count)
 
-        val cut = edit(s, Edit.Cut(grid.index(3, 2), grid.index(4, 2), Conduit.Signal))
+        val cut = edit(s, Edit.Cut(grid.tile(3, 2), grid.tile(4, 2), Conduit.Signal))
         val n = networks(cut)
 
         assertEquals(2, n.count)
-        assertNotEquals(n[grid.index(3, 2)], n[grid.index(4, 2)], "the two halves should have parted")
+        assertNotEquals(n[grid.tile(3, 2)], n[grid.tile(4, 2)], "the two halves should have parted")
     }
 
     @Test
     fun `an isolated tile is a network of one`() {
-        val s = edit(empty(), Edit.Place(grid.index(5, 5), MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
+        val s = edit(empty(), Edit.Place(grid.tile(5, 5), MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
         val n = networks(s)
 
         assertEquals(1, n.count)
-        assertTrue(n[grid.index(5, 5)] >= 0, "a stub is still a circuit, just a very short one")
+        assertTrue(n[grid.tile(5, 5)] >= 0, "a stub is still a circuit, just a very short one")
     }
 
     @Test
     fun `a tile with no wire is on no network`() {
         val s = drag(empty(), y = 2, fromX = 1, toX = 4)
-        assertEquals(-1, networks(s)[grid.index(7, 7)])
+        assertEquals(-1, networks(s)[grid.tile(7, 7)])
     }
 
     // ── Identity ──────────────────────────────────────────────────────────────
@@ -123,9 +123,9 @@ class SignalNetworkTest {
         s = drag(s, y = 2, fromX = 1, toX = 4)
         val n = networks(s)
 
-        val upper = grid.index(1, 2)
-        val lower = grid.index(1, 6)
-        assertTrue(upper < lower, "fixture assumption: the upper run holds the lower tile index")
+        val upper = grid.tile(1, 2)
+        val lower = grid.tile(1, 6)
+        assertTrue(upper.index < lower.index, "fixture assumption: the upper run holds the lower tile index")
         assertEquals(0, n[upper])
         assertEquals(1, n[lower])
     }
@@ -139,7 +139,7 @@ class SignalNetworkTest {
         val after = networks(Save.read(Save.write(s)))
 
         assertEquals(before.count, after.count)
-        for (tile in 0 until grid.size) {
+        for (tile in grid.tiles) {
             assertEquals(before[tile], after[tile], "tile $tile changed network across a save")
         }
     }

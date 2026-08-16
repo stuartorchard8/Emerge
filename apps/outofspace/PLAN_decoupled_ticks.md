@@ -118,7 +118,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 ?: IntArray(w.machines.size) { 0 }
             structure = StructureMap.derive(w.grid, w.machines, openness)
 
-            for (i in w.machines.indices) {
+            for (tile in w.grid.tiles) {
                 val m = w.machines[i] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(i))
                 w.machines[i] = when (m) {
@@ -141,7 +141,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Heat ────────────────────────────────────────────────────────────
         var conductedRadiated = 0L, conductedToAir = 0L
         if (shouldRun(state.tick, HEAT_PERIOD)) {
-            for (i in w.machines.indices) {
+            for (tile in w.grid.tiles) {
                 val added = w.heatAdded[i]
                 if (added == 0L) continue
                 val m = w.machines[i] ?: continue

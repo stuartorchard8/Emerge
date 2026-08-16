@@ -97,7 +97,7 @@ enum class Material(
          *
          * ⚠️ **Unchanged by the move to real densities, and it must stay that way.** This is the
          * *gas* side of the joint — the film of still air against the wall — and the gas was always
-         * at real scale: [AirField.AMBIENT_AIR] is a real kilogram of air in a tile. Only the solids
+         * at real scale: [Atmosphere.AMBIENT_AIR] is a real kilogram of air in a tile. Only the solids
          * moved. Scaling this with them made every wall equalise with its room inside a tick, which
          * showed up as gas tests failing rather than heat ones.
          *

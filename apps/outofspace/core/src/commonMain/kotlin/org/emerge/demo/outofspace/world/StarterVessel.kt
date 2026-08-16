@@ -21,53 +21,53 @@ fun starterVessel(
 
     fun put(x: Int, y: Int, m: Machine) {
         // Buildings anchored at centre.
-        if (grid.inBounds(x, y)) machines[grid.index(x, y)] = m
+        if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = m
     }
 
     /** Lay track, keeping existing joins (preserves crossings). */
-    fun lay(tile: Int, gauge: Boolean = false) {
-        val existing = rails[tile]
-        rails[tile] = existing?.copy(isGauge = gauge || existing.isGauge)
+    fun lay(tile: TileIndex, gauge: Boolean = false) {
+        val existing = rails[tile.index]
+        rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
             ?: Segment(Conduit.Rail, isGauge = gauge)
     }
 
     /** Joins two adjacent tiles of track, both halves, exactly as a drag would. */
-    fun join(a: Int, b: Int, dir: Direction) {
-        rails[a] = rails[a]!!.joinedTo(dir)
-        rails[b] = rails[b]!!.joinedTo(dir.opposite)
+    fun join(a: TileIndex, b: TileIndex, dir: Direction) {
+        rails[a.index] = rails[a.index]!!.joinedTo(dir)
+        rails[b.index] = rails[b.index]!!.joinedTo(dir.opposite)
     }
 
     /** Horizontal track from [fromX] to [toX], laid and joined (runs under buildings). */
     fun rail(fromX: Int, toX: Int, y: Int, gaugeAt: Set<Int> = emptySet()) {
         for (x in fromX..toX) {
             if (!grid.inBounds(x, y)) continue
-            lay(grid.index(x, y), x in gaugeAt)
+            lay(grid.tile(x, y), x in gaugeAt)
         }
         // Explicitly joined (touching ≠ connected).
         for (x in fromX until toX) {
             if (grid.inBounds(x, y) && grid.inBounds(x + 1, y)) {
-                join(grid.index(x, y), grid.index(x + 1, y), Direction.Right)
+                join(grid.tile(x, y), grid.tile(x + 1, y), Direction.Right)
             }
         }
     }
 
-    fun layWire(tile: Int) {
-        if (wires[tile] == null) wires[tile] = Segment(Conduit.Signal)
+    fun layWire(tile: TileIndex) {
+        if (wires[tile.index] == null) wires[tile.index] = Segment(Conduit.Signal)
     }
 
-    fun joinWire(a: Int, b: Int, dir: Direction) {
-        wires[a] = wires[a]!!.joinedTo(dir)
-        wires[b] = wires[b]!!.joinedTo(dir.opposite)
+    fun joinWire(a: TileIndex, b: TileIndex, dir: Direction) {
+        wires[a.index] = wires[a.index]!!.joinedTo(dir)
+        wires[b.index] = wires[b.index]!!.joinedTo(dir.opposite)
     }
 
     /** Horizontal signal wire, laid and joined the way a drag would. */
     fun signalRow(fromX: Int, toX: Int, y: Int) {
         val lo = minOf(fromX, toX)
         val hi = maxOf(fromX, toX)
-        for (x in lo..hi) if (grid.inBounds(x, y)) layWire(grid.index(x, y))
+        for (x in lo..hi) if (grid.inBounds(x, y)) layWire(grid.tile(x, y))
         for (x in lo until hi) {
             if (grid.inBounds(x, y) && grid.inBounds(x + 1, y)) {
-                joinWire(grid.index(x, y), grid.index(x + 1, y), Direction.Right)
+                joinWire(grid.tile(x, y), grid.tile(x + 1, y), Direction.Right)
             }
         }
     }
@@ -76,10 +76,10 @@ fun starterVessel(
     fun signalColumn(x: Int, fromY: Int, toY: Int) {
         val lo = minOf(fromY, toY)
         val hi = maxOf(fromY, toY)
-        for (yy in lo..hi) if (grid.inBounds(x, yy)) layWire(grid.index(x, yy))
+        for (yy in lo..hi) if (grid.inBounds(x, yy)) layWire(grid.tile(x, yy))
         for (yy in lo until hi) {
             if (grid.inBounds(x, yy) && grid.inBounds(x, yy + 1)) {
-                joinWire(grid.index(x, yy), grid.index(x, yy + 1), Direction.Down)
+                joinWire(grid.tile(x, yy), grid.tile(x, yy + 1), Direction.Down)
             }
         }
     }
@@ -87,11 +87,11 @@ fun starterVessel(
     /** A vertical run, for the waste that leaves through a machine's floor. */
     fun column(x: Int, fromY: Int, toY: Int) {
         for (y in fromY..toY) {
-            if (grid.inBounds(x, y)) lay(grid.index(x, y))
+            if (grid.inBounds(x, y)) lay(grid.tile(x, y))
         }
         for (y in fromY until toY) {
             if (grid.inBounds(x, y) && grid.inBounds(x, y + 1)) {
-                join(grid.index(x, y), grid.index(x, y + 1), Direction.Down)
+                join(grid.tile(x, y), grid.tile(x, y + 1), Direction.Down)
             }
         }
     }

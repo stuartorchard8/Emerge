@@ -76,16 +76,21 @@ import org.emerge.demo.outofspace.world.torqueAbout
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
-import org.emerge.demo.outofspace.world.gasCapacityAt
+import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.EnergyArray
+import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.PumpDemand
+import org.emerge.demo.outofspace.world.TileArray
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.applyPumps
 import org.emerge.demo.outofspace.world.exchangeLayers
@@ -98,7 +103,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
-import org.emerge.demo.outofspace.world.gasCapacity
+import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
@@ -148,7 +153,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // modifies them).
         var networks = SignalNetworks.none(w.grid.size)
         var signals = SignalField.none(w.grid.size)
-        var openness = IntArray(w.machines.size) { 0 }
+        var openness = IntArray(w.machines.size)
         var structure = StructureMap.derive(w.grid, w.machines, openness)
         if (shouldRun(state.tick, MACHINE_PERIOD)) {
             // Signals derived from network + machine fullness + player keys. Only
@@ -156,41 +161,41 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
             w.networks = networks
             signals = SignalField.build(networks) { raise ->
-                for (i in w.machines.indices) {
-                    when (val m = w.machines[i]) {
+                for (tile in w.grid.tiles) {
+                    when (val m = w[tile]) {
                         is Sensor -> {
-                            val target = w.grid.neighbour(i, m.facing)
-                            val seen = if (target < 0) -1 else w.originOf[target]
-                            if (seen >= 0) raise(i, fullness(w.machines[seen]))
+                            val target = w.grid.neighbour(tile, m.facing)
+                            val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
+                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen]))
                         }
                         // A finger on a key, on the same footing as any other transmitter.
-                        is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(i, SignalField.FULL)
+                        is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(tile, SignalField.FULL)
                         else -> {}
                     }
                 }
                 // Gauge persists after packet leaves.
-                for (t in w.rails.indices) {
-                    val r = w.rails[t] ?: continue
-                    if (r.isGauge) raise(t, r.lastPurity)
+                for (tile in w.grid.tiles) {
+                    val r = w.rails[tile.index] ?: continue
+                    if (r.isGauge) raise(tile, r.lastPurity)
                 }
             }
             w.signals = signals
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            openness = airlockOpenness(w.machines, signals) ?: IntArray(w.machines.size) { 0 }
+            openness = airlockOpenness(w.machines, signals) ?: IntArray(w.machines.size)
             structure = StructureMap.derive(w.grid, w.machines, openness)
 
-            for (i in w.machines.indices) {
-                val m = w.machines[i] ?: continue
-                val activation = m.wiring.activation(Action.Run, signals.at(i))
-                w.machines[i] = when (m) {
-                    is Extractor -> w.leech(m, activation, i)
-                    is Processor -> w.refine(cfg, m, activation, i)
-                    is ThermalDecomposer -> w.refine(cfg, m, activation, i)
-                    is Smelter -> w.melt(cfg, m, activation, i)
-                    is Vaporizer -> w.vaporize(m, activation, i)
-                    is Thruster -> w.fire(cfg, m, activation, i, structure)
+            for (tile in w.grid.tiles) {
+                val m = w[tile] ?: continue
+                val activation = m.wiring.activation(Action.Run, signals.at(tile))
+                w[tile] = when (m) {
+                    is Extractor -> w.leech(m, activation, tile)
+                    is Processor -> w.refine(cfg, m, activation, tile)
+                    is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
+                    is Smelter -> w.melt(cfg, m, activation, tile)
+                    is Vaporizer -> w.vaporize(m, activation, tile)
+                    is Thruster -> w.fire(cfg, m, activation, tile, structure)
                     is Airlock, is Bridge, is Pump, is Sensor, is Storage,
                     is Hull, is Vent, is WireButton -> m
                 }
@@ -219,19 +224,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (shouldRun(state.tick, HEAT_PERIOD)) {
             // Waste heat lands in the machine that did the work — see [heatPerGram] — so it
             // has to conduct out through the casing before the room feels it.
-            for (i in w.machines.indices) {
-                val added = w.heatAdded[i]
+            for (tile in w.grid.tiles) {
+                val added = w.heatAdded[tile.index]
                 if (added == 0L) continue
-                val m = w.machines[i] ?: continue
-                w.machines[i] = m.withEnergy(m.energy.plusSpread(added))
+                val m = w[tile] ?: continue
+                w[tile] = m.withEnergy(m.energy.plusEnergySpread(added))
             }
             val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
                 structure = structure,
-                airEnergy = w.airEnergy,
-                airCapacity = gasCapacity(state.grid.size, w.airMass),
+                airEnergy = w.energies,
+                heatCapacity = heatCapacity(state.grid.size, w.masses),
             )
             conductedRadiated = result.radiated
             conductedToAir = result.toAir
@@ -250,8 +255,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // (see [exchangeLayers]).
             exchangeLayers(
                 openings = valveOpenings(state.grid, conduits),
-                roomMass = w.airMass,
-                roomEnergy = w.airEnergy,
+                roomMass = w.masses,
+                roomEnergy = w.energies,
                 pipeMass = w.pipeMass,
                 pipeEnergy = w.pipeEnergy,
                 pipeVolumes = volumes,
@@ -260,8 +265,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
             applyPumps(
                 demands = pumpDemands(state.grid, w.machines, conduits, signals),
-                roomMass = w.airMass,
-                roomEnergy = w.airEnergy,
+                roomMass = w.masses,
+                roomEnergy = w.energies,
                 pipeMass = w.pipeMass,
                 pipeEnergy = w.pipeEnergy,
                 pipeVolumes = volumes,
@@ -271,15 +276,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Pressure ──────────────────────────────────────────────────────────────
         // Results used by flight below, so computed unconditionally.
         val roomPressure = tilePressure(
-            state.grid.size, w.airMass, gasKelvin(w.airEnergy, gasCapacity(state.grid.size, w.airMass)),
+            state.grid.size, w.masses, gasKelvin(w.energies, heatCapacity(state.grid.size, w.masses)),
         )
         val pushed = applyPressureForce(
-            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.airMass), roomPressure,
+            edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
             w.about,
         )
         val pipePressure = tilePressure(
             state.grid.size, w.pipeMass,
-            gasKelvin(w.pipeEnergy, gasCapacity(state.grid.size, w.pipeMass)), volumes,
+            gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass)), volumes,
         )
         val pipePushed = applyPressureForce(
             edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
@@ -288,12 +293,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         // When skipped, fluid state is carried forward from the previous tick.
-        var fluidAir = state.air
+        var fluidAir = Atmosphere(w.masses, w.energies)
         var pipeAirResult = state.pipeAir
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         if (shouldRun(state.tick, FLUID_PERIOD)) {
-            val result = diffuseFluid(edges, roomApertures, w.airMass, w.airEnergy)
+            val result = diffuseFluid(edges, roomApertures, w.masses, w.energies)
             fluidAir = result.air
             fluidVentedMass = result.ventedMass
             fluidVentedEnergy = result.ventedEnergy
@@ -549,11 +554,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         signals: SignalField,
     ): List<PumpDemand> {
         var demands: MutableList<PumpDemand>? = null
-        for (tile in machines.indices) {
-            val pump = machines[tile] as? Pump ?: continue
+        for (i in machines.indices) {
+            val tile = TileIndex(i)
+            val pump = machines[tile.index] as? Pump ?: continue
             if (conduits.at(Conduit.Pipe, tile) == null) continue
             val intake = grid.neighbour(tile, pump.facing)
-            if (intake < 0) continue
+            if (intake == TileIndex.NONE) continue
             val activation = pump.wiring.activation(Action.Run, signals.at(tile))
             if (activation <= 0) continue
             val moles = Pump.MILLIMOLES_PER_TICK * activation / SignalField.FULL
@@ -580,7 +586,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
-    private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, at: Int): Processor {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, tile: TileIndex): Processor {
         val input: Resource?
         val inProgress: Resource?
 
@@ -588,7 +594,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             inProgress = m.input ?: return m // Nothing to do if there's no input
             input = null
             // Apply all heat as soon as new material starts being processed
-            heat(at, heatOfWorking(inProgress.mass, m))
+            heat(tile, heatOfWorking(inProgress.mass, m))
         } else {
             input = m.input
             inProgress = m.inside
@@ -624,7 +630,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
     }
 
-    private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, at: Int): ThermalDecomposer {
+    private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, tile: TileIndex): ThermalDecomposer {
         val input: Resource?
         val inProgress: Resource?
 
@@ -632,7 +638,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             inProgress = m.input ?: return m // Nothing to do if there's no input
             input = null
             // Apply all heat as soon as new material starts being processed
-            heat(at, heatOfWorking(inProgress.mass, m))
+            heat(tile, heatOfWorking(inProgress.mass, m))
         } else {
             input = m.input
             inProgress = m.inside
@@ -667,7 +673,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
     }
 
-    private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, at: Int): Smelter {
+    private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, tile: TileIndex): Smelter {
         val input = m.input ?: return m
         val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
         if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
@@ -675,7 +681,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, heatOfWorking(chunkMass, m))
+        heat(tile, heatOfWorking(chunkMass, m))
         val r = smelt(chunk)
         // Smelter stalls if dominant species differs (stopped machine signals ore change).
         val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
@@ -689,25 +695,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         )
     }
 
-    private fun Work.vaporize(m: Vaporizer, activation: Int, at: Int): Vaporizer {
+    private fun Work.vaporize(m: Vaporizer, activation: Int, tile: TileIndex): Vaporizer {
         val input = m.input ?: return m
         val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
         val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(at, heatOfWorking(chunkMass, m))
+        heat(tile, heatOfWorking(chunkMass, m))
         val gas = chunk.mixture
-        val base = at * Species.COUNT
-        val parcel = LongArray(Species.COUNT)
+        val parcel = MassArray(1)
         for (s in Species.ALL) {
             val g = gas[s]
             if (g <= 0L) continue
-            airMass[base + s.ordinal] += g
-            parcel[s.ordinal] = g
+            masses[MassIndex(tile, s)] += g
+            parcel[MassIndex(TileIndex(0), s)] = g
         }
-        val energy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
-        airEnergy[at] += energy
+        val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
+        energies[tile] += energy
         // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
         solidBecameGas(chunkMass, energy)
 
@@ -742,7 +747,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         cfg: OutofspaceConfig,
         m: Thruster,
         activation: Int,
-        at: Int,
+        tile: TileIndex,
         structure: StructureMap,
     ): Thruster {
         val input = m.input ?: return m
@@ -750,15 +755,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val chunkMass = minOf(allowance, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
-        val path = exhaustPath(grid, structure, at, m.facing)
+        val path = exhaustPath(grid, structure, tile, m.facing)
 
-        heat(at, heatOfWorking(chunkMass, m))
+        heat(tile, heatOfWorking(chunkMass, m))
 
         // The propellant, as gas: whatever went into the chamber is what comes out of the bell.
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        val parcel = LongArray(Species.COUNT)
-        for (s in Species.ALL) parcel[s.ordinal] = chunk.mixture[s]
-        val propellantEnergy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
+        val parcel = MassArray(1) { _,s -> chunk.mixture[s] }
+        val propellantEnergy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
         // a corridor; it entrains it, which is why the whole path is walked and not just its ends.
@@ -767,16 +771,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         for (tile in path.path) {
             // The destination keeps what it has — the exhaust is about to be added to it.
             if (!path.isClear && tile == path.destination) continue
-            val base = tile * Species.COUNT
             for (s in Species.ALL) {
-                val held = airMass[base + s.ordinal]
+                val massIndex = MassIndex(tile, s)
+                val held = masses[massIndex]
                 if (held <= 0L) continue
-                parcel[s.ordinal] += held
+                parcel[MassIndex(TileIndex(0),s)] += held
                 scoopedMass += held
-                airMass[base + s.ordinal] = 0L
+                masses[massIndex] = 0L
             }
-            scoopedEnergy += airEnergy[tile]
-            airEnergy[tile] = 0L
+            scoopedEnergy += energies[tile]
+            energies[tile] = 0L
         }
 
         val ejectedMass = chunkMass + scoopedMass
@@ -794,16 +798,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // At the bell, which is the tile the machine is on. The ship keeps `−p` and `−τ`, and
             // both halves are written from the one number here so neither can be minted.
             exhaustTorque += torqueAbout(
-                about, tileCentre(grid.xOf(at)), tileCentre(grid.yOf(at)), outX, outY,
+                about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)), outX, outY,
             )
         } else {
             val destination = path.destination
-            val base = destination * Species.COUNT
-            for (s in Species.ALL) airMass[base + s.ordinal] += parcel[s.ordinal]
+            for (s in Species.ALL) masses[MassIndex(tile,s)] += parcel[MassIndex(TileIndex(0),s)]
             // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
             // your own bulkhead expensive rather than merely useless.
             val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
-            airEnergy[destination] += landed + scoopedEnergy
+            energies[destination] += landed + scoopedEnergy
             solidBecameGas(chunkMass, landed)
         }
 
@@ -870,6 +873,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
+        operator fun get(tile: TileIndex): Machine? = machines.getOrNull(tile.index)
+        operator fun set(tile: TileIndex, value: Machine) {
+            machines[tile.index] = value
+        }
         var extractedMass: Long = state.extractedMass
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
@@ -985,18 +992,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var bodyHandedTorque: Long = 0L
 
         // Mutable: edit pass moves air before fluid pass runs.
-        val airMass: LongArray = state.air.copyMass()
+        val masses: MassArray = state.air.copyMass()
 
-        /** This tick's air temperature, as energy — mutable for the same reason [airMass] is. */
-        val airEnergy: LongArray = state.air.copyEnergy()
+        /** This tick's air temperature, as energy — mutable for the same reason [masses] is. */
+        val energies: EnergyArray = state.air.copyEnergy()
 
-        /** This tick's momentum, mutable for the same reason [airMass] is. */
+        /** This tick's momentum, mutable for the same reason [masses] is. */
         val momentumX: LongArray = state.momentum.copyX()
         val momentumY: LongArray = state.momentum.copyY()
 
         /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
-        val pipeMass: LongArray = state.pipeAir.copyMass()
-        val pipeEnergy: LongArray = state.pipeAir.copyEnergy()
+        val pipeMass: MassArray = state.pipeAir.copyMass()
+        val pipeEnergy: EnergyArray = state.pipeAir.copyEnergy()
         val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
         val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 
@@ -1004,12 +1011,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val motion: MotionLog = MotionLog(state.rails)
 
         // tile → machine index (maintained incrementally for O(n)).
-        val originOf: IntArray = IntArray(state.grid.size).also { o ->
+        val originOf: TileArray = TileArray(state.grid.size).also { o ->
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
-                for (t in coveredTiles(state.grid, i, m.kind.size)) o[t] = i + 1
+                for (t in coveredTiles(state.grid, TileIndex(i), m.kind.size)) o[t] = TileIndex(i)
             }
-            for (i in o.indices) o[i] -= 1
+            for (i in 0 until o.size) o[TileIndex(i)] = TileIndex(o[TileIndex(i)].index)
         }
 
         /** Who is joined to whom, set once the wire has been swept. */
@@ -1033,23 +1040,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var acquiredEnergy: Long = state.acquiredEnergy
 
         /** Charges [energy] of waste heat to the machine stored at [index]. */
-        fun heat(index: Int, energy: Long) {
-            if (energy <= 0L || index !in heatAdded.indices) return
-            heatAdded[index] += energy
+        fun heat(tile: TileIndex, energy: Long) {
+            if (energy <= 0L || tile.index !in heatAdded.indices) return
+            heatAdded[tile.index] += energy
             generatedEnergy += energy
         }
 
         /**
-         * Charges [energy] to the machine at [index] **without** counting it as generated.
+         * Charges [energy] to the machine at [tile] **without** counting it as generated.
          *
          * The difference from [heat] is the whole point: this is energy that was already in the
          * world and has changed hands — a rock's heat arriving in the extractor that ate it. Booking
          * it as generated would break the thermal balance by exactly the amount that moved. Also
          * increments [acquiredEnergy] to record that the grid acquired this energy from outside.
          */
-        fun absorb(index: Int, energy: Long) {
-            if (energy == 0L || index !in heatAdded.indices) return
-            heatAdded[index] += energy
+        fun absorb(tile: TileIndex, energy: Long) {
+            if (energy == 0L || tile.index !in heatAdded.indices) return
+            heatAdded[tile.index] += energy
             acquiredEnergy += energy
         }
 
@@ -1067,29 +1074,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 when (body.slot) {
                     // A machine is several bodies now, one per tile, so the tile has to be named
                     // as well as the machine — see [Body.part].
-                    BodySlot.Deck -> machines[body.at]?.let {
-                        machines[body.at] = it.withEnergy(it.energy.with(body.part, energy[i]))
+                    BodySlot.Deck -> machines[body.tile.index]?.let {
+                        machines[body.tile.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
-                        layer(c)[body.at]?.let { layer(c)[body.at] = it.copy(energy = energy[i]) }
+                        layer(c)[body.tile.index]?.let { layer(c)[body.tile.index] = it.copy(energy = energy[i]) }
                     }
-                    BodySlot.Span -> bridges[body.at]?.let {
-                        bridges[body.at] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
+                    BodySlot.Span -> bridges[body.tile.index]?.let {
+                        bridges[body.tile.index] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
                     }
                 }
             }
         }
 
         // Cut pipe: release gas+heat into room (not deleted — shared ledger).
-        fun cutOpen(tile: Int) {
-            val base = tile * Species.COUNT
-            for (sp in Species.ALL) {
-                airMass[base + sp.ordinal] += pipeMass[base + sp.ordinal]
-                pipeMass[base + sp.ordinal] = 0L
+        fun cutOpen(tile: TileIndex) {
+            for (s in Species.ALL) {
+                val massIndex = MassIndex(tile, s)
+                masses[massIndex] += pipeMass[massIndex]
+                pipeMass[massIndex] = 0L
             }
-            airEnergy[tile] += pipeEnergy[tile]
+            energies[tile] += pipeEnergy[tile]
             pipeEnergy[tile] = 0L
         }
 
@@ -1099,42 +1106,42 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
-                    if (edit.index !in machines.indices) return
+                    if (edit.tile.index !in machines.indices) return
                     when (edit.kind) {
                         // Book energy for new body (heat arriving, not conjured).
                         MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
                             val c = edit.kind.conduit!!
-                            if (layer(c)[edit.index] == null) {
-                                layer(c)[edit.index] = Segment(c).also { built(it.energy) }
+                            if (layer(c)[edit.tile.index] == null) {
+                                layer(c)[edit.tile.index] = Segment(c).also { built(it.energy) }
                             }
                         }
                         // Valve: upgrade existing pipe or lay new.
                         MachineKind.Valve -> {
-                            val existing = layer(Conduit.Pipe)[edit.index]
-                            layer(Conduit.Pipe)[edit.index] =
+                            val existing = layer(Conduit.Pipe)[edit.tile.index]
+                            layer(Conduit.Pipe)[edit.tile.index] =
                                 existing?.copy(valve = true)
                                     ?: Segment(Conduit.Pipe, valve = true).also { built(it.energy) }
                         }
-                        MachineKind.Gauge -> if (rails[edit.index] == null) {
-                            rails[edit.index] = Segment(Conduit.Rail, isGauge = true)
+                        MachineKind.Gauge -> if (rails[edit.tile.index] == null) {
+                            rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
                                 .also { built(it.energy) }
                         }
-                        MachineKind.Bridge -> placeBridge(edit.index, edit.facing)
-                        else -> placeBuilding(edit.index, edit.kind, edit.facing)
+                        MachineKind.Bridge -> placeBridge(edit.tile, edit.facing)
+                        else -> placeBuilding(edit.tile, edit.kind, edit.facing)
                     }
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
                 is Edit.Cut -> {
                     val dir = adjacency(edit.from, edit.to) ?: return
                     val line = layer(edit.conduit)
-                    line[edit.from]?.let { line[edit.from] = it.cutFrom(dir) }
-                    line[edit.to]?.let { line[edit.to] = it.cutFrom(dir.opposite) }
+                    line[edit.from.index]?.let { line[edit.from.index] = it.cutFrom(dir) }
+                    line[edit.to.index]?.let { line[edit.to.index] = it.cutFrom(dir.opposite) }
                 }
                 is Edit.Rotate -> {
                     // Rotation: footprints square, so covered tiles unchanged — only ports move.
-                    val at = originAt(edit.index) ?: return
-                    val m = machines[at]
-                    if (m is Directed) machines[at] = m.rotated()
+                    val tile = originAt(edit.tile) ?: return
+                    val m = machines[tile.index]
+                    if (m is Directed) machines[tile.index] = m.rotated()
                 }
                 is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
@@ -1145,40 +1152,40 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // once would remove things the player could not see they were pointing at. A
                     // player who *does* mean all of them now has a way to say so.
                     DeleteLayer.Top -> {
-                        if (removeBridge(edit.index)) return
-                        for (c in Conduit.entries) if (removeConduit(edit.index, c)) return
-                        removeMachine(edit.index)
+                        if (removeBridge(edit.tile)) return
+                        for (c in Conduit.entries) if (removeConduit(edit.tile, c)) return
+                        removeMachine(edit.tile)
                     }
-                    DeleteLayer.Bridge -> removeBridge(edit.index)
-                    DeleteLayer.Rail -> removeConduit(edit.index, Conduit.Rail)
-                    DeleteLayer.Pipe -> removeConduit(edit.index, Conduit.Pipe)
-                    DeleteLayer.Deck -> removeMachine(edit.index)
+                    DeleteLayer.Bridge -> removeBridge(edit.tile)
+                    DeleteLayer.Rail -> removeConduit(edit.tile, Conduit.Rail)
+                    DeleteLayer.Pipe -> removeConduit(edit.tile, Conduit.Pipe)
+                    DeleteLayer.Deck -> removeMachine(edit.tile)
                     DeleteLayer.All -> {
-                        removeBridge(edit.index)
-                        for (c in Conduit.entries) removeConduit(edit.index, c)
-                        removeMachine(edit.index)
+                        removeBridge(edit.tile)
+                        for (c in Conduit.entries) removeConduit(edit.tile, c)
+                        removeMachine(edit.tile)
                     }
                 }
                 is Edit.Wire -> {
-                    val at = originAt(edit.index) ?: return
-                    val m = machines[at] ?: return
+                    val tile = originAt(edit.tile) ?: return
+                    val m = machines[tile.index] ?: return
                     val current = m.wiring.triggers(edit.action).toMutableList()
                     when {
                         edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
                         edit.slot in current.indices -> current[edit.slot] = edit.trigger
                         else -> current.add(edit.trigger)
                     }
-                    machines[at] = m.withWiring(m.wiring.with(edit.action, current))
+                    machines[tile.index] = m.withWiring(m.wiring.with(edit.action, current))
                 }
                 is Edit.BindKey -> {
-                    val at = originAt(edit.index) ?: return
-                    val m = machines[at]
-                    if (m is WireButton) machines[at] = m.copy(key = edit.key)
+                    val tile = originAt(edit.tile) ?: return
+                    val m = machines[tile.index]
+                    if (m is WireButton) machines[tile.index] = m.copy(key = edit.key)
                 }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
-                is Edit.Inject -> inject(edit.index, edit.mass, edit.water)
+                is Edit.Inject -> inject(edit.tile, edit.mass, edit.water)
                 // Recorded, never acted on here: a resize partway through a tick would leave half a
                 // world on each lattice, because `Work` addresses every tile through the grid the
                 // tick started on. Consumed at the very end of `reduce` — see [resized].
@@ -1190,35 +1197,35 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Takes a bridge off a tile. True if there was one, which is what makes [DeleteLayer.Top]'s
          * cascade readable as "the first layer that had anything".
          */
-        private fun removeBridge(at: Int): Boolean {
-            val bridge = bridges.getOrNull(at) ?: return false
-            bridges[at] = null
+        private fun removeBridge(tile: TileIndex): Boolean {
+            val bridge = bridges.getOrNull(tile.index) ?: return false
+            bridges[tile.index] = null
             scrapped(bridge.energy.total)
             return true
         }
 
         /** Takes one conduit layer off a tile, cutting the far halves of its joins. */
-        private fun removeConduit(at: Int, c: Conduit): Boolean {
+        private fun removeConduit(tile: TileIndex, c: Conduit): Boolean {
             val line = layer(c)
-            val segment = line.getOrNull(at) ?: return false
-            if (c == Conduit.Pipe) cutOpen(at)
-            line[at] = null
+            val segment = line.getOrNull(tile.index) ?: return false
+            if (c == Conduit.Pipe) cutOpen(tile)
+            line[tile.index] = null
             scrapped(segment.energy)
             // Cut far halves of joins (prevent phantom connections).
             for (dir in Direction.ALL) {
-                val n = grid.neighbour(at, dir)
-                if (n >= 0) line[n]?.let { line[n] = it.cutFrom(dir.opposite) }
+                val n = grid.neighbour(tile, dir)
+                if (n != TileIndex.NONE) line[n.index]?.let { line[n.index] = it.cutFrom(dir.opposite) }
             }
             return true
         }
 
         /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
-        private fun removeMachine(at: Int): Boolean {
-            val origin = originAt(at) ?: return false
-            val machine = machines[origin] ?: return false
-            for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = -1
+        private fun removeMachine(tile: TileIndex): Boolean {
+            val origin = originAt(tile) ?: return false
+            val machine = machines[origin.index] ?: return false
+            for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = TileIndex.NONE
             scrapped(machine.energy.total)
-            machines[origin] = null
+            machines[origin.index] = null
             return true
         }
 
@@ -1230,15 +1237,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and books nothing, so a held button over a wall does exactly nothing rather than quietly
          * accumulating a debt.
          */
-        private fun inject(at: Int, mass: Long, water: Boolean = false) {
-            if (at !in 0 until grid.size || mass <= 0L) return
-            if (originOf[at] >= 0 && machines[originOf[at]]?.kind?.isPermeable == false) return
-            val base = at * Species.COUNT
-            if (water) { injectWater(at, mass); return }
-            val shares = AirField.AMBIENT_AIR.scaledTo(mass)
+        private fun inject(tile: TileIndex, mass: Long, water: Boolean = false) {
+            if (tile.index !in 0 until grid.size || mass <= 0L) return
+            if (originOf[tile] != TileIndex.NONE && machines[originOf[tile].index]?.kind?.isPermeable == false) return
+            if (water) { injectWater(tile, mass); return }
+            val shares = Atmosphere.AMBIENT_AIR.scaledTo(mass)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather
             // than from the tile it is arriving in — that gas is already at its own temperature.
-            val parcel = LongArray(Species.COUNT)
+            val parcel = MassArray(1)
             var added = 0L
             // Every species, because the parcel is [AirField.AMBIENT_AIR] scaled and so already
             // contains exactly what air contains — anything else contributes zero. A hardcoded list
@@ -1248,16 +1254,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // a field holds goes quietly wrong the moment the field holds one more.
             for (s in Species.ALL) {
                 val g = shares[s]
-                parcel[s.ordinal] = g
-                airMass[base + s.ordinal] += g
+                parcel[MassIndex(TileIndex(0),s)] = g
+                masses[MassIndex(tile,s)] += g
                 added += g
             }
             if (added <= 0L) return
             // The heat comes in with the gas, at the temperature everything else here is. Derived
             // from the mass rather than defaulted to zero, which is [AirField.of]'s rule: gas that
             // arrived with no energy is gas at absolute zero, and it stops behaving like a gas.
-            val energy = gasCapacityAt(parcel, 0) * Temperature.AMBIENT_KELVIN
-            airEnergy[at] += energy
+            val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
+            energies[tile] += energy
             injectedAirMass += added
             injectedAirEnergy += energy
         }
@@ -1271,12 +1277,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * they must share is the admission — this mints matter, and `airBalance` stays honest only
          * because the same two counters are told about it.
          */
-        private fun injectWater(at: Int, mass: Long) {
-            val parcel = LongArray(Species.COUNT)
-            parcel[Species.Water.ordinal] = mass
-            airMass[at * Species.COUNT + Species.Water.ordinal] += mass
-            val energy = gasCapacityAt(parcel, 0) * Edit.WATER_INJECT_KELVIN
-            airEnergy[at] += energy
+        private fun injectWater(tile: TileIndex, mass: Long) {
+            val parcel = MassArray(1)
+            parcel[MassIndex(TileIndex(0),Species.Water)] = mass
+            masses[MassIndex(tile, Species.Water)] += mass
+            val energy = heatCapacityAt(parcel, TileIndex(0)) * Edit.WATER_INJECT_KELVIN
+            energies[tile] += energy
             injectedAirMass += mass
             injectedAirEnergy += energy
         }
@@ -1299,22 +1305,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Place building (click names centre, footprint grows around it). */
-        private fun placeBuilding(at: Int, kind: MachineKind, facing: Direction) {
+        private fun placeBuilding(tile: TileIndex, kind: MachineKind, facing: Direction) {
             val size = kind.size
-            if (!footprintFits(grid, at, size)) return
-            val covered = coveredTiles(grid, at, size)
+            if (!footprintFits(grid, tile, size)) return
+            val covered = coveredTiles(grid, tile, size)
             // Over anything occupied = no-op (footprint check, not just cursor tile).
-            if (covered.any { originOf[it] >= 0 }) return
+            if (covered.any { originOf[it] != TileIndex.NONE }) return
             val built = newMachine(kind, facing)
-            if (portsClash(portsOf(grid, built, at))) return
+            if (portsClash(portsOf(grid, built, tile))) return
 
             // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
             // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            if (!kind.isPermeable && !tryDisplaceAir(grid, airMass, covered) { originOf[it] < 0 }) return
+            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, energies, covered) { originOf[it] == TileIndex.NONE }) return
 
-            machines[at] = built
+            machines[tile.index] = built
             built(built.energy.total)
-            for (t in covered) originOf[t] = at
+            for (t in covered) originOf[t] = tile
         }
 
         /**
@@ -1325,14 +1331,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * an end, and neither can a bridge end and a building's port, because a segment on that tile
          * would have no way to say which of the two it feeds.
          */
-        private fun placeBridge(at: Int, facing: Direction) {
-            if (bridges[at] != null) return
+        private fun placeBridge(tile: TileIndex, facing: Direction) {
+            if (bridges[tile.index] != null) return
             val built = Bridge(facing)
-            val ports = portsOf(grid, built, at)
+            val ports = portsOf(grid, built, tile)
             // Both ends have to be on the grid, or it is half a bridge.
             if (ports.size < 2) return
             if (portsClash(ports)) return
-            bridges[at] = built
+            bridges[tile.index] = built
             built(built.energy.total)
         }
 
@@ -1343,27 +1349,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** The direction from [from] to [to] when the two are neighbours, else null. */
-        private fun adjacency(from: Int, to: Int): Direction? {
-            if (from !in rails.indices || to !in rails.indices) return null
+        private fun adjacency(from: TileIndex, to: TileIndex): Direction? {
+            if (from.index !in rails.indices || to.index !in rails.indices) return null
             return Direction.ALL.firstOrNull { grid.neighbour(from, it) == to }
         }
 
         /** Draw a conduit line (both halves linked symmetrically; gauges keep channel). */
-        private fun layConduit(from: Int, to: Int, conduit: Conduit) {
+        private fun layConduit(from: TileIndex, to: TileIndex, conduit: Conduit) {
             val dir = adjacency(from, to) ?: return
             // Each layer is its own grid, so a pipe drawn across a rail is a crossing rather than a
             // junction — and, now, rather than nothing at all. It used to share one list with the
             // track, find a conduit mismatch, and return having laid no pipe.
             val line = layer(conduit)
-            val a = line[from] ?: Segment(conduit)
-            val b = line[to] ?: Segment(conduit)
-            line[from] = a.joinedTo(dir)
-            line[to] = b.joinedTo(dir.opposite)
+            val a = line[from.index] ?: Segment(conduit)
+            val b = line[to.index] ?: Segment(conduit)
+            line[from.index] = a.joinedTo(dir)
+            line[to.index] = b.joinedTo(dir.opposite)
         }
 
         /** The index the machine covering [tile] is stored at, so any tile of it can be edited. */
-        private fun originAt(tile: Int): Int? =
-            if (tile !in originOf.indices) null else originOf[tile].takeIf { it >= 0 }
+        private fun originAt(tile: TileIndex): TileIndex? =
+            if (tile == TileIndex.NONE || tile.index >= originOf.size) null else originOf[tile].takeIf { it != TileIndex.NONE }
 
         /**
          * Leech from whatever rock is lying on the plate at [at], and grind what has been leeched —
@@ -1383,7 +1389,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Only the mass of it is obvious, and the other two are exactly the kind of half-exchange
          * the ledgers exist to catch.
          */
-        fun leech(m: Extractor, activation: Int, at: Int): Extractor {
+        fun leech(m: Extractor, activation: Int, tile: TileIndex): Extractor {
             val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
             // Backed up: stop working, holding whatever cell is already in the jaws. It is counted
             // as aboard either way, so nothing is forfeit by waiting.
@@ -1391,8 +1397,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             var input = m.input
             if (input == null || input.mass <= 0L) {
-                val found = if (activation > 0) reachedBody(m, at) else -1
-                input = if (found < 0) null else bite(found, at)
+                val found = if (activation > 0) reachedBody(m, tile) else -1
+                input = if (found < 0) null else bite(found, tile)
             }
             if (input == null) return m.copy(input = null, carry = carry)
             if (mass <= 0L) return m.copy(input = input, carry = carry)
@@ -1400,7 +1406,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The same shape as a processor working a lump: take a chunk off the input buffer.
             val chunk = input.mixture.take(minOf(mass, input.mass))
             if (chunk.total <= 0L) return m.copy(input = input, carry = carry)
-            heat(at, heatOfWorking(chunk.total, m))
+            heat(tile, heatOfWorking(chunk.total, m))
             return m.copy(
                 input = Resource(input.form, input.mixture - chunk).orNull(),
                 buffer = Resource(Form.Ore, m.buffer.mixture + chunk),
@@ -1409,10 +1415,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** The first body with a cell over the plate at [at], or `-1`. */
-        private fun reachedBody(m: Extractor, at: Int): Int {
+        private fun reachedBody(m: Extractor, tile: TileIndex): Int {
             val reach = m.kind.reach
-            val x0 = grid.xOf(at) - reach
-            val y0 = grid.yOf(at) - reach
+            val x0 = grid.xOf(tile) - reach
+            val y0 = grid.yOf(tile) - reach
             for (r in bodies.indices) {
                 if (reachableCell(bodies[r], pose, x0, y0, x0 + 2 * reach, y0 + 2 * reach) >= 0) return r
             }
@@ -1423,24 +1429,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Takes one cell off body [index], which is where mass enters the ore ledger — at the body,
          * not at the belt, so that the two balances are hinged on the same number.
          */
-        private fun bite(index: Int, at: Int): Resource? {
+        private fun bite(index: Int, tile: TileIndex): Resource? {
             val body = bodies[index]
-            val reach = machines[at]!!.kind.reach
+            val reach = machines[tile.index]!!.kind.reach
             val cell = reachableCell(
-                body, pose, grid.xOf(at) - reach, grid.yOf(at) - reach,
-                grid.xOf(at) + reach, grid.yOf(at) + reach,
+                body, pose, grid.xOf(tile) - reach, grid.yOf(tile) - reach,
+                grid.xOf(tile) + reach, grid.yOf(tile) + reach,
             )
             if (cell < 0) return null
             val taken = biteCell(body, cell)
             extractedMass += taken.mass
-            absorb(at, taken.energy)
+            absorb(tile, taken.energy)
             // The body lost this; the ship gained it, so the ship gave the body the negative.
             bodyHandedX -= taken.impulseX
             bodyHandedY -= taken.impulseY
             // Booked at the extractor, not at the rock: the arm is bolted to the hull there, and
             // that is the point the reaction to hauling a cell in actually pulls on.
             bodyHandedTorque -= torqueAbout(
-                about, tileCentre(grid.xOf(at)), tileCentre(grid.yOf(at)),
+                about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)),
                 taken.impulseX, taken.impulseY,
             )
             if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
@@ -1448,30 +1454,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
-        fun portsByTile(conduit: Conduit): Map<Int, List<Port>> {
-            val out = HashMap<Int, MutableList<Port>>()
+        fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
+            val out = HashMap<TileIndex, MutableList<Port>>()
             fun add(port: Port) {
                 if (port.conduit == conduit) out.getOrPut(port.tile) { mutableListOf() }.add(port)
             }
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
-                for (port in portsOf(grid, m, i)) add(port)
+                for (port in portsOf(grid, m, TileIndex(i))) add(port)
             }
             for (i in bridges.indices) {
                 val b = bridges[i] ?: continue
-                for (port in portsOf(grid, b, i)) add(port)
+                for (port in portsOf(grid, b, TileIndex(i))) add(port)
             }
             return out
         }
 
         /** Place output packet at port tile (ports behind buildings). Tops up partial packets where possible. */
-        fun pushOut(tile: Int, port: Port) {
-            val segment = rails[tile] ?: return
+        fun pushOut(tile: TileIndex, port: Port) {
+            val segment = rails[tile.index] ?: return
             // Bridges are not ejected from here. They are conduit, so they set their load down as
             // part of the conduit step -- see [depositFromBridge].
             if (port.fromBridge) return
 
-            val m = machines[port.owner] ?: return
+            val m = machines[port.owner.index] ?: return
             // A storage only lets go while its RUN activation is positive, which is what turns it
             // from a bucket into a valve the moment you wire something to it.
             if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
@@ -1483,7 +1489,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = segment.held == null
             if (!load(tile, segment, packet)) return
-            machines[port.owner] = withBuffer(m, port, rest.orNull())
+            machines[port.owner.index] = withBuffer(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
@@ -1499,12 +1505,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * draw a ghost shrinking away from a packet that has not gone anywhere. Left silent, the
          * lump simply continues — off the bridge and along the track in one unbroken slide.
          */
-        private fun depositFromBridge(tile: Int, port: Port) {
-            val segment = rails[tile] ?: return
-            val bridge = bridges[port.owner] ?: return
+        private fun depositFromBridge(tile: TileIndex, port: Port) {
+            val segment = rails[tile.index] ?: return
+            val bridge = bridges[port.owner.index] ?: return
             val held = bridge.exit ?: return
             if (!load(tile, segment, held)) return
-            bridges[port.owner] = bridge.copy(exit = null)
+            bridges[port.owner.index] = bridge.copy(exit = null)
         }
 
         /** Which of a machine's buffers drains through [port]. */
@@ -1526,52 +1532,52 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Places or merges [packet] onto the segment at [tile]. False if there was no room. */
-        private fun load(tile: Int, segment: Segment, packet: Packet): Boolean {
+        private fun load(tile: TileIndex, segment: Segment, packet: Packet): Boolean {
             val existing = segment.held
             if (existing == null) {
-                rails[tile] = segment.copy(held = packet).reading(packet)
+                rails[tile.index] = segment.copy(held = packet).reading(packet)
                 return true
             }
             val merged = squashOnto(existing, packet) ?: return false
-            rails[tile] = segment.copy(held = merged.merged).reading(merged.merged)
+            rails[tile.index] = segment.copy(held = merged.merged).reading(merged.merged)
             return merged.rejected == null
         }
 
         /** Advance all conduits one step (flow derived from input ports). */
-        fun advanceRails(ports: Map<Int, List<Port>>) {
+        fun advanceRails(ports: Map<TileIndex, List<Port>>) {
             // Bridges drain first (three real slots, not one).
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output && port.fromBridge) depositFromBridge(tile, port)
             }
 
             // Bridge steps with layer (slots freed for track).
-            for (i in bridges.indices) {
-                val b = bridges[i] ?: continue
+            for (tile in grid.tiles) {
+                val b = bridges[tile.index] ?: continue
                 if (b.conduit != Conduit.Rail) continue
                 val after = b.advanced()
-                bridges[i] = after
+                bridges[tile.index] = after
                 // A slot that was empty and is not now took delivery from the slot behind it, which
                 // is the only way a bridge slot is ever filled from the inside.
-                if (b.exit == null && after.exit != null) motion.bridgeSlotFilled(i, Motion.SLOT_EXIT)
-                if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(i, Motion.SLOT_MIDDLE)
+                if (b.exit == null && after.exit != null) motion.bridgeSlotFilled(tile, Motion.SLOT_EXIT)
+                if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(tile, Motion.SLOT_MIDDLE)
             }
 
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
             val sinks = ports.entries
-                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Input } }
+                .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
                 .toSet()
             // Sources (bridge far end gives crossing run its own direction).
             val sources = ports.entries
-                .filter { (tile, at) -> rails[tile] != null && at.any { it.kind == PortKind.Output } }
+                .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Output } }
                 .map { it.key }
                 .toSet()
-            val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) i else null }
+            val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
             val flow = FlowGraph.build(
                 railTiles,
                 sources,
                 sinks,
-                { tile, dir -> rails[tile]?.linkedTo(dir) == true },
+                { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                 grid,
             )
 
@@ -1609,8 +1615,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * has successors).
          */
         private fun hasRoom(port: Port): Boolean {
-            if (port.fromBridge) return bridges[port.owner]?.entry == null
-            return when (val m = machines[port.owner]) {
+            if (port.fromBridge) return bridges[port.owner.index]?.entry == null
+            return when (val m = machines[port.owner.index]) {
                 is Processor -> m.input == null
                 is Smelter -> m.input == null
                 is Storage -> m.contents == null || (m.contents?.mass ?: 0L) < Storage.CAP
@@ -1623,13 +1629,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
         private fun offerTo(port: Port, packet: Packet): Packet? {
             if (port.fromBridge) {
-                val bridge = bridges[port.owner] ?: return packet
+                val bridge = bridges[port.owner.index] ?: return packet
                 if (bridge.entry != null) return packet
-                bridges[port.owner] = bridge.copy(entry = packet)
+                bridges[port.owner.index] = bridge.copy(entry = packet)
                 return null
             }
-            val dest = machines[port.owner] ?: return packet
-            return if (deliver(port.owner, dest, packet)) null else packet
+            val dest = machines[port.owner.index] ?: return packet
+            return if (deliver(port.owner.index, dest, packet)) null else packet
         }
 
         /** Take packets (limit caps to available room). */

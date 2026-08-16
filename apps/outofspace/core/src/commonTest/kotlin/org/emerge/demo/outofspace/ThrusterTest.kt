@@ -5,14 +5,16 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.StructureMap
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.exhaustPath
@@ -153,10 +155,10 @@ class ThrusterTest {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
         // Inside the box, facing the port wall a few tiles away.
-        val at = grid.index(HULL_LEFT + 4, BAY_Y)
-        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, at = at))
+        val tile = grid.tile(HULL_LEFT + 4, BAY_Y)
+        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, tile))
 
-        val destination = grid.index(HULL_LEFT + 1, BAY_Y)
+        val destination = grid.tile(HULL_LEFT + 1, BAY_Y)
         val coldEnough = controller.state.air.kelvinAt(destination)
         repeat(TICKS) { controller.stepOnce() }
 
@@ -186,8 +188,8 @@ class ThrusterTest {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
         // Immediately inboard of the port wall, facing it: the exit face *is* the wall.
-        val at = grid.index(HULL_LEFT + 1, BAY_Y)
-        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, at = at))
+        val at = grid.tile(HULL_LEFT + 1, BAY_Y)
+        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, tile = at))
         val coldEnough = controller.state.air.kelvinAt(at)
 
         repeat(TICKS) { controller.stepOnce() }
@@ -207,21 +209,21 @@ class ThrusterTest {
     fun `the exhaust path reads the hull`() {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
-        val state = hullWithThruster(grid, Direction.Left, at = grid.index(HULL_LEFT + 4, BAY_Y))
+        val state = hullWithThruster(grid, Direction.Left, tile = grid.tile(HULL_LEFT + 4, BAY_Y))
         val structure = StructureMap.derive(grid, state.machines)
 
-        val blocked = exhaustPath(grid, structure, grid.index(HULL_LEFT + 4, BAY_Y), Direction.Left)
-        assertEquals(grid.index(HULL_LEFT, BAY_Y), blocked.blocker, "the wall is the blocker")
-        assertEquals(grid.index(HULL_LEFT + 1, BAY_Y), blocked.destination, "the tile before it takes the exhaust")
+        val blocked = exhaustPath(grid, structure, grid.tile(HULL_LEFT + 4, BAY_Y), Direction.Left)
+        assertEquals(grid.tile(HULL_LEFT, BAY_Y), blocked.blocker, "the wall is the blocker")
+        assertEquals(grid.tile(HULL_LEFT + 1, BAY_Y), blocked.destination, "the tile before it takes the exhaust")
         assertTrue(!blocked.isClear, "the wall is between it and the rim")
 
-        val against = grid.index(HULL_LEFT + 1, BAY_Y)
+        val against = grid.tile(HULL_LEFT + 1, BAY_Y)
         val cornered = exhaustPath(grid, structure, against, Direction.Left)
-        assertEquals(grid.index(HULL_LEFT, BAY_Y), cornered.blocker, "the wall is right there")
+        assertEquals(grid.tile(HULL_LEFT, BAY_Y), cornered.blocker, "the wall is right there")
         assertEquals(against, cornered.destination, "with nowhere else, it exhausts into itself")
 
         // Out through the hull tile the fixture replaced, and away: nothing between it and the rim.
-        val clear = exhaustPath(grid, structure, grid.index(HULL_RIGHT, BAY_Y), Direction.Right)
+        val clear = exhaustPath(grid, structure, grid.tile(HULL_RIGHT, BAY_Y), Direction.Right)
         assertTrue(clear.isClear, "outboard of the hull is the rim, and the rim is not a blocker")
     }
 
@@ -234,9 +236,9 @@ class ThrusterTest {
 
         val played = controller.state
         val loaded = Save.read(Save.write(played))
-        val here = cfg.initialGrid.index(HULL_RIGHT, BAY_Y)
-        val before = played.machines[here] as Thruster
-        val after = loaded.machines[here] as Thruster
+        val here = cfg.initialGrid.tile(HULL_RIGHT, BAY_Y)
+        val before = played[here] as Thruster
+        val after = loaded[here] as Thruster
         assertEquals(before, after, "the thruster did not survive the round trip")
         assertEquals(played.ventedMass, loaded.ventedMass)
         assertEquals(played.exhaustMomentumX, loaded.exhaustMomentumX)
@@ -249,21 +251,21 @@ class ThrusterTest {
      * a direction or a total would acquire a tolerance — see `FlightTest`'s vacuum fixture for the
      * same trade. What is being measured here is the engine.
      */
-    private fun hullWithThruster(grid: Grid, facing: Direction, at: Int = -1): VesselState {
+    private fun hullWithThruster(grid: Grid, facing: Direction, tile: TileIndex = TileIndex.NONE): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.index(x, y)] = Hull() }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         // Default: mounted *in* the starboard wall, which is how a motor is actually fitted.
-        val tile = if (at >= 0) at else grid.index(HULL_RIGHT, BAY_Y)
-        machines[tile] = Thruster(
+        val tile = if (tile != TileIndex.NONE) tile else grid.tile(HULL_RIGHT, BAY_Y)
+        machines[tile.index] = Thruster(
             facing = facing,
             input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
         )
         return VesselState(
             grid = grid,
             machines = machines.toList(),
-            air = AirField.of(LongArray(grid.size * Species.COUNT)),
+            air = Atmosphere.of(MassArray(grid.size)),
         )
     }
 

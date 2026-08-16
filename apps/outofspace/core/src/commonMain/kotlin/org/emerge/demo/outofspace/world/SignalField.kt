@@ -19,7 +19,7 @@ class SignalField(
     private val values: IntArray,
 ) {
     /** What the network under [tile] is carrying — 0 where no wire is laid, which is not an error. */
-    fun at(tile: Int): Int {
+    fun at(tile: TileIndex): Int {
         val id = networks[tile]
         return if (id < 0) 0 else values[id]
     }
@@ -30,7 +30,7 @@ class SignalField(
     val networkCount: Int get() = values.size
 
     override fun toString(): String =
-        (0 until values.size).filter { values[it] != 0 }.joinToString { "#$it=${values[it]}" }
+        values.indices.filter { values[it] != 0 }.joinToString { "#$it=${values[it]}" }
 
     companion object {
         /** A full signal, and the denominator every weight is out of. */
@@ -47,7 +47,7 @@ class SignalField(
          * because a sensor that has not been wired up yet is a normal state of a half-built vessel
          * and not something to complain about.
          */
-        fun build(networks: SignalNetworks, emit: (raise: (Int, Int) -> Unit) -> Unit): SignalField {
+        fun build(networks: SignalNetworks, emit: (raise: (TileIndex, Int) -> Unit) -> Unit): SignalField {
             val values = IntArray(networks.count)
             emit { tile, value ->
                 val id = networks[tile]

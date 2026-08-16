@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
@@ -16,27 +17,27 @@ import org.emerge.demo.outofspace.world.VolumeField
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
-    data class Place(val index: Int, val kind: MachineKind, val facing: Direction) : Edit
-    data class Rotate(val index: Int) : Edit
+    data class Place(val tile: TileIndex, val kind: MachineKind, val facing: Direction) : Edit
+    data class Rotate(val tile: TileIndex) : Edit
     /**
      * Takes something off a tile — one layer of it, or a named one, or all of it.
      *
      * [layer] defaults to [DeleteLayer.Top], which is the blind one-layer-per-click behaviour every
      * caller had before the delete tool existed, so nothing that predates it changes meaning.
      */
-    data class Remove(val index: Int, val layer: DeleteLayer = DeleteLayer.Top) : Edit
+    data class Remove(val tile: TileIndex, val layer: DeleteLayer = DeleteLayer.Top) : Edit
 
     /** Lay conduit between adjacent tiles [from]→[to] (one drag step). Missing track laid at ends. Non-adjacent = ignored (no pathfind). */
-    data class Lay(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
+    data class Lay(val from: TileIndex, val to: TileIndex, val conduit: Conduit = Conduit.Rail) : Edit
 
     /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
-    data class Cut(val from: Int, val to: Int, val conduit: Conduit = Conduit.Rail) : Edit
+    data class Cut(val from: TileIndex, val to: TileIndex, val conduit: Conduit = Conduit.Rail) : Edit
 
     /** Binds a button to a different key — see [org.emerge.demo.outofspace.world.machine.WireButton]. */
-    data class BindKey(val index: Int, val key: InputKey) : Edit
+    data class BindKey(val tile: TileIndex, val key: InputKey) : Edit
 
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
-    data class Wire(val index: Int, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
+    data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 
     /** Directional thrust (dx, dy each −1/0/1). Acceleration-based (reducer multiplies by vessel mass). Placeholder engine (ledger: debugImpulseX). */
     data class Thrust(val dx: Int, val dy: Int) : Edit
@@ -60,7 +61,7 @@ sealed interface Edit {
      * One edit per tick for as long as the button is held — see [OutofspaceController.injectTile] —
      * so the rate is a rate rather than a function of the frame rate.
      */
-    data class Inject(val index: Int, val mass: Long = INJECT_MASS, val water: Boolean = false) : Edit
+    data class Inject(val tile: TileIndex, val mass: Long = INJECT_MASS, val water: Boolean = false) : Edit
 
     /**
      * Takes the grid back to the ship plus its pad. The only edit that can make the grid smaller,

@@ -1,7 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.world.Grid
-
 /**
  * Staggered grid: scalars at tile centres, vectors on faces between tiles.
  * Prevents checkerboard pressure (centred velocity decouples neighbours).
@@ -35,27 +33,27 @@ class EdgeGrid(val grid: Grid) {
     // ── The tiles either side ──
 
     /** Tile on the -x side of an x-edge, or -1 if that is off the grid. */
-    fun xEdgeBefore(edge: Int): Int {
+    fun xEdgeBefore(edge: Int): TileIndex {
         val x = xOfXEdge(edge)
-        return if (x == 0) -1 else grid.index(x - 1, yOfXEdge(edge))
+        return if (x == 0) TileIndex.NONE else grid.tile(x - 1, yOfXEdge(edge))
     }
 
     /** Tile on the +x side of an x-edge, or -1 if that is off the grid. */
-    fun xEdgeAfter(edge: Int): Int {
+    fun xEdgeAfter(edge: Int): TileIndex {
         val x = xOfXEdge(edge)
-        return if (x == grid.width) -1 else grid.index(x, yOfXEdge(edge))
+        return if (x == grid.width) TileIndex.NONE else grid.tile(x, yOfXEdge(edge))
     }
 
     /** Tile on the -y side (above, on screen) of a y-edge, or -1 if that is off the grid. */
-    fun yEdgeBefore(edge: Int): Int {
+    fun yEdgeBefore(edge: Int): TileIndex {
         val y = yOfYEdge(edge)
-        return if (y == 0) -1 else grid.index(xOfYEdge(edge), y - 1)
+        return if (y == 0) TileIndex.NONE else grid.tile(xOfYEdge(edge), y - 1)
     }
 
     /** Tile on the +y side (below, on screen) of a y-edge, or -1 if that is off the grid. */
-    fun yEdgeAfter(edge: Int): Int {
+    fun yEdgeAfter(edge: Int): TileIndex {
         val y = yOfYEdge(edge)
-        return if (y == grid.height) -1 else grid.index(xOfYEdge(edge), y)
+        return if (y == grid.height) TileIndex.NONE else grid.tile(xOfYEdge(edge), y)
     }
 
     /** True when one side of this face is off the grid — i.e. it opens onto space. */
@@ -66,14 +64,14 @@ class EdgeGrid(val grid: Grid) {
 
     // ── A tile's own four faces ──
 
-    fun leftEdgeOf(tile: Int): Int = xEdge(grid.xOf(tile), grid.yOf(tile))
-    fun rightEdgeOf(tile: Int): Int = xEdge(grid.xOf(tile) + 1, grid.yOf(tile))
+    fun leftEdgeOf(tile: TileIndex): Int = xEdge(grid.xOf(tile), grid.yOf(tile))
+    fun rightEdgeOf(tile: TileIndex): Int = xEdge(grid.xOf(tile) + 1, grid.yOf(tile))
 
     /** The face above the tile on screen — `Direction.Up` is `dy = -1`. */
-    fun upEdgeOf(tile: Int): Int = yEdge(grid.xOf(tile), grid.yOf(tile))
+    fun upEdgeOf(tile: TileIndex): Int = yEdge(grid.xOf(tile), grid.yOf(tile))
 
     /** The face below the tile on screen. */
-    fun downEdgeOf(tile: Int): Int = yEdge(grid.xOf(tile), grid.yOf(tile) + 1)
+    fun downEdgeOf(tile: TileIndex): Int = yEdge(grid.xOf(tile), grid.yOf(tile) + 1)
 
     override fun equals(other: Any?): Boolean =
         this === other || (other is EdgeGrid && grid == other.grid)

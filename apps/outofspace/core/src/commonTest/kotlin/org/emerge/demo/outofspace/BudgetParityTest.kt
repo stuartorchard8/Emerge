@@ -6,10 +6,12 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Material
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vaporizer
@@ -108,11 +110,11 @@ class BudgetParityTest {
     @Test
     fun `a mole is a particle count and does not move with the mass unit`() {
         for (species in Species.ALL) {
-            val tile = LongArray(Species.COUNT)
-            tile[species.ordinal] = Budget.KILOGRAM
+            val tile = MassArray(1)
+            tile.data[species.ordinal] = Budget.KILOGRAM
             assertEquals(
                 1_000L * 1_000L / species.molarMass,
-                millimolesOf(tile, 0),
+                millimolesOf(tile, TileIndex(0)),
                 "millimoles in a kilogram of $species",
             )
         }

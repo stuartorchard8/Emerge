@@ -21,10 +21,10 @@ class FlowField(
 ) {
 
     /** Net mass per tick crossing the tile along +x. */
-    fun xAt(tile: Int): Long = x[tile]
+    fun xAt(tile: TileIndex): Long = x[tile.index]
 
     /** Net mass per tick along +y — **downward**, since the world is side-on and screen-down is gravity-down. */
-    fun yAt(tile: Int): Long = y[tile]
+    fun yAt(tile: TileIndex): Long = y[tile.index]
 
     /**
      * How fast the tile's contents are moving, in tiles per tick: the net mass crossing it over the
@@ -32,7 +32,7 @@ class FlowField(
      * anything can honestly be said to travel on this lattice — though diffusion cannot reach it,
      * since a cell keeps a share (see [SLOTS]).
      */
-    fun speedAt(tile: Int): Float = speed[tile]
+    fun speedAt(tile: TileIndex): Float = speed[tile.index]
 
     /** The fastest tile in the field, in tiles per tick. Zero for still air. */
     fun peakSpeed(): Float {
@@ -66,17 +66,17 @@ class FlowField(
             val x = LongArray(size)
             val y = LongArray(size)
             val speed = FloatArray(size)
-            for (tile in 0 until size) {
+            for (tile in edges.grid.tiles) {
                 // Averaged, so gas passing straight through reads as its throughput and gas arriving
                 // from both sides at once reads as still — which on the whole it is. Divergence is a
                 // different question, and pressure is the overlay that answers it.
-                x[tile] = (fluxX[edges.leftEdgeOf(tile)] + fluxX[edges.rightEdgeOf(tile)]) / 2L
-                y[tile] = (fluxY[edges.upEdgeOf(tile)] + fluxY[edges.downEdgeOf(tile)]) / 2L
-                val mass = maxOf(startingMass[tile], endingMass[tile])
+                x[tile.index] = (fluxX[edges.leftEdgeOf(tile)] + fluxX[edges.rightEdgeOf(tile)]) / 2L
+                y[tile.index] = (fluxY[edges.upEdgeOf(tile)] + fluxY[edges.downEdgeOf(tile)]) / 2L
+                val mass = maxOf(startingMass[tile.index], endingMass[tile.index])
                 if (mass <= 0L) continue
-                val fx = x[tile].toDouble()
-                val fy = y[tile].toDouble()
-                speed[tile] = (sqrt(fx * fx + fy * fy) / mass).toFloat()
+                val fx = x[tile.index].toDouble()
+                val fy = y[tile.index].toDouble()
+                speed[tile.index] = (sqrt(fx * fx + fy * fy) / mass).toFloat()
             }
             return FlowField(x, y, speed)
         }

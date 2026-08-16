@@ -80,14 +80,14 @@ class HeatTest {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1..w) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h).index] = Hull()
         }
         for (y in 1..h) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w, y).index] = Hull()
         }
-        for (y in 2 until h) for (x in 2 until w) machines[grid.index(x, y)] = fill(x, y)
+        for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
         return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails(grid, track)))
     }
 
@@ -97,21 +97,21 @@ class HeatTest {
     fun `hull encloses an interior and everything else is outside`() {
         val s = sealedRoom(6, 6)
         val g = s.grid
-        assertEquals(Structure.Interior, s.structure[g.index(3, 3)], "the middle is inside")
-        assertEquals(Structure.Hull, s.structure[g.index(1, 3)], "the wall is wall")
-        assertEquals(Structure.Vacuum, s.structure[g.index(0, 0)], "the corner is space")
+        assertEquals(Structure.Interior, s.structure[g.tile(3, 3).index], "the middle is inside")
+        assertEquals(Structure.Hull, s.structure[g.tile(1, 3).index], "the wall is wall")
+        assertEquals(Structure.Vacuum, s.structure[g.tile(0, 0).index], "the corner is space")
     }
 
     @Test
     fun `a single missing hull tile turns the room back into outside`() {
         val sealed = sealedRoom(6, 6)
         val g = sealed.grid
-        assertEquals(Structure.Interior, sealed.structure[g.index(3, 3)])
+        assertEquals(Structure.Interior, sealed.structure[g.tile(3, 3).index])
 
-        val breached = run(sealed, 2, OutofspaceInput(listOf(Edit.Remove(g.index(3, 1)))))
+        val breached = run(sealed, 2, OutofspaceInput(listOf(Edit.Remove(g.tile(3, 1)))))
         assertEquals(
             Structure.Vacuum,
-            breached.structure[g.index(3, 3)],
+            breached.structure[g.tile(3, 3).index],
             "space pours in through the hole; there is no separate notion of a leak",
         )
     }
@@ -121,13 +121,13 @@ class HeatTest {
         val grid = Grid(5, 3)
         val machines = arrayOfNulls<Machine>(15)
         for (x in 0 until 5) {
-            machines[grid.index(x, 0)] = Sensor(Direction.Right)
-            machines[grid.index(x, 2)] = Sensor(Direction.Right)
+            machines[grid.tile(x, 0).index] = Sensor(Direction.Right)
+            machines[grid.tile(x, 2).index] = Sensor(Direction.Right)
         }
         val s = VesselState(grid, machines.toList())
         assertEquals(
             Structure.Vacuum,
-            s.structure[grid.index(2, 1)],
+            s.structure[grid.tile(2, 1).index],
             "machinery in a room is not a pressure vessel",
         )
     }
@@ -199,9 +199,9 @@ class HeatTest {
         val g = room.grid
         val s = run(room, 120)
 
-        val atSmelter = s.kelvinAt(g.index(5, 5))
-        val twoAway = s.kelvinAt(g.index(2, 5))
-        val farCorner = s.kelvinAt(g.index(2, 9))
+        val atSmelter = s.kelvinAt(g.tile(5, 5))
+        val twoAway = s.kelvinAt(g.tile(2, 5))
+        val farCorner = s.kelvinAt(g.tile(2, 9))
 
         assertTrue(atSmelter > Temperature.AMBIENT_KELVIN + 15, "the furnace tile should be hot: ${atSmelter}K")
         assertTrue(atSmelter > twoAway, "hottest at the source: $atSmelter vs $twoAway")
@@ -216,10 +216,10 @@ class HeatTest {
         // wall is a hundredfold capacity ratio rather than the twofold one a tile field ever saw.
         val room = sealedRoom(6, 6, track = { row(2, 5, 3) })
         val g = room.grid
-        val hot = g.index(3, 1)             // a wall tile, driven to 4000K
+        val hot = g.tile(3, 1)             // a wall tile, driven to 4000K
         val machines = room.machines.toMutableList()
-        val wall = machines[hot]!!
-        machines[hot] = wall.atKelvin(4_000)
+        val wall = machines[hot.index]!!
+        machines[hot.index] = wall.atKelvin(4_000)
         var s = room.copy(machines = machines.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
@@ -241,7 +241,7 @@ class HeatTest {
         // old field charged every tile a capacity whether or not anything stood on it, and that is
         // exactly the fiction the body model drops. What is in an empty room is air, and the air's
         // temperature is [airKelvinAt].
-        val wall = g.index(3, 1)
+        val wall = g.tile(3, 1)
         val startK = s.kelvinAt(wall)
         s = run(s, 480)
         val endK = s.kelvinAt(wall)
@@ -257,21 +257,21 @@ class HeatTest {
         val grid = Grid(11, 11)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(5, 5)] = Smelter(Direction.Right, input = ore)
+        machines[grid.tile(5, 5).index] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())
         s = run(s, 40)
 
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing
         // encloses it: every tile around it is space.
-        assertEquals(Structure.Vacuum, s.structure[grid.index(1, 1)], "nothing encloses it")
-        assertEquals(Structure.Machine, s.structure[grid.index(5, 5)], "and it is solid, not a room")
+        assertEquals(Structure.Vacuum, s.structure[grid.tile(1, 1).index], "nothing encloses it")
+        assertEquals(Structure.Machine, s.structure[grid.tile(5, 5).index], "and it is solid, not a room")
         // The old per-tile field zeroed anything not enclosed, so a bare machine stored nothing at
         // all. That was a property of the field rather than of the world: a furnace in vacuum is
         // still a furnace full of hot firebrick, and what vacuum actually does is make radiation the
         // only way out. So it stores its heat, and sheds it slowly.
         assertTrue(s.storedEnergy > 0L, "a furnace in vacuum is still a hot furnace")
         assertTrue(s.radiatedEnergy > 0L, "and the only way out is radiation")
-        assertTrue(s.kelvinAt(grid.index(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
+        assertTrue(s.kelvinAt(grid.tile(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
         assertEnergyBalanced(s, "bare machine")
     }
 
@@ -279,16 +279,16 @@ class HeatTest {
     fun `placing hull is an ordinary build action`() {
         val grid = Grid(4, 3)
         var s = VesselState(grid, List(grid.size) { null })
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(1, 1), MachineKind.Hull, Direction.Right))))
-        assertTrue(s[grid.index(1, 1)] is Hull)
-        assertEquals(Structure.Hull, s.structure[grid.index(1, 1)])
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(1, 1), MachineKind.Hull, Direction.Right))))
+        assertTrue(s[grid.tile(1, 1)] is Hull)
+        assertEquals(Structure.Hull, s.structure[grid.tile(1, 1).index])
     }
 
     @Test
     fun `two runs of a heated world are identical`() {
         fun digest(s: VesselState) = buildString {
             append(s.storedEnergy).append('|').append(s.radiatedEnergy).append('|').append(s.generatedEnergy)
-            for (i in 0 until s.grid.size) append(s.kelvinAt(i)).append(',')
+            for (tile in s.grid.tiles) append(s.kelvinAt(tile)).append(',')
         }
         val grid = Grid(40, 28)
         assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
@@ -299,10 +299,10 @@ class HeatTest {
         val grid = Grid(6, 5)
         val machines = arrayOfNulls<Machine>(30)
         // Three walls and an open side: still outside.
-        for (x in 1..4) machines[grid.index(x, 1)] = Hull()
-        for (y in 1..3) { machines[grid.index(1, y)] = Hull(); machines[grid.index(4, y)] = Hull() }
+        for (x in 1..4) machines[grid.tile(x, 1).index] = Hull()
+        for (y in 1..3) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(4, y).index] = Hull() }
         val s = VesselState(grid, machines.toList())
-        assertEquals(Structure.Vacuum, s.structure[grid.index(2, 2)], "an open-bottomed box is not a room")
+        assertEquals(Structure.Vacuum, s.structure[grid.tile(2, 2).index], "an open-bottomed box is not a room")
         assertEquals(0, s.structure.interiorCount)
     }
 }

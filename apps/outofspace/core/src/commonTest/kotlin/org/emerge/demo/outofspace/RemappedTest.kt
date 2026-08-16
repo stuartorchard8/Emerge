@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.FlowCursors
@@ -13,6 +13,8 @@ import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
+import org.emerge.demo.outofspace.world.EnergyArray
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MomentumField
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -32,12 +34,12 @@ class RemappedTest {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1 until w - 1) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h - 2)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h - 2).index] = Hull()
         }
         for (y in 1 until h - 1) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w - 2, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w - 2, y).index] = Hull()
         }
         return VesselState(grid, machines.toList())
     }
@@ -47,24 +49,21 @@ class RemappedTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         // Hull
         for (x in 1 until w - 1) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h - 2)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h - 2).index] = Hull()
         }
         for (y in 1 until h - 1) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w - 2, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w - 2, y).index] = Hull()
         }
-        machines[grid.index(5, 5)] = Hull()
-        machines[grid.index(10, 5)] = Hull()
+        machines[grid.tile(5, 5).index] = Hull()
+        machines[grid.tile(10, 5).index] = Hull()
         // Diverter
-        val diverters = FlowCursors(mapOf(grid.index(7, 7) to 1))
+        val diverters = FlowCursors(mapOf(grid.tile(7, 7) to 1))
         // Air with uniform mass and energy
-        val airMass = LongArray(grid.size * Species.COUNT) {
-            val tile = it / Species.COUNT
-            if (tile < grid.size) 100L else 0L
-        }
-        val airEnergy = LongArray(grid.size) { 500L }
-        val air = AirField.of(airMass, airEnergy)
+        val airMass = MassArray(grid.size) { _,_ -> 100L}
+        val airEnergy = EnergyArray(grid.size) { 500L }
+        val air = Atmosphere.of(airMass, airEnergy)
         // Momentum with non-zero values
         val xEdges = EdgeGrid(grid).xEdgeCount
         val yEdges = EdgeGrid(grid).yEdgeCount
@@ -72,7 +71,7 @@ class RemappedTest {
         val momY = LongArray(yEdges) { 20L }
         val momentum = MomentumField.of(EdgeGrid(grid), momX, momY)
         // Pipe air: empty
-        val pipeAir = AirField.of(LongArray(grid.size * Species.COUNT) { 0L })
+        val pipeAir = Atmosphere.of(MassArray(grid.size))
         val pipeMomentum = MomentumField.of(EdgeGrid(grid), LongArray(xEdges), LongArray(yEdges))
         // One body
         val bodies = listOf(
@@ -107,10 +106,10 @@ class RemappedTest {
         assertEquals(s0.bridges, s1.bridges)
         assertEquals(s0.conduits, s1.conduits)
         assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
-        assertEquals(s0.air.copyMass().contentToString(), s1.air.copyMass().contentToString())
-        assertEquals(s0.air.copyEnergy().contentToString(), s1.air.copyEnergy().contentToString())
-        assertEquals(s0.pipeAir.copyMass().contentToString(), s1.pipeAir.copyMass().contentToString())
-        assertEquals(s0.pipeAir.copyEnergy().contentToString(), s1.pipeAir.copyEnergy().contentToString())
+        assertEquals(s0.air.copyMass().data.contentToString(), s1.air.copyMass().data.contentToString())
+        assertEquals(s0.air.copyEnergy().data.contentToString(), s1.air.copyEnergy().data.contentToString())
+        assertEquals(s0.pipeAir.copyMass().data.contentToString(), s1.pipeAir.copyMass().data.contentToString())
+        assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s1.pipeAir.copyEnergy().data.contentToString())
         assertTrue(s0.momentum.copyX().contentEquals(s1.momentum.copyX()), "momentum X")
         assertTrue(s0.momentum.copyY().contentEquals(s1.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s1.pipeMomentum.copyX()), "pipeMomentum X")
@@ -135,13 +134,13 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // Old machine at (5, 5) should now be at (9, 8)
-        val oldTile = oldGrid.index(5, 5)
-        val newTile = newGrid.index(9, 8)
-        assertEquals(s0.machines[oldTile], s1.machines[newTile])
+        val oldTile = oldGrid.tile(5, 5)
+        val newTile = newGrid.tile(9, 8)
+        assertEquals(s0[oldTile], s1[newTile])
         // Edge machine
-        val edgeTile = oldGrid.index(0, 0)
-        val edgeNewTile = newGrid.index(dx, dy)
-        assertEquals(s0.machines[edgeTile], s1.machines[edgeNewTile])
+        val edgeTile = oldGrid.tile(0, 0)
+        val edgeNewTile = newGrid.tile(dx, dy)
+        assertEquals(s0[edgeTile], s1[edgeNewTile])
     }
 
     @Test
@@ -159,9 +158,9 @@ class RemappedTest {
             val newLayer = s1.conduits[c]
             for (x in 0 until oldGrid.width) {
                 for (y in 0 until oldGrid.height) {
-                    val oldTile = oldGrid.index(x, y)
-                    val newTile = newGrid.index(x + dx, y + dy)
-                    assertEquals(oldLayer[oldTile], newLayer[newTile],
+                    val oldTile = oldGrid.tile(x, y)
+                    val newTile = newGrid.tile(x + dx, y + dy)
+                    assertEquals(oldLayer[oldTile.index], newLayer[newTile.index],
                         "conduit $c at ($x,$y) -> ($x+$dx,$y+$dy)")
                 }
             }
@@ -175,13 +174,13 @@ class RemappedTest {
         val newGrid = Grid(oldGrid.width + 2, oldGrid.height + 2)
         val dx = 2
         val dy = 2
-        val bridgeTile = oldGrid.index(5, 5)
+        val bridgeTile = oldGrid.tile(5, 5)
         val s0withBridge = s0.copy(machines = s0.machines.toMutableList().also {
-            it[bridgeTile] = Hull()
+            it[bridgeTile.index] = Hull()
         })
         val s1 = s0withBridge.remapped(newGrid, dx, dy)
-        val newTile = newGrid.index(5 + dx, 5 + dy)
-        assertEquals(s0withBridge.machines[bridgeTile], s1.machines[newTile])
+        val newTile = newGrid.tile(5 + dx, 5 + dy)
+        assertEquals(s0withBridge[bridgeTile], s1[newTile])
     }
 
     @Test
@@ -195,8 +194,8 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // Diverter at (7, 7) should move to (10, 9)
-        val oldTile = oldGrid.index(7, 7)
-        val newTile = newGrid.index(10, 9)
+        val oldTile = oldGrid.tile(7, 7)
+        val newTile = newGrid.tile(10, 9)
         assertEquals(1, s1.diverters.forkCursors[newTile])
     }
 
@@ -212,8 +211,8 @@ class RemappedTest {
 
         for (x in 0 until oldGrid.width) {
             for (y in 0 until oldGrid.height) {
-                val oldTile = oldGrid.index(x, y)
-                val newTile = newGrid.index(x + dx, y + dy)
+                val oldTile = oldGrid.tile(x, y)
+                val newTile = newGrid.tile(x + dx, y + dy)
                 for (s in Species.entries) {
                     val oldMass = s0.air.massOf(oldTile, s)
                     val newMass = s1.air.massOf(newTile, s)
@@ -237,8 +236,8 @@ class RemappedTest {
 
         for (x in 0 until oldGrid.width) {
             for (y in 0 until oldGrid.height) {
-                val oldTile = oldGrid.index(x, y)
-                val newTile = newGrid.index(x + dx, y + dy)
+                val oldTile = oldGrid.tile(x, y)
+                val newTile = newGrid.tile(x + dx, y + dy)
                 for (s in Species.entries) {
                     val oldMass = s0.pipeAir.massOf(oldTile, s)
                     val newMass = s1.pipeAir.massOf(newTile, s)
@@ -490,10 +489,10 @@ class RemappedTest {
         assertEquals(s0.bridges, s2.bridges, "bridges should be identical")
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
         assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
-        assertEquals(s0.air.copyMass().contentToString(), s2.air.copyMass().contentToString(), "air mass")
-        assertEquals(s0.air.copyEnergy().contentToString(), s2.air.copyEnergy().contentToString(), "air energy")
-        assertEquals(s0.pipeAir.copyMass().contentToString(), s2.pipeAir.copyMass().contentToString(), "pipeAir mass")
-        assertEquals(s0.pipeAir.copyEnergy().contentToString(), s2.pipeAir.copyEnergy().contentToString(), "pipeAir energy")
+        assertEquals(s0.air.copyMass().data.contentToString(), s2.air.copyMass().data.contentToString(), "air mass")
+        assertEquals(s0.air.copyEnergy().data.contentToString(), s2.air.copyEnergy().data.contentToString(), "air energy")
+        assertEquals(s0.pipeAir.copyMass().data.contentToString(), s2.pipeAir.copyMass().data.contentToString(), "pipeAir mass")
+        assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s2.pipeAir.copyEnergy().data.contentToString(), "pipeAir energy")
         assertTrue(s0.momentum.copyX().contentEquals(s2.momentum.copyX()), "momentum X")
         assertTrue(s0.momentum.copyY().contentEquals(s2.momentum.copyY()), "momentum Y")
         assertTrue(s0.pipeMomentum.copyX().contentEquals(s2.pipeMomentum.copyX()), "pipeMomentum X")
@@ -520,7 +519,7 @@ class RemappedTest {
         // Tiles in the new area that were not in the old grid should be zero
         for (x in 0 until 5) {
             for (y in 0 until 4) {
-                val tile = newGrid.index(x, y)
+                val tile = newGrid.tile(x, y)
                 assertEquals(0L, s1.air.massOf(tile, Species.Iron),
                     "new tile ($x,$y) should be vacuum")
                 assertEquals(0L, s1.air.copyEnergy()[tile], "new tile ($x,$y) energy should be zero")
@@ -548,11 +547,11 @@ class RemappedTest {
         // Tiles inside the new grid should still be correct
         for (x in 3 until oldGrid.width) {
             for (y in 2 until oldGrid.height) {
-                val oldTile = oldGrid.index(x, y)
+                val oldTile = oldGrid.tile(x, y)
                 val nx = x + dx
                 val ny = y + dy
-                val newTile = newGrid.index(nx, ny)
-                assertEquals(s0.machines[oldTile], s1.machines[newTile],
+                val newTile = newGrid.tile(nx, ny)
+                assertEquals(s0[oldTile], s1[newTile],
                     "machine at ($x,$y) -> ($nx,$ny)")
             }
         }
@@ -567,7 +566,7 @@ class RemappedTest {
         val stale = Motion(
             ByteArray(s0.grid.size) { Motion.FROM_PORT.toByte() },
             LongArray(s0.grid.size) { 7L },
-            mapOf(s0.grid.index(5, 5) to 1),
+            mapOf(s0.grid.tile(5, 5) to 1),
             emptyList(),
         )
         val s1 = s0.copy(motion = stale).remapped(Grid(26, 20), 3, 3)
@@ -575,7 +574,7 @@ class RemappedTest {
         assertEquals(Motion.NONE, s1.motion, "motion survived a resize")
         // The property the renderer actually depends on: nothing in the new grid claims to have
         // arrived from anywhere, at any index the new grid can produce.
-        for (tile in 0 until s1.grid.size) {
+        for (tile in s1.grid.tiles) {
             assertEquals(null, s1.motion.arrivedFrom(tile), "stale arrival at tile $tile")
             assertEquals(0L, s1.motion.previousMassAt(tile), "stale mass at tile $tile")
         }

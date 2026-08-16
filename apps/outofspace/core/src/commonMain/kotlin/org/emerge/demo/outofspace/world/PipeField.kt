@@ -39,8 +39,8 @@ fun pipeApertures(edges: EdgeGrid, conduits: Conduits): ApertureField {
     val x = IntArray(edges.xEdgeCount)
     val y = IntArray(edges.yEdgeCount)
 
-    fun joined(a: Int, b: Int, aToB: Direction): Boolean {
-        if (a < 0 || b < 0) return false
+    fun joined(a: TileIndex, b: TileIndex, aToB: Direction): Boolean {
+        if (a == TileIndex.NONE || b == TileIndex.NONE) return false
         val sa = conduits.at(Conduit.Pipe, a) ?: return false
         val sb = conduits.at(Conduit.Pipe, b) ?: return false
         return sa.linkedTo(aToB) && sb.linkedTo(aToB.opposite)
@@ -69,7 +69,7 @@ fun pipeApertures(edges: EdgeGrid, conduits: Conduits): ApertureField {
  */
 fun valveOpenings(grid: Grid, conduits: Conduits): IntArray =
     IntArray(grid.size) { tile ->
-        if (conduits.at(Conduit.Pipe, tile)?.isValve == true) ApertureField.OPEN else ApertureField.CLOSED
+        if (conduits.at(Conduit.Pipe, TileIndex(tile))?.isValve == true) ApertureField.OPEN else ApertureField.CLOSED
     }
 
 /**
@@ -83,6 +83,6 @@ fun valveOpenings(grid: Grid, conduits: Conduits): IntArray =
 fun pipeVolumes(grid: Grid, conduits: Conduits): VolumeField =
     VolumeField.of(
         IntArray(grid.size) { tile ->
-            if (conduits.at(Conduit.Pipe, tile) != null) PIPE_VOLUME else VolumeField.FULL
+            if (conduits.at(Conduit.Pipe, TileIndex(tile)) != null) PIPE_VOLUME else VolumeField.FULL
         }
     )

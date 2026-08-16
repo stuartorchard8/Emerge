@@ -21,12 +21,12 @@ class StructureMap(private val kinds: ByteArray) {
     operator fun get(index: Int): Structure = Structure.entries[kinds[index].toInt()]
 
     /** Solid: air can neither sit in this tile nor cross it. Walls and machines both. */
-    fun isImpermeable(index: Int): Boolean =
-        kinds[index].toInt() == Structure.Hull.ordinal || kinds[index].toInt() == Structure.Machine.ordinal
+    fun isImpermeable(tile: TileIndex): Boolean =
+        kinds[tile.index].toInt() == Structure.Hull.ordinal || kinds[tile.index].toInt() == Structure.Machine.ordinal
 
-    fun isPermeable(index: Int): Boolean = !isImpermeable(index)
+    fun isPermeable(tile: TileIndex): Boolean = !isImpermeable(tile)
 
-    fun isContained(index: Int): Boolean = kinds[index].toInt() != Structure.Vacuum.ordinal
+    fun isContained(tile: TileIndex): Boolean = kinds[tile.index].toInt() != Structure.Vacuum.ordinal
 
     val interiorCount: Int get() = kinds.count { it.toInt() == Structure.Interior.ordinal }
 
@@ -58,36 +58,36 @@ class StructureMap(private val kinds: ByteArray) {
          */
         fun derive(grid: Grid, machines: List<Machine?>, openness: IntArray? = null): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
-            for (i in machines.indices) {
-                val m = machines[i] ?: continue
+            for (tile in grid.tiles) {
+                val m = machines[tile.index] ?: continue
                 if (m.kind.isPermeable) continue
-                if ((openness?.get(i) ?: 0) > 0) continue
+                if ((openness?.get(tile.index) ?: 0) > 0) continue
                 val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
-                for (t in coveredTiles(grid, i, m.kind.size)) kinds[t] = kind.ordinal.toByte()
+                for (t in coveredTiles(grid, tile, m.kind.size)) kinds[t.index] = kind.ordinal.toByte()
             }
 
             // Breadth-first from the border. An explicit stack rather than recursion: a 48x28 grid is
             // 1344 deep in the worst case and this also runs on JS.
-            val stack = ArrayDeque<Int>()
-            fun seed(index: Int) {
-                if (kinds[index].toInt() == Structure.Interior.ordinal) {
-                    kinds[index] = Structure.Vacuum.ordinal.toByte()
-                    stack.addLast(index)
+            val stack = ArrayDeque<TileIndex>()
+            fun seed(tile: TileIndex) {
+                if (kinds[tile.index].toInt() == Structure.Interior.ordinal) {
+                    kinds[tile.index] = Structure.Vacuum.ordinal.toByte()
+                    stack.addLast(tile)
                 }
             }
             for (x in 0 until grid.width) {
-                seed(grid.index(x, 0))
-                seed(grid.index(x, grid.height - 1))
+                seed(grid.tile(x, 0))
+                seed(grid.tile(x, grid.height - 1))
             }
             for (y in 0 until grid.height) {
-                seed(grid.index(0, y))
-                seed(grid.index(grid.width - 1, y))
+                seed(grid.tile(0, y))
+                seed(grid.tile(grid.width - 1, y))
             }
             while (stack.isNotEmpty()) {
                 val at = stack.removeLast()
                 for (dir in Direction.ALL) {
                     val next = grid.neighbour(at, dir)
-                    if (next >= 0) seed(next)
+                    if (next != TileIndex.NONE) seed(next)
                 }
             }
             return StructureMap(kinds)

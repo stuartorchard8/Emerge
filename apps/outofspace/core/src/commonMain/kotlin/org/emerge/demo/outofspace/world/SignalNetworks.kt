@@ -20,7 +20,7 @@ package org.emerge.demo.outofspace.world
 class SignalNetworks private constructor(private val idOf: IntArray, val count: Int) {
 
     /** The network on [tile], or -1 where no wire is laid. */
-    operator fun get(tile: Int): Int = if (tile in idOf.indices) idOf[tile] else -1
+    operator fun get(tile: TileIndex): Int = if (tile != TileIndex.NONE && tile.index < idOf.size) idOf[tile.index] else -1
 
     override fun equals(other: Any?): Boolean =
         this === other || (other is SignalNetworks && idOf.contentEquals(other.idOf))
@@ -47,23 +47,23 @@ class SignalNetworks private constructor(private val idOf: IntArray, val count: 
             val layer = conduits[Conduit.Signal]
             val idOf = IntArray(grid.size) { -1 }
             var next = 0
-            val stack = ArrayDeque<Int>()
+            val stack = ArrayDeque<TileIndex>()
 
-            for (seed in layer.indices) {
-                if (layer[seed] == null || idOf[seed] >= 0) continue
+            for (tile in grid.tiles) {
+                if (layer[tile.index] == null || idOf[tile.index] >= 0) continue
                 val id = next++
-                idOf[seed] = id
-                stack.addLast(seed)
+                idOf[tile.index] = id
+                stack.addLast(tile)
                 // Explicit stack rather than recursion: a run can be as long as the grid, and this
                 // also has to run on JS.
                 while (stack.isNotEmpty()) {
                     val at = stack.removeLast()
-                    val segment = layer[at] ?: continue
+                    val segment = layer[at.index] ?: continue
                     for (dir in Direction.ALL) {
                         if (!segment.linkedTo(dir)) continue
                         val to = grid.neighbour(at, dir)
-                        if (to < 0 || layer[to] == null || idOf[to] >= 0) continue
-                        idOf[to] = id
+                        if (to == TileIndex.NONE || layer[to.index] == null || idOf[to.index] >= 0) continue
+                        idOf[to.index] = id
                         stack.addLast(to)
                     }
                 }

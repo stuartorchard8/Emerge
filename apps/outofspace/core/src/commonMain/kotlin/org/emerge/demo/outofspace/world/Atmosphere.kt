@@ -10,12 +10,12 @@ import org.emerge.demo.outofspace.chem.apportion
  * Air: flat LongArray (tiles × species), integers (exact conservation).
  * pressureAt = millimoles (not mass — lets heavy gas sink). densityAt = mass/volume.
  */
-class AirField(private val masses: LongArray, private val energies: LongArray) {
+class Atmosphere(private val masses: MassArray, private val energies: EnergyArray) {
 
-    fun massOf(tile: Int, species: Species): Long = masses[tile * Species.COUNT + species.ordinal]
+    fun massOf(tile: TileIndex, species: Species): Long = masses[MassIndex(tile, species)]
 
     /** Pressure in millimoles (particle count, not mass — heavy gases sink). */
-    fun pressureAt(tile: Int): Long = millimolesOf(masses, tile)
+    fun pressureAt(tile: TileIndex): Long = millimolesOf(masses, tile)
 
     /**
      * Joules per kelvin held by the air in a tile — what it costs to warm this much gas by a degree.
@@ -23,22 +23,21 @@ class AirField(private val masses: LongArray, private val energies: LongArray) {
      * Here rather than at every call site because a tile's temperature depends on it, and computing
      * it from [copyMass] would allocate the whole field once per tile queried.
      */
-    fun heatCapacityAt(tile: Int): Long = gasCapacityAt(masses, tile)
+    fun heatCapacityAt(tile: TileIndex): Long = heatCapacityAt(masses, tile)
 
     /**
      * How hot the air in a tile is, in kelvin. A tile with no air reads as ambient — see [gasKelvin]
      * for why that is the right placeholder for an absent quantity rather than a dodge.
      */
-    fun kelvinAt(tile: Int): Int {
-        val capacity = gasCapacityAt(masses, tile)
+    fun kelvinAt(tile: TileIndex): Int {
+        val capacity = heatCapacityAt(masses, tile)
         return if (capacity <= 0L) Temperature.AMBIENT_KELVIN else (energies[tile] / capacity).toInt()
     }
 
     /** Total gas mass in a tile — its density, since every tile is the same volume. */
-    fun densityAt(tile: Int): Long {
+    fun densityAt(tile: TileIndex): Long {
         var sum = 0L
-        val base = tile * Species.COUNT
-        for (s in Species.ALL) sum += masses[base + s.ordinal]
+        for (s in Species.ALL) sum += masses[MassIndex(tile, s)]
         return sum
     }
 
@@ -56,33 +55,32 @@ class AirField(private val masses: LongArray, private val energies: LongArray) {
      * taking the mass ledger with it. The HUD and the agent probe were quietly blind to it too, so
      * the injector would have looked like it was doing nothing.
      */
-    fun mixtureAt(tile: Int): Mixture {
+    fun mixtureAt(tile: TileIndex): Mixture {
         val out = LongArray(Species.COUNT)
-        val base = tile * Species.COUNT
-        for (s in Species.ALL) out[s.ordinal] = masses[base + s.ordinal]
+        for (s in Species.ALL) out[s.ordinal] = masses[MassIndex(tile, s)]
         return Mixture.of(out, energies[tile])
     }
 
     val totalMass: Long get() {
         var sum = 0L
-        for (g in masses) sum += g
+        masses.forEach { sum += it }
         return sum
     }
 
     /** Total thermal energy of the atmosphere — the ledger quantity, the twin of [totalMass]. */
     val totalEnergy: Long get() {
         var sum = 0L
-        for (j in energies) sum += j
+        energies.forEach { sum += it }
         return sum
     }
 
-    fun copyMass(): LongArray = masses.copyOf()
+    fun copyMass(): MassArray = masses.copyOf()
 
-    fun copyEnergy(): LongArray = energies.copyOf()
+    fun copyEnergy(): EnergyArray = energies.copyOf()
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is AirField && masses.contentEquals(other.masses) && energies.contentEquals(other.energies))
+            (other is Atmosphere && masses.contentEquals(other.masses) && energies.contentEquals(other.energies))
 
     override fun hashCode(): Int = 31 * masses.contentHashCode() + energies.contentHashCode()
 
@@ -110,20 +108,22 @@ class AirField(private val masses: LongArray, private val energies: LongArray) {
          * visible because the value is finally honest. It is the clearest single argument for the
          * mass-unit rebaseline: a trace gas is not representable as a *moving* thing until a unit is
          * smaller than a gram. See `NUMERIC_LIMITS.md` §6.2.
+         *
+         * TODO: use a recipie, not an actual mixture
          */
         val AMBIENT_AIR: Mixture = Mixture.of(
             Species.Nitrogen to 755L * Budget.GRAM,
             Species.Oxygen to 231L * Budget.GRAM,
             Species.Argon to 13L * Budget.GRAM,
             Species.CarbonDioxide to 1L * Budget.GRAM,
-            energy = Budget.JOULE * 1000, // TODO set ambient energy to 20 degrees C
+            energy = 0,
         )
 
         /**
          * Air at room temperature.
          *
          * The energy is **derived from the mass** rather than defaulted to zero, and that default is
-         * what makes this whole design safe. Heat lives inside [AirField] precisely because it must
+         * what makes this whole design safe. Heat lives inside [Atmosphere] precisely because it must
          * not be possible to replace a world's air and leave its temperature behind: on a
          * `data class`, `copy(air = …)` does not re-evaluate other properties' defaults, so a
          * parallel `airEnergy` array would silently keep describing gas that is no longer there. Ten
@@ -132,20 +132,19 @@ class AirField(private val masses: LongArray, private val energies: LongArray) {
          *
          * One value, so the two cannot disagree.
          */
-        fun of(mass: LongArray): AirField =
-            AirField(mass.copyOf(), ambientGasEnergy(mass.size / Species.COUNT, mass))
+        fun of(mass: MassArray): Atmosphere =
+            Atmosphere(mass.copyOf(), ambientGasEnergy(mass.size / Species.COUNT, mass))
 
         /** Air at a temperature somebody has an opinion about. Both arrays are copied. */
-        fun of(mass: LongArray, energy: LongArray): AirField =
-            AirField(mass.copyOf(), energy.copyOf())
+        fun of(mass: MassArray, energy: EnergyArray): Atmosphere =
+            Atmosphere(mass.copyOf(), energy.copyOf())
 
         /** Every enclosed tile filled with [AMBIENT_AIR]; vacuum left empty. */
-        fun ambient(grid: Grid, structure: StructureMap): AirField {
-            val mass = LongArray(grid.size * Species.COUNT)
-            for (tile in 0 until grid.size) {
+        fun ambient(grid: Grid, structure: StructureMap): Atmosphere {
+            val mass = MassArray(grid.size)
+            for (tile in grid.tiles) {
                 if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
-                val base = tile * Species.COUNT
-                for (s in Species.ALL) mass[base + s.ordinal] = AMBIENT_AIR[s]
+                for (s in Species.ALL) mass[MassIndex(tile, s)] = AMBIENT_AIR[s]
             }
             return of(mass)
         }
@@ -158,21 +157,22 @@ class AirField(private val masses: LongArray, private val energies: LongArray) {
  */
 fun tryDisplaceAir(
     grid: Grid,
-    mass: LongArray,
-    area: Collection<Int>,
-    permeable: (Int) -> Boolean,
+    masses: MassArray,
+    energies: EnergyArray,
+    area: Collection<TileIndex>,
+    permeable: (TileIndex) -> Boolean,
 ): Boolean {
     val order = area.toList()
-    val slotOf = HashMap<Int, Int>(order.size * 2)
+    val slotOf = HashMap<TileIndex, Int>(order.size * 2)
     for (i in order.indices) slotOf[order[i]] = i
 
     // ── The ways out: permeable tiles touching the area, in a fixed order ──
-    val exits = ArrayList<Int>()
-    val exitSlot = HashMap<Int, Int>()
+    val exits = ArrayList<TileIndex>()
+    val exitSlot = HashMap<TileIndex, Int>()
     for (tile in order) {
         for (dir in Direction.ALL) {
             val other = grid.neighbour(tile, dir)
-            if (other < 0 || other in slotOf || other in exitSlot || !permeable(other)) continue
+            if (other == TileIndex.NONE || other in slotOf || other in exitSlot || !permeable(other)) continue
             exitSlot[other] = exits.size
             exits.add(other)
         }
@@ -201,13 +201,14 @@ fun tryDisplaceAir(
     }
 
     // ── Work out every move before making any, so a refusal leaves the field untouched ──
-    val moved = LongArray(exits.size * Species.COUNT)
+    val movedMass = MassArray(exits.size)
+    val movedEnergy = EnergyArray(exits.size)
     val weights = LongArray(exits.size)
     for (slot in order.indices) {
-        val base = order[slot] * Species.COUNT
-        var total = 0L
-        for (s in Species.ALL) total += mass[base + s.ordinal]
-        if (total <= 0L) continue
+        val tile = order[slot]
+        var totalMass = 0L
+        for (s in Species.ALL) totalMass += masses[MassIndex(tile, s)]
+        if (totalMass <= 0L) continue
 
         var reachable = false
         for (e in exits.indices) {
@@ -220,18 +221,22 @@ fun tryDisplaceAir(
         if (!reachable) return false
 
         for (s in Species.ALL) {
-            val share = apportion(weights, mass[base + s.ordinal])
-            for (e in exits.indices) moved[e * Species.COUNT + s.ordinal] += share[e]
+            val share = apportion(weights, masses[MassIndex(tile, s)])
+            for (e in exits.indices) movedMass[MassIndex(TileIndex(e), s)] += share[e]
         }
+        val share = apportion(weights, energies[tile])
+        for (e in exits.indices) movedEnergy[TileIndex(e)] += share[e]
     }
 
-    for (slot in order.indices) {
-        val base = order[slot] * Species.COUNT
-        for (s in Species.ALL) mass[base + s.ordinal] = 0L
+    for (slot in order) {
+        energies[slot] = 0L
+        for (s in Species.ALL) masses[MassIndex(slot, s)] = 0L
     }
-    for (e in exits.indices) {
-        val base = exits[e] * Species.COUNT
-        for (s in Species.ALL) mass[base + s.ordinal] += moved[e * Species.COUNT + s.ordinal]
+    for (i in exits.indices) {
+        val exitTile = exits[i]
+        val source = TileIndex(i)
+        energies[exitTile] += movedEnergy[source]
+        for (s in Species.ALL) masses[MassIndex(exitTile, s)] += movedMass[MassIndex(source, s)]
     }
     return true
 }

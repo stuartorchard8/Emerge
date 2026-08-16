@@ -59,10 +59,10 @@ class BridgeTest {
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
         // send, anything arriving at its tank must have come off the *other* line.
-        m[grid.index(3, 5)] = Storage(Direction.Right, horizontalSupply)   // out at (4, 5)
-        m[grid.index(15, 5)] = Storage(Direction.Right)             // in at (14, 5)
-        m[grid.index(9, 2)] = Storage(Direction.Down, ingots)       // out at (9, 3)
-        m[grid.index(9, 9)] = Storage(Direction.Down)               // in at (9, 8)
+        m[grid.tile(3, 5).index] = Storage(Direction.Right, horizontalSupply)   // out at (4, 5)
+        m[grid.tile(15, 5).index] = Storage(Direction.Right)             // in at (14, 5)
+        m[grid.tile(9, 2).index] = Storage(Direction.Down, ingots)       // out at (9, 3)
+        m[grid.tile(9, 9).index] = Storage(Direction.Down)               // in at (9, 8)
 
         val track = rails(grid) {
             col(9, 3, 8)
@@ -78,7 +78,7 @@ class BridgeTest {
                 row(4, 14, 5)
             }
         }
-        if (bridged) bridges[grid.index(9, 5)] = Bridge(Direction.Right)
+        if (bridged) bridges[grid.tile(9, 5).index] = Bridge(Direction.Right)
         return VesselState(grid, m.toList(), conduits = Conduits.ofRails(track), bridges = bridges.toList())
     }
 
@@ -86,24 +86,24 @@ class BridgeTest {
 
     @Test
     fun `a bridge has one port at each end and occupies nothing between them`() {
-        val at = grid.index(9, 5)
+        val at = grid.tile(9, 5)
         val ports = portsOf(grid, Bridge(Direction.Right), at)
         assertEquals(2, ports.size)
-        assertEquals(grid.index(8, 5), ports.single { it.kind == PortKind.Input }.tile, "in on one side")
-        assertEquals(grid.index(10, 5), ports.single { it.kind == PortKind.Output }.tile, "out on the other")
+        assertEquals(grid.tile(8, 5), ports.single { it.kind == PortKind.Input }.tile, "in on one side")
+        assertEquals(grid.tile(10, 5), ports.single { it.kind == PortKind.Output }.tile, "out on the other")
 
         // The tile it hops is clear, and the crossing line runs through it untouched.
         val s = crossing(bridged = true)
-        assertTrue((8..10).all { s.occupancy.isFree(grid.index(it, 5)) }, "it takes up no floor")
-        assertNotNull(s.railAt(grid.index(9, 5)), "and the track it spans is untouched")
+        assertTrue((8..10).all { s.occupancy.isFree(grid.tile(it, 5)) }, "it takes up no floor")
+        assertNotNull(s.railAt(grid.tile(9, 5)), "and the track it spans is untouched")
     }
 
     @Test
     fun `a bridge turns with its facing`() {
-        val at = grid.index(9, 5)
+        val at = grid.tile(9, 5)
         val ports = portsOf(grid, Bridge(Direction.Down), at)
-        assertEquals(grid.index(9, 4), ports.single { it.kind == PortKind.Input }.tile)
-        assertEquals(grid.index(9, 6), ports.single { it.kind == PortKind.Output }.tile)
+        assertEquals(grid.tile(9, 4), ports.single { it.kind == PortKind.Input }.tile)
+        assertEquals(grid.tile(9, 6), ports.single { it.kind == PortKind.Output }.tile)
     }
 
     // ── Crossing ──────────────────────────────────────────────────────────────
@@ -124,13 +124,13 @@ class BridgeTest {
         // "nearest sink wins" standing in for a fork.
         val merged = run(crossing(horizontalSupply = null), 120)
         assertTrue(
-            (merged[grid.index(15, 5)] as Storage).contents?.mass ?: 0L > 0L,
+            ((merged[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,
             "the column's material reached the row's tank: the two lines are one network",
         )
 
         val bridged = run(crossing(bridged = true, horizontalSupply = null), 120)
         assertNull(
-            (bridged[grid.index(15, 5)] as Storage).contents,
+            (bridged[grid.tile(15, 5)] as Storage).contents,
             "and with a bridge it cannot: the column passes over without joining",
         )
     }
@@ -143,12 +143,12 @@ class BridgeTest {
         val s = crossing(bridged = true)
         assertEquals(
             false,
-            s.railAt(grid.index(8, 5))!!.linkedTo(Direction.Right),
+            s.railAt(grid.tile(8, 5))!!.linkedTo(Direction.Right),
             "the horizontal run stops dead at the column rather than joining it",
         )
         assertEquals(
             false,
-            s.railAt(grid.index(9, 5))!!.linkedTo(Direction.Left),
+            s.railAt(grid.tile(9, 5))!!.linkedTo(Direction.Left),
             "and the column does not reach back",
         )
     }
@@ -160,11 +160,11 @@ class BridgeTest {
         val s = run(crossing(bridged = true), 160)
 
         assertTrue(
-            ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,
+            ((s[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,
             "the horizontal line reached its tank",
         )
         assertTrue(
-            ((s[grid.index(9, 9)] as Storage).contents?.mass ?: 0L) > 0L,
+            ((s[grid.tile(9, 9)] as Storage).contents?.mass ?: 0L) > 0L,
             "and the vertical one reached its own",
         )
     }
@@ -175,8 +175,8 @@ class BridgeTest {
     private fun withLumpAtTheEntrance(): VesselState {
         val s = crossing(bridged = true, horizontalSupply = null)
         val rails = s.rails.toMutableList()
-        val at = grid.index(8, 5)
-        rails[at] = rails[at]!!.copy(held = SolidPacket(ingots))
+        val at = grid.tile(8, 5)
+        rails[at.index] = rails[at.index]!!.copy(held = SolidPacket(ingots))
         return s.copy(conduits = Conduits.ofRails(rails))
     }
 
@@ -186,27 +186,27 @@ class BridgeTest {
         // cost, and the material is somewhere identifiable the whole way over rather than vanishing
         // into the span and reappearing. Off the track at the input end, over the tile being hopped,
         // then down onto the track at the far end.
-        val at = grid.index(9, 5)
+        val at = grid.tile(9, 5)
         var s = withLumpAtTheEntrance()
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.entry?.mass, "lifted off the track at the input end")
+        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at.index]?.entry?.mass, "lifted off the track at the input end")
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.middle?.mass, "over the tile it hops")
-        assertNull(s.bridges[at]?.entry, "and the entrance is free for the next one")
+        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at.index]?.middle?.mass, "over the tile it hops")
+        assertNull(s.bridges[at.index]?.entry, "and the entrance is free for the next one")
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at]?.exit?.mass, "resting on the far end, for a whole step")
-        assertNull(s.bridges[at]?.middle, "and the middle is free for the next one")
-        assertNull(s.railAt(grid.index(10, 5))?.held, "not yet put down — that is next step's job")
+        assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at.index]?.exit?.mass, "resting on the far end, for a whole step")
+        assertNull(s.bridges[at.index]?.middle, "and the middle is free for the next one")
+        assertNull(s.railAt(grid.tile(10, 5))?.held, "not yet put down — that is next step's job")
 
         s = run(s, RAIL_PERIOD)
-        assertNull(s.bridges[at]?.exit, "and now down onto the track")
+        assertNull(s.bridges[at.index]?.exit, "and now down onto the track")
         // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
         // setting down there and running on one tile is a single tile of travel, not two. The
         // deposit happens first precisely so the track can carry it in the same step.
-        assertEquals(20 * Capacity.PACKET_MASS, s.railAt(grid.index(11, 5))?.held?.mass, "and away down the far run")
+        assertEquals(20 * Capacity.PACKET_MASS, s.railAt(grid.tile(11, 5))?.held?.mass, "and away down the far run")
     }
 
     @Test
@@ -215,9 +215,9 @@ class BridgeTest {
         // the whole bridge. One slot meant a bridge could only ever hold one lump, which is the same
         // statement as "it is a bottleneck": the span had a third of the capacity of the track it
         // replaced, so a bridged line ran at a third of the speed of the line either side of it.
-        var s = crossing(bridged = true).withMachine(grid.index(15, 5), null)
+        var s = crossing(bridged = true).withMachine(grid.tile(15, 5).index, null)
         s = run(s, RAIL_PERIOD * 20)
-        assertEquals(Bridge.SLOTS, s.bridges[grid.index(9, 5)]?.carried?.size, "all three slots loaded")
+        assertEquals(Bridge.SLOTS, s.bridges[grid.tile(9, 5).index]?.carried?.size, "all three slots loaded")
     }
 
     @Test
@@ -232,10 +232,10 @@ class BridgeTest {
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.
         s = run(s, RAIL_PERIOD * 13)
-        val before = (s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L
+        val before = (s[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L
         val steps = 15
         s = run(s, RAIL_PERIOD * steps)
-        val delivered = ((s[grid.index(15, 5)] as Storage).contents?.mass ?: 0L) - before
+        val delivered = ((s[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L) - before
         assertEquals(steps * Capacity.PACKET_MASS, delivered, "a packet a step, all the way across")
     }
 
@@ -247,44 +247,44 @@ class BridgeTest {
         // port there too, and has to be refused: a segment on that tile could not say which of the
         // two it feeds.
         var s = crossing()
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(13, 5), MachineKind.Bridge, Direction.Right))))
-        assertNull(s.bridges[grid.index(13, 5)], "its output port would collide with the tank's input")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(13, 5), MachineKind.Bridge, Direction.Right))))
+        assertNull(s.bridges[grid.tile(13, 5).index], "its output port would collide with the tank's input")
     }
 
     @Test
     fun `two bridges cannot share an end`() {
         var s = crossing()
-        val first = grid.index(9, 5)
+        val first = grid.tile(9, 5)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(first, MachineKind.Bridge, Direction.Right))))
-        assertNotNull(s.bridges[first], "the first one goes down fine")
+        assertNotNull(s.bridges[first.index], "the first one goes down fine")
 
         // Two tiles along: its input port would land on the first bridge's output port.
-        val second = grid.index(11, 5)
+        val second = grid.tile(11, 5)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(second, MachineKind.Bridge, Direction.Right))))
-        assertNull(s.bridges[second], "ends may not overlap")
+        assertNull(s.bridges[second.index], "ends may not overlap")
     }
 
     @Test
     fun `a bridge may be placed where only its span overlaps another`() {
         var s = crossing()
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(9, 5), MachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(9, 5), MachineKind.Bridge, Direction.Right))))
         // Perpendicular, crossing the first bridge's middle. Nothing of either is at that tile, so
         // there is nothing to clash with — which is the whole point of occupying no space.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.index(9, 5), MachineKind.Bridge, Direction.Down))))
-        assertEquals(Direction.Right, s.bridges[grid.index(9, 5)]?.facing, "the first is still there")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(9, 5), MachineKind.Bridge, Direction.Down))))
+        assertEquals(Direction.Right, s.bridges[grid.tile(9, 5).index]?.facing, "the first is still there")
     }
 
     // ── Conservation ──────────────────────────────────────────────────────────
 
     @Test
     fun `material inside a bridge is still aboard, and comes back out if it is removed`() {
-        val at = grid.index(9, 5)
+        val at = grid.tile(9, 5)
         var s = crossing(bridged = true)
         s = run(s, RAIL_PERIOD * 4)
         val before = s.inTransitMass
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(at))))
-        assertNull(s.bridges[at], "the bridge is gone")
+        assertNull(s.bridges[at.index], "the bridge is gone")
         assertEquals(before, s.inTransitMass, "and whatever was inside it fell on the deck")
     }
 

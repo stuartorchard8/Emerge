@@ -26,18 +26,16 @@ enum class BodySlot {
 class Body(
     val slot: BodySlot,
     /** The index it is stored at — its centre tile for a machine, its own tile for a fitting. */
-    val at: Int,
+    val tile: TileIndex,
     /**
      * Which of a machine's tiles this is, as an index into its [org.emerge.demo.outofspace.world.machine.Machine.energy].
      *
-     * Zero for anything that is still stored as one piece — a fitting, a bridge — where [at] alone
+     * Zero for anything that is still stored as one piece — a fitting, a bridge — where [tile] alone
      * identifies where the energy goes back. For a machine it is the other half of the address:
-     * [at] says which machine and this says which of its tiles, and both are needed now that a
+     * [tile] says which machine and this says which of its tiles, and both are needed now that a
      * machine is several bodies rather than one.
      */
     val part: Int = 0,
-    /** Every tile it is present on. One for a fitting, three for a span, a footprint for a machine. */
-    val tiles: IntArray,
     val material: Material,
     /** True for a fitting on a conduit layer: it shares its tile with the air rather than filling it. */
     val permeable: Boolean,
@@ -112,15 +110,15 @@ fun bodiesOf(
         // Placement enforces `footprintFits`, so a machine's footprint is never clipped by the grid
         // edge and this index lines up with the `thermalTiles` slots its energy is stored in. The
         // bound guards the one case that is not a placed machine: a grid that shrank underneath it.
-        val covered = coveredTiles(grid, i, m.kind.size)
+        val covered = coveredTiles(grid, TileIndex(i), m.kind.size)
         for (part in covered.indices) {
             if (part >= m.energy.size) break
+            val tile = TileIndex(part)
             out.add(
                 Body(
                     slot = BodySlot.Deck,
-                    at = i,
+                    tile = tile,
                     part = part,
-                    tiles = intArrayOf(covered[part]),
                     material = m.kind.material,
                     permeable = false,
                     energy = m.energy[part],
@@ -130,12 +128,11 @@ fun bodiesOf(
             )
         }
     }
-    conduits.all { conduit, i, s ->
+    conduits.all { conduit, tile, s ->
         out.add(
             Body(
                 slot = BodySlot.Fitting,
-                at = i,
-                tiles = intArrayOf(i),
+                tile = tile,
                 material = conduit.material,
                 permeable = true,
                 energy = s.energy,
@@ -158,16 +155,15 @@ fun bodiesOf(
         // came from a compacted list the survivors would shift up one and the bridge would be
         // holding its neighbour's heat. Walking the three offsets and skipping the missing one
         // keeps every slot addressed by what it *is*.
-        val span = spanParts(grid, i, b.facing)
+        val span = spanParts(grid, TileIndex(i), b.facing)
         for (part in span.indices) {
             val tile = span[part]
-            if (tile < 0 || part >= b.energy.size) continue
+            if (tile == TileIndex.NONE) continue
             out.add(
                 Body(
                     slot = BodySlot.Span,
-                    at = i,
+                    tile = tile,
                     part = part,
-                    tiles = intArrayOf(tile),
                     material = b.conduit.material,
                     permeable = true,
                     energy = b.energy[part],
@@ -196,10 +192,10 @@ fun solidEnergy(
 }
 
 /** The three tiles a bridge occupies: its middle, and one either side along [facing]. */
-fun spanTiles(grid: Grid, middle: Int, facing: Direction): IntArray {
-    val out = ArrayList<Int>(3)
-    for (tile in spanParts(grid, middle, facing)) if (tile >= 0) out.add(tile)
-    return out.toIntArray()
+fun spanTiles(grid: Grid, middle: TileIndex, facing: Direction): Array<TileIndex> {
+    val out = ArrayList<TileIndex>(3)
+    for (tile in spanParts(grid, middle, facing)) if (tile != TileIndex.NONE) out.add(tile)
+    return out.toTypedArray()
 }
 
 /**
@@ -208,7 +204,7 @@ fun spanTiles(grid: Grid, middle: Int, facing: Direction): IntArray {
  * [spanTiles] compacts the missing ends away, which is right for anything that only wants to visit
  * the tiles and wrong for anything that stores something per tile — see the note in [bodiesOf].
  */
-fun spanParts(grid: Grid, middle: Int, facing: Direction): IntArray = intArrayOf(
+fun spanParts(grid: Grid, middle: TileIndex, facing: Direction): Array<TileIndex> = arrayOf(
     grid.neighbour(middle, facing.opposite),
     middle,
     grid.neighbour(middle, facing),

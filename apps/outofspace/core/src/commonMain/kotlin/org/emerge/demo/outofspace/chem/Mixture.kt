@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.speciesColor
  * Grams of each Species. Mass = integer (exact conservation, reproducible across machines).
  * Immutable. Splits use apportion() (cumulative). Operations: +, -, take, scaledTo.
  */
-class Mixture private constructor(private val masses: LongArray, val energy: Long) {
+class Mixture private constructor(val masses: LongArray, val energy: Long) {
 
     init {
         require(masses.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${masses.size}" }

@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.render.torus.ui.Anchor
@@ -42,7 +43,7 @@ class OutofspaceHud {
      * @param hovered the tile under the pointer, or -1. Desktop and web have a pointer; on touch
      *   there is no hover, so the inspector falls back to the machine the player last tapped.
      */
-    fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: Int = -1) {
+    fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: TileIndex = TileIndex.NONE) {
         val s = controller.state
         ui.frame {
             // Drawn first (occludes everything).
@@ -213,7 +214,7 @@ class OutofspaceHud {
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
-            inspectPanel(controller, if (hovered >= 0) hovered else controller.selected)
+            inspectPanel(controller, if (hovered != TileIndex.NONE) hovered else controller.selected)
             wiringPanel(controller)
 
             panel(Anchor.BottomRight) {
@@ -322,19 +323,19 @@ class OutofspaceHud {
     }
 
     /** Contents of tile under pointer (mixture breakdown per buffer). */
-    private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, index: Int) {
-        if (index < 0) return
+    private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, tile: TileIndex) {
+        if (tile.index < 0) return
         val s = controller.state
-        val machine = s.machineCovering(index)
+        val machine = s.machineCovering(tile)
         val grid = s.grid
 
         panel(Anchor.TopRight) {
             val what = machine?.kind?.label ?: "DECK"
-            title("INSPECT  ·  $what (${grid.xOf(index)}, ${grid.yOf(index)})")
-            tileConditions(controller, index)
+            title("INSPECT  ·  $what (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+            tileConditions(controller, tile)
 
             // Rail on this tile (listed before machine — on top).
-            val segment = s.railAt(index)
+            val segment = s.railAt(tile)
             if (segment != null) {
                 title(if (segment.isGauge) "GAUGE" else "RAIL")
                 if (segment.isGauge) {
@@ -378,10 +379,10 @@ class OutofspaceHud {
     /** Tile conditions: location + temperature. */
     private fun org.emerge.render.torus.ui.PanelBuilder.tileConditions(
         controller: OutofspaceController,
-        index: Int,
+        tile: TileIndex,
     ) {
         val s = controller.state
-        val structure = s.structure[index]
+        val structure = s.structure[tile.index]
         keyValue(
             "PLACE",
             when (structure) {
@@ -395,7 +396,7 @@ class OutofspaceHud {
         )
         // Each solid body's temp (not averaged — cold line under furnace is interesting).
         for (body in s.solids) {
-            if (index !in body.tiles) continue
+            if (tile != body.tile) continue
             val k = body.kelvin
             keyValue(
                 body.material.label,
@@ -407,10 +408,10 @@ class OutofspaceHud {
         // Gas (interior + vented plumes). A trace is not a plume — see [Negligible] — but an interior
         // tile is still worth a pressure reading when it has been emptied, since "0% atm" inside the
         // vessel is the single most useful thing this panel says.
-        val density = s.air.densityAt(index)
+        val density = s.air.densityAt(tile)
         val trace = Negligible.gas(density)
         if (structure == Structure.Interior || !trace) {
-            val percent = s.pressurePercentAt(index)
+            val percent = s.pressurePercentAt(tile)
             keyValue(
                 "PRESSURE",
                 "$percent% atm",
@@ -429,20 +430,20 @@ class OutofspaceHud {
                 return
             }
             // Density beside pressure (gap = weight sorting).
-            keyValue("DENSITY", "${density * 100 / AirField.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            keyValue("DENSITY", "${density * 100 / Atmosphere.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
             // Air temperature (fluid acts on this — sets pressure).
-            val airK = s.airKelvinAt(index)
+            val airK = s.airKelvinAt(tile)
             keyValue(
                 "AIR TEMP",
                 "${airK}K  (${airK - 273}C)",
                 0x9A9A9AFFL,
                 if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
-            val speed = s.flow.speedAt(index)
-            if (speed > 0f && !Negligible.flow(s.flow.xAt(index), s.flow.yAt(index), density)) {
-                keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, index)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            val speed = s.flow.speedAt(tile)
+            if (speed > 0f && !Negligible.flow(s.flow.xAt(tile), s.flow.yAt(tile), density)) {
+                keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, tile)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
             }
-            val mix = s.air.mixtureAt(index)
+            val mix = s.air.mixtureAt(tile)
             if (!mix.isEmpty) {
                 val rows = composition(mix, 5).split('\n')
                 for (r in rows) {
@@ -453,9 +454,9 @@ class OutofspaceHud {
     }
 
     /** Air direction as 8-point compass (+y is down). */
-    private fun bearing(s: VesselState, index: Int): String {
-        val x = s.flow.xAt(index)
-        val y = s.flow.yAt(index)
+    private fun bearing(s: VesselState, tile: TileIndex): String {
+        val x = s.flow.xAt(tile)
+        val y = s.flow.yAt(tile)
         // A component under an eighth of the other is not a direction, it is rounding.
         val ax = if (x < 0) -x else x
         val ay = if (y < 0) -y else y
@@ -480,51 +481,51 @@ class OutofspaceHud {
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
     private fun org.emerge.render.torus.ui.UiBuilder.wiringPanel(controller: OutofspaceController) {
         if (controller.tool != Tool.Wire) return
-        val index = controller.selected
-        if (index < 0) return
-        val machine = controller.state[index] ?: return
+        val tile = controller.selected
+        if (tile == TileIndex.NONE) return
+        val machine = controller.state[tile] ?: return
         val grid = controller.state.grid
 
         // Bottom-right (not centred — build palette owns bottom-left).
         panel(Anchor.BottomRight, rowHeight = 20f) {
-            title("WIRING  ·  ${machine.kind.label} (${grid.xOf(index)}, ${grid.yOf(index)})")
+            title("WIRING  ·  ${machine.kind.label} (${grid.xOf(tile)}, ${grid.yOf(tile)})")
 
             // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
             // under it, and the readout's job is to say whether there is one.
-            val wired = controller.state.networks[index] >= 0
+            val wired = controller.state.networks[tile] >= 0
 
             if (machine is WireButton) {
                 clauseRow(
                     lhs = "WHEN KEY",
                     cmp = machine.key.label,
-                    rhs = if (wired) "${controller.state.signals.at(index) / 10}%" else "(no wire)",
-                    onLhs = { controller.cycleInputKey(index, 1) },
-                    onCmp = { controller.cycleInputKey(index, 1) },
-                    onRhs = { controller.cycleInputKey(index, 1) },
+                    rhs = if (wired) "${controller.state.signals.at(tile) / 10}%" else "(no wire)",
+                    onLhs = { controller.cycleInputKey(tile, 1) },
+                    onCmp = { controller.cycleInputKey(tile, 1) },
+                    onRhs = { controller.cycleInputKey(tile, 1) },
                 )
                 row("held in FLIGHT mode — press F to switch", 0x9A9A9AFFL)
                 gap()
             }
 
             if (machine is Sensor) {
-                val watched = grid.neighbour(index, machine.facing)
+                val watched = grid.neighbour(tile, machine.facing)
                 keyValue(
                     "EMITS",
-                    if (wired) "${controller.state.signals.at(index) / 10}% on circuit ${controller.state.networks[index]}"
+                    if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
                     else "(no wire under it)",
                     0x9A9A9AFFL,
                     if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
-                val target = if (watched >= 0) controller.state[watched] else null
+                val target = if (watched != TileIndex.NONE) controller.state[watched] else null
                 row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
                 gap()
             }
 
-            val gauge = controller.state.railAt(index)
+            val gauge = controller.state.railAt(tile)
             if (gauge?.isGauge == true) {
                 keyValue(
                     "REPORTS",
-                    if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[index]}"
+                    if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[tile]}"
                     else "(no wire under it)",
                     0x9A9A9AFFL,
                     if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
@@ -534,7 +535,7 @@ class OutofspaceHud {
 
             val action = Action.Run
             val triggers = machine.wiring.triggers(action)
-            val activation = machine.wiring.activation(action, controller.state.signals.at(index))
+            val activation = machine.wiring.activation(action, controller.state.signals.at(tile))
             keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
 
             if (triggers.isEmpty()) {
@@ -545,17 +546,17 @@ class OutofspaceHud {
                         lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
                         cmp = "x",
                         rhs = signed(trigger.percent),
-                        onLhs = { controller.cycleTriggerSource(index, action, slot, 1) },
-                        onCmp = { controller.wire(index, action, slot, null) },
-                        onRhs = { controller.cycleTriggerWeight(index, action, slot, 1) },
+                        onLhs = { controller.cycleTriggerSource(tile, action, slot, 1) },
+                        onCmp = { controller.wire(tile, action, slot, null) },
+                        onRhs = { controller.cycleTriggerWeight(tile, action, slot, 1) },
                     )
                 }
             }
             button("+ ADD TERM", 0x2E5A6BFFL) {
-                controller.wire(index, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
+                controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
             }
             row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
-            row(if (wired) "WIRE reads circuit ${controller.state.networks[index]}" else "WIRE reads 0 — no wire under this tile", 0x7A7A7AFFL)
+            row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0 — no wire under this tile", 0x7A7A7AFFL)
         }
     }
 
@@ -612,7 +613,7 @@ class OutofspaceHud {
         return "$sign${a / Flight.PER_TILE}.${frac.toString().padStart(6, '0')}"
     }
 
-    /** A [Frac] gravity as thousandths of the one g [VesselState.PLATING_ONE_G] means. */
+    /** Gravity as thousandths of the one g [VesselState.PLATING_ONE_G] means. */
     private fun milliG(raw: Long): Long = raw * 1000L / Int.MAX_VALUE.toLong()
 
     companion object {

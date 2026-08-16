@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Machine
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,23 +34,23 @@ class EditorToolsTest {
      * at (6, 5) and it covers (5..7, 4..6), so the obvious "one below the tank" is inside it. That
      * mistake reads as the bellows being broken and is the fixture being wrong.
      */
-    private val OPEN_TILE get() = grid.index(4, 7)
+    private val OPEN_TILE get() = grid.tile(4, 7)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
     /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
     private fun layered(): OutofspaceController {
         val machines = arrayOfNulls<Machine>(grid.size)
-        for (x in 2..10) { machines[grid.index(x, 2)] = Hull(); machines[grid.index(x, 8)] = Hull() }
-        for (y in 2..8) { machines[grid.index(2, y)] = Hull(); machines[grid.index(10, y)] = Hull() }
-        machines[grid.index(6, 5)] = Storage(Direction.Right)
+        for (x in 2..10) { machines[grid.tile(x, 2).index] = Hull(); machines[grid.tile(x, 8).index] = Hull() }
+        for (y in 2..8) { machines[grid.tile(2, y).index] = Hull(); machines[grid.tile(10, y).index] = Hull() }
+        machines[grid.tile(6, 5).index] = Storage(Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, machines.toList()))
         c.brush = MachineKind.Rail
-        c.dragTo(grid.index(5, 5))
-        c.apply(grid.index(4, 5))
-        c.dragTo(grid.index(7, 5))
+        c.dragTo(grid.tile(5, 5))
+        c.apply(grid.tile(4, 5))
+        c.dragTo(grid.tile(7, 5))
         c.brush = MachineKind.Pipe
-        c.apply(grid.index(4, 5))
-        c.dragTo(grid.index(7, 5))
+        c.apply(grid.tile(4, 5))
+        c.dragTo(grid.tile(7, 5))
         c.stepOnce()
         return c
     }
@@ -61,44 +62,44 @@ class EditorToolsTest {
     @Test
     fun `a named layer comes off and leaves the others standing`() {
         val c = layered()
-        val at = grid.index(6, 5)
-        assertNotNull(c.state.conduits[Conduit.Rail][at], "the fixture built no rail")
-        assertNotNull(c.state.conduits[Conduit.Pipe][at], "the fixture built no pipe")
-        assertTrue(c.state[at] is Storage, "the fixture built no tank")
+        val tile = grid.tile(6, 5)
+        assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the fixture built no rail")
+        assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "the fixture built no pipe")
+        assertTrue(c.state[tile] is Storage, "the fixture built no tank")
 
-        c.remove(at, DeleteLayer.Pipe)
+        c.removeAt(tile, DeleteLayer.Pipe)
         c.stepOnce()
 
-        assertNull(c.state.conduits[Conduit.Pipe][at], "the pipe survived being named")
-        assertNotNull(c.state.conduits[Conduit.Rail][at], "the rail came off with the pipe")
-        assertTrue(c.state[at] is Storage, "the tank came off with the pipe")
+        assertNull(c.state.conduits[Conduit.Pipe][tile.index], "the pipe survived being named")
+        assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the rail came off with the pipe")
+        assertTrue(c.state[tile] is Storage, "the tank came off with the pipe")
     }
 
     /** The deck can be reached through what is threaded over it, which TOP could never do in one go. */
     @Test
     fun `DECK takes the building out from under its fittings`() {
         val c = layered()
-        val at = grid.index(6, 5)
+        val at = grid.tile(6, 5)
 
-        c.remove(at, DeleteLayer.Deck)
+        c.removeAt(at, DeleteLayer.Deck)
         c.stepOnce()
 
         assertNull(c.state[at], "the tank is still there")
-        assertNotNull(c.state.conduits[Conduit.Rail][at], "the rail went with it")
-        assertNotNull(c.state.conduits[Conduit.Pipe][at], "the pipe went with it")
+        assertNotNull(c.state.conduits[Conduit.Rail][at.index], "the rail went with it")
+        assertNotNull(c.state.conduits[Conduit.Pipe][at.index], "the pipe went with it")
     }
 
     @Test
     fun `ALL clears the tile in one click`() {
         val c = layered()
-        val at = grid.index(6, 5)
+        val at = grid.tile(6, 5)
 
-        c.remove(at, DeleteLayer.All)
+        c.removeAt(at, DeleteLayer.All)
         c.stepOnce()
 
         assertNull(c.state[at])
-        assertNull(c.state.conduits[Conduit.Rail][at])
-        assertNull(c.state.conduits[Conduit.Pipe][at])
+        assertNull(c.state.conduits[Conduit.Rail][at.index])
+        assertNull(c.state.conduits[Conduit.Pipe][at.index])
     }
 
     /**
@@ -109,22 +110,22 @@ class EditorToolsTest {
     @Test
     fun `TOP still peels one layer at a time`() {
         val c = layered()
-        val at = grid.index(6, 5)
+        val tile = grid.tile(6, 5)
 
-        c.remove(at, DeleteLayer.Top)
+        c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
-        assertNull(c.state.conduits[Conduit.Rail][at], "rail is the first conduit layer, so it goes first")
-        assertNotNull(c.state.conduits[Conduit.Pipe][at], "two layers came off in one click")
-        assertTrue(c.state[at] is Storage)
+        assertNull(c.state.conduits[Conduit.Rail][tile.index], "rail is the first conduit layer, so it goes first")
+        assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "two layers came off in one click")
+        assertTrue(c.state[tile] is Storage)
 
-        c.remove(at, DeleteLayer.Top)
+        c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
-        assertNull(c.state.conduits[Conduit.Pipe][at])
-        assertTrue(c.state[at] is Storage, "the tank came off before its fittings had")
+        assertNull(c.state.conduits[Conduit.Pipe][tile.index])
+        assertTrue(c.state[tile] is Storage, "the tank came off before its fittings had")
 
-        c.remove(at, DeleteLayer.Top)
+        c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
-        assertNull(c.state[at])
+        assertNull(c.state[tile])
     }
 
     // ── the bellows ────────────────────────────────────────────────────────────────
@@ -144,7 +145,7 @@ class EditorToolsTest {
             c.injectTile = at
             c.stepOnce()
         }
-        c.injectTile = -1
+        c.injectTile = TileIndex.NONE
         c.stepOnce()
 
         val s = c.state
@@ -157,7 +158,7 @@ class EditorToolsTest {
     /**
      * The gas arrives at room temperature, not at absolute zero.
      *
-     * [org.emerge.demo.outofspace.world.AirField.of]'s rule, and the one mistake this is most likely
+     * [org.emerge.demo.outofspace.world.Atmosphere.of]'s rule, and the one mistake this is most likely
      * to make: energy derived from the mass rather than defaulted, or the room chills every time
      * somebody uses the tool.
      */
@@ -168,7 +169,7 @@ class EditorToolsTest {
         val before = c.state.airKelvinAt(at)
 
         repeat(5) { c.injectTile = at; c.stepOnce() }
-        c.injectTile = -1
+        c.injectTile = TileIndex.NONE
         c.stepOnce()
 
         val after = c.state.airKelvinAt(at)
@@ -182,11 +183,11 @@ class EditorToolsTest {
     @Test
     fun `injecting into a solid machine does nothing at all`() {
         val c = layered()
-        val at = grid.index(6, 5)   // the tank, which is impermeable
+        val at = grid.tile(6, 5)   // the tank, which is impermeable
         val before = c.state.atmosphereMass
 
         repeat(5) { c.injectTile = at; c.stepOnce() }
-        c.injectTile = -1
+        c.injectTile = TileIndex.NONE
         c.stepOnce()
 
         val s = c.state
@@ -215,7 +216,7 @@ class EditorToolsTest {
     fun `the admission survives a round trip`() {
         val c = layered()
         repeat(4) { c.injectTile = OPEN_TILE; c.stepOnce() }
-        c.injectTile = -1
+        c.injectTile = TileIndex.NONE
         c.stepOnce()
 
         val written = Save.write(c.state)

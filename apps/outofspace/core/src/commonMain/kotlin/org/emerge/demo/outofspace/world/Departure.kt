@@ -11,6 +11,6 @@ import org.emerge.demo.outofspace.logistics.Packet
  */
 data class Departure(
     /** The tile it was standing on, which is where the ghost of it shrinks away. */
-    val tile: Int,
+    val tile: TileIndex,
     val packet: Packet,
 )

@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.AirField
+import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -11,8 +11,9 @@ import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
-import org.emerge.demo.outofspace.world.gasCapacityAt
+import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -35,12 +36,12 @@ class ValveTest {
     private fun hulled(): List<Machine?> {
         val m = arrayOfNulls<Machine>(grid.size)
         for (x in 0 until grid.width) {
-            m[grid.index(x, 0)] = Hull()
-            m[grid.index(x, grid.height - 1)] = Hull()
+            m[grid.tile(x, 0).index] = Hull()
+            m[grid.tile(x, grid.height - 1).index] = Hull()
         }
         for (y in 0 until grid.height) {
-            m[grid.index(0, y)] = Hull()
-            m[grid.index(grid.width - 1, y)] = Hull()
+            m[grid.tile(0, y).index] = Hull()
+            m[grid.tile(grid.width - 1, y).index] = Hull()
         }
         return m.toList()
     }
@@ -56,20 +57,20 @@ class ValveTest {
 
     private fun pipeRun(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
-        for (x in fromX until toX) s = edit(s, Edit.Lay(grid.index(x, y), grid.index(x + 1, y), Conduit.Pipe))
+        for (x in fromX until toX) s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Pipe))
         return s
     }
 
-    private fun valveAt(state: VesselState, tile: Int): VesselState =
+    private fun valveAt(state: VesselState, tile: TileIndex): VesselState =
         edit(state, Edit.Place(tile, MachineKind.Valve, Direction.Right))
 
-    private fun pipeMass(s: VesselState, tile: Int): Long {
+    private fun pipeMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
         for (sp in Species.ALL) sum += s.pipeAir.massOf(tile, sp)
         return sum
     }
 
-    private fun roomMass(s: VesselState, tile: Int): Long {
+    private fun roomMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
         for (sp in Species.ALL) sum += s.air.massOf(tile, sp)
         return sum
@@ -99,7 +100,7 @@ class ValveTest {
     private fun plumbed(valveX: Int = 6, y: Int = 6): VesselState {
         var s = VesselState(grid, hulled())
         s = pipeRun(s, y, 4, 15)
-        return valveAt(s, grid.index(valveX, y))
+        return valveAt(s, grid.tile(valveX, y))
     }
 
     @Test
@@ -117,7 +118,7 @@ class ValveTest {
             "the pipe took ${first}g on the first tick and held ${after.pipeAir.totalMass}g after " +
                 "two hundred more — gas crossed once and then stopped",
         )
-        assertTrue(pipeMass(after, grid.index(13, 6)) > 0L, "gas crossed but never ran along the pipe")
+        assertTrue(pipeMass(after, grid.tile(13, 6)) > 0L, "gas crossed but never ran along the pipe")
         assertBalanced(after, "filling a pipe from a room")
     }
 
@@ -135,8 +136,8 @@ class ValveTest {
     fun `gas stops crossing when the pressures match, not when the masses do`() {
         val after = run(plumbed(), 400)
 
-        val roomTile = grid.index(6, 5)
-        val pipeTile = grid.index(6, 6)
+        val roomTile = grid.tile(6, 5)
+        val pipeTile = grid.tile(6, 6)
         val room = roomMass(after, roomTile)
         val pipe = pipeMass(after, pipeTile)
         assertTrue(pipe > 0L && room > 0L, "one side of the valve ended up empty")
@@ -159,15 +160,15 @@ class ValveTest {
      */
     @Test
     fun `the valve brush lays its own pipe on bare deck and opens one that is already there`() {
-        val bare = valveAt(VesselState(grid, hulled()), grid.index(6, 6))
-        val laid = bare.conduits.at(Conduit.Pipe, grid.index(6, 6))
+        val bare = valveAt(VesselState(grid, hulled()), grid.tile(6, 6))
+        val laid = bare.conduits.at(Conduit.Pipe, grid.tile(6, 6))
         assertTrue(laid != null && laid.isValve, "the brush laid nothing on bare deck")
 
         var run = pipeRun(VesselState(grid, hulled()), 6, 4, 15)
-        val before = run.conduits.at(Conduit.Pipe, grid.index(6, 6))!!
+        val before = run.conduits.at(Conduit.Pipe, grid.tile(6, 6))!!
         assertTrue(!before.isValve, "the fixture laid a run that was already open")
-        run = valveAt(run, grid.index(6, 6))
-        val after = run.conduits.at(Conduit.Pipe, grid.index(6, 6))!!
+        run = valveAt(run, grid.tile(6, 6))
+        val after = run.conduits.at(Conduit.Pipe, grid.tile(6, 6))!!
         assertTrue(after.isValve, "the brush did not open the pipe already on the tile")
         assertEquals(before.links, after.links, "opening a valve tore up the run it is part of")
     }
@@ -181,10 +182,10 @@ class ValveTest {
         val after = run(plumbed(), 50)
         val back = org.emerge.demo.outofspace.world.Save.read(org.emerge.demo.outofspace.world.Save.write(after))
 
-        val tile = grid.index(6, 6)
+        val tile = grid.tile(6, 6)
         assertTrue(back.conduits.at(Conduit.Pipe, tile)?.isValve == true, "the valve came back sealed")
         assertTrue(
-            back.conduits.at(Conduit.Pipe, grid.index(7, 6))?.isValve == false,
+            back.conduits.at(Conduit.Pipe, grid.tile(7, 6))?.isValve == false,
             "an ordinary length of pipe came back open",
         )
         assertEquals(after.pipeAir, back.pipeAir, "the pipes came back holding something else")
@@ -211,8 +212,8 @@ class ValveTest {
     fun `what crosses has the composition of what it left`() {
         val after = run(plumbed(), 300)
 
-        val roomTile = grid.index(6, 5)
-        val pipeTile = grid.index(6, 6)
+        val roomTile = grid.tile(6, 5)
+        val pipeTile = grid.tile(6, 6)
         for (sp in Species.ALL) {
             val room = after.air.massOf(roomTile, sp)
             val pipe = after.pipeAir.massOf(pipeTile, sp)
@@ -237,8 +238,8 @@ class ValveTest {
         // Heat the whole room's air by half again. Done to the field rather than with a furnace, so
         // the test measures the valve and not the smelter.
         val energy = s.air.copyEnergy()
-        for (i in energy.indices) energy[i] = energy[i] * 3 / 2
-        val warmed = AirField.of(s.air.copyMass(), energy)
+        for (i in 0 until energy.size) energy[TileIndex(i)] = energy[TileIndex(i)] * 3 / 2
+        val warmed = Atmosphere.of(s.air.copyMass(), energy)
         // The baseline moves by what the fixture ADDED, rather than being restated from the room
         // field. Restating it is the obvious version and it is wrong twice over: it drops the energy
         // already in the pipes, and it discards the `solidToAirEnergy` the world has booked so far.
@@ -249,8 +250,8 @@ class ValveTest {
         )
 
         val after = run(s, 200)
-        val pipeTile = grid.index(6, 6)
-        val capacity = gasCapacityAt(after.pipeAir.copyMass(), pipeTile)
+        val pipeTile = grid.tile(6, 6)
+        val capacity = heatCapacityAt(after.pipeAir.copyMass(), pipeTile)
         assertTrue(capacity > 0L, "no gas reached the pipe, so there is no temperature to read")
 
         val kelvin = (after.pipeAir.copyEnergy()[pipeTile] / capacity).toInt()
@@ -285,16 +286,16 @@ class ValveTest {
         // live, and this test is about the exchange rather than about the boundary.
         s = pipeRun(s, y, axis - 6, axis - 2)
         s = pipeRun(s, y, axis + 2, axis + 6)
-        s = valveAt(s, grid.index(axis - 4, y))
-        s = valveAt(s, grid.index(axis + 4, y))
+        s = valveAt(s, grid.tile(axis - 4, y))
+        s = valveAt(s, grid.tile(axis + 4, y))
 
         val after = run(s, 200)
 
         var left = 0L
         var right = 0L
         for (d in 2..6) {
-            left += pipeMass(after, grid.index(axis - d, y))
-            right += pipeMass(after, grid.index(axis + d, y))
+            left += pipeMass(after, grid.tile(axis - d, y))
+            right += pipeMass(after, grid.tile(axis + d, y))
         }
         assertTrue(left > 0L, "neither side filled, so the test measured nothing")
 

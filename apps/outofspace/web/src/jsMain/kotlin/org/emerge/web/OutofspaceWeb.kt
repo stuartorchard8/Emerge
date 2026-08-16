@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.Tool
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.ui.Ui
 import org.w3c.dom.HTMLCanvasElement
@@ -54,8 +55,8 @@ private fun start(canvas: HTMLCanvasElement) {
     var uiConsumed = false
     var lastX = 0f
     var lastY = 0f
-    var hovered = -1
-    var lastPainted = -1
+    var hovered = TileIndex.NONE
+    var lastPainted = TileIndex.NONE
 
     /** CSS pixels → framebuffer pixels. The canvas is backed at device resolution, so these differ. */
     fun toPx(e: MouseEvent): Pair<Float, Float> {
@@ -76,13 +77,13 @@ private fun start(canvas: HTMLCanvasElement) {
                 uiConsumed = ui.hitTestDown(x, y)
                 if (!uiConsumed) {
                     val tile = renderer.tileIndexAt(x, y, controller.state)
-                    if (tile >= 0) { controller.apply(tile); lastPainted = tile }
+                    if (tile != TileIndex.NONE) { controller.apply(tile); lastPainted = tile }
                 }
             }
             1 -> middleDown = true
             2 -> {
                 val tile = renderer.tileIndexAt(x, y, controller.state)
-                if (tile >= 0) controller.remove(tile)
+                if (tile != TileIndex.NONE) controller.removeAt(tile)
             }
         }
     })
@@ -97,7 +98,7 @@ private fun start(canvas: HTMLCanvasElement) {
         when {
             middleDown -> renderer.panByPixels(dx, dy)
             leftDown && uiConsumed -> ui.dragTo(x, y)
-            leftDown && controller.tool == Tool.Build -> if (hovered >= 0 && hovered != lastPainted) {
+            leftDown && controller.tool == Tool.Build -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
                 controller.place(hovered)
                 lastPainted = hovered
             }
@@ -112,7 +113,7 @@ private fun start(canvas: HTMLCanvasElement) {
             0 -> {
                 if (uiConsumed) { ui.hitTestUp(x, y); ui.releaseHold() }
                 leftDown = false
-                lastPainted = -1
+                lastPainted = TileIndex.NONE
                 uiConsumed = false
             }
             1 -> middleDown = false

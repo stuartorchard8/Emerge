@@ -42,12 +42,12 @@ class SignalInputTest {
     }
 
     private fun signalRow(wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
-        for (x in fromX..toX) if (wires[grid.index(x, y)] == null) wires[grid.index(x, y)] = Segment(Conduit.Signal)
+        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
         for (x in fromX until toX) {
-            val a = grid.index(x, y)
-            val b = grid.index(x + 1, y)
-            wires[a] = wires[a]!!.joinedTo(Direction.Right)
-            wires[b] = wires[b]!!.joinedTo(Direction.Left)
+            val a = grid.tile(x, y)
+            val b = grid.tile(x + 1, y)
+            wires[a.index] = wires[a.index]!!.joinedTo(Direction.Right)
+            wires[b.index] = wires[b.index]!!.joinedTo(Direction.Left)
         }
     }
 
@@ -57,7 +57,7 @@ class SignalInputTest {
     /** One button on one run of wire, going nowhere in particular. */
     private fun rig(key: InputKey = InputKey.Up): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(buttonAt.first, buttonAt.second)] = WireButton(key)
+        machines[grid.tile(buttonAt.first, buttonAt.second).index] = WireButton(key)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, buttonAt.first, farEnd.first, buttonAt.second)
         return VesselState(
@@ -67,7 +67,7 @@ class SignalInputTest {
         )
     }
 
-    private fun atFarEnd(s: VesselState) = s.signals.at(grid.index(farEnd.first, farEnd.second))
+    private fun atFarEnd(s: VesselState) = s.signals.at(grid.tile(farEnd.first, farEnd.second))
 
     // ── Pressed and released ──────────────────────────────────────────────────
 
@@ -101,8 +101,8 @@ class SignalInputTest {
     @Test
     fun `holding two keys drives both their buttons`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 2)] = WireButton(InputKey.Left)
-        machines[grid.index(2, 6)] = WireButton(InputKey.Right)
+        machines[grid.tile(2, 2).index] = WireButton(InputKey.Left)
+        machines[grid.tile(2, 6).index] = WireButton(InputKey.Right)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
@@ -112,14 +112,14 @@ class SignalInputTest {
             held = InputKey.Left.bit or InputKey.Right.bit,
         )
 
-        assertEquals(SignalField.FULL, s.signals.at(grid.index(8, 2)))
-        assertEquals(SignalField.FULL, s.signals.at(grid.index(8, 6)))
+        assertEquals(SignalField.FULL, s.signals.at(grid.tile(8, 2)))
+        assertEquals(SignalField.FULL, s.signals.at(grid.tile(8, 6)))
     }
 
     @Test
     fun `a button with no wire under it is harmless`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.index(2, 4)] = WireButton(InputKey.Up)
+        machines[grid.tile(2, 4).index] = WireButton(InputKey.Up)
         val s = run(VesselState(grid, machines.toList()), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
@@ -128,7 +128,7 @@ class SignalInputTest {
     fun `a button keeps its key across a save`() {
         val s = rig(InputKey.B)
         val back = Save.read(Save.write(s))
-        assertEquals(InputKey.B, (back[grid.index(buttonAt.first, buttonAt.second)] as WireButton).key)
+        assertEquals(InputKey.B, (back[grid.tile(buttonAt.first, buttonAt.second)] as WireButton).key)
     }
 
     // ── The whole point ───────────────────────────────────────────────────────
@@ -148,18 +148,18 @@ class SignalInputTest {
         val h = 8
         val machines = arrayOfNulls<Machine>(grid.size)
         for (x in 1..w) {
-            machines[grid.index(x, 1)] = Hull()
-            machines[grid.index(x, h)] = Hull()
+            machines[grid.tile(x, 1).index] = Hull()
+            machines[grid.tile(x, h).index] = Hull()
         }
         for (y in 1..h) {
-            machines[grid.index(1, y)] = Hull()
-            machines[grid.index(w, y)] = Hull()
+            machines[grid.tile(1, y).index] = Hull()
+            machines[grid.tile(w, y).index] = Hull()
         }
         // The door in the starboard wall, wired to whatever is on the run beneath it.
-        machines[grid.index(w, h / 2)] = Airlock(
+        machines[grid.tile(w, h / 2).index] = Airlock(
             wiring = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Wire, SignalField.FULL)))),
         )
-        machines[grid.index(3, h / 2)] = WireButton(InputKey.Right)
+        machines[grid.tile(3, h / 2).index] = WireButton(InputKey.Right)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 3, w, h / 2)

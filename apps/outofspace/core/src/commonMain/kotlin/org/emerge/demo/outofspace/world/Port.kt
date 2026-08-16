@@ -22,7 +22,7 @@ import org.emerge.demo.outofspace.world.machine.WireButton
  * Port is a property of a tile (footprints enable this). Two ports share tile only if different conduits.
  */
 data class Port(
-    val tile: Int,
+    val tile: TileIndex,
     /** Facing direction (not connection direction — conduits run underneath buildings). Determines draw orientation. */
     val side: Direction,
     val kind: PortKind,
@@ -30,7 +30,7 @@ data class Port(
     /** Which network it belongs to. Two ports may share a tile only if these differ. */
     val conduit: Conduit = Conduit.Rail,
     /** Where the thing owning this port is stored — its centre tile. */
-    val owner: Int = -1,
+    val owner: TileIndex = TileIndex.NONE,
     /** Whether the owner lives on the bridge list rather than the deck. */
     val fromBridge: Boolean = false,
 )
@@ -100,11 +100,11 @@ private fun localPorts(machine: Machine): List<LocalPort> {
     }
 }
 
-/** The ports of the machine stored at [centre], in world tiles. Empty if it has none or is clipped. */
-fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
+/** The ports of the machine stored at [centreTile], in world tiles. Empty if it has none or is clipped. */
+fun portsOf(grid: Grid, machine: Machine, centreTile: TileIndex): List<Port> {
     val turns = (machine as? Directed)?.facing?.ordinal ?: 0
-    val cx = grid.xOf(centre)
-    val cy = grid.yOf(centre)
+    val cx = grid.xOf(centreTile)
+    val cy = grid.yOf(centreTile)
     val out = ArrayList<Port>(4)
     for (p in localPorts(machine)) {
         var dx = p.dx
@@ -121,7 +121,7 @@ fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
         val x = cx + dx
         val y = cy + dy
         if (grid.inBounds(x, y)) {
-            out.add(Port(grid.index(x, y), side, p.kind, p.stream, p.conduit, centre, machine is Bridge))
+            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, machine is Bridge))
         }
     }
     return out
@@ -135,7 +135,7 @@ fun portsOf(grid: Grid, machine: Machine, centre: Int): List<Port> {
  * buildings" means, and it is why a run has to be threaded *under* a machine to reach it rather than
  * butted against its edge.
  */
-fun portAt(grid: Grid, machine: Machine, centre: Int, tile: Int, kind: PortKind, conduit: Conduit): Port? =
-    portsOf(grid, machine, centre).firstOrNull {
+fun portAt(grid: Grid, machine: Machine, centreTile: TileIndex, tile: TileIndex, kind: PortKind, conduit: Conduit): Port? =
+    portsOf(grid, machine, centreTile).firstOrNull {
         it.kind == kind && it.tile == tile && it.conduit == conduit
     }
