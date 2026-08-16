@@ -176,7 +176,7 @@ class AtmosphereTest {
     fun `flow settles rather than running away`() {
         val room = sealedRoom(6, 3)
         val g = room.grid
-        val mass = MassArray(g.size * Species.COUNT)
+        val mass = MassArray(g.size)
         mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 10_000L * gram
         val field = Atmosphere.of(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)

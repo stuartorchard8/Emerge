@@ -970,7 +970,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
 
     // ── 4. Dense field arrays: air / pipeAir (mass + energy) ────────────
     fun remapAirField(src: Atmosphere): Atmosphere {
-        val newMass = MassArray(newGrid.size * Species.COUNT)
+        val newMass = MassArray(newGrid.size)
         val oldEnergy = src.copyEnergy()
         val newEnergy = EnergyArray(newGrid.size)
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
