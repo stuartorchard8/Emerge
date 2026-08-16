@@ -54,6 +54,12 @@ private val REFERENCE_DENSITY: Long get() = Species.Osmium.solidMassPerTile
  * Empty mixtures weigh nothing, which is the honest answer and keeps callers from dividing by it.
  */
 fun massPerTileOf(mixture: Mixture): Long {
+    val memo = mixture.massPerTileMemo
+    if (memo != Mixture.UNSET) return memo
+    return massPerTileUncached(mixture).also { mixture.massPerTileMemo = it }
+}
+
+private fun massPerTileUncached(mixture: Mixture): Long {
     val total = mixture.total
     if (total <= 0L) return 0L
     // A pure pile is its species' density exactly. Not an optimisation: the fixed-point round trip
@@ -97,6 +103,12 @@ fun massPerTileOf(mixture: Mixture): Long {
  * being different is the whole reason they are written out separately here.
  */
 fun capacityPerTileOf(mixture: Mixture): Long {
+    val memo = mixture.capacityPerTileMemo
+    if (memo != Mixture.UNSET) return memo
+    return capacityPerTileUncached(mixture).also { mixture.capacityPerTileMemo = it }
+}
+
+private fun capacityPerTileUncached(mixture: Mixture): Long {
     if (mixture.total <= 0L) return 0L
     // Split rather than multiplied-then-divided, which is what makes [SPECIFIC_HEAT_SCALE] free.
     //

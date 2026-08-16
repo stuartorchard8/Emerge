@@ -13,6 +13,24 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
         require(masses.size == Species.COUNT) { "expected ${Species.COUNT} species, got ${masses.size}" }
     }
 
+    /**
+     * Memo slots for the two derived quantities that cost a full pass over [Species] to work out —
+     * this mixture's density and its heat capacity per tile. Filled on first read by
+     * `massPerTileOf` and `capacityPerTileOf`, which is where the physics stays; nothing but those
+     * two functions may touch them.
+     *
+     * **Here rather than on the caller because the caller is the wrong scope.** A rock's
+     * composition never changes, but the rock is a data class that is `copy`-ed every tick to move
+     * it, and each copy re-ran both loops from scratch — at 165 species that measured at roughly
+     * half the tick with the pressure sweep already fixed. Caching on the *mixture* means the work
+     * is done once per distinct composition ever, and every other caller inherits it.
+     *
+     * Safe to fill without synchronisation: a [Mixture] is immutable, so the value is a pure
+     * function of [masses] and two threads racing here can only write the identical `Long`.
+     */
+    internal var massPerTileMemo: Long = UNSET
+    internal var capacityPerTileMemo: Long = UNSET
+
     operator fun get(species: Species): Long = masses[species.ordinal]
 
     /** Total mass in mass. */
@@ -126,6 +144,9 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
     override fun hashCode(): Int = masses.contentHashCode()
 
     companion object {
+        /** "Not worked out yet" for the memo slots — no real density or capacity is negative. */
+        internal const val UNSET: Long = -1L
+
         val EMPTY: Mixture = Mixture(LongArray(Species.COUNT), 0)
 
         fun of(vararg parts: Pair<Species, Long>, energy: Long): Mixture {

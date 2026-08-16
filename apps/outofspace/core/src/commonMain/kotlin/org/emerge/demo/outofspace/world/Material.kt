@@ -75,11 +75,20 @@ enum class Material(
     Firebrick("FIREBRICK", Mixture.of(Species.Quartz to 550L, Species.Aluminum to 450L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
-    /** What a full tile of this stuff weighs, at its real density. */
-    val massPerTile: Long get() = massPerTileOf(composition)
+    /**
+     * What a full tile of this stuff weighs, at its real density.
+     *
+     * ⚠️ **A field, not a `get()`, and that is a performance fact rather than a style one.**
+     * [massPerTileOf] walks every one of [Species]' entries doing two [scaledRatio]s apiece, and a
+     * material's [composition] is a compile-time constant — so every evaluation after the first
+     * returns the identical number for identical work. As a getter it measured at roughly a quarter
+     * of the whole sim tick, because [conductance] reaches it through [capacityPerTile] and the
+     * heat solver asks per contact per tick. Same for the two below.
+     */
+    val massPerTile: Long = massPerTileOf(composition)
 
     /** Millijoules per kelvin for a full tile of it. */
-    val capacityPerTile: Long get() = capacityPerTileOf(composition)
+    val capacityPerTile: Long = capacityPerTileOf(composition)
 
     /**
      * How much heat crosses a contact of this material per kelvin per tick.
@@ -88,7 +97,7 @@ enum class Material(
      * behaviour is stated once, in the unit anyone can check against the game — "a firebrick joint
      * takes the better part of a thousand ticks" — and cannot drift when a density changes.
      */
-    val conductance: Long get() = capacityPerTile * 100L / conductanceCentiTicks
+    val conductance: Long = capacityPerTile * 100L / conductanceCentiTicks
 
     companion object {
         /**
