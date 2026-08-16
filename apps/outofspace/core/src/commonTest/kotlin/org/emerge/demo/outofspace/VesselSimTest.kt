@@ -171,7 +171,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
             ),
-            120,
+            120*RAIL_PERIOD,
         )
 
         assertTrue(s.ventedMass > 0L, "the vent took a share")
@@ -224,7 +224,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
             ),
-            120,
+            120*RAIL_PERIOD,
         )
 
         // The far arm is the stretch between the storage's output and where the extractor joins. It is
@@ -234,10 +234,10 @@ class VesselSimTest {
             farArm.any { s.railAt(it)?.held != null },
             "the storage's own material never got out onto the loop",
         )
-//        assertTrue(
-//            ((s[grid.index(7, 5)] as Storage).contents?.mass ?: 0L) > 0L,
-//            "and the loop should have carried the extractor's material round into the storage",
-//        )
+        assertTrue(
+            ((s[grid.tile(7, 5)] as Storage).contents?.mass ?: 0L) > 0L,
+            "and the loop should have carried the extractor's material round into the storage",
+        )
         assertBalanced(s, "merged loop")
     }
 

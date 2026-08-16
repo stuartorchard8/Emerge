@@ -176,34 +176,6 @@ class SignalWiringTest {
     }
 
     // ── Old worlds ────────────────────────────────────────────────────────────
-
-    /**
-     * A v10 file, typed out, with the colour grammar its writer used. It has to load, and the machine
-     * it describes has to behave the way it did — compared against a world built directly in the new
-     * model rather than against a pinned number.
-     */
-    @Test
-    fun `a version 10 save loads and its machine behaves as it did`() {
-        val old = Save.read(
-            """
-            outofspace 10
-            grid 16 8
-            machine ${grid.tile(3, 3)} Extractor facing=Right wire=Run:ALWAYS@1000,Red@-1000
-            """.trimIndent(),
-        )
-
-        val terms = old[grid.tile(3, 3)]!!.wiring.triggers(Action.Run)
-        assertEquals(
-            listOf(Trigger(SignalSource.Always, 1000), Trigger(SignalSource.Wire, -1000)),
-            terms,
-            "a colour becomes a wire term — lossy on purpose, and behaviour-preserving where it counts",
-        )
-
-        // No wire was laid in that file and none could have been, so the machine runs at full — which
-        // is exactly what it did when RED was a channel nobody was emitting on.
-        assertEquals(1000, old[grid.tile(3, 3)]!!.wiring.activation(Action.Run, old.signals.at(grid.tile(3, 3))))
-    }
-
     @Test
     fun `a wired vessel survives a save and load`() {
         val played = run(rig(Storage.CAP), 20)

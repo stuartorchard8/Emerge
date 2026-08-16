@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_PERIOD
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Atmosphere
 import org.emerge.demo.outofspace.world.Conduit
@@ -106,12 +107,13 @@ class ValveTest {
     @Test
     fun `a valve lets the room fill the pipe it opens onto`() {
         val start = plumbed()
+        val postFluidTick = run(start, FLUID_PERIOD)
         // Not zero: placing the valve is an edit, and an edit runs a tick, so one tick's worth has
         // already crossed by the time the fixture hands the world back. That is the valve working.
-        val first = start.pipeAir.totalMass
+        val first = postFluidTick.pipeAir.totalMass
         assertTrue(first > 0L, "nothing crossed the valve on the tick it was opened")
 
-        val after = run(start, 200)
+        val after = run(start, 200*FLUID_PERIOD)
 
         assertTrue(
             after.pipeAir.totalMass > first * 4,
