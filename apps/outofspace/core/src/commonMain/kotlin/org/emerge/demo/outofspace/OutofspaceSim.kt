@@ -1105,16 +1105,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 when (body.slot) {
                     // A machine is several bodies now, one per tile, so the tile has to be named
                     // as well as the machine — see [Body.part].
-                    BodySlot.Deck -> machines[body.tile.index]?.let {
-                        machines[body.tile.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
+                    // Through [Body.anchor] and not [Body.tile]: a machine occupies its whole
+                    // footprint but is stored only at its origin, so every part but the centre
+                    // would otherwise write into whatever happens to sit on the tile it covers.
+                    BodySlot.Deck -> machines[body.anchor.index]?.let {
+                        machines[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
                         layer(c)[body.tile.index]?.let { layer(c)[body.tile.index] = it.copy(energy = energy[i]) }
                     }
-                    BodySlot.Span -> bridges[body.tile.index]?.let {
-                        bridges[body.tile.index] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
+                    // Same again: a bridge spans three tiles and is stored at the middle one.
+                    BodySlot.Span -> bridges[body.anchor.index]?.let {
+                        bridges[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
                     }
                 }
             }

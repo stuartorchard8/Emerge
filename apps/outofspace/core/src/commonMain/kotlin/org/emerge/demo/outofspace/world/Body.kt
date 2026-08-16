@@ -25,15 +25,33 @@ enum class BodySlot {
  */
 class Body(
     val slot: BodySlot,
-    /** The index it is stored at — its centre tile for a machine, its own tile for a fitting. */
+    /**
+     * The grid tile this body actually **occupies** — where it is in the world.
+     *
+     * This is what conduction reads: [stepSolidHeat] asks for its face neighbours, whether it is
+     * contained, and which tile of air it couples to, and every one of those is a question about
+     * where the metal is. For one tile of a five-by-five smelter that is that tile, not the
+     * smelter's centre.
+     */
     val tile: TileIndex,
+    /**
+     * The tile the owning object is **stored at** — the key back into `machines` or `bridges`.
+     *
+     * ⚠️ **Not the same as [tile], and conflating the two is a live bug rather than a tidy-up.**
+     * A machine occupies its whole footprint but is stored only at its origin, so writing a
+     * conducted result back through [tile] reaches a *different* machine — or none — for every
+     * part except the centre. When the two were one field, `applyBodyHeat` addressed a one-tile
+     * machine with a five-by-five machine's part index and threw straight out of bounds.
+     *
+     * Equal to [tile] for a fitting, which is stored where it sits.
+     */
+    val anchor: TileIndex,
     /**
      * Which of a machine's tiles this is, as an index into its [org.emerge.demo.outofspace.world.machine.Machine.energy].
      *
-     * Zero for anything that is still stored as one piece — a fitting, a bridge — where [tile] alone
-     * identifies where the energy goes back. For a machine it is the other half of the address:
-     * [tile] says which machine and this says which of its tiles, and both are needed now that a
-     * machine is several bodies rather than one.
+     * Zero for a fitting, which is stored as one piece and needs no second half. For a machine or a
+     * bridge it is the other half of the address: [anchor] says which object and this says which of
+     * its tiles, and both are needed now that one object is several bodies.
      */
     val part: Int = 0,
     val material: Material,
@@ -113,11 +131,11 @@ fun bodiesOf(
         val covered = coveredTiles(grid, TileIndex(i), m.kind.size)
         for (part in covered.indices) {
             if (part >= m.energy.size) break
-            val tile = TileIndex(part)
             out.add(
                 Body(
                     slot = BodySlot.Deck,
-                    tile = tile,
+                    tile = covered[part],
+                    anchor = TileIndex(i),
                     part = part,
                     material = m.kind.material,
                     permeable = false,
@@ -133,6 +151,7 @@ fun bodiesOf(
             Body(
                 slot = BodySlot.Fitting,
                 tile = tile,
+                anchor = tile,
                 material = conduit.material,
                 permeable = true,
                 energy = s.energy,
@@ -163,6 +182,7 @@ fun bodiesOf(
                 Body(
                     slot = BodySlot.Span,
                     tile = tile,
+                    anchor = TileIndex(i),
                     part = part,
                     material = b.conduit.material,
                     permeable = true,
