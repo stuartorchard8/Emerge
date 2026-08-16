@@ -218,7 +218,7 @@ class VesselSimTest {
         // ...and an extractor dropping onto that same loop, its port at (5, 7).
         val feed = feedExtractor(grid, machines, 3, 7)
 
-        val s = run(
+        var s = run(
             VesselState(
                 grid, machines.toList(),
                 conduits = Conduits.ofRails(rails.toList()),
@@ -234,10 +234,31 @@ class VesselSimTest {
             farArm.any { s.railAt(it)?.held != null },
             "the storage's own material never got out onto the loop",
         )
-        assertTrue(
-            ((s[grid.tile(7, 5)] as Storage).contents?.mass ?: 0L) > 0L,
-            "and the loop should have carried the extractor's material round into the storage",
-        )
+
+        // ⚠️ **Movement, not occupancy** — and the difference is the whole of what this test got
+        // wrong before. A loop that is working *fills*: every tile carries a lump, the extractor
+        // can no longer force one on (a packet already travelling has priority over a source
+        // feeding onto the same rail), and the storage takes delivery at its input port and sets
+        // the same lump back down through its output inside the one rail step. So `contents` is
+        // empty at the end of every tick the world ever runs, and the tiles all look identical
+        // from one step to the next. Asserting on either reads a turning loop as a dead one.
+        //
+        // [Motion] is the mover's own record of what it just did, which is exactly the fact no
+        // snapshot of the buffers can recover: `departures` names the packets it took off the rail
+        // and handed over, and `arrivedFrom` names the tiles whose lump is new.
+        //
+        // Watched across several rail steps because either can legitimately be quiet for one —
+        // a step where the storage's output had nowhere to set down hands nothing over.
+        val handover = grid.tile(6, 5)
+        var handedToStorage = false
+        var loopTurned = false
+        repeat(4) {
+            s = run(s, RAIL_PERIOD)
+            if (s.motion.departures.any { it.tile == handover }) handedToStorage = true
+            if (farArm.any { s.motion.arrivedFrom(it) != null }) loopTurned = true
+        }
+        assertTrue(handedToStorage, "the loop never carried the extractor's material into the storage")
+        assertTrue(loopTurned, "the loop stopped turning once it was full")
         assertBalanced(s, "merged loop")
     }
 
