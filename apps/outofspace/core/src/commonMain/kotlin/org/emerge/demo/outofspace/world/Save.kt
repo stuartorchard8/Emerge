@@ -111,30 +111,30 @@ object Save {
         // `links=5` says nothing, `R-L-` says the run goes left to right through this tile.
         for (tile in state.grid.tiles) {
             val m = state[tile] ?: continue
-            out.append("machine ").append(tile).append(' ').append(writeMachine(m))
+            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
         // record always named its own network, but while there was one list per tile the keyword
         // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
         state.conduits.all { _, tile, r ->
-            out.append("conduit ").append(tile).append(' ').append(writeSegment(r))
+            out.append("conduit ").append(tile.index).append(' ').append(writeSegment(r))
             out.append("   # ").append(where(state.grid, tile)).append(' ').append(linkLetters(r)).append('\n')
         }
         for (tile in state.grid.tiles) {
             val b = state.bridges[tile.index] ?: continue
-            out.append("bridge ").append(tile).append(' ').append(writeMachine(b))
+            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         for (tile in state.grid.tiles) {
             val cursor = state.diverters.forkCursors[tile] ?: 0
-            if (cursor != 0) out.append("diverter ").append(tile).append(' ').append(cursor).append('\n')
+            if (cursor != 0) out.append("diverter ").append(tile.index).append(' ').append(cursor).append('\n')
         }
         // Which feeder a merge takes from next. A separate line from `diverter` because a tile can
         // be both, and an older save simply has none of these.
         for (tile in state.grid.tiles) {
             val cursor = state.diverters.mergeCursors[tile] ?: 0
-            if (cursor != 0) out.append("merge ").append(tile).append(' ').append(cursor).append('\n')
+            if (cursor != 0) out.append("merge ").append(tile.index).append(' ').append(cursor).append('\n')
         }
 
         // Solid heat lives on machines/segments (their `k=` field), not a separate per-tile block.
@@ -142,7 +142,7 @@ object Save {
         for (tile in state.grid.tiles) {
             val mix = state.air.mixtureAt(tile)
             if (mix.isEmpty) continue
-            out.append("air ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
+            out.append("air ").append(tile.index).append(' ').append(writeMixture(mix)).append('\n')
         }
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
@@ -159,7 +159,7 @@ object Save {
         for (tile in state.grid.tiles) {
             val mix = state.pipeAir.mixtureAt(tile)
             if (mix.isEmpty) continue
-            out.append("pipeair ").append(tile).append(' ').append(writeMixture(mix)).append('\n')
+            out.append("pipeair ").append(tile.index).append(' ').append(writeMixture(mix)).append('\n')
         }
         writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy().data)
         writeSparse(out, "pipemomx", state.pipeMomentum.copyX())
