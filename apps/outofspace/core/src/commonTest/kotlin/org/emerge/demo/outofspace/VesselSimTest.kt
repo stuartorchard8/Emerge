@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsOf
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
+import org.emerge.demo.outofspace.world.RockSpawner
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -46,6 +47,23 @@ import kotlin.test.assertTrue
  * duplicated on handoff, a jam that eats a slot, a buffer overwritten instead of merged.
  */
 class VesselSimTest {
+
+    /**
+     * No world rocks, the same way ten other classes here ask for none.
+     *
+     * These are logistics tests: every body they care about is feedstock they placed on a plate
+     * themselves, and [RockSpawner] populating the sky around the vessel is scenery that some of
+     * them then have to reason about. `an extractor eats its rock and then stops` asserts the world
+     * has no bodies left in it, which is a statement about the feedstock and is only expressible
+     * while nothing else is arriving.
+     *
+     * ⚠️ It matters that this is stated here rather than inherited. [RockSpawner.enabled] is a
+     * global that nothing sets back to true, so a class without this line sees rocks or does not
+     * depending on which class the runner reached first — and this test passed for exactly that
+     * reason until `ticksToMove` grew by [OutofspaceReducer.RAIL_PERIOD] and pushed the run past
+     * [RockSpawner.ACTIVATE_AFTER_TICK].
+     */
+    init { RockSpawner.enabled = false }
 
     private val cfg = OutofspaceConfig(initialGrid = Grid(40, 28))
 
