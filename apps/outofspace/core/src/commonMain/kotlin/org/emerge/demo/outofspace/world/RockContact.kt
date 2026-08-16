@@ -96,7 +96,7 @@ object RockContact {
 }
 
 /** Integer floor division, which is not what `/` does for negatives — and a body goes negative. */
-private fun floorTile(v: Long): Long =
+internal fun floorTile(v: Long): Long =
     if (v >= 0L) v / Flight.PER_TILE else -((-v + Flight.PER_TILE - 1L) / Flight.PER_TILE)
 
 /**

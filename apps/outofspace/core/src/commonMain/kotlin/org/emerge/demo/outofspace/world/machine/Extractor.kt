@@ -6,8 +6,12 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.CellShape
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.floorTile
+import org.emerge.demo.outofspace.world.overlapBetween
+import org.emerge.demo.outofspace.world.shapeReach
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Wiring
@@ -96,35 +100,66 @@ class Bite(val body: RigidBody?, val mass: Long, val energy: Long, val impulseX:
  * Which of [body]'s cells a machine covering tiles `[x0,x1] × [y0,y1]` can reach, or `-1`.
  *
  * The nearest one to the plate's centre, so a body hanging half off is eaten from the side that is
- * actually over the machine, and so the answer never depends on iteration luck. The far edge is
- * half-open exactly as [org.emerge.demo.outofspace.world.overlapsHull]'s is: a cell that only touches the plate's edge is beside it,
- * not on it.
+ * actually over the machine, and so the answer never depends on iteration luck.
+ *
+ * ⚠️ **A body has an orientation of its own, so its cells are not laid out along the grid's axes.**
+ * This walks them through [org.emerge.demo.outofspace.world.RigidBody.poseIn] — the composed body-in-ship pose — exactly as
+ * [org.emerge.demo.outofspace.world.overlapsHull] does. It used to transform the body's *corner* and then step the cell offsets
+ * along the grid, which is [org.emerge.demo.outofspace.world.RigidBody.localX]'s documented trap: the answer then ignored `ang`
+ * entirely, and a rock that arrived spinning — or any rock at all aboard a ship that had turned —
+ * landed on the plate the collision solver could see and sat in a place the extractor could not.
+ * A turned body read *identically* to an upright one, so the failure was silent rather than noisy.
+ *
+ * The reach test is [org.emerge.demo.outofspace.world.overlapBetween] against each plate tile, which is the same geometry
+ * [org.emerge.demo.outofspace.world.collectHullContacts] emits contacts from. That agreement is the point: a cell is a disc
+ * to the solver, so a cell that reaches the plate by the box test and not by the disc test is a bite
+ * taken out of a rock that is not touching the machine. The old half-open box test could only match
+ * that while nothing was ever turned.
  */
 fun reachableCell(body: RigidBody, pose: Pose, x0: Int, y0: Int, x1: Int, y1: Int): Int {
-    val loX = x0.toLong() * Flight.PER_TILE
-    val loY = y0.toLong() * Flight.PER_TILE
-    val hiX = (x1 + 1).toLong() * Flight.PER_TILE
-    val hiY = (y1 + 1).toLong() * Flight.PER_TILE
-    val focusX = (loX + hiX) / 2L
-    val focusY = (loY + hiY) / 2L
+    val half = Flight.PER_TILE / 2L
+    val focusX = (x0 + x1 + 1).toLong() * Flight.PER_TILE / 2L
+    val focusY = (y0 + y1 + 1).toLong() * Flight.PER_TILE / 2L
+    // Hoisted: [Pose]'s constructor runs a CORDIC loop, which is cheap once a body and not once a
+    // cell — see [RigidBody.pose].
+    val at = body.poseIn(pose)
 
     var best = -1
     var bestDistance = Long.MAX_VALUE
     for (i in body.cells.indices) {
         if (!body.cells[i]) continue
+        val shape = body.shapeAt(i)
         // Grid frame: the plate is a tile and a body is in the world, so the body comes to it.
-        val cellX = body.localX(pose) + (i % body.width) * Flight.PER_TILE
-        val cellY = body.localY(pose) + (i / body.width) * Flight.PER_TILE
-        if (cellX + Flight.PER_TILE <= loX || cellX >= hiX) continue
-        if (cellY + Flight.PER_TILE <= loY || cellY >= hiY) continue
-        // In tiles, so the square cannot overflow however far out the body is.
-        val dx = (cellX + Flight.PER_TILE / 2L - focusX) / Flight.PER_TILE
-        val dy = (cellY + Flight.PER_TILE / 2L - focusY) / Flight.PER_TILE
+        val localX = (i % body.width) * Flight.PER_TILE + half
+        val localY = (i / body.width) * Flight.PER_TILE + half
+        val cellX = at.toWorldX(localX, localY)
+        val cellY = at.toWorldY(localX, localY)
+
+        // In tiles, so the square cannot overflow however far out the body is. Measured before the
+        // overlap test because it is the cheaper of the two and it rejects most cells.
+        val dx = (cellX - focusX) / Flight.PER_TILE
+        val dy = (cellY - focusY) / Flight.PER_TILE
         val distance = dx * dx + dy * dy
-        if (distance < bestDistance) {
-            bestDistance = distance
-            best = i
+        if (distance >= bestDistance) continue
+
+        var reached = false
+        val reach = shapeReach(shape)
+        for (ty in floorTile(cellY - reach)..floorTile(cellY + reach - 1L)) {
+            if (ty < y0 || ty > y1) continue
+            for (tx in floorTile(cellX - reach)..floorTile(cellX + reach - 1L)) {
+                if (tx < x0 || tx > x1) continue
+                if (overlapBetween(
+                        shape, cellX, cellY,
+                        CellShape.TILE, tx * Flight.PER_TILE + half, ty * Flight.PER_TILE + half,
+                    )
+                ) { reached = true; break }
+            }
+            if (reached) break
         }
+        if (!reached) continue
+
+        bestDistance = distance
+        best = i
     }
     return best
 }
