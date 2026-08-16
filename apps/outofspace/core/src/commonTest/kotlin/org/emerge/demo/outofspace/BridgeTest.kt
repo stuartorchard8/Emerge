@@ -122,7 +122,7 @@ class BridgeTest {
         // Its earlier forms asserted the near tank stole everything and the far one got nothing.
         // Both were artefacts rather than the mechanic — first of consumers being terminal, then of
         // "nearest sink wins" standing in for a fork.
-        val merged = run(crossing(horizontalSupply = null), 120)
+        val merged = run(crossing(horizontalSupply = null), 120*RAIL_PERIOD)
         assertTrue(
             ((merged[grid.tile(15, 5)] as Storage).contents?.mass ?: 0L) > 0L,
             "the column's material reached the row's tank: the two lines are one network",

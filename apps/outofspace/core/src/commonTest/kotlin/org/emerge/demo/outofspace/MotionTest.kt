@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -194,7 +195,7 @@ class MotionTest {
         val near = cfg.initialGrid.tile(5, 3)     // the track tile under the bridge's input port
         val far = cfg.initialGrid.tile(7, 3)      // and under its output port
         var crossed = false
-        repeat(80) {
+        repeat(80*RAIL_PERIOD) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             assertTrue(
                 s.motion.departures.none { it.tile == near },

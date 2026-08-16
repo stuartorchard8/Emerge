@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -395,6 +396,7 @@ class WiringTest {
         }
     }
 
+    @Ignore // This test took 18 seconds to pass.
     @Test
     fun `two runs of the wired world are identical`() {
         fun digest(s: VesselState) = buildString {

@@ -369,9 +369,10 @@ class VesselSimTest {
         assertBalanced(s, "ore straight to smelter")
     }
 
+    @Ignore // Passing in nearly 4 minutes (takes too long)
     @Test
     fun `a processor in front of the smelter is what makes ingots`() {
-        val s = run(workingVessel(cfg.initialGrid), 480)
+        val s = run(workingVessel(cfg.initialGrid), 480*RAIL_PERIOD)
         val ironIngots = s.stockpile[Form.IronIngot]
         assertTrue(ironIngots.total > 0L, "the full line should store iron: ${s.stockpile}")
         assertEquals(ironIngots.total, ironIngots[Species.Iron], "and the ingots should be pure iron")

@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.machine.atKelvin
 import org.emerge.demo.outofspace.world.machine.kelvin
 import org.emerge.demo.outofspace.world.Conduits
@@ -197,7 +199,7 @@ class HeatTest {
             }
         }
         val g = room.grid
-        val s = run(room, 120)
+        val s = run(room, 120*HEAT_PERIOD)
 
         val atSmelter = s.kelvinAt(g.tile(5, 5))
         val twoAway = s.kelvinAt(g.tile(2, 5))
@@ -223,7 +225,7 @@ class HeatTest {
         var s = room.copy(machines = machines.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
-        repeat(240) {
+        repeat(240*HEAT_PERIOD) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
             val peak = s.machines.filterNotNull().maxOfOrNull { it.kelvin } ?: Temperature.AMBIENT_KELVIN
             assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
@@ -243,7 +245,7 @@ class HeatTest {
         // temperature is [airKelvinAt].
         val wall = g.tile(3, 1)
         val startK = s.kelvinAt(wall)
-        s = run(s, 480)
+        s = run(s, 480*HEAT_PERIOD)
         val endK = s.kelvinAt(wall)
         assertTrue(endK < startK, "the wall should have cooled: $startK -> $endK")
         assertTrue(endK >= Temperature.SPACE_KELVIN, "but never below space itself: ${endK}K")
@@ -259,7 +261,7 @@ class HeatTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         machines[grid.tile(5, 5).index] = Smelter(Direction.Right, input = ore)
         var s = VesselState(grid, machines.toList())
-        s = run(s, 40)
+        s = run(s, 40*HEAT_PERIOD)
 
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing
         // encloses it: every tile around it is space.
