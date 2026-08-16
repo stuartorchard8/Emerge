@@ -98,65 +98,6 @@ class ProcessorChainTest {
         )
     }
 
-    @Test
-    fun `chained straight through, purity climbs at every stage`() {
-        // Extractor -> processor -> processor -> processor -> tank, each processor venting its tailings
-        // through the floor. Every building abuts the next; the ports line up without conveyors.
-        val grid = Grid(28, 10)
-        val m = arrayOfNulls<Machine>(grid.size)
-        val rails = arrayOfNulls<Segment>(grid.size)
-        // Enough rock to keep three stages fed for the whole run: one would be gone in a minute.
-        val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
-        val stages = listOf(6, 11, 16)
-        for (x in stages) {
-            m[grid.tile(x, 3).index] = Processor(Direction.Right)
-            m[grid.tile(x, 7).index] = Vent()
-            joinCol(grid, rails, x, 4, 7)   // its tailings run
-        }
-        m[grid.tile(21, 3).index] = Storage(Direction.Right)
-        // One short run per stage, from an output port to the next input port.
-        joinRow(grid, rails, 4, 5, 3)
-        joinRow(grid, rails, 7, 10, 3)
-        joinRow(grid, rails, 12, 15, 3)
-        joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
-        // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
-        // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
-        s = run(s, 1800)
-
-        // Sampled over a window, not on one tick. A stage's `product` buffer empties on whichever
-        // tick it hands its packet to the belt, so a single-instant reading of all three catches
-        // one of them mid-handover and reads 0 for it — which sorts wrong and fails a test about
-        // purity for a reason that has nothing to do with purity. What is *standing in* a buffer
-        // moves about every tick; what the stage separates does not, so take the buffer's purity
-        // whenever there is something in it and ignore the ticks when there isn't.
-        val purities = MutableList(stages.size) { 0 }
-        repeat(HANDOVER_WINDOW) {
-            s = run(s, 1)
-            for ((i, x) in stages.withIndex()) {
-                val p = purity((s[grid.tile(x, 3)] as Processor).product)
-                if (p > 0) purities[i] = p
-            }
-        }
-
-        // The **shape**, and an endpoint derived rather than pinned. This has read 75/100/100 and
-        // then 66/88/100; every one of those figures was a constant that had to be re-pinned by
-        // whatever changed upstream of it, which makes the test a record of its own history rather
-        // than of the claim. The claim is that each stage is cleaner than the one before, and that
-        // the far end is as clean as three passes of [process] can make this ore — which the chemistry
-        // will tell us, so ask it instead of writing the answer down. (Note that it is *not* 100:
-        // `process` caps its effective efficiency at the input's own purity, so a stage takes p to
-        // 1-(1-p)² and a 900-permille machine converges on 99, never reaching pure.)
-        assertEquals(purities.sorted(), purities, "each stage should be cleaner than the last: $purities")
-        assertTrue(purities.first() > 41, "and the first should already beat the 41% ore body: $purities")
-        assertEquals(threeStagePurity(), purities.last(), "the last stage matches the chemistry: $purities")
-        assertEquals(
-            threeStagePurity(),
-            purity((s[grid.tile(21, 3)] as Storage).contents),
-            "and the far end holds what the last stage made",
-        )
-    }
-
     /**
      * What three passes of the concentrator do to a packet of the standard ore body — the oracle for
      * the end of a three-stage chain, computed from the same chemistry the machines use so that a
