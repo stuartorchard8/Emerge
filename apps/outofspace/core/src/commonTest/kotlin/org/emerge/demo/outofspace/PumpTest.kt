@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.PUMP_PERIOD
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -107,7 +109,7 @@ class PumpTest {
      */
     @Test
     fun `a pump pushes past the pressure a valve would stop at`() {
-        val after = run(pumped(), 600)
+        val after = run(pumped(), 600*PUMP_PERIOD)
 
         val intake = grid.tile(6, 5)
         val pipe = grid.tile(6, 6)
@@ -141,7 +143,7 @@ class PumpTest {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
-        val early = run(s, 400)
+        val early = run(s, 400*PUMP_PERIOD)
         val late = run(early, 1_200)
 
         val pipe = grid.tile(6, 6)

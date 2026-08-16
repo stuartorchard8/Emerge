@@ -168,7 +168,7 @@ class GaugeTest {
         )
         val rows = contentsBreakdown(p)
         assertEquals(listOf("INPUT", "PROCESSING", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
-        assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[2].second.mass, "knowing which buffer is stuck is the whole point")
+        assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[3].second.mass, "knowing which buffer is stuck is the whole point")
     }
 
     @Test

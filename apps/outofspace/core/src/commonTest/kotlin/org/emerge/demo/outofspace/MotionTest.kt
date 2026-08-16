@@ -108,7 +108,7 @@ class MotionTest {
     fun `a packet a machine took off the track is recorded as leaving it`() {
         var s = line()
         var seen = false
-        repeat(60) {
+        repeat(60*RAIL_PERIOD) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             val d = s.motion.departures.firstOrNull() ?: return@repeat
             assertEquals(cfg.initialGrid.tile(8, 3), d.tile, "the tank's input port is at (8, 3)")
@@ -154,7 +154,7 @@ class MotionTest {
         var s = bridged()
         val tile = cfg.initialGrid.tile(6, 3)
         var sawNewMiddle = false
-        repeat(60) {
+        repeat(60*RAIL_PERIOD) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             val b = s.bridges[tile.index] ?: return@repeat
             if (b.middle != null && s.motion.bridgeSlotIsNew(tile, Motion.SLOT_MIDDLE)) sawNewMiddle = true
@@ -172,7 +172,7 @@ class MotionTest {
     @Test
     fun `a jammed bridge is not reported as moving`() {
         // Long enough to fill the 20 kg tank and pack the line solid all the way back.
-        val s = run(bridged(), 500)
+        val s = run(bridged(), 500*RAIL_PERIOD)
         val tile = cfg.initialGrid.tile(6, 3)
         val b = assertNotNull(s.bridges[tile.index])
         assertEquals(Bridge.SLOTS, b.carried.size, "the bridge should be packed by now")

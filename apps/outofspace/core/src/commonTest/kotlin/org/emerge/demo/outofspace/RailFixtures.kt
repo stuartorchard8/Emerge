@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
@@ -181,7 +182,7 @@ val FEEDSTOCK_MASS: Long get() = 21L * massPerTileOf(OutofspaceReducer.DEFAULT_O
  * The slack is a quarter on top, because a line has to fill before it can deliver and the first few
  * packets are in transit rather than arriving.
  */
-fun ticksToMove(mass: Long): Int = ((mass / Capacity.PACKET_MASS) * 5L / 4L).toInt() + 20
+fun ticksToMove(mass: Long): Int = ((mass / Capacity.PACKET_MASS) * 5L / 4L).toInt()*RAIL_PERIOD + 20
 
 /**
  * The starter vessel **with feedstock on both plates** — what most of these tests mean when they

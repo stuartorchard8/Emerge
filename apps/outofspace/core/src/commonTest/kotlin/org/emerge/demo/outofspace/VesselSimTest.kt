@@ -140,7 +140,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
             ),
-            480,
+            480*RAIL_PERIOD,
         )
 
         assertEquals(Storage.CAP, (s[grid.tile(8, 5)] as Storage).contents?.mass, "the tank filled")
@@ -463,7 +463,7 @@ class VesselSimTest {
 
         rails[grid.tile(1, 2).index] = rails[grid.tile(1, 2).index]!!.copy(held = carried)
         val s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
-        return run(s, 12)
+        return run(s, 12*RAIL_PERIOD)
     }
 
     @Test
