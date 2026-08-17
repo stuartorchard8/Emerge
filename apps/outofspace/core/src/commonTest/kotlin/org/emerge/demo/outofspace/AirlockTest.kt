@@ -63,7 +63,7 @@ class AirlockTest {
      * The door is on the right wall specifically so that gas leaving it travels +x, and the ship must
      * therefore go −x. An axis the room is not symmetric about would let a sign error pass.
      */
-    private fun roomWithDoor(door: Machine?, w: Int = 8, h: Int = 8): VesselState {
+    private fun roomWithDoor(door: DeckMachine?, w: Int = 8, h: Int = 8): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
@@ -78,7 +78,7 @@ class AirlockTest {
         if (door != null) {
             val doorTile = grid.tile(w, h / 2)
             deck -= doorTile
-            machines[doorTile.index] = door
+            deck += door.movedTo(doorTile)
         }
         return VesselState(grid, machines.toList(), deck = deck)
     }
@@ -90,7 +90,7 @@ class AirlockTest {
 
     @Test
     fun `an unsignalled airlock is a wall`() {
-        val start = roomWithDoor(Airlock())
+        val start = roomWithDoor(Airlock(TileIndex(0)))
         val after = run(start, 60)
 
         assertEquals(0L, after.airVentedMass, "a shut door vents nothing")
@@ -104,7 +104,7 @@ class AirlockTest {
      */
     @Test
     fun `a shut airlock behaves exactly as the hull it replaces`() {
-        val withDoor = run(roomWithDoor(Airlock()), 60)
+        val withDoor = run(roomWithDoor(Airlock(TileIndex(0))), 60)
         val withWall = run(roomWithDoor(null), 60)
 
         assertEquals(withWall.atmosphereMass, withDoor.atmosphereMass)
@@ -113,7 +113,7 @@ class AirlockTest {
 
     @Test
     fun `a shut airlock keeps the room inside`() {
-        val s = run(roomWithDoor(Airlock()), 1)
+        val s = run(roomWithDoor(Airlock(TileIndex(0))), 1)
         assertEquals(Structure.Interior, s.structure[insideTheDoor(s).index])
     }
 
@@ -121,7 +121,7 @@ class AirlockTest {
 
     @Test
     fun `a signalled airlock lets the air out`() {
-        val start = roomWithDoor(Airlock(wiring = held(SignalField.FULL)))
+        val start = roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL)))
         val after = run(start, 60)
 
         assertTrue(
@@ -137,7 +137,7 @@ class AirlockTest {
      */
     @Test
     fun `venting through an airlock keeps the air ledger balanced`() {
-        val s = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 60)
+        val s = run(roomWithDoor(Airlock(TileIndex(0),wiring = held(SignalField.FULL))), 60)
         assertEquals(0L, s.airBalance, "aboard ${s.atmosphereMass} + vented ${s.airVentedMass}")
     }
 
@@ -149,7 +149,7 @@ class AirlockTest {
      */
     @Test
     fun `an open airlock puts the room outside`() {
-        val s = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 1)
+        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 1)
         assertEquals(Structure.Vacuum, s.structure[insideTheDoor(s).index])
     }
 
@@ -162,8 +162,8 @@ class AirlockTest {
      */
     @Test
     fun `a wider signal vents faster`() {
-        val ajar = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL / 4))), 30).airVentedMass
-        val wide = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 30).airVentedMass
+        val ajar = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL / 4))), 30).airVentedMass
+        val wide = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 30).airVentedMass
 
         assertTrue(ajar > 0L, "a quarter-open door still leaks")
         assertTrue(wide > ajar, "and a fully open one leaks faster: $wide vs $ajar")
@@ -178,7 +178,7 @@ class AirlockTest {
      */
     @Test
     fun `venting out of one side drives the vessel the other way`() {
-        val s = run(roomWithDoor(Airlock(wiring = held(SignalField.FULL))), 60)
+        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 60)
 
         assertTrue(s.vesselImpulseX < 0L, "exhaust went +x, so the ship should go -x: ${s.vesselImpulseX}")
         assertTrue(

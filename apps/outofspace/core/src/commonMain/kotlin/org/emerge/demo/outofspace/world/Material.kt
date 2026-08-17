@@ -186,7 +186,6 @@ fun seriesConductance(a: Long, b: Long): Long {
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
 val MachineKind.material: Material
     get() = when (this) {
-        MachineKind.Airlock -> Material.Steel
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
@@ -199,7 +198,7 @@ val MachineKind.material: Material
     }
 val DeckMachineKind.material: Material
     get() = when (this) {
-        DeckMachineKind.Hull -> Material.Steel
+        DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -228,9 +227,6 @@ val Conduit.material: Material
  */
 val MachineKind.fillPermille: Int
     get() = when (this) {
-        // Plate: a few centimetres of steel over a metre of face, plus framing.
-        MachineKind.Airlock -> 60
-
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
 
@@ -256,7 +252,7 @@ val MachineKind.fillPermille: Int
 val DeckMachineKind.fillPermille: Int
     get() = when (this) {
         // Plate: a few centimetres of steel over a metre of face, plus framing.
-        DeckMachineKind.Hull -> 60
+        DeckMachineKind.Hull, DeckMachineKind.Airlock -> 60
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

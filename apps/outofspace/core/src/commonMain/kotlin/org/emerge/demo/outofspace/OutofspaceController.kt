@@ -196,18 +196,35 @@ class OutofspaceController(
 
     /** Cycles a trigger between the constant and the wire under the machine. */
     fun cycleTriggerSource(tile: TileIndex, action: Action, slot: Int, delta: Int) {
-        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
+        val currentDeck = state.deckMachineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
         val all = SignalSource.ALL
-        val next = all[((all.indexOf(current.source) + delta) % all.size + all.size) % all.size]
-        wire(tile, action, slot, current.copy(source = next))
+
+        if (current != null) {
+            val next = all[((all.indexOf(current.source) + delta) % all.size + all.size) % all.size]
+            wire(tile, action, slot, current.copy(source = next))
+        }
+        if (currentDeck != null) {
+            val next = all[((all.indexOf(currentDeck.source) + delta) % all.size + all.size) % all.size]
+            wire(tile, action, slot, currentDeck.copy(source = next))
+        }
     }
 
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
     fun cycleTriggerWeight(tile: TileIndex, action: Action, slot: Int, delta: Int) {
-        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
-        val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
-        val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
-        wire(tile, action, slot, current.copy(weightPermille = next))
+        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
+        val currentDeck = state.deckMachineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
+
+        if (current != null) {
+            val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
+            val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
+            wire(tile, action, slot, current.copy(weightPermille = next))
+        }
+        if (currentDeck != null) {
+            val at = WEIGHT_LADDER.indexOf(currentDeck.weightPermille).let { if (it < 0) 0 else it }
+            val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
+            wire(tile, action, slot, currentDeck.copy(weightPermille = next))
+        }
     }
 
     /** Drops a rock centred on ([x], [y]) — the stand-in for capture, see [Edit.DropRock]. */

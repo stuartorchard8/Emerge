@@ -187,7 +187,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            openness = airlockOpenness(w.machines, signals) ?: IntArray(w.machines.size)
+            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.machines.size)
             structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
 
             for (tile in w.grid.tiles) {
@@ -200,7 +200,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Smelter -> w.melt(cfg, m, activation, tile)
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
-                    is Airlock, is Bridge, is Pump, is Sensor, is Storage,
+                    is Bridge, is Pump, is Sensor, is Storage,
                     is Vent, is WireButton -> m
                 }
             }
@@ -208,7 +208,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Hull -> m
+                    is Hull, is Airlock -> m
                 }
             }
         }
@@ -460,10 +460,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // to the overboard store below, which is what makes the pair impossible to unbalance.
         val exhaustX = state.pose.turnedX(w.exhaustMomentumX, w.exhaustMomentumY)
         val exhaustY = state.pose.turnedY(w.exhaustMomentumX, w.exhaustMomentumY)
-        val pressureX = pressureImpulseX
-        val pressureY = pressureImpulseY
-        val netImpulseX = state.pose.turnedX(pressureX, pressureY) + thrustX - handedX - exhaustX
-        val netImpulseY = state.pose.turnedY(pressureX, pressureY) + thrustY - handedY - exhaustY
+        val netImpulseX = state.pose.turnedX(pressureImpulseX, pressureImpulseY) + thrustX - handedX - exhaustX
+        val netImpulseY = state.pose.turnedY(pressureImpulseX, pressureImpulseY) + thrustY - handedY - exhaustY
 
         // The same five contributions crossed with the point each one is applied at — see
         // [torqueAbout] for why this is summed term by term and not derived from `netImpulse`.
@@ -1247,14 +1245,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Edit.Wire -> {
                     val tile = originAt(edit.tile) ?: return
-                    val m = machines[tile.index] ?: return
-                    val current = m.wiring.triggers(edit.action).toMutableList()
-                    when {
-                        edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
-                        edit.slot in current.indices -> current[edit.slot] = edit.trigger
-                        else -> current.add(edit.trigger)
+                    val m = machines[tile.index]
+                    val dm = deck[tile]
+                    if (m != null) {
+                        val current = m.wiring.triggers(edit.action).toMutableList()
+                        when {
+                            edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
+                            edit.slot in current.indices -> current[edit.slot] = edit.trigger
+                            else -> current.add(edit.trigger)
+                        }
+                        machines[tile.index] = m.withWiring(m.wiring.with(edit.action, current))
                     }
-                    machines[tile.index] = m.withWiring(m.wiring.with(edit.action, current))
+                    if (dm != null) {
+                        val current = dm.wiring.triggers(edit.action).toMutableList()
+                        when {
+                            edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
+                            edit.slot in current.indices -> current[edit.slot] = edit.trigger
+                            else -> current.add(edit.trigger)
+                        }
+                        deck[tile] = dm.withWiring(dm.wiring.with(edit.action, current))
+                    }
                 }
                 is Edit.BindKey -> {
                     val tile = originAt(edit.tile) ?: return
@@ -1728,7 +1738,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return when (val m = machines[port.owner.index]) {
                 is Processor -> m.input == null
                 is Smelter -> m.input == null
-                is Storage -> m.contents == null || (m.contents?.mass ?: 0L) < Storage.CAP
+                is Storage -> m.contents == null || (m.contents.mass) < Storage.CAP
                 is Thruster -> m.input == null
                 is Vent -> true
                 else -> false
@@ -1743,8 +1753,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 bridges[port.owner.index] = bridge.copy(entry = packet)
                 return null
             }
-            val dest = machines[port.owner.index] ?: return packet
-            return if (deliver(port.owner.index, dest, packet)) null else packet
+            val dest = machines[port.owner.index]
+            val deckDest = deck[port.owner]
+            if (dest != null) {
+                return if (deliver(port.owner.index, dest, packet)) null else packet
+            } else if (deckDest != null) {
+                return if (deliver(port.owner.index, deckDest, packet)) null else packet
+            } else {
+                return packet
+            }
         }
 
         /** Take packets (limit caps to available room). */
@@ -1795,6 +1812,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Extractor -> false
                 is Pump -> false
                 is Sensor, is WireButton -> false
+            }
+        }
+        private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
+            return when (destination) {
                 is Hull, is Airlock -> false
             }
         }
@@ -1825,7 +1846,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Vent -> Vent()
             MachineKind.Thruster -> Thruster(facing)
             MachineKind.Pump -> Pump(facing)
-            MachineKind.Airlock -> Airlock()
             // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
             MachineKind.Wire -> null
@@ -1833,6 +1853,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
+            DeckMachineKind.Airlock -> Airlock(tile)
         }
     }
 }

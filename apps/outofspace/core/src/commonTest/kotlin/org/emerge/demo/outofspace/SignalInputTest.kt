@@ -162,7 +162,10 @@ class SignalInputTest {
             deck += Hull(grid.tile(w, y))
         }
         // The door in the starboard wall, wired to whatever is on the run beneath it.
-        machines[grid.tile(w, h / 2).index] = Airlock(
+        val airlockTile = grid.tile(w, h / 2)
+        deck -= airlockTile
+        deck += Airlock(
+            airlockTile,
             wiring = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Wire, SignalField.FULL)))),
         )
         machines[grid.tile(3, h / 2).index] = WireButton(InputKey.Right)

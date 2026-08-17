@@ -97,12 +97,12 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
         // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
         // over.
-        is Sensor, is WireButton, is Airlock, is Pump -> emptyList()
+        is Sensor, is WireButton, is Pump -> emptyList()
     }
 }
 private fun localPorts(machine: DeckMachine): List<LocalPort> {
     return when (machine) {
-        is Hull -> emptyList()
+        is Hull, is Airlock -> emptyList()
     }
 }
 

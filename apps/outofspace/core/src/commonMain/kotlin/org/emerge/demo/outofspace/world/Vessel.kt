@@ -451,7 +451,7 @@ data class VesselState(
     val flow: FlowField by lazy {
         // Airlocks resolved the way the sim resolves them, or a door standing open this tick would
         // be drawn as a wall the air flows through.
-        val openness = airlockOpenness(machines, signals)
+        val openness = airlockOpenness(deck, signals)
         val edges = EdgeGrid(grid)
         val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, deck, openness), openness)
         diffuseFluid(edges, apertures, air.copyMass(), energies = null).flow
@@ -504,6 +504,7 @@ data class VesselState(
 
     /** The machine covering a tile, wherever its centre happens to be. */
     fun machineCovering(tile: TileIndex): Machine? = machines.getOrNull(occupancy[tile].index)
+    fun deckMachineCovering(tile: TileIndex): DeckMachine? = deck[occupancy[tile]]
 
     /** The rail segment on a tile, if the layer has one there. */
     fun railAt(tile: TileIndex): Segment? = rails.getOrNull(tile.index)

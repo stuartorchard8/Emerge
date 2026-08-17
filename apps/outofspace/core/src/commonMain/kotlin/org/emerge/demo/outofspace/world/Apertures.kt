@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.Airlock
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
@@ -39,14 +41,14 @@ import org.emerge.demo.outofspace.world.machine.Machine
  * step change at the moment the door leaves shut, because containment is a yes-or-no question and
  * there is no graded answer to give it. The gas leaving is smooth; only the label snaps.
  */
-fun airlockOpenness(machines: List<Machine?>, signals: SignalField): IntArray? {
+fun airlockOpenness(deck: DeckArray, signals: SignalField): IntArray? {
     var openness: IntArray? = null
-    for (i in machines.indices) {
-        val m = machines[i]
+    for (i in 0 until deck.size) {
+        val m = deck[TileIndex(i)]
         if (m !is Airlock) continue
         val activation = m.wiring.activation(Action.Run, signals.at(TileIndex(i)))
         if (activation <= 0) continue
-        val array = openness ?: IntArray(machines.size).also { openness = it }
+        val array = openness ?: IntArray(deck.size).also { openness = it }
         array[i] = activation * ApertureField.OPEN / SignalField.FULL
     }
     return openness

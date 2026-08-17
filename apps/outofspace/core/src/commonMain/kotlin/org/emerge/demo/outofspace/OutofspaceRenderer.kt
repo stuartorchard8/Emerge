@@ -657,15 +657,6 @@ class OutofspaceRenderer {
                     )
                 }
             }
-            // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
-            // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
-            // and the player should read them as the same kind of thing.
-            is Airlock -> {
-                tileRect(x, y, 1f, kindColor(MachineKind.Airlock))
-                val open = m.wiring.activation(Action.Run, state.signals.at(tile))
-                    .coerceIn(0, SignalField.FULL) / SignalField.FULL.toFloat()
-                if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
-            }
             // A button: its face lights up while it is held, and its key is written on it by the
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
             is WireButton -> {
@@ -701,8 +692,20 @@ class OutofspaceRenderer {
     }
 
     private fun drawDeckMachine(state: VesselState, m: DeckMachine) {
+        val tile = m.center
+        val x = state.grid.xOf(tile)
+        val y = state.grid.yOf(tile)
         when (m) {
-            is Hull -> tileRect(state.grid.xOf(m.tile), state.grid.yOf(m.tile), 1f, kindColor(DeckMachineKind.Hull))
+            is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
+            // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
+            // and the player should read them as the same kind of thing.
+            is Airlock -> {
+                tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
+                val open = m.wiring.activation(Action.Run, state.signals.at(tile))
+                    .coerceIn(0, SignalField.FULL) / SignalField.FULL.toFloat()
+                if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
+            }
         }
         drawPorts(state, m)
     }
@@ -1259,8 +1262,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.KeyInput -> 0x2E3A4AFFL
-    // Lighter than hull, so a door reads as a door in a wall at a glance.
-    MachineKind.Airlock -> 0x6E7C90FFL
     MachineKind.Vent -> 0x3A3A44FFL
     MachineKind.Pump -> 0xB07840FFL
     MachineKind.Thruster -> 0xC04A30FFL
@@ -1269,6 +1270,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
 }
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Hull -> 0x4A5464FFL
+    DeckMachineKind.Airlock -> 0x6E7C90FFL
 }
 
 /**

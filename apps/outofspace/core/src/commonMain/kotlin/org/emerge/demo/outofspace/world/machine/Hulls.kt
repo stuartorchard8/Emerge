@@ -25,13 +25,13 @@ data class Vent(
  * different verbs. [org.emerge.demo.outofspace.world.StructureMap] derives the enclosed space from wherever these end up.
  */
 data class Hull(
-    val tile: TileIndex,
+    override val center: TileIndex,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DeckMachine {
-    override val tiles: Array<TileIndex> = Array(1) { tile }
+    override val tiles: Array<TileIndex> = Array(1) { center }
     override val kind: DeckMachineKind get() = DeckMachineKind.Hull
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
-    override fun movedTo(center: TileIndex): DeckMachine = copy(tile = center)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }
 
 /**
@@ -50,12 +50,13 @@ data class Hull(
  * [org.emerge.demo.outofspace.world.airlockOpenness] for what that costs and why it is right.
  */
 data class Airlock(
+    override val center: TileIndex,
     override val wiring: Wiring = SEALED,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Airlock),
-) : Machine {
-    override val kind: MachineKind get() = MachineKind.Airlock
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DeckMachine {
+    override val tiles: Array<TileIndex> = Array(1) { center }
+    override val kind: DeckMachineKind get() = DeckMachineKind.Airlock
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
         /** Wired to nothing: a freshly placed door holds pressure until it is given a channel. */

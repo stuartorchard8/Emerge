@@ -281,8 +281,6 @@ object Save {
             // heat are all written by the common code around this.
             is Pump -> {}
             is Vent -> put("vented", m.ventedMass.toString())
-            // An airlock is its wiring, and the common code around this writes that.
-            is Hull, is Airlock -> {}
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -301,7 +299,8 @@ object Save {
         }
         if (m is DirectedDeckMachine) put("facing", m.facing.name)
         when (m) {
-            is Hull -> {}
+            // An airlock is its wiring, and the common code around this writes that.
+            is Hull, is Airlock -> {}
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -922,7 +921,6 @@ object Save {
             )
             MachineKind.Vent -> Vent(ventedMass = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
-            MachineKind.Airlock -> Airlock()
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
                 fail("$kindName is a conduit, not a machine")
@@ -981,6 +979,7 @@ object Save {
 
         val machine: DeckMachine = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
+            DeckMachineKind.Airlock -> Airlock(tile)
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted

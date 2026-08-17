@@ -92,6 +92,7 @@ class DeckArray(private val machines: Array<DeckMachine?>, val masses: MassArray
      */
     operator fun set(key: TileIndex, m: DeckMachine) {
         require(machines[key.index] != null) { "nothing to replace at $key" }
+        require(m.center == key) { "tried to replace machine at $key with one at ${m.center}" }
         machines[key.index] = m
     }
 

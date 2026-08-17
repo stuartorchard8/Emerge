@@ -63,14 +63,14 @@ class StructureMap(private val kinds: ByteArray) {
                 val m = machines[tile.index] ?: continue
                 if (m.kind.isPermeable) continue
                 if ((openness?.get(tile.index) ?: 0) > 0) continue
-                val kind = if (m is Airlock) Structure.Hull else Structure.Machine
+                val kind = Structure.Machine
                 for (t in coveredTiles(grid, tile, m.kind.size)) kinds[t.index] = kind.ordinal.toByte()
             }
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
                 if (m.kind.isPermeable) continue
                 if ((openness?.get(tile.index) ?: 0) > 0) continue
-                val kind = if (m is Hull) Structure.Hull else Structure.Machine
+                val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
                 for (t in m.tiles) kinds[t.index] = kind.ordinal.toByte()
             }
 
