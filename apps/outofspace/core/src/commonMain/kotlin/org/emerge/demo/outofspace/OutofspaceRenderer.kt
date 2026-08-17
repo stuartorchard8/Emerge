@@ -298,6 +298,13 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
+                drawDeckMachine(state, state.deck[tile] ?: continue)
+            }
+        }
+
+        for (y in mMinY..mMaxY) {
+            for (x in mMinX..mMaxX) {
+                val tile = grid.tile(x, y)
                 drawMachine(state, tile, x, y, state[tile] ?: continue)
             }
         }
