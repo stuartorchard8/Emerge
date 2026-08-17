@@ -26,9 +26,11 @@ fun starterVessel(
         // Buildings anchored at centre.
         if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = m
     }
-    fun put(m: DeckMachine) {
-        // Buildings anchored at centre.
-        deck += m
+    fun put(x: Int, y: Int, m: (TileIndex) -> DeckMachine) {
+        // Buildings anchored at centre. Clipped at the rim exactly as the machine `put` is: the
+        // hull loops below run past the grid, and `grid.tile` of an off-grid (x, y) is not "no
+        // tile" — it is row-major arithmetic landing on somebody else's tile.
+        if (grid.inBounds(x, y)) deck += m(grid.tile(x, y))
     }
 
     /** Lay track, keeping existing joins (preserves crossings). */
@@ -146,12 +148,12 @@ fun starterVessel(
     val top = y - 5
     val bottom = wy + 5
     for (hx in left..right) {
-        put(Hull(grid.tile(hx, top)))
-        put(Hull(grid.tile(hx, bottom)))
+        put(hx, top, ::Hull)
+        put(hx, bottom, ::Hull)
     }
     for (hy in top+1..<bottom) {
-        put(Hull(grid.tile(left, hy)))
-        put(Hull(grid.tile(right, hy)))
+        put(left, hy, ::Hull)
+        put(right, hy, ::Hull)
     }
 
     // No rock on either plate, and that is the increment showing through rather than an omission:

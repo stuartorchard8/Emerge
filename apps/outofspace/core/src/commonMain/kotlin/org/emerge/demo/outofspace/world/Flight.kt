@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.thermalTiles
@@ -48,9 +49,9 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */
-fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>): Long {
+fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>, deck: DeckArray): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges) { _, fabric, _ -> sum += fabric }
+    forEachVesselMass(machines, conduits, bridges, deck) { _, fabric, _ -> sum += fabric }
     return sum
 }
 
@@ -77,8 +78,17 @@ inline fun forEachVesselMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
+    deck: DeckArray,
     action: (tile: TileIndex, fabric: Long, cargo: Long) -> Unit,
 ) {
+    // The deck layer weighs the same way the machine list does, tile by tile — a hull plate that
+    // moved into `deck` must not stop being part of what a thrust is divided by. Booked at the tile
+    // the metal is on rather than at the machine's anchor, which is the same answer for a one-tile
+    // machine and the better one for the centre of mass when a bigger one lands here.
+    for (t in 0 until deck.size) {
+        val m = deck[TileIndex(t)] ?: continue
+        for (tile in m.tiles) action(tile, m.kind.massPerTile, 0L)
+    }
     for (t in machines.indices) {
         val m = machines[t] ?: continue
         action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m))
@@ -105,9 +115,10 @@ fun cargoMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
+    deck: DeckArray,
 ): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges) { _, _, cargo -> sum += cargo }
+    forEachVesselMass(machines, conduits, bridges, deck) { _, _, cargo -> sum += cargo }
     return sum
 }
 
@@ -116,9 +127,10 @@ fun vesselMass(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
+    deck: DeckArray,
 ): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges) { _, fabric, cargo -> sum += fabric + cargo }
+    forEachVesselMass(machines, conduits, bridges, deck) { _, fabric, cargo -> sum += fabric + cargo }
     return sum
 }
 

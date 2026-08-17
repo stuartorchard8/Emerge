@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
@@ -71,6 +72,10 @@ class GridFitTest {
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
         for (tile in s.grid.tiles) {
+            val m = s.deck[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
+        }
+        for (tile in s.grid.tiles) {
             if (s.bridges[tile.index] == null) continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
@@ -104,7 +109,7 @@ class GridFitTest {
         // interior and the whole ship is inside-out. The pad is what makes that unrepresentable.
         val fitted = starterVessel(Grid(96, 60)).fitGrid(pad = 4)
         for (tile in fitted.grid.tiles) {
-            if (fitted[tile] == null) continue
+            if (fitted[tile] == null && fitted.deck[tile] == null) continue
             val x = fitted.grid.xOf(tile)
             val y = fitted.grid.yOf(tile)
             assertTrue(

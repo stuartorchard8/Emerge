@@ -69,7 +69,7 @@ class GridVentTest {
             deck += Hull(grid.tile(x, 4))
             deck += Hull(grid.tile(x, 8))
         }
-        for (y in 4..8) {
+        for (y in 5..7) {
             deck += Hull(grid.tile(6, y))
             deck += Hull(grid.tile(10, y))
         }

@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.sim.core.physics.primitives.Coord
 
@@ -117,6 +118,7 @@ fun massDistribution(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
+    deck: DeckArray,
 ): MassDistribution {
     var mass = 0L
     // Tile units, not millitiles: `Σ m·x` at a microgram per unit is already 2e17 on a heavy grid,
@@ -124,7 +126,7 @@ fun massDistribution(
     // the division below recovers anyway.
     var momentX = 0L
     var momentY = 0L
-    forEachVesselMass(machines, conduits, bridges) { tile, fabric, cargo ->
+    forEachVesselMass(machines, conduits, bridges, deck) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         mass += m
@@ -140,7 +142,7 @@ fun massDistribution(
     val comY = scaledRatio(momentY, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
 
     var gyrationSq = 0L
-    forEachVesselMass(machines, conduits, bridges) { tile, fabric, cargo ->
+    forEachVesselMass(machines, conduits, bridges, deck) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         val rx = tileCentre(grid.xOf(tile)) - comX

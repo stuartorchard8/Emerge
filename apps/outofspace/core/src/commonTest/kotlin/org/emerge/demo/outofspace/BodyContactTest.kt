@@ -274,7 +274,7 @@ class BodyContactTest {
         val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 2..<WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
         val state = VesselState(grid = grid, machines = machines.toList(), deck, gravity = VesselState.FREEFALL)

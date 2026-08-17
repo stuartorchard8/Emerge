@@ -41,7 +41,7 @@ class ValveTest {
             deck += Hull(grid.tile(x, 0))
             deck += Hull(grid.tile(x, grid.height - 1))
         }
-        for (y in 0 until grid.height) {
+        for (y in 1 until grid.height - 1) {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }

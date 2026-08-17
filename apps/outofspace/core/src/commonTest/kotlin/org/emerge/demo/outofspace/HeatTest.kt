@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.setTemperature
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.Structure
@@ -88,7 +89,7 @@ class HeatTest {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))
         }
-        for (y in 1..h) {
+        for (y in 2 until h) {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w, y))
         }
@@ -223,15 +224,14 @@ class HeatTest {
         val room = sealedRoom(6, 6, track = { row(2, 5, 3) })
         val g = room.grid
         val hot = g.tile(3, 1)             // a wall tile, driven to 4000K
-        val machines = room.machines.toMutableList()
-        val wall = machines[hot.index]!!
-        machines[hot.index] = wall.atKelvin(4_000)
-        var s = room.copy(machines = machines.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+        val deck = room.deck.copyOf()
+        deck[hot]!!.setTemperature(4_000, deck.energies)
+        var s = room.copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
         repeat(240*HEAT_PERIOD) {
             s = OutofspaceReducer.reduce(cfgFor(s.grid), s, emptyMap())
-            val peak = s.machines.filterNotNull().maxOfOrNull { it.kelvin } ?: Temperature.AMBIENT_KELVIN
+            val peak = s.solids.maxOfOrNull { it.kelvin } ?: Temperature.AMBIENT_KELVIN
             assertTrue(peak <= previousPeak, "the hottest body got hotter with no source: $peak > $previousPeak")
             previousPeak = peak
         }
@@ -308,7 +308,7 @@ class HeatTest {
         val deck = DeckArray(grid.size)
         // Three walls and an open side: still outside.
         for (x in 1..4) deck += Hull(grid.tile(x, 1))
-        for (y in 1..3) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(4, y)) }
+        for (y in 2..3) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(4, y)) }
         val s = VesselState(grid, machines.toList(), deck)
         assertEquals(Structure.Vacuum, s.structure[grid.tile(2, 2).index], "an open-bottomed box is not a room")
         assertEquals(0, s.structure.interiorCount)

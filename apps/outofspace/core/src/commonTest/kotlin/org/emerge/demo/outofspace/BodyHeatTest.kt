@@ -80,7 +80,7 @@ class BodyHeatTest {
         val d = deck.copyOf()
         val m = d[tile]!!
         m.setTemperature(kelvin, d.energies)
-        return copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
+        return copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }
     }
 
     private fun VesselState.railKelvin(tile: TileIndex): Int {
@@ -236,7 +236,7 @@ class BodyHeatTest {
         val world = room(8, 8)
         val g = world.grid
         val wall = g.tile(4, 1)
-        val heated = world.heatMachine(wall, 1_200)
+        val heated = world.heatDeckMachine(wall, 1_200)
 
         val settled = run(heated, 40*HEAT_PERIOD)
         val inside = settled.airKelvinAt(g.tile(4, 2))

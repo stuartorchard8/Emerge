@@ -10,7 +10,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.diameter
-import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.capacityPerTile
 import kotlin.jvm.JvmInline
 
 /**
@@ -38,6 +38,15 @@ sealed interface DeckMachine {
     val center get() = tiles[tiles.size/2]
 
     fun withWiring(wiring: Wiring): DeckMachine
+
+    /**
+     * The same machine anchored at [center] — how a world states itself on a different lattice.
+     *
+     * A machine's [tiles] are absolute grid indexes, so they mean a different place the moment the
+     * grid changes shape. Re-anchoring is the machine's own job because only it knows how its
+     * footprint hangs off its centre; see [org.emerge.demo.outofspace.world.remapped].
+     */
+    fun movedTo(center: TileIndex): DeckMachine
 
     fun energy(deckEnergy: EnergyArray) = tiles.map { deckEnergy[it] }
 
@@ -73,6 +82,19 @@ class DeckArray(private val machines: Array<DeckMachine?>, val masses: MassArray
         machines[tile.index] = null
     }
 
+    /**
+     * Swaps the machine at [key] for another standing on the same tiles, leaving the stores alone.
+     *
+     * The distinction from `-=` then `+=` is the whole reason it exists: that pair means *demolish
+     * and build*, and it zeroes the matter and re-seeds the energy at ambient. Running a machine
+     * for a tick is neither, so the tick loop uses this and a hull stops being reset to room
+     * temperature every time it is stepped.
+     */
+    operator fun set(key: TileIndex, m: DeckMachine) {
+        require(machines[key.index] != null) { "nothing to replace at $key" }
+        machines[key.index] = m
+    }
+
     operator fun plusAssign(m: DeckMachine) {
         val previous = machines[m.center.index]
         require(previous == null) // No overwriting
@@ -105,17 +127,17 @@ fun DeckArray(size: Int): DeckArray {
  * Reach for [DeckMachine.energy] directly when the gradient is the subject.
  */
 fun DeckMachine.temperatureKelvin(energies: EnergyArray): Int {
-    val capacity = kind.material.capacityPerTile * kind.diameter * kind.diameter
+    val capacity = kind.capacityPerTile * tiles.size
     val totalEnergy = tiles.sumOf { energies[it] }
     return if (capacity <= 0L) Temperature.SPACE_KELVIN else (totalEnergy / capacity).toInt()
 }
 
 /** The same machine with every one of its tiles at [kelvin] — how a uniform body is stated. */
 fun DeckMachine.setTemperature(kelvin: Int, deckEnergy: EnergyArray) =
-    setEnergy(LongArray(kind.diameter*kind.diameter) { kind.material.capacityPerTile * kelvin }, deckEnergy)
+    setEnergy(LongArray(tiles.size) { kind.capacityPerTile * kelvin }, deckEnergy)
 
 /** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
-val DeckMachine.ambientEnergy : Long get() = kind.material.capacityPerTile * Temperature.AMBIENT_KELVIN
+val DeckMachine.ambientEnergy : Long get() = kind.capacityPerTile * Temperature.AMBIENT_KELVIN
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface DirectedDeckMachine : Machine {

@@ -255,11 +255,14 @@ class ThrusterTest {
     private fun hullWithThruster(grid: Grid, facing: Direction, tile: TileIndex = TileIndex.NONE): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         // Default: mounted *in* the starboard wall, which is how a motor is actually fitted.
         val tile = if (tile != TileIndex.NONE) tile else grid.tile(HULL_RIGHT, BAY_Y)
+        // Mounted *in* the wall, so the plate it replaces comes out first — a tile carries one
+        // deck machine, and the motor is the one that is there.
+        deck -= tile
         machines[tile.index] = Thruster(
             facing = facing,
             input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),

@@ -79,7 +79,7 @@ class VaporizerTest {
     private fun hullWithVaporizer(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         machines[grid.tile(BAY_X, BAY_Y).index] = Vaporizer(

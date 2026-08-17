@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.fitToFrame
@@ -90,6 +91,10 @@ class GridFitTriggerTest {
             val m: Machine = s[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
+        for (tile in s.grid.tiles) {
+            val m = s.deck[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
+        }
         for (tile in s.grid.tiles) if (s.bridges[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         for (c in Conduit.entries) {
             val layer = s.conduits[c]
@@ -107,7 +112,7 @@ class GridFitTriggerTest {
 
     /** Every machine's position as `(x, y)`, row-major — an order a translation cannot disturb. */
     private fun positions(s: VesselState): List<Pair<Int, Int>> =
-        s.grid.tiles.filter { s[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
+        s.grid.tiles.filter { s[it] != null || s.deck[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
 
     /**
      * A world that has grown past its fit: built one tile in from the left edge and one in from the

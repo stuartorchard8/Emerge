@@ -40,7 +40,7 @@ class RemappedTest {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h - 2))
         }
-        for (y in 1 until h - 1) {
+        for (y in 2 until h - 2) {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w - 2, y))
         }
@@ -56,12 +56,13 @@ class RemappedTest {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h - 2))
         }
-        for (y in 1 until h - 1) {
+        for (y in 2 until h - 2) {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w - 2, y))
         }
-        deck += Hull(grid.tile(5, 5))
-        deck += Hull(grid.tile(10, 5))
+        // Two obstacles in the middle of the room. Guarded because a small `populatedWorld` puts
+        // the second of them on the starboard wall, and the deck refuses to be built over.
+        for (t in listOf(grid.tile(5, 5), grid.tile(10, 5))) if (deck[t] == null) deck += Hull(t)
         // Diverter
         val diverters = FlowCursors(mapOf(grid.tile(7, 7) to 1))
         // Air with uniform mass and energy

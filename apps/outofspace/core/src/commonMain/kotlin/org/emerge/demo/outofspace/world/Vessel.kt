@@ -461,7 +461,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges) }
+    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges, deck) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -624,13 +624,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges)
+    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges, deck)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMass(machines, conduits, bridges)
+    val mass: Long get() = vesselMass(machines, conduits, bridges, deck)
 
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
@@ -639,7 +639,7 @@ data class VesselState(
      * its cargo, so storing it would be storing a second answer to a question the walk already
      * answers. The tick computes it once and passes it down; a readout can afford to ask again.
      */
-    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges)
+    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges, deck)
 
     /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
@@ -902,6 +902,14 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
             "remap would discard a machine at ($ox, $oy)"
         }
     }
+    for (i in 0 until deck.size) {
+        val tile = TileIndex(i)
+        if (deck[tile] == null) continue
+        val ox = grid.xOf(tile); val oy = grid.yOf(tile)
+        require(newGrid.inBounds(ox + dx, oy + dy)) {
+            "remap would discard a machine at ($ox, $oy)"
+        }
+    }
     for (i in bridges.indices) {
         val tile = TileIndex(i)
         if (bridges[i] == null) continue
@@ -939,6 +947,23 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         val oi = grid.tile(ox, oy)
         newMachines[ni.index] = machines[oi.index]
     }
+    // The deck is three things on one lattice — the machines, their matter and their energy — so it
+    // is remapped in two passes rather than one. `+=` seeds a freshly placed machine at ambient, and
+    // this machine is not freshly placed: the stores are copied over the seed afterwards, which is
+    // also the only order in which `+=`'s "nothing here yet" requirement can hold.
+    val newDeck = DeckArray(newGrid.size)
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val m = deck[grid.tile(ox, oy)] ?: continue
+        val ni = remapTile(ox, oy) ?: continue
+        newDeck += m.movedTo(ni)
+    }
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val ni = remapTile(ox, oy) ?: continue
+        val oi = grid.tile(ox, oy)
+        newDeck.energies[ni] = deck.energies[oi]
+        for (s in Species.entries) newDeck.masses[MassIndex(ni, s)] = deck.masses[MassIndex(oi, s)]
+    }
+
     val newBridges = MutableList(newGrid.size) { null as Bridge? }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue
@@ -1075,6 +1100,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         // the old grid, which the renderer then reads at new-grid tile indices.
         motion = Motion.NONE,
         machines = newMachines,
+        deck = newDeck,
         conduits = newConduits,
         bridges = newBridges,
         diverters = newDiverters,

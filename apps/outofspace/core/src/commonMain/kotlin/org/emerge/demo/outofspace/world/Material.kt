@@ -127,7 +127,7 @@ enum class Material(
          * [org.emerge.demo.outofspace.world.machine.MachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
          * ship cools to space on the timescale it always did.
          */
-        val RADIANCE: Long get() = DeckMachineKind.Hull.material.capacityPerTile / 6_533L
+        val RADIANCE: Long get() = DeckMachineKind.Hull.capacityPerTile / 6_533L
     }
 }
 
@@ -277,6 +277,7 @@ val DeckMachineKind.capacityPerTile: Long get() = material.capacityPerTile * fil
 
 /** What crosses a contact of it: the material's conductance through the metal actually present. */
 val MachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
+val DeckMachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
 
 /** What one tile of bare conduit weighs. */
 val Conduit.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L

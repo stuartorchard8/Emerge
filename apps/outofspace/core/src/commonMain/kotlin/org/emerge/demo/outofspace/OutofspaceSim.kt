@@ -207,8 +207,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
-                w.deck -= tile
-                w += when (m) {
+                w[tile] = when (m) {
                     is Hull -> m
                 }
             }
@@ -247,7 +246,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     dm?.addEnergySpread(added, w.deck)
                 }
             }
-            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
+            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges, w.deck)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
@@ -363,7 +362,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val mass = vesselMass(machines, conduits, bridges)
+        val mass = vesselMass(machines, conduits, bridges, w.deck)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -478,6 +477,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         return state.copy(
             machines = machines,
+            deck = w.deck,
             conduits = conduits,
             bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
@@ -935,6 +935,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         operator fun set(tile: TileIndex, value: Machine) {
             machines[tile.index] = value
         }
+        operator fun set(tile: TileIndex, value: DeckMachine) {
+            deck[tile] = value
+        }
         operator fun plusAssign(value: DeckMachine) {
             deck += value
         }
@@ -990,7 +993,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * points at once. The same choice, for the same reason, that hands `state.velocityX` to
          * [driftBodies] and integrates the position from it: one frame per tick, stated once.
          */
-        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges)
+        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges, state.deck)
 
         /**
          * Where the grid sits in the world, taken once from the incoming state and shared — the same
@@ -1142,6 +1145,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Through [Body.anchor] and not [Body.tile]: a machine occupies its whole
                     // footprint but is stored only at its origin, so every part but the centre
                     // would otherwise write into whatever happens to sit on the tile it covers.
+                    // Stored per tile in the dense deck layer, so this one is addressed by where
+                    // the metal is and needs no part index at all.
+                    BodySlot.DeckStore -> deck.energies[body.tile] = energy[i]
                     BodySlot.Deck -> machines[body.anchor.index]?.let {
                         machines[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }
@@ -1295,10 +1301,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
         private fun removeMachine(tile: TileIndex): Boolean {
             val origin = originAt(tile) ?: return false
-            val machine = machines[origin.index] ?: return false
-            for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = TileIndex.NONE
-            scrapped(machine.energy.total)
-            machines[origin.index] = null
+            val machine = machines[origin.index]
+            if (machine != null) {
+                for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = TileIndex.NONE
+                scrapped(machine.energy.total)
+                machines[origin.index] = null
+                return true
+            }
+            // The deck layer is the same click. Its energy is in the dense array rather than on the
+            // object, so it is read *before* the removal — `-=` zeroes the stores on its way out.
+            val deckMachine = deck[origin] ?: return false
+            for (t in deckMachine.tiles) originOf[t] = TileIndex.NONE
+            scrapped(deckMachine.energy(deck.energies).sum())
+            deck -= origin
             return true
         }
 
@@ -1312,7 +1327,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun inject(tile: TileIndex, mass: Long, water: Boolean = false) {
             if (tile.index !in 0 until grid.size || mass <= 0L) return
-            if (originOf[tile] != TileIndex.NONE && machines[originOf[tile].index]?.kind?.isPermeable == false) return
+            val occupant = originOf[tile]
+            if (occupant != TileIndex.NONE && machines[occupant.index]?.kind?.isPermeable == false) return
+            if (occupant != TileIndex.NONE && deck[occupant]?.kind?.isPermeable == false) return
             if (water) { injectWater(tile, mass); return }
             val shares = Stuff.AMBIENT_AIR.scaledTo(mass)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather

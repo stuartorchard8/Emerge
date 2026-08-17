@@ -31,6 +31,7 @@ data class Hull(
     override val tiles: Array<TileIndex> = Array(1) { tile }
     override val kind: DeckMachineKind get() = DeckMachineKind.Hull
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(tile = center)
 }
 
 /**

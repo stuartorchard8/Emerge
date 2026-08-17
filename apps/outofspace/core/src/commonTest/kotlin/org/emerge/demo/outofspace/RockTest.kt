@@ -230,7 +230,7 @@ class RockTest {
         val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
         return VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G)

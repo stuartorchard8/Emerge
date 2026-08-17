@@ -127,7 +127,7 @@ class SignalWireTest {
                 deck += Hull(grid.tile(x, 1))
                 deck += Hull(grid.tile(x, grid.height - 2))
             }
-            for (y in 1 until grid.height - 1) {
+            for (y in 2 until grid.height - 2) {
                 deck += Hull(grid.tile(1, y))
                 deck += Hull(grid.tile(grid.width - 2, y))
             }

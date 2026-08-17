@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
@@ -8,8 +9,14 @@ import org.emerge.demo.outofspace.world.machine.Machine
  * came from once the conduction pass has worked out where it went.
  */
 enum class BodySlot {
-    /** [VesselState.machines] — buildings and hull, one entry per machine at its centre tile. */
+    /** [VesselState.machines] — buildings, one entry per machine at its centre tile. */
     Deck,
+
+    /**
+     * [VesselState.deck] — the dense deck layer, where a machine's energy is stored *per tile*
+     * rather than on the object, so this one writes back through [Body.tile] and not [Body.anchor].
+     */
+    DeckStore,
 
     /** [VesselState.conduits] — one segment per tile of one conduit layer. */
     Fitting,
@@ -114,8 +121,29 @@ fun bodiesOf(
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
+    deck: DeckArray,
 ): List<Body> {
     val out = ArrayList<Body>(64)
+    // The deck layer first, so "deck, then fittings, then spans" still reads in order. One body per
+    // tile here too, and for once that needs no index arithmetic: the machine names its own tiles
+    // and its energy is already stored against them.
+    for (tile in grid.tiles) {
+        val m = deck[tile] ?: continue
+        for (part in m.tiles) {
+            out.add(
+                Body(
+                    slot = BodySlot.DeckStore,
+                    tile = part,
+                    anchor = tile,
+                    material = m.kind.material,
+                    permeable = m.kind.isPermeable,
+                    energy = deck.energies[part],
+                    capacity = m.kind.capacityPerTile,
+                    conductance = m.kind.conductance,
+                )
+            )
+        }
+    }
     for (i in machines.indices) {
         val m = machines[i] ?: continue
         // ⚠️ One body per TILE of the machine, not one per machine — step 6b of

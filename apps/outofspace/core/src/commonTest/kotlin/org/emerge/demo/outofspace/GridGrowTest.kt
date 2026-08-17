@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Motion
+import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.growToFit
@@ -85,6 +86,10 @@ class GridGrowTest {
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
         for (tile in s.grid.tiles) {
+            val m = s.deck[tile] ?: continue
+            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
+        }
+        for (tile in s.grid.tiles) {
             if (s.bridges[tile.index] == null) continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         }
@@ -109,7 +114,7 @@ class GridGrowTest {
      * the point: if they stop lining up, something moved that should not have.
      */
     private fun positions(s: VesselState): List<Pair<Int, Int>> =
-        s.grid.tiles.filter { s[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
+        s.grid.tiles.filter { s[it] != null || s.deck[it] != null }.map { s.grid.xOf(it) to s.grid.yOf(it) }
 
     /** The tiles a layer occupies, as `(x, y)` in the grid that holds them. */
     private fun occupied(s: VesselState, of: (VesselState) -> List<Int>): Set<Pair<Int, Int>> =
