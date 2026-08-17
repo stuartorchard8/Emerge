@@ -67,7 +67,7 @@ object OutofspaceBench {
 
         // ── The suspects, on real state from the warmed world ──
         val edges = EdgeGrid(grid)
-        val structure = StructureMap.derive(grid, state.machines)
+        val structure = StructureMap.derive(grid, state.machines, state.deck)
         val apertures = ApertureField.derive(edges, structure)
         val mass = state.air.copyMass()
         val energy = state.air.copyEnergy()

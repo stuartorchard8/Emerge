@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsBreakdown
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -49,6 +50,7 @@ class GaugeTest {
     private fun line(carrying: Resource): VesselState {
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.tile(3, 2).index] = Storage(Direction.Right, carrying)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
@@ -60,6 +62,7 @@ class GaugeTest {
         return VesselState(
             grid,
             m.toList(),
+            deck,
             conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
         )
     }
@@ -113,11 +116,12 @@ class GaugeTest {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.tile(3, 2).index] = Storage(Direction.Right, pure)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
-        val bare = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")

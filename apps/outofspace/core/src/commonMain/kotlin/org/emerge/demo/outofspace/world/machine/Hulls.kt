@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.EnergyArray
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /** A vent: throws material overboard. Somewhere for slag to go that is not "jam the line". */
@@ -23,12 +25,12 @@ data class Vent(
  * different verbs. [org.emerge.demo.outofspace.world.StructureMap] derives the enclosed space from wherever these end up.
  */
 data class Hull(
+    val tile: TileIndex,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Hull),
-) : Machine {
-    override val kind: MachineKind get() = MachineKind.Hull
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DeckMachine {
+    override val tiles: Array<TileIndex> = Array(1) { tile }
+    override val kind: DeckMachineKind get() = DeckMachineKind.Hull
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
 }
 
 /**

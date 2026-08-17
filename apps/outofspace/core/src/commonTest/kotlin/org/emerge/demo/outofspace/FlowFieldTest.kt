@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.diffuseFluid
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -30,7 +31,7 @@ class FlowFieldTest {
 
     private val grid = Grid(5, 5)
     private val edges = EdgeGrid(grid)
-    private val structure = StructureMap.derive(grid, List(grid.size) { null })
+    private val structure = StructureMap.derive(grid, List(grid.size) { null }, DeckArray(grid.size))
     private val apertures = ApertureField.derive(edges, structure)
 
     /**

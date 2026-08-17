@@ -25,6 +25,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
@@ -144,6 +145,7 @@ class WiringTest {
         return VesselState(
             grid,
             listOf(Storage(Direction.Right, stored), Sensor(Direction.Left)),
+            DeckArray(grid.size),
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
         )
     }
@@ -162,6 +164,7 @@ class WiringTest {
         var s = VesselState(
             grid,
             listOf(null, Sensor(Direction.Left)),
+            DeckArray(grid.size),
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
         )
         s = run(s, 1)
@@ -190,9 +193,10 @@ class WiringTest {
         fun groundInASecond(w: Wiring): Long {
             val grid = Grid(5, 5)
             val machines = arrayOfNulls<Machine>(grid.size)
+            val deck = DeckArray(grid.size)
             val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
-            val s = run(VesselState(grid, machines.toList(), bodies = feed), 4)
-            return (s[grid.tile(2, 2)] as Extractor).buffer.mass
+            val s = run(VesselState(grid, machines.toList(), deck, bodies = feed), 4)
+            return (s[grid.tile(2, 2)] as? Extractor)!!.buffer.mass
         }
         // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_MASS`, which was
         // the same number only by the coincidence that a packet was four ticks' output — a
@@ -212,14 +216,15 @@ class WiringTest {
         val grid = Grid(12, 6)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         m[grid.tile(3, 3).index] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
         m[grid.tile(8, 3).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
 
         s = run(s, RAIL_PERIOD * 8)
-        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.tile(3, 3)] as Storage).contents?.mass, "it let go of nothing")
+        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.tile(3, 3)] as? Storage)!!.contents?.mass, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.railAt(grid.tile(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
@@ -241,6 +246,7 @@ class WiringTest {
         // takes it in at x=5. The sensor sits below the tank looking up at its bottom row.
         val grid = Grid(12, 8)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val feed = feedExtractor(
             grid, machines, 2, 3,
             wiring = wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000),
@@ -256,7 +262,7 @@ class WiringTest {
         signalRow(grid, wires, 2, 6, 5)
         signalCol(grid, wires, 2, 3, 5)
         var s = VesselState(
-            grid, machines.toList(),
+            grid, machines.toList(), deck,
             conduits = Conduits.of(
                 grid.size,
                 Conduit.Rail to rails.toList(),
@@ -273,7 +279,7 @@ class WiringTest {
         // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
         // lurches that say nothing about a rate.
         fun ground(w: VesselState): Long =
-            w.extractedMass - ((w[grid.tile(2, 3)] as Extractor).input?.mass ?: 0L)
+            w.extractedMass - ((w[grid.tile(2, 3)] as? Extractor)!!.input?.mass ?: 0L)
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
@@ -289,7 +295,7 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue((s[grid.tile(6, 3)] as Storage).contents!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue((s[grid.tile(6, 3)] as? Storage)!!.contents!!.mass <= Storage.CAP, "and it never overfills")
     }
 
     @Test
@@ -313,7 +319,8 @@ class WiringTest {
     @Test
     fun `wiring edits add, change and remove terms`() {
         val grid = Grid(2, 1)
-        val base = VesselState(grid, listOf(Extractor(Direction.Right), null))
+        val deck = DeckArray(grid.size)
+        val base = VesselState(grid, listOf(Extractor(Direction.Right), null), deck)
 
         val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(TileIndex(0), Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
         assertEquals(2, added[TileIndex(0)]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
@@ -330,7 +337,7 @@ class WiringTest {
         // Room for the whole footprint: a place that would hang off the grid is refused outright.
         val grid = Grid(8, 6)
         val at = grid.tile(3, 3)
-        var s = VesselState(grid, List(grid.size) { null })
+        var s = VesselState.empty(grid)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Extractor, Direction.Right))))
         assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s[at]!!.wiring.triggers(Action.Run))
     }
@@ -339,9 +346,10 @@ class WiringTest {
     fun `wiring survives rotation`() {
         val grid = Grid(2, 1)
         val wired = Extractor(Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
-        var s = VesselState(grid, listOf(wired, null))
+        val deck = DeckArray(grid.size)
+        var s = VesselState(grid, listOf(wired, null), deck)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(TileIndex(0)))))
-        assertEquals(Direction.Down, (s[TileIndex(0)] as Extractor).facing)
+        assertEquals(Direction.Down, (s[TileIndex(0)] as? Extractor)!!.facing)
         assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s[TileIndex(0)]!!.wiring.triggers(Action.Run))
     }
 
@@ -356,11 +364,12 @@ class WiringTest {
     private fun twoUp(upstream: Machine): VesselState {
         val g = Grid(12, 6)
         val m = arrayOfNulls<Machine>(g.size)
+        val deck = DeckArray(g.size)
         val rails = arrayOfNulls<Segment>(g.size)
         m[g.tile(3, 3).index] = upstream                  // output port at (4, 3)
         m[g.tile(7, 3).index] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
-        return VesselState(g, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        return VesselState(g, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
     }
 
     @Test
@@ -371,12 +380,12 @@ class WiringTest {
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut).grid
         var s = run(twoUp(shut), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, (s[g.tile(3, 3)] as Storage).contents!!.mass, "a closed valve holds everything")
-        assertNull((s[g.tile(7, 3)] as Storage).contents, "so nothing arrives downstream")
+        assertEquals(5 * Capacity.PACKET_MASS, (s[g.tile(3, 3)] as? Storage)!!.contents!!.mass, "a closed valve holds everything")
+        assertNull((s[g.tile(7, 3)] as? Storage)!!.contents, "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(Direction.Right, stored)), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.tile(7, 3)] as Storage).contents!!.mass, "an open one drains into the next tank")
-        assertNull((s2[g.tile(3, 3)] as Storage).contents, "and empties itself doing it")
+        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.tile(7, 3)] as? Storage)!!.contents!!.mass, "an open one drains into the next tank")
+        assertNull((s2[g.tile(3, 3)] as? Storage)!!.contents, "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────

@@ -1,17 +1,26 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Structure
+import org.emerge.demo.outofspace.world.Stuff
+import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.capacityPerTile
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,16 +66,21 @@ class AirlockTest {
     private fun roomWithDoor(door: Machine?, w: Int = 8, h: Int = 8): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1..w) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h))
         }
-        for (y in 1..h) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w, y).index] = Hull()
+        for (y in 2 until h) {
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w, y))
         }
-        if (door != null) machines[grid.tile(w, h / 2).index] = door
-        return VesselState(grid, machines.toList())
+        if (door != null) {
+            val doorTile = grid.tile(w, h / 2)
+            deck -= doorTile
+            machines[doorTile.index] = door
+        }
+        return VesselState(grid, machines.toList(), deck = deck)
     }
 
     /** The tile just inside the door — the one whose containment the flood fill has to get right. */
@@ -91,7 +105,7 @@ class AirlockTest {
     @Test
     fun `a shut airlock behaves exactly as the hull it replaces`() {
         val withDoor = run(roomWithDoor(Airlock()), 60)
-        val withWall = run(roomWithDoor(Hull()), 60)
+        val withWall = run(roomWithDoor(null), 60)
 
         assertEquals(withWall.atmosphereMass, withDoor.atmosphereMass)
         assertEquals(withWall.airVentedMass, withDoor.airVentedMass)

@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,11 +44,12 @@ class MotionTest {
     private fun line(tankX: Int = 9): VesselState {
         val grid = cfg.initialGrid
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
         m[grid.tile(tankX, 3).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
-        return VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed)
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -134,6 +136,7 @@ class MotionTest {
     private fun bridged(): VesselState {
         val grid = cfg.initialGrid
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
@@ -142,7 +145,7 @@ class MotionTest {
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         return VesselState(
-            grid, m.toList(),
+            grid, m.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bridges = bridges.toList(),
             bodies = feed,

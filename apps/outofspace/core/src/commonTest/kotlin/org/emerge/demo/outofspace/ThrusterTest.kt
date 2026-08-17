@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
@@ -210,7 +211,7 @@ class ThrusterTest {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
         val state = hullWithThruster(grid, Direction.Left, tile = grid.tile(HULL_LEFT + 4, BAY_Y))
-        val structure = StructureMap.derive(grid, state.machines)
+        val structure = StructureMap.derive(grid, state.machines, state.deck)
 
         val blocked = exhaustPath(grid, structure, grid.tile(HULL_LEFT + 4, BAY_Y), Direction.Left)
         assertEquals(grid.tile(HULL_LEFT, BAY_Y), blocked.blocker, "the wall is the blocker")
@@ -237,8 +238,8 @@ class ThrusterTest {
         val played = controller.state
         val loaded = Save.read(Save.write(played))
         val here = cfg.initialGrid.tile(HULL_RIGHT, BAY_Y)
-        val before = played[here] as Thruster
-        val after = loaded[here] as Thruster
+        val before = played[here] as? Thruster
+        val after = loaded[here] as? Thruster
         assertEquals(before, after, "the thruster did not survive the round trip")
         assertEquals(played.ventedMass, loaded.ventedMass)
         assertEquals(played.exhaustMomentumX, loaded.exhaustMomentumX)
@@ -253,7 +254,8 @@ class ThrusterTest {
      */
     private fun hullWithThruster(grid: Grid, facing: Direction, tile: TileIndex = TileIndex.NONE): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         // Default: mounted *in* the starboard wall, which is how a motor is actually fitted.
@@ -265,6 +267,7 @@ class ThrusterTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
         )
     }

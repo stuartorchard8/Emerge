@@ -7,11 +7,13 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -50,6 +52,8 @@ data class VesselState(
     val grid: Grid,
     /** The deck: buildings, walls, the things that take up floor space. */
     val machines: List<Machine?>,
+    /** Matter and energy storage for all the machines that have a deck footprint. */
+    val deck: DeckArray,
     /**
      * The conduit layers — one grid of segments per network, sharing tiles freely with the deck
      * beneath and with each other.
@@ -229,10 +233,10 @@ data class VesselState(
      */
     val networks: SignalNetworks = SignalNetworks.derive(grid, conduits),
     /** Derived from where the hull is, every tick — see [StructureMap]. */
-    val structure: StructureMap = StructureMap.derive(grid, machines),
+    val structure: StructureMap = StructureMap.derive(grid, machines, deck),
     /** Which tiles each machine covers, derived every tick — see [Occupancy]. */
-    val occupancy: Occupancy = Occupancy.derive(grid, machines),
-    val air: Stuff = Stuff.ambientAir(grid, StructureMap.derive(grid, machines)),
+    val occupancy: Occupancy = Occupancy.derive(grid, machines, deck),
+    val air: Stuff = Stuff.ambientAir(grid, StructureMap.derive(grid, machines, deck)),
     /**
      * What is inside the pipes — a **second fluid field**, on the same lattice and run by the same
      * solver, holding its own gas at its own pressure and temperature.
@@ -251,8 +255,6 @@ data class VesselState(
     val pipeAir: Stuff = Stuff.empty(grid.size),
     /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
     val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
-    /** Matter and energy storage for all the machines that have a deck footprint. */
-    val deck: Stuff = Stuff.empty(grid.size),
     /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
      * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
@@ -282,7 +284,7 @@ data class VesselState(
      *    [acquiredEnergy] cancels the double-count: `stored` holds the energy and `acquired`
      *    records the transfer so the ledger stays closed.
      */
-    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges),
+    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges) + deck.totalEnergy,
     /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
@@ -451,7 +453,7 @@ data class VesselState(
         // be drawn as a wall the air flows through.
         val openness = airlockOpenness(machines, signals)
         val edges = EdgeGrid(grid)
-        val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, openness), openness)
+        val apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines, deck, openness), openness)
         diffuseFluid(edges, apertures, air.copyMass(), energies = null).flow
     }
 
@@ -536,7 +538,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
-    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges)
+    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.energies.data.sum()
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass
@@ -759,7 +761,7 @@ data class VesselState(
          */
         val PLATING_ONE_G: Frac2 = Frac2(Frac(0L, 1), Frac(1L, 1))
 
-        fun empty(grid: Grid): VesselState = VesselState(grid, List(grid.size) { null })
+        fun empty(grid: Grid): VesselState = VesselState(grid, List(grid.size) { null }, DeckArray(grid.size))
     }
 }
 

@@ -66,12 +66,8 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
         return sum
     }
 
-    /** Total thermal energy of the atmosphere — the ledger quantity, the twin of [totalMass]. */
-    val totalEnergy: Long get() {
-        var sum = 0L
-        energies.forEach { sum += it }
-        return sum
-    }
+    /** Total thermal energy of the stuff — the ledger quantity, the twin of [totalMass]. */
+    val totalEnergy: Long get() = energies.data.sum()
 
     fun copyMass(): MassArray = masses.copyOf()
 

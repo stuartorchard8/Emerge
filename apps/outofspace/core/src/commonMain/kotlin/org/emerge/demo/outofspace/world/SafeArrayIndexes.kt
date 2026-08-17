@@ -19,16 +19,10 @@ value class TileArray(val data: IntArray) {
         data[key.index] = value.index
     }
 
-    inline fun contentEquals(other: TileArray) : Boolean = data.contentEquals(other.data)
-    inline fun contentHashCode() : Int = data.contentHashCode()
-    inline fun copyOf() : TileArray = TileArray(data.copyOf())
+    fun contentEquals(other: TileArray) : Boolean = data.contentEquals(other.data)
+    fun contentHashCode() : Int = data.contentHashCode()
+    fun copyOf() : TileArray = TileArray(data.copyOf())
     inline val size : Int get() = data.size
-    inline fun extendedBy(other: TileArray) : TileArray {
-        val newArray = IntArray(data.size+other.data.size)
-        data.copyInto(newArray)
-        other.data.copyInto(newArray, data.size)
-        return TileArray(newArray)
-    }
 }
 fun TileArray(size: Int, init: (Int) -> TileIndex = { TileIndex.NONE}): TileArray {
     return TileArray(IntArray(size, { init(it).index }))
@@ -52,13 +46,6 @@ value class MassArray(val data: LongArray) {
     fun contentEquals(other: MassArray) : Boolean = data.contentEquals(other.data)
     fun contentHashCode() : Int = data.contentHashCode()
     val size : Int get() = data.size
-    fun extendedBy(other: MassArray) : MassArray {
-        // TODO: no extension, just fixed-size internal multi-layer
-        val newArray = LongArray(data.size+other.data.size)
-        data.copyInto(newArray)
-        other.data.copyInto(newArray, data.size)
-        return MassArray(newArray)
-    }
     inline fun forEach(action: (Long) -> Unit) {
         for (i in data.indices) {
             action(data[i])

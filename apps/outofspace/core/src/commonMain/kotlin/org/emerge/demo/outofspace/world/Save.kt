@@ -13,11 +13,15 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
@@ -114,6 +118,11 @@ object Save {
             out.append("machine ").append(tile.index).append(' ').append(writeMachine(m))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
+        for (tile in state.grid.tiles) {
+            val m = state.deck[tile] ?: continue
+            out.append("deckmachine ").append(tile.index).append(' ').append(writeDeckMachine(m))
+            out.append("   # ").append(where(state.grid, tile)).append('\n')
+        }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
         // record always named its own network, but while there was one list per tile the keyword
         // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
@@ -147,6 +156,7 @@ object Save {
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyEnergy().data)
+        writeSparse(out, "deckheat", state.deck.energies.copyOf().data)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
@@ -281,6 +291,21 @@ object Save {
         // fields hides the one machine that is actually hot. Version 5 and later; a version 4 file
         // has no per-body heat at all and every body loads at ambient.
         if (m.energy != ambientEnergy(m.kind)) put("k", writeTileEnergy(m.energy))
+        return f.toString()
+    }
+
+    private fun writeDeckMachine(m: DeckMachine): String {
+        val f = StringBuilder(m.kind.name)
+        fun put(key: String, value: String?) {
+            if (value != null) f.append(' ').append(key).append('=').append(value)
+        }
+        if (m is DirectedDeckMachine) put("facing", m.facing.name)
+        when (m) {
+            is Hull -> {}
+        }
+        // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
+        // them — the file should show the wiring somebody actually did.
+        if (m.wiring != Wiring.RUNNING) put("wire", writeWiring(m.wiring))
         return f.toString()
     }
 
@@ -476,6 +501,7 @@ object Save {
         if (grid.size <= 0) throw SaveError("line $gridLine: grid has no tiles")
 
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<TileIndex, Int>()
@@ -544,10 +570,10 @@ object Save {
              * has to name it too.
              */
             fun energy(i: Int): Long = energyScale.of(long(i))
-            fun tile(i: Int): Int {
+            fun tile(i: Int): TileIndex {
                 val t = tokens.getOrNull(i)?.toIntOrNull() ?: fail("expected a tile index")
                 if (t !in 0 until grid.size) fail("tile $t is outside a ${grid.width}x${grid.height} grid")
-                return t
+                return TileIndex(t)
             }
 
             when (tokens[0]) {
@@ -578,8 +604,19 @@ object Save {
 
                 "machine" -> {
                     val t = tile(1)
-                    if (machines[t] != null) fail("two machines at tile $t")
-                    machines[t] = readMachine(tokens.drop(2), version, scale, energyScale, ::fail)
+                    if (machines[t.index] != null) fail("two machines at tile $t")
+                    if (deck[t] != null) fail("two machines at tile $t")
+                    val (m, dm) = readMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
+                    machines[t.index] = m
+                    if (dm != null) {
+                        deck += dm
+                    }
+                }
+                "deckmachine" -> {
+                    val t = tile(1)
+                    if (machines[t.index] != null) fail("two machines at tile $t")
+                    if (deck[t] != null) fail("two machines at tile $t")
+                    deck += readDeckMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
                 }
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
@@ -588,16 +625,17 @@ object Save {
                     val layer = layers[segment.conduit.ordinal]
                     // Per layer, not per tile. Two segments on one tile is what layers are *for*;
                     // two of the same conduit on one tile is still a corrupt file.
-                    if (layer[t] != null) fail("two ${segment.conduit.label} segments at tile $t")
-                    layer[t] = segment
+                    if (layer[t.index] != null) fail("two ${segment.conduit.label} segments at tile $t")
+                    layer[t.index] = segment
                 }
                 "bridge" -> {
                     val t = tile(1)
-                    if (bridges[t] != null) fail("two bridges at tile $t")
-                    bridges[t] = readMachine(tokens.drop(2), version, scale, energyScale, ::fail) as? Bridge ?: fail("not a bridge")
+                    if (bridges[t.index] != null) fail("two bridges at tile $t")
+                    val (bridge, _) = readMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
+                    bridges[t.index] = bridge as? Bridge ?: fail("not a bridge")
                 }
-                "diverter" -> diverters[TileIndex(tile(1))] = long(2).toInt()
-                "merge" -> merges[TileIndex(tile(1))] = long(2).toInt()
+                "diverter" -> diverters[tile(1)] = long(2).toInt()
+                "merge" -> merges[tile(1)] = long(2).toInt()
                 // V4 stored heat per tile — averaged, which is why it was replaced. Parse for well-formedness, drop.
                 "heat" -> for (i in 1 until tokens.size) {
                     val eq = tokens[i].indexOf('=')
@@ -607,10 +645,11 @@ object Save {
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
+                "deckheat" -> readSparse(tokens, deck.energies.data, energyScale, ::fail)
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) pipeMass[MassIndex(TileIndex(t), s)] = mix[s]
+                    for (s in Species.ALL) pipeMass[MassIndex(t, s)] = mix[s]
                 }
                 "pipeairheat" -> readSparse(tokens, pipeEnergy.data, energyScale, ::fail)
                 "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
@@ -662,14 +701,14 @@ object Save {
                 "air" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) airMass[MassIndex(TileIndex(t), s)] = mix[s]
+                    for (s in Species.ALL) airMass[MassIndex(t, s)] = mix[s]
                 }
                 else -> fail("unknown entry '${tokens[0]}'")
             }
         }
 
-        val structure = StructureMap.derive(grid, machines.toList())
-        val occupancy = Occupancy.derive(grid, machines.toList())
+        val structure = StructureMap.derive(grid, machines.toList(), deck)
+        val occupancy = Occupancy.derive(grid, machines.toList(), deck)
         val conduits = Conduits.of(
             grid.size,
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
@@ -709,6 +748,7 @@ object Save {
             grid = grid,
             gridPad = GRID_PAD,
             machines = machines.toList(),
+            deck = deck,
             conduits = conduits,
             bridges = bridges.toList(),
             diverters = FlowCursors(diverters, merges),
@@ -778,11 +818,15 @@ object Save {
     private fun readMachine(
         tokens: List<String>,
         version: Int,
+        tile: TileIndex,
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
-    ): Machine {
+    ): Pair<Machine?, DeckMachine?> {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
+        if (kindName in DeckMachineKind.ALL.map { it.toString() }) {
+            return null to readDeckMachine(tokens, version, tile, scale, energyScale, fail)
+        }
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
         // body of its own, because the rock it is standing on is the ore body now.
@@ -878,7 +922,6 @@ object Save {
             )
             MachineKind.Vent -> Vent(ventedMass = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
-            MachineKind.Hull -> Hull()
             MachineKind.Airlock -> Airlock()
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
@@ -894,7 +937,56 @@ object Save {
         val heated = f["k"]?.let { j ->
             machine.withEnergy(readTileEnergy(j, machine, version, energyScale, fail))
         } ?: machine
-        return heated.withWiring(wiring)
+        return heated.withWiring(wiring) to null
+    }
+
+    private fun readDeckMachine(
+        tokens: List<String>,
+        version: Int,
+        tile: TileIndex,
+        scale: Rescale,
+        energyScale: Rescale,
+        fail: (String) -> Nothing,
+    ): DeckMachine {
+        val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
+        val kind = DeckMachineKind.ALL.firstOrNull { it.name == kindName }
+            ?: fail("unknown machine '$kindName'")
+        val f = fields(tokens.drop(1), fail)
+
+        fun facing(): Direction = f["facing"]?.let { name ->
+            Direction.ALL.firstOrNull { it.name == name } ?: fail("unknown direction '$name'")
+        } ?: fail("$kindName needs a facing")
+        fun res(key: String): Resource? = f[key]?.let { readResource(it, scale, fail) }
+        fun num(key: String, fallback: Long): Long =
+            f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
+        // ⚠️ Scales the value read from the file but NOT the fallback, which is a current-unit
+        // constant off the machine's own data class. Scaling a default would rescale a number that
+        // was never in the old unit to begin with.
+        fun massNum(key: String, fallback: Long): Long =
+            f[key]?.let { scale.of(it.toLongOrNull() ?: fail("bad number '$it'")) } ?: fallback
+
+        // V1 rate was per second; V2+ is per tick. Convert v1 by dividing by V1_TICKS_PER_SECOND.
+        /**
+         * A machine's throughput, defaulting to **that machine kind's own current default**.
+         *
+         * ⚠️ The fallback used to be a literal per machine — a fourth copy of a number already
+         * stated on the data class — so a save with no `rate` field loaded a machine running at
+         * whatever the rate was when this function was written. That is the "caller restates a
+         * constant it does not own" family again, and it survived a rate change silently.
+         */
+        fun rate(fallback: Long): Long {
+            val stored = massNum("rate", fallback * V1_TICKS_PER_SECOND)
+            return if (version < 2) stored / V1_TICKS_PER_SECOND else massNum("rate", fallback)
+        }
+
+        val machine: DeckMachine = when (kind) {
+            DeckMachineKind.Hull -> Hull(tile)
+        }
+        // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
+        // the same for every machine but the airlock, which ships sealed — and a door that defaulted
+        // to running would come back from a hand-written save wide open.
+        val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
+        return machine.withWiring(wiring)
     }
 
     private fun readSegment(

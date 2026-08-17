@@ -16,6 +16,8 @@ import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MomentumField
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,31 +35,33 @@ class RemappedTest {
     private fun simpleWorld(w: Int, h: Int): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1 until w - 1) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h - 2).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h - 2))
         }
         for (y in 1 until h - 1) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w - 2, y).index] = Hull()
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w - 2, y))
         }
-        return VesselState(grid, machines.toList())
+        return VesselState(grid, machines.toList(), deck)
     }
 
     private fun populatedWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         // Hull
         for (x in 1 until w - 1) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h - 2).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h - 2))
         }
         for (y in 1 until h - 1) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w - 2, y).index] = Hull()
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w - 2, y))
         }
-        machines[grid.tile(5, 5).index] = Hull()
-        machines[grid.tile(10, 5).index] = Hull()
+        deck += Hull(grid.tile(5, 5))
+        deck += Hull(grid.tile(10, 5))
         // Diverter
         val diverters = FlowCursors(mapOf(grid.tile(7, 7) to 1))
         // Air with uniform mass and energy
@@ -85,6 +89,7 @@ class RemappedTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             diverters = diverters,
             air = air,
             momentum = momentum,
@@ -136,11 +141,11 @@ class RemappedTest {
         // Old machine at (5, 5) should now be at (9, 8)
         val oldTile = oldGrid.tile(5, 5)
         val newTile = newGrid.tile(9, 8)
-        assertEquals(s0[oldTile], s1[newTile])
+        assertEquals(s0.deck[oldTile], s1.deck[newTile])
         // Edge machine
         val edgeTile = oldGrid.tile(0, 0)
         val edgeNewTile = newGrid.tile(dx, dy)
-        assertEquals(s0[edgeTile], s1[edgeNewTile])
+        assertEquals(s0.deck[edgeTile], s1.deck[edgeNewTile])
     }
 
     @Test
@@ -175,8 +180,8 @@ class RemappedTest {
         val dx = 2
         val dy = 2
         val bridgeTile = oldGrid.tile(5, 5)
-        val s0withBridge = s0.copy(machines = s0.machines.toMutableList().also {
-            it[bridgeTile.index] = Hull()
+        val s0withBridge = s0.copy(deck = s0.deck.copyOf().also {
+            it += Hull(bridgeTile)
         })
         val s1 = s0withBridge.remapped(newGrid, dx, dy)
         val newTile = newGrid.tile(5 + dx, 5 + dy)
@@ -551,7 +556,7 @@ class RemappedTest {
                 val nx = x + dx
                 val ny = y + dy
                 val newTile = newGrid.tile(nx, ny)
-                assertEquals(s0[oldTile], s1[newTile],
+                assertEquals(s0.deck[oldTile], s1.deck[newTile],
                     "machine at ($x,$y) -> ($nx,$ny)")
             }
         }

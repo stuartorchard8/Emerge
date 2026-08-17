@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.MomentumField
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.remapped
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -63,13 +64,14 @@ class GridVentTest {
     private fun gassyWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 6..10) {
-            machines[grid.tile(x, 4).index] = Hull()
-            machines[grid.tile(x, 8).index] = Hull()
+            deck += Hull(grid.tile(x, 4))
+            deck += Hull(grid.tile(x, 8))
         }
         for (y in 4..8) {
-            machines[grid.tile(6, y).index] = Hull()
-            machines[grid.tile(10, y).index] = Hull()
+            deck += Hull(grid.tile(6, y))
+            deck += Hull(grid.tile(10, y))
         }
 
         // Air everywhere, different in every tile, and in two species so a per-species stride bug
@@ -104,6 +106,7 @@ class GridVentTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             air = air,
             pipeAir = pipeAir,
             momentum = MomentumField.of(edges, momX, momY),

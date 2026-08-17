@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
@@ -15,8 +14,8 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -63,6 +62,7 @@ class ProcessorChainTest {
         val grid = Grid(12, 10)
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.tile(3, 3).index] = Processor(Direction.Right, input = ore)   // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
@@ -72,11 +72,11 @@ class ProcessorChainTest {
         m[grid.tile(3, 8).index] = Storage(Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 800)
 
-        val forward = (s[grid.tile(7, 3)] as Storage).contents
-        val below = (s[grid.tile(3, 8)] as Storage).contents
+        val forward = (s[grid.tile(7, 3)] as? Storage)?.contents
+        val below = (s[grid.tile(3, 8)] as? Storage)?.contents
 
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         // Against the *feed*, which is the claim: 41% ore in, appreciably richer out.
@@ -118,6 +118,7 @@ class ProcessorChainTest {
     fun `a processor with nowhere to put its tailings backs up instead of hoarding them`() {
         val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
@@ -127,13 +128,13 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), conduits = Conduits.ofRails(rails.toList()), bodies = feed)
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed)
         // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
         // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
         s = run(s, 1800)
 
         for (x in stages) {
-            val held = (s[grid.tile(x, 3)] as Processor).tailings?.mass ?: 0L
+            val held = (s[grid.tile(x, 3)] as? Processor)?.tailings?.mass ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",

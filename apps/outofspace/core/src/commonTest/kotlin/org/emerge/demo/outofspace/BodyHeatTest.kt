@@ -18,8 +18,12 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.ambientEnergy
+import org.emerge.demo.outofspace.world.machine.setTemperature
+import org.emerge.demo.outofspace.world.material
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -52,16 +56,17 @@ class BodyHeatTest {
     ): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1..w) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h))
         }
-        for (y in 1..h) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w, y).index] = Hull()
+        for (y in 2..<h) {
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w, y))
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
-        return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails(grid)))
+        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid)))
     }
 
     /** The state with the body stored at [tile] set to [kelvin], and its ledger re-anchored. */
@@ -70,6 +75,12 @@ class BodyHeatTest {
         val m = list[tile.index]!!
         list[tile.index] = m.atKelvin(kelvin)
         return copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+    }
+    private fun VesselState.heatDeckMachine(tile: TileIndex, kelvin: Int): VesselState {
+        val d = deck.copyOf()
+        val m = d[tile]!!
+        m.setTemperature(kelvin, d.energies)
+        return copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
     }
 
     private fun VesselState.railKelvin(tile: TileIndex): Int {
@@ -103,7 +114,7 @@ class BodyHeatTest {
         list[tile.index] = cold.withEnergy(cold.energy.with(0, perTile * 2_000L))
         val seeded = world.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
 
-        fun tiles(s: VesselState) = (s[tile] as Machine).energy
+        fun tiles(s: VesselState) = s[tile]!!.energy
         val start = tiles(seeded)
         assertEquals(25, start.size, "a five-by-five smelter stores twenty-five figures, not one")
 
@@ -141,10 +152,10 @@ class BodyHeatTest {
         val before = world.copy(machines = list.toList())
 
         val after = Save.read(Save.write(before))
-        val restored = after[tile] as Machine
+        val restored = after[tile]
         assertEquals(
-            (before[tile] as Machine).energy,
-            restored.energy,
+            before[tile]!!.energy,
+            restored!!.energy,
             "a saved machine must come back holding exactly what it held, tile by tile",
         )
     }
@@ -269,15 +280,15 @@ class BodyHeatTest {
     fun `building and scrapping a body books its energy in and out`() {
         val grid = Grid(6, 5)
         val at = grid.tile(2, 2)
-        var s = VesselState(grid, List(grid.size) { null })
+        var s = VesselState.empty(grid)
         val cfg = cfgFor(grid)
 
         s = OutofspaceReducer.reduce(
             cfg, s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Place(at, MachineKind.Hull, Direction.Right)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Hull, Direction.Right)))),
         )
         assertEquals(
-            ambientEnergy(MachineKind.Hull).total,
+            ambientEnergy(DeckMachineKind.Hull).total,
             s.insertedEnergy,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
@@ -290,7 +301,7 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.insertedEnergy < ambientEnergy(MachineKind.Hull).total / 1_000L,
+            s.insertedEnergy < ambientEnergy(DeckMachineKind.Hull).total / 1_000L,
             "and scrapping it takes that heat back out: ${s.insertedEnergy}",
         )
     }

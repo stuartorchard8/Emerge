@@ -24,8 +24,6 @@ class SignalNetworkTest {
     private val grid = Grid(12, 8)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
-    private fun empty(): VesselState = VesselState(grid, List(grid.size) { null })
-
     private fun edit(state: VesselState, vararg edits: Edit): VesselState =
         OutofspaceReducer.reduce(cfg, state, mapOf(PlayerId(0) to OutofspaceInput(edits.toList())))
 
@@ -43,7 +41,7 @@ class SignalNetworkTest {
 
     @Test
     fun `bare wire is one network per run`() {
-        var s = drag(empty(), y = 2, fromX = 1, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 2, fromX = 1, toX = 4)
         s = drag(s, y = 6, fromX = 1, toX = 4)
         val n = networks(s)
 
@@ -60,7 +58,7 @@ class SignalNetworkTest {
      */
     @Test
     fun `touching is not joining`() {
-        var s = drag(empty(), y = 2, fromX = 1, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 2, fromX = 1, toX = 4)
         s = drag(s, y = 3, fromX = 1, toX = 4)
         val n = networks(s)
 
@@ -69,7 +67,7 @@ class SignalNetworkTest {
 
     @Test
     fun `joining two runs makes one network`() {
-        var s = drag(empty(), y = 2, fromX = 1, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 2, fromX = 1, toX = 4)
         s = drag(s, y = 4, fromX = 1, toX = 4)
         assertEquals(2, networks(s).count)
 
@@ -84,7 +82,7 @@ class SignalNetworkTest {
 
     @Test
     fun `cutting a run makes two networks`() {
-        val s = drag(empty(), y = 2, fromX = 1, toX = 6)
+        val s = drag(VesselState.empty(grid), y = 2, fromX = 1, toX = 6)
         assertEquals(1, networks(s).count)
 
         val cut = edit(s, Edit.Cut(grid.tile(3, 2), grid.tile(4, 2), Conduit.Signal))
@@ -96,7 +94,7 @@ class SignalNetworkTest {
 
     @Test
     fun `an isolated tile is a network of one`() {
-        val s = edit(empty(), Edit.Place(grid.tile(5, 5), MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
+        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(5, 5), MachineKind.Wire, org.emerge.demo.outofspace.world.Direction.Right))
         val n = networks(s)
 
         assertEquals(1, n.count)
@@ -105,7 +103,7 @@ class SignalNetworkTest {
 
     @Test
     fun `a tile with no wire is on no network`() {
-        val s = drag(empty(), y = 2, fromX = 1, toX = 4)
+        val s = drag(VesselState.empty(grid), y = 2, fromX = 1, toX = 4)
         assertEquals(-1, networks(s)[grid.tile(7, 7)])
     }
 
@@ -119,7 +117,7 @@ class SignalNetworkTest {
     @Test
     fun `networks are numbered by their lowest tile`() {
         // Laid bottom-first, so discovery order and index order disagree if anything gets this wrong.
-        var s = drag(empty(), y = 6, fromX = 1, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 6, fromX = 1, toX = 4)
         s = drag(s, y = 2, fromX = 1, toX = 4)
         val n = networks(s)
 
@@ -132,7 +130,7 @@ class SignalNetworkTest {
 
     @Test
     fun `ids survive a save and load`() {
-        var s = drag(empty(), y = 6, fromX = 1, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 6, fromX = 1, toX = 4)
         s = drag(s, y = 2, fromX = 1, toX = 4)
 
         val before = networks(s)

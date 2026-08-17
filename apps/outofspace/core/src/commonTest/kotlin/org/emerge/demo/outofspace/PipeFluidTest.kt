@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
 import org.emerge.sim.core.PlayerId
@@ -36,17 +37,17 @@ class PipeFluidTest {
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
     /** A sealed hull, so the room air has nowhere to go and cannot muddy the ledger. */
-    private fun hulled(): List<Machine?> {
-        val m = arrayOfNulls<Machine>(grid.size)
+    private fun hulled(): DeckArray {
+        val deck = DeckArray(grid.size)
         for (x in 0 until grid.width) {
-            m[grid.tile(x, 0).index] = Hull()
-            m[grid.tile(x, grid.height - 1).index] = Hull()
+            deck += Hull(grid.tile(x, 0))
+            deck += Hull(grid.tile(x, grid.height - 1))
         }
         for (y in 0 until grid.height) {
-            m[grid.tile(0, y).index] = Hull()
-            m[grid.tile(grid.width - 1, y).index] = Hull()
+            deck += Hull(grid.tile(0, y))
+            deck += Hull(grid.tile(grid.width - 1, y))
         }
-        return m.toList()
+        return deck
     }
 
     private fun lay(state: VesselState, from: TileIndex, to: TileIndex): VesselState =
@@ -62,7 +63,7 @@ class PipeFluidTest {
 
     /** A pipe run along row [y] from [fromX] to [toX], with gas put into its first cell. */
     private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, mass: Long = 400L): VesselState {
-        var s = VesselState(grid, hulled())
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled())
         for (x in fromX until toX) s = lay(s, grid.tile(x, y), grid.tile(x + 1, y))
 
         val tile = grid.tile(fromX, y)
@@ -139,7 +140,7 @@ class PipeFluidTest {
 
     @Test
     fun `no pipe means no open face anywhere`() {
-        val bare = VesselState(grid, hulled())
+        val bare = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled())
         val edges = EdgeGrid(grid)
         val apertures = pipeApertures(edges, bare.conduits)
 
@@ -149,7 +150,7 @@ class PipeFluidTest {
 
     @Test
     fun `pipes laid side by side without being drawn together stay separate`() {
-        var s = VesselState(grid, hulled())
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled())
         // Two parallel runs one tile apart, each drawn on its own.
         for (x in 3 until 8) s = lay(s, grid.tile(x, 4), grid.tile(x + 1, 4))
         for (x in 3 until 8) s = lay(s, grid.tile(x, 5), grid.tile(x + 1, 5))

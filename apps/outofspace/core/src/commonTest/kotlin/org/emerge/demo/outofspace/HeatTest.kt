@@ -21,6 +21,9 @@ import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
@@ -80,16 +83,17 @@ class HeatTest {
     ): VesselState {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1..w) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h))
         }
         for (y in 1..h) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w, y).index] = Hull()
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w, y))
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
-        return VesselState(grid, machines.toList(), conduits = Conduits.ofRails(rails(grid, track)))
+        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid, track)))
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────
@@ -121,11 +125,12 @@ class HeatTest {
     fun `only hull seals - a wall of machinery does not`() {
         val grid = Grid(5, 3)
         val machines = arrayOfNulls<Machine>(15)
+        val deck = DeckArray(grid.size)
         for (x in 0 until 5) {
             machines[grid.tile(x, 0).index] = Sensor(Direction.Right)
             machines[grid.tile(x, 2).index] = Sensor(Direction.Right)
         }
-        val s = VesselState(grid, machines.toList())
+        val s = VesselState(grid, machines.toList(), deck)
         assertEquals(
             Structure.Vacuum,
             s.structure[grid.tile(2, 1).index],
@@ -258,8 +263,9 @@ class HeatTest {
         val grid = Grid(11, 11)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         machines[grid.tile(5, 5).index] = Smelter(Direction.Right, input = ore)
-        var s = VesselState(grid, machines.toList())
+        var s = VesselState(grid, machines.toList(), deck)
         s = run(s, 40*HEAT_PERIOD)
 
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing
@@ -279,9 +285,9 @@ class HeatTest {
     @Test
     fun `placing hull is an ordinary build action`() {
         val grid = Grid(4, 3)
-        var s = VesselState(grid, List(grid.size) { null })
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(1, 1), MachineKind.Hull, Direction.Right))))
-        assertTrue(s[grid.tile(1, 1)] is Hull)
+        var s = VesselState.empty(grid)
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(1, 1), DeckMachineKind.Hull, Direction.Right))))
+        assertTrue(s.deck[grid.tile(1, 1)] is Hull)
         assertEquals(Structure.Hull, s.structure[grid.tile(1, 1).index])
     }
 
@@ -299,10 +305,11 @@ class HeatTest {
     fun `structure derivation is not fooled by a hull that only half encloses`() {
         val grid = Grid(6, 5)
         val machines = arrayOfNulls<Machine>(30)
+        val deck = DeckArray(grid.size)
         // Three walls and an open side: still outside.
-        for (x in 1..4) machines[grid.tile(x, 1).index] = Hull()
-        for (y in 1..3) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(4, y).index] = Hull() }
-        val s = VesselState(grid, machines.toList())
+        for (x in 1..4) deck += Hull(grid.tile(x, 1))
+        for (y in 1..3) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(4, y)) }
+        val s = VesselState(grid, machines.toList(), deck)
         assertEquals(Structure.Vacuum, s.structure[grid.tile(2, 2).index], "an open-bottomed box is not a room")
         assertEquals(0, s.structure.interiorCount)
     }

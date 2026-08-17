@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -77,7 +78,8 @@ class VaporizerTest {
     /** A hull box with a fuelled vaporizer amidships and an ordinary atmosphere around it. */
     private fun hullWithVaporizer(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         machines[grid.tile(BAY_X, BAY_Y).index] = Vaporizer(
@@ -85,7 +87,7 @@ class VaporizerTest {
             // A volatile, so what comes out is a gas anybody would recognise as one.
             input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)),
         )
-        return VesselState(grid = grid, machines = machines.toList())
+        return VesselState(grid = grid, machines = machines.toList(), deck = deck)
     }
 
     private companion object {

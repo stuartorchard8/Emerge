@@ -21,6 +21,8 @@ import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
@@ -483,7 +485,11 @@ class OutofspaceHud {
         if (controller.tool != Tool.Wire) return
         val tile = controller.selected
         if (tile == TileIndex.NONE) return
-        val machine = controller.state[tile] ?: return
+        val machine: Machine = controller.state[tile] ?: return
+        machineWiringPanel(controller, tile, machine)
+    }
+
+    private fun org.emerge.render.torus.ui.UiBuilder.machineWiringPanel(controller: OutofspaceController, tile: TileIndex, machine: Machine) {
         val grid = controller.state.grid
 
         // Bottom-right (not centred — build palette owns bottom-left).
@@ -517,7 +523,12 @@ class OutofspaceHud {
                     if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
                 val target = if (watched != TileIndex.NONE) controller.state[watched] else null
-                row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+                if (target != null) {
+                    row("watching: ${target.kind.label}", 0x9A9A9AFFL)
+                } else {
+                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deck[watched] else null
+                    row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+                }
                 gap()
             }
 

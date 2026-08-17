@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -96,13 +97,44 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
         // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
         // over.
-        is Sensor, is WireButton, is Hull, is Airlock, is Pump -> emptyList()
+        is Sensor, is WireButton, is Airlock, is Pump -> emptyList()
+    }
+}
+private fun localPorts(machine: DeckMachine): List<LocalPort> {
+    return when (machine) {
+        is Hull -> emptyList()
     }
 }
 
 /** The ports of the machine stored at [centreTile], in world tiles. Empty if it has none or is clipped. */
 fun portsOf(grid: Grid, machine: Machine, centreTile: TileIndex): List<Port> {
     val turns = (machine as? Directed)?.facing?.ordinal ?: 0
+    val cx = grid.xOf(centreTile)
+    val cy = grid.yOf(centreTile)
+    val out = ArrayList<Port>(4)
+    for (p in localPorts(machine)) {
+        var dx = p.dx
+        var dy = p.dy
+        var side = p.side
+        // Direction's declaration order is clockwise, so facing.ordinal is exactly how many quarter
+        // turns to apply. (dx, dy) -> (-dy, dx) is that turn with +y pointing down the screen.
+        repeat(turns) {
+            val nx = -dy
+            dy = dx
+            dx = nx
+            side = side.clockwise
+        }
+        val x = cx + dx
+        val y = cy + dy
+        if (grid.inBounds(x, y)) {
+            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, machine is Bridge))
+        }
+    }
+    return out
+}
+fun portsOf(grid: Grid, machine: DeckMachine): List<Port> {
+    val turns = (machine as? Directed)?.facing?.ordinal ?: 0
+    val centreTile = machine.center
     val cx = grid.xOf(centreTile)
     val cy = grid.yOf(centreTile)
     val out = ArrayList<Port>(4)

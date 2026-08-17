@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.thermalTiles
 
@@ -126,7 +127,7 @@ enum class Material(
          * [org.emerge.demo.outofspace.world.machine.MachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
          * ship cools to space on the timescale it always did.
          */
-        val RADIANCE: Long get() = MachineKind.Hull.capacityPerTile / 6_533L
+        val RADIANCE: Long get() = DeckMachineKind.Hull.material.capacityPerTile / 6_533L
     }
 }
 
@@ -185,7 +186,7 @@ fun seriesConductance(a: Long, b: Long): Long {
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
 val MachineKind.material: Material
     get() = when (this) {
-        MachineKind.Hull, MachineKind.Airlock -> Material.Steel
+        MachineKind.Airlock -> Material.Steel
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
         MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
@@ -195,6 +196,10 @@ val MachineKind.material: Material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
         MachineKind.Bridge -> Conduit.Rail.material
         MachineKind.Wire -> Conduit.Signal.material
+    }
+val DeckMachineKind.material: Material
+    get() = when (this) {
+        DeckMachineKind.Hull -> Material.Steel
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -224,7 +229,7 @@ val Conduit.material: Material
 val MachineKind.fillPermille: Int
     get() = when (this) {
         // Plate: a few centimetres of steel over a metre of face, plus framing.
-        MachineKind.Hull, MachineKind.Airlock -> 60
+        MachineKind.Airlock -> 60
 
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
@@ -248,6 +253,11 @@ val MachineKind.fillPermille: Int
         // A cable.
         MachineKind.Wire -> 2
     }
+val DeckMachineKind.fillPermille: Int
+    get() = when (this) {
+        // Plate: a few centimetres of steel over a metre of face, plus framing.
+        DeckMachineKind.Hull -> 60
+    }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */
 val Conduit.fillPermille: Int
@@ -259,9 +269,11 @@ val Conduit.fillPermille: Int
 
 /** What one tile of this kind weighs: its material's real density, at the fraction it fills. */
 val MachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
+val DeckMachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
 
 /** Millijoules per kelvin for one tile of it — the same fill, the same fact. */
 val MachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
+val DeckMachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
 
 /** What crosses a contact of it: the material's conductance through the metal actually present. */
 val MachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L

@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -40,10 +41,11 @@ class EditorToolsTest {
     /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
     private fun layered(): OutofspaceController {
         val machines = arrayOfNulls<Machine>(grid.size)
-        for (x in 2..10) { machines[grid.tile(x, 2).index] = Hull(); machines[grid.tile(x, 8).index] = Hull() }
-        for (y in 2..8) { machines[grid.tile(2, y).index] = Hull(); machines[grid.tile(10, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        for (x in 2..10) { deck += Hull(grid.tile(x, 2)); deck += Hull(grid.tile(x, 8)) }
+        for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         machines[grid.tile(6, 5).index] = Storage(Direction.Right)
-        val c = OutofspaceController(cfg, VesselState(grid, machines.toList()))
+        val c = OutofspaceController(cfg, VesselState.empty(grid))
         c.brush = MachineKind.Rail
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))
@@ -65,14 +67,14 @@ class EditorToolsTest {
         val tile = grid.tile(6, 5)
         assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the fixture built no rail")
         assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "the fixture built no pipe")
-        assertTrue(c.state[tile] is Storage, "the fixture built no tank")
+        assertTrue(c.state[tile] as? Storage != null, "the fixture built no tank")
 
         c.removeAt(tile, DeleteLayer.Pipe)
         c.stepOnce()
 
         assertNull(c.state.conduits[Conduit.Pipe][tile.index], "the pipe survived being named")
         assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the rail came off with the pipe")
-        assertTrue(c.state[tile] is Storage, "the tank came off with the pipe")
+        assertTrue(c.state[tile] as? Storage != null, "the tank came off with the pipe")
     }
 
     /** The deck can be reached through what is threaded over it, which TOP could never do in one go. */

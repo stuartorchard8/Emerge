@@ -126,7 +126,11 @@ internal fun VesselState.placedBounds(): IntArray? {
 
     for (tile in grid.tiles) {
         val m = machines[tile.index] ?: continue
-        cover(grid.xOf(tile), grid.yOf(tile), m.kind.size / 2)
+        cover(grid.xOf(tile), grid.yOf(tile), m.kind.reach)
+    }
+    for (tile in grid.tiles) {
+        val m = deck[tile] ?: continue
+        cover(grid.xOf(tile), grid.yOf(tile), m.kind.reach)
     }
     for (tile in grid.tiles) {
         if (bridges[tile.index] == null) continue

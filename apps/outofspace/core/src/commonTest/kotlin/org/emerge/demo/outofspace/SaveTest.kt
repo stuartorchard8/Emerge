@@ -22,6 +22,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -287,6 +288,7 @@ class SaveTest {
     @Test
     fun `two runs that cross without touching still do after a reload`() {
         val grid = Grid(8, 8)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         fun lay(x: Int, y: Int) { rails[grid.tile(x, y).index] = rails[grid.tile(x, y).index] ?: Segment(org.emerge.demo.outofspace.world.Conduit.Rail) }
         fun join(a: TileIndex, b: TileIndex, dir: Direction) {
@@ -298,7 +300,7 @@ class SaveTest {
         for (x in 1..4) join(grid.tile(x, 3), grid.tile(x + 1, 3), Direction.Right)
         for (y in 1..4) join(grid.tile(3, y), grid.tile(3, y + 1), Direction.Down)
 
-        val state = VesselState(grid, List(grid.size) { null }, conduits = Conduits.ofRails(rails.toList()))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()))
         val reloaded = Save.read(Save.write(state))
         for (tile in grid.tiles) {
             assertEquals(rails[tile.index]?.links, reloaded.railAt(tile)?.links, "links differ at tile $tile")
@@ -308,6 +310,7 @@ class SaveTest {
     @Test
     fun `both layers of a crossing survive a save`() {
         val grid = Grid(8, 6)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val pipes = arrayOfNulls<Segment>(grid.size)
         val crossing = grid.tile(4, 3)
@@ -317,6 +320,7 @@ class SaveTest {
         val state = VesselState(
             grid,
             List(grid.size) { null },
+            deck,
             conduits = Conduits.of(
                 grid.size,
                 Conduit.Rail to rails.toList(),
@@ -356,12 +360,13 @@ class SaveTest {
     @Test
     fun `a gauge keeps that it is one, and its last reading`() {
         val grid = Grid(6, 4)
+        val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0))
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
-        val state = VesselState(grid, List(grid.size) { null }, conduits = Conduits.ofRails(rails.toList()))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()))
         val back = Save.read(Save.write(state)).railAt(grid.tile(2, 2))
         assertNotNull(back)
         assertTrue(back.isGauge)
@@ -375,6 +380,7 @@ class SaveTest {
     fun `a machine keeps its wiring, its buffers and its fractional carry`() {
         val grid = Grid(10, 10)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         machines[grid.tile(4, 4).index] = Extractor(
             Direction.Right,
             input = Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)),
@@ -386,19 +392,19 @@ class SaveTest {
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.tile(7, 4).index] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
 
-        val state = VesselState(grid, machines.toList())
+        val state = VesselState(grid, machines.toList(), deck)
         val back = Save.read(Save.write(state))
 
-        val extractor = back[grid.tile(4, 4)] as Extractor
-        assertEquals(37L, extractor.carry)
+        val extractor = back[grid.tile(4, 4)] as? Extractor
+        assertEquals(37L, extractor!!.carry)
         assertEquals(123L, extractor.buffer.mass)
         assertEquals(700L, extractor.input?.mixture?.get(Species.Iron), "the cell in the jaws too")
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
 
-        val tank = back[grid.tile(7, 4)] as Storage
-        assertEquals(Form.IronIngot, tank.contents?.form)
+        val tank = back[grid.tile(7, 4)] as? Storage
+        assertEquals(Form.IronIngot, tank!!.contents?.form)
         assertEquals(900L, tank.contents?.mass)
     }
 
@@ -432,7 +438,7 @@ class SaveTest {
             """.trimIndent(),
         )
         assertEquals(Grid(6, 4), state.grid)
-        assertEquals(Direction.Up, (state[TileIndex(8)] as Sensor).facing)
+        assertEquals(Direction.Up, (state[TileIndex(8)] as? Sensor)?.facing)
         // The save says 250 and 250, and a version-1 save is written in mass — so what comes back is
         // half a kilogram in whatever this build's unit is, not the digits on the page.
         assertEquals(500L * Budget.GRAM, state.railAt(TileIndex(10))?.held?.mass)

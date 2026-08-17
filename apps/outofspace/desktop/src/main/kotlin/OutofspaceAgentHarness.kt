@@ -21,6 +21,9 @@ import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.physics.primitives.Frac
@@ -393,7 +396,7 @@ object OutofspaceAgentHarness {
             var minX = Int.MAX_VALUE
             var minY = Int.MAX_VALUE
             for (tile in grid.tiles) {
-                if (state[tile] == null) continue
+                if (state[tile] == null && state.deck[tile] == null) continue
                 val x = grid.xOf(tile)
                 val y = grid.yOf(tile)
                 if (x < minX) minX = x
@@ -405,6 +408,8 @@ object OutofspaceAgentHarness {
         /** The first tile holding a machine of this kind, in row-major order, or null. */
         private fun anchorOf(kind: MachineKind): TileIndex? =
             state.grid.tiles.firstOrNull { state[it]?.kind == kind }
+        private fun anchorOf(kind: DeckMachineKind): TileIndex? =
+            state.grid.tiles.firstOrNull { (state.deck[it])?.kind == kind }
 
         private fun resolveLandmark(name: String, grid: Grid, isXAxis: Boolean): Int {
             if (name == "origin") {
@@ -585,7 +590,9 @@ object OutofspaceAgentHarness {
             var minX = Int.MAX_VALUE; var minY = Int.MAX_VALUE
             var maxX = Int.MIN_VALUE; var maxY = Int.MIN_VALUE
             for (tile in grid.tiles) {
-                if (state[tile] == null && state.railAt(tile) == null) continue
+                if (state[tile] == null
+                    && state.deck[tile] == null
+                    && state.railAt(tile) == null) continue
                 val x = grid.xOf(tile); val y = grid.yOf(tile)
                 minX = min(minX, x); maxX = max(maxX, x)
                 minY = min(minY, y); maxY = max(maxY, y)

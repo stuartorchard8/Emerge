@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.collectHullContacts
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.demo.outofspace.world.solveContacts
 import org.emerge.sim.core.physics.primitives.Coord
@@ -404,10 +405,12 @@ class ContactTest {
     private fun wall(): VesselState {
         val grid = Grid(12, 12)
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[grid.tile(WALL.toInt(), ROW.toInt()).index] = Hull()
+        val deck = DeckArray(grid.size)
+        deck += Hull(grid.tile(WALL.toInt(), ROW.toInt()))
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
         )
     }

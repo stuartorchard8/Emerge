@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.angularVelocity
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.torqueAbout
@@ -229,7 +230,8 @@ class RotationTest {
      */
     private fun box(grid: Grid, vararg bays: Int): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         for (y in bays) {
@@ -241,6 +243,7 @@ class RotationTest {
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
         )
     }

@@ -10,9 +10,11 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.remapped
-import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -79,7 +81,7 @@ class GridGrowTest {
         }
 
         for (tile in s.grid.tiles) {
-            val m = s[tile] ?: continue
+            val m: Machine = s[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
         for (tile in s.grid.tiles) {
@@ -115,9 +117,9 @@ class GridGrowTest {
 
     /** [state] with a hull dropped straight into the tile list — a placement with no reducer. */
     private fun withHullAt(state: VesselState, x: Int, y: Int): VesselState {
-        val machines = state.machines.toMutableList()
-        machines[state.grid.tile(x, y).index] = Hull()
-        return state.copy(machines = machines)
+        val deck = state.deck.copyOf()
+        deck += Hull(state.grid.tile(x, y))
+        return state.copy(deck = deck)
     }
 
     /**
@@ -238,7 +240,7 @@ class GridGrowTest {
 
             val grown = edit(
                 before,
-                Edit.Place(before.grid.tile(at.first, at.second), MachineKind.Hull, Direction.Right),
+                Edit.PlaceDeck(before.grid.tile(at.first, at.second), DeckMachineKind.Hull, Direction.Right),
             )
             assertNotEquals(before.grid, grown.grid, "$name: the reducer did not grow the grid")
             assertBalanced(grown, "straight after growing $name")
@@ -353,7 +355,7 @@ class GridGrowTest {
         controller.tool = Tool.Build
 
         // Build into the left pad: the near edge, so the origin moves.
-        controller.brush = MachineKind.Hull
+        controller.deckBrush = DeckMachineKind.Hull
         controller.place(before.grid.tile(1, before.grid.height / 2))
         val after = controller.stepOnce()
 
@@ -379,7 +381,7 @@ class GridGrowTest {
             // A: grows during the tick the edit lands.
             val a0 = fitted()
             val target = a0.grid.tile(at.first, at.second)
-            val a1 = edit(a0, Edit.Place(target, MachineKind.Hull, Direction.Right))
+            val a1 = edit(a0, Edit.PlaceDeck(target, DeckMachineKind.Hull, Direction.Right))
 
             // B: the same world, already the size A will grow to, with the same edit at the tile it
             // will have ended up at. `remapped` is P1's, tested in isolation, so B leans on nothing
@@ -388,7 +390,7 @@ class GridGrowTest {
             val b0 = a0.remapped(shape.state.grid, shape.dx, shape.dy)
             val b1 = edit(
                 b0,
-                Edit.Place(b0.grid.tile(at.first + shape.dx, at.second + shape.dy), MachineKind.Hull, Direction.Right),
+                Edit.PlaceDeck(b0.grid.tile(at.first + shape.dx, at.second + shape.dy), DeckMachineKind.Hull, Direction.Right),
             )
 
             assertEquals(a1.grid, b1.grid, "$name: A did not reach B's shape")

@@ -9,6 +9,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -320,13 +321,15 @@ class FlightTest {
     /** A hull with no air in it, so a burn is arithmetic rather than a measurement. */
     private fun vacuumHull(grid: Grid, ballast: Boolean): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         if (ballast) for (x in HULL_LEFT..HULL_RIGHT) for (y in HULL_TOP + 1 until BREACH_Y) put(x, y)
         return VesselState(
             grid = grid,
             machines = machines.toList(),
+            deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
         )
     }
@@ -334,10 +337,11 @@ class FlightTest {
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
     private fun bareHull(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
-        return VesselState(grid = grid, machines = machines.toList())
+        return VesselState(grid = grid, machines = machines.toList(), deck=deck)
     }
 
     private fun abs(v: Long): Long = if (v < 0L) -v else v

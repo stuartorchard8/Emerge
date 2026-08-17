@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -29,8 +30,6 @@ class SignalWireTest {
     private val grid = Grid(12, 8)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
-    private fun empty(): VesselState = VesselState(grid, List(grid.size) { null })
-
     private fun edit(state: VesselState, vararg edits: Edit): VesselState =
         OutofspaceReducer.reduce(cfg, state, mapOf(PlayerId(0) to OutofspaceInput(edits.toList())))
 
@@ -49,7 +48,7 @@ class SignalWireTest {
 
     @Test
     fun `a dragged run joins tile to tile`() {
-        val s = drag(empty(), y = 3, fromX = 2, toX = 5)
+        val s = drag(VesselState.empty(grid), y = 3, fromX = 2, toX = 5)
 
         for (x in 2..5) assertNotNull(wireAt(s, x, 3), "no wire at x=$x")
         assertTrue(wireAt(s, 2, 3)!!.linkedTo(Direction.Right), "the first tile should join rightward")
@@ -64,7 +63,7 @@ class SignalWireTest {
      */
     @Test
     fun `two runs that merely touch are not joined`() {
-        var s = drag(empty(), y = 3, fromX = 2, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 3, fromX = 2, toX = 4)
         s = drag(s, y = 4, fromX = 2, toX = 4)
 
         for (x in 2..4) {
@@ -75,7 +74,7 @@ class SignalWireTest {
 
     @Test
     fun `a single tile can be placed on its own`() {
-        val s = edit(empty(), Edit.Place(grid.tile(6, 2), MachineKind.Wire, Direction.Right))
+        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(6, 2), MachineKind.Wire, Direction.Right))
         val stub = wireAt(s, 6, 2)
 
         assertNotNull(stub, "placing the wire brush on one tile should leave a stub")
@@ -85,7 +84,7 @@ class SignalWireTest {
 
     @Test
     fun `wire comes off again`() {
-        var s = drag(empty(), y = 3, fromX = 2, toX = 4)
+        var s = drag(VesselState.empty(grid), y = 3, fromX = 2, toX = 4)
         s = edit(s, Edit.Remove(grid.tile(3, 3), DeleteLayer.Top))
 
         assertNull(wireAt(s, 3, 3), "the wire should be gone")
@@ -99,7 +98,7 @@ class SignalWireTest {
 
     @Test
     fun `save and load round-trips a laid network, links included`() {
-        val s = drag(empty(), y = 3, fromX = 2, toX = 5)
+        val s = drag(VesselState.empty(grid), y = 3, fromX = 2, toX = 5)
         val reloaded = Save.read(Save.write(s))
 
         for (x in 2..5) {
@@ -123,15 +122,16 @@ class SignalWireTest {
     fun `wire displaces nothing`() {
         fun room(): VesselState {
             val machines = arrayOfNulls<Machine>(grid.size)
+            val deck = DeckArray(grid.size)
             for (x in 1 until grid.width - 1) {
-                machines[grid.tile(x, 1).index] = Hull()
-                machines[grid.tile(x, grid.height - 2).index] = Hull()
+                deck += Hull(grid.tile(x, 1))
+                deck += Hull(grid.tile(x, grid.height - 2))
             }
             for (y in 1 until grid.height - 1) {
-                machines[grid.tile(1, y).index] = Hull()
-                machines[grid.tile(grid.width - 2, y).index] = Hull()
+                deck += Hull(grid.tile(1, y))
+                deck += Hull(grid.tile(grid.width - 2, y))
             }
-            return VesselState(grid, machines.toList())
+            return VesselState(grid, machines.toList(), deck)
         }
 
         var wired = room()

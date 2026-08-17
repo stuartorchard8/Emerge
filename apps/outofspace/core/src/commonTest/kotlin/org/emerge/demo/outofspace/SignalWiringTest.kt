@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -77,6 +78,7 @@ class SignalWiringTest {
      */
     private fun rig(fill: Long, wired: Boolean = true): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
         machines[grid.tile(extractorAt.first, extractorAt.second).index] =
             Extractor(Direction.Right).withWiring(stopWhenFull)
@@ -90,15 +92,16 @@ class SignalWiringTest {
         return VesselState(
             grid,
             machines.toList(),
+            deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
         )
     }
 
-    private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as Extractor
+    private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
-    private fun ground(s: VesselState): Long = s.extractedMass - (extractor(s).input?.mass ?: 0L)
+    private fun ground(s: VesselState): Long = s.extractedMass - (extractor(s)!!.input?.mass ?: 0L)
 
     // ── The point of the plan ─────────────────────────────────────────────────
 
@@ -111,7 +114,7 @@ class SignalWiringTest {
             s.signals.at(grid.tile(extractorAt.first, extractorAt.second)),
             "a full tank should be driving the whole run, including the far end",
         )
-        assertEquals(0, extractor(s).wiring.activation(Action.Run, s.signals.at(grid.tile(extractorAt.first, extractorAt.second))))
+        assertEquals(0, extractor(s)!!.wiring.activation(Action.Run, s.signals.at(grid.tile(extractorAt.first, extractorAt.second))))
     }
 
     /**
@@ -162,6 +165,7 @@ class SignalWiringTest {
     @Test
     fun `two machines on one run see the same value`() {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         machines[grid.tile(13, 5).index] = Storage(Direction.Right, stored)
         machines[grid.tile(12, 3).index] = Sensor(Direction.Down)
@@ -169,7 +173,7 @@ class SignalWiringTest {
         signalRow(wires, 2, 12, 3)
 
         val s = run(
-            VesselState(grid, machines.toList(), conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
             2,
         )
         assertEquals(s.signals.at(grid.tile(2, 3)), s.signals.at(grid.tile(10, 3)))

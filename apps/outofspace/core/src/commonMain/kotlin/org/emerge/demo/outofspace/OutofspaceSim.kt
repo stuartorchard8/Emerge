@@ -33,7 +33,7 @@ import org.emerge.demo.outofspace.world.coveredTiles
 import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.portsOf
-import org.emerge.demo.outofspace.world.size
+import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.Body
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.BodySlot
@@ -104,7 +104,11 @@ import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.heatCapacity
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.size
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
@@ -154,7 +158,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var networks = SignalNetworks.none(w.grid.size)
         var signals = SignalField.none(w.grid.size)
         var openness = IntArray(w.machines.size)
-        var structure = StructureMap.derive(w.grid, w.machines, openness)
+        var structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
         if (shouldRun(state.tick, MACHINE_PERIOD)) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
@@ -162,7 +166,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             w.networks = networks
             signals = SignalField.build(networks) { raise ->
                 for (tile in w.grid.tiles) {
-                    when (val m = w[tile]) {
+                    when (val m : Machine? = w[tile]) {
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
                             val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
@@ -184,10 +188,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
             openness = airlockOpenness(w.machines, signals) ?: IntArray(w.machines.size)
-            structure = StructureMap.derive(w.grid, w.machines, openness)
+            structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
 
             for (tile in w.grid.tiles) {
-                val m = w[tile] ?: continue
+                val m : Machine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
                     is Extractor -> w.leech(m, activation, tile)
@@ -197,7 +201,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
                     is Airlock, is Bridge, is Pump, is Sensor, is Storage,
-                    is Hull, is Vent, is WireButton -> m
+                    is Vent, is WireButton -> m
+                }
+            }
+            for (tile in w.grid.tiles) {
+                val m : DeckMachine = w[tile] ?: continue
+                val activation = m.wiring.activation(Action.Run, signals.at(tile))
+                w.deck -= tile
+                w += when (m) {
+                    is Hull -> m
                 }
             }
         }
@@ -227,15 +239,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (tile in w.grid.tiles) {
                 val added = w.heatAdded[tile.index]
                 if (added == 0L) continue
-                val m = w[tile] ?: continue
-                w[tile] = m.withEnergy(m.energy.plusEnergySpread(added))
+                val m : Machine? = w[tile]
+                if (m != null) {
+                    w[tile] = m.withEnergy(m.energy.plusEnergySpread(added))
+                } else {
+                    val dm : DeckMachine? = w[tile]
+                    dm?.addEnergySpread(added, w.deck)
+                }
             }
             val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
                 structure = structure,
-                airEnergy = w.energies,
+                airEnergy = w.airEnergy,
                 heatCapacity = heatCapacity(state.grid.size, w.masses),
             )
             conductedRadiated = result.radiated
@@ -256,7 +273,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             exchangeLayers(
                 openings = valveOpenings(state.grid, conduits),
                 roomMass = w.masses,
-                roomEnergy = w.energies,
+                roomEnergy = w.airEnergy,
                 pipeMass = w.pipeMass,
                 pipeEnergy = w.pipeEnergy,
                 pipeVolumes = volumes,
@@ -266,7 +283,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             applyPumps(
                 demands = pumpDemands(state.grid, w.machines, conduits, signals),
                 roomMass = w.masses,
-                roomEnergy = w.energies,
+                roomEnergy = w.airEnergy,
                 pipeMass = w.pipeMass,
                 pipeEnergy = w.pipeEnergy,
                 pipeVolumes = volumes,
@@ -299,7 +316,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
             // that exists before the gas has been allowed to answer it.
             val roomPressure = tilePressure(
-                state.grid.size, w.masses, gasKelvin(w.energies, heatCapacity(state.grid.size, w.masses)),
+                state.grid.size, w.masses, gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses)),
             )
             val pushed = applyPressureForce(
                 edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
@@ -324,12 +341,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         // When skipped, fluid state is carried forward from the previous tick.
-        var fluidAir = Stuff(w.masses, w.energies)
+        var fluidAir = Stuff(w.masses, w.airEnergy)
         var pipeAirResult = state.pipeAir
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         if (shouldRun(state.tick, FLUID_PERIOD)) {
-            val result = diffuseFluid(edges, roomApertures, w.masses, w.energies)
+            val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy)
             fluidAir = result.air
             fluidVentedMass = result.ventedMass
             fluidVentedEnergy = result.ventedEnergy
@@ -743,7 +760,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             parcel[MassIndex(TileIndex(0), s)] = g
         }
         val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
-        energies[tile] += energy
+        airEnergy[tile] += energy
         // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
         solidBecameGas(chunkMass, energy)
 
@@ -810,8 +827,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 scoopedMass += held
                 masses[massIndex] = 0L
             }
-            scoopedEnergy += energies[tile]
-            energies[tile] = 0L
+            scoopedEnergy += airEnergy[tile]
+            airEnergy[tile] = 0L
         }
 
         val ejectedMass = chunkMass + scoopedMass
@@ -842,7 +859,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
             // your own bulkhead expensive rather than merely useless.
             val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
-            energies[destination] += landed + scoopedEnergy
+            airEnergy[destination] += landed + scoopedEnergy
             solidBecameGas(chunkMass, landed)
         }
 
@@ -909,9 +926,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
-        operator fun get(tile: TileIndex): Machine? = machines.getOrNull(tile.index)
+        val deck: DeckArray = state.deck.copyOf()
+        inline operator fun <reified T> get(tile: TileIndex): T? = when(T::class) {
+            Machine::class -> machines.getOrNull(tile.index)
+            DeckMachine::class -> deck[tile]
+            else -> null
+        } as T?
         operator fun set(tile: TileIndex, value: Machine) {
             machines[tile.index] = value
+        }
+        operator fun plusAssign(value: DeckMachine) {
+            deck += value
         }
         var extractedMass: Long = state.extractedMass
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
@@ -1031,7 +1056,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val masses: MassArray = state.air.copyMass()
 
         /** This tick's air temperature, as energy — mutable for the same reason [masses] is. */
-        val energies: EnergyArray = state.air.copyEnergy()
+        val airEnergy: EnergyArray = state.air.copyEnergy()
 
         /** This tick's momentum, mutable for the same reason [masses] is. */
         val momentumX: LongArray = state.momentum.copyX()
@@ -1051,6 +1076,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (i in machines.indices) {
                 val m = machines[i] ?: continue
                 for (t in coveredTiles(state.grid, TileIndex(i), m.kind.size)) o[t] = TileIndex(i)
+            }
+            for (tile in grid.tiles) {
+                val m = deck[tile] ?: continue
+                for (t in coveredTiles(state.grid, tile, m.kind.diameter)) o[t] = tile
             }
             for (i in 0 until o.size) o[TileIndex(i)] = TileIndex(o[TileIndex(i)].index)
         }
@@ -1136,7 +1165,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 masses[massIndex] += pipeMass[massIndex]
                 pipeMass[massIndex] = 0L
             }
-            energies[tile] += pipeEnergy[tile]
+            airEnergy[tile] += pipeEnergy[tile]
             pipeEnergy[tile] = 0L
         }
 
@@ -1169,6 +1198,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         MachineKind.Bridge -> placeBridge(edit.tile, edit.facing)
                         else -> placeBuilding(edit.tile, edit.kind, edit.facing)
                     }
+                }
+                is Edit.PlaceDeck -> {
+                    if (edit.tile == TileIndex.NONE || edit.tile.index >= deck.size) return
+                    placeDeckBuilding(edit.tile, edit.kind, edit.facing, deck)
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
                 is Edit.Cut -> {
@@ -1303,7 +1336,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // from the mass rather than defaulted to zero, which is [AirField.of]'s rule: gas that
             // arrived with no energy is gas at absolute zero, and it stops behaving like a gas.
             val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
-            energies[tile] += energy
+            airEnergy[tile] += energy
             injectedAirMass += added
             injectedAirEnergy += energy
         }
@@ -1322,7 +1355,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             parcel[MassIndex(TileIndex(0),Species.Water)] = mass
             masses[MassIndex(tile, Species.Water)] += mass
             val energy = heatCapacityAt(parcel, TileIndex(0)) * Edit.WATER_INJECT_KELVIN
-            energies[tile] += energy
+            airEnergy[tile] += energy
             injectedAirMass += mass
             injectedAirEnergy += energy
         }
@@ -1351,15 +1384,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val covered = coveredTiles(grid, tile, size)
             // Over anything occupied = no-op (footprint check, not just cursor tile).
             if (covered.any { originOf[it] != TileIndex.NONE }) return
-            val built = newMachine(kind, facing)
+            val built = newMachine(kind, facing) ?: return
             if (portsClash(portsOf(grid, built, tile))) return
 
             // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
             // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, energies, covered) { originOf[it] == TileIndex.NONE }) return
+            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
 
             machines[tile.index] = built
             built(built.energy.total)
+            for (t in covered) originOf[t] = tile
+        }
+
+        /** Place building (click names centre, footprint grows around it). */
+        private fun placeDeckBuilding(tile: TileIndex, kind: DeckMachineKind, facing: Direction, deck: DeckArray) {
+            val size = kind.diameter
+            if (!footprintFits(grid, tile, size)) return
+            val covered = coveredTiles(grid, tile, size)
+            // Over anything occupied = no-op (footprint check, not just cursor tile).
+            if (covered.any { originOf[it] != TileIndex.NONE }) return
+            val built = newDeckMachine(kind, tile, facing) ?: return
+            if (portsClash(portsOf(grid, built))) return
+
+            // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
+            // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
+            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
+
+            deck += built
+            built(built.energy(deck.energies).sum())
             for (t in covered) originOf[t] = tile
         }
 
@@ -1744,7 +1796,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun asResource(packet: Packet): Resource =
             Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
 
-        private fun newMachine(kind: MachineKind, facing: Direction): Machine = when (kind) {
+        private fun newMachine(kind: MachineKind, facing: Direction): Machine? = when (kind) {
             MachineKind.Extractor -> Extractor(facing)
             MachineKind.Processor -> Processor(facing)
             MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
@@ -1756,12 +1808,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Vent -> Vent()
             MachineKind.Thruster -> Thruster(facing)
             MachineKind.Pump -> Pump(facing)
-            MachineKind.Hull -> Hull()
             MachineKind.Airlock -> Airlock()
             // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
-            MachineKind.Wire,
-            -> Hull()
+            MachineKind.Wire -> null
+        }
+
+        private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
+            DeckMachineKind.Hull -> Hull(tile)
         }
     }
 }

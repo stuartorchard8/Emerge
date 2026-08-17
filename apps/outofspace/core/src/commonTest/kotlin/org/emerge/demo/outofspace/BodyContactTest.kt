@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockContact
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -272,10 +273,11 @@ class BodyContactTest {
     private fun vacuumHull(): VesselState {
         val grid = CFG.initialGrid
         val machines = arrayOfNulls<Machine>(grid.size)
-        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = Hull() }
-        for (x in 1..WALL_X) { put(x, 6); put(x, 26) }
+        val deck = DeckArray(grid.size)
+        fun put(x: Int, y: Int) { if (grid.inBounds(x, y)) deck += Hull(grid.tile(x, y)) }
+        for (x in 2..<WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
-        val state = VesselState(grid = grid, machines = machines.toList(), gravity = VesselState.FREEFALL)
+        val state = VesselState(grid = grid, machines = machines.toList(), deck, gravity = VesselState.FREEFALL)
         return state.copy(air = Stuff.gas(MassArray(grid.size)))
     }
 

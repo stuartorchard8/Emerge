@@ -6,9 +6,10 @@ import org.emerge.demo.outofspace.world.STARTER_PLATE_X
 import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
-import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,7 +67,7 @@ class GridFitTest {
         }
 
         for (tile in s.grid.tiles) {
-            val m = s[tile] ?: continue
+            val m: Machine = s[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
         }
         for (tile in s.grid.tiles) {

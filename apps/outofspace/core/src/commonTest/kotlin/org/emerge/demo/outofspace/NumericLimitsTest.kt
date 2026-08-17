@@ -16,9 +16,11 @@ import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.SLOTS
-import org.emerge.demo.outofspace.world.size
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.machine.thermalTiles
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.size
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -187,7 +189,7 @@ class NumericLimitsTest {
      * An eighth of the grid in hull, which is roughly what a hull enclosing a usable interior comes
      * to and is within a factor of three of the 110 tonnes measured on the standard bare hull.
      */
-    private val referenceShipMass: Long = MachineKind.Hull.massPerTile * gridTiles / 8L
+    private val referenceShipMass: Long = DeckMachineKind.Hull.material.massPerTile * gridTiles / 8L
 
     /**
      * An integer count out of [Budget]'s current mass unit and into plain grams.

@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.bodiesOf
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,9 +31,6 @@ class ConduitLayersTest {
 
     private val grid = Grid(12, 6)
     private val cfg = OutofspaceConfig(initialGrid = grid)
-
-    private fun empty(): VesselState =
-        VesselState(grid, List(grid.size) { null })
 
     private fun lay(state: VesselState, conduit: Conduit, from: TileIndex, to: TileIndex): VesselState =
         OutofspaceReducer.reduce(
@@ -56,7 +54,7 @@ class ConduitLayersTest {
 
     @Test
     fun `a pipe drawn across a rail leaves both on the crossing tile`() {
-        var s = empty()
+        var s = VesselState.empty(grid)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
         s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
 
@@ -72,7 +70,7 @@ class ConduitLayersTest {
 
     @Test
     fun `each layer is linked along itself and to nothing on the other`() {
-        var s = empty()
+        var s = VesselState.empty(grid)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
         s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
 
@@ -131,7 +129,7 @@ class ConduitLayersTest {
             // In vacuum, with no hull: a room's air is an enormous reservoir beside a tile of copper
             // and drains the run to ambient long before the signal shows. Real conduction, and it
             // would drown what this test is asking about.
-            var s = VesselState(grid, List(grid.size) { null })
+            var s = VesselState.empty(grid)
             s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
             s = dragDown(s, Conduit.Pipe, x = 5, fromY = pipeFromY, toY = pipeToY)
 
@@ -165,7 +163,7 @@ class ConduitLayersTest {
 
     @Test
     fun `heat runs along a layer to the far end of its own run`() {
-        var s = VesselState(grid, List(grid.size) { null })
+        var s = VesselState.empty(grid)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
 
         val hotEnd = grid.tile(2, 3)

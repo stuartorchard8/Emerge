@@ -28,7 +28,6 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
     Pump("PUMP", isPermeable=true),
-    Hull("HULL"),
     Airlock("AIRLOCK"),
     ;
 
@@ -38,5 +37,16 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     companion object {
         val ALL: List<MachineKind> = entries.toList()
         val DECK: List<MachineKind> = ALL.filter { it.isDeck }
+    }
+}
+/**
+ * Machine kinds that take up deck space, storing their matter and energy in the deck layer.
+ */
+enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) {
+    Hull("HULL"),
+    ;
+
+    companion object {
+        val ALL: List<DeckMachineKind> = entries.toList()
     }
 }

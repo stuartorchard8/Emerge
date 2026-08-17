@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
@@ -40,7 +41,17 @@ class OutofspaceController(
     var speed: Float = 1f
 
     /** What the player is about to place, and which way it will face. */
+    var brushKind: BrushKind = BrushKind.Machine
     var brush: MachineKind = MachineKind.Rail
+        set(value) {
+            brushKind = BrushKind.Machine
+            field = value
+        }
+    var deckBrush: DeckMachineKind = DeckMachineKind.Hull
+        set(value) {
+            brushKind = BrushKind.Deck
+            field = value
+        }
     var brushFacing: Direction = Direction.Right
 
     /** What a left-click does — see [Tool]. */

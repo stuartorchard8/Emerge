@@ -31,6 +31,18 @@ enum class Direction(val dx: Int, val dy: Int) {
             Up -> Right
         }
 
+    val isHorizontal: Boolean
+        get() = when (this) {
+            Right, Left -> true
+            Up, Down -> false
+        }
+
+    val isVertical: Boolean
+        get() = when (this) {
+            Right, Left -> false
+            Up, Down -> true
+        }
+
     companion object {
         val ALL: List<Direction> = entries.toList()
     }

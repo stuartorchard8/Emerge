@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.billOfMaterials
 import org.emerge.demo.outofspace.chem.TILE_LITRES
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -210,10 +211,16 @@ class CompositionMassTest {
     @Test
     fun `a boulder outweighs the ship's own fabric, tile for tile`() {
         val oreTile = massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (kind in listOf(MachineKind.Hull, MachineKind.Smelter, MachineKind.Rail)) {
+        for (kind in listOf(MachineKind.Smelter, MachineKind.Rail)) {
             assertTrue(
                 oreTile > kind.massPerTile * 4,
                 "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.massPerTile} g)",
+            )
+        }
+        for (kind in listOf(DeckMachineKind.Hull)) {
+            assertTrue(
+                oreTile > kind.massPerTile * 4,
+                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.material.massPerTile} g)",
             )
         }
     }

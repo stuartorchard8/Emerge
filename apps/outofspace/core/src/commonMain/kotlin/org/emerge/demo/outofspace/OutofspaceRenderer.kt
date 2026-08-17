@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
-import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
@@ -40,7 +39,11 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.diameter
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.size
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.shader.StarscapeShader
@@ -181,7 +184,9 @@ class OutofspaceRenderer {
         var maxX = Int.MIN_VALUE
         var maxY = Int.MIN_VALUE
         for (tile in state.grid.tiles) {
-            if (state[tile] == null) continue
+            val machine = state[tile]
+            val deckMachine = state.deck[tile]
+            if (machine == null && deckMachine == null) continue
             val x = state.grid.xOf(tile)
             val y = state.grid.yOf(tile)
             if (x < minX) minX = x
@@ -645,7 +650,6 @@ class OutofspaceRenderer {
                     )
                 }
             }
-            is Hull -> tileRect(x, y, 1f, kindColor(MachineKind.Hull))
             // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
             // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
             // and the player should read them as the same kind of thing.
@@ -689,6 +693,13 @@ class OutofspaceRenderer {
         drawPorts(state, tile, m)
     }
 
+    private fun drawDeckMachine(state: VesselState, m: DeckMachine) {
+        when (m) {
+            is Hull -> tileRect(state.grid.xOf(m.tile), state.grid.yOf(m.tile), 1f, kindColor(DeckMachineKind.Hull))
+        }
+        drawPorts(state, m)
+    }
+
     /**
      * The body of a machine: a square of [span] tiles centred on its anchor tile, inset a little.
      *
@@ -713,6 +724,18 @@ class OutofspaceRenderer {
      */
     private fun drawPorts(state: VesselState, tile: TileIndex, m: Machine) {
         for (port in portsOf(state.grid, m, tile)) {
+            val px = state.grid.xOf(port.tile)
+            val py = state.grid.yOf(port.tile)
+            val color = if (port.kind == PortKind.Input) Colors.PORT_IN else Colors.PORT_OUT
+            val cx = (px + 0.5f) * tilePx
+            val cy = (py + 0.5f) * tilePx
+            val w = Visual.PORT_SIZE
+            val h = Visual.PORT_SIZE
+            rect(cx, cy, w * tilePx, h * tilePx, color)
+        }
+    }
+    private fun drawPorts(state: VesselState, m: DeckMachine) {
+        for (port in portsOf(state.grid, m)) {
             val px = state.grid.xOf(port.tile)
             val py = state.grid.yOf(port.tile)
             val color = if (port.kind == PortKind.Input) Colors.PORT_IN else Colors.PORT_OUT
@@ -1229,7 +1252,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.KeyInput -> 0x2E3A4AFFL
-    MachineKind.Hull -> 0x4A5464FFL
     // Lighter than hull, so a door reads as a door in a wall at a glance.
     MachineKind.Airlock -> 0x6E7C90FFL
     MachineKind.Vent -> 0x3A3A44FFL
@@ -1237,6 +1259,9 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Thruster -> 0xC04A30FFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
+}
+fun kindColor(kind: DeckMachineKind): Long = when (kind) {
+    DeckMachineKind.Hull -> 0x4A5464FFL
 }
 
 /**

@@ -14,10 +14,12 @@ import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
     data class Place(val tile: TileIndex, val kind: MachineKind, val facing: Direction) : Edit
+    data class PlaceDeck(val tile: TileIndex, val kind: DeckMachineKind, val facing: Direction) : Edit
     data class Rotate(val tile: TileIndex) : Edit
     /**
      * Takes something off a tile — one layer of it, or a named one, or all of it.

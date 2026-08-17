@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.PUMP_PERIOD
-import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -15,6 +14,8 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VolumeField
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -32,17 +33,17 @@ class PumpTest {
     private val grid = Grid(20, 12)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
-    private fun hulled(): List<Machine?> {
-        val m = arrayOfNulls<Machine>(grid.size)
+    private fun hulled(): DeckArray {
+        val deck = DeckArray(grid.size)
         for (x in 0 until grid.width) {
-            m[grid.tile(x, 0).index] = Hull()
-            m[grid.tile(x, grid.height - 1).index] = Hull()
+            deck += Hull(grid.tile(x, 0))
+            deck += Hull(grid.tile(x, grid.height - 1))
         }
         for (y in 0 until grid.height) {
-            m[grid.tile(0, y).index] = Hull()
-            m[grid.tile(grid.width - 1, y).index] = Hull()
+            deck += Hull(grid.tile(0, y))
+            deck += Hull(grid.tile(grid.width - 1, y))
         }
-        return m.toList()
+        return deck
     }
 
     private fun edit(state: VesselState, vararg edits: Edit): VesselState =
@@ -84,7 +85,7 @@ class PumpTest {
 
     /** A pipe run with a pump on it at [pumpX], drawing from the room above (facing Up). */
     private fun pumped(pumpX: Int = 6, y: Int = 6, facing: Direction = Direction.Up): VesselState {
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G)
         s = pipeRun(s, y, 4, 15)
         return edit(s, Edit.Place(grid.tile(pumpX, y), MachineKind.Pump, facing))
     }
@@ -140,7 +141,7 @@ class PumpTest {
         // flows away down the network, the cell under it stays well below its ceiling, and the pump
         // keeps working until the whole run is full. That is the machine behaving correctly, and it
         // is also indistinguishable from a stall that does nothing.
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G)
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
         val early = run(s, 400*PUMP_PERIOD)
@@ -160,7 +161,7 @@ class PumpTest {
 
     @Test
     fun `a pump with no pipe beneath it has nowhere to push`() {
-        var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G)
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
         val roomBefore = s.air.totalMass
 
@@ -189,10 +190,10 @@ class PumpTest {
         // A bulkhead across the middle with the pump set into it, so the only way out of either
         // chamber is through the machine.
         fun split(facing: Direction): VesselState {
-            var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G)
+            var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G)
             for (x in 1 until grid.width - 1) {
                 if (x == 6) continue
-                s = edit(s, Edit.Place(grid.tile(x, 6), MachineKind.Hull, Direction.Right))
+                s = edit(s, Edit.PlaceDeck(grid.tile(x, 6), DeckMachineKind.Hull, Direction.Right))
             }
             s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
             return run(edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, facing)), 400)
@@ -235,7 +236,7 @@ class PumpTest {
 
     @Test
     fun `the momentum a pump takes out of the room is booked to the vessel`() {
-        val idle = run(VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G), 300)
+        val idle = run(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G), 300)
         // Drawing sideways, so the intake removes momentum along x, where a still room has least of
         // its own and the pump's contribution is not buried under the settling of the air column.
         val working = run(pumped(facing = Direction.Left), 300)

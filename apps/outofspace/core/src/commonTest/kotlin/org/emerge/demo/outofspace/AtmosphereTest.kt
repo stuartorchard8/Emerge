@@ -14,6 +14,8 @@ import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.sim.core.PlayerId
@@ -65,15 +67,16 @@ class AtmosphereTest {
     private fun sealedRoom(w: Int, h: Int): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1..w) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h))
         }
-        for (y in 1..h) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w, y).index] = Hull()
+        for (y in 2..<h) {
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w, y))
         }
-        return VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
+        return VesselState(grid, machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G)
     }
 
     // ── Conservation ──────────────────────────────────────────────────────────
@@ -95,11 +98,11 @@ class AtmosphereTest {
     fun `hull separates two rooms so their pressures do not equalise`() {
         // Two 3-wide rooms sharing a wall, one at double pressure.
         val grid = Grid(9, 5)
-        val machines = arrayOfNulls<Machine>(grid.size)
-        for (x in 1..7) { machines[grid.tile(x, 1).index] = Hull(); machines[grid.tile(x, 3).index] = Hull() }
-        for (y in 1..3) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(7, y).index] = Hull() }
-        machines[grid.tile(4, 2).index] = Hull()   // the dividing wall
-        var s = VesselState(grid, machines.toList(), gravity = VesselState.PLATING_ONE_G)
+        val deck = DeckArray(grid.size)
+        for (x in 2..6) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, 3)) }
+        for (y in 1..2) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(7, y)) }
+        deck += Hull(grid.tile(4, 2))   // the dividing wall
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), deck=deck, gravity = VesselState.PLATING_ONE_G)
 
         val mass = MassArray(grid.size)
         for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram
@@ -239,7 +242,7 @@ class AtmosphereTest {
         val aboard = s.atmosphereMass
         assertTrue(s.air.pressureAt(wall) > 0L, "the tile we are about to wall off had air in it")
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(wall, DeckMachineKind.Hull, Direction.Up))))
         assertEquals(0L, s.air.pressureAt(wall), "a hull tile is not part of the atmosphere")
         assertEquals(aboard, s.atmosphereMass, "and not a gram of it was lost")
         assertAirBalanced(s, "after walling")
@@ -251,14 +254,14 @@ class AtmosphereTest {
         val room = sealedRoom(5, 5)
         val g = room.grid
         val pocket = g.tile(3, 3)
-        val machines = room.machines.toMutableList()
-        for (dir in Direction.ALL) machines[g.neighbour(pocket, dir).index] = Hull()
-        var s = run(room.copy(machines = machines.toList()), 4)
+        val deck = room.deck.copyOf()
+        for (dir in Direction.ALL) deck += Hull(g.neighbour(pocket, dir))
+        var s = run(room.copy(deck = deck), 4)
         val trapped = s.air.pressureAt(pocket)
         assertTrue(trapped > 0L, "the pocket has air in it to begin with")
 
-        s = run(s, 2, OutofspaceInput(listOf(Edit.Place(pocket, MachineKind.Hull, Direction.Up))))
-        assertEquals(null, s[pocket], "the build had nowhere to put the air, so it did not happen")
+        s = run(s, 2, OutofspaceInput(listOf(Edit.PlaceDeck(pocket, DeckMachineKind.Hull, Direction.Up))))
+        assertEquals(null, s.deck[pocket], "the build had nowhere to put the air, so it did not happen")
         assertEquals(trapped, s.air.pressureAt(pocket), "and the air is untouched")
         assertAirBalanced(s, "after the refusal")
     }
@@ -272,7 +275,8 @@ class AtmosphereTest {
         val aboard = s.atmosphereMass
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(tile, MachineKind.Storage, Direction.Right))))
-        assertTrue(s[tile] != null, "the storage went down")
+        val m: Machine? = s[tile]
+        assertTrue(m != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {
             assertEquals(0L, s.air.pressureAt(g.tile(x, y)), "($x,$y) is under the machine")
         }
@@ -324,7 +328,7 @@ class AtmosphereTest {
         val room = sealedRoom(8, 4)
         val g = room.grid
         val wall = g.tile(4, 3)
-        var s = run(room, 1, OutofspaceInput(listOf(Edit.Place(wall, MachineKind.Hull, Direction.Up))))
+        var s = run(room, 1, OutofspaceInput(listOf(Edit.PlaceDeck(wall, DeckMachineKind.Hull, Direction.Up))))
         s = run(s, 20)
         val aboard = s.atmosphereMass
 

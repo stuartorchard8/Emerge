@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 
@@ -268,7 +270,9 @@ fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
  * needs.
  */
 fun frictionBetween(body: RigidBody, cell: Int, machine: Machine?): Long =
-    pairRoughness(roughnessOfBody(body), (machine?.kind ?: MachineKind.Hull).material.roughness)
+    pairRoughness(roughnessOfBody(body), machine?.kind?.material?.roughness ?: DeckMachineKind.Hull.material.roughness)
+fun frictionBetween(body: RigidBody, cell: Int, machine: DeckMachine?): Long =
+    pairRoughness(roughnessOfBody(body), (machine?.kind ?: DeckMachineKind.Hull).material.roughness)
 
 /**
  * The friction of one body's cell against **another body's** cell — the same lookup, both sides now

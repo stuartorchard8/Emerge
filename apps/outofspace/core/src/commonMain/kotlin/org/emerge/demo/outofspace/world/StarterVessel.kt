@@ -1,8 +1,10 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Smelter
@@ -16,12 +18,17 @@ fun starterVessel(
     grid: Grid,
 ): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
+    val deck = DeckArray(grid.size)
     val rails = arrayOfNulls<Segment>(grid.size)
     val wires = arrayOfNulls<Segment>(grid.size)
 
     fun put(x: Int, y: Int, m: Machine) {
         // Buildings anchored at centre.
         if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = m
+    }
+    fun put(m: DeckMachine) {
+        // Buildings anchored at centre.
+        deck += m
     }
 
     /** Lay track, keeping existing joins (preserves crossings). */
@@ -139,12 +146,12 @@ fun starterVessel(
     val top = y - 5
     val bottom = wy + 5
     for (hx in left..right) {
-        put(hx, top, Hull())
-        put(hx, bottom, Hull())
+        put(Hull(grid.tile(hx, top)))
+        put(Hull(grid.tile(hx, bottom)))
     }
-    for (hy in top..bottom) {
-        put(left, hy, Hull())
-        put(right, hy, Hull())
+    for (hy in top+1..<bottom) {
+        put(Hull(grid.tile(left, hy)))
+        put(Hull(grid.tile(right, hy)))
     }
 
     // No rock on either plate, and that is the increment showing through rather than an omission:
@@ -154,6 +161,7 @@ fun starterVessel(
     return VesselState(
         grid = grid,
         machines = built,
+        deck = deck,
         conduits = Conduits.of(
             grid.size,
             Conduit.Rail to rails.toList(),

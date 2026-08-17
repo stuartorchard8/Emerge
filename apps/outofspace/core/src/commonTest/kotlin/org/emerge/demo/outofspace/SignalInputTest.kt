@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,12 +58,14 @@ class SignalInputTest {
     /** One button on one run of wire, going nowhere in particular. */
     private fun rig(key: InputKey = InputKey.Up): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         machines[grid.tile(buttonAt.first, buttonAt.second).index] = WireButton(key)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, buttonAt.first, farEnd.first, buttonAt.second)
         return VesselState(
             grid,
             machines.toList(),
+            deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
         )
     }
@@ -101,13 +104,14 @@ class SignalInputTest {
     @Test
     fun `holding two keys drives both their buttons`() {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         machines[grid.tile(2, 2).index] = WireButton(InputKey.Left)
         machines[grid.tile(2, 6).index] = WireButton(InputKey.Right)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
         val s = run(
-            VesselState(grid, machines.toList(), conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
             1,
             held = InputKey.Left.bit or InputKey.Right.bit,
         )
@@ -119,8 +123,9 @@ class SignalInputTest {
     @Test
     fun `a button with no wire under it is harmless`() {
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         machines[grid.tile(2, 4).index] = WireButton(InputKey.Up)
-        val s = run(VesselState(grid, machines.toList()), 1, held = InputKey.Up.bit)
+        val s = run(VesselState(grid, machines.toList(), deck), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
 
@@ -128,7 +133,7 @@ class SignalInputTest {
     fun `a button keeps its key across a save`() {
         val s = rig(InputKey.B)
         val back = Save.read(Save.write(s))
-        assertEquals(InputKey.B, (back[grid.tile(buttonAt.first, buttonAt.second)] as WireButton).key)
+        assertEquals(InputKey.B, (back[grid.tile(buttonAt.first, buttonAt.second)] as? WireButton)?.key)
     }
 
     // ── The whole point ───────────────────────────────────────────────────────
@@ -147,13 +152,14 @@ class SignalInputTest {
         val w = 8
         val h = 8
         val machines = arrayOfNulls<Machine>(grid.size)
+        val deck = DeckArray(grid.size)
         for (x in 1..w) {
-            machines[grid.tile(x, 1).index] = Hull()
-            machines[grid.tile(x, h).index] = Hull()
+            deck += Hull(grid.tile(x, 1))
+            deck += Hull(grid.tile(x, h))
         }
         for (y in 1..h) {
-            machines[grid.tile(1, y).index] = Hull()
-            machines[grid.tile(w, y).index] = Hull()
+            deck += Hull(grid.tile(1, y))
+            deck += Hull(grid.tile(w, y))
         }
         // The door in the starboard wall, wired to whatever is on the run beneath it.
         machines[grid.tile(w, h / 2).index] = Airlock(
@@ -167,6 +173,7 @@ class SignalInputTest {
         val start = VesselState(
             grid,
             machines.toList(),
+            deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
         )
 

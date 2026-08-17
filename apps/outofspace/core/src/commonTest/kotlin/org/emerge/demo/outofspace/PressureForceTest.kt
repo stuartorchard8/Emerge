@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.applyPressureForce
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import kotlin.test.Test
@@ -41,9 +42,10 @@ class PressureForceTest {
 
         init {
             val machines = arrayOfNulls<Machine>(grid.size)
-            for (x in 1..w) { machines[grid.tile(x, 1).index] = Hull(); machines[grid.tile(x, h).index] = Hull() }
-            for (y in 1..h) { machines[grid.tile(1, y).index] = Hull(); machines[grid.tile(w, y).index] = Hull() }
-            apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines.toList()))
+            val deck = DeckArray(grid.size)
+            for (x in 1..w) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, h)) }
+            for (y in 1..h) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(w, y)) }
+            apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines.toList(), deck))
             for (x in 2 until w) for (y in 2 until h) air(grid.tile(x, y))
         }
 
