@@ -107,7 +107,7 @@ class GaugeTest {
     @Test
     fun `a gauge puts its mass on the wire beneath it`() {
         val half = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS/2, energy = 0))
-        val s = run(line(half), 20*RAIL_PERIOD)
+        val s = run(line(half), 3*RAIL_PERIOD)
         assertEquals(500, s.signals.at(s.grid.tile(gaugeTileX, 2)), "half packet reads 50%")
     }
 
