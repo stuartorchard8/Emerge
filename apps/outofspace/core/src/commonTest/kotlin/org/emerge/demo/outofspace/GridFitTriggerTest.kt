@@ -95,7 +95,6 @@ class GridFitTriggerTest {
             val m = s.deck[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
         }
-        for (tile in s.grid.tiles) if (s.bridges[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
         for (c in Conduit.entries) {
             val layer = s.conduits[c]
             for (tile in s.grid.tiles) if (layer[tile.index] != null) cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)

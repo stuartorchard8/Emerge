@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
+import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -155,16 +156,14 @@ class MotionTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val bridges = arrayOfNulls<Bridge>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
         deck += Storage(grid.tile(11, 3), Direction.Right)
-        bridges[grid.tile(6, 3).index] = Bridge(Direction.Right)
+        deck += Bridge(grid.tile(6, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         return VesselState(
             grid, m.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
-            bridges = bridges.toList(),
             bodies = feed,
             buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
         )
@@ -177,8 +176,10 @@ class MotionTest {
         var sawNewMiddle = false
         repeat(60*RAIL_PERIOD) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            val b = s.bridges[tile.index] ?: return@repeat
-            if (b.middle != null && s.motion.bridgeSlotIsNew(tile, Motion.SLOT_MIDDLE)) sawNewMiddle = true
+            if (s.deck[tile] !is Bridge) return@repeat
+            if (s.inStore(tile, BufferRole.Inside) != null &&
+                s.motion.bridgeSlotIsNew(tile, Motion.SLOT_MIDDLE)
+            ) sawNewMiddle = true
         }
         assertTrue(sawNewMiddle, "nothing ever moved onto the middle of the bridge")
     }
@@ -195,8 +196,10 @@ class MotionTest {
         // Long enough to fill the 20 kg tank and pack the line solid all the way back.
         val s = run(bridged(), 500*RAIL_PERIOD)
         val tile = cfg.initialGrid.tile(6, 3)
-        val b = assertNotNull(s.bridges[tile.index])
-        assertEquals(Bridge.SLOTS, b.carried.size, "the bridge should be packed by now")
+        assertNotNull(s.deck[tile] as? Bridge)
+        val filled = listOf(BufferRole.Input, BufferRole.Inside, BufferRole.Product)
+            .count { s.inStore(tile, it) != null }
+        assertEquals(Bridge.SLOTS, filled, "the bridge should be packed by now")
         for (slot in listOf(Motion.SLOT_ENTRY, Motion.SLOT_MIDDLE, Motion.SLOT_EXIT)) {
             assertTrue(!s.motion.bridgeSlotIsNew(tile, slot), "slot $slot claims to have just moved")
         }
@@ -228,7 +231,7 @@ class MotionTest {
             )
             // Checked at the far end of the span rather than on the port tile: a packet set down
             // there is carried on in the same step, so the port tile is empty every time you look.
-            if (s.bridges[cfg.initialGrid.tile(6, 3).index]?.exit != null) crossed = true
+            if (s.inStore(cfg.initialGrid.tile(6, 3), BufferRole.Product) != null) crossed = true
         }
         assertTrue(crossed, "nothing ever crossed the bridge, so this proved nothing")
     }

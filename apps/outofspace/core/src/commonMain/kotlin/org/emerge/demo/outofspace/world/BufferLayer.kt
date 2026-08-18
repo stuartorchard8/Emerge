@@ -72,7 +72,7 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
     }
 
     /** Take down every store [machine] keeps, discarding whatever is in them. */
-    fun releaseRoles(grid: Grid, machine: Machine, centre: TileIndex) {
+    fun releaseRoles(grid: Grid, machine: Placed, centre: TileIndex) {
         for (role in BufferRole.entries) {
             val tile = bufferTile(grid, machine, centre, role) ?: continue
             if (hasRole(tile)) releaseRole(tile)

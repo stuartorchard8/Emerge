@@ -88,8 +88,6 @@ data class VesselState(
      * has a temperature whether or not anything is flowing down it.
      */
     val conduits: Conduits = Conduits.empty(machines.size),
-    /** Bridges, stored at their middle tile. They occupy nothing, so they are not in [occupancy]. */
-    val bridges: List<Bridge?> = List(grid.size) { null },
     /** Which way each fork last sent material — see [FlowCursors]. */
     val diverters: FlowCursors = FlowCursors(),
     /**
@@ -307,7 +305,7 @@ data class VesselState(
      *    [acquiredEnergy] cancels the double-count: `stored` holds the energy and `acquired`
      *    records the transfer so the ledger stays closed.
      */
-    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges) + deck.totalEnergy + buffers.totalEnergy,
+    val baselineEnergy: Long = solidEnergy(machines, conduits) + deck.totalEnergy + buffers.totalEnergy,
     /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
@@ -489,7 +487,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges, deck, buffers) }
+    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, deck, buffers) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -553,10 +551,6 @@ data class VesselState(
             val m = machines[tile.index] ?: continue
             for (port in portsOf(grid, m, tile)) add(port)
         }
-        for (tile in grid.tiles) {
-            val b = bridges[tile.index] ?: continue
-            for (port in portsOf(grid, b, tile)) add(port)
-        }
         // See the twin of this in the reducer for why deck machines are visited by centre.
         for (tile in grid.tiles) {
             val m = deck[tile] ?: continue
@@ -574,7 +568,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
-    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.totalEnergy + buffers.totalEnergy
+    val storedEnergy: Long get() = solidEnergy(machines, conduits) + deck.totalEnergy + buffers.totalEnergy
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass
@@ -660,13 +654,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoMass(grid, machines, rail, conduits, bridges, deck, buffers)
+    val inTransitMass: Long get() = cargoMass(grid, machines, rail, conduits, deck, buffers)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMass(grid, machines, rail, conduits, bridges, deck, buffers)
+    val mass: Long get() = vesselMass(grid, machines, rail, conduits, deck, buffers)
 
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
@@ -675,7 +669,7 @@ data class VesselState(
      * its cargo, so storing it would be storing a second answer to a question the walk already
      * answers. The tick computes it once and passes it down; a readout can afford to ask again.
      */
-    val distribution: MassDistribution get() = massDistribution(grid, machines, rail, conduits, bridges, deck, buffers)
+    val distribution: MassDistribution get() = massDistribution(grid, machines, rail, conduits, deck, buffers)
 
     /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
@@ -816,12 +810,11 @@ fun spoilsOf(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLay
  * Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks.
  *
  * Kind-blind, and that is the point of [BufferRole]: a machine's stores are its role tiles, so this
- * no longer has to be extended when a machine gains a buffer. A [Bridge] is the one exception, since
- * what it holds is packets in transit rather than a store.
+ * no longer has to be extended when a machine gains a buffer — a [Bridge] stopped being the one
+ * exception when its three slots became three role tiles like anything else's.
  */
 fun massIn(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Long = when (machine) {
     null -> 0L
-    is Bridge -> machine.mass
     else -> {
         var sum = 0L
         for (role in BufferRole.entries) {
@@ -841,7 +834,16 @@ fun massIn(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer
  */
 fun fullness(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Int = when (machine) {
     null -> 0
-    is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
+    // Slots occupied, not mass: a bridge is full when there is nowhere to put the next lump, and
+    // three small packets back it up exactly as three large ones do.
+    is Bridge -> {
+        var filled = 0
+        for (role in BufferRole.entries) {
+            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            if (buffers.massAt(tile) > 0L) filled++
+        }
+        filled * SignalField.FULL / Bridge.SLOTS
+    }
     // An extractor reads on its output buffer alone: what is in the jaws is a whole cell of rock and
     // dwarfs the ground ore, so counting it would peg the sensor the moment the machine took a bite.
     is Extractor -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Product)!!) *
@@ -866,6 +868,13 @@ fun fullness(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLay
  * "WASTE" for both would throw away the only word that says which machine they are looking at.
  */
 private fun labelOf(machine: Placed, role: BufferRole): String = when (machine) {
+    // Which end of the span it is on, which is the only thing worth knowing about a bridge — and
+    // what the three slots were always called in the inspector.
+    is Bridge -> when (role) {
+        BufferRole.Input -> "IN"
+        BufferRole.Inside -> "SPAN"
+        else -> "OUT"
+    }
     is Extractor -> if (role == BufferRole.Inside) "CRUSHING" else "BUFFER"
     is Storage -> "STORED"
     is Thruster -> "PROPELLANT"
@@ -890,15 +899,6 @@ private fun labelOf(machine: Placed, role: BufferRole): String = when (machine) 
  */
 fun contentsBreakdown(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
-    // Slot by slot, input end first: "which end of the span is it on" is the only thing worth
-    // knowing about a bridge, and one lump labelled IN TRANSIT could not say it.
-    is Bridge -> listOf("IN" to machine.entry, "SPAN" to machine.middle, "OUT" to machine.exit)
-        .mapNotNull { (label, p) ->
-            if (p == null) null else {
-                val form = (p as? org.emerge.demo.outofspace.logistics.SolidPacket)?.form ?: Form.Ore
-                label to Resource(form, p.contents)
-            }
-        }
     else -> BufferRole.entries.mapNotNull { role ->
         val tile = bufferTile(grid, machine, centre, role) ?: return@mapNotNull null
         buffers.resourceAt(tile)?.let { labelOf(machine, role) to it }
@@ -908,7 +908,6 @@ fun contentsBreakdown(machine: Placed?, centre: TileIndex, grid: Grid, buffers: 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
 fun contentsOf(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Mixture = when (machine) {
     null -> Mixture.EMPTY
-    is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
     else -> {
         var out = Mixture.EMPTY
         for (role in BufferRole.entries) {
@@ -947,14 +946,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         val ox = grid.xOf(tile); val oy = grid.yOf(tile)
         require(newGrid.inBounds(ox + dx, oy + dy)) {
             "remap would discard a machine at ($ox, $oy)"
-        }
-    }
-    for (i in bridges.indices) {
-        val tile = TileIndex(i)
-        if (bridges[i] == null) continue
-        val ox = grid.xOf(tile); val oy = grid.yOf(tile)
-        require(newGrid.inBounds(ox + dx, oy + dy)) {
-            "remap would discard a bridge at ($ox, $oy)"
         }
     }
     for (c in Conduit.entries) {
@@ -1027,13 +1018,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         val oi = grid.tile(ox, oy)
         if (rail.isEmpty(oi)) continue
         newRail.put(ni, rail.resourceAt(oi))
-    }
-
-    val newBridges = MutableList(newGrid.size) { null as Bridge? }
-    for (ox in 0 until oldW) for (oy in 0 until oldH) {
-        val ni = remapTile(ox, oy) ?: continue
-        val oi = grid.tile(ox, oy)
-        newBridges[ni.index] = bridges[oi.index]
     }
 
     // ── 2. Conduits: remap each layer ────────────────────────────────────
@@ -1179,7 +1163,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         buffers = newBuffers,
         rail = newRail,
         conduits = newConduits,
-        bridges = newBridges,
         diverters = newDiverters,
         air = newAir,
         pipeAir = newPipeAir,

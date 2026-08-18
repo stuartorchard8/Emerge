@@ -188,7 +188,7 @@ class TileEnergy private constructor(private val perTile: LongArray) {
  * identical machine hold a different amount of heat depending on where you put it.
  */
 val MachineKind.thermalTiles: Int
-    get() = if (this == MachineKind.Bridge) 3 else size * size
+    get() = size * size
 
 /**
  * The machine's temperature **averaged over its tiles**.

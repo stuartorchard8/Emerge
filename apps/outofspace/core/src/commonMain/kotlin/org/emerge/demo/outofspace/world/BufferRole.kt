@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Machine
@@ -129,6 +130,17 @@ internal fun localBufferOffset(machine: Placed, role: BufferRole): Int {
             BufferRole.Waste -> NO_OFFSET
         }
         is Storage -> if (role == BufferRole.Inside) pack(0, 0) else NO_OFFSET
+
+        // The three slots of a gantry, which are the three tiles it stands on: what has just been
+        // lifted off the track at the near end, what is over the gap, and what is waiting to be put
+        // down at the far end. The one machine whose `Inside` is genuinely *in transit* rather than
+        // being worked on — see `Bridge`, and `advanceBridges` for the shuffle that moves it along.
+        is Bridge -> when (role) {
+            BufferRole.Input -> pack(-r, 0)
+            BufferRole.Inside -> pack(0, 0)
+            BufferRole.Product -> pack(r, 0)
+            BufferRole.Waste -> NO_OFFSET
+        }
         else -> NO_OFFSET
     }
 }

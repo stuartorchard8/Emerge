@@ -346,7 +346,11 @@ class OutofspaceRenderer {
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
-                drawBridge(state, tile, state.bridges[tile.index] ?: continue, x, y)
+                val b = state.deck[tile] as? Bridge ?: continue
+                // Once per bridge, at its middle — it is stored at its centre and drawn across all
+                // three of its tiles, so visiting it per covered tile would draw it three times.
+                if (b.center != tile) continue
+                drawBridge(state, tile, b, x, y)
             }
         }
 
@@ -571,23 +575,25 @@ class OutofspaceRenderer {
         val across = if (horizontal) Visual.BRIDGE_SPAN_Y else Visual.BRIDGE_SPAN_X
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        drawPorts(state, tile, b)
-        rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(MachineKind.Bridge))
-        // One slot per tile (entry fixed, middle+exit slide along span).
+        drawPorts(state, b)
+        rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(DeckMachineKind.Bridge))
+        // One slot per tile (entry fixed, middle+exit slide along span). Read off the buffer layer,
+        // where a bridge's load lives now — the three role tiles are these three positions.
         val slots = listOf(
-            Triple(-1f, b.entry, Motion.SLOT_ENTRY),
-            Triple(0f, b.middle, Motion.SLOT_MIDDLE),
-            Triple(1f, b.exit, Motion.SLOT_EXIT),
+            Triple(-1f, BufferRole.Input, Motion.SLOT_ENTRY),
+            Triple(0f, BufferRole.Inside, Motion.SLOT_MIDDLE),
+            Triple(1f, BufferRole.Product, Motion.SLOT_EXIT),
         )
-        for ((along, packet, slot) in slots) {
-            if (packet == null) continue
+        for ((along, role, slot) in slots) {
+            val store = bufferTile(state.grid, b, tile, role) ?: continue
+            val packet = state.buffers.resourceAt(store) ?: continue
             val from = if (state.motion.bridgeSlotIsNew(tile, slot)) along - 1f else along
             val at = lerp(from, along, railPacketAlpha)
             val size = Visual.BRIDGE_PACKET_SIZE * tilePx
             rect(
                 cx + b.facing.dx * at * tilePx,
                 cy + b.facing.dy * at * tilePx,
-                size, size, packet.contents.color.toLong(),
+                size, size, packet.mixture.color.toLong(),
             )
         }
     }
@@ -648,6 +654,9 @@ class OutofspaceRenderer {
             return
         }
         when (m) {
+            // Drawn by [drawBridge] in its own pass, above the track it crosses — a bridge is the
+            // one deck machine that is *over* the tile rather than on it.
+            is Bridge -> {}
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
             is Extractor -> {
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
@@ -1277,11 +1286,11 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Rail -> 0x39445AFFL
     MachineKind.Gauge -> 0x39445AFFL
     MachineKind.Pipe -> 0x7A5A3AFFL
-    MachineKind.Bridge -> 0x1A2030FFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
 }
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
+    DeckMachineKind.Bridge -> 0x1A2030FFL
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
     DeckMachineKind.Vent -> 0x3A3A44FFL

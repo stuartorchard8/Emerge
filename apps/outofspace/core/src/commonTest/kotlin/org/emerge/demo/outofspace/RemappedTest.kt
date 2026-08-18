@@ -112,7 +112,6 @@ class RemappedTest {
         assertEquals(s0.grid, s1.grid)
         assertEquals(s0.machines.size, s1.machines.size)
         assertEquals(s0.machines, s1.machines)
-        assertEquals(s0.bridges, s1.bridges)
         assertEquals(s0.conduits, s1.conduits)
         assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
         assertEquals(s0.air.copyMass().data.contentToString(), s1.air.copyMass().data.contentToString())
@@ -495,7 +494,6 @@ class RemappedTest {
 
         assertEquals(s0.grid, s2.grid, "grid should be identical")
         assertEquals(s0.machines, s2.machines, "machines should be identical")
-        assertEquals(s0.bridges, s2.bridges, "bridges should be identical")
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
         assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
         assertEquals(s0.air.copyMass().data.contentToString(), s2.air.copyMass().data.contentToString(), "air mass")

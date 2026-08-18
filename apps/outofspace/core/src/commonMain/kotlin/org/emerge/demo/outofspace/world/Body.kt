@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 
@@ -21,8 +20,6 @@ enum class BodySlot {
     /** [VesselState.conduits] — one segment per tile of one conduit layer. */
     Fitting,
 
-    /** [VesselState.bridges] — stored at the middle of the three tiles it spans. */
-    Span,
 
     /**
      * [VesselState.buffers] — what a machine is holding, at the tile its store stands on.
@@ -52,7 +49,7 @@ class Body(
      */
     val tile: TileIndex,
     /**
-     * The tile the owning object is **stored at** — the key back into `machines` or `bridges`.
+     * The tile the owning object is **stored at** — the key back into `machines` or the deck.
      *
      * ⚠️ **Not the same as [tile], and conflating the two is a live bug rather than a tidy-up.**
      * A machine occupies its whole footprint but is stored only at its origin, so writing a
@@ -130,7 +127,6 @@ fun bodiesOf(
     grid: Grid,
     machines: List<Machine?>,
     conduits: Conduits,
-    bridges: List<Machine?>,
     deck: DeckArray,
     buffers: BufferLayer,
 ): List<Body> {
@@ -230,73 +226,23 @@ fun bodiesOf(
             )
         )
     }
-    for (i in bridges.indices) {
-        val b = bridges[i] as? Bridge ?: continue
-        // The three tiles it looks like: the one it is stored on and one either side along its
-        // facing. It occupies none of them on any layer, which is what a bridge is — but it is
-        // still three tiles of metal sitting in three tiles of room, and heat does not care whether
-        // something claims the floor space. Split per tile for the same reasons a machine is.
-        //
-        // ⚠️ The part index is the position along the span and **not** the position in a list of
-        // the tiles that happen to be on the grid. A span at the rim loses an end, and if the index
-        // came from a compacted list the survivors would shift up one and the bridge would be
-        // holding its neighbour's heat. Walking the three offsets and skipping the missing one
-        // keeps every slot addressed by what it *is*.
-        val span = spanParts(grid, TileIndex(i), b.facing)
-        for (part in span.indices) {
-            val tile = span[part]
-            if (tile == TileIndex.NONE) continue
-            out.add(
-                Body(
-                    slot = BodySlot.Span,
-                    tile = tile,
-                    anchor = TileIndex(i),
-                    part = part,
-                    material = b.conduit.material,
-                    permeable = true,
-                    energy = b.energy[part],
-                    capacity = b.conduit.capacityPerTile,
-                    conductance = b.conduit.conductance,
-                )
-            )
-        }
-    }
     return out
 }
 
 /**
- * Total thermal energy in every solid thing aboard — machines, conduit segments, and bridges.
+ * Total thermal energy in every solid thing aboard — machines and conduit segments. A bridge's is
+ * in the deck layer with every other casing's, since it became a deck machine.
  */
 fun solidEnergy(
     machines: List<Machine?>,
     conduits: Conduits,
-    bridges: List<Machine?>,
 ): Long {
     var sum = 0L
     for (m in machines) sum += m?.energy?.total ?: 0L
     sum += conduits.totalEnergy
-    for (b in bridges) sum += b?.energy?.total ?: 0L
     return sum
 }
 
-/** The three tiles a bridge occupies: its middle, and one either side along [facing]. */
-fun spanTiles(grid: Grid, middle: TileIndex, facing: Direction): Array<TileIndex> {
-    val out = ArrayList<TileIndex>(3)
-    for (tile in spanParts(grid, middle, facing)) if (tile != TileIndex.NONE) out.add(tile)
-    return out.toTypedArray()
-}
-
-/**
- * The same three tiles, **positionally**: back, middle, front, with `-1` for an end off the grid.
- *
- * [spanTiles] compacts the missing ends away, which is right for anything that only wants to visit
- * the tiles and wrong for anything that stores something per tile — see the note in [bodiesOf].
- */
-fun spanParts(grid: Grid, middle: TileIndex, facing: Direction): Array<TileIndex> = arrayOf(
-    grid.neighbour(middle, facing.opposite),
-    middle,
-    grid.neighbour(middle, facing),
-)
 
 /**
  * How fast what a machine holds equalises with the machine holding it.

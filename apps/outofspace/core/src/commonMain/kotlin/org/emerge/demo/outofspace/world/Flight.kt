@@ -49,9 +49,9 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */
-fun structureMass(grid: Grid, machines: List<Machine?>, rail: RailLayer, conduits: Conduits, bridges: List<Machine?>, deck: DeckArray, buffers: BufferLayer): Long {
+fun structureMass(grid: Grid, machines: List<Machine?>, rail: RailLayer, conduits: Conduits, deck: DeckArray, buffers: BufferLayer): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { _, fabric, _ -> sum += fabric }
+    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, fabric, _ -> sum += fabric }
     return sum
 }
 
@@ -79,7 +79,6 @@ inline fun forEachVesselMass(
     machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
-    bridges: List<Machine?>,
     deck: DeckArray,
     buffers: BufferLayer,
     action: (tile: TileIndex, fabric: Long, cargo: Long) -> Unit,
@@ -111,10 +110,6 @@ inline fun forEachVesselMass(
         // the unit and this is a change of representation, not of what the ship weighs.
         action(tile, conduits.massAt(conduit, tile), if (conduit == Conduit.Rail) rail.massAt(tile) else 0L)
     }
-    for (t in bridges.indices) {
-        val b = bridges[t] ?: continue
-        action(TileIndex(t), b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b, TileIndex(t), grid, buffers))
-    }
 }
 
 /**
@@ -131,12 +126,11 @@ fun cargoMass(
     machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
-    bridges: List<Machine?>,
     deck: DeckArray,
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { _, _, cargo -> sum += cargo }
+    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, _, cargo -> sum += cargo }
     return sum
 }
 
@@ -146,12 +140,11 @@ fun vesselMass(
     machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
-    bridges: List<Machine?>,
     deck: DeckArray,
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
+    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
     return sum
 }
 

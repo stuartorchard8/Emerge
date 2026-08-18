@@ -65,10 +65,12 @@ private data class LocalPort(
 private fun localPorts(machine: Placed): List<LocalPort> {
     val r = machine.reach
     return when (machine) {
-        // Bridge: 3 tiles, connects at ends.
+        // A gantry: it takes the belt on at one end and puts it down at the other. Rail only —
+        // there was never a pipe bridge, since a fluid is a continuum and has nothing to hop with.
+        // At ±reach like every other machine's ports, which for a 3-long span is its two ends.
         is Bridge -> listOf(
-            LocalPort(-1, 0, Direction.Left, PortKind.Input, conduit = machine.conduit),
-            LocalPort(1, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),
+            LocalPort(-r, 0, Direction.Left, PortKind.Input),
+            LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
 
 

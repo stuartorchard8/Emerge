@@ -130,11 +130,10 @@ internal fun VesselState.placedBounds(): IntArray? {
     }
     for (tile in grid.tiles) {
         val m = deck[tile] ?: continue
-        cover(grid.xOf(tile), grid.yOf(tile), m.kind.reach)
-    }
-    for (tile in grid.tiles) {
-        if (bridges[tile.index] == null) continue
-        cover(grid.xOf(tile), grid.yOf(tile), 0)
+        // Tile by tile rather than centre-and-reach: a bridge's footprint is a line, so a reach
+        // taken as a square would claim two tiles either side of it that nothing stands on and
+        // refuse a shrink that is actually legal.
+        for (part in m.tiles(grid)) cover(grid.xOf(part), grid.yOf(part), 0)
     }
     for (c in Conduit.entries) {
         val layer = conduits[c]

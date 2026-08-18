@@ -76,10 +76,6 @@ class GridFitTest {
             val m = s.deck[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
         }
-        for (tile in s.grid.tiles) {
-            if (s.bridges[tile.index] == null) continue
-            cover(s.grid.xOf(tile), s.grid.yOf(tile), 0)
-        }
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             val layer = s.conduits[c]
             for (tile in s.grid.tiles) {
@@ -248,7 +244,6 @@ class GridFitTest {
         append(s.grid.width).append('x').append(s.grid.height)
         append('|').append(s.tick)
         for (m in s.machines) append('|').append(m?.toString() ?: "-")
-        for (b in s.bridges) append('|').append(b?.toString() ?: "-")
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
         }

@@ -18,7 +18,6 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Rail("RAIL", Conduit.Rail),
     Gauge("GAUGE", Conduit.Rail),
     Pipe("PIPE", Conduit.Pipe),
-    Bridge("BRIDGE", Conduit.Rail),
     Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
     ;
@@ -44,6 +43,17 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
     ThermalDecomposer("THERMAL DECOMPOSER", isPermeable = true),
     Smelter("SMELTER"),
     Extractor("EXTRACTOR", isPermeable = true),
+
+    /**
+     * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
+     * see `DeckMachineKind.span`.
+     *
+     * Permeable, because a bridge is a gantry and not a block: it is mostly the air under it, so it
+     * divides no room and displaces no gas. What it *does* claim is the floor, which is the whole
+     * point of it being here — a bridge can no longer be stacked on another building or on another
+     * bridge, so crossing a run costs three tiles of deck.
+     */
+    Bridge("BRIDGE", isPermeable = true),
     ;
 
     companion object {

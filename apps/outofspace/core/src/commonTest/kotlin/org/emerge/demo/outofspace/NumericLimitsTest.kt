@@ -158,8 +158,7 @@ class NumericLimitsTest {
      * whole reason this is a separate number: divide by the wrong one and a bridge either vanishes
      * from the budget or is counted as if it were three deck plates.
      */
-    private fun MachineKind.footprintTiles(): Long =
-        if (this == MachineKind.Bridge) 1L else (size * size).toLong()
+    private fun MachineKind.footprintTiles(): Long = (size * size).toLong()
 
     /**
      * The most mass, and the most heat capacity, that a **single tile** of a packed grid can carry.

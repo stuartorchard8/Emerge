@@ -188,7 +188,6 @@ val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
-        MachineKind.Bridge -> Conduit.Rail.material
         MachineKind.Wire -> Conduit.Signal.material
     }
 val DeckMachineKind.material: Material
@@ -202,6 +201,8 @@ val DeckMachineKind.material: Material
         DeckMachineKind.Extractor,
         -> Material.Titanium
         DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> Material.Firebrick
+        // Iron, like the track it holds up.
+        DeckMachineKind.Bridge -> Conduit.Rail.material
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -237,7 +238,7 @@ val MachineKind.fillPermille: Int
         MachineKind.Gauge -> 40
 
         // Track and pipework, laid across a tile rather than filling it.
-        MachineKind.Rail, MachineKind.Bridge -> 20
+        MachineKind.Rail -> 20
         MachineKind.Pipe, MachineKind.Valve -> 15
 
         // A cable.
@@ -260,6 +261,10 @@ val DeckMachineKind.fillPermille: Int
         DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> 250
         // Instruments and fittings: mostly a housing. Carried across unchanged.
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
+        // A gantry: the same fill as the track it carries, because that is what it is — a length of
+        // rail held up in the air. Carried across from when a bridge was a fitting, so the migration
+        // does not quietly change what the ship weighs.
+        DeckMachineKind.Bridge -> 20
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

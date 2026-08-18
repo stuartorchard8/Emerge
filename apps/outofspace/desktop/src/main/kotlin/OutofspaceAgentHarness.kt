@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.DeleteLayer
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
@@ -553,7 +554,7 @@ object OutofspaceAgentHarness {
         }
 
         private fun buildGlyph(tile: TileIndex): Char {
-            state.bridges[tile.index]?.let { return 'B' }
+            if (state.machineCovering(tile) is Bridge) return 'B'
             state.railAt(tile)?.let { return '=' }
             val m = state.machineCovering(tile)
             if (m != null) return if (m::class.simpleName == "Hull") 'H' else '#'
@@ -622,7 +623,7 @@ object OutofspaceAgentHarness {
             println("[agent] probe ($x,$y) tile $tile @ tick ${controller.tick}")
             println("[agent]   machine   ${state.machineCovering(tile)?.let { it::class.simpleName } ?: "-"}" +
                 "  rail ${state.railAt(tile)?.let { "yes held=${!state.rail.isEmpty(tile)}" } ?: "-"}" +
-                "  bridge ${if (state.bridges[tile.index] != null) "yes" else "-"}")
+                "  bridge ${if (state.machineCovering(tile) is Bridge) "yes" else "-"}")
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")

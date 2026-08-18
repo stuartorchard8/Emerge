@@ -38,6 +38,7 @@ import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.coveredTiles
 import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
+import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -211,17 +212,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
 
             for (tile in w.grid.tiles) {
-                val m : Machine = w[tile] ?: continue
-                val activation = m.wiring.activation(Action.Run, signals.at(tile))
-                w[tile] = when (m) {
-                    is Bridge -> m
-                }
-            }
-            for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Hull, is Airlock, is Vent, is Storage,
+                    // A bridge is inert like a length of track: its load is shuffled along by
+                    // [advanceBridges] with the rest of the conduit step, not by running the machine.
+                    is Hull, is Airlock, is Vent, is Storage, is Bridge,
                     is Sensor, is WireButton, is Pump -> m
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
@@ -267,7 +263,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     dm?.addEnergySpread(added, w.grid, w.deck)
                 }
             }
-            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges, w.deck, w.buffers)
+            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.deck, w.buffers)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
@@ -382,8 +378,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Flight ────────────────────────────────────────────────────────────────
         //
         val machines = w.machines.toList()
-        val bridges = w.bridges.toList()
-        val mass = vesselMass(w.grid, machines, w.rail, conduits, bridges, w.deck, w.buffers)
+        val mass = vesselMass(w.grid, machines, w.rail, conduits, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -500,7 +495,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             buffers = w.buffers,
             rail = w.rail,
             conduits = conduits,
-            bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
             tick = state.tick + 1,
             extractedMass = w.extractedMass,
@@ -972,7 +966,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         fun conduitsSnapshot(): Conduits =
             Conduits.of(Array(layers.size) { layers[it].toList() }, tracks.copyOf())
-        val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
 
@@ -1009,7 +1002,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * points at once. The same choice, for the same reason, that hands `state.velocityX` to
          * [driftBodies] and integrates the position from it: one frame per tick, stated once.
          */
-        val about: MassDistribution = massDistribution(state.grid, state.machines, state.rail, state.conduits, state.bridges, state.deck, state.buffers)
+        val about: MassDistribution = massDistribution(state.grid, state.machines, state.rail, state.conduits, state.deck, state.buffers)
 
         /**
          * Where the grid sits in the world, taken once from the incoming state and shared — the same
@@ -1098,7 +1091,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
-                for (t in coveredTiles(state.grid, tile, m.kind.diameter)) o[t] = tile
+                // ⚠️ `m.tiles(grid)`, not `coveredTiles(grid, tile, diameter)`. A bridge's footprint
+                // is a **line along its facing**, and the square form claimed the two tiles either
+                // side of it as well — which silently stole the origin of whatever was standing
+                // there, so a rotation check found the neighbouring tile free and turned onto it.
+                // [Occupancy.derive] is the twin of this and already walks the footprint.
+                for (t in m.tiles(state.grid)) o[t] = tile
             }
             for (i in 0 until o.size) o[TileIndex(i)] = TileIndex(o[TileIndex(i)].index)
         }
@@ -1174,10 +1172,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     BodySlot.Fitting -> body.conduit?.let { c ->
                         if (tracks.occupies(c, body.tile)) tracks.setEnergy(c, body.tile, energy[i])
                     }
-                    // Same again: a bridge spans three tiles and is stored at the middle one.
-                    BodySlot.Span -> bridges[body.anchor.index]?.let {
-                        bridges[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i])) as Bridge
-                    }
                 }
             }
         }
@@ -1225,7 +1219,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
                                 .also { built(tracks.lay(Conduit.Rail, edit.tile)) }
                         }
-                        MachineKind.Bridge -> placeBridge(edit.tile, edit.facing)
                         else -> placeBuilding(edit.tile, edit.kind, edit.facing)
                     }
                 }
@@ -1248,8 +1241,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // The same for the deck. A turned machine keeps its tiles — footprints are
                     // square — so this moves its ports and nothing else, and `set` leaves the
                     // stores and the casing exactly where they were.
+                    //
+                    // ⚠️ Except a bridge, whose footprint is a line: turning it moves it off two
+                    // tiles and onto two others, so the turn is *refused* when the tiles it would
+                    // swing onto are not free. Demolish and rebuild is the way to move a blocked
+                    // one, which is the same answer the game gives for anything else in the way.
                     val dm = deck[tile]
-                    if (dm is DirectedDeckMachine) deck[tile] = dm.rotated()
+                    if (dm is DirectedDeckMachine) {
+                        val turned = dm.rotated() as DirectedDeckMachine
+                        if (canStandWhereItWouldTurn(turned, tile)) rebuildInPlace(tile, dm, turned)
+                    }
                 }
                 is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
@@ -1260,17 +1261,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // once would remove things the player could not see they were pointing at. A
                     // player who *does* mean all of them now has a way to say so.
                     DeleteLayer.Top -> {
-                        if (removeBridge(edit.tile)) return
+                        // Bridge, then conduit, then the machine underneath — unchanged, and it has
+                        // to be said explicitly now that a bridge is a deck machine: a bridge is
+                        // *above* the track it crosses, so peeling from the top reaches it first.
+                        // Left to fall through with the rest of the deck it would come off last, and
+                        // clearing a bridged tile would start by lifting the rail out from under it.
+                        if (deck[originAt(edit.tile) ?: edit.tile] is Bridge) {
+                            if (removeMachine(edit.tile)) return
+                        }
                         for (c in Conduit.entries) if (removeConduit(edit.tile, c)) return
                         removeMachine(edit.tile)
                     }
-                    DeleteLayer.Bridge -> removeBridge(edit.tile)
+                    // A bridge is a deck machine now, so BRIDGE and DECK name the same layer. Kept
+                    // as its own entry because a player pointing at a bridge means the bridge.
+                    DeleteLayer.Bridge -> removeMachine(edit.tile)
                     DeleteLayer.Rail -> removeConduit(edit.tile, Conduit.Rail)
                     DeleteLayer.Pipe -> removeConduit(edit.tile, Conduit.Pipe)
                     DeleteLayer.Wire -> removeConduit(edit.tile, Conduit.Signal)
                     DeleteLayer.Deck -> removeMachine(edit.tile)
                     DeleteLayer.All -> {
-                        removeBridge(edit.tile)
                         for (c in Conduit.entries) removeConduit(edit.tile, c)
                         removeMachine(edit.tile)
                     }
@@ -1314,17 +1323,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        /**
-         * Takes a bridge off a tile. True if there was one, which is what makes [DeleteLayer.Top]'s
-         * cascade readable as "the first layer that had anything".
-         */
-        private fun removeBridge(tile: TileIndex): Boolean {
-            val bridge = bridges.getOrNull(tile.index) ?: return false
-            bridges[tile.index] = null
-            scrapped(bridge.energy.total)
-            return true
-        }
-
         /** Takes one conduit layer off a tile, cutting the far halves of its joins. */
         private fun removeConduit(tile: TileIndex, c: Conduit): Boolean {
             val line = layer(c)
@@ -1359,8 +1357,58 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val deckMachine = deck[origin] ?: return false
             for (t in deckMachine.tiles(grid)) originOf[t] = TileIndex.NONE
             scrapped(deckMachine.energy(grid, deck.stuff).sum())
+            // The stores come down with the building, for the reason the machine list's do: a store
+            // left standing at a tile with nothing on it is a warehouse's worth of iron nobody can
+            // reach, and it still counts toward the vessel's mass.
+            buffers.releaseRoles(grid, deckMachine, origin)
             deck -= origin
             return true
+        }
+
+        /**
+         * Whether [turned] would fit if the machine at [centre] were rotated to it.
+         *
+         * Only a span can fail this — every square footprint covers the same tiles whichever way it
+         * points — but it is asked of everything, because "check the shape you would become" needs
+         * no exception and a rule with an exception in it grows a second one.
+         */
+        private fun canStandWhereItWouldTurn(turned: DeckMachine, centre: TileIndex): Boolean {
+            val after = turned.kind.footprint(centre, grid, (turned as? DirectedDeckMachine)?.facing ?: Direction.Right)
+                ?: return false
+            // Its own tiles do not count as in the way: it is standing on them already.
+            return after.all { originOf[it] == TileIndex.NONE || originOf[it] == centre }
+        }
+
+        /**
+         * Swaps the machine at [centre] for [turned], moving its casing and its stores with it.
+         *
+         * A demolish-and-rebuild rather than `deck[tile] = turned`, because a span's tiles change:
+         * `set` deliberately leaves the matter alone, which is right for a machine that stays where
+         * it is and would strand a bridge's casing on the tiles it just swung off. Booked through
+         * neither ledger — no metal arrives and none is scrapped, it is the same bridge — so the
+         * energy is carried across by hand.
+         */
+        private fun rebuildInPlace(centre: TileIndex, before: DeckMachine, turned: DeckMachine) {
+            val carried = before.tiles(grid).sumOf { deck.stuff.energyAt(it) }
+            for (t in before.tiles(grid)) originOf[t] = TileIndex.NONE
+            val held = BufferRole.entries.mapNotNull { role ->
+                val tile = bufferTile(grid, before, centre, role) ?: return@mapNotNull null
+                buffers.resourceAt(tile)?.let { role to it }
+            }
+            buffers.releaseRoles(grid, before, centre)
+            deck -= centre
+            deck += turned
+            buffers.claimRoles(grid, turned, centre)
+            for (t in turned.tiles(grid)) originOf[t] = centre
+            for ((role, held1) in held) {
+                bufferTile(grid, turned, centre, role)?.let { buffers.put(it, held1) }
+            }
+            // Put the heat back where the metal went. Spread evenly: the tiles are not the same
+            // tiles, so there is no per-tile correspondence to preserve, and a bridge is one object.
+            val tiles = turned.tiles(grid)
+            val each = carried / tiles.size
+            for (t in tiles) deck.stuff.setEnergy(t, each)
+            deck.stuff.addEnergy(centre, carried % tiles.size)
         }
 
         /**
@@ -1463,14 +1511,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (t in covered) originOf[t] = tile
         }
 
-        /** Place building (click names centre, footprint grows around it). */
+        /**
+         * Place building (click names centre, footprint grows around it).
+         *
+         * The footprint comes from the machine rather than from `coveredTiles(grid, tile, size)`,
+         * because a bridge's is a **line along its facing** and a square would have it claim two
+         * tiles it does not stand on. `tiles(grid)` is the one answer both shapes give.
+         */
         private fun placeDeckBuilding(tile: TileIndex, kind: DeckMachineKind, facing: Direction, deck: DeckArray) {
-            val size = kind.diameter
-            if (!footprintFits(grid, tile, size)) return
-            val covered = coveredTiles(grid, tile, size)
+            val built = newDeckMachine(kind, tile, facing) ?: return
+            // Null means it hangs off the grid — half a bridge, or a smelter over the rim.
+            val covered = (kind.footprint(tile, grid, facing) ?: return).toList()
             // Over anything occupied = no-op (footprint check, not just cursor tile).
             if (covered.any { originOf[it] != TileIndex.NONE }) return
-            val built = newDeckMachine(kind, tile, facing) ?: return
             if (portsClash(portsOf(grid, built))) return
 
             // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
@@ -1479,26 +1532,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             deck += built
             built(built.energy(grid, deck.stuff).sum())
+            // The stores go up with the building: an empty tank is a tank and not an absence, and a
+            // bridge's three slots have to exist before anything can be set down in one.
+            buffers.claimRoles(grid, built, tile)
             for (t in covered) originOf[t] = tile
-        }
-
-        /**
-         * Puts a bridge down, stored at its middle tile.
-         *
-         * It occupies nothing, so there is no footprint to check — the **only** constraint is its
-         * ports, and that is the constraint that gives bridges their shape: two of them cannot share
-         * an end, and neither can a bridge end and a building's port, because a segment on that tile
-         * would have no way to say which of the two it feeds.
-         */
-        private fun placeBridge(tile: TileIndex, facing: Direction) {
-            if (bridges[tile.index] != null) return
-            val built = Bridge(facing)
-            val ports = portsOf(grid, built, tile)
-            // Both ends have to be on the grid, or it is half a bridge.
-            if (ports.size < 2) return
-            if (portsClash(ports)) return
-            bridges[tile.index] = built
-            built(built.energy.total)
         }
 
         /** Any two ports of the same conduit on one tile clash. */
@@ -1631,10 +1668,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val m = machines[i] ?: continue
                 for (port in portsOf(grid, m, TileIndex(i))) add(port)
             }
-            for (i in bridges.indices) {
-                val b = bridges[i] ?: continue
-                for (port in portsOf(grid, b, TileIndex(i))) add(port)
-            }
             // Deck machines have ports too, now that a vent is one. Visited by centre — a machine
             // covering several tiles is stored once, and adding its ports once per covered tile
             // would offer the same packet to it as many times as it is wide.
@@ -1686,10 +1719,48 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun depositFromBridge(tile: TileIndex, port: Port) {
             if (rails[tile.index] == null) return
-            val bridge = bridges[port.owner.index] ?: return
-            val held = bridge.exit as? SolidPacket ?: return
-            if (!rail.loadOnto(tile, held.resource)) return
-            bridges[port.owner.index] = bridge.copy(exit = null)
+            val bridge = deck[port.owner] as? Bridge ?: return
+            // The far-end slot *is* this tile — a bridge's product port stands on its own last tile,
+            // which is why setting down is a change of layer and not of place.
+            val store = bufferTile(grid, bridge, port.owner, BufferRole.Product) ?: return
+            val held = buffers.resourceAt(store) ?: return
+            if (!rail.loadOnto(tile, held)) return
+            buffers.put(store, null)
+        }
+
+        /**
+         * Everything aboard every bridge shuffles one slot toward the output end.
+         *
+         * Walked from the **far end back**, so a full bridge empties its product slot onto the track
+         * and shuffles along in the same step rather than stalling for two — the same rule, and for
+         * the same reason, as [FlowGraph.order] on the track itself.
+         *
+         * The three slots are the three tiles the bridge stands on, so this is three reads and three
+         * writes on the buffer layer rather than a `copy` of a data class. What used to be
+         * `Bridge.advanced()` is here and not on the machine because the machine no longer holds
+         * anything — a bridge is now only its facing, and where its load is is a fact about the
+         * world.
+         */
+        private fun advanceBridges() {
+            for (tile in grid.tiles) {
+                val b = deck[tile] as? Bridge ?: continue
+                if (b.center != tile) continue
+                val slots = arrayOf(BufferRole.Input, BufferRole.Inside, BufferRole.Product)
+                    .map { bufferTile(grid, b, tile, it) ?: return@map null }
+                // Back to front: product first, so the tile it vacates is free for the one behind.
+                for (i in slots.indices.reversed()) {
+                    if (i == 0) break
+                    val into = slots[i] ?: continue
+                    val from = slots[i - 1] ?: continue
+                    if (buffers.massAt(into) > 0L) continue
+                    val moving = buffers.resourceAt(from) ?: continue
+                    buffers.put(into, moving)
+                    buffers.put(from, null)
+                    // A slot that was empty and is not now took delivery from the slot behind it,
+                    // which is the only way a bridge slot is ever filled from the inside.
+                    motion.bridgeSlotFilled(tile, if (i == 2) Motion.SLOT_EXIT else Motion.SLOT_MIDDLE)
+                }
+            }
         }
 
         /** Which of a machine's buffers drains through [port]. */
@@ -1712,16 +1783,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
 
             // Bridge steps with layer (slots freed for track).
-            for (tile in grid.tiles) {
-                val b = bridges[tile.index] ?: continue
-                if (b.conduit != Conduit.Rail) continue
-                val after = b.advanced()
-                bridges[tile.index] = after
-                // A slot that was empty and is not now took delivery from the slot behind it, which
-                // is the only way a bridge slot is ever filled from the inside.
-                if (b.exit == null && after.exit != null) motion.bridgeSlotFilled(tile, Motion.SLOT_EXIT)
-                if (b.middle == null && after.middle != null) motion.bridgeSlotFilled(tile, Motion.SLOT_MIDDLE)
-            }
+            advanceBridges()
 
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
             val sinks = ports.entries
@@ -1786,12 +1848,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
         private fun offerTo(port: Port, packet: Packet): Packet? {
-            if (port.fromBridge) {
-                val bridge = bridges[port.owner.index] ?: return packet
-                if (bridge.entry != null) return packet
-                bridges[port.owner.index] = bridge.copy(entry = packet)
-                return null
-            }
             val dest = machines[port.owner.index]
             val deckDest = deck[port.owner]
             if (dest != null) {
@@ -1825,6 +1881,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
+                // A lump stepping onto a bridge goes into the near-end slot.
+                //
+                // ⚠️ **A slot takes one packet or none**, and does not merge — which is the one way
+                // a bridge differs from every other buffered kind. `acceptInto` would pour the next
+                // lump into the same slot up to [MACHINE_BUFFER_CAP], and a bridge is not a hopper:
+                // it is three places to stand, and what leaves the far end has to be what stepped on.
+                is Bridge -> {
+                    val store = bufferTile(grid, destination, destination.center, BufferRole.Input)
+                    val solid = packet as? SolidPacket
+                    if (store == null || solid == null || buffers.massAt(store) > 0L) false
+                    else {
+                        buffers.put(store, solid.resource)
+                        true
+                    }
+                }
                 // Overboard, and booked as it goes: [ventedMass] is the only legitimate way for mass
                 // to leave the vessel, so the ledger term and the machine's own running total move
                 // together or the world stops adding up.
@@ -1880,7 +1951,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun newMachine(kind: MachineKind, facing: Direction): Machine? = when (kind) {
             // Fittings placed directly on layers.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
+            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve,
             MachineKind.Wire -> null
         }
 
@@ -1898,6 +1969,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(tile, facing)
             DeckMachineKind.Smelter -> Smelter(tile, facing)
             DeckMachineKind.Extractor -> Extractor(tile, facing)
+            DeckMachineKind.Bridge -> Bridge(tile, facing)
         }
     }
 }

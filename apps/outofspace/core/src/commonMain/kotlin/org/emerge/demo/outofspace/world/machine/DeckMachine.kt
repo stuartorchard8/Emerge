@@ -55,7 +55,8 @@ sealed interface DeckMachine : Placed {
      * grid to hand because they are all iterating a world.
      */
     fun tiles(grid: Grid): Array<TileIndex> =
-        kind.footprint(center, grid) ?: error("a ${kind.label} at $center does not fit this grid")
+        kind.footprint(center, grid, (this as? DirectedDeckMachine)?.facing ?: Direction.Right)
+            ?: error("a ${kind.label} at $center does not fit this grid")
 
     fun withWiring(wiring: Wiring): DeckMachine
 

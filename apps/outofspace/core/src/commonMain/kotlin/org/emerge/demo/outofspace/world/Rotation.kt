@@ -118,7 +118,6 @@ fun massDistribution(
     machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
-    bridges: List<Machine?>,
     deck: DeckArray,
     buffers: BufferLayer,
 ): MassDistribution {
@@ -128,7 +127,7 @@ fun massDistribution(
     // the division below recovers anyway.
     var momentX = 0L
     var momentY = 0L
-    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
+    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         mass += m
@@ -144,7 +143,7 @@ fun massDistribution(
     val comY = scaledRatio(momentY, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
 
     var gyrationSq = 0L
-    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
+    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         val rx = tileCentre(grid.xOf(tile)) - comX
@@ -167,7 +166,7 @@ fun tileCentre(n: Int): Long = n * Rotation.MILLI_TILE + Rotation.MILLI_TILE / 2
  * The same three numbers for a **free body**: a grid of equal cells, each weighing [massPerTile].
  *
  * The same two passes as [massDistribution] and for the same reason, but the walk is a cell grid
- * rather than machines-conduits-bridges. Kept as a separate function rather than generalised over a
+ * rather than machines-conduits-deck. Kept as a separate function rather than generalised over a
  * callback because the two disagree about what a "tile" weighs — a vessel tile is fabric plus cargo
  * and changes every tick, a body's cells are all the same rock — and pretending otherwise would cost
  * the body a per-cell lookup it does not need.

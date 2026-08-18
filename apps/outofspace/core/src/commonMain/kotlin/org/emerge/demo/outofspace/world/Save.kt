@@ -132,11 +132,6 @@ object Save {
             out.append("   # ").append(where(state.grid, tile)).append(' ').append(linkLetters(r)).append('\n')
         }
         for (tile in state.grid.tiles) {
-            val b = state.bridges[tile.index] ?: continue
-            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b, tile, state.grid, state.buffers))
-            out.append("   # ").append(where(state.grid, tile)).append('\n')
-        }
-        for (tile in state.grid.tiles) {
             val cursor = state.diverters.forkCursors[tile] ?: 0
             if (cursor != 0) out.append("diverter ").append(tile.index).append(' ').append(cursor).append('\n')
         }
@@ -281,6 +276,9 @@ object Save {
     private fun storeKey(m: Placed, role: BufferRole): String = when {
         m is Storage -> "stored"
         m is Extractor -> if (role == BufferRole.Inside) "in" else "buffer"
+        // A bridge's middle slot has always been `span`, and it stays `span`: the three slots became
+        // three role tiles without the file needing to know.
+        m is Bridge && role == BufferRole.Inside -> "span"
         role == BufferRole.Input -> "in"
         role == BufferRole.Inside -> "inside"
         role == BufferRole.Product -> "out"
@@ -293,15 +291,6 @@ object Save {
             if (value != null) f.append(' ').append(key).append('=').append(value)
         }
         if (m is Directed) put("facing", m.facing.name)
-        when (m) {
-            is Bridge -> {
-                put("conduit", m.conduit.name)
-                put("in", m.entry?.let { writePacket(it) })
-                put("span", m.middle?.let { writePacket(it) })
-                put("out", m.exit?.let { writePacket(it) })
-            }
-            is Storage -> {}
-        }
         // Every store the machine keeps, under the key that record has always used for it. What a
         // machine holds moved to the buffer layer without the file noticing — see [storeKey].
         for (role in bufferRolesOf(m)) {
@@ -325,8 +314,9 @@ object Save {
         }
         if (m is DirectedDeckMachine) put("facing", m.facing.name)
         when (m) {
-            // An airlock is its wiring, and the common code around this writes that.
-            is Hull, is Airlock -> {}
+            // An airlock is its wiring, and the common code around this writes that. A bridge is
+            // its facing and its three slots, and both of those are written by the common code too.
+            is Hull, is Airlock, is Bridge -> {}
             is Vent -> put("vented", m.ventedMass.toString())
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
@@ -590,7 +580,6 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
-        val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<TileIndex, Int>()
         val merges = HashMap<TileIndex, Int>()
         val airMass = MassArray(grid.size)
@@ -731,11 +720,15 @@ object Save {
                     if (layer[t.index] != null) fail("two ${segment.conduit.label} segments at tile $t")
                     layer[t.index] = segment
                 }
+                // A `bridge` record is how every file up to this one spelled it, back when a bridge
+                // was its own list. It is a deck machine now, so the keyword is a legacy spelling of
+                // `deckmachine` and lands in the same place — the same routing a `machine` record
+                // for a vent gets. The slot keys (`in`, `span`, `out`) did not change; see
+                // [storeKey].
                 "bridge" -> {
                     val t = tile(1)
-                    if (bridges[t.index] != null) fail("two bridges at tile $t")
-                    val (bridge, _) = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
-                    bridges[t.index] = bridge as? Bridge ?: fail("not a bridge")
+                    if (deck[t] != null) fail("two machines at tile $t")
+                    deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
                 "merge" -> merges[tile(1)] = long(2).toInt()
@@ -843,7 +836,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMass(grid, machines.toList(), rail, conduits, bridges.toList(), deck, buffers)
+            val shipMass = vesselMass(grid, machines.toList(), rail, conduits, deck, buffers)
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
@@ -880,7 +873,6 @@ object Save {
             buffers = buffers,
             rail = rail,
             conduits = conduits,
-            bridges = bridges.toList(),
             diverters = FlowCursors(diverters, merges),
             gravity = gravity,
             positionX = positionX,
@@ -906,8 +898,8 @@ object Save {
             // file's baseline described the per-tile field, so it is not carried across: the
             // ledger is re-anchored to what the bodies actually hold.
             baselineEnergy = if (version >= 5) baselineEnergy ?: solidEnergy(
-                machines.toList(), conduits, bridges.toList()
-            ) else solidEnergy(machines.toList(), conduits, bridges.toList()),
+                machines.toList(), conduits
+            ) else solidEnergy(machines.toList(), conduits),
             air = air,
             pipeAir = pipeAir,
             pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
@@ -1027,16 +1019,6 @@ object Save {
         }
 
         val machine: Machine = when (kind) {
-            MachineKind.Bridge -> Bridge(
-                facing = facing(),
-                conduit = f["conduit"]?.let { name ->
-                    Conduit.entries.firstOrNull { it.name == name } ?: fail("unknown conduit '$name'")
-                } ?: Conduit.Rail,
-                // `held` = v5 bridge slot name; read as entry so old saves load material.
-                entry = (f["in"] ?: f["held"])?.let { readPacket(it, scale, fail) },
-                middle = f["span"]?.let { readPacket(it, scale, fail) },
-                exit = f["out"]?.let { readPacket(it, scale, fail) },
-            )
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
                 fail("$kindName is a conduit, not a machine")
@@ -1080,7 +1062,23 @@ object Save {
         fun facing(): Direction = f["facing"]?.let { name ->
             Direction.ALL.firstOrNull { it.name == name } ?: fail("unknown direction '$name'")
         } ?: fail("$kindName needs a facing")
-        fun res(key: String): Resource? = f[key]?.let { readResource(it, scale, fail) }
+        /**
+         * A store's contents.
+         *
+         * ⚠️ Tolerates the `S:` packet prefix, because a **legacy `bridge` record wrote its three
+         * slots as packets** rather than as resources — a bridge carried `Packet`s while every other
+         * machine's store held a `Resource`, and that difference reached the file. Now that its slots
+         * are ordinary role tiles there is one spelling going forward, and this reads the old one.
+         * `F:` is refused rather than unwrapped: there was never a fluid bridge, and a file claiming
+         * one is a file that means something this build cannot honour.
+         */
+        fun res(key: String): Resource? = f[key]?.let {
+            when {
+                it.startsWith("S:") -> readResource(it.substring(2), scale, fail)
+                it.startsWith("F:") -> fail("a $kindName store cannot hold a fluid packet: '$it'")
+                else -> readResource(it, scale, fail)
+            }
+        }
         fun num(key: String, fallback: Long): Long =
             f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
         // ⚠️ Scales the value read from the file but NOT the fallback, which is a current-unit
@@ -1156,6 +1154,14 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
             )
+            DeckMachineKind.Bridge -> {
+                // ⛔ A pipe bridge is refused rather than quietly turned into a rail one. There was
+                // never a way to build one — `Edit.Place` only ever made rail bridges — so a file
+                // that says otherwise was hand-edited, and converting it would silently reroute a
+                // network. Every real save says Rail or says nothing.
+                f["conduit"]?.let { if (it != Conduit.Rail.name) fail("a bridge carries rail, not $it") }
+                Bridge(tile, facing())
+            }
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted
