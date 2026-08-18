@@ -1,6 +1,7 @@
 # Self-building rails
 
-Status: **planned, not started** (2026-08-18).
+Status: **increments 1–4 built and green** (2026-08-19). Creative mode is still on by default —
+flipping `VesselState.creative` is a one-line change and Stu's call.
 
 Replace creative-mode placement with a closed construction loop. ONI does this with agents that
 walk to a ghost carrying materials; we do it with the rail network itself. No pathfinding, no
@@ -139,28 +140,65 @@ It is *not* in scope here.
 
 Keeping one layer per conduit type rather than merging them is what makes this possible at all.
 
-## Increments
+## Increments — all four built
 
-**1. Break the identity.** `reconciled` stops conjuring and stops clearing. Laying makes matter-free
-track. `Work.built` drops its conduit term; `TrackLayers.lay` becomes a bill query. Nothing is
-playable — the whole network is ghosts — but the ledger tightens and the suite reports the true
-scope. This is the hard shape and it cannot be discovered by doing increment 2 first.
+**1. Break the identity ✅** `9da586d9`, `cfcbe610`, `2fea0f6b`. `reconciled` split into `swept`
+(clears orphans) and `finished` (only a *stated* world says it). `trackstuff` added so a partly-built
+segment survives a save. `VesselState.creative` added, on by default.
 
-**2. Ghost port and the admission rule.** A rail below its bill grows an input port. Only material
-≥95% target species may enter its tile. What enters is absorbed onto the structure layer,
-proportionally, up to what is still needed. Resolve the port-priority question (above) first.
+**2. Ghost port and admission ✅** `fbf4c89a`, `62647892`, `e1f0eb53`. A ghost is a sink without
+owning a port; refuses anything under 95% of what it is made of; absorbs proportionally, junk and
+all, onto the structure layer. `VesselState.builtMass` books the crossing from cargo to fabric.
 
-**3. Deconstruction.** The `deconstructing` bit, the implied output port, the multi-tick dribble
-(a tile carries at most one packet and a bill may exceed `Capacity.PACKET_MASS`), and ceasing to be
-when structure mass is zero *and* the transport tile is empty.
+**3. Deconstruction ✅** `4cb7424d`. `Segment.deconstructing`, saved as `scrapping=1`. Outside
+creative, delete marks rather than removes. A marked rail is a source, carries traffic to the end,
+and ceases to be when both its structure and its tile are empty. Track under a deck machine's port
+is locked. **A rail walks**, pinned to the unit by `GhostTest`.
 
-**4. Starter vessel and rendering.** Real rails and a storage container of iron on the starting ship.
-A fill-fraction visual so a half-built ghost is legible, and a deconstruction visual.
+**4. Starter vessel and rendering ✅** `e8662a02`, `1e9e3035`. Half a tank of iron;
+`baselineCargoMass`; ghosts fade up from a dim slate, marked track goes warm; `agent-scripts/ghosts.txt`.
 
 Later, out of scope: pipes and wires by the same mechanism, then deck machines, then the fancier
 things a walking rail makes possible.
 
+## What building it turned up
+
+**Three latent bugs the work exposed, all fixed:**
+
+1. The grid remap copied a segment's *heat* by hand and let `with` re-derive its *mass* from the
+   kind's bill. A length of track whose composition had been altered came back pristine one grid
+   over and no ledger could see it. It copies the matter now.
+2. `writeMixture` never wrote energy, though `readMixture` has always read it. Every gram of ore in
+   a tank or on a belt came back from a save at whatever the reader defaulted to. Invisible while
+   everything stored happened to be at ambient.
+3. The mass ledger assumed everything solid aboard had been dug up. A ship that starts with a stock
+   cannot say that — hence `baselineCargoMass`.
+
+**One design collision, fixed:** a segment handing its metal back is always short of its bill, so it
+read as a ghost and absorbed its own metal straight off the belt. Stable, stationary, and
+indistinguishable from deconstruction doing nothing. Being told to go now overrides being short.
+
+## ⛔ Open — for Stu
+
+**Deconstruction deadlocks on an occupied tile.** A marked rail cannot hand its metal back while a
+lump is standing on it, and if nothing downstream is drawing, the lump never leaves. Draw a run, let
+the tank overfill it, change your mind, and the tiles sit marked for ever. Recorded by
+`agent-scripts/ghosts.txt`, which asserts the jam rather than papering over it.
+
+Same family as the accepted bricking limitation, but reachable by ordinary play rather than by
+saturating a network with the wrong material. Not fixed, and deliberately so — the plan says not to
+invent a rescue mechanism. Worth a decision.
+
+**`massBalance` cannot see conjured fabric.** It counts cargo, and conduit structure is not cargo, so
+a bug that minted metal directly onto the structure layer would not move it. `builtMass` is the only
+witness. Worth knowing when reading a green ledger.
+
+**The energy ledger still does not follow the mass.** The transport layer's energy was never in
+`storedEnergy`, so heat riding in with absorbed material is not booked. Older than this work, and the
+energy ledger is parked.
+
 ## Coordination
 
 Increment 1 touches `Conduits`, `Save` and `OutofspaceSim`'s work ledger. Gauge and valve work was in
-flight in `Save`, `Port` and `Segment` when this was written — check what landed before starting.
+flight in `Save`, `Port` and `Segment` when this was written — it landed in `a52cd884`/`b5b0f3fd`
+before any of the above.
