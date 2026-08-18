@@ -120,7 +120,10 @@ class OutofspaceController(
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
-    fun place(tile: TileIndex) = pending.add(Edit.Place(tile, brush, brushFacing))
+    fun place(tile: TileIndex) = when (brushKind) {
+        BrushKind.Deck -> pending.add(Edit.PlaceDeck(tile, deckBrush, brushFacing))
+        BrushKind.Machine -> pending.add(Edit.Place(tile, brush, brushFacing))
+    }
 
     /**
      * The tile the current drag last reached, or -1 when nothing is being dragged.
@@ -190,7 +193,7 @@ class OutofspaceController(
     fun cycleInputKey(tile: TileIndex, delta: Int) {
         // On the deck now, like every other transmitter. Asking the machine list would find
         // nothing and the key would simply stop cycling, with no error to say why.
-        val current = state.deckMachineCovering(tile) as? WireButton ?: return
+        val current = state.machineCovering(tile) as? WireButton ?: return
         val all = InputKey.ALL
         val next = all[((all.indexOf(current.key) + delta) % all.size + all.size) % all.size]
         bindKey(tile, next)
@@ -199,7 +202,7 @@ class OutofspaceController(
     /** Cycles a trigger between the constant and the wire under the machine. */
     fun cycleTriggerSource(tile: TileIndex, action: Action, slot: Int, delta: Int) {
         val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
-        val currentDeck = state.deckMachineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
+        val currentDeck = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
         val all = SignalSource.ALL
 
         if (current != null) {
@@ -215,7 +218,7 @@ class OutofspaceController(
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
     fun cycleTriggerWeight(tile: TileIndex, action: Action, slot: Int, delta: Int) {
         val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
-        val currentDeck = state.deckMachineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
+        val currentDeck = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
 
         if (current != null) {
             val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }

@@ -1,10 +1,8 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Bridge
-import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -46,7 +44,7 @@ enum class BufferRole { Input, Inside, Product, Waste }
  * [portsOf] allocates a list, and this is walked for every machine aboard on every tick that states
  * a world. The offsets are duplicated deliberately and `BufferRoleTest` holds the two in agreement.
  */
-fun bufferTile(grid: Grid, machine: Placed, centre: TileIndex, role: BufferRole): TileIndex? {
+fun bufferTile(grid: Grid, machine: DeckMachine, centre: TileIndex, role: BufferRole): TileIndex? {
     val packed = localBufferOffset(machine, role)
     if (packed == NO_OFFSET) return null
     var dx = (packed shr 8) - OFFSET_BIAS
@@ -64,7 +62,7 @@ fun bufferTile(grid: Grid, machine: Placed, centre: TileIndex, role: BufferRole)
 }
 
 /** Every role the machine actually keeps a store for. Allocation-free walks should use [bufferTile] directly. */
-fun bufferRolesOf(machine: Placed): List<BufferRole> =
+fun bufferRolesOf(machine: DeckMachine): List<BufferRole> =
     BufferRole.entries.filter { localBufferOffset(machine, it) != NO_OFFSET }
 
 /**
@@ -74,13 +72,13 @@ fun bufferRolesOf(machine: Placed): List<BufferRole> =
  * pooled store serving both doors" means when it is written down rather than special-cased at each
  * of the half-dozen places that ask.
  */
-fun inputBufferRole(machine: Placed): BufferRole? = when (machine) {
+fun inputBufferRole(machine: DeckMachine): BufferRole? = when (machine) {
     is Storage -> BufferRole.Inside
     else -> if (localBufferOffset(machine, BufferRole.Input) != NO_OFFSET) BufferRole.Input else null
 }
 
 /** The store that drains out through an output port carrying [stream], or null. */
-fun outputBufferRole(machine: Placed, stream: Stream): BufferRole? {
+fun outputBufferRole(machine: DeckMachine, stream: Stream): BufferRole? {
     val role = when {
         machine is Storage -> BufferRole.Inside
         stream == Stream.Waste -> BufferRole.Waste
@@ -94,7 +92,7 @@ internal const val NO_OFFSET = -1
 
 private fun pack(dx: Int, dy: Int): Int = ((dx + OFFSET_BIAS) shl 8) or (dy + OFFSET_BIAS)
 
-internal fun localBufferOffset(machine: Placed, role: BufferRole): Int {
+internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
     val r = machine.reach
     return when (machine) {
         // What it is chewing on is inside it; the ore it has ground goes out the one port it has.

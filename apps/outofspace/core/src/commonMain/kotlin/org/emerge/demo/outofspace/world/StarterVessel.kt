@@ -3,7 +3,6 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -17,15 +16,10 @@ import org.emerge.demo.outofspace.world.machine.Vent
 fun starterVessel(
     grid: Grid,
 ): VesselState {
-    val machines = arrayOfNulls<Machine>(grid.size)
     val deck = DeckArray(grid)
     val rails = arrayOfNulls<Segment>(grid.size)
     val wires = arrayOfNulls<Segment>(grid.size)
 
-    fun put(x: Int, y: Int, m: Machine) {
-        // Buildings anchored at centre.
-        if (grid.inBounds(x, y)) machines[grid.tile(x, y).index] = m
-    }
     fun put(x: Int, y: Int, m: (TileIndex) -> DeckMachine) {
         // Buildings anchored at centre. Clipped at the rim exactly as the machine `put` is: the
         // hull loops below run past the grid, and `grid.tile` of an off-grid (x, y) is not "no
@@ -159,12 +153,10 @@ fun starterVessel(
     // No rock on either plate, and that is the increment showing through rather than an omission:
     // an extractor has to be **given** something to eat. What H4 changes is where you get one — the
     // ore is out there in the field now, and the vessel flies to it. See §5i and [RockField].
-    val built = machines.toList()
     return VesselState(
         grid = grid,
-        machines = built,
         deck = deck,
-        buffers = BufferLayer.forMachines(grid, built),
+        buffers = BufferLayer.forDeck(grid, deck),
         rail = RailLayer.empty(grid.size),
         conduits = Conduits.of(
             grid.size,

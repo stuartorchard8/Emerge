@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.solidMassPerTile
-import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.size
 import kotlin.test.Test
@@ -158,7 +157,6 @@ class NumericLimitsTest {
      * whole reason this is a separate number: divide by the wrong one and a bridge either vanishes
      * from the budget or is counted as if it were three deck plates.
      */
-    private fun MachineKind.footprintTiles(): Long = (size * size).toLong()
 
     /**
      * The most mass, and the most heat capacity, that a **single tile** of a packed grid can carry.
@@ -174,13 +172,12 @@ class NumericLimitsTest {
      *
      * Dividing the per-machine figure by its footprint gives the honest quantity: a density, in
      * grams (or joules per kelvin) **per tile of deck**, which is then multiplied by the grid. For
-     * everything but a bridge that reduces to `capacityPerTile` exactly, since `thermalTiles` and the
-     * footprint are the same number — which is the sanity check that this is the right divisor.
+     * Per **tile**, and every kind's figures are already per tile, so there is no divisor left to
+     * get wrong — the machine list this used to walk kept a whole-machine total that had to be
+     * divided by a footprint, and a bridge was the exception that made the divisor worth stating.
      */
-    private val densestTileMass: Long =
-        MachineKind.ALL.maxOf { it.massPerTile * it.thermalTiles / it.footprintTiles() }
-    private val densestTileCapacity: Long =
-        MachineKind.ALL.maxOf { it.capacityPerTile * it.thermalTiles / it.footprintTiles() }
+    private val densestTileMass: Long = DeckMachineKind.ALL.maxOf { it.massPerTile }
+    private val densestTileCapacity: Long = DeckMachineKind.ALL.maxOf { it.capacityPerTile }
 
     /**
      * A ship the game actually flies, rather than the heaviest one that could be drawn.

@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -66,7 +65,6 @@ class ProcessorChainTest {
     fun `the concentrate leaves forward and the tailings leave downward`() {
         val grid = Grid(12, 10)
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Processor(grid.tile(3, 3), Direction.Right)                // covers x 2..4
@@ -77,7 +75,7 @@ class ProcessorChainTest {
         deck += Storage(grid.tile(3, 8), Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+        var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(3, 3), ore)
         s = run(s, 800)
 
@@ -123,7 +121,6 @@ class ProcessorChainTest {
     @Test
     fun `a processor with nowhere to put its tailings backs up instead of hoarding them`() {
         val grid = Grid(28, 10)
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3, bodies = 8)
@@ -134,7 +131,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+        var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
         // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
         s = run(s, 1800)

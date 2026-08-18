@@ -14,12 +14,9 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.InputKey
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
@@ -36,7 +33,6 @@ import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.ambientEnergy
-import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -114,11 +110,6 @@ object Save {
         // unreadable to a person and the whole point of the format is that a person can read it. So
         // every placed thing carries its coordinates in a comment, and track spells its links out —
         // `links=5` says nothing, `R-L-` says the run goes left to right through this tile.
-        for (tile in state.grid.tiles) {
-            val m = state[tile] ?: continue
-            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m, tile, state.grid, state.buffers))
-            out.append("   # ").append(where(state.grid, tile)).append('\n')
-        }
         for (tile in state.grid.tiles) {
             val m = state.deck[tile] ?: continue
             out.append("deckmachine ").append(tile.index).append(' ').append(writeDeckMachine(m, state.grid, state.buffers))
@@ -273,7 +264,7 @@ object Save {
      * pooled store is `stored`. Kept exactly as they were, so the storage migration does not
      * invalidate a single save.
      */
-    private fun storeKey(m: Placed, role: BufferRole): String = when {
+    private fun storeKey(m: DeckMachine, role: BufferRole): String = when {
         m is Storage -> "stored"
         m is Extractor -> if (role == BufferRole.Inside) "in" else "buffer"
         // A bridge's middle slot has always been `span`, and it stays `span`: the three slots became
@@ -283,28 +274,6 @@ object Save {
         role == BufferRole.Inside -> "inside"
         role == BufferRole.Product -> "out"
         else -> "waste"
-    }
-
-    private fun writeMachine(m: Machine, tile: TileIndex, grid: Grid, buffers: BufferLayer): String {
-        val f = StringBuilder(m.kind.name)
-        fun put(key: String, value: String?) {
-            if (value != null) f.append(' ').append(key).append('=').append(value)
-        }
-        if (m is Directed) put("facing", m.facing.name)
-        // Every store the machine keeps, under the key that record has always used for it. What a
-        // machine holds moved to the buffer layer without the file noticing — see [storeKey].
-        for (role in bufferRolesOf(m)) {
-            val store = bufferTile(grid, m, tile, role) ?: continue
-            put(storeKey(m, role), buffers.resourceAt(store)?.let { writeResource(it) })
-        }
-        // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
-        // them — the file should show the wiring somebody actually did.
-        if (m.wiring != Wiring.RUNNING) put("wire", writeWiring(m.wiring))
-        // And omitted at room temperature, for the same reason: a file full of identical `k=`
-        // fields hides the one machine that is actually hot. Version 5 and later; a version 4 file
-        // has no per-body heat at all and every body loads at ambient.
-        if (m.energy != ambientEnergy(m.kind)) put("k", writeTileEnergy(m.energy))
-        return f.toString()
     }
 
     private fun writeDeckMachine(m: DeckMachine, grid: Grid, buffers: BufferLayer): String {
@@ -412,23 +381,6 @@ object Save {
         val parts = field.split(',')
         if (parts.size != cells) fail("a $cells-cell body has ${parts.size} per-cell energy")
         return TileEnergy.of(LongArray(cells) { scale.of(parts[it].toLongOrNull() ?: fail("bad body energy '$field'")) })
-    }
-
-    private fun readTileEnergy(
-        field: String,
-        machine: Machine,
-        version: Int,
-        scale: Rescale,
-        fail: (String) -> Nothing,
-    ): TileEnergy {
-        val tiles = machine.kind.thermalTiles
-        if (version < 12) {
-            val total = scale.of(field.toLongOrNull() ?: fail("bad energy '$field'"))
-            return TileEnergy.uniform(tiles, 0L).plusEnergySpread(total)
-        }
-        val parts = field.split(',')
-        if (parts.size != tiles) fail("expected $tiles per-tile energy for ${machine.kind}, got ${parts.size}")
-        return TileEnergy.of(LongArray(tiles) { scale.of(parts[it].toLongOrNull() ?: fail("bad energy '$field'")) })
     }
 
     private fun writeSegment(s: Segment, tile: TileIndex, rail: RailLayer, conduits: Conduits): String {
@@ -573,7 +525,6 @@ object Save {
         )
         if (grid.size <= 0) throw SaveError("line $gridLine: grid has no tiles")
 
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val buffers = BufferLayer.empty(grid.size)
         val rail = RailLayer.empty(grid.size)
@@ -678,30 +629,26 @@ object Save {
                 "solidtoair" -> solidToAir = energy(1)
                 "baselineair" -> baselineAir = scaled(1)
 
+                // Every kind that was ever written under this keyword now lives on the deck, so
+                // `machine` is purely a legacy spelling of `deckmachine` — see [readMachine], which
+                // is what is left of the machine list.
                 "machine" -> {
                     val t = tile(1)
-                    if (machines[t.index] != null) fail("two machines at tile $t")
                     if (deck[t] != null) fail("two machines at tile $t")
-                    val (m, dm) = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
-                    machines[t.index] = m
-                    if (dm != null) {
-                        deck += dm
-                        // A kind that has since become a deck machine — a vent — is still written as
-                        // a `machine` record by every file saved before it moved. Its heat rode that
-                        // record in `k=`, and `deckheat` was not written for it, so without this the
-                        // machine comes back at ambient and the thermal ledger reports the
-                        // difference on the first tick after the load.
-                        readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
-                            val tiles = dm.tiles(grid)
-                            val each = total / tiles.size
-                            for (tile in tiles) deck.stuff.setEnergy(tile, each)
-                            deck.stuff.addEnergy(dm.center, total % tiles.size)
-                        }
+                    val dm = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    deck += dm
+                    // Its heat rode that record in `k=`, and `deckheat` was not written for it, so
+                    // without this the machine comes back at ambient and the thermal ledger reports
+                    // the difference on the first tick after the load.
+                    readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
+                        val tiles = dm.tiles(grid)
+                        val each = total / tiles.size
+                        for (tile in tiles) deck.stuff.setEnergy(tile, each)
+                        deck.stuff.addEnergy(dm.center, total % tiles.size)
                     }
                 }
                 "deckmachine" -> {
                     val t = tile(1)
-                    if (machines[t.index] != null) fail("two machines at tile $t")
                     if (deck[t] != null) fail("two machines at tile $t")
                     deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                 }
@@ -812,8 +759,8 @@ object Save {
             }
         }
 
-        val structure = StructureMap.derive(grid, machines.toList(), deck)
-        val occupancy = Occupancy.derive(grid, machines.toList(), deck)
+        val structure = StructureMap.derive(grid, deck)
+        val occupancy = Occupancy.derive(grid, deck)
         // A file is hand-editable, so it is hand-breakable: a typed world that puts a belt and a
         // pipe on one tile violates the exclusion rule, and that is a *bad save*, not a bug in the
         // reader. Restated as a [SaveError] so the loader reports it the way it reports any other
@@ -836,7 +783,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMass(grid, machines.toList(), rail, conduits, deck, buffers)
+            val shipMass = vesselMass(grid, rail, conduits, deck, buffers)
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
@@ -865,11 +812,10 @@ object Save {
         return VesselState(
             grid = grid,
             gridPad = GRID_PAD,
-            machines = machines.toList(),
             deck = deck,
             // The layer the machine records were read into. Omitting it does not fail loudly: the
-            // default derives empty stores from the machine list, so every warehouse comes back with
-            // its store standing and its contents gone.
+            // default derived empty stores, so every warehouse came back with its store standing and
+            // its contents gone. Hence: no default.
             buffers = buffers,
             rail = rail,
             conduits = conduits,
@@ -897,9 +843,7 @@ object Save {
             // world and harmless for a saved one, where the line is always present. A version 4
             // file's baseline described the per-tile field, so it is not carried across: the
             // ledger is re-anchored to what the bodies actually hold.
-            baselineEnergy = if (version >= 5) baselineEnergy ?: solidEnergy(
-                machines.toList(), conduits
-            ) else solidEnergy(machines.toList(), conduits),
+            baselineEnergy = baselineEnergy ?: solidEnergy(conduits),
             air = air,
             pipeAir = pipeAir,
             pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
@@ -976,72 +920,19 @@ object Save {
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
-    ): Pair<Machine?, DeckMachine?> {
+    ): DeckMachine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
         // body of its own, because the rock it is standing on is the ore body now. The rename is
         // applied here rather than in the deck reader so that both spellings land on one path.
         val deckName = if (version < 10 && kindName == "Miner") "Extractor" else kindName
-        if (deckName in DeckMachineKind.ALL.map { it.toString() }) {
-            return null to readDeckMachine(
-                listOf(deckName) + tokens.drop(1), version, tile, grid, buffers, scale, energyScale, fail,
-            )
+        if (deckName !in DeckMachineKind.ALL.map { it.toString() }) {
+            fail("$kindName is a conduit, not a machine")
         }
-        val kind = MachineKind.ALL.firstOrNull { it.name == kindName }
-            ?: fail("unknown machine '$kindName'")
-        val f = fields(tokens.drop(1), fail)
-
-        fun facing(): Direction = f["facing"]?.let { name ->
-            Direction.ALL.firstOrNull { it.name == name } ?: fail("unknown direction '$name'")
-        } ?: fail("$kindName needs a facing")
-        fun res(key: String): Resource? = f[key]?.let { readResource(it, scale, fail) }
-        fun num(key: String, fallback: Long): Long =
-            f[key]?.let { it.toLongOrNull() ?: fail("bad number '$it'") } ?: fallback
-        // ⚠️ Scales the value read from the file but NOT the fallback, which is a current-unit
-        // constant off the machine's own data class. Scaling a default would rescale a number that
-        // was never in the old unit to begin with.
-        fun massNum(key: String, fallback: Long): Long =
-            f[key]?.let { scale.of(it.toLongOrNull() ?: fail("bad number '$it'")) } ?: fallback
-
-        // V1 rate was per second; V2+ is per tick. Convert v1 by dividing by V1_TICKS_PER_SECOND.
-        /**
-         * A machine's throughput, defaulting to **that machine kind's own current default**.
-         *
-         * ⚠️ The fallback used to be a literal per machine — a fourth copy of a number already
-         * stated on the data class — so a save with no `rate` field loaded a machine running at
-         * whatever the rate was when this function was written. That is the "caller restates a
-         * constant it does not own" family again, and it survived a rate change silently.
-         */
-        fun rate(fallback: Long): Long {
-            val stored = massNum("rate", fallback * V1_TICKS_PER_SECOND)
-            return if (version < 2) stored / V1_TICKS_PER_SECOND else massNum("rate", fallback)
-        }
-
-        val machine: Machine = when (kind) {
-            // Track is a segment, not a machine, and has its own line.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
-                fail("$kindName is a conduit, not a machine")
-        }
-        // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
-        // the same for every machine but the airlock, which ships sealed — and a door that defaulted
-        // to running would come back from a hand-written save wide open.
-        val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
-        // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
-        // ⚠️ `k` is the machine's stored heat, so it takes the ENERGY factor. It rode the mass
-        // factor until v14, which was correct only while the two units were locked together.
-        // Its stores, from the fields the record has always used. Claimed before they are filled,
-        // because a store is a thing that exists whether or not it has anything in it — and the
-        // loader is one of the routes that never runs the reducer's claim path.
-        buffers.claimRoles(grid, machine, tile)
-        for (role in bufferRolesOf(machine)) {
-            val store = bufferTile(grid, machine, tile, role) ?: continue
-            buffers.put(store, res(storeKey(machine, role)))
-        }
-        val heated = f["k"]?.let { j ->
-            machine.withEnergy(readTileEnergy(j, machine, version, energyScale, fail))
-        } ?: machine
-        return heated.withWiring(wiring) to null
+        return readDeckMachine(
+            listOf(deckName) + tokens.drop(1), version, tile, grid, buffers, scale, energyScale, fail,
+        )
     }
 
     private fun readDeckMachine(

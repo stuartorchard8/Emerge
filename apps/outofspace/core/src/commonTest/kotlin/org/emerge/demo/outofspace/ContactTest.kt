@@ -9,7 +9,6 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Operand
@@ -406,15 +405,13 @@ class ContactTest {
     /** One solid tile at ([WALL], [ROW]) in an otherwise empty, airless world. */
     private fun wall(): VesselState {
         val grid = Grid(12, 12)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         deck += Hull(grid.tile(WALL.toInt(), ROW.toInt()))
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 

@@ -9,7 +9,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
@@ -68,10 +67,6 @@ class GridFitTest {
             if (y + reach > maxY) maxY = y + reach
         }
 
-        for (tile in s.grid.tiles) {
-            val m: Machine = s[tile] ?: continue
-            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
-        }
         for (tile in s.grid.tiles) {
             val m = s.deck[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
@@ -243,7 +238,6 @@ class GridFitTest {
     private fun digest(s: VesselState): String = buildString {
         append(s.grid.width).append('x').append(s.grid.height)
         append('|').append(s.tick)
-        for (m in s.machines) append('|').append(m?.toString() ?: "-")
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             for (seg in s.conduits[c]) append('|').append(seg?.toString() ?: "-")
         }

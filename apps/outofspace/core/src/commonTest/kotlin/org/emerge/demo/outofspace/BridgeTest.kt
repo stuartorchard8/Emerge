@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -61,7 +60,6 @@ class BridgeTest {
      * vertical line runs top to bottom down column 9. They meet at (9, 5).
      */
     private fun crossing(bridged: Boolean = false, horizontalSupply: Resource? = ingots): VesselState {
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
@@ -86,7 +84,7 @@ class BridgeTest {
             }
         }
         if (bridged) deck += Bridge(grid.tile(9, 5), Direction.Right)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, conduits = Conduits.ofRails(track), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(3, 5), horizontalSupply)
             .stocked(grid.tile(9, 2), ingots)
     }
@@ -228,7 +226,9 @@ class BridgeTest {
         // the whole bridge. One slot meant a bridge could only ever hold one lump, which is the same
         // statement as "it is a bottleneck": the span had a third of the capacity of the track it
         // replaced, so a bridged line ran at a third of the speed of the line either side of it.
-        var s = crossing(bridged = true).withMachine(grid.tile(15, 5).index, null)
+        // Take the far tank away, so the output run fills and stops taking.
+        var s = crossing(bridged = true)
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(15, 5), DeleteLayer.Deck))))
         s = run(s, RAIL_PERIOD * 20)
         assertEquals(Bridge.SLOTS, s.slotsFilled(grid.tile(9, 5)), "all three slots loaded")
     }

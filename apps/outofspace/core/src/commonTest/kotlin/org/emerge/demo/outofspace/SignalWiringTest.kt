@@ -14,7 +14,6 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -81,7 +80,6 @@ class SignalWiringTest {
      * refinery has to produce — this is a test about wire, not about ore.
      */
     private fun rig(fill: Long, wired: Boolean = true): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
         deck += Extractor(grid.tile(extractorAt.first, extractorAt.second), Direction.Right)
@@ -95,11 +93,10 @@ class SignalWiringTest {
 
         return VesselState(
             grid,
-            machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         ).stocked(grid.tile(13, 5), stored)
     }
 
@@ -170,7 +167,6 @@ class SignalWiringTest {
 
     @Test
     fun `two machines on one run see the same value`() {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         deck += Storage(grid.tile(13, 5), Direction.Right)
@@ -179,7 +175,7 @@ class SignalWiringTest {
         signalRow(wires, 2, 12, 3)
 
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+            VesselState(grid, deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
                 .stocked(grid.tile(13, 5), stored),
             2,
         )

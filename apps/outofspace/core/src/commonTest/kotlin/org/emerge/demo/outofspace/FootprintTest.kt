@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.machine.Processor
@@ -104,7 +103,7 @@ class FootprintTest {
 
         // A corner of the footprint, as far from the centre as it gets.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(7, 7)))))
-        assertTrue(s.machines.all { it == null }, "the whole furnace goes, not a slice of it")
+        assertTrue(grid.tiles.all { s.deck[it] == null }, "the whole furnace goes, not a slice of it")
         assertTrue(grid.tiles.all { s.occupancy.isFree(it) }, "and it releases every tile")
     }
 
@@ -174,7 +173,6 @@ class FootprintTest {
     private fun feed(endX: Int, endY: Int): VesselState {
         val grid = Grid(14, 14)
         val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Storage(grid.tile(2, 6), Direction.Right)   // output port at (3, 6)
@@ -182,7 +180,7 @@ class FootprintTest {
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(2, 6), ingots)
     }
 
@@ -214,7 +212,6 @@ class FootprintTest {
     fun `a sensor pointed at any tile of a building reads that building`() {
         val grid = Grid(12, 12)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(6, 6), Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
@@ -225,13 +222,12 @@ class FootprintTest {
         val s = run(
             VesselState(
                 grid,
-                m.toList(),
                 deck,
                 conduits = org.emerge.demo.outofspace.world.Conduits.of(
                     grid.size,
                     org.emerge.demo.outofspace.world.Conduit.Signal to wires.toList(),
                 ),
-                buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
+                buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
             ).stocked(grid.tile(6, 6), stored),
             2,
         )
@@ -245,7 +241,6 @@ class FootprintTest {
         // Inside a hull, because an unenclosed tile is space and space has no heat capacity at all.
         val grid = Grid(16, 16)
         fun room(kind: DeckMachineKind): VesselState {
-            val m = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid)
             for (i in 1..13) {
                 deck += Hull(grid.tile(i, 1))
@@ -257,7 +252,7 @@ class FootprintTest {
                 DeckMachineKind.Processor -> Processor(grid.tile(8, 8), Direction.Right)
                 else -> Smelter(grid.tile(8, 8), Direction.Right)
             }
-            return VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+            return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         }
         val small = room(DeckMachineKind.Processor).storedEnergy
         val large = room(DeckMachineKind.Smelter).storedEnergy

@@ -2,9 +2,9 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 
 /**
@@ -105,11 +105,10 @@ fun collectHullContacts(
     restingSpeedY: Long,
     into: MutableList<Contact>,
     /**
-     * The ship's machines, by tile — read for one thing only, which is what a contact's friction
-     * should be. `null` means "bare hull everywhere", which is what a test wall is and what the
-     * shape of the contact does not depend on.
+     * The deck, for one thing only: what a contact's friction should be. `null` means "bare hull
+     * everywhere", which is what a test wall is and what the shape of the contact does not depend on.
      */
-    machines: List<Machine?>? = null,
+    deck: DeckArray? = null,
 ) {
     val half = Flight.PER_TILE / 2L
     for (cy in 0 until body.height) {
@@ -137,7 +136,7 @@ fun collectHullContacts(
                         bx = tx * Flight.PER_TILE + half, by = ty * Flight.PER_TILE + half,
                         body = index,
                         restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
-                        friction = frictionBetween(body, cell, machines?.get(tile.index)),
+                        friction = frictionBetween(body, cell, deck?.get(tile)),
                         into = into,
                     )
                 }
@@ -269,8 +268,6 @@ fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
  * — it knows a tile is solid and not what kind of solid, which is all every other reader of it
  * needs.
  */
-fun frictionBetween(body: RigidBody, cell: Int, machine: Machine?): Long =
-    pairRoughness(roughnessOfBody(body), machine?.kind?.material?.roughness ?: DeckMachineKind.Hull.material.roughness)
 fun frictionBetween(body: RigidBody, cell: Int, machine: DeckMachine?): Long =
     pairRoughness(roughnessOfBody(body), (machine?.kind ?: DeckMachineKind.Hull).material.roughness)
 

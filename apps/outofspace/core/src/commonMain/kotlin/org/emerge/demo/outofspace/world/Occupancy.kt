@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
  * Which tiles belong to which machine.
@@ -30,13 +29,8 @@ class Occupancy(private val originOf: TileArray) {
     override fun hashCode(): Int = originOf.contentHashCode()
 
     companion object {
-        fun derive(grid: Grid, machines: List<Machine?>, deck: DeckArray): Occupancy {
+        fun derive(grid: Grid, deck: DeckArray): Occupancy {
             val originOf = TileArray(grid.size) { TileIndex.NONE }
-            for (i in machines.indices) {
-                val m = machines[i] ?: continue
-                val tile = TileIndex(i)
-                for (tile in coveredTiles(grid, tile, m.kind.size)) originOf[tile] = tile
-            }
             for (i in 0 until deck.size) {
                 val tile = TileIndex(i)
                 val m = deck[tile] ?: continue

@@ -1,8 +1,8 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.sim.core.physics.primitives.Coord
 
 /**
@@ -209,8 +209,8 @@ fun sweepBodies(
     /** Per body, because it is derived from what that body weighs — see [driftBodies]. */
     restingSpeedX: LongArray,
     restingSpeedY: LongArray,
-    /** The ship's machines by tile, for [frictionBetween]. `null` is bare hull throughout. */
-    machines: List<Machine?>? = null,
+    /** The deck, for [frictionBetween]. `null` is bare hull throughout. */
+    deck: DeckArray? = null,
 ): SweptBodies {
     val n = bodies.size
     if (n == 0) return SweptBodies(bodies, 0L, 0L, 0L)
@@ -388,7 +388,7 @@ fun sweepBodies(
             if (mass[i] <= 0L) continue
             collectHullContacts(
                 grid, structure, bodies[i], i, inGrid[i]!!,
-                restingSpeedX[i], restingSpeedY[i], contacts, machines,
+                restingSpeedX[i], restingSpeedY[i], contacts, deck,
             )
         }
         for (i in 0 until n) {

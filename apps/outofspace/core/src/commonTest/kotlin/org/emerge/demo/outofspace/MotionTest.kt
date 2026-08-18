@@ -10,7 +10,6 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
@@ -47,13 +46,12 @@ class MotionTest {
     /** An extractor at (2,3), port at (4,3), feeding a run of track rightward into a tank at [tankX]. */
     private fun line(tankX: Int = 9): VesselState {
         val grid = cfg.initialGrid
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
         deck += Storage(grid.tile(tankX, 3), Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -153,7 +151,6 @@ class MotionTest {
     /** A run that crosses a bridge at (6,3), hopping the tile at (6,3) itself. */
     private fun bridged(): VesselState {
         val grid = cfg.initialGrid
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
@@ -162,10 +159,10 @@ class MotionTest {
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         return VesselState(
-            grid, m.toList(), deck,
+            grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 

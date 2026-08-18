@@ -24,7 +24,6 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.render.torus.ui.Ui
 import org.emerge.sim.core.physics.primitives.Frac
@@ -440,7 +439,7 @@ object OutofspaceAgentHarness {
             Direction.entries.firstOrNull { it.name.equals(name, true) }
                 ?: error("unknown direction '$name' (have ${Direction.entries.map { it.name }})")
 
-        private fun machineCount(): Int = state.machines.count { it != null }
+        private fun machineCount(): Int = state.grid.tiles.count { state.deck[it] != null }
 
         // ── camera ───────────────────────────────────────────────────────────────────
         /** Camera moves are recorded even before GL exists, so `camera` can precede the first `shot`. */

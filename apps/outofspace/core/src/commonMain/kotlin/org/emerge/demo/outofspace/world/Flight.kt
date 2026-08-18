@@ -2,9 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
-import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -49,9 +47,9 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */
-fun structureMass(grid: Grid, machines: List<Machine?>, rail: RailLayer, conduits: Conduits, deck: DeckArray, buffers: BufferLayer): Long {
+fun structureMass(grid: Grid, rail: RailLayer, conduits: Conduits, deck: DeckArray, buffers: BufferLayer): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, fabric, _ -> sum += fabric }
+    forEachVesselMass(grid, rail, conduits, deck, buffers) { _, fabric, _ -> sum += fabric }
     return sum
 }
 
@@ -76,7 +74,6 @@ fun structureMass(grid: Grid, machines: List<Machine?>, rail: RailLayer, conduit
  */
 inline fun forEachVesselMass(
     grid: Grid,
-    machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
     deck: DeckArray,
@@ -100,10 +97,6 @@ inline fun forEachVesselMass(
         for (tile in m.tiles(grid)) action(tile, deck.stuff.massAt(tile), 0L)
         action(m.center, 0L, massIn(m, m.center, grid, buffers))
     }
-    for (t in machines.indices) {
-        val m = machines[t] ?: continue
-        action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m, TileIndex(t), grid, buffers))
-    }
     conduits.all { conduit, tile, _ ->
         // Weighed off the layer for the reason the deck is, and with the same guarantee:
         // [conduitBillOfMaterials] apportions, so a tile of track weighs `conduit.massPerTile` to
@@ -123,28 +116,26 @@ inline fun forEachVesselMass(
  */
 fun cargoMass(
     grid: Grid,
-    machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
     deck: DeckArray,
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, _, cargo -> sum += cargo }
+    forEachVesselMass(grid, rail, conduits, deck, buffers) { _, _, cargo -> sum += cargo }
     return sum
 }
 
 /** What a thrust is divided by: the fabric plus what it carries. See [Flight] for why not the gas. */
 fun vesselMass(
     grid: Grid,
-    machines: List<Machine?>,
     rail: RailLayer,
     conduits: Conduits,
     deck: DeckArray,
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(grid, machines, rail, conduits, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
+    forEachVesselMass(grid, rail, conduits, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
     return sum
 }
 

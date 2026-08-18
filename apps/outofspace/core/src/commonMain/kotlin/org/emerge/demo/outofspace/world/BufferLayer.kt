@@ -1,11 +1,11 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
+import org.emerge.demo.outofspace.world.machine.DeckArray
 
 /**
  * Machine buffers — every input, output, waste and processing store in the vessel, on **one** layer.
@@ -58,7 +58,7 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
      * world disagree about who has already claimed what: the reducer claims as it builds, a save
      * fills stores before the state exists, and a fixture states a machine list and nothing else.
      */
-    fun claimRoles(grid: Grid, machine: Placed, centre: TileIndex) {
+    fun claimRoles(grid: Grid, machine: DeckMachine, centre: TileIndex) {
         for (role in BufferRole.entries) {
             if (localBufferOffset(machine, role) == NO_OFFSET) continue
             // Loud, because the alternative is a machine that stands but has nowhere to put
@@ -72,7 +72,7 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
     }
 
     /** Take down every store [machine] keeps, discarding whatever is in them. */
-    fun releaseRoles(grid: Grid, machine: Placed, centre: TileIndex) {
+    fun releaseRoles(grid: Grid, machine: DeckMachine, centre: TileIndex) {
         for (role in BufferRole.entries) {
             val tile = bufferTile(grid, machine, centre, role) ?: continue
             if (hasRole(tile)) releaseRole(tile)
@@ -149,7 +149,7 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
             BufferLayer(StuffLayer.empty(tileCount), IntArray(tileCount) { NO_FORM })
 
         /**
-         * A layer with a store already standing wherever [machines] needs one, all empty.
+         * A layer with a store already standing wherever the deck needs one, all empty.
          *
          * The default for a world stated rather than built. Going through the reducer, a store is
          * claimed as its machine goes up; a [VesselState] assembled directly — by a fixture, a save
@@ -157,11 +157,11 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
          * store to put anything in. Deriving it from the machine list means the two routes cannot
          * disagree about which tiles have stores.
          */
-        fun forMachines(grid: Grid, machines: List<Machine?>): BufferLayer {
-            val out = empty(machines.size)
-            for (i in machines.indices) {
-                val m = machines[i] ?: continue
-                out.claimRoles(grid, m, TileIndex(i))
+        fun forDeck(grid: Grid, deck: DeckArray): BufferLayer {
+            val out = empty(deck.size)
+            for (tile in grid.tiles) {
+                val m = deck[tile] ?: continue
+                out.claimRoles(grid, m, tile)
             }
             return out
         }

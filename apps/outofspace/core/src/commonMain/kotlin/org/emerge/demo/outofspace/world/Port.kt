@@ -3,11 +3,8 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -62,7 +59,7 @@ private data class LocalPort(
 /**
  * Machine connection points in local frame, rotated into world. Unrotated definition (one variant per machine, not per orientation).
  */
-private fun localPorts(machine: Placed): List<LocalPort> {
+private fun localPorts(machine: DeckMachine): List<LocalPort> {
     val r = machine.reach
     return when (machine) {
         // A gantry: it takes the belt on at one end and puts it down at the other. Rail only —
@@ -125,7 +122,7 @@ private fun localPorts(machine: Placed): List<LocalPort> {
 }
 
 /** The ports of the machine stored at [centreTile], in world tiles. Empty if it has none or is clipped. */
-fun portsOf(grid: Grid, machine: Placed, centreTile: TileIndex): List<Port> {
+fun portsOf(grid: Grid, machine: DeckMachine, centreTile: TileIndex): List<Port> {
     val turns = machine.turns
     val cx = grid.xOf(centreTile)
     val cy = grid.yOf(centreTile)
@@ -161,15 +158,3 @@ fun portsOf(grid: Grid, machine: Placed, centreTile: TileIndex): List<Port> {
  */
 fun portsOf(grid: Grid, machine: DeckMachine): List<Port> = portsOf(grid, machine, machine.center)
 
-/**
- * The port of [conduit] that this machine exposes at [tile], if any.
- *
- * Binding is by **tile alone**, not by an adjacent tile: conduits run underneath buildings, so a
- * segment connects to whatever building shares its own tile. That is what "ports behind the
- * buildings" means, and it is why a run has to be threaded *under* a machine to reach it rather than
- * butted against its edge.
- */
-fun portAt(grid: Grid, machine: Machine, centreTile: TileIndex, tile: TileIndex, kind: PortKind, conduit: Conduit): Port? =
-    portsOf(grid, machine, centreTile).firstOrNull {
-        it.kind == kind && it.tile == tile && it.conduit == conduit
-    }

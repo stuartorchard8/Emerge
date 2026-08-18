@@ -9,7 +9,6 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.massPerTileOf
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.STARTER_DEMO_PLATE_Y
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X
@@ -231,9 +230,7 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
  * fixture means by "a machine with something in it".
  */
 fun VesselState.stocked(tile: TileIndex, resource: Resource?, role: BufferRole? = null): VesselState = also {
-    // Either list: a kind that has moved to the deck is still "the machine at this tile" as far as
-    // a fixture is concerned, and every caller means the thing standing there.
-    val m = machines[tile.index] ?: deck[tile] ?: error("no machine at $tile to stock")
+    val m = deck[tile] ?: error("no machine at $tile to stock")
     val use = role ?: inputBufferRole(m) ?: error("$m takes no deliveries; name a role")
     it.buffers.put(bufferTile(grid, m, tile, use) ?: error("$m keeps no $use store"), resource)
 }
@@ -246,6 +243,6 @@ fun VesselState.riding(tile: TileIndex, resource: Resource?): VesselState = also
 
 /** What the machine at [tile] is holding in its [role] store. */
 fun VesselState.inStore(tile: TileIndex, role: BufferRole): Resource? {
-    val m = machines[tile.index] ?: deck[tile] ?: return null
+    val m = deck[tile] ?: return null
     return buffers.resourceAt(bufferTile(grid, m, tile, role) ?: return null)
 }

@@ -26,7 +26,6 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.growToFit
@@ -49,8 +48,6 @@ import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.machine.MachineKind
@@ -167,8 +164,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // modifies them).
         var networks = SignalNetworks.none(w.grid.size)
         var signals = SignalField.none(w.grid.size)
-        var openness = IntArray(w.machines.size)
-        var structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
+        var openness = IntArray(w.grid.size)
+        var structure = StructureMap.derive(w.grid, w.deck, openness)
         if (shouldRun(state.tick, MACHINE_PERIOD)) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
@@ -189,7 +186,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             // the deck. `w[seen]` cannot answer this, since its reified lookup
                             // resolves one hierarchy or the other and would read a tank as absent.
                             if (seen != TileIndex.NONE) {
-                                val target: Placed? = w.machines.getOrNull(seen.index) ?: w.deck[seen]
+                                val target: DeckMachine? = w.deck[seen]
                                 raise(tile, fullness(target, seen, w.grid, w.buffers))
                             }
                         }
@@ -208,8 +205,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.machines.size)
-            structure = StructureMap.derive(w.grid, w.machines, w.deck, openness)
+            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
+            structure = StructureMap.derive(w.grid, w.deck, openness)
 
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
@@ -255,15 +252,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (tile in w.grid.tiles) {
                 val added = w.heatAdded[tile.index]
                 if (added == 0L) continue
-                val m : Machine? = w[tile]
-                if (m != null) {
-                    w[tile] = m.withEnergy(m.energy.plusEnergySpread(added))
-                } else {
-                    val dm : DeckMachine? = w[tile]
-                    dm?.addEnergySpread(added, w.grid, w.deck)
-                }
+                w[tile]?.addEnergySpread(added, w.grid, w.deck)
             }
-            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.deck, w.buffers)
+            val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
@@ -377,8 +368,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Flight ────────────────────────────────────────────────────────────────
         //
-        val machines = w.machines.toList()
-        val mass = vesselMass(w.grid, machines, w.rail, conduits, w.deck, w.buffers)
+        val mass = vesselMass(w.grid, w.rail, conduits, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -440,7 +430,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ShipMotion(state.pose, state.velocityX, state.velocityY, spin),
             mass,
             w.about,
-            w.machines,
+            w.deck,
         )
 
         // Vessel pays for body momentum here: `−J` for the `+J` the body got (conserved by construction).
@@ -490,7 +480,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val netTorque = pressureTorque - handedTorque - w.exhaustTorque
 
         return state.copy(
-            machines = machines,
             deck = w.deck,
             buffers = w.buffers,
             rail = w.rail,
@@ -651,11 +640,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * [bufferTile] returns null for a role it does not — so a null here is a machine being asked for
      * a store it has no concept of, which is a bug in the caller and not a state the world can be in.
      */
-    private fun Work.store(m: Placed, centre: TileIndex, role: BufferRole): Resource? =
+    private fun Work.store(m: DeckMachine, centre: TileIndex, role: BufferRole): Resource? =
         buffers.resourceAt(bufferTile(grid, m, centre, role)!!)
 
     /** Replace the [role] store of the machine at [centre], or empty it if [resource] is null. */
-    private fun Work.putStore(m: Placed, centre: TileIndex, role: BufferRole, resource: Resource?) {
+    private fun Work.putStore(m: DeckMachine, centre: TileIndex, role: BufferRole, resource: Resource?) {
         buffers.put(bufferTile(grid, m, centre, role)!!, resource)
     }
 
@@ -912,7 +901,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /** Mutable scratch for one tick (reducer stays pure). */
     private class Work(state: VesselState) {
         val grid: Grid = state.grid
-        val machines: MutableList<Machine?> = state.machines.toMutableList()
         val deck: DeckArray = state.deck.copyOf()
         val buffers: BufferLayer = state.buffers.copyOf()
 
@@ -924,14 +912,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * beside [layers], and handed back to [Conduits] whole at the end of it.
          */
         val tracks: TrackLayers = state.conduits.tracks.copyOf()
-        inline operator fun <reified T> get(tile: TileIndex): T? = when(T::class) {
-            Machine::class -> machines.getOrNull(tile.index)
-            DeckMachine::class -> deck[tile]
-            else -> null
-        } as T?
-        operator fun set(tile: TileIndex, value: Machine) {
-            machines[tile.index] = value
-        }
+        operator fun get(tile: TileIndex): DeckMachine? = deck[tile]
         operator fun set(tile: TileIndex, value: DeckMachine) {
             deck[tile] = value
         }
@@ -1002,7 +983,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * points at once. The same choice, for the same reason, that hands `state.velocityX` to
          * [driftBodies] and integrates the position from it: one frame per tick, stated once.
          */
-        val about: MassDistribution = massDistribution(state.grid, state.machines, state.rail, state.conduits, state.deck, state.buffers)
+        val about: MassDistribution = massDistribution(state.grid, state.rail, state.conduits, state.deck, state.buffers)
 
         /**
          * Where the grid sits in the world, taken once from the incoming state and shared — the same
@@ -1085,10 +1066,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // tile → machine index (maintained incrementally for O(n)).
         val originOf: TileArray = TileArray(state.grid.size).also { o ->
-            for (i in machines.indices) {
-                val m = machines[i] ?: continue
-                for (t in coveredTiles(state.grid, TileIndex(i), m.kind.size)) o[t] = TileIndex(i)
-            }
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
                 // ⚠️ `m.tiles(grid)`, not `coveredTiles(grid, tile, diameter)`. A bridge's footprint
@@ -1154,19 +1131,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val body = bodies[i]
                 if (energy[i] == body.energy) continue
                 when (body.slot) {
-                    // A machine is several bodies now, one per tile, so the tile has to be named
-                    // as well as the machine — see [Body.part].
-                    // Through [Body.anchor] and not [Body.tile]: a machine occupies its whole
-                    // footprint but is stored only at its origin, so every part but the centre
-                    // would otherwise write into whatever happens to sit on the tile it covers.
-                    // Stored per tile in the dense deck layer, so this one is addressed by where
-                    // the metal is and needs no part index at all.
+                    // Stored per tile in the deck layer, so this one is addressed by where the metal
+                    // is and needs no part index at all.
                     BodySlot.DeckStore -> deck.setEnergy(body.tile, energy[i])
                     // Held matter, addressed by the tile its store stands on — same reason as above.
                     BodySlot.BufferStore -> buffers.stuff.setEnergy(body.tile, energy[i])
-                    BodySlot.Deck -> machines[body.anchor.index]?.let {
-                        machines[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
-                    }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
@@ -1187,13 +1156,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pipeEnergy[tile] = 0L
         }
 
-        /** Where a machine instance currently sits — extractors are charged heat by identity. */
-        fun indexOf(machine: Machine): Int = machines.indexOfFirst { it === machine }
-
         fun apply(edit: Edit) {
             when (edit) {
                 is Edit.Place -> {
-                    if (edit.tile.index !in machines.indices) return
+                    if (edit.tile.index !in 0 until deck.size) return
                     when (edit.kind) {
                         // Book energy for new body (heat arriving, not conjured).
                         MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
@@ -1219,7 +1185,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
                                 .also { built(tracks.lay(Conduit.Rail, edit.tile)) }
                         }
-                        else -> placeBuilding(edit.tile, edit.kind, edit.facing)
                     }
                 }
                 is Edit.PlaceDeck -> {
@@ -1236,9 +1201,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.Rotate -> {
                     // Rotation: footprints square, so covered tiles unchanged — only ports move.
                     val tile = originAt(edit.tile) ?: return
-                    val m = machines[tile.index]
-                    if (m is Directed) machines[tile.index] = m.rotated()
-                    // The same for the deck. A turned machine keeps its tiles — footprints are
+                    // A turned machine keeps its tiles — footprints are
                     // square — so this moves its ports and nothing else, and `set` leaves the
                     // stores and the casing exactly where they were.
                     //
@@ -1286,17 +1249,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Edit.Wire -> {
                     val tile = originAt(edit.tile) ?: return
-                    val m = machines[tile.index]
                     val dm = deck[tile]
-                    if (m != null) {
-                        val current = m.wiring.triggers(edit.action).toMutableList()
-                        when {
-                            edit.trigger == null -> if (edit.slot in current.indices) current.removeAt(edit.slot)
-                            edit.slot in current.indices -> current[edit.slot] = edit.trigger
-                            else -> current.add(edit.trigger)
-                        }
-                        machines[tile.index] = m.withWiring(m.wiring.with(edit.action, current))
-                    }
                     if (dm != null) {
                         val current = dm.wiring.triggers(edit.action).toMutableList()
                         when {
@@ -1309,7 +1262,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 is Edit.BindKey -> {
                     val tile = originAt(edit.tile) ?: return
-                    val m = machines[tile.index]
+                    val m = deck[tile]
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
                 // Accumulated (mass finalised after edit pass).
@@ -1341,19 +1294,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
         private fun removeMachine(tile: TileIndex): Boolean {
             val origin = originAt(tile) ?: return false
-            val machine = machines[origin.index]
-            if (machine != null) {
-                for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = TileIndex.NONE
-                scrapped(machine.energy.total)
-                // Whatever was in the buffer goes with the machine — spoilsOf has already been asked
-                // what falls on the floor, and holding the store open would leave a warehouse's worth
-                // of iron at a tile with nothing standing on it.
-                buffers.releaseRoles(grid, machine, origin)
-                machines[origin.index] = null
-                return true
-            }
-            // The deck layer is the same click. Its energy is in the dense array rather than on the
-            // object, so it is read *before* the removal — `-=` zeroes the stores on its way out.
+            // Energy is in the layer rather than on the object, so it is read *before* the removal —
+            // `-=` zeroes the stores on its way out.
             val deckMachine = deck[origin] ?: return false
             for (t in deckMachine.tiles(grid)) originOf[t] = TileIndex.NONE
             scrapped(deckMachine.energy(grid, deck.stuff).sum())
@@ -1422,7 +1364,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun inject(tile: TileIndex, mass: Long, water: Boolean = false) {
             if (tile.index !in 0 until grid.size || mass <= 0L) return
             val occupant = originOf[tile]
-            if (occupant != TileIndex.NONE && machines[occupant.index]?.kind?.isPermeable == false) return
             if (occupant != TileIndex.NONE && deck[occupant]?.kind?.isPermeable == false) return
             if (water) { injectWater(tile, mass); return }
             val shares = Stuff.AMBIENT_AIR.scaledTo(mass)
@@ -1486,29 +1427,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             )
             bodies.add(body)
             built(body.energy.total)
-        }
-
-        /** Place building (click names centre, footprint grows around it). */
-        private fun placeBuilding(tile: TileIndex, kind: MachineKind, facing: Direction) {
-            val size = kind.size
-            if (!footprintFits(grid, tile, size)) return
-            val covered = coveredTiles(grid, tile, size)
-            // Over anything occupied = no-op (footprint check, not just cursor tile).
-            if (covered.any { originOf[it] != TileIndex.NONE }) return
-            val built = newMachine(kind, facing) ?: return
-            if (portsClash(portsOf(grid, built, tile))) return
-
-            // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
-            // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
-
-            machines[tile.index] = built
-            built(built.energy.total)
-            // A storage's store is a tile in the buffer layer, reserved as the machine goes up so an
-            // empty warehouse is a warehouse and not an absence. claimRole refuses a second store on
-            // the tile, which is the guard for a one-tile machine wanting two roles.
-            buffers.claimRoles(grid, built, tile)
-            for (t in covered) originOf[t] = tile
         }
 
         /**
@@ -1664,10 +1582,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             fun add(port: Port) {
                 if (port.conduit == conduit) out.getOrPut(port.tile) { mutableListOf() }.add(port)
             }
-            for (i in machines.indices) {
-                val m = machines[i] ?: continue
-                for (port in portsOf(grid, m, TileIndex(i))) add(port)
-            }
             // Deck machines have ports too, now that a vent is one. Visited by centre — a machine
             // covering several tiles is stored once, and adding its ports once per covered tile
             // would offer the same packet to it as many times as it is wide.
@@ -1683,13 +1597,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Place output packet at port tile (ports behind buildings). Tops up partial packets where possible. */
         fun pushOut(tile: TileIndex, port: Port) {
             val segment = rails[tile.index] ?: return
-            // Bridges are not ejected from here. They are conduit, so they set their load down as
-            // part of the conduit step -- see [depositFromBridge].
-            if (port.fromBridge) return
-
-            // Either list — a warehouse stands on the deck, and its output port is the one that
-            // most needs this: a tank that cannot push is a tank that silently swallows a line.
-            val m = machines[port.owner.index] ?: deck[port.owner] ?: return
+            val m = deck[port.owner] ?: return
+            // A bridge is not ejected from here. It sets its load down as part of the conduit step
+            // — see [depositFromBridge].
+            if (m is Bridge) return
             // A storage only lets go while its RUN activation is positive, which is what turns it
             // from a bucket into a valve the moment you wire something to it.
             if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
@@ -1764,13 +1675,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Which of a machine's buffers drains through [port]. */
-        private fun bufferFor(m: Placed, port: Port): Resource? {
+        private fun bufferFor(m: DeckMachine, port: Port): Resource? {
             val role = outputBufferRole(m, port.stream) ?: return null
             return buffers.resourceAt(bufferTile(grid, m, port.owner, role) ?: return null)
         }
 
         /** Write back what is left in the buffer that drained through [port]. */
-        private fun drained(m: Placed, port: Port, rest: Resource?) {
+        private fun drained(m: DeckMachine, port: Port, rest: Resource?) {
             val role = outputBufferRole(m, port.stream) ?: return
             buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
         }
@@ -1848,15 +1759,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
         private fun offerTo(port: Port, packet: Packet): Packet? {
-            val dest = machines[port.owner.index]
-            val deckDest = deck[port.owner]
-            if (dest != null) {
-                return if (deliver(port.owner.index, dest, packet)) null else packet
-            } else if (deckDest != null) {
-                return if (deliver(port.owner.index, deckDest, packet)) null else packet
-            } else {
-                return packet
-            }
+            val dest = deck[port.owner] ?: return packet
+            return if (deliver(port.owner.index, dest, packet)) null else packet
         }
 
         /** Take packets (limit caps to available room). */
@@ -1868,16 +1772,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         private fun Resource.orNull(): Resource? = if (isEmpty) null else this
-
-        /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
-        private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
-            val centre = TileIndex(target)
-            val role = inputBufferRole(destination) ?: return false
-            val store = bufferTile(grid, destination, centre, role) ?: return false
-            val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
-            buffers.put(store, merged)
-            return true
-        }
 
         private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
@@ -1933,7 +1827,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** The new input buffer if [packet] is acceptable, else null. */
-        private fun acceptInto(destination: Placed, existing: Resource?, packet: Packet): Resource? {
+        private fun acceptInto(destination: DeckMachine, existing: Resource?, packet: Packet): Resource? {
             if (packet !is SolidPacket) return null
             // A warehouse takes any form and fills to its tank; a working machine takes ore only,
             // one lump at a time. That difference is the whole of what "storage" means here.
@@ -1948,12 +1842,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** What a packet becomes when it is tipped onto the deck. */
         private fun asResource(packet: Packet): Resource =
             Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
-
-        private fun newMachine(kind: MachineKind, facing: Direction): Machine? = when (kind) {
-            // Fittings placed directly on layers.
-            MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve,
-            MachineKind.Wire -> null
-        }
 
         private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)

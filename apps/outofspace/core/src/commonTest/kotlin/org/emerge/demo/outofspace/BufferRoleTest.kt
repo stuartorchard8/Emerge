@@ -1,6 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.world.machine.Placed
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -9,7 +9,6 @@ import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.bufferRolesOf
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
@@ -37,7 +36,7 @@ class BufferRoleTest {
     private val grid = Grid(21, 21)
     private val centre get() = grid.tile(10, 10)
 
-    private fun kinds(facing: Direction): List<Placed> = listOf(
+    private fun kinds(facing: Direction): List<DeckMachine> = listOf(
         Extractor(centre, facing), Vaporizer(centre, facing), Thruster(centre, facing),
         Processor(centre, facing), Smelter(centre, facing), ThermalDecomposer(centre, facing),
         Storage(centre, facing),

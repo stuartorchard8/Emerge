@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.massPerTile
-import org.emerge.demo.outofspace.world.machine.thermalTiles
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
@@ -15,7 +14,9 @@ import org.emerge.demo.outofspace.world.capacityPerTileOf
 import org.emerge.demo.outofspace.world.massPerTileOf
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidMassPerTile
-import org.emerge.demo.outofspace.world.billOfMaterials
+import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
@@ -230,15 +231,22 @@ class CompositionMassTest {
         }
     }
 
-    /** The bill of materials is the machine's own mass, split the way its material is. */
+    /**
+     * A length of conduit's bill of materials weighs that length of conduit.
+     *
+     * The twin of `CasingMassTest`, which makes the same claim for every [DeckMachineKind]. It used
+     * to be stated over `MachineKind`, back when that enum named buildings; every one of those has
+     * moved to the deck and `MachineKind` names only conduits now, so this is what is left of it —
+     * and it is a claim nothing else was making.
+     */
     @Test
-    fun `a machine's bill of materials weighs the machine`() {
-        for (kind in MachineKind.ALL) {
-            val bom = billOfMaterials(kind)
-            assertEquals(kind.massPerTile * kind.thermalTiles, bom.total, "${kind.label} bill of materials")
+    fun `a length of conduit's bill of materials weighs that conduit`() {
+        for (conduit in Conduit.entries) {
+            val bom = conduitBillOfMaterials(conduit)
+            assertEquals(conduit.massPerTile, bom.total, "${conduit.label} bill of materials")
             for (species in Species.ALL) {
-                if (kind.material.composition[species] == 0L) {
-                    assertEquals(0L, bom[species], "${kind.label} should contain no $species")
+                if (conduit.material.composition[species] == 0L) {
+                    assertEquals(0L, bom[species], "${conduit.label} should contain no $species")
                 }
             }
         }

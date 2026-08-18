@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.Save
@@ -163,7 +162,11 @@ class SaveTest {
         assertEquals(here.grid, heavier.grid, "nor is a grid")
         assertEquals(here.positionX, heavier.positionX, "nor is a position — it is in tiles")
         assertEquals(here.positionY, heavier.positionY, "nor is a position — it is in tiles")
-        assertEquals(here.machines.count { it != null }, heavier.machines.count { it != null }, "machine count")
+        assertEquals(
+            here.grid.tiles.count { here.deck[it] != null },
+            heavier.grid.tiles.count { heavier.deck[it] != null },
+            "machine count",
+        )
         // The trap this whole family of bugs lives in: same syntax as air, entirely different meaning.
         for (i in here.bodies.indices) {
             assertEquals(
@@ -304,7 +307,7 @@ class SaveTest {
         for (x in 1..4) join(grid.tile(x, 3), grid.tile(x + 1, 3), Direction.Right)
         for (y in 1..4) join(grid.tile(3, y), grid.tile(3, y + 1), Direction.Down)
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size))
+        val state = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         val reloaded = Save.read(Save.write(state))
         for (tile in grid.tiles) {
             assertEquals(rails[tile.index]?.links, reloaded.railAt(tile)?.links, "links differ at tile $tile")
@@ -325,14 +328,13 @@ class SaveTest {
 
         val state = VesselState(
             grid,
-            List(grid.size) { null },
             deck,
             conduits = Conduits.of(
                 grid.size,
                 Conduit.Rail to rails.toList(),
                 Conduit.Signal to wires.toList(),
             ),
-            buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
         val back = Save.read(Save.write(state))
 
@@ -390,7 +392,7 @@ class SaveTest {
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size))
+        val state = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         val back = Save.read(Save.write(state)).railAt(grid.tile(2, 2))
         assertNotNull(back)
         assertTrue(back.isGauge)
@@ -403,7 +405,6 @@ class SaveTest {
     @Test
     fun `a machine keeps its wiring, its buffers and its fractional carry`() {
         val grid = Grid(10, 10)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val starter = starterVessel(cfg.initialGrid)
         deck += Extractor(
@@ -424,7 +425,7 @@ class SaveTest {
         // because the two lived on different lists.
         deck += Storage(grid.tile(8, 4), Direction.Left)
 
-        val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        val state = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(8, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)), BufferRole.Inside)
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
@@ -451,10 +452,12 @@ class SaveTest {
         val back = Save.read(Save.write(played))
         assertEquals(played.storedEnergy, back.storedEnergy)
         assertEquals(played.atmosphereMass, back.atmosphereMass)
-        // Body by body rather than tile by tile: solid heat lives on the machine and the segment
-        // now, so the thing that has to survive a round trip is each object's own energy.
+        // Tile by tile: a casing's heat is in the deck layer, addressed by the tile the metal is on.
         for (tile in played.grid.tiles) {
-            assertEquals(played[tile]?.energy, back[tile]?.energy, "machine energy differ at tile $tile")
+            assertEquals(
+                played.deck.energyAt(tile), back.deck.energyAt(tile),
+                "deck energy differs at tile $tile",
+            )
             assertEquals(
                 played.conduits.energyAt(Conduit.Rail, tile),
                 back.conduits.energyAt(Conduit.Rail, tile),

@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
@@ -69,7 +68,6 @@ class AtmosphereTest {
     /** A hull box [w] x [h] with a ring of space around it. */
     private fun sealedRoom(w: Int, h: Int): VesselState {
         val grid = Grid(w + 2, h + 2)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
@@ -79,7 +77,7 @@ class AtmosphereTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w, y))
         }
-        return VesselState(grid, machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     // ── Conservation ──────────────────────────────────────────────────────────
@@ -105,7 +103,7 @@ class AtmosphereTest {
         for (x in 2..6) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, 3)) }
         for (y in 1..2) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(7, y)) }
         deck += Hull(grid.tile(4, 2))   // the dividing wall
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), deck=deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
+        var s = VesselState(grid, deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
 
         val mass = MassArray(grid.size)
         for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram

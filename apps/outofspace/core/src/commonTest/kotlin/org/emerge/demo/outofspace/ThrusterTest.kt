@@ -14,7 +14,6 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.StructureMap
@@ -215,7 +214,7 @@ class ThrusterTest {
         val cfg = OutofspaceConfig()
         val grid = cfg.initialGrid
         val state = hullWithThruster(grid, Direction.Left, tile = grid.tile(HULL_LEFT + 4, BAY_Y))
-        val structure = StructureMap.derive(grid, state.machines, state.deck)
+        val structure = StructureMap.derive(grid, state.deck)
 
         val blocked = exhaustPath(grid, structure, grid.tile(HULL_LEFT + 4, BAY_Y), Direction.Left)
         assertEquals(grid.tile(HULL_LEFT, BAY_Y), blocked.blocker, "the wall is the blocker")
@@ -257,7 +256,6 @@ class ThrusterTest {
      * same trade. What is being measured here is the engine.
      */
     private fun hullWithThruster(grid: Grid, facing: Direction, tile: TileIndex = TileIndex.NONE): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
@@ -270,10 +268,9 @@ class ThrusterTest {
         deck += Thruster(tile, facing = facing)
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         ).stocked(tile, Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)))
     }
 

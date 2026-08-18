@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Machine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -49,12 +48,11 @@ class EditorToolsTest {
      * is still three layers deep, which is what these tests need.
      */
     private fun layered(): OutofspaceController {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 2..10) { deck += Hull(grid.tile(x, 2)); deck += Hull(grid.tile(x, 8)) }
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         deck += Storage(grid.tile(6, 5), Direction.Right)
-        val c = OutofspaceController(cfg, VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)))
+        val c = OutofspaceController(cfg, VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)))
         c.brush = MachineKind.Rail
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))

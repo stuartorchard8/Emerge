@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
@@ -230,12 +229,11 @@ class RockTest {
 
     private fun bareHull(): VesselState {
         val grid = CFG.initialGrid
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid = grid, deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */

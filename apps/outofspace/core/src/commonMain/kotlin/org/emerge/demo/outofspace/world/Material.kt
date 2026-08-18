@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
-import org.emerge.demo.outofspace.world.machine.thermalTiles
 
 /** Shared temperatures across all systems (air, fabric, vacuum). */
 object Temperature {
@@ -306,20 +305,6 @@ val Conduit.conductance: Long get() = material.conductance * fillPermille / 1_00
  * so it lives with the things that know.
  */
 val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_KELVIN
-
-/**
- * **The bill of materials for one machine of this kind** — every gram of every species in it.
- *
- * The whole point of building the mass model this way round. What a machine weighs, what it costs
- * to warm, what it will cost to build and what it will yield when torn down are one number seen
- * from four sides, so they cannot drift apart: a smelter is 550:450 silica to alumina by mass
- * because firebrick is, and salvaging it hands back exactly that.
- *
- * ⚠️ Nothing spends or refunds this yet — building is free and dismantling yields nothing. This is
- * the number those will read when they land; it is derived, so there is no second table to forget.
- */
-fun billOfMaterials(kind: MachineKind): Mixture =
-    kind.material.composition.scaledTo(kind.massPerTile * kind.thermalTiles)
 
 /**
  * **What one tile of a deck machine is made of** — the species, at the masses a tile of it weighs.

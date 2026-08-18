@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
@@ -10,7 +12,6 @@ import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.VesselState
@@ -36,7 +37,6 @@ class RemappedTest {
 
     private fun simpleWorld(w: Int, h: Int): VesselState {
         val grid = Grid(w, h)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 1 until w - 1) {
             deck += Hull(grid.tile(x, 1))
@@ -46,12 +46,11 @@ class RemappedTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w - 2, y))
         }
-        return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     private fun populatedWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         // Hull
         for (x in 1 until w - 1) {
@@ -91,15 +90,14 @@ class RemappedTest {
         )
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             diverters = diverters,
             air = air,
             momentum = momentum,
             pipeAir = pipeAir,
             pipeMomentum = pipeMomentum,
             bodies = bodies,
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 
@@ -110,8 +108,8 @@ class RemappedTest {
         val s0 = simpleWorld(20, 14)
         val s1 = s0.remapped(s0.grid, 0, 0)
         assertEquals(s0.grid, s1.grid)
-        assertEquals(s0.machines.size, s1.machines.size)
-        assertEquals(s0.machines, s1.machines)
+        assertEquals(s0.deck.size, s1.deck.size)
+        assertEquals(s0.grid.tiles.map { s0.deck[it] }, s1.grid.tiles.map { s1.deck[it] })
         assertEquals(s0.conduits, s1.conduits)
         assertEquals(s0.diverters.forkCursors, s1.diverters.forkCursors)
         assertEquals(s0.air.copyMass().data.contentToString(), s1.air.copyMass().data.contentToString())
@@ -184,11 +182,22 @@ class RemappedTest {
         val dy = 2
         val bridgeTile = oldGrid.tile(5, 5)
         val s0withBridge = s0.copy(deck = s0.deck.copyOf().also {
-            it += Hull(bridgeTile)
+            it += Bridge(bridgeTile, Direction.Right)
         })
         val s1 = s0withBridge.remapped(newGrid, dx, dy)
         val newTile = newGrid.tile(5 + dx, 5 + dy)
-        assertEquals(s0withBridge[bridgeTile], s1[newTile])
+
+        // Re-anchored, not merely copied: a machine's centre is a tile index and a tile index means
+        // a different place on a different grid. Comparing the two machines for equality is what
+        // this used to do and it cannot work — the whole point is that they differ by exactly this.
+        val moved = s1[newTile] as? Bridge ?: error("no bridge at the remapped tile")
+        assertEquals(newTile, moved.center, "it kept its old anchor")
+        assertEquals(Direction.Right, moved.facing)
+        // And its span came with it. A footprint is a line for a bridge, so this is also the check
+        // that a non-square footprint survives a change of lattice.
+        for (part in moved.tiles(newGrid)) {
+            assertTrue(!s1.occupancy.isFree(part), "the span lost tile $part")
+        }
     }
 
     @Test
@@ -493,7 +502,11 @@ class RemappedTest {
         val s2 = s1.remapped(g2, -4, -3)
 
         assertEquals(s0.grid, s2.grid, "grid should be identical")
-        assertEquals(s0.machines, s2.machines, "machines should be identical")
+        assertEquals(
+            s0.grid.tiles.map { s0.deck[it] },
+            s2.grid.tiles.map { s2.deck[it] },
+            "machines should be identical",
+        )
         assertEquals(s0.conduits, s2.conduits, "conduits should be identical")
         assertEquals(s0.diverters.forkCursors, s2.diverters.forkCursors, "diverters should be identical")
         assertEquals(s0.air.copyMass().data.contentToString(), s2.air.copyMass().data.contentToString(), "air mass")

@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Smelter
@@ -52,7 +51,6 @@ class GaugeTest {
      */
     private fun line(carrying: Resource): VesselState {
         val grid = Grid(14, 6)
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Storage(grid.tile(3, 2), Direction.Right)
@@ -64,10 +62,9 @@ class GaugeTest {
         wires[gaugeTileX + 2 * grid.width] = Segment(Conduit.Signal)
         return VesselState(
             grid,
-            m.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         ).stocked(grid.tile(3, 2), carrying)
     }
 
@@ -119,13 +116,12 @@ class GaugeTest {
     fun `a gauge with no wire under it drives nothing`() {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val grid = Grid(14, 6)
-        val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Storage(grid.tile(3, 2), Direction.Right)
         deck += Storage(grid.tile(10, 2), Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
-        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 2), pure)
+        val bare = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 2), pure)
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")

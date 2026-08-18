@@ -3,7 +3,6 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
  * How much of each face is open to flow — an **area**, not a yes-or-no.

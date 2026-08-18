@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
@@ -123,7 +122,6 @@ class SignalWireTest {
     @Test
     fun `wire displaces nothing`() {
         fun room(): VesselState {
-            val machines = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid)
             for (x in 1 until grid.width - 1) {
                 deck += Hull(grid.tile(x, 1))
@@ -133,7 +131,7 @@ class SignalWireTest {
                 deck += Hull(grid.tile(1, y))
                 deck += Hull(grid.tile(grid.width - 2, y))
             }
-            return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+            return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         }
 
         var wired = room()

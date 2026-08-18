@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.VesselState
@@ -81,13 +80,12 @@ class VaporizerTest {
 
     /** A hull box with a fuelled vaporizer amidships and an ordinary atmosphere around it. */
     private fun hullWithVaporizer(grid: Grid): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         deck += Vaporizer(grid.tile(BAY_X, BAY_Y), facing = Direction.Right)
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid = grid, deck = deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             // A volatile, so what comes out is a gas anybody would recognise as one.
             .stocked(grid.tile(BAY_X, BAY_Y), Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)))
     }

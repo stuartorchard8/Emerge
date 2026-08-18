@@ -34,12 +34,20 @@ import kotlin.jvm.JvmInline
  * [org.emerge.demo.outofspace.logistics.Rate] with the fraction kept in each machine's own `carry`.
  * Carry is machine state and not a global precisely so it survives a save.
  */
-sealed interface DeckMachine : Placed {
+sealed interface DeckMachine {
     val kind: DeckMachineKind
-    override val wiring: Wiring
 
-    override val reach: Int get() = kind.reach
-    override val turns: Int get() = (this as? DirectedDeckMachine)?.facing?.ordinal ?: 0
+    /**
+     * The `Σ(signal × weight)` rules that decide whether — and how fast — it runs. A new machine is
+     * wired to ALWAYS at full, so placing one just works and wiring is something you add.
+     */
+    val wiring: Wiring
+
+    /** Half-width of the footprint — see [DeckMachineKind.reach]. */
+    val reach: Int get() = kind.reach
+
+    /** Quarter-turns clockwise from the facing-Right frame. Zero for anything that does not face. */
+    val turns: Int get() = (this as? DirectedDeckMachine)?.facing?.ordinal ?: 0
 
     /** The tile it is stored at, and the middle of its footprint. */
     val center: TileIndex

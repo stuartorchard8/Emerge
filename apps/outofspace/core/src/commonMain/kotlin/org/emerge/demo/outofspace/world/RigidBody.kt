@@ -1,9 +1,9 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
@@ -379,8 +379,8 @@ fun driftBodies(
     ship: ShipMotion,
     shipMass: Long,
     about: MassDistribution = MassDistribution.EMPTY,
-    /** The ship's machines by tile — carried this far for one reason, [frictionBetween]. */
-    machines: List<Machine?>? = null,
+    /** The deck, carried this far for one reason: [frictionBetween]. */
+    deck: DeckArray? = null,
 ): BodyStep {
     if (bodies.isEmpty()) return BodyStep(bodies, 0L, 0L)
     /**
@@ -449,7 +449,7 @@ fun driftBodies(
         grid, structure, bodies,
         ship, shipMass, about,
         restingX, restingY,
-        machines,
+        deck,
     )
 
     // The contact half of the ledger comes back from the sweep already booked at the points the

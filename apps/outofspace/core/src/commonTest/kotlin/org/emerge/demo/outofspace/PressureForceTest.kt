@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EdgeGrid
@@ -41,11 +40,10 @@ class PressureForceTest {
         val my = LongArray(edges.yEdgeCount)
 
         init {
-            val machines = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid)
             for (x in 1..w) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, h)) }
             for (y in 2 until h) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(w, y)) }
-            apertures = ApertureField.derive(edges, StructureMap.derive(grid, machines.toList(), deck))
+            apertures = ApertureField.derive(edges, StructureMap.derive(grid, deck))
             for (x in 2 until w) for (y in 2 until h) air(grid.tile(x, y))
         }
 

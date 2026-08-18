@@ -21,7 +21,6 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.SignalField
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
@@ -305,13 +304,6 @@ class OutofspaceRenderer {
             for (x in mMinX..mMaxX) {
                 val tile = grid.tile(x, y)
                 drawDeckMachine(state, state.deck[tile] ?: continue)
-            }
-        }
-
-        for (y in mMinY..mMaxY) {
-            for (x in mMinX..mMaxX) {
-                val tile = grid.tile(x, y)
-                drawMachine(state, tile, x, y, state[tile] ?: continue)
             }
         }
 
@@ -619,23 +611,6 @@ class OutofspaceRenderer {
 
     // ── Machine drawing ───────────────────────────────────────────────────────
 
-    private fun drawMachine(state: VesselState, tile: TileIndex, x: Int, y: Int, m: Machine) {
-        val n = m.kind.size
-        // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
-        // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
-        if (m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
-            bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
-            bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
-            drawPorts(state, tile, m)
-            return
-        }
-        when (m) {
-            // Bridges not on deck list (separate pass).
-            is Bridge -> Unit
-        }
-        drawPorts(state, tile, m)
-    }
-
     private fun drawDeckMachine(state: VesselState, m: DeckMachine) {
         val tile = m.center
         val x = state.grid.xOf(tile)
@@ -765,18 +740,6 @@ class OutofspaceRenderer {
      * A port is drawn as a stub straddling the machine's boundary, so it reads as a fitting on the
      * wall rather than as cargo sitting inside.
      */
-    private fun drawPorts(state: VesselState, tile: TileIndex, m: Machine) {
-        for (port in portsOf(state.grid, m, tile)) {
-            val px = state.grid.xOf(port.tile)
-            val py = state.grid.yOf(port.tile)
-            val color = if (port.kind == PortKind.Input) Colors.PORT_IN else Colors.PORT_OUT
-            val cx = (px + 0.5f) * tilePx
-            val cy = (py + 0.5f) * tilePx
-            val w = Visual.PORT_SIZE
-            val h = Visual.PORT_SIZE
-            rect(cx, cy, w * tilePx, h * tilePx, color)
-        }
-    }
     private fun drawPorts(state: VesselState, m: DeckMachine) {
         for (port in portsOf(state.grid, m)) {
             val px = state.grid.xOf(port.tile)

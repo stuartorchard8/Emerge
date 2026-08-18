@@ -37,7 +37,7 @@ class DeckArray(
     val stuff: StuffLayer,
 ) {
 
-    operator fun get(key: TileIndex): DeckMachine? = machines[key.index]
+    operator fun get(key: TileIndex): DeckMachine? = if (key == TileIndex.NONE) null else machines[key.index]
 
     /**
      * Demolish the machine at [tile]: it stops standing there, and the deck stops holding matter and

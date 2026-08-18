@@ -23,7 +23,6 @@ import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.Ui
 
@@ -493,63 +492,11 @@ class OutofspaceHud {
         if (controller.tool != Tool.Wire) return
         val tile = controller.selected
         if (tile == TileIndex.NONE) return
-        val machine = controller.state[tile]
-        val deckMachine = controller.state.deck[tile]
-        if (machine != null) machineWiringPanel(controller, tile, machine)
-        if (deckMachine != null) deckMachineWiringPanel(controller, tile, deckMachine)
+        val machine = controller.state.deck[tile] ?: return
+        machineWiringPanel(controller, tile, machine)
     }
 
-    private fun org.emerge.render.torus.ui.UiBuilder.machineWiringPanel(controller: OutofspaceController, tile: TileIndex, machine: Machine) {
-        val grid = controller.state.grid
-
-        // Bottom-right (not centred — build palette owns bottom-left).
-        panel(Anchor.BottomRight, rowHeight = 20f) {
-            title("WIRING  ·  ${machine.kind.label} (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-
-            // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
-            // under it, and the readout's job is to say whether there is one.
-            val wired = controller.state.networks[tile] >= 0
-
-            val gauge = controller.state.railAt(tile)
-            if (gauge?.isGauge == true) {
-                keyValue(
-                    "REPORTS",
-                    if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[tile]}"
-                    else "(no wire under it)",
-                    0x9A9A9AFFL,
-                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
-                )
-                gap()
-            }
-
-            val action = Action.Run
-            val triggers = machine.wiring.triggers(action)
-            val activation = machine.wiring.activation(action, controller.state.signals.at(tile))
-            keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
-
-            if (triggers.isEmpty()) {
-                row("(never runs — no terms)", 0xE05A4AFFL)
-            } else {
-                for ((slot, trigger) in triggers.withIndex()) {
-                    clauseRow(
-                        lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
-                        cmp = "x",
-                        rhs = signed(trigger.percent),
-                        onLhs = { controller.cycleTriggerSource(tile, action, slot, 1) },
-                        onCmp = { controller.wire(tile, action, slot, null) },
-                        onRhs = { controller.cycleTriggerWeight(tile, action, slot, 1) },
-                    )
-                }
-            }
-            button("+ ADD TERM", 0x2E5A6BFFL) {
-                controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
-            }
-            row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
-            row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0 — no wire under this tile", 0x7A7A7AFFL)
-        }
-    }
-
-    private fun org.emerge.render.torus.ui.UiBuilder.deckMachineWiringPanel(controller: OutofspaceController, tile: TileIndex, machine: DeckMachine) {
+    private fun org.emerge.render.torus.ui.UiBuilder.machineWiringPanel(controller: OutofspaceController, tile: TileIndex, machine: DeckMachine) {
         val grid = controller.state.grid
 
         // Bottom-right (not centred — build palette owns bottom-left).
@@ -586,7 +533,7 @@ class OutofspaceHud {
                 if (target != null) {
                     row("watching: ${target.kind.label}", 0x9A9A9AFFL)
                 } else {
-                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deckMachineCovering(watched) else null
+                    val targetDeck = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
                     row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
                 }
                 gap()

@@ -130,7 +130,7 @@ class ConduitLayersTest {
             Conduit.Signal to wires.toList(),
         )
 
-        val bodies = bodiesOf(grid, List(grid.size) { null }, conduits, DeckArray(grid), BufferLayer.empty(grid.size))
+        val bodies = bodiesOf(grid, conduits, DeckArray(grid), BufferLayer.empty(grid.size))
 
         assertEquals(2, bodies.size, "one body per fitting, not one per tile")
         assertEquals(

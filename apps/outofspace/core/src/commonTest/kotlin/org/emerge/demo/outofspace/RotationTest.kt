@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockSpawner
@@ -233,7 +232,6 @@ class RotationTest {
      * a known point and the zeros above exact.
      */
     private fun box(grid: Grid, vararg bays: Int): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
@@ -245,10 +243,9 @@ class RotationTest {
         }
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         ).also { state ->
             // Propellant is a store now, so it is put in after the state stands the stores up.
             for (y in bays) state.stocked(

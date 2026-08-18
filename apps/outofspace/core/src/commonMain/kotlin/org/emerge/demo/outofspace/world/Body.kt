@@ -1,19 +1,18 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
  * Which list a solid thing is stored in. Enough, with its index, to put a body's heat back where it
  * came from once the conduction pass has worked out where it went.
  */
 enum class BodySlot {
-    /** [VesselState.machines] — buildings, one entry per machine at its centre tile. */
-    Deck,
-
     /**
-     * [VesselState.deck] — the dense deck layer, where a machine's energy is stored *per tile*
-     * rather than on the object, so this one writes back through [Body.tile] and not [Body.anchor].
+     * [VesselState.deck] — a building's casing, one body per tile of its footprint.
+     *
+     * Its energy is stored in the layer *per tile* rather than on the object, so this writes back
+     * through [Body.tile] and not [Body.anchor]. There used to be a second slot beside it, `Deck`,
+     * for the machines that kept their heat on the data class; nothing does any more.
      */
     DeckStore,
 
@@ -125,7 +124,6 @@ class Body(
  */
 fun bodiesOf(
     grid: Grid,
-    machines: List<Machine?>,
     conduits: Conduits,
     deck: DeckArray,
     buffers: BufferLayer,
@@ -176,36 +174,6 @@ fun bodiesOf(
         }
     }
 
-    for (i in machines.indices) {
-        val m = machines[i] ?: continue
-        // ⚠️ One body per TILE of the machine, not one per machine — step 6b of
-        // PLAN_unit_rescale.md. Everything interesting about that follows from doing it here and
-        // nowhere else: [stepSolidHeat] already joins any two impermeable bodies that share a tile
-        // face, and the tiles of one machine are exactly that, so a machine begins conducting
-        // through *itself* without a line of new physics. A five-by-five smelter stops being one
-        // temperature and grows a hot face and a cool one.
-        //
-        // Placement enforces `footprintFits`, so a machine's footprint is never clipped by the grid
-        // edge and this index lines up with the `thermalTiles` slots its energy is stored in. The
-        // bound guards the one case that is not a placed machine: a grid that shrank underneath it.
-        val covered = coveredTiles(grid, TileIndex(i), m.kind.size)
-        for (part in covered.indices) {
-            if (part >= m.energy.size) break
-            out.add(
-                Body(
-                    slot = BodySlot.Deck,
-                    tile = covered[part],
-                    anchor = TileIndex(i),
-                    part = part,
-                    material = m.kind.material,
-                    permeable = false,
-                    energy = m.energy[part],
-                    capacity = m.kind.capacityPerTile,
-                    conductance = m.kind.conductance,
-                )
-            )
-        }
-    }
     conduits.all { conduit, tile, s ->
         out.add(
             Body(
@@ -234,13 +202,9 @@ fun bodiesOf(
  * in the deck layer with every other casing's, since it became a deck machine.
  */
 fun solidEnergy(
-    machines: List<Machine?>,
     conduits: Conduits,
 ): Long {
-    var sum = 0L
-    for (m in machines) sum += m?.energy?.total ?: 0L
-    sum += conduits.totalEnergy
-    return sum
+    return conduits.totalEnergy
 }
 
 

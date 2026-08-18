@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -322,7 +321,6 @@ class FlightTest {
 
     /** A hull with no air in it, so a burn is arithmetic rather than a measurement. */
     private fun vacuumHull(grid: Grid, ballast: Boolean): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
@@ -330,21 +328,19 @@ class FlightTest {
         if (ballast) for (x in HULL_LEFT..HULL_RIGHT) for (y in HULL_TOP + 1 until BREACH_Y) put(x, y)
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
     private fun bareHull(grid: Grid): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
-        return VesselState(grid = grid, machines = machines.toList(), deck=deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid = grid, deck=deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     private fun abs(v: Long): Long = if (v < 0L) -v else v

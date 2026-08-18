@@ -11,8 +11,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Save
-import org.emerge.demo.outofspace.world.machine.atKelvin
-import org.emerge.demo.outofspace.world.machine.kelvin
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.capacityPerTile
 
@@ -20,7 +18,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -63,12 +60,9 @@ class BodyHeatTest {
         w: Int,
         h: Int,
         rails: (Grid) -> List<Segment?> = { List(it.size) { null } },
-        fill: (Int, Int) -> Machine? = { _, _ -> null },
-        /** The same, for the kinds that live on the deck. */
         deckFill: (Int, Int, TileIndex) -> DeckMachine? = { _, _, _ -> null },
     ): VesselState {
         val grid = Grid(w + 2, h + 2)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
@@ -79,19 +73,12 @@ class BodyHeatTest {
             deck += Hull(grid.tile(w, y))
         }
         for (y in 2 until h) for (x in 2 until w) {
-            machines[grid.tile(x, y).index] = fill(x, y)
             deckFill(x, y, grid.tile(x, y))?.let { deck += it }
         }
-        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid)), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, conduits = Conduits.ofRails(rails(grid)), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     /** The state with the body stored at [tile] set to [kelvin], and its ledger re-anchored. */
-    private fun VesselState.heatMachine(tile: TileIndex, kelvin: Int): VesselState {
-        val list = machines.toMutableList()
-        val m = list[tile.index]!!
-        list[tile.index] = m.atKelvin(kelvin)
-        return copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
-    }
     private fun VesselState.heatDeckMachine(tile: TileIndex, kelvin: Int): VesselState {
         val d = deck.copyOf()
         val m = d[tile]!!
@@ -341,17 +328,10 @@ class BodyHeatTest {
             if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
         })
 
-        // The same number of energy into each, on top of ambient. Two paths rather than one now
-        // that the tank is a deck machine: its heat is in the layer and the furnace's is on the
-        // machine. The *quantity* is the same, which is the whole of what the test compares.
+        // The same number of energy into each, on top of ambient. One path now that every kind is a
+        // deck machine and its heat is in the layer.
         val added = 20_000_000_000L
         fun bump(s: VesselState): VesselState {
-            val m = s.machines[at.index]
-            if (m != null) {
-                val list = s.machines.toMutableList()
-                list[at.index] = m.withEnergy(m.energy.plusEnergySpread(added))
-                return s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
-            }
             val d = s.deck.copyOf()
             d[at]!!.addEnergySpread(added, s.grid, d)
             return s.copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }

@@ -3,7 +3,6 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 
 /**
  * Every tile's [Structure], derived rather than authored.
@@ -57,15 +56,8 @@ class StructureMap(private val kinds: ByteArray) {
          * it and every door is shut, which is the right answer for a world being loaded or built.
          * See [org.emerge.demo.outofspace.world.airlockOpenness].
          */
-        fun derive(grid: Grid, machines: List<Machine?>, deck: DeckArray, openness: IntArray? = null): StructureMap {
+        fun derive(grid: Grid, deck: DeckArray, openness: IntArray? = null): StructureMap {
             val kinds = ByteArray(grid.size) { Structure.Interior.ordinal.toByte() }
-            for (tile in grid.tiles) {
-                val m = machines[tile.index] ?: continue
-                if (m.kind.isPermeable) continue
-                if ((openness?.get(tile.index) ?: 0) > 0) continue
-                val kind = Structure.Machine
-                for (t in coveredTiles(grid, tile, m.kind.size)) kinds[t.index] = kind.ordinal.toByte()
-            }
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
                 if (m.kind.isPermeable) continue

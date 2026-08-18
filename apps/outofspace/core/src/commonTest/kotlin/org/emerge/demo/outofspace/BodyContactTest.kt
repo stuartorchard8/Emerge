@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.RockContact
 import org.emerge.demo.outofspace.world.RockSpawner
@@ -274,12 +273,11 @@ class BodyContactTest {
     /** A box with a wall down each side and no air in it — `RockContactTest`'s, for the same reason. */
     private fun vacuumHull(): VesselState {
         val grid = CFG.initialGrid
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 2..<WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
-        val state = VesselState(grid = grid, machines = machines.toList(), deck, gravity = VesselState.FREEFALL, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        val state = VesselState(grid = grid, deck, gravity = VesselState.FREEFALL, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         return state.copy(air = Stuff.gas(MassArray(grid.size)))
     }
 

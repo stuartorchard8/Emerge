@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Structure
@@ -60,7 +59,6 @@ class AirlockTest {
      */
     private fun roomWithDoor(door: DeckMachine?, w: Int = 8, h: Int = 8): VesselState {
         val grid = Grid(w + 2, h + 2)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
@@ -75,7 +73,7 @@ class AirlockTest {
             deck -= doorTile
             deck += door.movedTo(doorTile)
         }
-        return VesselState(grid, machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck = deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
 
     /** The tile just inside the door — the one whose containment the flood fill has to get right. */

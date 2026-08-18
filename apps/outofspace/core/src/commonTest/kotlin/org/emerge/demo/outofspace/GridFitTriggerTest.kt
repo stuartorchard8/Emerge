@@ -10,7 +10,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
@@ -87,10 +86,6 @@ class GridFitTriggerTest {
             if (y + reach > maxY) maxY = y + reach
         }
 
-        for (tile in s.grid.tiles) {
-            val m: Machine = s[tile] ?: continue
-            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.size / 2)
-        }
         for (tile in s.grid.tiles) {
             val m = s.deck[tile] ?: continue
             cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)

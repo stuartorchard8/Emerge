@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.EnergyArray
@@ -65,7 +64,6 @@ class GridVentTest {
      */
     private fun gassyWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 6..10) {
             deck += Hull(grid.tile(x, 4))
@@ -107,8 +105,7 @@ class GridVentTest {
 
         return VesselState(
             grid = grid,
-            machines = machines.toList(),
-            deck = deck,
+                        deck = deck,
             air = air,
             pipeAir = pipeAir,
             momentum = MomentumField.of(edges, momX, momY),
@@ -120,7 +117,7 @@ class GridVentTest {
             // there is for air — the sum is the invariant.
             vesselImpulseX = -(momX.sum() + pipeMomX.sum()),
             vesselImpulseY = -(momY.sum() + pipeMomY.sum()),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 
@@ -290,6 +287,10 @@ class GridVentTest {
         val before = gassyWorld()
         val after = before.remapped(Grid(12, 14), 0, 0)
         assertEquals(12, after.grid.width, "the legitimate shrink was refused")
-        assertEquals(before.machines.count { it != null }, after.machines.count { it != null }, "a machine went missing")
+        assertEquals(
+            before.grid.tiles.count { before.deck[it] != null },
+            after.grid.tiles.count { after.deck[it] != null },
+            "a machine went missing",
+        )
     }
 }

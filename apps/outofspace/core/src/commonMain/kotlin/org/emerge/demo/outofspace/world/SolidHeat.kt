@@ -1,10 +1,9 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -276,11 +275,11 @@ private class Transfers(capacity: Int, nodeCount: Int) {
  * reason: both constants are quoted per gram against a thousandth of a joule. Through [scaledRatio]
  * so that a whole rock cell's worth of mass times 400,000 does not wrap on the way.
  */
-fun heatOfWorking(mass: Long, machine: Placed?): Long =
+fun heatOfWorking(mass: Long, machine: DeckMachine?): Long =
     scaledRatio(mass, Budget.CAPACITY_DIVISOR, heatPerGram(machine))
 
 /** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
-fun heatPerGram(machine: Placed?): Long = when (machine) {
+fun heatPerGram(machine: DeckMachine?): Long = when (machine) {
     // 400 kJ/g. Smelting costs ~1 MJ/kg.
     is Smelter -> 400_000L
     is Processor -> 40_000L    // crushing and grinding

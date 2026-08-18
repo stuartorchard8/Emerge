@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
-import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.SignalField
@@ -59,17 +58,15 @@ class SignalInputTest {
 
     /** One button on one run of wire, going nowhere in particular. */
     private fun rig(key: InputKey = InputKey.Up): VesselState {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         deck += WireButton(grid.tile(buttonAt.first, buttonAt.second), key)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, buttonAt.first, farEnd.first, buttonAt.second)
         return VesselState(
             grid,
-            machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
     }
 
@@ -106,7 +103,6 @@ class SignalInputTest {
 
     @Test
     fun `holding two keys drives both their buttons`() {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         deck += WireButton(grid.tile(2, 2), InputKey.Left)
         deck += WireButton(grid.tile(2, 6), InputKey.Right)
@@ -114,7 +110,7 @@ class SignalInputTest {
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)),
+            VesselState(grid, deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)),
             1,
             held = InputKey.Left.bit or InputKey.Right.bit,
         )
@@ -125,10 +121,9 @@ class SignalInputTest {
 
     @Test
     fun `a button with no wire under it is harmless`() {
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         deck += WireButton(grid.tile(2, 4), InputKey.Up)
-        val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)), 1, held = InputKey.Up.bit)
+        val s = run(VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
 
@@ -154,7 +149,6 @@ class SignalInputTest {
     fun `holding a key vents the ship and drives it the other way`() {
         val w = 8
         val h = 8
-        val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
@@ -178,10 +172,9 @@ class SignalInputTest {
 
         val start = VesselState(
             grid,
-            machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
 
         val idle = run(start, 60, held = 0)
