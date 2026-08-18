@@ -289,7 +289,7 @@ data class VesselState(
      *    [acquiredEnergy] cancels the double-count: `stored` holds the energy and `acquired`
      *    records the transfer so the ledger stays closed.
      */
-    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges) + deck.totalEnergy,
+    val baselineEnergy: Long = solidEnergy(machines, conduits, bridges) + deck.totalEnergy + buffers.totalEnergy,
     /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
@@ -466,7 +466,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges, deck) }
+    val solids: List<Body> by lazy { bodiesOf(grid, machines, conduits, bridges, deck, buffers) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -544,7 +544,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
-    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.totalEnergy
+    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.totalEnergy + buffers.totalEnergy
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass

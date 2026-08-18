@@ -1,6 +1,11 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.atKelvin
 import org.emerge.demo.outofspace.world.machine.kelvin
@@ -249,6 +254,57 @@ class BodyHeatTest {
         // Nothing arrives from outside and nothing is conducted into it: space is not a cold
         // reservoir the hull can convect into, it is empty, and radiation is the only path out.
         assertTrue(settled.radiatedEnergy > 0L, "and the exposed face radiates")
+    }
+
+    @Test
+    fun `a hot machine warms what it is holding`() {
+        // The point of putting buffers in a layer: a store is a body like any other, so the heat
+        // solver's existing "bodies sharing a tile touch" rule couples it to the casing around it
+        // with no contact logic written for it. This is the ThermalDecomposer's whole story in
+        // miniature — heat the machine, and the charge inside comes up with it.
+        val g = Grid(12, 12)
+        val at = g.tile(5, 5)
+        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 400L * Budget.KILOGRAM, energy = 0L))
+
+        var s = room(10, 10) { x, y -> if (x == 5 && y == 5) Storage(Direction.Right) else null }
+            .stocked(at, ore)
+        // Put the charge in at room temperature, so what follows is heat arriving and not heat
+        // that was already there.
+        s.buffers.stuff.setEnergy(at, s.buffers.stuff.heatCapacityAt(at) * Temperature.AMBIENT_KELVIN)
+
+        val list = s.machines.toMutableList()
+        val m = list[at.index]!!
+        list[at.index] = m.withEnergy(m.energy.plusEnergySpread(40_000_000_000L))
+        s = s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+
+        val before = s.buffers.stuff.kelvinAt(at)
+        val beforeEnergy = s.buffers.stuff.energyAt(at)
+        assertEquals(Temperature.AMBIENT_KELVIN, before, "the charge starts at room temperature")
+
+        val warmed = run(s, 40)
+        // Energy first, because it is the finer instrument: a charge this size takes a few hundred
+        // ticks to move a whole kelvin, so an integer temperature can read unchanged while heat is
+        // plainly arriving. Asserting only on kelvin hid working conduction once already.
+        assertTrue(
+            warmed.buffers.stuff.energyAt(at) > beforeEnergy,
+            "heat must cross from the casing into the charge",
+        )
+        val after = warmed.buffers.stuff.kelvinAt(at)
+        assertTrue(after > before, "and enough of it to see: ${before}K -> ${after}K")
+        assertTrue(after < 444, "but not all at once — the contact is finite, not instant")
+    }
+
+    @Test
+    fun `an empty machine has nothing to warm`() {
+        // An empty store has no thermal mass, so it is not a body at all. Worth pinning: a
+        // zero-capacity node in the Jacobi solve would be a division by zero, and "nothing there,
+        // nothing to warm" is also the physically right statement.
+        val g = Grid(12, 12)
+        val at = g.tile(5, 5)
+        val s = room(10, 10) { x, y -> if (x == 5 && y == 5) Storage(Direction.Right) else null }
+        assertEquals(0L, s.buffers.massAt(at))
+        // It survives a run rather than dividing by zero somewhere in the solver.
+        assertEquals(0L, run(s, 5).buffers.massAt(at))
     }
 
     @Test

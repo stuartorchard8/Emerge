@@ -248,7 +248,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     dm?.addEnergySpread(added, w.deck)
                 }
             }
-            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges, w.deck)
+            val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges, w.deck, w.buffers)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
@@ -1150,6 +1150,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Stored per tile in the dense deck layer, so this one is addressed by where
                     // the metal is and needs no part index at all.
                     BodySlot.DeckStore -> deck.setEnergy(body.tile, energy[i])
+                    // Held matter, addressed by the tile its store stands on — same reason as above.
+                    BodySlot.BufferStore -> buffers.stuff.setEnergy(body.tile, energy[i])
                     BodySlot.Deck -> machines[body.anchor.index]?.let {
                         machines[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }

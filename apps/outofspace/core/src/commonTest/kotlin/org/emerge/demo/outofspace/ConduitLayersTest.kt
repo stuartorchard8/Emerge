@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.Conduits
@@ -97,7 +98,7 @@ class ConduitLayersTest {
             Conduit.Pipe to pipes.toList(),
         )
 
-        val bodies = bodiesOf(grid, List(grid.size) { null }, conduits, List(grid.size) { null }, DeckArray(grid.size))
+        val bodies = bodiesOf(grid, List(grid.size) { null }, conduits, List(grid.size) { null }, DeckArray(grid.size), BufferLayer.empty(grid.size))
 
         assertEquals(2, bodies.size, "one body per fitting, not one per tile")
         assertEquals(

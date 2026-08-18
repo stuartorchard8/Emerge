@@ -23,6 +23,15 @@ enum class BodySlot {
 
     /** [VesselState.bridges] — stored at the middle of the three tiles it spans. */
     Span,
+
+    /**
+     * [VesselState.buffers] — what a machine is holding, at the tile its store stands on.
+     *
+     * A body like any other, which is the whole point: the heat solver already joins every pair of
+     * bodies sharing a tile, so a buffer conducts with the casing around it without a line of
+     * contact logic written for it. Writes back through [Body.tile].
+     */
+    BufferStore,
 }
 
 /**
@@ -122,6 +131,7 @@ fun bodiesOf(
     conduits: Conduits,
     bridges: List<Machine?>,
     deck: DeckArray,
+    buffers: BufferLayer,
 ): List<Body> {
     val out = ArrayList<Body>(64)
     // The deck layer first, so "deck, then fittings, then spans" still reads in order. One body per
@@ -146,6 +156,29 @@ fun bodiesOf(
             )
         }
     }
+    // What machines are holding. Only stocked stores become bodies: an empty buffer has no thermal
+    // mass, nothing to hold a temperature with, and a zero-capacity node in a Jacobi solve is a
+    // division waiting to happen. Physically the same statement — nothing there, nothing to warm.
+    buffers.stuff.forEachOccupiedTile { tile ->
+        val capacity = buffers.stuff.heatCapacityAt(tile)
+        if (capacity > 0L) {
+            out.add(
+                Body(
+                    slot = BodySlot.BufferStore,
+                    tile = tile,
+                    anchor = tile,
+                    material = Material.Steel,
+                    // Permeable, so it touches the air of its own tile and nothing across a face. A
+                    // buffer is inside a machine; it has no exposed surface of its own.
+                    permeable = true,
+                    energy = buffers.stuff.energyAt(tile),
+                    capacity = capacity,
+                    conductance = BUFFER_CONTACT_CONDUCTANCE,
+                )
+            )
+        }
+    }
+
     for (i in machines.indices) {
         val m = machines[i] ?: continue
         // ⚠️ One body per TILE of the machine, not one per machine — step 6b of
@@ -259,3 +292,29 @@ fun spanParts(grid: Grid, middle: TileIndex, facing: Direction): Array<TileIndex
     middle,
     grid.neighbour(middle, facing),
 )
+
+/**
+ * How fast what a machine holds equalises with the machine holding it.
+ *
+ * The thermal contact between a buffer and its casing — a pile of ore against the wall of a hopper —
+ * and it is a *contact* conductance rather than a material property, which is why it is stated here
+ * and not derived from whatever happens to be in the buffer. The contents' own conductivity barely
+ * matters: a heap of rubble touches its container at a few points regardless of what the rubble is,
+ * and that contact is what limits the flow.
+ *
+ * **Derivation**: a **400 kg** charge — a few belt-loads, the size a machine actually works on —
+ * comes up to its casing's temperature over **a few seconds**. That charge holds about 1.8e7 per
+ * kelvin, so a time constant of a couple of hundred ticks wants a conductance around 6e4, which is
+ * thirty times [Material.AIR_FILM]. Larger than the air film because solid touching solid carries
+ * heat better than a film of still air against a wall; finite because a furnace that heated its
+ * charge instantly would leave the player nothing to watch and nothing to plan around.
+ *
+ * Note what follows from stating it as a conductance rather than as a time: a **heavier charge takes
+ * proportionally longer**, because it has more to warm and the same contact to warm it through. That
+ * is the physically right behaviour and it is free here.
+ *
+ * ⚠️ **A dial, not a measurement.** Unlike the densities and specific heats — which are real numbers
+ * about real substances — nothing physical pins this. It is set by how long a machine ought to take
+ * to heat its contents, and it is the number to reach for when the [ThermalDecomposer] feels wrong.
+ */
+val BUFFER_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 30L
