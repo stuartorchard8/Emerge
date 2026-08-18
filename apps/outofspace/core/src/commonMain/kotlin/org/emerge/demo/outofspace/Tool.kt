@@ -51,6 +51,16 @@ enum class DeleteLayer(val label: String) {
     Rail("RAIL"),
     Pipe("PIPE"),
 
+    /**
+     * The signal network — what the WIRE brush lays, and the layer most likely to be buried, since
+     * a wire is the only fitting that still shares its tile with a belt.
+     *
+     * Named WIRE rather than SIGNAL because that is the brush that lays it. `Conduit.Power` is not
+     * in this and has no tool of its own: nothing lays it yet, and one key taking down two networks
+     * is the sort of thing a player discovers by losing a run of cable.
+     */
+    Wire("WIRE"),
+
     /** The building, straight through whatever is threaded over it. */
     Deck("DECK"),
 

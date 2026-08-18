@@ -86,6 +86,27 @@ class EditorToolsTest {
         assertTrue(c.state.deck[tile] as? Storage != null, "the tank came off with the rail")
     }
 
+    /**
+     * The wire is the layer that most needs naming, and until it had a [DeleteLayer] the only way to
+     * reach one under a belt was to peel the belt off first and put it back.
+     *
+     * The rail is the assertion that matters: TOP would have taken it, because rail is the first
+     * conduit entry and a wire is the last.
+     */
+    @Test
+    fun `WIRE reaches the signal layer under the belt on top of it`() {
+        val c = layered()
+        val tile = grid.tile(6, 5)
+        assertNotNull(c.state.conduits[Conduit.Signal][tile.index], "the fixture built no wire")
+
+        c.removeAt(tile, DeleteLayer.Wire)
+        c.stepOnce()
+
+        assertNull(c.state.conduits[Conduit.Signal][tile.index], "the wire survived being named")
+        assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the rail came off with the wire")
+        assertTrue(c.state.deck[tile] as? Storage != null, "the tank came off with the wire")
+    }
+
     /** The deck can be reached through what is threaded over it, which TOP could never do in one go. */
     @Test
     fun `DECK takes the building out from under its fittings`() {

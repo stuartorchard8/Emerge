@@ -1267,6 +1267,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     DeleteLayer.Bridge -> removeBridge(edit.tile)
                     DeleteLayer.Rail -> removeConduit(edit.tile, Conduit.Rail)
                     DeleteLayer.Pipe -> removeConduit(edit.tile, Conduit.Pipe)
+                    DeleteLayer.Wire -> removeConduit(edit.tile, Conduit.Signal)
                     DeleteLayer.Deck -> removeMachine(edit.tile)
                     DeleteLayer.All -> {
                         removeBridge(edit.tile)
