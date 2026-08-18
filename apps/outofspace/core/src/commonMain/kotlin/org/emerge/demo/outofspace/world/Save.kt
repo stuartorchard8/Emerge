@@ -85,6 +85,9 @@ object Save {
         out.append("airvented ").append(state.airVentedMass).append('\n')
         out.append("baselinejoules ").append(state.baselineEnergy).append('\n')
         out.append("inserted ").append(state.insertedEnergy).append('\n')
+        // Absent reads as creative, which is what every world written before the switch existed was
+        // — and what every world still is until a ghost can finish building itself.
+        out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
         out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
@@ -560,6 +563,7 @@ object Save {
         val rail = RailLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
+        var creative = true
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
         // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
         // segment has been read, and this line *replaces* the metal [Conduits.of] lays.
@@ -756,6 +760,7 @@ object Save {
                 "pipemomy" -> readSparse(tokens, pipeMomentumY, scale, ::fail)
                 "momx" -> readSparse(tokens, momentumX, scale, ::fail)
                 "momy" -> readSparse(tokens, momentumY, scale, ::fail)
+                "creative" -> creative = tokens.getOrNull(1) != "0"
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
                 "body", "rock" -> {
@@ -892,6 +897,7 @@ object Save {
             airVentedMass = airVented,
             structure = structure,
             occupancy = occupancy,
+            creative = creative,
             insertedEnergy = inserted,
             acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,

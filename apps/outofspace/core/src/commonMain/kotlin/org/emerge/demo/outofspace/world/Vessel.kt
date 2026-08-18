@@ -312,6 +312,20 @@ data class VesselState(
      */
     val baselineEnergy: Long = solidEnergy(conduits) + deck.totalEnergy + buffers.totalEnergy,
     /**
+     * Whether the player may conjure things into being rather than build them.
+     *
+     * In **creative** the world works as it always has: drawing a run of track lays finished track,
+     * the metal and the heat arrive from off-world, and [insertedEnergy] books them. With it off,
+     * drawing a run lays **ghosts** — track with a representation and no mass, which fills itself
+     * from the network. See `apps/outofspace/PLAN_self_building_rails.md`.
+     *
+     * A field on the world rather than a global `var`, because a global one is a footgun the moment
+     * two tests want different answers, and because this is expected to become a world setting
+     * chosen at creation. It has no UI: it is the switch in the code, and it is on by default until
+     * a ghost can actually finish building itself.
+     */
+    val creative: Boolean = true,
+    /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
      */

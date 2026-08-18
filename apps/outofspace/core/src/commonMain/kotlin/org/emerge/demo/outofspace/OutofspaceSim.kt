@@ -1098,6 +1098,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val heatAdded: LongArray = LongArray(state.grid.size)
         var generatedEnergy: Long = state.generatedEnergy
         var insertedEnergy: Long = state.insertedEnergy
+
+        /**
+         * Whether the player may conjure things rather than build them — see [VesselState.creative].
+         *
+         * Held because `state` is a constructor parameter and the edit path runs long after init.
+         */
+        val creative: Boolean = state.creative
         var acquiredEnergy: Long = state.acquiredEnergy
 
         /** Charges [energy] of waste heat to the machine stored at [index]. */
@@ -1169,9 +1176,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             val c = brush.conduit
                             if (spokenFor(c, edit.tile)) return
                             if (layer(c)[edit.tile.index] == null) {
-                                // Book energy for new body (heat arriving, not conjured).
                                 layer(c)[edit.tile.index] = Segment(c)
-                                built(tracks.lay(c, edit.tile))
+                                // In creative the metal arrives from off-world with its heat in it,
+                                // and `built` books it. Otherwise it does not arrive at all: what is
+                                // laid is a ghost, and it fills itself off the network.
+                                if (creative) built(tracks.lay(c, edit.tile))
                             }
                         }
                         is Brush.Building -> placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck)
@@ -1465,12 +1474,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // a junction — and, now, rather than nothing at all. It used to share one list with the
             // track, find a conduit mismatch, and return having laid no pipe.
             val line = layer(conduit)
-            // Drawing a run lays metal wherever there was none, and that metal arrives with its
-            // heat in it — booked for the same reason [Edit.Place] books it. It went unbooked while
-            // a segment carried its own energy: the field defaulted to ambient and nothing had to
-            // ask for it, so the drag tool quietly minted the heat of every tile it laid.
-            val a = line[from.index] ?: Segment(conduit).also { built(tracks.lay(conduit, from)) }
-            val b = line[to.index] ?: Segment(conduit).also { built(tracks.lay(conduit, to)) }
+            // Drawing a run lays metal wherever there was none, and in creative that metal arrives
+            // from off-world with its heat in it — booked for the same reason [Edit.Place] books it.
+            // It went unbooked while a segment carried its own energy: the field defaulted to
+            // ambient and nothing had to ask for it, so the drag tool quietly minted the heat of
+            // every tile it laid. Outside creative nothing arrives and the drag lays ghosts.
+            fun raise(tile: TileIndex): Segment {
+                if (creative) built(tracks.lay(conduit, tile))
+                return Segment(conduit)
+            }
+            val a = line[from.index] ?: raise(from)
+            val b = line[to.index] ?: raise(to)
             line[from.index] = a.joinedTo(dir)
             line[to.index] = b.joinedTo(dir.opposite)
         }
