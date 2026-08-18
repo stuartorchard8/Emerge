@@ -539,7 +539,7 @@ data class VesselState(
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
-    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.energies.data.sum()
+    val storedEnergy: Long get() = solidEnergy(machines, conduits, bridges) + deck.totalEnergy
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass
@@ -961,8 +961,14 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue
         val oi = grid.tile(ox, oy)
-        newDeck.energies[ni] = deck.energies[oi]
-        for (s in Species.entries) newDeck.masses[MassIndex(ni, s)] = deck.masses[MassIndex(oi, s)]
+        // ⚠️ Only where the old deck actually stood. Copying unconditionally claims a row for every
+        // tile in the grid, which makes the layer dense — the one thing its row layout exists to
+        // avoid — and then leaves rows behind at tiles with no machine, so the next `+=` there fails
+        // its "nothing here yet" check. That is not hypothetical; it is what this loop did first.
+        if (!deck.stuff.occupies(oi)) continue
+        newDeck.stuff.claim(ni)
+        newDeck.stuff.setEnergy(ni, deck.stuff.energyAt(oi))
+        deck.stuff.forEachSpecies(oi) { s, mass -> newDeck.stuff[ni, s] = mass }
     }
 
     val newBridges = MutableList(newGrid.size) { null as Bridge? }

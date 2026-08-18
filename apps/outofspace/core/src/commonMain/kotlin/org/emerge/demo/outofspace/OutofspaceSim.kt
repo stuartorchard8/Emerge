@@ -1145,7 +1145,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // would otherwise write into whatever happens to sit on the tile it covers.
                     // Stored per tile in the dense deck layer, so this one is addressed by where
                     // the metal is and needs no part index at all.
-                    BodySlot.DeckStore -> deck.energies[body.tile] = energy[i]
+                    BodySlot.DeckStore -> deck.setEnergy(body.tile, energy[i])
                     BodySlot.Deck -> machines[body.anchor.index]?.let {
                         machines[body.anchor.index] = it.withEnergy(it.energy.with(body.part, energy[i]))
                     }
@@ -1322,7 +1322,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // object, so it is read *before* the removal — `-=` zeroes the stores on its way out.
             val deckMachine = deck[origin] ?: return false
             for (t in deckMachine.tiles) originOf[t] = TileIndex.NONE
-            scrapped(deckMachine.energy(deck.energies).sum())
+            scrapped(deckMachine.energy(deck.stuff).sum())
             deck -= origin
             return true
         }
@@ -1438,7 +1438,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
 
             deck += built
-            built(built.energy(deck.energies).sum())
+            built(built.energy(deck.stuff).sum())
             for (t in covered) originOf[t] = tile
         }
 

@@ -87,7 +87,11 @@ inline fun forEachVesselMass(
     // machine and the better one for the centre of mass when a bigger one lands here.
     for (t in 0 until deck.size) {
         val m = deck[TileIndex(t)] ?: continue
-        for (tile in m.tiles) action(tile, m.kind.massPerTile, 0L)
+        // Weighed from the matter stored on each tile rather than from `kind.massPerTile`. The two
+        // are equal to the unit — [tileBillOfMaterials] apportions, and it is measured identical for
+        // every kind — so this is a change of representation and not of what the ship weighs. It has
+        // to move at the same time as the fill in `+=`, or the deck is counted twice or not at all.
+        for (tile in m.tiles) action(tile, deck.stuff.massAt(tile), 0L)
     }
     for (t in machines.indices) {
         val m = machines[t] ?: continue

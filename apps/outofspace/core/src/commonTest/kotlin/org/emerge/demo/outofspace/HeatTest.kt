@@ -225,7 +225,7 @@ class HeatTest {
         val g = room.grid
         val hot = g.tile(3, 1)             // a wall tile, driven to 4000K
         val deck = room.deck.copyOf()
-        deck[hot]!!.setTemperature(4_000, deck.energies)
+        deck[hot]!!.setTemperature(4_000, deck.stuff)
         var s = room.copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE

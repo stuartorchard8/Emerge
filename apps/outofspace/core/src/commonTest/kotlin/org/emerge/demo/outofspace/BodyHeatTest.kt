@@ -19,6 +19,8 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.heatCapacityOf
+import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.ambientEnergy
@@ -79,7 +81,7 @@ class BodyHeatTest {
     private fun VesselState.heatDeckMachine(tile: TileIndex, kelvin: Int): VesselState {
         val d = deck.copyOf()
         val m = d[tile]!!
-        m.setTemperature(kelvin, d.energies)
+        m.setTemperature(kelvin, d.stuff)
         return copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }
     }
 
@@ -287,8 +289,12 @@ class BodyHeatTest {
             cfg, s,
             mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Hull, Direction.Right)))),
         )
+        // Derived from what a tile of hull is *made of*, not from a per-kind capacity constant. Those
+        // two used to be one expression and are now two: since a casing became real matter, its
+        // capacity follows from the iron and carbon on the tile. They differ by 0.17 ppm, and this
+        // side is the honest one — the other was a harmonic-mean-density round trip.
         assertEquals(
-            ambientEnergy(DeckMachineKind.Hull).total,
+            heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull)) * Temperature.AMBIENT_KELVIN,
             s.insertedEnergy,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
@@ -301,7 +307,7 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.insertedEnergy < ambientEnergy(DeckMachineKind.Hull).total / 1_000L,
+            s.insertedEnergy < heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull)) * Temperature.AMBIENT_KELVIN / 1_000L,
             "and scrapping it takes that heat back out: ${s.insertedEnergy}",
         )
     }

@@ -308,3 +308,19 @@ val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_K
  */
 fun billOfMaterials(kind: MachineKind): Mixture =
     kind.material.composition.scaledTo(kind.massPerTile * kind.thermalTiles)
+
+/**
+ * **What one tile of a deck machine is made of** — the species, at the masses a tile of it weighs.
+ *
+ * The per-tile twin of [billOfMaterials], and the thing the deck layer is now *filled with* rather
+ * than merely described by. A machine's casing stopped being a lookup on its kind and became real
+ * matter sitting in [org.emerge.demo.outofspace.world.StuffLayer], which is what makes it possible
+ * for chemistry to act on the casing at all: you cannot decompose a constant.
+ *
+ * ⚠️ [Mixture.scaledTo] apportions, so this sums to [massPerTile] **exactly** — not to within a
+ * rounding. That is load-bearing: the deck's contribution to the vessel's mass used to be this
+ * constant and is now the sum of these species, and the two must agree to the unit or the ship
+ * changes weight the day the representation changes. Measured identical for every kind.
+ */
+fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
+    kind.material.composition.scaledTo(kind.massPerTile)

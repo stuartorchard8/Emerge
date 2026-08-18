@@ -156,7 +156,7 @@ object Save {
 
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyEnergy().data)
-        writeSparse(out, "deckheat", state.deck.energies.copyOf().data)
+        writeDeckHeat(out, state.deck.stuff)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
@@ -200,6 +200,28 @@ object Save {
     private const val HEAT_PER_LINE = 12
 
     /** Index=value pairs, several to a line, skipping zeros. The idiom the heat field already uses. */
+    /**
+     * The deck's energy, in the same `deckheat tile=value` lines [writeSparse] emits — the layer is
+     * row-allocated now, so there is no tile-indexed array to hand it, but the **format is
+     * unchanged** and old saves load without a version bump.
+     *
+     * Tiles are emitted in ascending order rather than in row order. Row order is an artefact of the
+     * order things were built and demolished in, and letting it reach the file would make two
+     * identical worlds save as different text.
+     */
+    private fun writeDeckHeat(out: StringBuilder, deck: StuffLayer) {
+        val tiles = ArrayList<Int>(deck.occupiedTiles)
+        deck.forEachOccupiedTile { if (deck.energyAt(it) != 0L) tiles.add(it.index) }
+        tiles.sort()
+        var onLine = 0
+        for (tile in tiles) {
+            if (onLine == 0) out.append("deckheat")
+            out.append(' ').append(tile).append('=').append(deck.energyAt(TileIndex(tile)))
+            if (++onLine == HEAT_PER_LINE) { out.append('\n'); onLine = 0 }
+        }
+        if (onLine != 0) out.append('\n')
+    }
+
     private fun writeSparse(out: StringBuilder, tag: String, values: LongArray) {
         var onLine = 0
         for (i in values.indices) {
@@ -644,7 +666,7 @@ object Save {
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
-                "deckheat" -> readSparse(tokens, deck.energies.data, energyScale, ::fail)
+                "deckheat" -> readDeckHeat(tokens, deck.stuff, energyScale, ::fail)
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
@@ -804,6 +826,16 @@ object Save {
     }
 
     /** The reading half of [writeSparse]. */
+    private fun readDeckHeat(tokens: List<String>, deck: StuffLayer, scale: Rescale, fail: (String) -> Nothing) {
+        for (i in 1 until tokens.size) {
+            val eq = tokens[i].indexOf('=')
+            if (eq < 0) fail("expected index=value, got '${tokens[i]}'")
+            val at = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad index in '${tokens[i]}'")
+            if (at !in 0 until deck.tileCount) fail("index $at is outside the field")
+            deck.setEnergy(TileIndex(at), scale.of(tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'")))
+        }
+    }
+
     private fun readSparse(tokens: List<String>, into: LongArray, scale: Rescale, fail: (String) -> Nothing) {
         for (i in 1 until tokens.size) {
             val eq = tokens[i].indexOf('=')

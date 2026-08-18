@@ -135,6 +135,26 @@ private fun capacityPerTileUncached(mixture: Mixture): Long {
     )
 }
 
+/**
+ * Joules per kelvin for **this actual pile of matter** — not for a full tile of the stuff it is made
+ * of, which is what [capacityPerTileOf] answers.
+ *
+ * The distinction is the whole point of storing a machine's casing as real matter. `capacityPerTileOf`
+ * takes a *proportion* and tells you what a solid tile of that material would cost to warm;
+ * this takes *masses* and tells you what the matter actually present costs. Once a tile holds real
+ * species, the second question is the one every temperature in the game is asking.
+ *
+ * ⚠️ [org.emerge.demo.outofspace.world.StuffLayer.heatCapacityAt] is the allocation-free twin of
+ * this, walking a layer's row instead of a [Mixture]. The two must agree, and `CasingMassTest`
+ * checks that they do — a divergence would mean a machine's built temperature and its running
+ * temperature came from different physics.
+ */
+fun heatCapacityOf(mixture: Mixture): Long {
+    var sum = 0L
+    for (s in Species.ALL) sum += mixture[s] * s.specificHeat
+    return sum / Budget.CAPACITY_DIVISOR
+}
+
 /** Millijoules per gram per kelvin: what [mixture] costs to warm, averaged by mass. */
 fun specificHeatOf(mixture: Mixture): Long = meanSpecificHeatMilli(mixture) / SPECIFIC_HEAT_SCALE
 

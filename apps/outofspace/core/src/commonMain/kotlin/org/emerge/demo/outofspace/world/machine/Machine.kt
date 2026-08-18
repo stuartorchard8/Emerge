@@ -182,8 +182,7 @@ fun Machine.atKelvin(kelvin: Int): Machine =
 /** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
 fun ambientEnergy(kind: MachineKind): TileEnergy =
     TileEnergy.uniform(kind.thermalTiles, kind.capacityPerTile * Temperature.AMBIENT_KELVIN)
-fun ambientEnergy(kind: DeckMachineKind): TileEnergy =
-    TileEnergy.uniform(kind.diameter*kind.diameter, kind.capacityPerTile * Temperature.AMBIENT_KELVIN)
+
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface Directed : Machine {

@@ -137,8 +137,10 @@ fun bodiesOf(
                     anchor = tile,
                     material = m.kind.material,
                     permeable = m.kind.isPermeable,
-                    energy = deck.energies[part],
-                    capacity = m.kind.capacityPerTile,
+                    energy = deck.stuff.energyAt(part),
+                    // From the matter on the tile, not from the kind — so a casing that a reaction
+                    // has altered conducts as what it has become. See [StuffLayer.heatCapacityAt].
+                    capacity = deck.stuff.heatCapacityAt(part),
                     conductance = m.kind.conductance,
                 )
             )
