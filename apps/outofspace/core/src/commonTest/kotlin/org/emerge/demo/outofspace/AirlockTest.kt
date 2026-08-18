@@ -3,26 +3,19 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Action
-import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Structure
-import org.emerge.demo.outofspace.world.Stuff
-import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
-import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -157,18 +150,13 @@ class AirlockTest {
 
     // ── Graded ────────────────────────────────────────────────────────────────
 
-    /**
-     * Half a signal is half a door. The aperture field has always been an area rather than a flag,
-     * and this is the first thing that uses it as one — so it is worth an assertion that the grading
-     * survives the trip from wiring, through the openness array, to the faces.
-     */
     @Test
-    fun `a wider signal vents faster`() {
+    fun `a wider signal vents the same`() {
         val ajar = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL / 4))), 30).airVentedMass
         val wide = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 30).airVentedMass
 
-        assertTrue(ajar > 0L, "a quarter-open door still leaks")
-        assertTrue(wide > ajar, "and a fully open one leaks faster: $wide vs $ajar")
+        assertTrue(ajar > 0L, "a quarter-signal opens the door")
+        assertEquals(wide, ajar, "and the door should leak the same as one open with full signal: $wide vs $ajar")
     }
 
     // ── Thrust ────────────────────────────────────────────────────────────────

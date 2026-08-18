@@ -46,12 +46,17 @@ fun airlockOpenness(deck: DeckArray, signals: SignalField): IntArray? {
     for (i in 0 until deck.size) {
         val m = deck[TileIndex(i)]
         if (m !is Airlock) continue
-        val activation = m.wiring.activation(Action.Run, signals.at(TileIndex(i)))
-        if (activation <= 0) continue
         val array = openness ?: IntArray(deck.size).also { openness = it }
-        array[i] = activation * ApertureField.OPEN / SignalField.FULL
+        array[i] = airlockOpenness(m, signals)
     }
     return openness
+}
+fun airlockOpenness(m: Airlock, signals: SignalField): Int {
+    val activation = m.wiring.activation(Action.Run, signals.at(m.center))
+    if (activation <= 0) return 0
+    // N.B. we used to open proportionally to activation, and may go back to that at some point.
+    // return activation * ApertureField.OPEN / SignalField.FULL
+    return ApertureField.OPEN
 }
 
 class ApertureField(

@@ -42,7 +42,9 @@ import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
+import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -701,6 +703,15 @@ class OutofspaceRenderer {
         val tile = m.center
         val x = state.grid.xOf(tile)
         val y = state.grid.yOf(tile)
+        val n = m.kind.diameter
+        // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
+        // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
+        if (m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
+            bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
+            bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
+            drawPorts(state, m)
+            return
+        }
         when (m) {
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
             // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
@@ -708,8 +719,7 @@ class OutofspaceRenderer {
             // and the player should read them as the same kind of thing.
             is Airlock -> {
                 tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
-                val open = m.wiring.activation(Action.Run, state.signals.at(tile))
-                    .coerceIn(0, SignalField.FULL) / SignalField.FULL.toFloat()
+                val open = airlockOpenness(m, state.signals) / ApertureField.OPEN
                 if (open > 0f) tileRect(x, y, Visual.MACHINE_INSET * open, Colors.VENT_CORE)
             }
         }

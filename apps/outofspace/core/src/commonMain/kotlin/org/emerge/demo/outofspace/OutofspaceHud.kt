@@ -532,11 +532,11 @@ class OutofspaceHud {
                     0x9A9A9AFFL,
                     if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
-                val target = if (watched != TileIndex.NONE) controller.state[watched] else null
+                val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
                 if (target != null) {
                     row("watching: ${target.kind.label}", 0x9A9A9AFFL)
                 } else {
-                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deck[watched] else null
+                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deckMachineCovering(watched) else null
                     row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
                 }
                 gap()

@@ -186,7 +186,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Gauge persists after packet leaves.
                 for (tile in w.grid.tiles) {
                     val r = w.rails[tile.index] ?: continue
-                    if (r.isGauge) raise(tile, r.lastPurity)
+                    if (r.isGauge) raise(tile, (r.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
                 }
             }
             w.signals = signals
@@ -1713,7 +1713,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (i in rails.indices) {
                 val segment = rails[i] ?: continue
                 if (!segment.isGauge) continue
-                val packet = rail.packetAt(TileIndex(i)) ?: continue
+                val packet = rail.packetAt(TileIndex(i))
                 rails[i] = segment.reading(packet)
             }
         }

@@ -11,9 +11,7 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.BufferLayer
-import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -63,7 +61,7 @@ class GaugeTest {
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
         // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
         val wires = arrayOfNulls<Segment>(grid.size)
-        wires[GAUGE_TILE_X + 2 * grid.width] = Segment(Conduit.Signal)
+        wires[gaugeTileX + 2 * grid.width] = Segment(Conduit.Signal)
         return VesselState(
             grid,
             m.toList(),
@@ -74,14 +72,14 @@ class GaugeTest {
     }
 
     /** Where [line] puts its gauge, so a test can ask what that tile's circuit reads. */
-    private val GAUGE_TILE_X = 6
+    private val gaugeTileX = 6
 
     private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.tile(6, 2))!!
 
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
-        val s = run(line(ore), 20*RAIL_PERIOD)
+        val s = run(line(ore), 3*RAIL_PERIOD)
         val gauge = gaugeOf(s)
         assertEquals(Species.Iron, gauge.lastDominant, "iron is the largest single component")
         assertEquals(410, gauge.lastPurity, "41% of the ore, not a majority of it")
@@ -89,12 +87,12 @@ class GaugeTest {
     }
 
     @Test
-    fun `the reading persists after the packet has gone, so an idle line still reads`() {
+    fun `the reading goes after the packet has gone, so an idle line is quiet`() {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         val s = run(line(ore), 120*RAIL_PERIOD)
         val gauge = gaugeOf(s)
         assertEquals(null, s.onRail(s.grid.tile(6, 2)), "the packet moved on")
-        assertEquals(410, gauge.lastPurity, "but the reading stayed")
+        assertEquals(0, gauge.lastPurity, "the reading disappeared")
         assertEquals(Capacity.PACKET_MASS, s.stockpile.totalMass, "and it was passed through, not consumed")
     }
 
@@ -107,10 +105,10 @@ class GaugeTest {
     }
 
     @Test
-    fun `a gauge puts its purity on the wire beneath it`() {
-        val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
-        val s = run(line(pure), 20*RAIL_PERIOD)
-        assertEquals(1000, s.signals.at(s.grid.tile(GAUGE_TILE_X, 2)), "pure metal reads 100%")
+    fun `a gauge puts its mass on the wire beneath it`() {
+        val half = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS/2, energy = 0))
+        val s = run(line(half), 20*RAIL_PERIOD)
+        assertEquals(500, s.signals.at(s.grid.tile(gaugeTileX, 2)), "half packet reads 50%")
     }
 
     /**
@@ -131,7 +129,6 @@ class GaugeTest {
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")
-        assertTrue(s.railAt(grid.tile(6, 2))!!.lastPurity > 0, "though the gauge still took its reading")
     }
 
     @Test

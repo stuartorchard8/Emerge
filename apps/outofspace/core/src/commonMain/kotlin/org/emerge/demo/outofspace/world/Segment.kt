@@ -78,8 +78,17 @@ data class Segment(
     fun cutFrom(dir: Direction): Segment = copy(links = links and (1 shl dir.ordinal).inv())
 
     /** This segment having seen [packet] go past. Reads it; does not consume it. */
-    fun reading(packet: Packet): Segment {
+    fun reading(packet: Packet?): Segment {
         if (!isGauge) return this
+        if (packet == null) {
+            if (lastMass == 0L) return this
+            return copy(
+                lastForm = null,
+                lastDominant = null,
+                lastPurity = 0,
+                lastMass = 0,
+            )
+        }
         val dominant = packet.contents.dominant ?: return this
         val mass = packet.mass
         return copy(
