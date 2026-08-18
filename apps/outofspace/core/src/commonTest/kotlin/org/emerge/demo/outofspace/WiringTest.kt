@@ -156,9 +156,9 @@ class WiringTest {
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) wires[eye.index] = Segment(Conduit.Signal)
         val machines = arrayOfNulls<Machine>(grid.size)
-        machines[eye.index] = Sensor(Direction.Left)
         val deck = DeckArray(grid)
         deck += Storage(tank, Direction.Right)
+        deck += Sensor(eye, Direction.Left)
         return VesselState(
             grid,
             machines.toList(),
@@ -179,12 +179,15 @@ class WiringTest {
         val grid = Grid(2, 1)
         val wires = arrayOfNulls<Segment>(grid.size)
         wires[1] = Segment(Conduit.Signal)
+        val machines = List<Machine?>(grid.size) { null }
+        val deck = DeckArray(grid)
+        deck += Sensor(TileIndex(1), Direction.Left)
         var s = VesselState(
             grid,
-            listOf(null, Sensor(Direction.Left)),
-            DeckArray(grid),
+            machines,
+            deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, listOf(null, Sensor(Direction.Left))), rail = RailLayer.empty(grid.size),
+            buffers = BufferLayer.forMachines(grid, machines), rail = RailLayer.empty(grid.size),
         )
         s = run(s, 1)
         assertEquals(0, s.signals.at(TileIndex(1)))
@@ -272,7 +275,7 @@ class WiringTest {
             bodies = 4,
         )
         deck += Storage(grid.tile(6, 3), Direction.Right)   // input port at (5, 3)
-        machines[grid.tile(6, 5).index] = Sensor(Direction.Up)
+        deck += Sensor(grid.tile(6, 5), Direction.Up)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 5, 3)
         // The run that joins the sensor to the extractor. Without it the two are strangers, which is

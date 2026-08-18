@@ -188,7 +188,6 @@ val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer,
-        MachineKind.Sensor, MachineKind.Pump, MachineKind.KeyInput,
         MachineKind.Thruster,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
@@ -201,7 +200,9 @@ val DeckMachineKind.material: Material
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
         // A hole in the hull with a housing around it, and the housing is the part that is made of
         // anything — which is why it keeps the instrument's fill rather than the plate's.
-        DeckMachineKind.Vent, DeckMachineKind.Storage -> Material.Titanium
+        DeckMachineKind.Vent, DeckMachineKind.Storage,
+        DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
+        -> Material.Titanium
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -234,16 +235,14 @@ val MachineKind.fillPermille: Int
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
 
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
-        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer,
-        MachineKind.Pump,
-        -> 150
+        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer -> 150
 
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         MachineKind.Thruster -> 120
 
         // Instruments and fittings: mostly a housing.
-        MachineKind.Sensor, MachineKind.KeyInput, MachineKind.Gauge -> 40
+        MachineKind.Gauge -> 40
 
         // Track and pipework, laid across a tile rather than filling it.
         MachineKind.Rail, MachineKind.Bridge -> 20
@@ -260,7 +259,9 @@ val DeckMachineKind.fillPermille: Int
         // rechosen, so the migration does not quietly change what the ship weighs.
         DeckMachineKind.Vent -> 40
         // A shell with a room's worth of space inside it — carried across unchanged.
-        DeckMachineKind.Storage -> 150
+        DeckMachineKind.Storage, DeckMachineKind.Pump -> 150
+        // Instruments and fittings: mostly a housing. Carried across unchanged.
+        DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

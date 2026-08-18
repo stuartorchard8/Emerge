@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -46,11 +47,11 @@ enum class InputKey(val label: String) {
  * finger can now drive too.
  */
 data class WireButton(
+    override val center: TileIndex,
     val key: InputKey = InputKey.Up,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.KeyInput),
-) : Machine {
-    override val kind: MachineKind get() = MachineKind.KeyInput
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.KeyInput
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }

@@ -617,7 +617,7 @@ class OutofspaceRenderer {
         val n = m.kind.size
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
-        if (m !is Sensor && m !is WireButton && m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
+        if (m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, tile, m)
@@ -650,26 +650,6 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            // A button: its face lights up while it is held, and its key is written on it by the
-            // wiring panel rather than by the tile — a letter at this size would be a smudge.
-            is WireButton -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.KeyInput))
-                val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
-                tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
-            }
-            is Sensor -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Sensor))
-                // Faces its target, and its eye glows with whatever it is putting on the wire — the
-                // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
-                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
-                edgeMark(x, y, m.facing, emitting)
-                tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
-            }
-            // Pump intake: arrow shows facing (room direction).
-            is Pump -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Pump))
-                intakeArrow(x, y, m.facing)
-            }
             // The bell marks the exhaust face, so which way a motor pushes is readable without
             // selecting it — the one thing about a thruster you cannot afford to get wrong.
             is Thruster -> {
@@ -687,7 +667,11 @@ class OutofspaceRenderer {
         val n = m.kind.diameter
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
-        if (m !is Airlock && m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0) {
+        // A transmitter is never "stopped": a sensor or a button with no activation is doing its
+        // job, and so is a shut airlock — see the note on [Airlock.SEALED].
+        if (m !is Airlock && m !is Sensor && m !is WireButton &&
+            m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0
+        ) {
             bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, m)
@@ -695,6 +679,27 @@ class OutofspaceRenderer {
         }
         when (m) {
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            // A button: its face lights up while it is held, and its key is written on it by the
+            // wiring panel rather than by the tile — a letter at this size would be a smudge.
+            is WireButton -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.KeyInput))
+                val pressed = state.signals.at(tile) / SignalField.FULL.toFloat()
+                tileRect(x, y, Visual.BUTTON_FACE, lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, pressed))
+            }
+            is Sensor -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Sensor))
+                // Faces its target, and its eye glows with whatever it is putting on the wire — the
+                // same ramp the wire itself uses, so a lit sensor and a lit run read as one thing.
+                val emitting = lerpColor(Colors.WIRE_DARK, Colors.WIRE_LIVE, state.signals.at(tile) / SignalField.FULL.toFloat())
+                edgeMark(x, y, m.facing, emitting)
+                tileRect(x, y, Visual.SENSOR_EYE_SCALE, emitting)
+            }
+            // Pump intake: arrow shows facing (room direction).
+            is Pump -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Pump))
+                intakeArrow(x, y, m.facing)
+            }
+
             is Vent -> {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vent))
                 tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
@@ -1275,9 +1280,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.ThermalDecomposer -> 0x5E5A3BFFL
     MachineKind.Vaporizer -> 0x905A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
-    MachineKind.Sensor -> 0x24303CFFL
-    MachineKind.KeyInput -> 0x2E3A4AFFL
-    MachineKind.Pump -> 0xB07840FFL
     MachineKind.Thruster -> 0xC04A30FFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
@@ -1287,6 +1289,9 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Airlock -> 0x6E7C90FFL
     DeckMachineKind.Vent -> 0x3A3A44FFL
     DeckMachineKind.Storage -> 0x3A4A5AFFL
+    DeckMachineKind.Sensor -> 0x24303CFFL
+    DeckMachineKind.KeyInput -> 0x2E3A4AFFL
+    DeckMachineKind.Pump -> 0xB07840FFL
 }
 
 /**

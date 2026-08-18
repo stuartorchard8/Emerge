@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -11,14 +12,14 @@ import org.emerge.demo.outofspace.world.Wiring
  * Does not model compression heating (gas carries its own energy).
  */
 data class Pump(
+    override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Pump),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Pump
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Pump
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
         /**

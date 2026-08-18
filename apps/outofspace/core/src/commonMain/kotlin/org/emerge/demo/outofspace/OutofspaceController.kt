@@ -188,7 +188,9 @@ class OutofspaceController(
 
     /** Cycles which key a button answers to. */
     fun cycleInputKey(tile: TileIndex, delta: Int) {
-        val current = state.machineCovering(tile) as? WireButton ?: return
+        // On the deck now, like every other transmitter. Asking the machine list would find
+        // nothing and the key would simply stop cycling, with no error to say why.
+        val current = state.deckMachineCovering(tile) as? WireButton ?: return
         val all = InputKey.ALL
         val next = all[((all.indexOf(current.key) + delta) % all.size + all.size) % all.size]
         bindKey(tile, next)

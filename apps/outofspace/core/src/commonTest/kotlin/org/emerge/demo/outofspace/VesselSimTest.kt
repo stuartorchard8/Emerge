@@ -601,7 +601,7 @@ class VesselSimTest {
         val held = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0))
         var s = VesselState(grid, machines, deck, buffers = BufferLayer.forMachines(grid, machines), rail = RailLayer.empty(grid.size))
             .stocked(at, held)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Sensor, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Sensor, Direction.Right))))
         // Compared as the machine itself: its heat lives in the deck layer now, so a tick of
         // conduction moves the layer rather than the object and the object is unchanged.
         assertEquals(
@@ -632,12 +632,12 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val base = VesselState(grid, listOf(null, null), deck, buffers = BufferLayer.forMachines(grid, listOf(null, null)), rail = RailLayer.empty(grid.size))
         val a = mapOf(
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))),
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Pump, Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(Edit.PlaceDeck(TileIndex(0), DeckMachineKind.Sensor, Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(Edit.PlaceDeck(TileIndex(0), DeckMachineKind.Pump, Direction.Right))),
         )
         val b = mapOf(
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Pump, Direction.Right))),
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(Edit.PlaceDeck(TileIndex(0), DeckMachineKind.Pump, Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(Edit.PlaceDeck(TileIndex(0), DeckMachineKind.Sensor, Direction.Right))),
         )
         assertEquals(
             OutofspaceReducer.reduce(cfg, base, a)[TileIndex(0)],

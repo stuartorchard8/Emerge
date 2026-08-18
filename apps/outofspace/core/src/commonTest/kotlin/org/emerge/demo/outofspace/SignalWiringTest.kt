@@ -88,7 +88,7 @@ class SignalWiringTest {
             Extractor(Direction.Right).withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
         // Looking up at the tank, which sits below the run.
-        machines[grid.tile(sensorAt.first, sensorAt.second).index] = Sensor(Direction.Down)
+        deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) signalRow(wires, extractorAt.first, sensorAt.first, 3)
@@ -174,7 +174,7 @@ class SignalWiringTest {
         val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         deck += Storage(grid.tile(13, 5), Direction.Right)
-        machines[grid.tile(12, 3).index] = Sensor(Direction.Down)
+        deck += Sensor(grid.tile(12, 3), Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 12, 3)
 

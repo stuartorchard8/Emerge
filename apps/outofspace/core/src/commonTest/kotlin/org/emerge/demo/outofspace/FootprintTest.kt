@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
@@ -78,8 +79,8 @@ class FootprintTest {
         val grid = Grid(12, 12)
         var s = place(grid, grid.tile(5, 5), MachineKind.Smelter)
         // Two tiles away: outside the *centre* but well inside the footprint.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(7, 5), MachineKind.Sensor, Direction.Right))))
-        assertNull(s[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(7, 5), DeckMachineKind.Sensor, Direction.Right))))
+        assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
     }
 
     @Test
@@ -212,7 +213,7 @@ class FootprintTest {
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(6, 6), Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
-        m[grid.tile(7, 8).index] = Sensor(Direction.Up)
+        deck += Sensor(grid.tile(7, 8), Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
         val wires = arrayOfNulls<Segment>(grid.size)
         wires[grid.tile(7, 8).index] = Segment(org.emerge.demo.outofspace.world.Conduit.Signal)

@@ -510,38 +510,6 @@ class OutofspaceHud {
             // under it, and the readout's job is to say whether there is one.
             val wired = controller.state.networks[tile] >= 0
 
-            if (machine is WireButton) {
-                clauseRow(
-                    lhs = "WHEN KEY",
-                    cmp = machine.key.label,
-                    rhs = if (wired) "${controller.state.signals.at(tile) / 10}%" else "(no wire)",
-                    onLhs = { controller.cycleInputKey(tile, 1) },
-                    onCmp = { controller.cycleInputKey(tile, 1) },
-                    onRhs = { controller.cycleInputKey(tile, 1) },
-                )
-                row("held in FLIGHT mode — press F to switch", 0x9A9A9AFFL)
-                gap()
-            }
-
-            if (machine is Sensor) {
-                val watched = grid.neighbour(tile, machine.facing)
-                keyValue(
-                    "EMITS",
-                    if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
-                    else "(no wire under it)",
-                    0x9A9A9AFFL,
-                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
-                )
-                val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
-                if (target != null) {
-                    row("watching: ${target.kind.label}", 0x9A9A9AFFL)
-                } else {
-                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deckMachineCovering(watched) else null
-                    row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
-                }
-                gap()
-            }
-
             val gauge = controller.state.railAt(tile)
             if (gauge?.isGauge == true) {
                 keyValue(
@@ -591,6 +559,38 @@ class OutofspaceHud {
             // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
             // under it, and the readout's job is to say whether there is one.
             val wired = controller.state.networks[tile] >= 0
+
+            if (machine is WireButton) {
+                clauseRow(
+                    lhs = "WHEN KEY",
+                    cmp = machine.key.label,
+                    rhs = if (wired) "${controller.state.signals.at(tile) / 10}%" else "(no wire)",
+                    onLhs = { controller.cycleInputKey(tile, 1) },
+                    onCmp = { controller.cycleInputKey(tile, 1) },
+                    onRhs = { controller.cycleInputKey(tile, 1) },
+                )
+                row("held in FLIGHT mode — press F to switch", 0x9A9A9AFFL)
+                gap()
+            }
+
+            if (machine is Sensor) {
+                val watched = grid.neighbour(tile, machine.facing)
+                keyValue(
+                    "EMITS",
+                    if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
+                    else "(no wire under it)",
+                    0x9A9A9AFFL,
+                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
+                )
+                val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
+                if (target != null) {
+                    row("watching: ${target.kind.label}", 0x9A9A9AFFL)
+                } else {
+                    val targetDeck = if (watched != TileIndex.NONE) controller.state.deckMachineCovering(watched) else null
+                    row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+                }
+                gap()
+            }
 
             val gauge = controller.state.railAt(tile)
             if (gauge?.isGauge == true) {

@@ -299,13 +299,6 @@ object Save {
                 put("rate", m.massPerTick.toString())
             }
             is Storage -> {}
-            // A sensor is its facing and its wiring, both written by the common code around this.
-            is Sensor -> {}
-            // A button is its key and its wiring; the common code writes the second.
-            is WireButton -> put("key", m.key.name)
-            // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
-            // heat are all written by the common code around this.
-            is Pump -> {}
         }
         // Every store the machine keeps, under the key that record has always used for it. What a
         // machine holds moved to the buffer layer without the file noticing — see [storeKey].
@@ -336,6 +329,13 @@ object Save {
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
             is Storage -> {}
+            // A sensor is its facing and its wiring, both written by the common code around this.
+            is Sensor -> {}
+            // A button is its key and its wiring; the common code writes the second.
+            is WireButton -> put("key", m.key.name)
+            // A pump holds nothing: what it moves is in the two air fields. Facing and wiring are
+            // written by the common code around this.
+            is Pump -> {}
         }
         // The same store loop the machine record has, and it is not optional: a deck machine's
         // buffers are on the same layer under the same keys, and leaving it out wrote a warehouse
@@ -1014,20 +1014,11 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
-            // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
-            // under it, and no colour can be turned back into a piece of geometry that was never laid.
-            MachineKind.Sensor -> Sensor(facing = facing())
-            MachineKind.KeyInput -> WireButton(
-                key = f["key"]?.let { name ->
-                    InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
-                } ?: InputKey.Up,
-            )
             MachineKind.Thruster -> Thruster(
                 facing = facing(),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(Direction.Right).massPerTick),
             )
-            MachineKind.Pump -> Pump(facing())
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
                 fail("$kindName is a conduit, not a machine")
@@ -1099,6 +1090,16 @@ object Save {
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
             DeckMachineKind.Storage -> Storage(tile, facing())
+            // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
+            // under it, and no colour can be turned back into a piece of geometry that was never laid.
+            DeckMachineKind.Sensor -> Sensor(tile, facing())
+            DeckMachineKind.KeyInput -> WireButton(
+                tile,
+                key = f["key"]?.let { name ->
+                    InputKey.ALL.firstOrNull { it.name == name } ?: fail("unknown key '$name'")
+                } ?: InputKey.Up,
+            )
+            DeckMachineKind.Pump -> Pump(tile, facing())
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted

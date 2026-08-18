@@ -133,7 +133,7 @@ fun starterVessel(
     put(11, wy) { Storage(it, Direction.Right) }
     rail(7, 10, wy)
     // Sensor looks at tank bottom edge.
-    put(11, wy + 2, Sensor(Direction.Up))
+    put(11, wy + 2) { Sensor(it, Direction.Up) }
 
     // ...and the run that makes it mean anything. This is the demonstration: the sensor drives the
     // wire beneath it, the wire reaches the extractor's anchor tile, and the extractor's second term

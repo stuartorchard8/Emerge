@@ -89,7 +89,7 @@ class PumpTest {
     private fun pumped(pumpX: Int = 6, y: Int = 6, facing: Direction = Direction.Up): VesselState {
         var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
         s = pipeRun(s, y, 4, 15)
-        return edit(s, Edit.Place(grid.tile(pumpX, y), MachineKind.Pump, facing))
+        return edit(s, Edit.PlaceDeck(grid.tile(pumpX, y), DeckMachineKind.Pump, facing))
     }
 
     @Test
@@ -145,7 +145,7 @@ class PumpTest {
         // is also indistinguishable from a stall that does nothing.
         var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
         s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
-        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, Direction.Up))
         val early = run(s, 400*PUMP_PERIOD)
         val late = run(early, 1_200)
 
@@ -164,7 +164,7 @@ class PumpTest {
     @Test
     fun `a pump with no pipe beneath it has nowhere to push`() {
         var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
-        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, Direction.Up))
         val roomBefore = s.air.totalMass
 
         val after = run(s, 200)
@@ -198,7 +198,7 @@ class PumpTest {
                 s = edit(s, Edit.PlaceDeck(grid.tile(x, 6), DeckMachineKind.Hull, Direction.Right))
             }
             s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
-            return run(edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pump, facing)), 400)
+            return run(edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, facing)), 400)
         }
 
         fun chamber(s: VesselState, rows: IntRange): Long {
@@ -230,7 +230,7 @@ class PumpTest {
         val after = run(pumped(facing = Direction.Down), 50)
         val back = Save.read(Save.write(after))
 
-        val pump = back.machines[grid.tile(6, 6).index] as? Pump
+        val pump = back.deck[grid.tile(6, 6)] as? Pump
         assertTrue(pump != null, "the pump did not come back")
         assertEquals(Direction.Down, pump.facing, "it came back facing somewhere else")
         assertEquals(after.pipeAir, back.pipeAir, "what it had pumped came back as something else")

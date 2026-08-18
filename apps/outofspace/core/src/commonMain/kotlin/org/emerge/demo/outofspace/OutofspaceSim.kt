@@ -174,8 +174,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
             w.networks = networks
             signals = SignalField.build(networks) { raise ->
+                // The transmitters are deck machines, so this walks the deck. ⚠️ It used to walk
+                // `machines`, and a reified lookup that resolves the wrong hierarchy answers *null*
+                // — every sensor and every button would simply have stopped emitting, with nothing
+                // to see but wiring that no longer does anything.
                 for (tile in w.grid.tiles) {
-                    when (val m : Machine? = w[tile]) {
+                    when (val m : DeckMachine? = w.deck[tile]) {
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
                             val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
@@ -216,14 +220,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Smelter -> w.melt(cfg, m, activation, tile)
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
-                    is Bridge, is Pump, is Sensor, is WireButton -> m
+                    is Bridge -> m
                 }
             }
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Hull, is Airlock, is Vent, is Storage -> m
+                    is Hull, is Airlock, is Vent, is Storage,
+                    is Sensor, is WireButton, is Pump -> m
                 }
             }
         }
@@ -296,7 +301,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
             applyPumps(
-                demands = pumpDemands(state.grid, w.machines, conduits, signals),
+                demands = pumpDemands(state.grid, w.deck, conduits, signals),
                 roomMass = w.masses,
                 roomEnergy = w.airEnergy,
                 pipeMass = w.pipeMass,
@@ -613,14 +618,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /** Pump demands: room→pipe. Both ends optional (missing pump excluded). Activation applied here, not in [applyPumps]. */
     private fun pumpDemands(
         grid: Grid,
-        machines: List<Machine?>,
+        deck: DeckArray,
         conduits: Conduits,
         signals: SignalField,
     ): List<PumpDemand> {
         var demands: MutableList<PumpDemand>? = null
-        for (i in machines.indices) {
+        for (i in 0 until deck.size) {
             val tile = TileIndex(i)
-            val pump = machines[tile.index] as? Pump ?: continue
+            val pump = deck[tile] as? Pump ?: continue
             if (conduits.at(Conduit.Pipe, tile) == null) continue
             val intake = grid.neighbour(tile, pump.facing)
             if (intake == TileIndex.NONE) continue
@@ -1275,7 +1280,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.BindKey -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = machines[tile.index]
-                    if (m is WireButton) machines[tile.index] = m.copy(key = edit.key)
+                    if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
@@ -1812,6 +1817,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     buffers.put(store, merged)
                     true
                 }
+                // Neither a sensor nor a button nor a pump is on the material network at all:
+                // no ports, nothing to hand anything to.
+                is Sensor, is WireButton, is Pump -> false
                 is Hull, is Airlock -> false
             }
         }
@@ -1839,10 +1847,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
             MachineKind.Vaporizer -> Vaporizer(facing)
             MachineKind.Smelter -> Smelter(facing)
-            MachineKind.Sensor -> Sensor(facing)
-            MachineKind.KeyInput -> WireButton()
             MachineKind.Thruster -> Thruster(facing)
-            MachineKind.Pump -> Pump(facing)
             // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
             MachineKind.Wire -> null
@@ -1853,6 +1858,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile)
             DeckMachineKind.Storage -> Storage(tile, facing)
+            DeckMachineKind.Sensor -> Sensor(tile, facing)
+            DeckMachineKind.KeyInput -> WireButton(tile)
+            DeckMachineKind.Pump -> Pump(tile, facing)
         }
     }
 }

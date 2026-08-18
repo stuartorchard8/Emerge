@@ -90,7 +90,7 @@ class BufferRoleTest {
 
     @Test
     fun `machines that hold nothing claim nothing`() {
-        for (m in listOf(Sensor(Direction.Right), Pump(Direction.Right))) {
+        for (m in listOf(Sensor(centre, Direction.Right), Pump(centre, Direction.Right))) {
             assertEquals(emptyList(), bufferRolesOf(m), "$m claims a store")
             for (role in BufferRole.entries) assertNull(bufferTile(grid, m, centre, role))
         }

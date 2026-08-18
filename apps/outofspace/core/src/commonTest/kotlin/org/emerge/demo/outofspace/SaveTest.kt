@@ -450,7 +450,10 @@ class SaveTest {
             """.trimIndent(),
         )
         assertEquals(Grid(6, 4), state.grid)
-        assertEquals(Direction.Up, (state[TileIndex(8)] as? Sensor)?.facing)
+        // Still written as a `machine` record by every file that predates the move — the reader
+        // routes a deck kind onward by name, so a hand-typed world keeps working — but it lands on
+        // the deck, which is where a sensor lives now.
+        assertEquals(Direction.Up, (state.deck[TileIndex(8)] as? Sensor)?.facing)
         // The save says 250 and 250, and a version-1 save is written in mass — so what comes back is
         // half a kilogram in whatever this build's unit is, not the digits on the page.
         assertEquals(500L * Budget.GRAM, state.rail.massAt(TileIndex(10)))
