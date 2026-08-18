@@ -164,7 +164,7 @@ class VesselSimTest {
             480*RAIL_PERIOD,
         )
 
-        assertEquals(Storage.CAP, (s[grid.tile(8, 5)] as? Storage)!!.contents?.mass, "the tank filled")
+        assertEquals(Storage.CAP, s.buffers.resourceAt(grid.tile(8, 5))?.mass, "the tank filled")
         assertTrue(s.ventedMass > 0L, "and the rest went up the branch and overboard")
         assertBalanced(s, "line with a full tank and an open vent")
     }
@@ -197,7 +197,7 @@ class VesselSimTest {
         )
 
         assertTrue(s.ventedMass > 0L, "the vent took a share")
-        val stored = (s[grid.tile(9, 5)] as? Storage)!!.contents?.mass ?: 0L
+        val stored = s.buffers.resourceAt(grid.tile(9, 5))?.mass ?: 0L
         assertTrue(stored > 0L, "and so did the tank, which used to get nothing at all")
         // Not an exact split: the tank stops pulling when it fills, and everything then goes
         // overboard. Both being fed while both can take is the property that matters.
@@ -460,7 +460,7 @@ class VesselSimTest {
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)   // its input port
         var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
         s = run(s, RAIL_PERIOD)
-        assertEquals(1_000L, (s[grid.tile(4, 2)] as? Storage)!!.contents!!.mass, "it landed in the tank")
+        assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
 
         // Take the tank away and the stockpile goes with it: availability is a fact about where
@@ -526,7 +526,7 @@ class VesselSimTest {
         assertNull((s[grid43(s)] as? Processor)!!.input, "the processor should not have taken an ingot")
         assertEquals(
             1_000L,
-            (s[s.grid.tile(9, 2)] as? Storage)!!.contents?.mass,
+            s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
             "and the tank at the end of the belt should have caught it",
         )
     }
@@ -548,7 +548,7 @@ class VesselSimTest {
             (processor.tailings?.mass ?: 0L)
         assertEquals(1_000L, taken, "the processor should have taken the ore off the belt")
         assertNull(
-            (s[s.grid.tile(9, 2)] as? Storage)!!.contents,
+            s.buffers.resourceAt(s.grid.tile(9, 2)),
             "so nothing should have reached the tank",
         )
     }
@@ -561,7 +561,7 @@ class VesselSimTest {
         assertNull((s[grid43(s)] as? Smelter)!!.input, "the smelter should not have taken an ingot")
         assertEquals(
             1_000L,
-            (s[s.grid.tile(9, 2)] as? Storage)!!.contents?.mass,
+            s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
             "the ingot should have carried on to the tank",
         )
     }
@@ -574,8 +574,9 @@ class VesselSimTest {
     fun `placing never overwrites an existing machine`() {
         val grid = Grid(2, 1)
         val deck = DeckArray(grid.size)
-        val store = Storage(Direction.Right, contents = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0)))
-        var s = VesselState(grid, listOf(store, null), deck)
+        val store = Storage(Direction.Right)
+        val held = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0))
+        var s = VesselState(grid, listOf(store, null), deck).stocked(TileIndex(0), held)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))))
         // Compared with its heat put back, because a tick of conduction has moved it: the machine
         // is a thermal body now and radiating for one tick is not the same as being overwritten.
@@ -584,6 +585,7 @@ class VesselSimTest {
             s[TileIndex(0)]?.withEnergy(store.energy),
             "a stray click must not destroy a machine and its contents",
         )
+        assertEquals(held, s.buffers.resourceAt(TileIndex(0)), "nor empty its store")
     }
 
     @Test
@@ -592,12 +594,12 @@ class VesselSimTest {
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        m[grid.tile(4, 3).index] = Storage(Direction.Right, stored)
-        var s = VesselState(grid, m.toList(), deck)
+        m[grid.tile(4, 3).index] = Storage(Direction.Right)
+        var s = VesselState(grid, m.toList(), deck).stocked(grid.tile(4, 3), stored)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(4, 3)))))
         val tank = s[grid.tile(4, 3)] as? Storage
         assertEquals(Direction.Down, tank!!.facing)
-        assertEquals(100L, tank.contents?.mass)
+        assertEquals(100L, s.buffers.massAt(grid.tile(4, 3)))
     }
 
     @Test
@@ -669,7 +671,7 @@ class VesselSimTest {
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
         val onTrack = s.rails.fold(Mixture.EMPTY) { acc, r -> acc + (r?.held?.contents ?: Mixture.EMPTY) }
-        val inWorld = s.machines.fold(onTrack) { acc, m -> acc + contentsOf(m) }
+        val inWorld = s.machines.indices.fold(onTrack) { acc, i -> acc + contentsOf(s.machines[i], TileIndex(i), s.buffers) }
         val accountedFor = inWorld.total + s.ventedMass
         assertEquals(s.extractedMass, accountedFor)
 

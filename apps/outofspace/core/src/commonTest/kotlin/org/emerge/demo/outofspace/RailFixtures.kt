@@ -17,6 +17,8 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.world.storageBufferTile
 import org.emerge.demo.outofspace.world.TileIndex
 
 /**
@@ -212,3 +214,15 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
         bodies = bodies,
     )
 }
+
+/**
+ * A world with [resource] already sitting in the store at [tile].
+ *
+ * A [org.emerge.demo.outofspace.world.machine.Storage] no longer carries its contents, so a fixture
+ * that wants a full tank states the machine and the matter separately: the machine goes in the list,
+ * and this puts the matter in the layer once the state exists. Chained after construction rather
+ * than passed in, because [org.emerge.demo.outofspace.world.VesselState] derives its stores from the
+ * machine list and so the store is already standing by the time this is called.
+ */
+fun VesselState.stocked(tile: TileIndex, resource: Resource?): VesselState =
+    also { it.buffers.put(storageBufferTile(tile), resource) }

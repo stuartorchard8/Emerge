@@ -55,6 +55,11 @@ data class VesselState(
     /** Matter and energy storage for all the machines that have a deck footprint. */
     val deck: DeckArray,
     /**
+     * Every machine buffer aboard — input, output, waste and processing stores alike, on one layer
+     * keyed by the tile the store stands on. See [BufferLayer] for why one layer suffices.
+     */
+    val buffers: BufferLayer = BufferLayer.forMachines(machines),
+    /**
      * The conduit layers — one grid of segments per network, sharing tiles freely with the deck
      * beneath and with each other.
      *
@@ -433,7 +438,7 @@ data class VesselState(
      * Derived rather than stored, for the same reason [structure] is — a cached copy is one more
      * thing that can disagree with the world, and this is cheap to fold.
      */
-    val stockpile: Stockpile get() = Stockpile.of(machines)
+    val stockpile: Stockpile get() = Stockpile.of(machines, buffers)
 
     /**
      * Where the air is going, tile by tile — see [FlowField].
@@ -625,13 +630,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges, deck)
+    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges, deck, buffers)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMass(machines, conduits, bridges, deck)
+    val mass: Long get() = vesselMass(machines, conduits, bridges, deck, buffers)
 
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
@@ -640,7 +645,7 @@ data class VesselState(
      * its cargo, so storing it would be storing a second answer to a question the walk already
      * answers. The tick computes it once and passes it down; a readout can afford to ask again.
      */
-    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges, deck)
+    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges, deck, buffers)
 
     /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
@@ -767,15 +772,24 @@ data class VesselState(
 }
 
 /**
+ * Where a [Storage]'s buffer stands: its **centre tile**.
+ *
+ * Storage is the one machine with a single pooled store rather than an input/output pair — its
+ * contents serve both ports — so it takes the same tile the processing role uses. That is the right
+ * answer for a warehouse: what it holds is the volume of the building, not a queue at either door.
+ */
+fun storageBufferTile(centre: TileIndex): TileIndex = centre
+
+/**
  * What falls on the floor when a machine is taken apart: everything it was holding, keeping forms
  * separate. Defined in terms of [contentsBreakdown] so there is exactly one list of "where a machine
  * keeps things" — a second one would drift, and the drift would look like a conservation bug.
  */
-fun spoilsOf(machine: Machine?): List<Resource> =
-    contentsBreakdown(machine).map { it.second }.filter { !it.isEmpty }
+fun spoilsOf(machine: Machine?, centre: TileIndex, buffers: BufferLayer): List<Resource> =
+    contentsBreakdown(machine, centre, buffers).map { it.second }.filter { !it.isEmpty }
 
 /** Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks. */
-fun massIn(machine: Machine?): Long = when (machine) {
+fun massIn(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Long = when (machine) {
     null -> 0L
     is Bridge -> machine.mass
     is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
@@ -784,7 +798,7 @@ fun massIn(machine: Machine?): Long = when (machine) {
     is Vaporizer -> (machine.input?.mass ?: 0L)
     is Thruster -> (machine.input?.mass ?: 0L)
     is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
-    is Storage -> machine.contents?.mass ?: 0L
+    is Storage -> buffers.massAt(storageBufferTile(centre))
     is Sensor, is WireButton -> 0L
     is Hull, is Airlock -> 0L
     is Vent -> 0L
@@ -798,16 +812,16 @@ fun massIn(machine: Machine?): Long = when (machine) {
  * capacity differs by kind (a belt's is its slots, a storage's is its tank), which is the point: the
  * question a sensor asks is "is this backing up?", not "how much mass".
  */
-fun fullness(machine: Machine?): Int = when (machine) {
+fun fullness(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Int = when (machine) {
     null -> 0
     is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
     is Extractor -> (machine.buffer.mass * SignalField.FULL / Extractor.BUFFER_CAP).toInt()
-    is Processor -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is ThermalDecomposer -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
-    is Vaporizer -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Thruster -> (massIn(machine) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Smelter -> (massIn(machine) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is Storage -> ((machine.contents?.mass ?: 0L) * SignalField.FULL / Storage.CAP).toInt()
+    is Processor -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is ThermalDecomposer -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
+    is Vaporizer -> (massIn(machine, centre, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Thruster -> (massIn(machine, centre, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Smelter -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Storage -> (buffers.massAt(storageBufferTile(centre)) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
     is Vent -> 0
@@ -820,7 +834,7 @@ fun fullness(machine: Machine?): Int = when (machine) {
  * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
-fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (machine) {
+fun contentsBreakdown(machine: Machine?, centre: TileIndex, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
     // Slot by slot, input end first: "which end of the span is it on" is the only thing worth
     // knowing about a bridge, and one lump labelled IN TRANSIT could not say it.
@@ -854,12 +868,12 @@ fun contentsBreakdown(machine: Machine?): List<Pair<String, Resource>> = when (m
         machine.refined?.let { "REFINED" to it },
         machine.slag?.let { "SLAG" to it },
     )
-    is Storage -> listOfNotNull(machine.contents?.let { "STORED" to it })
+    is Storage -> listOfNotNull(buffers.resourceAt(storageBufferTile(centre))?.let { "STORED" to it })
     is Sensor, is WireButton, is Vent, is Pump, is Hull, is Airlock -> emptyList()
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
-fun contentsOf(machine: Machine?): Mixture = when (machine) {
+fun contentsOf(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Mixture = when (machine) {
     null -> Mixture.EMPTY
     is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
     is Extractor -> (machine.input?.mixture ?: Mixture.EMPTY) + machine.buffer.mixture
@@ -874,7 +888,7 @@ fun contentsOf(machine: Machine?): Mixture = when (machine) {
     is Thruster -> machine.input?.mixture ?: Mixture.EMPTY
     is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
         (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
-    is Storage -> machine.contents?.mixture ?: Mixture.EMPTY
+    is Storage -> buffers.resourceAt(storageBufferTile(centre))?.mixture ?: Mixture.EMPTY
     is Sensor, is WireButton -> Mixture.EMPTY
     is Hull, is Airlock -> Mixture.EMPTY
     is Vent -> Mixture.EMPTY
@@ -969,6 +983,17 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         newDeck.stuff.claim(ni)
         newDeck.stuff.setEnergy(ni, deck.stuff.energyAt(oi))
         deck.stuff.forEachSpecies(oi) { s, mass -> newDeck.stuff[ni, s] = mass }
+    }
+
+    // Buffers move with the lattice like the deck does. Same rule, same reason: only where a store
+    // actually stands, or the layer goes dense and stores appear at tiles with no machine on them.
+    val newBuffers = BufferLayer.empty(newGrid.size)
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val ni = remapTile(ox, oy) ?: continue
+        val oi = grid.tile(ox, oy)
+        if (!buffers.stuff.occupies(oi)) continue
+        newBuffers.claimRole(ni)
+        newBuffers.put(ni, buffers.resourceAt(oi))
     }
 
     val newBridges = MutableList(newGrid.size) { null as Bridge? }
@@ -1108,6 +1133,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         motion = Motion.NONE,
         machines = newMachines,
         deck = newDeck,
+        buffers = newBuffers,
         conduits = newConduits,
         bridges = newBridges,
         diverters = newDiverters,

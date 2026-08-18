@@ -75,8 +75,8 @@ class ProcessorChainTest {
         var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
         s = run(s, 800)
 
-        val forward = (s[grid.tile(7, 3)] as? Storage)?.contents
-        val below = (s[grid.tile(3, 8)] as? Storage)?.contents
+        val forward = s.buffers.resourceAt(grid.tile(7, 3))
+        val below = s.buffers.resourceAt(grid.tile(3, 8))
 
         assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
         // Against the *feed*, which is the claim: 41% ore in, appreciably richer out.

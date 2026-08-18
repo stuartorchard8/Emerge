@@ -390,9 +390,10 @@ class SaveTest {
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
-        machines[grid.tile(7, 4).index] = Storage(Direction.Left, Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
+        machines[grid.tile(7, 4).index] = Storage(Direction.Left)
 
         val state = VesselState(grid, machines.toList(), deck)
+            .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
         val back = Save.read(Save.write(state))
 
         val extractor = back[grid.tile(4, 4)] as? Extractor
@@ -403,9 +404,11 @@ class SaveTest {
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
 
-        val tank = back[grid.tile(7, 4)] as? Storage
-        assertEquals(Form.IronIngot, tank!!.contents?.form)
-        assertEquals(900L, tank.contents?.mass)
+        // The contents survive in the buffer layer; the record still carries `stored`, so the file
+        // format is unchanged and an older save loads into the new home unaltered.
+        val tank = back.buffers.resourceAt(grid.tile(7, 4))
+        assertEquals(Form.IronIngot, tank?.form)
+        assertEquals(900L, tank?.mass)
     }
 
     @Test

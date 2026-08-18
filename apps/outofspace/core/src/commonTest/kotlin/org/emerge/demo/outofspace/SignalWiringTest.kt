@@ -82,7 +82,7 @@ class SignalWiringTest {
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
         machines[grid.tile(extractorAt.first, extractorAt.second).index] =
             Extractor(Direction.Right).withWiring(stopWhenFull)
-        machines[grid.tile(13, 5).index] = Storage(Direction.Right, stored)
+        machines[grid.tile(13, 5).index] = Storage(Direction.Right)
         // Looking up at the tank, which sits below the run.
         machines[grid.tile(sensorAt.first, sensorAt.second).index] = Sensor(Direction.Down)
 
@@ -95,7 +95,7 @@ class SignalWiringTest {
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
-        )
+        ).stocked(grid.tile(13, 5), stored)
     }
 
     private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
@@ -167,13 +167,14 @@ class SignalWiringTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
-        machines[grid.tile(13, 5).index] = Storage(Direction.Right, stored)
+        machines[grid.tile(13, 5).index] = Storage(Direction.Right)
         machines[grid.tile(12, 3).index] = Sensor(Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 12, 3)
 
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList())),
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()))
+                .stocked(grid.tile(13, 5), stored),
             2,
         )
         assertEquals(s.signals.at(grid.tile(2, 3)), s.signals.at(grid.tile(10, 3)))

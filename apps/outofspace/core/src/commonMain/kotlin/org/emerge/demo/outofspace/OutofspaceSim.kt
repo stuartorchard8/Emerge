@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.storageBufferTile
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
@@ -34,6 +35,7 @@ import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.diameter
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Body
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.BodySlot
@@ -170,7 +172,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
                             val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
-                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen]))
+                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen], seen, w.buffers))
                         }
                         // A finger on a key, on the same footing as any other transmitter.
                         is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(tile, SignalField.FULL)
@@ -362,7 +364,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val mass = vesselMass(machines, conduits, bridges, w.deck)
+        val mass = vesselMass(machines, conduits, bridges, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -476,6 +478,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return state.copy(
             machines = machines,
             deck = w.deck,
+            buffers = w.buffers,
             conduits = conduits,
             bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
@@ -925,6 +928,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val grid: Grid = state.grid
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         val deck: DeckArray = state.deck.copyOf()
+        val buffers: BufferLayer = state.buffers.copyOf()
         inline operator fun <reified T> get(tile: TileIndex): T? = when(T::class) {
             Machine::class -> machines.getOrNull(tile.index)
             DeckMachine::class -> deck[tile]
@@ -991,7 +995,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * points at once. The same choice, for the same reason, that hands `state.velocityX` to
          * [driftBodies] and integrates the position from it: one frame per tick, stated once.
          */
-        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges, state.deck)
+        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges, state.deck, state.buffers)
 
         /**
          * Where the grid sits in the world, taken once from the incoming state and shared — the same
@@ -1315,6 +1319,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (machine != null) {
                 for (t in coveredTiles(grid, origin, machine.kind.size)) originOf[t] = TileIndex.NONE
                 scrapped(machine.energy.total)
+                // Whatever was in the buffer goes with the machine — spoilsOf has already been asked
+                // what falls on the floor, and holding the store open would leave a warehouse's worth
+                // of iron at a tile with nothing standing on it.
+                if (machine is Storage) buffers.releaseRole(storageBufferTile(origin))
                 machines[origin.index] = null
                 return true
             }
@@ -1420,6 +1428,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             machines[tile.index] = built
             built(built.energy.total)
+            // A storage's store is a tile in the buffer layer, reserved as the machine goes up so an
+            // empty warehouse is a warehouse and not an absence. claimRole refuses a second store on
+            // the tile, which is the guard for a one-tile machine wanting two roles.
+            if (built is Storage) buffers.claimRole(storageBufferTile(tile))
             for (t in covered) originOf[t] = tile
         }
 
@@ -1637,7 +1649,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             is Extractor -> m.buffer
             is Processor -> if (port.stream == Stream.Waste) m.tailings else m.product
             is Smelter -> if (port.stream == Stream.Waste) m.slag else m.refined
-            is Storage -> m.contents
+            // Storage keeps nothing on the machine any more; its store is a tile in the buffer layer.
+            is Storage -> buffers.resourceAt(storageBufferTile(port.owner))
             else -> null
         }
 
@@ -1646,7 +1659,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             is Extractor -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
             is Processor -> if (port.stream == Stream.Waste) m.copy(tailings = rest) else m.copy(product = rest)
             is Smelter -> if (port.stream == Stream.Waste) m.copy(slag = rest) else m.copy(refined = rest)
-            is Storage -> m.copy(contents = rest)
+            // The machine is unchanged — what drained was the layer's, so that is what is written.
+            is Storage -> m.also { buffers.put(storageBufferTile(port.owner), rest) }
             else -> m
         }
 
@@ -1738,7 +1752,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return when (val m = machines[port.owner.index]) {
                 is Processor -> m.input == null
                 is Smelter -> m.input == null
-                is Storage -> m.contents == null || (m.contents.mass) < Storage.CAP
+                is Storage -> buffers.massAt(storageBufferTile(port.owner)) < Storage.CAP
                 is Thruster -> m.input == null
                 is Vent -> true
                 else -> false
@@ -1790,13 +1804,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Storage -> {
                     if (packet !is SolidPacket) false
                     else {
-                        val existing = destination.contents
+                        val store = storageBufferTile(TileIndex(target))
+                        val existing = buffers.resourceAt(store)
                         if (existing != null && existing.form != packet.form) false
                         else if ((existing?.mass ?: 0L) >= Storage.CAP) false
                         else {
                             val merged = if (existing == null) packet.resource
                             else Resource(existing.form, existing.mixture + packet.contents)
-                            machines[target] = destination.copy(contents = merged)
+                            buffers.put(store, merged)
                             true
                         }
                     }

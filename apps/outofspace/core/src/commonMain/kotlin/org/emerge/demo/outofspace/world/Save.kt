@@ -115,7 +115,7 @@ object Save {
         // `links=5` says nothing, `R-L-` says the run goes left to right through this tile.
         for (tile in state.grid.tiles) {
             val m = state[tile] ?: continue
-            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m))
+            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m, tile, state.buffers))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -132,7 +132,7 @@ object Save {
         }
         for (tile in state.grid.tiles) {
             val b = state.bridges[tile.index] ?: continue
-            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b))
+            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b, tile, state.buffers))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -239,7 +239,7 @@ object Save {
     private fun linkLetters(s: Segment): String =
         Direction.ALL.joinToString("") { if (s.linkedTo(it)) it.name.take(1) else "-" }
 
-    private fun writeMachine(m: Machine): String {
+    private fun writeMachine(m: Machine, tile: TileIndex, buffers: BufferLayer): String {
         val f = StringBuilder(m.kind.name)
         fun put(key: String, value: String?) {
             if (value != null) f.append(' ').append(key).append('=').append(value)
@@ -294,7 +294,7 @@ object Save {
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
-            is Storage -> put("stored", m.contents?.let { writeResource(it) })
+            is Storage -> put("stored", buffers.resourceAt(storageBufferTile(tile))?.let { writeResource(it) })
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
             // A button is its key and its wiring; the common code writes the second.
@@ -523,6 +523,7 @@ object Save {
 
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
+        val buffers = BufferLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<TileIndex, Int>()
@@ -627,7 +628,7 @@ object Save {
                     val t = tile(1)
                     if (machines[t.index] != null) fail("two machines at tile $t")
                     if (deck[t] != null) fail("two machines at tile $t")
-                    val (m, dm) = readMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
+                    val (m, dm) = readMachine(tokens.drop(2), version, t, buffers, scale, energyScale, ::fail)
                     machines[t.index] = m
                     if (dm != null) {
                         deck += dm
@@ -652,7 +653,7 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (bridges[t.index] != null) fail("two bridges at tile $t")
-                    val (bridge, _) = readMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
+                    val (bridge, _) = readMachine(tokens.drop(2), version, t, buffers, scale, energyScale, ::fail)
                     bridges[t.index] = bridge as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
@@ -739,7 +740,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMass(machines.toList(), conduits, bridges.toList(), deck)
+            val shipMass = vesselMass(machines.toList(), conduits, bridges.toList(), deck, buffers)
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
@@ -770,6 +771,10 @@ object Save {
             gridPad = GRID_PAD,
             machines = machines.toList(),
             deck = deck,
+            // The layer the machine records were read into. Omitting it does not fail loudly: the
+            // default derives empty stores from the machine list, so every warehouse comes back with
+            // its store standing and its contents gone.
+            buffers = buffers,
             conduits = conduits,
             bridges = bridges.toList(),
             diverters = FlowCursors(diverters, merges),
@@ -850,6 +855,7 @@ object Save {
         tokens: List<String>,
         version: Int,
         tile: TileIndex,
+        buffers: BufferLayer,
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
@@ -936,7 +942,10 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
-            MachineKind.Storage -> Storage(facing = facing(), contents = res("stored"))
+            // The record still carries `stored`; it is put straight into the buffer layer, which is
+            // where a storage's contents live now. Format unchanged, so old saves load as they were.
+            MachineKind.Storage -> Storage(facing = facing())
+                .also { buffers.put(storageBufferTile(tile), res("stored")) }
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
             // under it, and no colour can be turned back into a piece of geometry that was never laid.
             MachineKind.Sensor -> Sensor(facing = facing())

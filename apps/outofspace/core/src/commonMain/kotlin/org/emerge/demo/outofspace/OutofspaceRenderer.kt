@@ -6,6 +6,7 @@ import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.storageBufferTile
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -629,31 +630,32 @@ class OutofspaceRenderer {
             }
             is Processor -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
-                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is ThermalDecomposer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.ThermalDecomposer))
-                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Vaporizer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Vaporizer))
-                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Smelter -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
-                fillBar(x, y, n, massIn(m).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Storage -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Storage))
             // Tank: room-sized fill (legible at distance).
-                val level = (m.contents?.mass ?: 0L).toFloat() / Storage.CAP
+                val stored = state.buffers.resourceAt(storageBufferTile(tile))
+                val level = (stored?.mass ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
                     val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
                     val bottom = y + n * 0.5f - Visual.TANK_BOTTOM_MARGIN
                     rect(
                         (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
                         (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
-                        m.contents?.mixture?.color?.toLong() ?: 0x000000FF,
+                        stored?.mixture?.color?.toLong() ?: 0x000000FF,
                     )
                 }
             }

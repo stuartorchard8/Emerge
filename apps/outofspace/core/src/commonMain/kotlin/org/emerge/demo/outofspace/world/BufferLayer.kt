@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Storage
 
 /**
  * Machine buffers — every input, output, waste and processing store in the vessel, on **one** layer.
@@ -116,5 +118,22 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
 
         fun empty(tileCount: Int): BufferLayer =
             BufferLayer(StuffLayer.empty(tileCount), IntArray(tileCount) { NO_FORM })
+
+        /**
+         * A layer with a store already standing wherever [machines] needs one, all empty.
+         *
+         * The default for a world stated rather than built. Going through the reducer, a store is
+         * claimed as its machine goes up; a [VesselState] assembled directly — by a fixture, a save
+         * or the starter vessel — never runs that code, and would otherwise hold a warehouse with no
+         * store to put anything in. Deriving it from the machine list means the two routes cannot
+         * disagree about which tiles have stores.
+         */
+        fun forMachines(machines: List<Machine?>): BufferLayer {
+            val out = empty(machines.size)
+            for (i in machines.indices) {
+                if (machines[i] is Storage) out.claimRole(storageBufferTile(TileIndex(i)))
+            }
+            return out
+        }
     }
 }

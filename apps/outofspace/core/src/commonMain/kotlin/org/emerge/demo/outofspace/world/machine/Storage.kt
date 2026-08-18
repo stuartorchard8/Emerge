@@ -2,11 +2,17 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
 
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
+ * ⚠️ **A storage holds nothing itself.** Its contents live in
+ * [org.emerge.demo.outofspace.world.BufferLayer] at the tile
+ * [org.emerge.demo.outofspace.world.storageBufferTile] names — its centre, because a warehouse's
+ * contents are the volume of the building rather than a queue at either door. The machine is the
+ * behaviour and the layer is the matter, so asking what a storage holds needs the world and not just
+ * the machine.
+ *
  * A buffer you can see the level of. Holds one form, releases it out the front while its RUN
  * activation is positive — so a storage wired to a sensor is a valve, and a storage wired to nothing
  * is a dead end that fills up.
@@ -18,7 +24,6 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class Storage(
     override val facing: Direction,
-    val contents: Resource? = null,
     override val wiring: Wiring = Wiring.RUNNING,
     override val energy: TileEnergy = ambientEnergy(MachineKind.Storage),
 ) : Directed {

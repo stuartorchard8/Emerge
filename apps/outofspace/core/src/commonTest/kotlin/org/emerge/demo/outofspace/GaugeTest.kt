@@ -9,6 +9,8 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -52,7 +54,7 @@ class GaugeTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 2).index] = Storage(Direction.Right, carrying)
+        m[grid.tile(3, 2).index] = Storage(Direction.Right)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
@@ -64,7 +66,7 @@ class GaugeTest {
             m.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
-        )
+        ).stocked(grid.tile(3, 2), carrying)
     }
 
     /** Where [line] puts its gauge, so a test can ask what that tile's circuit reads. */
@@ -118,10 +120,10 @@ class GaugeTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 2).index] = Storage(Direction.Right, pure)
+        m[grid.tile(3, 2).index] = Storage(Direction.Right)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
-        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList())).stocked(grid.tile(3, 2), pure)
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")
@@ -170,15 +172,15 @@ class GaugeTest {
             product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
             tailings = Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10, energy = 0)),
         )
-        val rows = contentsBreakdown(p)
+        val rows = contentsBreakdown(p, TileIndex(0), BufferLayer.empty(1))
         assertEquals(listOf("INPUT", "PROCESSING", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
         assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[3].second.mass, "knowing which buffer is stuck is the whole point")
     }
 
     @Test
     fun `machines that hold nothing report nothing rather than a phantom row`() {
-        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right)))
-        assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right)))
+        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right), TileIndex(0), BufferLayer.empty(1)))
+        assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right), TileIndex(0), BufferLayer.empty(1)))
     }
 
     @Test

@@ -144,10 +144,10 @@ class WiringTest {
         if (wired) wires[1] = Segment(Conduit.Signal)
         return VesselState(
             grid,
-            listOf(Storage(Direction.Right, stored), Sensor(Direction.Left)),
+            listOf(Storage(Direction.Right), Sensor(Direction.Left)),
             DeckArray(grid.size),
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-        )
+        ).stocked(TileIndex(0), stored)
     }
 
     @Test
@@ -217,14 +217,14 @@ class WiringTest {
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        m[grid.tile(3, 3).index] = Storage(Direction.Right, stored).copy(wiring = wiring()) as Storage
+        m[grid.tile(3, 3).index] = Storage(Direction.Right).copy(wiring = wiring()) as Storage
         m[grid.tile(8, 3).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList())).stocked(grid.tile(3, 3), stored)
 
         s = run(s, RAIL_PERIOD * 8)
-        assertEquals(4 * Capacity.PACKET_MASS, (s[grid.tile(3, 3)] as? Storage)!!.contents?.mass, "it let go of nothing")
+        assertEquals(4 * Capacity.PACKET_MASS, s.buffers.resourceAt(grid.tile(3, 3))?.mass, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.railAt(grid.tile(it, 3))?.held?.mass ?: 0L }, "so the track is bare")
     }
 
@@ -295,7 +295,7 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue((s[grid.tile(6, 3)] as? Storage)!!.contents!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.mass <= Storage.CAP, "and it never overfills")
     }
 
     @Test
@@ -361,7 +361,7 @@ class WiringTest {
      * The track has to be there: ports connect to whatever segment shares their tile, so two
      * buildings touching each other are not connected — nothing joins them but rail.
      */
-    private fun twoUp(upstream: Machine): VesselState {
+    private fun twoUp(upstream: Machine, stocked: Resource? = null): VesselState {
         val g = Grid(12, 6)
         val m = arrayOfNulls<Machine>(g.size)
         val deck = DeckArray(g.size)
@@ -370,22 +370,23 @@ class WiringTest {
         m[g.tile(7, 3).index] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
         return VesselState(g, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+            .stocked(g.tile(3, 3), stocked)
     }
 
     @Test
     fun `a storage releases only while it is told to`() {
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS, energy = 0))
-        val shut = Storage(Direction.Right, stored).copy(wiring = wiring())
+        val shut = Storage(Direction.Right).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
-        val g = twoUp(shut).grid
-        var s = run(twoUp(shut), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, (s[g.tile(3, 3)] as? Storage)!!.contents!!.mass, "a closed valve holds everything")
-        assertNull((s[g.tile(7, 3)] as? Storage)!!.contents, "so nothing arrives downstream")
+        val g = twoUp(shut, stored).grid
+        var s = run(twoUp(shut, stored), 20 * RAIL_PERIOD)
+        assertEquals(5 * Capacity.PACKET_MASS, s.buffers.resourceAt(g.tile(3, 3))!!.mass, "a closed valve holds everything")
+        assertNull(s.buffers.resourceAt(g.tile(7, 3)), "so nothing arrives downstream")
 
-        var s2 = run(twoUp(Storage(Direction.Right, stored)), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, (s2[g.tile(7, 3)] as? Storage)!!.contents!!.mass, "an open one drains into the next tank")
-        assertNull((s2[g.tile(3, 3)] as? Storage)!!.contents, "and empties itself doing it")
+        var s2 = run(twoUp(Storage(Direction.Right), stored), 20 * RAIL_PERIOD)
+        assertEquals(5 * Capacity.PACKET_MASS, s2.buffers.resourceAt(g.tile(7, 3))!!.mass, "an open one drains into the next tank")
+        assertNull(s2.buffers.resourceAt(g.tile(3, 3)), "and empties itself doing it")
     }
 
     // ── Conservation still holds with all of it running ───────────────────────

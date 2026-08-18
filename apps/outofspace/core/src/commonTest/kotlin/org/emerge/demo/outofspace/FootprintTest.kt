@@ -169,12 +169,13 @@ class FootprintTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(2, 6).index] = Storage(Direction.Right, ingots)   // output port at (3, 6)
+        m[grid.tile(2, 6).index] = Storage(Direction.Right)   // output port at (3, 6)
         m[grid.tile(6, 6).index] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
         return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+            .stocked(grid.tile(2, 6), ingots)
     }
 
     @Test
@@ -189,14 +190,14 @@ class FootprintTest {
             st.copy(conduits = Conduits.ofRails(rails))
         }, 40)
 
-        assertNull((s[s.grid.tile(6, 6)] as? Storage)?.contents, "no port on the tiles it crosses")
+        assertNull(s.buffers.resourceAt(s.grid.tile(6, 6)), "no port on the tiles it crosses")
     }
 
     @Test
     fun `track reaching a port delivers into the building`() {
         val s = run(feed(endX = 5, endY = 6), 40*RAIL_PERIOD)
         assertTrue(
-            ((s[s.grid.tile(6, 6)] as? Storage)?.contents?.mass ?: 0L) > 0L,
+            s.buffers.massAt(s.grid.tile(6, 6)) > 0L,
             "it went in the front door, from underneath",
         )
     }
@@ -207,7 +208,7 @@ class FootprintTest {
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        m[grid.tile(6, 6).index] = Storage(Direction.Right, stored)
+        m[grid.tile(6, 6).index] = Storage(Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
         m[grid.tile(7, 8).index] = Sensor(Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
@@ -222,7 +223,7 @@ class FootprintTest {
                     grid.size,
                     org.emerge.demo.outofspace.world.Conduit.Signal to wires.toList(),
                 ),
-            ),
+            ).stocked(grid.tile(6, 6), stored),
             2,
         )
         assertEquals(1000, s.signals.at(grid.tile(7, 8)), "a full tank reads full")

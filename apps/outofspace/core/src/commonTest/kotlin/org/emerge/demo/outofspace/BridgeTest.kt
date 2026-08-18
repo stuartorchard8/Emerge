@@ -61,9 +61,9 @@ class BridgeTest {
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
         // send, anything arriving at its tank must have come off the *other* line.
-        m[grid.tile(3, 5).index] = Storage(Direction.Right, horizontalSupply)   // out at (4, 5)
+        m[grid.tile(3, 5).index] = Storage(Direction.Right)   // out at (4, 5)
         m[grid.tile(15, 5).index] = Storage(Direction.Right)             // in at (14, 5)
-        m[grid.tile(9, 2).index] = Storage(Direction.Down, ingots)       // out at (9, 3)
+        m[grid.tile(9, 2).index] = Storage(Direction.Down)       // out at (9, 3)
         m[grid.tile(9, 9).index] = Storage(Direction.Down)               // in at (9, 8)
 
         val track = rails(grid) {
@@ -82,6 +82,8 @@ class BridgeTest {
         }
         if (bridged) bridges[grid.tile(9, 5).index] = Bridge(Direction.Right)
         return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList())
+            .stocked(grid.tile(3, 5), horizontalSupply)
+            .stocked(grid.tile(9, 2), ingots)
     }
 
     // ── The shape of a bridge ─────────────────────────────────────────────────
@@ -126,13 +128,13 @@ class BridgeTest {
         // "nearest sink wins" standing in for a fork.
         val merged = run(crossing(horizontalSupply = null), 120*RAIL_PERIOD)
         assertTrue(
-            ((merged[grid.tile(15, 5)] as? Storage)?.contents?.mass ?: 0L) > 0L,
+            merged.buffers.massAt(grid.tile(15, 5)) > 0L,
             "the column's material reached the row's tank: the two lines are one network",
         )
 
         val bridged = run(crossing(bridged = true, horizontalSupply = null), 120)
         assertNull(
-            (bridged[grid.tile(15, 5)] as? Storage)?.contents,
+            bridged.buffers.resourceAt(grid.tile(15, 5)),
             "and with a bridge it cannot: the column passes over without joining",
         )
     }
@@ -162,11 +164,11 @@ class BridgeTest {
         val s = run(crossing(bridged = true), 160*RAIL_PERIOD)
 
         assertTrue(
-            ((s[grid.tile(15, 5)] as? Storage)?.contents?.mass ?: 0L) > 0L,
+            s.buffers.massAt(grid.tile(15, 5)) > 0L,
             "the horizontal line reached its tank",
         )
         assertTrue(
-            ((s[grid.tile(9, 9)] as? Storage)?.contents?.mass ?: 0L) > 0L,
+            s.buffers.massAt(grid.tile(9, 9)) > 0L,
             "and the vertical one reached its own",
         )
     }
@@ -234,10 +236,10 @@ class BridgeTest {
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.
         s = run(s, RAIL_PERIOD * 13)
-        val before = (s[grid.tile(15, 5)] as? Storage)?.contents?.mass ?: 0L
+        val before = s.buffers.resourceAt(grid.tile(15, 5))?.mass ?: 0L
         val steps = 15
         s = run(s, RAIL_PERIOD * steps)
-        val delivered = ((s[grid.tile(15, 5)] as? Storage)?.contents?.mass ?: 0L) - before
+        val delivered = s.buffers.massAt(grid.tile(15, 5)) - before
         assertEquals(steps * Capacity.PACKET_MASS, delivered, "a packet a step, all the way across")
     }
 
