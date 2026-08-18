@@ -591,7 +591,7 @@ object Save {
         val rail = RailLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
-        var creative = true
+        var creative = false
         var built = 0L
         var baselineCargo: Long? = null
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
