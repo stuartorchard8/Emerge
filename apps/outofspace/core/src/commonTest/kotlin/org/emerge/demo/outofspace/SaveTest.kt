@@ -426,7 +426,11 @@ class SaveTest {
         // now, so the thing that has to survive a round trip is each object's own energy.
         for (tile in played.grid.tiles) {
             assertEquals(played[tile]?.energy, back[tile]?.energy, "machine energy differ at tile $tile")
-            assertEquals(played.railAt(tile)?.energy, back.railAt(tile)?.energy, "segment energy differ at tile $tile")
+            assertEquals(
+                played.conduits.energyAt(Conduit.Rail, tile),
+                back.conduits.energyAt(Conduit.Rail, tile),
+                "segment energy differ at tile $tile",
+            )
             assertEquals(played.air.mixtureAt(tile), back.air.mixtureAt(tile), "air differs at tile $tile")
         }
     }

@@ -324,3 +324,11 @@ fun billOfMaterials(kind: MachineKind): Mixture =
  */
 fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
     kind.material.composition.scaledTo(kind.massPerTile)
+
+/**
+ * **The bill of materials for one tile of bare conduit** — the twin of [tileBillOfMaterials], and
+ * the same apportioning, so a run of track weighs exactly [Conduit.massPerTile] a tile however its
+ * material is composed.
+ */
+fun conduitBillOfMaterials(conduit: Conduit): Mixture =
+    conduit.material.composition.scaledTo(conduit.massPerTile)

@@ -36,14 +36,6 @@ data class Segment(
     val lastPurity: Int = 0,
     val lastMass: Long = 0L,
     /**
-     * How much thermal energy this length of track is holding, in the millijoules [Material]
-     * documents — see [org.emerge.demo.outofspace.world.machine.Machine.tileProperties] for why it lives here rather than in a field beside the
-     * layer.
-     *
-     * The default reads [conduit], which is declared above it: a tile of rail starts as iron at room
-     * temperature and a tile of pipe as copper, without anything having to remember to set it.
-     */
-    /**
      * If set, this length of pipe is a **valve**: gas crosses freely between it and the room sharing
      * its tile.
      *
@@ -62,7 +54,6 @@ data class Segment(
      * exclusively by the pipe layer.
      */
     val valve: Boolean = false,
-    val energy: Long = conduit.ambientPerTile,
 ) {
     /** True for a length of pipe that is open to the room around it — see [valve]. */
     val isValve: Boolean get() = valve && conduit == Conduit.Pipe

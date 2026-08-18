@@ -127,7 +127,7 @@ object Save {
         // record always named its own network, but while there was one list per tile the keyword
         // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
         state.conduits.all { _, tile, r ->
-            out.append("conduit ").append(tile.index).append(' ').append(writeSegment(r, tile, state.rail))
+            out.append("conduit ").append(tile.index).append(' ').append(writeSegment(r, tile, state.rail, state.conduits))
             out.append("   # ").append(where(state.grid, tile)).append(' ').append(linkLetters(r)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -400,7 +400,7 @@ object Save {
         return TileEnergy.of(LongArray(tiles) { scale.of(parts[it].toLongOrNull() ?: fail("bad energy '$field'")) })
     }
 
-    private fun writeSegment(s: Segment, tile: TileIndex, rail: RailLayer): String {
+    private fun writeSegment(s: Segment, tile: TileIndex, rail: RailLayer, conduits: Conduits): String {
         val f = StringBuilder(s.conduit.name)
         f.append(" links=").append(s.links)
         if (s.isGauge) f.append(" gauge=1")
@@ -415,7 +415,17 @@ object Save {
         s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
         if (s.lastPurity != 0) f.append(" lastpurity=").append(s.lastPurity)
         if (s.lastMass != 0L) f.append(" lastmass=").append(s.lastMass)
-        if (s.energy != s.conduit.ambientPerTile) f.append(" k=").append(s.energy)
+        // Read off the layer, which is where a segment's heat lives now. The record is unchanged:
+        // still `k=`, still omitted when the tile is at the temperature a freshly laid one would be,
+        // so a file written before the migration and one written after are the same file.
+        val energy = conduits.energyAt(s.conduit, tile)
+        // Compared against what *this* tile would hold if freshly laid, not against
+        // [Conduit.ambientPerTile]. The bill of materials apportions, so a multi-species conduit's
+        // capacity can differ from the kind's by a part in a million — and against the kind's figure
+        // every single tile would then look non-ambient and be written out.
+        if (energy != conduits.heatCapacityAt(s.conduit, tile) * Temperature.AMBIENT_KELVIN) {
+            f.append(" k=").append(energy)
+        }
         return f.toString()
     }
 
@@ -537,6 +547,8 @@ object Save {
         val buffers = BufferLayer.empty(grid.size)
         val rail = RailLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
+        /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
+        val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<TileIndex, Int>()
         val merges = HashMap<TileIndex, Int>()
@@ -656,6 +668,11 @@ object Save {
                 "rail", "conduit" -> {
                     val t = tile(1)
                     val segment = readSegment(tokens.drop(2), t, rail, scale, energyScale, ::fail)
+                    // The heat is the layer's, and the layer does not exist until every segment has
+                    // been read — so it is held aside by (conduit, tile) and applied below, once
+                    // [Conduits.of] has laid the metal that carries it.
+                    readSegmentEnergy(tokens.drop(2), energyScale, ::fail)
+                        ?.let { segmentEnergy[segment.conduit.ordinal to t.index] = it }
                     val layer = layers[segment.conduit.ordinal]
                     // Per layer, not per tile. Two segments on one tile is what layers are *for*;
                     // two of the same conduit on one tile is still a corrupt file.
@@ -747,6 +764,11 @@ object Save {
             grid.size,
             *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
         )
+        // Every laid tile came back at ambient; the ones the file had a reading for get theirs back.
+        // A tile with no `k=` is left exactly as laid, which is what the writer's omission meant.
+        for ((key, energy) in segmentEnergy) {
+            conduits.tracks.setEnergy(Conduit.entries[key.first], TileIndex(key.second), energy)
+        }
         val air = Stuff.from(airMass, airEnergy)
         val pipeAir = Stuff.from(pipeMass, pipeEnergy)
 
@@ -1075,12 +1097,23 @@ object Save {
             lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
             lastMass = scale.of(f["lastmass"]?.toLongOrNull() ?: 0L),
             valve = f["valve"] == "1",
-            // Same rule as massNum: the stored figure scales, the ambient fallback does not. And the
-            // ENERGY factor, not the mass one — a conduit's stored heat rode the mass factor until
-            // v14 split them, which was correct only while the two units were locked together.
-            energy = f["k"]?.let { energyScale.of(it.toLongOrNull() ?: fail("bad energy '$it'")) }
-                ?: conduit.ambientPerTile,
         )
+    }
+
+    /**
+     * The `k=` reading off a segment record, or null where the file omitted it.
+     *
+     * Same rule as massNum: the stored figure scales, and it is the ENERGY factor, not the mass one
+     * — a conduit's stored heat rode the mass factor until v14 split them, which was correct only
+     * while the two units were locked together.
+     */
+    private fun readSegmentEnergy(
+        tokens: List<String>,
+        energyScale: Rescale,
+        fail: (String) -> Nothing,
+    ): Long? {
+        val f = fields(tokens.drop(1), fail)
+        return f["k"]?.let { energyScale.of(it.toLongOrNull() ?: fail("bad energy '$it'")) }
     }
 
     private fun readWiring(text: String, fail: (String) -> Nothing): Wiring {

@@ -93,8 +93,8 @@ class BodyHeatTest {
     }
 
     private fun VesselState.railKelvin(tile: TileIndex): Int {
-        val s = rails[tile.index] ?: error("no track at $tile")
-        return (s.energy / s.conduit.capacityPerTile).toInt()
+        rails[tile.index] ?: error("no track at $tile")
+        return (conduits.energyAt(Conduit.Rail, tile) / Conduit.Rail.capacityPerTile).toInt()
     }
 
     /**
@@ -224,9 +224,9 @@ class BodyHeatTest {
 
         // Drive one tile of the upper run hot.
         val source = g.tile(2, topRow)
-        val rails = world.rails.toMutableList()
-        rails[source.index] = rails[source.index]!!.copy(energy = Conduit.Rail.capacityPerTile * 2_000L)
-        var s = world.copy(conduits = Conduits.ofRails(rails.toList()))
+        var s = world.copy(
+            conduits = world.conduits.heated(Conduit.Rail, source, Conduit.Rail.capacityPerTile * 2_000L),
+        )
         s = s.copy(baselineEnergy = s.storedEnergy)
 
         val settled = run(s, 40*HEAT_PERIOD)

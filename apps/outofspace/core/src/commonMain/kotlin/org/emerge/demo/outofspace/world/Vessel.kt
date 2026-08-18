@@ -1039,6 +1039,16 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
             newLayer[ni.index] = oldLayer[oi.index]
         }
         newConduits = newConduits.with(c, newLayer)
+        // ⚠️ The metal came back at ambient — [Conduits.with] lays what it finds, and it has no way
+        // to know these segments are the *same* ones one grid over rather than new ones. So the heat
+        // is carried across by hand, tile by tile. Without this a grid growth quietly cools every
+        // pipe aboard to room temperature and the thermal ledger loses the difference.
+        for (ox in 0 until oldW) for (oy in 0 until oldH) {
+            val ni = remapTile(ox, oy) ?: continue
+            val oi = grid.tile(ox, oy)
+            if (oldLayer[oi.index] == null) continue
+            newConduits.tracks.setEnergy(c, ni, conduits.energyAt(c, oi))
+        }
     }
 
     // ── 3. Sparse map for diverters ──────────────────────────────────────

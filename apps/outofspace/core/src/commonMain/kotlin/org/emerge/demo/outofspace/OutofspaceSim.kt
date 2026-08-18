@@ -84,6 +84,7 @@ import org.emerge.demo.outofspace.world.vesselMass
 import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.TrackLayers
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.exhaustPath
@@ -910,6 +911,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Everything riding on the track — see [RailLayer]. Mutated in place through the tick. */
         val rail: RailLayer = state.rail.copyOf()
+
+        /**
+         * What the networks are made of — see [TrackLayers]. Mutated in place through the tick
+         * beside [layers], and handed back to [Conduits] whole at the end of it.
+         */
+        val tracks: TrackLayers = state.conduits.tracks.copyOf()
         inline operator fun <reified T> get(tile: TileIndex): T? = when(T::class) {
             Machine::class -> machines.getOrNull(tile.index)
             DeckMachine::class -> deck[tile]
@@ -934,11 +941,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** The rail layer, which packets, gauges, bridges and motion all mean by "the track". */
         val rails: MutableList<Segment?> get() = layers[Conduit.Rail.ordinal]
 
-        fun conduitsSnapshot(): Conduits {
-            var out = Conduits.empty(grid.size)
-            for (c in Conduit.entries) out = out.with(c, layers[c.ordinal].toList())
-            return out
-        }
+        fun conduitsSnapshot(): Conduits =
+            Conduits.of(Array(layers.size) { layers[it].toList() }, tracks.copyOf())
         val bridges: MutableList<Bridge?> = state.bridges.toMutableList()
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
@@ -1139,7 +1143,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->
-                        layer(c)[body.tile.index]?.let { layer(c)[body.tile.index] = it.copy(energy = energy[i]) }
+                        if (tracks.occupies(c, body.tile)) tracks.setEnergy(c, body.tile, energy[i])
                     }
                     // Same again: a bridge spans three tiles and is stored at the middle one.
                     BodySlot.Span -> bridges[body.anchor.index]?.let {
@@ -1172,7 +1176,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
                             val c = edit.kind.conduit!!
                             if (layer(c)[edit.tile.index] == null) {
-                                layer(c)[edit.tile.index] = Segment(c).also { built(it.energy) }
+                                layer(c)[edit.tile.index] = Segment(c)
+                                built(tracks.lay(c, edit.tile))
                             }
                         }
                         // Valve: upgrade existing pipe or lay new.
@@ -1180,11 +1185,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             val existing = layer(Conduit.Pipe)[edit.tile.index]
                             layer(Conduit.Pipe)[edit.tile.index] =
                                 existing?.copy(valve = true)
-                                    ?: Segment(Conduit.Pipe, valve = true).also { built(it.energy) }
+                                    ?: Segment(Conduit.Pipe, valve = true)
+                                        .also { built(tracks.lay(Conduit.Pipe, edit.tile)) }
                         }
                         MachineKind.Gauge -> if (rails[edit.tile.index] == null) {
                             rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
-                                .also { built(it.energy) }
+                                .also { built(tracks.lay(Conduit.Rail, edit.tile)) }
                         }
                         MachineKind.Bridge -> placeBridge(edit.tile, edit.facing)
                         else -> placeBuilding(edit.tile, edit.kind, edit.facing)
@@ -1283,10 +1289,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Takes one conduit layer off a tile, cutting the far halves of its joins. */
         private fun removeConduit(tile: TileIndex, c: Conduit): Boolean {
             val line = layer(c)
-            val segment = line.getOrNull(tile.index) ?: return false
+            line.getOrNull(tile.index) ?: return false
             if (c == Conduit.Pipe) cutOpen(tile)
             line[tile.index] = null
-            scrapped(segment.energy)
+            scrapped(tracks.clear(c, tile))
             // Cut far halves of joins (prevent phantom connections).
             for (dir in Direction.ALL) {
                 val n = grid.neighbour(tile, dir)
@@ -1475,8 +1481,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // junction — and, now, rather than nothing at all. It used to share one list with the
             // track, find a conduit mismatch, and return having laid no pipe.
             val line = layer(conduit)
-            val a = line[from.index] ?: Segment(conduit)
-            val b = line[to.index] ?: Segment(conduit)
+            // Drawing a run lays metal wherever there was none, and that metal arrives with its
+            // heat in it — booked for the same reason [Edit.Place] books it. It went unbooked while
+            // a segment carried its own energy: the field defaulted to ambient and nothing had to
+            // ask for it, so the drag tool quietly minted the heat of every tile it laid.
+            val a = line[from.index] ?: Segment(conduit).also { built(tracks.lay(conduit, from)) }
+            val b = line[to.index] ?: Segment(conduit).also { built(tracks.lay(conduit, to)) }
             line[from.index] = a.joinedTo(dir)
             line[to.index] = b.joinedTo(dir.opposite)
         }

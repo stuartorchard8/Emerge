@@ -36,7 +36,8 @@ enum class BodySlot {
 
 /**
  * One solid object with one temperature (wall, furnace, track tile).
- * Energy stored on object (Machine.energy/Segment.energy), not tile-field (prevents desync on copy).
+ * Energy stored on the object for machines ([Machine.energy]) and on the layer for fittings
+ * ([Conduits.tracks]) — see [TrackLayers] for why a segment's heat moved off the segment.
  * [permeable] controls conduction contacts (impermeable = tile-face; permeable = tile-sharing + air).
  */
 class Body(
@@ -217,8 +218,12 @@ fun bodiesOf(
                 anchor = tile,
                 material = conduit.material,
                 permeable = true,
-                energy = s.energy,
-                capacity = conduit.capacityPerTile,
+                // Both read off the layer rather than off the segment and the kind: the metal in a
+                // tile of track is what holds the heat, so the two numbers come from one place and
+                // cannot drift apart. [conduitBillOfMaterials] apportions, so the capacity is the
+                // kind's to the unit.
+                energy = conduits.energyAt(conduit, tile),
+                capacity = conduits.heatCapacityAt(conduit, tile),
                 conductance = conduit.conductance,
                 conduit = conduit,
                 links = s.links,
@@ -269,7 +274,7 @@ fun solidEnergy(
 ): Long {
     var sum = 0L
     for (m in machines) sum += m?.energy?.total ?: 0L
-    conduits.all { _, _, s -> sum += s.energy }
+    sum += conduits.totalEnergy
     for (b in bridges) sum += b?.energy?.total ?: 0L
     return sum
 }

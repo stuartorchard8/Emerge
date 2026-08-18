@@ -135,18 +135,12 @@ class ConduitLayersTest {
             s = dragDown(s, Conduit.Pipe, x = 5, fromY = pipeFromY, toY = pipeToY)
 
             val hotEnd = grid.tile(2, 3)
-            val hot = s.conduits.at(Conduit.Rail, hotEnd)!!
-            s = s.copy(
-                conduits = s.conduits.with(
-                    Conduit.Rail,
-                    s.conduits[Conduit.Rail].toMutableList()
-                        .also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
-                ),
-            )
+            val hot = s.conduits.energyAt(Conduit.Rail, hotEnd)
+            s = s.copy(conduits = s.conduits.heated(Conduit.Rail, hotEnd, hot * 3))
             repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
-            val probe = s.conduits.at(Conduit.Pipe, grid.tile(5, pipeFromY))!!
-            return (probe.energy / Conduit.Pipe.capacityPerTile).toInt()
+            val probe = grid.tile(5, pipeFromY)
+            return (s.conduits.energyAt(Conduit.Pipe, probe) / Conduit.Pipe.capacityPerTile).toInt()
         }
 
         // Crossing the rail at (5,3): the two share that tile, so heat gets across.
@@ -168,17 +162,12 @@ class ConduitLayersTest {
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
 
         val hotEnd = grid.tile(2, 3)
-        val hot = s.conduits.at(Conduit.Rail, hotEnd)!!
-        s = s.copy(
-            conduits = s.conduits.with(
-                Conduit.Rail,
-                s.conduits[Conduit.Rail].toMutableList().also { it[hotEnd.index] = hot.copy(energy = hot.energy * 3) },
-            ),
-        )
+        val hot = s.conduits.energyAt(Conduit.Rail, hotEnd)
+        s = s.copy(conduits = s.conduits.heated(Conduit.Rail, hotEnd, hot * 3))
         repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
-        val far = s.conduits.at(Conduit.Rail, grid.tile(7, 3))!!
-        val kelvin = (far.energy / Conduit.Rail.capacityPerTile).toInt()
+        val far = grid.tile(7, 3)
+        val kelvin = (s.conduits.energyAt(Conduit.Rail, far) / Conduit.Rail.capacityPerTile).toInt()
         assertTrue(kelvin > Temperature.AMBIENT_KELVIN, "heat did not travel along the run (${kelvin}K)")
     }
 }

@@ -101,7 +101,10 @@ inline fun forEachVesselMass(
         action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m, TileIndex(t), grid, buffers))
     }
     conduits.all { conduit, tile, _ ->
-        action(tile, conduit.massPerTile, if (conduit == Conduit.Rail) rail.massAt(tile) else 0L)
+        // Weighed off the layer for the reason the deck is, and with the same guarantee:
+        // [conduitBillOfMaterials] apportions, so a tile of track weighs `conduit.massPerTile` to
+        // the unit and this is a change of representation, not of what the ship weighs.
+        action(tile, conduits.massAt(conduit, tile), if (conduit == Conduit.Rail) rail.massAt(tile) else 0L)
     }
     for (t in bridges.indices) {
         val b = bridges[t] ?: continue
