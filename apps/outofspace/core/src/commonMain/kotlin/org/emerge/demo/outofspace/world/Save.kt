@@ -146,6 +146,7 @@ object Save {
         writeSparse(out, "airheat", state.air.copyEnergy().data)
         writeDeckHeat(out, state.deck.stuff)
         writeDeckStuff(out, state.deck)
+        writeTrackStuff(out, state.conduits)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
@@ -236,6 +237,33 @@ object Save {
                 if (Species.ALL.all { deck.stuff[part, it] == bill[it] }) continue
                 out.append("deckstuff ").append(part.index).append(' ')
                     .append(writeMixture(deck.stuff.mixtureAt(part))).append('\n')
+            }
+        }
+    }
+
+    /**
+     * What each length of conduit is **made of**, one `trackstuff <conduit> <tile> <mixture>` line
+     * per tile whose metal is no longer its kind's bill of materials.
+     *
+     * The twin of [writeDeckStuff], written for the same reason and read with the same rule: absence
+     * means "made of what its kind is made of", which is what every file written before this line
+     * existed meant, so no version bump is needed to read one.
+     *
+     * ⚠️ It stops being an optimisation and becomes **required** the moment a segment can hold less
+     * than its bill. A ghost is exactly that — track with a representation and no mass — and before
+     * this line a ghost saved as a finished rail, because the loader re-derived every segment's
+     * metal from its kind. See `apps/outofspace/PLAN_self_building_rails.md`.
+     */
+    private fun writeTrackStuff(out: StringBuilder, conduits: Conduits) {
+        for (conduit in Conduit.entries) {
+            val stuff = conduits.tracks[conduit]
+            val bill = conduitBillOfMaterials(conduit)
+            for (tile in 0 until conduits.tileCount) {
+                val t = TileIndex(tile)
+                if (conduits.at(conduit, t) == null) continue
+                if (Species.ALL.all { stuff[t, it] == bill[it] }) continue
+                out.append("trackstuff ").append(conduit.name).append(' ').append(tile).append(' ')
+                    .append(writeMixture(stuff.mixtureAt(t))).append('\n')
             }
         }
     }
@@ -533,6 +561,9 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
+        // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
+        // segment has been read, and this line *replaces* the metal [Conduits.of] lays.
+        val trackStuff = HashMap<Pair<Int, Int>, Mixture>()
         val diverters = HashMap<TileIndex, Int>()
         val merges = HashMap<TileIndex, Int>()
         val airMass = MassArray(grid.size)
@@ -707,6 +738,14 @@ object Save {
                     if (!deck.stuff.occupies(t)) fail("deckstuff at $t, where no deck machine stands")
                     for (s in Species.ALL) deck.stuff[t, s] = mix[s]
                 }
+                "trackstuff" -> {
+                    val name = tokens.getOrNull(1) ?: fail("expected a conduit")
+                    val conduit = Conduit.entries.firstOrNull { it.name == name }
+                        ?: fail("unknown conduit '$name'")
+                    val t = tile(2)
+                    val mix = readMixture(tokens.getOrNull(3) ?: fail("expected a mixture"), scale, ::fail)
+                    trackStuff[conduit.ordinal to t.index] = mix
+                }
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
@@ -781,6 +820,14 @@ object Save {
             )
         } catch (e: IllegalArgumentException) {
             throw SaveError(e.message ?: "the conduit layers do not describe a world")
+        }
+        // A tile the file gave a composition for is *not* made of its bill — it is a ghost, or a
+        // length of track something has reacted with. Applied before the heat, since the energy line
+        // is the last word on what this metal holds and must not be overwritten by a re-lay.
+        for ((key, mix) in trackStuff) {
+            val stuff = conduits.tracks[Conduit.entries[key.first]]
+            val t = TileIndex(key.second)
+            for (sp in Species.ALL) stuff[t, sp] = mix[sp]
         }
         // Every laid tile came back at ambient; the ones the file had a reading for get theirs back.
         // A tile with no `k=` is left exactly as laid, which is what the writer's omission meant.

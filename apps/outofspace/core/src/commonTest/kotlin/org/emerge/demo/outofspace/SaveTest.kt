@@ -515,6 +515,38 @@ class SaveTest {
     }
 
     @Test
+    fun `a half-built length of track comes back half-built`() {
+        // The case the ghost depends on: a segment holding less than its bill of materials. Before
+        // `trackstuff` the loader re-derived every segment's metal from its kind, so a ghost saved
+        // as a finished rail and the player got their iron back for free.
+        val played = run(starterVessel(cfg.initialGrid), 20)
+        val laid = played.grid.tiles.first { played.conduits.at(Conduit.Rail, it) != null }
+        val stuff = played.conduits.tracks[Conduit.Rail]
+        val before = stuff[laid, Species.Iron]
+        assertTrue(before > 1L, "a length of rail should be made of some iron, got $before")
+        stuff[laid, Species.Iron] = before / 2
+
+        val back = Save.read(Save.write(played))
+        assertEquals(before / 2, back.conduits.tracks[Conduit.Rail][laid, Species.Iron], "iron at $laid")
+        // And nothing else moved: every other length is still what its kind is made of.
+        for (conduit in Conduit.entries) {
+            for (tile in played.grid.tiles) {
+                assertEquals(
+                    played.conduits.tracks[conduit].mixtureAt(tile),
+                    back.conduits.tracks[conduit].mixtureAt(tile),
+                    "$conduit matter differs at tile $tile",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `an untouched vessel writes no track matter at all`() {
+        val text = Save.write(run(starterVessel(cfg.initialGrid), 20))
+        assertTrue(text.lines().none { it.startsWith("trackstuff") }, "unaltered track wrote matter")
+    }
+
+    @Test
     fun `an untouched vessel writes no deck matter at all`() {
         // Absence means "made of what its kind is made of". If a plain vessel wrote a line per plate
         // the file would grow by thousands of lines that say nothing the machine record does not.
