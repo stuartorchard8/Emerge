@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.massIn
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
@@ -126,7 +129,7 @@ class VesselSimTest {
         val carried = (4..7).map { s.railAt(grid.tile(it, 2))?.held?.mass ?: 0L }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
         assertTrue(
-            (s[grid.tile(2, 2)] as? Extractor)!!.buffer.mass >= Extractor.BUFFER_CAP,
+            (s.held(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
             "and the extractor should have stopped digging",
         )
         assertBalanced(s, "jammed line")
@@ -364,7 +367,7 @@ class VesselSimTest {
             "nothing travelled: there is nothing to travel toward",
         )
         assertTrue(
-            (s[grid.tile(2, 2)] as? Extractor)!!.buffer.mass >= Extractor.BUFFER_CAP,
+            (s.held(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
             "and the backlog is where you can see it, in the extractor",
         )
         assertBalanced(s, "unconsumed line")
@@ -438,23 +441,26 @@ class VesselSimTest {
 
     @Test
     fun `a smelter stalls rather than mixing two metals`() {
-        val grid = Grid(3, 1)
+        // Five across, because a smelter is: its stores stand on its own port tiles, so a furnace
+        // in a grid too small to hold its footprint has nowhere to put anything.
+        val grid = Grid(9, 9)
+        val centre = grid.tile(4, 4)
         val deck = DeckArray(grid.size)
         val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L, energy = 0))
-        val smelter = Smelter(Direction.Right, input = ironOre)
-        var s = VesselState(grid, listOf(smelter, null, null), deck, buffers = BufferLayer.forMachines(grid, listOf(smelter, null, null)))
+        val m = arrayOfNulls<Machine>(grid.size)
+        m[centre.index] = Smelter(Direction.Right)
+        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()))
+            .stocked(centre, ironOre)
         s = run(s, 20)
-        val after = s[TileIndex(0)] as? Smelter
-        assertEquals(Form.IronIngot, assertNotNull(after!!.refined).form)
+        assertEquals(Form.IronIngot, assertNotNull(s.held(centre, BufferRole.Product)).form)
 
         // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
         val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L, energy = 0))
-        var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null), deck, buffers = BufferLayer.forMachines(grid, listOf(after.copy(input = copperOre), null, null)))
-        val heldBefore = (s2[TileIndex(0)] as? Smelter)!!.refined!!.mass
+        var s2 = s.stocked(centre, copperOre)
+        val heldBefore = s2.held(centre, BufferRole.Product)!!.mass
         s2 = run(s2, 20)
-        val stalled = s2[TileIndex(0)] as? Smelter
-        assertEquals(heldBefore, stalled!!.refined!!.mass, "output should not have grown")
-        assertEquals(copperOre.mass, stalled.input!!.mass, "and the copper ore should be untouched")
+        assertEquals(heldBefore, s2.held(centre, BufferRole.Product)!!.mass, "output should not have grown")
+        assertEquals(copperOre.mass, s2.held(centre, BufferRole.Input)!!.mass, "and the copper ore should be untouched")
     }
 
     @Test
@@ -485,10 +491,11 @@ class VesselSimTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        m[grid.tile(4, 2).index] = Processor(Direction.Right, input = ore)   // input port at (3, 2)
+        m[grid.tile(4, 2).index] = Processor(Direction.Right)               // input port at (3, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)
         var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+            .stocked(grid.tile(4, 2), ore)
         s = run(s, RAIL_PERIOD * 2)
         assertNotNull(s.railAt(grid.tile(3, 2))?.held, "the ingot should still be waiting on the track")
     }
@@ -532,7 +539,7 @@ class VesselSimTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Processor(Direction.Down), ingot)
 
-        assertNull((s[grid43(s)] as? Processor)!!.input, "the processor should not have taken an ingot")
+        assertNull(s.held(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
         assertEquals(
             1_000L,
             s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
@@ -546,15 +553,11 @@ class VesselSimTest {
         // that decided this packet's fate is what the machine was willing to take.
         val ore = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Processor(Direction.Down), ore)
-        val processor = s[grid43(s)] as? Processor
-
         // Asserted as conservation rather than as "the input buffer is not empty", which is a moment
         // and not a fact: the processor grinds at 125 g a tick, so whether the ore is still in the
         // mouth, half separated, or wholly turned into concentrate and tailings depends only on when
         // you happen to look. What must hold at any tick is that all of it is accounted for.
-        val taken = (processor!!.input?.mass ?: 0L) +
-            (processor.product?.mass ?: 0L) +
-            (processor.tailings?.mass ?: 0L)
+        val taken = massIn(s[grid43(s)], grid43(s), s.grid, s.buffers)
         assertEquals(1_000L, taken, "the processor should have taken the ore off the belt")
         assertNull(
             s.buffers.resourceAt(s.grid.tile(9, 2)),
@@ -567,7 +570,7 @@ class VesselSimTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Smelter(Direction.Down), ingot)
 
-        assertNull((s[grid43(s)] as? Smelter)!!.input, "the smelter should not have taken an ingot")
+        assertNull(s.held(grid43(s), BufferRole.Input), "the smelter should not have taken an ingot")
         assertEquals(
             1_000L,
             s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
@@ -680,7 +683,7 @@ class VesselSimTest {
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
         val onTrack = s.rails.fold(Mixture.EMPTY) { acc, r -> acc + (r?.held?.contents ?: Mixture.EMPTY) }
-        val inWorld = s.machines.indices.fold(onTrack) { acc, i -> acc + contentsOf(s.machines[i], TileIndex(i), s.buffers) }
+        val inWorld = s.machines.indices.fold(onTrack) { acc, i -> acc + contentsOf(s.machines[i], TileIndex(i), s.grid, s.buffers) }
         val accountedFor = inWorld.total + s.ventedMass
         assertEquals(s.extractedMass, accountedFor)
 

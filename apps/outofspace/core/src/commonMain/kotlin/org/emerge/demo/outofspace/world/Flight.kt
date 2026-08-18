@@ -49,9 +49,9 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */
-fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>, deck: DeckArray, buffers: BufferLayer): Long {
+fun structureMass(grid: Grid, machines: List<Machine?>, conduits: Conduits, bridges: List<Machine?>, deck: DeckArray, buffers: BufferLayer): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges, deck, buffers) { _, fabric, _ -> sum += fabric }
+    forEachVesselMass(grid, machines, conduits, bridges, deck, buffers) { _, fabric, _ -> sum += fabric }
     return sum
 }
 
@@ -75,6 +75,7 @@ fun structureMass(machines: List<Machine?>, conduits: Conduits, bridges: List<Ma
  * hundreds a real lever arm contributes. Worth knowing, not worth a second walk.
  */
 inline fun forEachVesselMass(
+    grid: Grid,
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
@@ -96,14 +97,14 @@ inline fun forEachVesselMass(
     }
     for (t in machines.indices) {
         val m = machines[t] ?: continue
-        action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m, TileIndex(t), buffers))
+        action(TileIndex(t), m.kind.massPerTile * m.kind.thermalTiles, massIn(m, TileIndex(t), grid, buffers))
     }
     conduits.all { conduit, tile, segment ->
         action(tile, conduit.massPerTile, if (conduit == Conduit.Rail) segment.held?.mass ?: 0L else 0L)
     }
     for (t in bridges.indices) {
         val b = bridges[t] ?: continue
-        action(TileIndex(t), b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b, TileIndex(t), buffers))
+        action(TileIndex(t), b.kind.massPerTile * MachineKind.Bridge.thermalTiles, massIn(b, TileIndex(t), grid, buffers))
     }
 }
 
@@ -117,6 +118,7 @@ inline fun forEachVesselMass(
  * would look like the ship getting heavier for no reason.
  */
 fun cargoMass(
+    grid: Grid,
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
@@ -124,12 +126,13 @@ fun cargoMass(
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges, deck, buffers) { _, _, cargo -> sum += cargo }
+    forEachVesselMass(grid, machines, conduits, bridges, deck, buffers) { _, _, cargo -> sum += cargo }
     return sum
 }
 
 /** What a thrust is divided by: the fabric plus what it carries. See [Flight] for why not the gas. */
 fun vesselMass(
+    grid: Grid,
     machines: List<Machine?>,
     conduits: Conduits,
     bridges: List<Machine?>,
@@ -137,7 +140,7 @@ fun vesselMass(
     buffers: BufferLayer,
 ): Long {
     var sum = 0L
-    forEachVesselMass(machines, conduits, bridges, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
+    forEachVesselMass(grid, machines, conduits, bridges, deck, buffers) { _, fabric, cargo -> sum += fabric + cargo }
     return sum
 }
 

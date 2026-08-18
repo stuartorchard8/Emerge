@@ -46,9 +46,6 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class Extractor(
     override val facing: Direction,
-    /** The cell it is chewing on. Counts as mass aboard — see [org.emerge.demo.outofspace.world.massIn] — because it is. */
-    val input: Resource? = null,
-    val buffer: Resource = Resource(Form.Ore, Mixture.EMPTY),
     val carry: Long = 0L,
     /**
      * Grams per tick at full activation: **one belt-load**.

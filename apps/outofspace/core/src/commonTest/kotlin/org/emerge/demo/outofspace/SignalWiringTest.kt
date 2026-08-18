@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -103,7 +105,8 @@ class SignalWiringTest {
     private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
-    private fun ground(s: VesselState): Long = s.extractedMass - (extractor(s)!!.input?.mass ?: 0L)
+    private fun ground(s: VesselState): Long =
+        s.extractedMass - (s.held(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Inside)?.mass ?: 0L)
 
     // ── The point of the plan ─────────────────────────────────────────────────
 

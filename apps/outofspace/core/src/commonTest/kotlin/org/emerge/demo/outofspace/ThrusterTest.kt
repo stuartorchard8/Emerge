@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -264,17 +266,14 @@ class ThrusterTest {
         // Mounted *in* the wall, so the plate it replaces comes out first — a tile carries one
         // deck machine, and the motor is the one that is there.
         deck -= tile
-        machines[tile.index] = Thruster(
-            facing = facing,
-            input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
-        )
+        machines[tile.index] = Thruster(facing = facing)
         return VesselState(
             grid = grid,
             machines = machines.toList(),
             deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forMachines(grid, machines.toList()),
-        )
+        ).stocked(tile, Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)))
     }
 
     private companion object {

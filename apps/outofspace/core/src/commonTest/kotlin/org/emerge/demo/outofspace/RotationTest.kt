@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -238,10 +240,7 @@ class RotationTest {
         for (y in bays) {
             // The bay replaces the plate that was there — see `ThrusterTest`'s fixture.
             deck -= grid.tile(HULL_RIGHT, y)
-            machines[grid.tile(HULL_RIGHT, y).index] = Thruster(
-                facing = Direction.Right,
-                input = Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
-            )
+            machines[grid.tile(HULL_RIGHT, y).index] = Thruster(facing = Direction.Right)
         }
         return VesselState(
             grid = grid,
@@ -249,7 +248,13 @@ class RotationTest {
             deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forMachines(grid, machines.toList()),
-        )
+        ).also { state ->
+            // Propellant is a store now, so it is put in after the state stands the stores up.
+            for (y in bays) state.stocked(
+                grid.tile(HULL_RIGHT, y),
+                Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)),
+            )
+        }
     }
 
     private companion object {

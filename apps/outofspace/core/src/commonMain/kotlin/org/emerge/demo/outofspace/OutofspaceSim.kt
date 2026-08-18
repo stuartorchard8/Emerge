@@ -11,7 +11,10 @@ import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
-import org.emerge.demo.outofspace.world.storageBufferTile
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.inputBufferRole
+import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
@@ -172,7 +175,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
                             val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
-                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen], seen, w.buffers))
+                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen], seen, w.grid, w.buffers))
                         }
                         // A finger on a key, on the same footing as any other transmitter.
                         is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(tile, SignalField.FULL)
@@ -364,7 +367,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val mass = vesselMass(machines, conduits, bridges, w.deck, w.buffers)
+        val mass = vesselMass(w.grid, machines, conduits, bridges, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -630,122 +633,98 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     * Full rate per machine-tick — unchanged from the old single-rate system. The Rate
     * accumulator's carry handles fractional activation values.
     */
+    /**
+     * What the machine at [centre] has in its [role] store, or null if that store is empty.
+     *
+     * The `!!` is the address scheme holding: a machine is only ever asked for a role it keeps, and
+     * [bufferTile] returns null for a role it does not — so a null here is a machine being asked for
+     * a store it has no concept of, which is a bug in the caller and not a state the world can be in.
+     */
+    private fun Work.store(m: Machine, centre: TileIndex, role: BufferRole): Resource? =
+        buffers.resourceAt(bufferTile(grid, m, centre, role)!!)
+
+    /** Replace the [role] store of the machine at [centre], or empty it if [resource] is null. */
+    private fun Work.putStore(m: Machine, centre: TileIndex, role: BufferRole, resource: Resource?) {
+        buffers.put(bufferTile(grid, m, centre, role)!!, resource)
+    }
+
     private fun throttled(perTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
         if (activation <= 0) return 0L to carry
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, tile: TileIndex): Processor {
-        val input: Resource?
-        val inProgress: Resource?
-
-        if (m.inside == null) {
-            inProgress = m.input ?: return m // Nothing to do if there's no input
-            input = null
-            // Apply all heat as soon as new material starts being processed
-            heat(tile, heatOfWorking(inProgress.mass, m))
-        } else {
-            input = m.input
-            inProgress = m.inside
+        // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
+        // the moment it starts rather than dribbled out over the action.
+        val inProgress = store(m, tile, BufferRole.Inside) ?: run {
+            val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+            putStore(m, tile, BufferRole.Input, null)
+            putStore(m, tile, BufferRole.Inside, fresh)
+            heat(tile, heatOfWorking(fresh.mass, m))
+            fresh
         }
 
         val (actionProgress, carry) = throttled(1, activation, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
-            // Full output blocks the machine (catches tailings too).
-            if (m.product != null || m.tailings != null) {
-                return m.copy(
-                    input = input,
-                    inside = inProgress,
-                    progress = m.ticksPerAction,
-                    carry = carry,
-                )
+            // Full output blocks the machine (catches tailings too). The lump stays where it is.
+            if (store(m, tile, BufferRole.Product) != null || store(m, tile, BufferRole.Waste) != null) {
+                return m.copy(progress = m.ticksPerAction, carry = carry)
             }
             val r = process(inProgress, m.efficiencyPermille)
-            return m.copy(
-                input = input,
-                inside = null,
-                product = r.product,
-                tailings = r.tailings,
-                progress = 0,
-                carry = carry,
-            )
-        } else {
-            return m.copy(
-                input = input,
-                inside = inProgress,
-                progress = m.progress + actionProgress.toInt(),
-                carry = carry,
-            )
+            putStore(m, tile, BufferRole.Inside, null)
+            putStore(m, tile, BufferRole.Product, r.product)
+            putStore(m, tile, BufferRole.Waste, r.tailings)
+            return m.copy(progress = 0, carry = carry)
         }
+        return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
     }
 
     private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, tile: TileIndex): ThermalDecomposer {
-        val input: Resource?
-        val inProgress: Resource?
-
-        if (m.inside == null) {
-            inProgress = m.input ?: return m // Nothing to do if there's no input
-            input = null
-            // Apply all heat as soon as new material starts being processed
-            heat(tile, heatOfWorking(inProgress.mass, m))
-        } else {
-            input = m.input
-            inProgress = m.inside
+        val inProgress = store(m, tile, BufferRole.Inside) ?: run {
+            val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+            putStore(m, tile, BufferRole.Input, null)
+            putStore(m, tile, BufferRole.Inside, fresh)
+            heat(tile, heatOfWorking(fresh.mass, m))
+            fresh
         }
 
         val (actionProgress, carry) = throttled(1, activation, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
-            // Full output blocks the machine (catches tailings too).
-            if (m.product != null) {
-                return m.copy(
-                    input = input,
-                    inside = inProgress,
-                    progress = m.ticksPerAction,
-                    carry = carry,
-                )
+            if (store(m, tile, BufferRole.Product) != null) {
+                return m.copy(progress = m.ticksPerAction, carry = carry)
             }
-            val r = cook(inProgress, m.setTemperature)
-            return m.copy(
-                input = input,
-                inside = null,
-                product = r,
-                progress = 0,
-                carry = carry,
-            )
-        } else {
-            return m.copy(
-                input = input,
-                inside = inProgress,
-                progress = m.progress + actionProgress.toInt(),
-                carry = carry,
-            )
+            putStore(m, tile, BufferRole.Inside, null)
+            putStore(m, tile, BufferRole.Product, cook(inProgress, m.setTemperature))
+            return m.copy(progress = 0, carry = carry)
         }
+        return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
     }
 
     private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, tile: TileIndex): Smelter {
-        val input = m.input ?: return m
+        val input = store(m, tile, BufferRole.Input) ?: return m
         val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-        if (blocked(m.refined, m.slag)) return m.copy(carry = carry)
+        val heldRefined = store(m, tile, BufferRole.Product)
+        val heldSlag = store(m, tile, BufferRole.Waste)
+        if (blocked(heldRefined, heldSlag)) return m.copy(carry = carry)
         val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val chunk = Resource(input.form, input.mixture.take(chunkMass))
         heat(tile, heatOfWorking(chunkMass, m))
         val r = smelt(chunk)
-        // Smelter stalls if dominant species differs (stopped machine signals ore change).
-        val refined = m.refined.merged(r.refined) ?: return m.copy(carry = carry)
-        val slag = m.slag.merged(r.slag) ?: return m.copy(carry = carry)
+        // Smelter stalls if dominant species differs (stopped machine signals ore change). Both
+        // merges are resolved before anything is written, or a stall would leave the ore consumed.
+        val refined = heldRefined.merged(r.refined) ?: return m.copy(carry = carry)
+        val slag = heldSlag.merged(r.slag) ?: return m.copy(carry = carry)
 
-        return m.copy(
-            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
-            refined = refined.buffer,
-            slag = slag.buffer,
-            carry = carry,
-        )
+        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
+        putStore(m, tile, BufferRole.Product, refined.buffer)
+        putStore(m, tile, BufferRole.Waste, slag.buffer)
+        return m.copy(carry = carry)
     }
 
     private fun Work.vaporize(m: Vaporizer, activation: Int, tile: TileIndex): Vaporizer {
-        val input = m.input ?: return m
+        val input = store(m, tile, BufferRole.Input) ?: return m
         val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
         val chunkMass = minOf(mass, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
@@ -765,10 +744,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
         solidBecameGas(chunkMass, energy)
 
-        return m.copy(
-            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
-            carry = carry,
-        )
+        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
+        return m.copy(carry = carry)
     }
 
     /**
@@ -799,7 +776,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         tile: TileIndex,
         structure: StructureMap,
     ): Thruster {
-        val input = m.input ?: return m
+        val input = store(m, tile, BufferRole.Input) ?: return m
         val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
         val chunkMass = minOf(allowance, input.mass)
         if (chunkMass <= 0L) return m.copy(carry = carry)
@@ -864,10 +841,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             solidBecameGas(chunkMass, landed)
         }
 
-        return m.copy(
-            input = Resource(input.form, input.mixture - chunk.mixture).orNull(),
-            carry = carry,
-        )
+        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
+        return m.copy(carry = carry)
     }
 
 /** Buffer merge: new contents, or null if forms cannot coexist. Null vs Merge(null) distinguishes "empty" from "cannot mix". */
@@ -1324,7 +1299,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Whatever was in the buffer goes with the machine — spoilsOf has already been asked
                 // what falls on the floor, and holding the store open would leave a warehouse's worth
                 // of iron at a tile with nothing standing on it.
-                if (machine is Storage) buffers.releaseRole(storageBufferTile(origin))
+                buffers.releaseRoles(grid, machine, origin)
                 machines[origin.index] = null
                 return true
             }
@@ -1433,7 +1408,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // A storage's store is a tile in the buffer layer, reserved as the machine goes up so an
             // empty warehouse is a warehouse and not an absence. claimRole refuses a second store on
             // the tile, which is the guard for a one-tile machine wanting two roles.
-            if (built is Storage) buffers.claimRole(storageBufferTile(tile))
+            buffers.claimRoles(grid, built, tile)
             for (t in covered) originOf[t] = tile
         }
 
@@ -1526,25 +1501,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
             // Backed up: stop working, holding whatever cell is already in the jaws. It is counted
             // as aboard either way, so nothing is forfeit by waiting.
-            if (m.buffer.mass >= Extractor.BUFFER_CAP) return m.copy(carry = carry)
+            val held = buffers.resourceAt(bufferTile(grid, m, tile, BufferRole.Product)!!)
+            if ((held?.mass ?: 0L) >= Extractor.BUFFER_CAP) return m.copy(carry = carry)
 
-            var input = m.input
+            var input = store(m, tile, BufferRole.Inside)
             if (input == null || input.mass <= 0L) {
                 val found = if (activation > 0) reachedBody(m, tile) else -1
                 input = if (found < 0) null else bite(found, tile)
+                putStore(m, tile, BufferRole.Inside, input)
             }
-            if (input == null) return m.copy(input = null, carry = carry)
-            if (mass <= 0L) return m.copy(input = input, carry = carry)
+            if (input == null || mass <= 0L) return m.copy(carry = carry)
 
             // The same shape as a processor working a lump: take a chunk off the input buffer.
             val chunk = input.mixture.take(minOf(mass, input.mass))
-            if (chunk.total <= 0L) return m.copy(input = input, carry = carry)
+            if (chunk.total <= 0L) return m.copy(carry = carry)
             heat(tile, heatOfWorking(chunk.total, m))
-            return m.copy(
-                input = Resource(input.form, input.mixture - chunk).orNull(),
-                buffer = Resource(Form.Ore, m.buffer.mixture + chunk),
-                carry = carry,
-            )
+            putStore(m, tile, BufferRole.Inside, Resource(input.form, input.mixture - chunk).orNull())
+            putStore(m, tile, BufferRole.Product, Resource(Form.Ore, (held?.mixture ?: Mixture.EMPTY) + chunk))
+            return m.copy(carry = carry)
         }
 
         /** The first body with a cell over the plate at [at], or `-1`. */
@@ -1622,7 +1596,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = segment.held == null
             if (!load(tile, segment, packet)) return
-            machines[port.owner.index] = withBuffer(m, port, rest.orNull())
+            drained(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
             if (wasEmpty) motion.placedByPort(tile)
@@ -1647,23 +1621,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Which of a machine's buffers drains through [port]. */
-        private fun bufferFor(m: Machine, port: Port): Resource? = when (m) {
-            is Extractor -> m.buffer
-            is Processor -> if (port.stream == Stream.Waste) m.tailings else m.product
-            is Smelter -> if (port.stream == Stream.Waste) m.slag else m.refined
-            // Storage keeps nothing on the machine any more; its store is a tile in the buffer layer.
-            is Storage -> buffers.resourceAt(storageBufferTile(port.owner))
-            else -> null
+        private fun bufferFor(m: Machine, port: Port): Resource? {
+            val role = outputBufferRole(m, port.stream) ?: return null
+            return buffers.resourceAt(bufferTile(grid, m, port.owner, role) ?: return null)
         }
 
-        /** That machine with the drained buffer replaced. */
-        private fun withBuffer(m: Machine, port: Port, rest: Resource?): Machine = when (m) {
-            is Extractor -> m.copy(buffer = rest ?: Resource(Form.Ore, Mixture.EMPTY))
-            is Processor -> if (port.stream == Stream.Waste) m.copy(tailings = rest) else m.copy(product = rest)
-            is Smelter -> if (port.stream == Stream.Waste) m.copy(slag = rest) else m.copy(refined = rest)
-            // The machine is unchanged — what drained was the layer's, so that is what is written.
-            is Storage -> m.also { buffers.put(storageBufferTile(port.owner), rest) }
-            else -> m
+        /** Write back what is left in the buffer that drained through [port]. */
+        private fun drained(m: Machine, port: Port, rest: Resource?) {
+            val role = outputBufferRole(m, port.stream) ?: return
+            buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
         }
 
         /** Places or merges [packet] onto the segment at [tile]. False if there was no room. */
@@ -1739,28 +1705,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        /**
-         * Whether the thing behind an input port could take **anything** at all right now.
-         *
-         * This is what makes a full machine transparent to the traffic rather than a wall across it:
-         * an input with no room does not pull, so the flow field routes past it to the next consumer
-         * that does. Deliberately asked without reference to a particular packet — the field is
-         * derived once for the whole layer, before any packet is looked at, and a port that has room
-         * but refuses *this* form is handled by the other half of the fix (a tile at a sink still
-         * has successors).
-         */
-        private fun hasRoom(port: Port): Boolean {
-            if (port.fromBridge) return bridges[port.owner.index]?.entry == null
-            return when (val m = machines[port.owner.index]) {
-                is Processor -> m.input == null
-                is Smelter -> m.input == null
-                is Storage -> buffers.massAt(storageBufferTile(port.owner)) < Storage.CAP
-                is Thruster -> m.input == null
-                is Vent -> true
-                else -> false
-            }
-        }
-
         /** Offers a passing packet to whatever owns [port]. Returns what was not taken. */
         private fun offerTo(port: Port, packet: Packet): Packet? {
             if (port.fromBridge) {
@@ -1792,45 +1736,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
         private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
-            return when (destination) {
-                is Processor -> acceptInto(destination.input, packet)?.let { machines[target] =
-                    destination.copy(input = it); true } ?: false
-                is ThermalDecomposer -> acceptInto(destination.input, packet)?.let { machines[target] =
-                    destination.copy(input = it); true } ?: false
-                is Smelter -> acceptInto(destination.input, packet)?.let { machines[target] =
-                    destination.copy(input = it); true } ?: false
-                is Vaporizer -> acceptInto(destination.input, packet)?.let { machines[target] =
-                    destination.copy(input = it); true } ?: false
-                is Thruster -> acceptInto(destination.input, packet)?.let { machines[target] =
-                    destination.copy(input = it); true } ?: false
-                is Storage -> {
-                    if (packet !is SolidPacket) false
-                    else {
-                        val store = storageBufferTile(TileIndex(target))
-                        val existing = buffers.resourceAt(store)
-                        if (existing != null && existing.form != packet.form) false
-                        else if ((existing?.mass ?: 0L) >= Storage.CAP) false
-                        else {
-                            val merged = if (existing == null) packet.resource
-                            else Resource(existing.form, existing.mixture + packet.contents)
-                            buffers.put(store, merged)
-                            true
-                        }
-                    }
-                }
-                is Vent -> {
-                    ventedMass += packet.mass
-                    machines[target] = destination.copy(ventedMass = destination.ventedMass + packet.mass)
-                    true
-                }
-
-                // These machines have no inputs
-                is Bridge -> false
-                is Extractor -> false
-                is Pump -> false
-                is Sensor, is WireButton -> false
+            val centre = TileIndex(target)
+            if (destination is Vent) {
+                ventedMass += packet.mass
+                machines[target] = destination.copy(ventedMass = destination.ventedMass + packet.mass)
+                return true
             }
+            val role = inputBufferRole(destination) ?: return false
+            val store = bufferTile(grid, destination, centre, role) ?: return false
+            val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
+            buffers.put(store, merged)
+            return true
         }
+
         private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
                 is Hull, is Airlock -> false
@@ -1838,11 +1756,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** The new input buffer if [packet] is acceptable, else null. */
-        private fun acceptInto(existing: Resource?, packet: Packet): Resource? {
+        private fun acceptInto(destination: Machine, existing: Resource?, packet: Packet): Resource? {
             if (packet !is SolidPacket) return null
-            if (packet.resource.form != Form.Ore) return null
+            // A warehouse takes any form and fills to its tank; a working machine takes ore only,
+            // one lump at a time. That difference is the whole of what "storage" means here.
+            if (destination !is Storage && packet.resource.form != Form.Ore) return null
             if (existing != null && existing.form != packet.form) return null
-            if ((existing?.mass ?: 0L) >= MACHINE_BUFFER_CAP) return null
+            val cap = if (destination is Storage) Storage.CAP else MACHINE_BUFFER_CAP
+            if ((existing?.mass ?: 0L) >= cap) return null
             return if (existing == null) packet.resource
             else Resource(existing.form, existing.mixture + packet.contents)
         }

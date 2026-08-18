@@ -45,12 +45,14 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
         val EMPTY: Stockpile = Stockpile(Array(Form.ALL.size) { Mixture.EMPTY })
 
         /** Everything sitting in every storage aboard, gathered by form. */
-        fun of(machines: List<Machine?>, buffers: BufferLayer): Stockpile {
+        fun of(grid: Grid, machines: List<Machine?>, buffers: BufferLayer): Stockpile {
             var any = false
             val byForm = Array(Form.ALL.size) { Mixture.EMPTY }
             for (i in machines.indices) {
-                if (machines[i] !is Storage) continue
-                val held = buffers.resourceAt(storageBufferTile(TileIndex(i))) ?: continue
+                val m = machines[i]
+                if (m !is Storage) continue
+                val store = bufferTile(grid, m, TileIndex(i), BufferRole.Inside) ?: continue
+                val held = buffers.resourceAt(store) ?: continue
                 if (held.isEmpty) continue
                 byForm[held.form.ordinal] = byForm[held.form.ordinal] + held.mixture
                 any = true

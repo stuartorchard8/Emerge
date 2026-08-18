@@ -10,10 +10,6 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class Processor(
     override val facing: Direction,
-    val input: Resource? = null,
-    val inside: Resource? = null,
-    val product: Resource? = null,
-    val tailings: Resource? = null,
     val carry: Long = 0L,
     /**
      * Minimum number of machine ticks it takes to convert inProgress resources to product and tailings.

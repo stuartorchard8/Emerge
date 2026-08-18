@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
@@ -385,8 +387,6 @@ class SaveTest {
         val deck = DeckArray(grid.size)
         machines[grid.tile(4, 4).index] = Extractor(
             Direction.Right,
-            input = Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)),
-            buffer = Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)),
             carry = 37L,
             // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
@@ -396,12 +396,14 @@ class SaveTest {
 
         val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
             .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
+            .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)), BufferRole.Inside)
+            .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
         val back = Save.read(Save.write(state))
 
         val extractor = back[grid.tile(4, 4)] as? Extractor
         assertEquals(37L, extractor!!.carry)
-        assertEquals(123L, extractor.buffer.mass)
-        assertEquals(700L, extractor.input?.mixture?.get(Species.Iron), "the cell in the jaws too")
+        assertEquals(123L, back.held(grid.tile(4, 4), BufferRole.Product)?.mass)
+        assertEquals(700L, back.held(grid.tile(4, 4), BufferRole.Inside)?.mixture?.get(Species.Iron), "the cell in the jaws too")
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)

@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -65,7 +67,7 @@ class ProcessorChainTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 3).index] = Processor(Direction.Right, input = ore)   // covers x 2..4
+        m[grid.tile(3, 3).index] = Processor(Direction.Right)                // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
         m[grid.tile(7, 3).index] = Storage(Direction.Right)                 // input port at (6, 3)
         // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
@@ -74,6 +76,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+            .stocked(grid.tile(3, 3), ore)
         s = run(s, 800)
 
         val forward = s.buffers.resourceAt(grid.tile(7, 3))
@@ -135,7 +138,7 @@ class ProcessorChainTest {
         s = run(s, 1800)
 
         for (x in stages) {
-            val held = (s[grid.tile(x, 3)] as? Processor)?.tailings?.mass ?: 0L
+            val held = s.held(grid.tile(x, 3), BufferRole.Waste)?.mass ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",

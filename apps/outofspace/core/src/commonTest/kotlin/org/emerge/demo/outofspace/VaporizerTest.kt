@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
@@ -83,12 +85,10 @@ class VaporizerTest {
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
-        machines[grid.tile(BAY_X, BAY_Y).index] = Vaporizer(
-            facing = Direction.Right,
-            // A volatile, so what comes out is a gas anybody would recognise as one.
-            input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)),
-        )
+        machines[grid.tile(BAY_X, BAY_Y).index] = Vaporizer(facing = Direction.Right)
         return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+            // A volatile, so what comes out is a gas anybody would recognise as one.
+            .stocked(grid.tile(BAY_X, BAY_Y), Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)))
     }
 
     private companion object {

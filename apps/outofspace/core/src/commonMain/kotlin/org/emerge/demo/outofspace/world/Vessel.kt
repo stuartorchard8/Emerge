@@ -453,7 +453,7 @@ data class VesselState(
      * Derived rather than stored, for the same reason [structure] is — a cached copy is one more
      * thing that can disagree with the world, and this is cheap to fold.
      */
-    val stockpile: Stockpile get() = Stockpile.of(machines, buffers)
+    val stockpile: Stockpile get() = Stockpile.of(grid, machines, buffers)
 
     /**
      * Where the air is going, tile by tile — see [FlowField].
@@ -645,13 +645,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoMass(machines, conduits, bridges, deck, buffers)
+    val inTransitMass: Long get() = cargoMass(grid, machines, conduits, bridges, deck, buffers)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMass(machines, conduits, bridges, deck, buffers)
+    val mass: Long get() = vesselMass(grid, machines, conduits, bridges, deck, buffers)
 
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
@@ -790,37 +790,31 @@ data class VesselState(
 }
 
 /**
- * Where a [Storage]'s buffer stands: its **centre tile**.
- *
- * Storage is the one machine with a single pooled store rather than an input/output pair — its
- * contents serve both ports — so it takes the same tile the processing role uses. That is the right
- * answer for a warehouse: what it holds is the volume of the building, not a queue at either door.
- */
-fun storageBufferTile(centre: TileIndex): TileIndex = centre
-
-/**
  * What falls on the floor when a machine is taken apart: everything it was holding, keeping forms
  * separate. Defined in terms of [contentsBreakdown] so there is exactly one list of "where a machine
  * keeps things" — a second one would drift, and the drift would look like a conservation bug.
  */
-fun spoilsOf(machine: Machine?, centre: TileIndex, buffers: BufferLayer): List<Resource> =
-    contentsBreakdown(machine, centre, buffers).map { it.second }.filter { !it.isEmpty }
+fun spoilsOf(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Resource> =
+    contentsBreakdown(machine, centre, grid, buffers).map { it.second }.filter { !it.isEmpty }
 
-/** Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks. */
-fun massIn(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Long = when (machine) {
+/**
+ * Total mass held by one machine, wherever it keeps it. Used for world-wide conservation checks.
+ *
+ * Kind-blind, and that is the point of [BufferRole]: a machine's stores are its role tiles, so this
+ * no longer has to be extended when a machine gains a buffer. A [Bridge] is the one exception, since
+ * what it holds is packets in transit rather than a store.
+ */
+fun massIn(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Long = when (machine) {
     null -> 0L
     is Bridge -> machine.mass
-    is Extractor -> (machine.input?.mass ?: 0L) + machine.buffer.mass
-    is Processor -> (machine.input?.mass ?: 0L) + (machine.inside?.mass ?: 0L) + (machine.product?.mass ?: 0L) + (machine.tailings?.mass ?: 0L)
-    is ThermalDecomposer -> (machine.input?.mass ?: 0L) + (machine.inside?.mass ?: 0L) + (machine.product?.mass ?: 0L)
-    is Vaporizer -> (machine.input?.mass ?: 0L)
-    is Thruster -> (machine.input?.mass ?: 0L)
-    is Smelter -> (machine.input?.mass ?: 0L) + (machine.refined?.mass ?: 0L) + (machine.slag?.mass ?: 0L)
-    is Storage -> buffers.massAt(storageBufferTile(centre))
-    is Sensor, is WireButton -> 0L
-    is Hull, is Airlock -> 0L
-    is Vent -> 0L
-    is Pump -> 0L
+    else -> {
+        var sum = 0L
+        for (role in BufferRole.entries) {
+            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            sum += buffers.massAt(tile)
+        }
+        sum
+    }
 }
 
 /**
@@ -830,16 +824,19 @@ fun massIn(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Long = w
  * capacity differs by kind (a belt's is its slots, a storage's is its tank), which is the point: the
  * question a sensor asks is "is this backing up?", not "how much mass".
  */
-fun fullness(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Int = when (machine) {
+fun fullness(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Int = when (machine) {
     null -> 0
     is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
-    is Extractor -> (machine.buffer.mass * SignalField.FULL / Extractor.BUFFER_CAP).toInt()
-    is Processor -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is ThermalDecomposer -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
-    is Vaporizer -> (massIn(machine, centre, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Thruster -> (massIn(machine, centre, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Smelter -> (massIn(machine, centre, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is Storage -> (buffers.massAt(storageBufferTile(centre)) * SignalField.FULL / Storage.CAP).toInt()
+    // An extractor reads on its output buffer alone: what is in the jaws is a whole cell of rock and
+    // dwarfs the ground ore, so counting it would peg the sensor the moment the machine took a bite.
+    is Extractor -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Product)!!) *
+        SignalField.FULL / Extractor.BUFFER_CAP).toInt()
+    is Processor -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is ThermalDecomposer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
+    is Vaporizer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
+    is Smelter -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
     is Vent -> 0
@@ -847,12 +844,36 @@ fun fullness(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Int = 
 }.coerceIn(0, SignalField.FULL)
 
 /**
+ * What the inspector calls each of a machine's stores.
+ *
+ * The role says where a thing is in the machine; this says what the machine calls it there. A
+ * smelter's [BufferRole.Waste] is slag and a processor's is tailings, and telling the player
+ * "WASTE" for both would throw away the only word that says which machine they are looking at.
+ */
+private fun labelOf(machine: Machine, role: BufferRole): String = when (machine) {
+    is Extractor -> if (role == BufferRole.Inside) "CRUSHING" else "BUFFER"
+    is Storage -> "STORED"
+    is Thruster -> "PROPELLANT"
+    is Smelter -> when (role) {
+        BufferRole.Input -> "INPUT"
+        BufferRole.Product -> "REFINED"
+        else -> "SLAG"
+    }
+    else -> when (role) {
+        BufferRole.Input -> "INPUT"
+        BufferRole.Inside -> "PROCESSING"
+        BufferRole.Product -> "CONCENTRATE"
+        BufferRole.Waste -> "TAILINGS"
+    }
+}
+
+/**
  * A machine's contents broken out by the buffer they sit in, for the inspector.
  *
  * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
-fun contentsBreakdown(machine: Machine?, centre: TileIndex, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
+fun contentsBreakdown(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
     // Slot by slot, input end first: "which end of the span is it on" is the only thing worth
     // knowing about a bridge, and one lump labelled IN TRANSIT could not say it.
@@ -863,54 +884,24 @@ fun contentsBreakdown(machine: Machine?, centre: TileIndex, buffers: BufferLayer
                 label to Resource(form, p.contents)
             }
         }
-    is Extractor -> listOfNotNull(machine.input?.let { "CRUSHING" to it }, "BUFFER" to machine.buffer)
-    is Processor -> listOfNotNull(
-        machine.input?.let { "INPUT" to it },
-        machine.inside?.let { "PROCESSING" to it },
-        machine.product?.let { "CONCENTRATE" to it },
-        machine.tailings?.let { "TAILINGS" to it },
-    )
-    is ThermalDecomposer -> listOfNotNull(
-        machine.input?.let { "INPUT" to it },
-        machine.inside?.let { "PROCESSING" to it },
-        machine.product?.let { "CONCENTRATE" to it },
-    )
-    is Vaporizer -> listOfNotNull(
-        machine.input?.let { "INPUT" to it },
-    )
-    is Thruster -> listOfNotNull(
-        machine.input?.let { "PROPELLANT" to it },
-    )
-    is Smelter -> listOfNotNull(
-        machine.input?.let { "INPUT" to it },
-        machine.refined?.let { "REFINED" to it },
-        machine.slag?.let { "SLAG" to it },
-    )
-    is Storage -> listOfNotNull(buffers.resourceAt(storageBufferTile(centre))?.let { "STORED" to it })
-    is Sensor, is WireButton, is Vent, is Pump, is Hull, is Airlock -> emptyList()
+    else -> BufferRole.entries.mapNotNull { role ->
+        val tile = bufferTile(grid, machine, centre, role) ?: return@mapNotNull null
+        buffers.resourceAt(tile)?.let { labelOf(machine, role) to it }
+    }
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
-fun contentsOf(machine: Machine?, centre: TileIndex, buffers: BufferLayer): Mixture = when (machine) {
+fun contentsOf(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Mixture = when (machine) {
     null -> Mixture.EMPTY
     is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
-    is Extractor -> (machine.input?.mixture ?: Mixture.EMPTY) + machine.buffer.mixture
-    is Processor -> (machine.input?.mixture ?: Mixture.EMPTY) +
-            (machine.inside?.mixture ?: Mixture.EMPTY) +
-            (machine.product?.mixture ?: Mixture.EMPTY) +
-            (machine.tailings?.mixture ?: Mixture.EMPTY)
-    is ThermalDecomposer -> (machine.input?.mixture ?: Mixture.EMPTY) +
-            (machine.inside?.mixture ?: Mixture.EMPTY) +
-            (machine.product?.mixture ?: Mixture.EMPTY)
-    is Vaporizer -> machine.input?.mixture ?: Mixture.EMPTY
-    is Thruster -> machine.input?.mixture ?: Mixture.EMPTY
-    is Smelter -> (machine.input?.mixture ?: Mixture.EMPTY) +
-        (machine.refined?.mixture ?: Mixture.EMPTY) + (machine.slag?.mixture ?: Mixture.EMPTY)
-    is Storage -> buffers.resourceAt(storageBufferTile(centre))?.mixture ?: Mixture.EMPTY
-    is Sensor, is WireButton -> Mixture.EMPTY
-    is Hull, is Airlock -> Mixture.EMPTY
-    is Vent -> Mixture.EMPTY
-    is Pump -> Mixture.EMPTY
+    else -> {
+        var out = Mixture.EMPTY
+        for (role in BufferRole.entries) {
+            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            out += buffers.resourceAt(tile)?.mixture ?: Mixture.EMPTY
+        }
+        out
+    }
 }
 
 /**

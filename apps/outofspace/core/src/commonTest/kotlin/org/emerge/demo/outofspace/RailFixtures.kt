@@ -18,7 +18,9 @@ import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.chem.Resource
-import org.emerge.demo.outofspace.world.storageBufferTile
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.inputBufferRole
 import org.emerge.demo.outofspace.world.TileIndex
 
 /**
@@ -216,13 +218,25 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
 }
 
 /**
- * A world with [resource] already sitting in the store at [tile].
+ * A world with [resource] already sitting in the [role] store of the machine at [tile].
  *
- * A [org.emerge.demo.outofspace.world.machine.Storage] no longer carries its contents, so a fixture
- * that wants a full tank states the machine and the matter separately: the machine goes in the list,
- * and this puts the matter in the layer once the state exists. Chained after construction rather
- * than passed in, because [org.emerge.demo.outofspace.world.VesselState] derives its stores from the
- * machine list and so the store is already standing by the time this is called.
+ * No machine carries its contents any more, so a fixture that wants a loaded one states the machine
+ * and the matter separately: the machine goes in the list, and this puts the matter in the layer
+ * once the state exists. Chained after construction rather than passed in, because
+ * [org.emerge.demo.outofspace.world.VesselState] derives its stores from the machine list, so the
+ * store is already standing by the time this is called.
+ *
+ * [role] defaults to the store an arriving packet would land in, since that is what almost every
+ * fixture means by "a machine with something in it".
  */
-fun VesselState.stocked(tile: TileIndex, resource: Resource?): VesselState =
-    also { it.buffers.put(storageBufferTile(tile), resource) }
+fun VesselState.stocked(tile: TileIndex, resource: Resource?, role: BufferRole? = null): VesselState = also {
+    val m = machines[tile.index] ?: error("no machine at $tile to stock")
+    val use = role ?: inputBufferRole(m) ?: error("$m takes no deliveries; name a role")
+    it.buffers.put(bufferTile(grid, m, tile, use) ?: error("$m keeps no $use store"), resource)
+}
+
+/** What the machine at [tile] is holding in its [role] store. */
+fun VesselState.held(tile: TileIndex, role: BufferRole): Resource? {
+    val m = machines[tile.index] ?: return null
+    return buffers.resourceAt(bufferTile(grid, m, tile, role) ?: return null)
+}

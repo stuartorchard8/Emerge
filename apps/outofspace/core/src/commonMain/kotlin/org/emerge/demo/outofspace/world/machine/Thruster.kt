@@ -43,7 +43,6 @@ import org.emerge.demo.outofspace.world.Wiring
 data class Thruster(
     override val facing: Direction,
     /** Propellant waiting to be thrown. Solid, arriving by rail, exactly as a smelter's feed does. */
-    val input: Resource? = null,
     val carry: Long = 0L,
     /**
      * Propellant thrown per tick at full activation.

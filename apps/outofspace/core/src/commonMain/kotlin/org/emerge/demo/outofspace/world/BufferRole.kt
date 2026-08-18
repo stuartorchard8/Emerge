@@ -88,11 +88,11 @@ fun outputBufferRole(machine: Machine, stream: Stream): BufferRole? {
 }
 
 private const val OFFSET_BIAS = 8
-private const val NO_OFFSET = -1
+internal const val NO_OFFSET = -1
 
 private fun pack(dx: Int, dy: Int): Int = ((dx + OFFSET_BIAS) shl 8) or (dy + OFFSET_BIAS)
 
-private fun localBufferOffset(machine: Machine, role: BufferRole): Int {
+internal fun localBufferOffset(machine: Machine, role: BufferRole): Int {
     val r = machine.kind.reach
     return when (machine) {
         // What it is chewing on is inside it; the ore it has ground goes out the one port it has.

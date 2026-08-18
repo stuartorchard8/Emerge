@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.machine.atKelvin
@@ -198,12 +200,12 @@ class HeatTest {
             track = { row(7, 8, 5); col(5, 7, 8) },
         ) { x, y ->
             when {
-                x == 5 && y == 5 -> Smelter(Direction.Right, input = ore)
+                x == 5 && y == 5 -> Smelter(Direction.Right)
                 x == 8 && y == 5 -> Vent()      // refined leaves forward
                 x == 5 && y == 8 -> Vent()      // slag leaves through the floor
                 else -> null
             }
-        }
+        }.stocked(g0.tile(5, 5), ore)
         val g = room.grid
         val s = run(room, 120*HEAT_PERIOD)
 
@@ -265,8 +267,9 @@ class HeatTest {
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
-        machines[grid.tile(5, 5).index] = Smelter(Direction.Right, input = ore)
+        machines[grid.tile(5, 5).index] = Smelter(Direction.Right)
         var s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+            .stocked(grid.tile(5, 5), ore)
         s = run(s, 40*HEAT_PERIOD)
 
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing

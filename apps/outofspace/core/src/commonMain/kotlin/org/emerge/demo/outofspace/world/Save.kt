@@ -115,7 +115,7 @@ object Save {
         // `links=5` says nothing, `R-L-` says the run goes left to right through this tile.
         for (tile in state.grid.tiles) {
             val m = state[tile] ?: continue
-            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m, tile, state.buffers))
+            out.append("machine ").append(tile.index).append(' ').append(writeMachine(m, tile, state.grid, state.buffers))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -132,7 +132,7 @@ object Save {
         }
         for (tile in state.grid.tiles) {
             val b = state.bridges[tile.index] ?: continue
-            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b, tile, state.buffers))
+            out.append("bridge ").append(tile.index).append(' ').append(writeMachine(b, tile, state.grid, state.buffers))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -239,7 +239,24 @@ object Save {
     private fun linkLetters(s: Segment): String =
         Direction.ALL.joinToString("") { if (s.linkedTo(it)) it.name.take(1) else "-" }
 
-    private fun writeMachine(m: Machine, tile: TileIndex, buffers: BufferLayer): String {
+    /**
+     * The field name a machine's [role] store has always had in the file.
+     *
+     * The roles were named after the fact and the keys were not, so two machines spell them their
+     * own way: an extractor's jaws are `in` and its ground ore is `buffer`, and a storage's one
+     * pooled store is `stored`. Kept exactly as they were, so the storage migration does not
+     * invalidate a single save.
+     */
+    private fun storeKey(m: Machine, role: BufferRole): String = when {
+        m is Storage -> "stored"
+        m is Extractor -> if (role == BufferRole.Inside) "in" else "buffer"
+        role == BufferRole.Input -> "in"
+        role == BufferRole.Inside -> "inside"
+        role == BufferRole.Product -> "out"
+        else -> "waste"
+    }
+
+    private fun writeMachine(m: Machine, tile: TileIndex, grid: Grid, buffers: BufferLayer): String {
         val f = StringBuilder(m.kind.name)
         fun put(key: String, value: String?) {
             if (value != null) f.append(' ').append(key).append('=').append(value)
@@ -253,48 +270,34 @@ object Save {
                 put("out", m.exit?.let { writePacket(it) })
             }
             is Extractor -> {
-                put("buffer", writeResource(m.buffer))
-                put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
             is Processor -> {
-                put("in", m.input?.let { writeResource(it) })
-                put("inside", m.inside?.let { writeResource(it) })
-                put("out", m.product?.let { writeResource(it) })
-                put("waste", m.tailings?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("progress", m.progress.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
             is ThermalDecomposer -> {
-                put("in", m.input?.let { writeResource(it) })
-                put("inside", m.inside?.let { writeResource(it) })
-                put("out", m.product?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("progress", m.progress.toString())
                 put("temp", m.setTemperature.toString())
             }
             is Vaporizer -> {
-                put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
-            // Propellant and the fraction of a tick's worth left over. The exhaust path is derived
-            // from the hull every tick and so is not state — see [exhaustPath].
+            // The exhaust path is derived from the hull every tick and so is not state — see
+            // [exhaustPath]; the propellant is a store, written by the role loop below.
             is Thruster -> {
-                put("in", m.input?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
             is Smelter -> {
-                put("in", m.input?.let { writeResource(it) })
-                put("out", m.refined?.let { writeResource(it) })
-                put("waste", m.slag?.let { writeResource(it) })
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
-            is Storage -> put("stored", buffers.resourceAt(storageBufferTile(tile))?.let { writeResource(it) })
+            is Storage -> {}
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
             // A button is its key and its wiring; the common code writes the second.
@@ -303,6 +306,12 @@ object Save {
             // heat are all written by the common code around this.
             is Pump -> {}
             is Vent -> put("vented", m.ventedMass.toString())
+        }
+        // Every store the machine keeps, under the key that record has always used for it. What a
+        // machine holds moved to the buffer layer without the file noticing — see [storeKey].
+        for (role in bufferRolesOf(m)) {
+            val store = bufferTile(grid, m, tile, role) ?: continue
+            put(storeKey(m, role), buffers.resourceAt(store)?.let { writeResource(it) })
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -628,7 +637,7 @@ object Save {
                     val t = tile(1)
                     if (machines[t.index] != null) fail("two machines at tile $t")
                     if (deck[t] != null) fail("two machines at tile $t")
-                    val (m, dm) = readMachine(tokens.drop(2), version, t, buffers, scale, energyScale, ::fail)
+                    val (m, dm) = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                     machines[t.index] = m
                     if (dm != null) {
                         deck += dm
@@ -653,7 +662,7 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (bridges[t.index] != null) fail("two bridges at tile $t")
-                    val (bridge, _) = readMachine(tokens.drop(2), version, t, buffers, scale, energyScale, ::fail)
+                    val (bridge, _) = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                     bridges[t.index] = bridge as? Bridge ?: fail("not a bridge")
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
@@ -740,7 +749,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMass(machines.toList(), conduits, bridges.toList(), deck, buffers)
+            val shipMass = vesselMass(grid, machines.toList(), conduits, bridges.toList(), deck, buffers)
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
@@ -855,6 +864,7 @@ object Save {
         tokens: List<String>,
         version: Int,
         tile: TileIndex,
+        grid: Grid,
         buffers: BufferLayer,
         scale: Rescale,
         energyScale: Rescale,
@@ -911,41 +921,32 @@ object Save {
             )
             MachineKind.Extractor -> Extractor(
                 facing = facing(),
-                buffer = res("buffer") ?: Resource(Form.Ore, Mixture.EMPTY),
-                input = res("in"),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Extractor(Direction.Right).massPerTick),
             )
             MachineKind.Processor -> Processor(
                 facing = facing(),
-                input = res("in"), inside = res("inside"), product = res("out"), tailings = res("waste"),
                 carry = massNum("carry", 0L),
                 progress = num("actionProgress", 0L).toInt(),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
             MachineKind.ThermalDecomposer -> ThermalDecomposer(
                 facing = facing(),
-                input = res("in"), inside = res("inside"), product = res("out"),
                 carry = massNum("carry", 0L),
                 progress = num("actionProgress", 0L).toInt(),
                 setTemperature = num("temp", 900L).toInt(),
             )
             MachineKind.Vaporizer -> Vaporizer(
                 facing = facing(),
-                input = res("in"),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Vaporizer(Direction.Right).massPerTick),
             )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
-                input = res("in"), refined = res("out"), slag = res("waste"),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
-            // The record still carries `stored`; it is put straight into the buffer layer, which is
-            // where a storage's contents live now. Format unchanged, so old saves load as they were.
             MachineKind.Storage -> Storage(facing = facing())
-                .also { buffers.put(storageBufferTile(tile), res("stored")) }
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
             // under it, and no colour can be turned back into a piece of geometry that was never laid.
             MachineKind.Sensor -> Sensor(facing = facing())
@@ -956,7 +957,6 @@ object Save {
             )
             MachineKind.Thruster -> Thruster(
                 facing = facing(),
-                input = res("in"),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(Direction.Right).massPerTick),
             )
@@ -973,6 +973,14 @@ object Save {
         // No `k=` field → room-temperature default (from constructor). Old `heat` lines parsed for well-formedness, discarded.
         // ⚠️ `k` is the machine's stored heat, so it takes the ENERGY factor. It rode the mass
         // factor until v14, which was correct only while the two units were locked together.
+        // Its stores, from the fields the record has always used. Claimed before they are filled,
+        // because a store is a thing that exists whether or not it has anything in it — and the
+        // loader is one of the routes that never runs the reducer's claim path.
+        buffers.claimRoles(grid, machine, tile)
+        for (role in bufferRolesOf(machine)) {
+            val store = bufferTile(grid, machine, tile, role) ?: continue
+            buffers.put(store, res(storeKey(machine, role)))
+        }
         val heated = f["k"]?.let { j ->
             machine.withEnergy(readTileEnergy(j, machine, version, energyScale, fail))
         } ?: machine

@@ -371,7 +371,7 @@ class OutofspaceHud {
 
             if (machine == null) return@panel
 
-            val buffers = contentsBreakdown(machine, tile, controller.state.buffers)
+            val buffers = contentsBreakdown(machine, tile, controller.state.grid, controller.state.buffers)
             if (buffers.isEmpty()) {
                 row("(empty)", 0x9A9A9AFFL)
             } else {

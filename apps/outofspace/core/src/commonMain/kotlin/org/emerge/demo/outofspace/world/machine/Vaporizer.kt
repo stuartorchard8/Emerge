@@ -10,7 +10,6 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class Vaporizer(
     override val facing: Direction,
-    val input: Resource? = null,
     val carry: Long = 0L,
     /**
      * Grams per tick at full activation: **one belt-load**.

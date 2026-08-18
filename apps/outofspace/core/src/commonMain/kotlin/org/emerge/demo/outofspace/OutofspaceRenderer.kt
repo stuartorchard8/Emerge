@@ -6,7 +6,10 @@ import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
-import org.emerge.demo.outofspace.world.storageBufferTile
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.inputBufferRole
+import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -626,28 +629,29 @@ class OutofspaceRenderer {
                 // and the rock pass draws over it — see [drawRock].
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Extractor))
                 bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
-                fillBar(x, y, n, m.buffer.mass.toFloat() / Extractor.BUFFER_CAP)
+                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.mass ?: 0L)
+                    .toFloat() / Extractor.BUFFER_CAP)
             }
             is Processor -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
-                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is ThermalDecomposer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.ThermalDecomposer))
-                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Vaporizer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Vaporizer))
-                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Smelter -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
-                fillBar(x, y, n, massIn(m, tile, state.buffers).toFloat() / BUFFER_BAR_FULL)
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is Storage -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Storage))
             // Tank: room-sized fill (legible at distance).
-                val stored = state.buffers.resourceAt(storageBufferTile(tile))
+                val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
                 val level = (stored?.mass ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
                     val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)

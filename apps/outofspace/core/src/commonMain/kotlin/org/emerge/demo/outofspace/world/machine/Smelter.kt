@@ -8,9 +8,6 @@ import org.emerge.demo.outofspace.world.Wiring
 /** A smelter: refined metal out the front, slag out the side. */
 data class Smelter(
     override val facing: Direction,
-    val input: Resource? = null,
-    val refined: Resource? = null,
-    val slag: Resource? = null,
     val carry: Long = 0L,
     /**
      * Grams per tick at full activation: **one belt-load**.

@@ -59,7 +59,13 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
      */
     fun claimRoles(grid: Grid, machine: Machine, centre: TileIndex) {
         for (role in BufferRole.entries) {
-            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            if (localBufferOffset(machine, role) == NO_OFFSET) continue
+            // Loud, because the alternative is a machine that stands but has nowhere to put
+            // anything — and that only shows up as a null far away, in whichever function first
+            // reaches for the store. A store off the edge of the grid means the machine was placed
+            // where its own footprint does not fit.
+            val tile = bufferTile(grid, machine, centre, role)
+                ?: error("$machine at $centre has its $role store off the grid")
             if (!hasRole(tile)) claimRole(tile)
         }
     }

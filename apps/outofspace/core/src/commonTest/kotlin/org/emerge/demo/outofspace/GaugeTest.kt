@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -166,22 +168,28 @@ class GaugeTest {
 
     @Test
     fun `a processor names each of its buffers separately`() {
-        val p = Processor(
-            Direction.Right,
-            input = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0)),
-            inside = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS * 10, energy = 0)),
-            product = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
-            tailings = Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10, energy = 0)),
-        )
-        val rows = contentsBreakdown(p, TileIndex(0), BufferLayer.empty(1))
+        val grid = Grid(5, 5)
+        val centre = grid.tile(2, 2)
+        val p = Processor(Direction.Right)
+        val buffers = BufferLayer.empty(grid.size)
+        buffers.claimRoles(grid, p, centre)
+        for ((role, resource) in listOf(
+            BufferRole.Input to Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0)),
+            BufferRole.Inside to Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS * 10, energy = 0)),
+            BufferRole.Product to Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
+            BufferRole.Waste to Resource(Form.Ore, Mixture.of(Species.Quartz to Capacity.PACKET_MASS * 3 / 10, energy = 0)),
+        )) buffers.put(bufferTile(grid, p, centre, role)!!, resource)
+        val rows = contentsBreakdown(p, centre, grid, buffers)
         assertEquals(listOf("INPUT", "PROCESSING", "CONCENTRATE", "TAILINGS"), rows.map { it.first })
         assertEquals(Capacity.PACKET_MASS * 3 / 10, rows[3].second.mass, "knowing which buffer is stuck is the whole point")
     }
 
     @Test
     fun `machines that hold nothing report nothing rather than a phantom row`() {
-        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right), TileIndex(0), BufferLayer.empty(1)))
-        assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right), TileIndex(0), BufferLayer.empty(1)))
+        val grid = Grid(9, 9)
+        val centre = grid.tile(4, 4)
+        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 
     @Test
