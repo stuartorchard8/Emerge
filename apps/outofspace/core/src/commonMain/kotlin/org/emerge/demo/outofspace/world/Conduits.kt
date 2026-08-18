@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Conduit layers: one List<Segment?> per [Conduit] (rail/pipe/power/signal).
@@ -87,15 +86,9 @@ class Conduits private constructor(
         return this
     }
 
-    /** Whether the segment at [tile] holds every gram its kind is made of — the opposite of a ghost. */
-    fun isComplete(conduit: Conduit, tile: TileIndex): Boolean {
-        if (at(conduit, tile) == null) return false
-        val stuff = tracks[conduit]
-        val bill = conduitBillOfMaterials(conduit)
-        // Per species, and not against a total: a ghost admits a few percent of whatever came with
-        // the material it was fed, so its total mass can pass the bill while its iron is still short.
-        return Species.ALL.all { stuff[tile, it] >= bill[it] }
-    }
+    /** Whether the segment at [tile] holds every gram its kind is made of — see [TrackLayers.holdsFullBill]. */
+    fun isComplete(conduit: Conduit, tile: TileIndex): Boolean =
+        at(conduit, tile) != null && tracks.holdsFullBill(conduit, tile)
 
     /** True for a segment that is laid but not yet made of everything it needs — see [isComplete]. */
     fun isGhost(conduit: Conduit, tile: TileIndex): Boolean =

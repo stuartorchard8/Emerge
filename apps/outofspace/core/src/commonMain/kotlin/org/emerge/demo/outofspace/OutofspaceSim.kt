@@ -1697,10 +1697,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             advanceBridges()
 
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
+            //
+            // A **ghost** is a sink too, and it does not get there by owning a port: a length of
+            // track short of its bill of materials *is* an input, which is what makes a drawn run
+            // build itself. Its own tile is the address, so it overrides whatever else wants
+            // material there — a machine standing over a ghost is simply cut off from the network
+            // until its feed has finished building. See `apps/outofspace/PLAN_self_building_rails.md`.
+            val ghosts = mutableSetOf<TileIndex>()
+            for (i in rails.indices) {
+                val tile = TileIndex(i)
+                if (rails[i] != null && !tracks.holdsFullBill(Conduit.Rail, tile)) ghosts.add(tile)
+            }
             val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
-                .toSet()
+                .toMutableSet()
+            sinks.addAll(ghosts)
             // Sources (bridge far end gives crossing run its own direction).
             val sources = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Output } }

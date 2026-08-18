@@ -52,6 +52,23 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
         return energy
     }
 
+    /**
+     * Whether the tile holds every gram of [conduit]'s bill of materials — the opposite of a ghost.
+     *
+     * ⚠️ **Per species, and never against a total.** A ghost admits a few percent of whatever came
+     * with the material it was fed, so a tile can carry more mass than its bill while still being
+     * short of the one thing it is made of. A total-mass test would call that finished and hand the
+     * player a free length of track.
+     *
+     * The single place the question is answered, so the routing, the ledger and the renderer cannot
+     * drift into three different opinions about which tiles are ghosts.
+     */
+    fun holdsFullBill(conduit: Conduit, tile: TileIndex): Boolean {
+        val stuff = layers[conduit.ordinal]
+        val bill = conduitBillOfMaterials(conduit)
+        return Species.ALL.all { stuff[tile, it] >= bill[it] }
+    }
+
     fun occupies(conduit: Conduit, tile: TileIndex): Boolean = layers[conduit.ordinal].occupies(tile)
 
     fun massAt(conduit: Conduit, tile: TileIndex): Long = layers[conduit.ordinal].massAt(tile)

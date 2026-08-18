@@ -1,6 +1,18 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
@@ -109,5 +121,67 @@ class GhostTest {
 
         assertTrue(s.conduits.massAt(Conduit.Rail, tile) > iron, "the fixture did not make the tile heavier")
         assertFalse(s.conduits.isComplete(Conduit.Rail, tile), "a tile short of its iron passed as finished")
+    }
+
+    // ── A ghost draws material to itself ──────────────────────────────────────
+
+    /**
+     * A tank of iron at (3, 3) pushing onto a run of track from (4, 3) to (7, 3), and nothing at the
+     * far end. The only thing that can make the belt move is a **sink**, and the only candidate is
+     * whatever is at (7, 3).
+     */
+    private fun tankAndRun(ghostAt: Int?): VesselState {
+        val grid = Grid(12, 6)
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(3, 3), Direction.Right)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 7, 3)
+        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
+        val s = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(grid.tile(3, 3), stored)
+        // `Conduits.ofRails` states finished track, so a ghost has to be made by taking the metal
+        // back out — which is exactly the state a drawn run arrives in.
+        if (ghostAt != null) s.conduits.tracks[Conduit.Rail].release(grid.tile(ghostAt, 3))
+        return s
+    }
+
+    private fun onTheRun(s: VesselState): Long =
+        (4..7).sumOf { s.rail.massAt(s.grid.tile(it, 3)) }
+
+    @Test
+    fun `a run of finished track with nothing at the end never advances`() {
+        // The control. Without it the test below proves only that belts work.
+        //
+        // A tank pushes onto its own output tile whether or not anything is drawing, so (4, 3) is
+        // loaded either way and the question is never "did the tank let go". It is whether the load
+        // *travels*, and with no sink anywhere the flow graph gives it nowhere to go.
+        val s = run(tankAndRun(ghostAt = null), RAIL_PERIOD * 8)
+        assertTrue(s.rail.massAt(s.grid.tile(4, 3)) > 0L, "the tank did not even load its own output tile")
+        assertEquals(
+            0L,
+            (5..7).sumOf { s.rail.massAt(s.grid.tile(it, 3)) },
+            "the load travelled down a run with no sink at the end of it",
+        )
+    }
+
+    @Test
+    fun `a ghost at the end of a run draws material down it`() {
+        val s = run(tankAndRun(ghostAt = 7), RAIL_PERIOD * 8)
+        assertTrue(onTheRun(s) > 0L, "the tank held on: a ghost is not pulling as a sink")
+        assertTrue(
+            s.rail.massAt(s.grid.tile(7, 3)) > 0L,
+            "material moved but did not reach the ghost at (7, 3)",
+        )
+    }
+
+    private fun run(state: VesselState, ticks: Int): VesselState {
+        var s = state
+        repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
+        return s
     }
 }
