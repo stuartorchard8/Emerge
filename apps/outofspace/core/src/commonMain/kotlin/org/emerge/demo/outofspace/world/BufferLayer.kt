@@ -95,6 +95,9 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
 
     val totalEnergy: Long get() = stuff.totalEnergy
 
+    /** How many tiles this layer is stated over — must match the world it belongs to. */
+    val tileCount: Int get() = forms.size
+
     fun copyOf(): BufferLayer = BufferLayer(stuff.copyOf(), forms.copyOf())
 
     override fun equals(other: Any?): Boolean =

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
@@ -110,6 +111,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
     }
 
@@ -160,6 +162,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
+                buffers = BufferLayer.forMachines(machines.toList()),
             ),
             480*RAIL_PERIOD,
         )
@@ -192,6 +195,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
+                buffers = BufferLayer.forMachines(machines.toList()),
             ),
             120*RAIL_PERIOD,
         )
@@ -246,6 +250,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
+                buffers = BufferLayer.forMachines(machines.toList()),
             ),
             120*RAIL_PERIOD,
         )
@@ -322,6 +327,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
         s = run(s, 80)
 
@@ -345,6 +351,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
         s = run(s, 120)
 
@@ -379,6 +386,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
         s = run(s, ticksToMove(FEEDSTOCK_MASS))
 
@@ -409,6 +417,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
 
         s = run(s, ticksToMove(Storage.CAP))
@@ -433,14 +442,14 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L, energy = 0))
         val smelter = Smelter(Direction.Right, input = ironOre)
-        var s = VesselState(grid, listOf(smelter, null, null), deck)
+        var s = VesselState(grid, listOf(smelter, null, null), deck, buffers = BufferLayer.forMachines(listOf(smelter, null, null)))
         s = run(s, 20)
         val after = s[TileIndex(0)] as? Smelter
         assertEquals(Form.IronIngot, assertNotNull(after!!.refined).form)
 
         // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
         val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L, energy = 0))
-        var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null), deck)
+        var s2 = VesselState(grid, listOf(after.copy(input = copperOre), null, null), deck, buffers = BufferLayer.forMachines(listOf(after.copy(input = copperOre), null, null)))
         val heldBefore = (s2[TileIndex(0)] as? Smelter)!!.refined!!.mass
         s2 = run(s2, 20)
         val stalled = s2[TileIndex(0)] as? Smelter
@@ -458,7 +467,7 @@ class VesselSimTest {
         m[grid.tile(4, 2).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)   // its input port
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
         s = run(s, RAIL_PERIOD)
         assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
@@ -479,7 +488,7 @@ class VesselSimTest {
         m[grid.tile(4, 2).index] = Processor(Direction.Right, input = ore)   // input port at (3, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
         s = run(s, RAIL_PERIOD * 2)
         assertNotNull(s.railAt(grid.tile(3, 2))?.held, "the ingot should still be waiting on the track")
     }
@@ -514,7 +523,7 @@ class VesselSimTest {
         m[grid.tile(4, 3).index] = machine
 
         rails[grid.tile(1, 2).index] = rails[grid.tile(1, 2).index]!!.copy(held = carried)
-        val s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        val s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
         return run(s, 12*RAIL_PERIOD)
     }
 
@@ -576,7 +585,7 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         val store = Storage(Direction.Right)
         val held = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0))
-        var s = VesselState(grid, listOf(store, null), deck).stocked(TileIndex(0), held)
+        var s = VesselState(grid, listOf(store, null), deck, buffers = BufferLayer.forMachines(listOf(store, null))).stocked(TileIndex(0), held)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))))
         // Compared with its heat put back, because a tick of conduction has moved it: the machine
         // is a thermal body now and radiating for one tick is not the same as being overwritten.
@@ -595,7 +604,7 @@ class VesselSimTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         m[grid.tile(4, 3).index] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList(), deck).stocked(grid.tile(4, 3), stored)
+        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(m.toList())).stocked(grid.tile(4, 3), stored)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(4, 3)))))
         val tank = s[grid.tile(4, 3)] as? Storage
         assertEquals(Direction.Down, tank!!.facing)
@@ -606,7 +615,7 @@ class VesselSimTest {
     fun `edits apply in PlayerId order, not map order`() {
         val grid = Grid(2, 1)
         val deck = DeckArray(grid.size)
-        val base = VesselState(grid, listOf(null, null), deck)
+        val base = VesselState(grid, listOf(null, null), deck, buffers = BufferLayer.forMachines(listOf(null, null)))
         val a = mapOf(
             PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))),
             PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Storage, Direction.Right))),

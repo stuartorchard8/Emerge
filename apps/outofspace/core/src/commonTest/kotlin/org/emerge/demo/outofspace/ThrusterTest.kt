@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -272,6 +273,7 @@ class ThrusterTest {
             machines = machines.toList(),
             deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
     }
 

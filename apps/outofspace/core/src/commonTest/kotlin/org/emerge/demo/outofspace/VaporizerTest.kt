@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
@@ -87,7 +88,7 @@ class VaporizerTest {
             // A volatile, so what comes out is a gas anybody would recognise as one.
             input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)),
         )
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck)
+        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(machines.toList()))
     }
 
     private companion object {

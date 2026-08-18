@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Grid
@@ -118,6 +119,7 @@ class GridVentTest {
             // there is for air — the sum is the invariant.
             vesselImpulseX = -(momX.sum() + pipeMomX.sum()),
             vesselImpulseY = -(momY.sum() + pipeMomY.sum()),
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
     }
 

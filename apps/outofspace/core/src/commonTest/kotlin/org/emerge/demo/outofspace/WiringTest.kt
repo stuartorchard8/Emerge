@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -147,6 +148,7 @@ class WiringTest {
             listOf(Storage(Direction.Right), Sensor(Direction.Left)),
             DeckArray(grid.size),
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
+            buffers = BufferLayer.forMachines(listOf(Storage(Direction.Right), Sensor(Direction.Left))),
         ).stocked(TileIndex(0), stored)
     }
 
@@ -166,6 +168,7 @@ class WiringTest {
             listOf(null, Sensor(Direction.Left)),
             DeckArray(grid.size),
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
+            buffers = BufferLayer.forMachines(listOf(null, Sensor(Direction.Left))),
         )
         s = run(s, 1)
         assertEquals(0, s.signals.at(TileIndex(1)))
@@ -195,7 +198,7 @@ class WiringTest {
             val machines = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid.size)
             val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
-            val s = run(VesselState(grid, machines.toList(), deck, bodies = feed), 4)
+            val s = run(VesselState(grid, machines.toList(), deck, bodies = feed, buffers = BufferLayer.forMachines(machines.toList())), 4)
             return (s[grid.tile(2, 2)] as? Extractor)!!.buffer.mass
         }
         // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_MASS`, which was
@@ -221,7 +224,7 @@ class WiringTest {
         m[grid.tile(8, 3).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList())).stocked(grid.tile(3, 3), stored)
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList())).stocked(grid.tile(3, 3), stored)
 
         s = run(s, RAIL_PERIOD * 8)
         assertEquals(4 * Capacity.PACKET_MASS, s.buffers.resourceAt(grid.tile(3, 3))?.mass, "it let go of nothing")
@@ -269,6 +272,7 @@ class WiringTest {
                 Conduit.Signal to wires.toList(),
             ),
             bodies = feed,
+            buffers = BufferLayer.forMachines(machines.toList()),
         )
 
         // Throttling begins on the very first tick — fullness is continuous, so there is no grace
@@ -320,7 +324,7 @@ class WiringTest {
     fun `wiring edits add, change and remove terms`() {
         val grid = Grid(2, 1)
         val deck = DeckArray(grid.size)
-        val base = VesselState(grid, listOf(Extractor(Direction.Right), null), deck)
+        val base = VesselState(grid, listOf(Extractor(Direction.Right), null), deck, buffers = BufferLayer.forMachines(listOf(Extractor(Direction.Right), null)))
 
         val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(TileIndex(0), Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
         assertEquals(2, added[TileIndex(0)]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
@@ -347,7 +351,7 @@ class WiringTest {
         val grid = Grid(2, 1)
         val wired = Extractor(Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
         val deck = DeckArray(grid.size)
-        var s = VesselState(grid, listOf(wired, null), deck)
+        var s = VesselState(grid, listOf(wired, null), deck, buffers = BufferLayer.forMachines(listOf(wired, null)))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(TileIndex(0)))))
         assertEquals(Direction.Down, (s[TileIndex(0)] as? Extractor)!!.facing)
         assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s[TileIndex(0)]!!.wiring.triggers(Action.Run))
@@ -369,7 +373,7 @@ class WiringTest {
         m[g.tile(3, 3).index] = upstream                  // output port at (4, 3)
         m[g.tile(7, 3).index] = Storage(Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
-        return VesselState(g, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        return VesselState(g, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
             .stocked(g.tile(3, 3), stocked)
     }
 

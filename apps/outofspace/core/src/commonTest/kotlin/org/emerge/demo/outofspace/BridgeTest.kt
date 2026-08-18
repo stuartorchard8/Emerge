@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -81,7 +82,7 @@ class BridgeTest {
             }
         }
         if (bridged) bridges[grid.tile(9, 5).index] = Bridge(Direction.Right)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList())
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList(), buffers = BufferLayer.forMachines(m.toList()))
             .stocked(grid.tile(3, 5), horizontalSupply)
             .stocked(grid.tile(9, 2), ingots)
     }

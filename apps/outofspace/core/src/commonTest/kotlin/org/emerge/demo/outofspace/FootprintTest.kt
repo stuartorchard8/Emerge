@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -174,7 +175,7 @@ class FootprintTest {
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()))
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
             .stocked(grid.tile(2, 6), ingots)
     }
 
@@ -223,6 +224,7 @@ class FootprintTest {
                     grid.size,
                     org.emerge.demo.outofspace.world.Conduit.Signal to wires.toList(),
                 ),
+                buffers = BufferLayer.forMachines(m.toList()),
             ).stocked(grid.tile(6, 6), stored),
             2,
         )
@@ -250,7 +252,7 @@ class FootprintTest {
                     else -> Smelter(Direction.Right)
                 }
             }
-            return VesselState(grid, m.toList(), deck)
+            return VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(m.toList()))
         }
         val small = room(MachineKind.Processor).storedEnergy
         val large = room(MachineKind.Smelter).storedEnergy

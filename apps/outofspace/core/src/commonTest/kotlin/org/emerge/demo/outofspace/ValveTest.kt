@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_PERIOD
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
@@ -100,7 +101,7 @@ class ValveTest {
 
     /** A pipe run across the middle of a pressurised hull, with one valve on it. */
     private fun plumbed(valveX: Int = 6, y: Int = 6): VesselState {
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled())
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(arrayOfNulls<Machine>(grid.size).toList()))
         s = pipeRun(s, y, 4, 15)
         return valveAt(s, grid.tile(valveX, y))
     }
@@ -163,11 +164,11 @@ class ValveTest {
      */
     @Test
     fun `the valve brush lays its own pipe on bare deck and opens one that is already there`() {
-        val bare = valveAt(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled()), grid.tile(6, 6))
+        val bare = valveAt(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(arrayOfNulls<Machine>(grid.size).toList())), grid.tile(6, 6))
         val laid = bare.conduits.at(Conduit.Pipe, grid.tile(6, 6))
         assertTrue(laid != null && laid.isValve, "the brush laid nothing on bare deck")
 
-        var run = pipeRun(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled()), 6, 4, 15)
+        var run = pipeRun(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(arrayOfNulls<Machine>(grid.size).toList())), 6, 4, 15)
         val before = run.conduits.at(Conduit.Pipe, grid.tile(6, 6))!!
         assertTrue(!before.isValve, "the fixture laid a run that was already open")
         run = valveAt(run, grid.tile(6, 6))
@@ -196,7 +197,7 @@ class ValveTest {
 
     @Test
     fun `a sealed pipe run with no valve on it still takes nothing`() {
-        val s = pipeRun(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled()), 6, 4, 15)
+        val s = pipeRun(VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(arrayOfNulls<Machine>(grid.size).toList())), 6, 4, 15)
         val after = run(s, 200)
 
         assertEquals(0L, after.pipeAir.totalMass, "gas got into a pipe with no way in")
@@ -283,7 +284,7 @@ class ValveTest {
     fun `a mirrored pair of valves fills a mirrored pair of pipes the same`() {
         val axis = grid.width / 2
         val y = 6
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled())
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(arrayOfNulls<Machine>(grid.size).toList()))
         // Two separate runs, one either side of the axis, each with its own valve at the same
         // distance out. Midships rather than at the bow: the rim is where transport asymmetries
         // live, and this test is about the exchange rather than about the boundary.

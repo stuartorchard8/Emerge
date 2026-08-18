@@ -57,8 +57,18 @@ data class VesselState(
     /**
      * Every machine buffer aboard — input, output, waste and processing stores alike, on one layer
      * keyed by the tile the store stands on. See [BufferLayer] for why one layer suffices.
+     *
+     * ⚠️ **Required, and deliberately so.** It defaulted to `BufferLayer.forMachines(machines)`, and
+     * that default was silent in the one direction that matters: code which *built* a layer and then
+     * forgot to pass it got back a perfectly well-formed world with every store standing, correctly
+     * claimed, and **empty**. The save loader did exactly that and quietly emptied every tank in the
+     * game; nothing threw, and two assertions were the only evidence. Everywhere else in this
+     * storage migration a missing layer is a compile error, and now it is here too.
+     *
+     * Fixtures that genuinely do not care still say [BufferLayer.forMachines] — the point is that
+     * they say it.
      */
-    val buffers: BufferLayer = BufferLayer.forMachines(machines),
+    val buffers: BufferLayer,
     /**
      * The conduit layers — one grid of segments per network, sharing tiles freely with the deck
      * beneath and with each other.
@@ -420,6 +430,11 @@ data class VesselState(
         require(conduits.tileCount == grid.size) {
             "conduit layers are ${conduits.tileCount}, grid holds ${grid.size}"
         }
+        // Making `buffers` explicit trades one silent failure for a smaller one: a caller can now
+        // hand over a layer derived from a *different* machine list. Sizes catch the careless case.
+        require(buffers.tileCount == grid.size) {
+            "buffer layer is ${buffers.tileCount}, grid holds ${grid.size}"
+        }
     }
 
     /**
@@ -767,7 +782,10 @@ data class VesselState(
          */
         val PLATING_ONE_G: Frac2 = Frac2(Frac(0L, 1), Frac(1L, 1))
 
-        fun empty(grid: Grid): VesselState = VesselState(grid, List(grid.size) { null }, DeckArray(grid.size))
+        fun empty(grid: Grid): VesselState {
+            val machines = List<Machine?>(grid.size) { null }
+            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(machines))
+        }
     }
 }
 
