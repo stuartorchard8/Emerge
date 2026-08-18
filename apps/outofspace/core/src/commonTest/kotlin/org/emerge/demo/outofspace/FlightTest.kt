@@ -323,7 +323,7 @@ class FlightTest {
     /** A hull with no air in it, so a burn is arithmetic rather than a measurement. */
     private fun vacuumHull(grid: Grid, ballast: Boolean): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
@@ -340,7 +340,7 @@ class FlightTest {
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
     private fun bareHull(grid: Grid): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }

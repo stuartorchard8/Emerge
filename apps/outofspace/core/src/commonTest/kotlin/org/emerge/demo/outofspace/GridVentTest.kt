@@ -66,7 +66,7 @@ class GridVentTest {
     private fun gassyWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 6..10) {
             deck += Hull(grid.tile(x, 4))
             deck += Hull(grid.tile(x, 8))

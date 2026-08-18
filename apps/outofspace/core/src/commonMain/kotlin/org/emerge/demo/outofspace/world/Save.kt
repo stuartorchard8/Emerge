@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
@@ -120,7 +121,7 @@ object Save {
         }
         for (tile in state.grid.tiles) {
             val m = state.deck[tile] ?: continue
-            out.append("deckmachine ").append(tile.index).append(' ').append(writeDeckMachine(m))
+            out.append("deckmachine ").append(tile.index).append(' ').append(writeDeckMachine(m, state.grid, state.buffers))
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
@@ -247,7 +248,7 @@ object Save {
      * pooled store is `stored`. Kept exactly as they were, so the storage migration does not
      * invalidate a single save.
      */
-    private fun storeKey(m: Machine, role: BufferRole): String = when {
+    private fun storeKey(m: Placed, role: BufferRole): String = when {
         m is Storage -> "stored"
         m is Extractor -> if (role == BufferRole.Inside) "in" else "buffer"
         role == BufferRole.Input -> "in"
@@ -322,7 +323,7 @@ object Save {
         return f.toString()
     }
 
-    private fun writeDeckMachine(m: DeckMachine): String {
+    private fun writeDeckMachine(m: DeckMachine, grid: Grid, buffers: BufferLayer): String {
         val f = StringBuilder(m.kind.name)
         fun put(key: String, value: String?) {
             if (value != null) f.append(' ').append(key).append('=').append(value)
@@ -332,6 +333,16 @@ object Save {
             // An airlock is its wiring, and the common code around this writes that.
             is Hull, is Airlock -> {}
             is Vent -> put("vented", m.ventedMass.toString())
+            // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
+            // the store loop below writes them under the key the record has always used.
+            is Storage -> {}
+        }
+        // The same store loop the machine record has, and it is not optional: a deck machine's
+        // buffers are on the same layer under the same keys, and leaving it out wrote a warehouse
+        // back empty while the record itself looked perfectly well-formed.
+        for (role in bufferRolesOf(m)) {
+            val store = bufferTile(grid, m, m.center, role) ?: continue
+            put(storeKey(m, role), buffers.resourceAt(store)?.let { writeResource(it) })
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -543,7 +554,7 @@ object Save {
         if (grid.size <= 0) throw SaveError("line $gridLine: grid has no tiles")
 
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val buffers = BufferLayer.empty(grid.size)
         val rail = RailLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
@@ -662,9 +673,10 @@ object Save {
                         // machine comes back at ambient and the thermal ledger reports the
                         // difference on the first tick after the load.
                         readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
-                            val each = total / dm.tiles.size
-                            for (tile in dm.tiles) deck.stuff.setEnergy(tile, each)
-                            deck.stuff.addEnergy(dm.center, total % dm.tiles.size)
+                            val tiles = dm.tiles(grid)
+                            val each = total / tiles.size
+                            for (tile in tiles) deck.stuff.setEnergy(tile, each)
+                            deck.stuff.addEnergy(dm.center, total % tiles.size)
                         }
                     }
                 }
@@ -672,7 +684,7 @@ object Save {
                     val t = tile(1)
                     if (machines[t.index] != null) fail("two machines at tile $t")
                     if (deck[t] != null) fail("two machines at tile $t")
-                    deck += readDeckMachine(tokens.drop(2), version, t, scale, energyScale, ::fail)
+                    deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                 }
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
@@ -928,7 +940,7 @@ object Save {
     ): Pair<Machine?, DeckMachine?> {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
         if (kindName in DeckMachineKind.ALL.map { it.toString() }) {
-            return null to readDeckMachine(tokens, version, tile, scale, energyScale, fail)
+            return null to readDeckMachine(tokens, version, tile, grid, buffers, scale, energyScale, fail)
         }
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
@@ -1002,7 +1014,6 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
-            MachineKind.Storage -> Storage(facing = facing())
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
             // under it, and no colour can be turned back into a piece of geometry that was never laid.
             MachineKind.Sensor -> Sensor(facing = facing())
@@ -1046,6 +1057,8 @@ object Save {
         tokens: List<String>,
         version: Int,
         tile: TileIndex,
+        grid: Grid,
+        buffers: BufferLayer,
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
@@ -1085,11 +1098,19 @@ object Save {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
+            DeckMachineKind.Storage -> Storage(tile, facing())
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted
         // to running would come back from a hand-written save wide open.
         val wiring = f["wire"]?.let { readWiring(it, fail) } ?: machine.wiring
+        // Claimed and filled exactly as the machine record's are — see the twin in [readMachine]
+        // for why claiming is separate from filling.
+        buffers.claimRoles(grid, machine, tile)
+        for (role in bufferRolesOf(machine)) {
+            val store = bufferTile(grid, machine, tile, role) ?: continue
+            buffers.put(store, res(storeKey(machine, role)))
+        }
         return machine.withWiring(wiring)
     }
 

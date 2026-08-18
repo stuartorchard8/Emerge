@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world.machine
 import org.emerge.demo.outofspace.num.Budget
 
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -23,14 +24,14 @@ import org.emerge.demo.outofspace.world.Wiring
  * up to and point at, and blowing a hole beside a full warehouse costs you the contents.
  */
 data class Storage(
+    override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Storage),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Storage
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Storage
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
         /**

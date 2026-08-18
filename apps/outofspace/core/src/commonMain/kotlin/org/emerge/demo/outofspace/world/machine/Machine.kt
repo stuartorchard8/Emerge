@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.size
@@ -25,9 +26,37 @@ import org.emerge.demo.outofspace.world.size
  * [org.emerge.demo.outofspace.logistics.Rate] with the fraction kept in each machine's own `carry`.
  * Carry is machine state and not a global precisely so it survives a save.
  */
-sealed interface Machine {
-    val kind: MachineKind
+/**
+ * Anything the player has **put on a tile** — whichever list it lives on.
+ *
+ * The two hierarchies differ in where their matter is kept ([Machine] on itself, [DeckMachine] in
+ * the deck layer) and in nothing else that the code around them cares about. Ports, buffer roles and
+ * contents are geometry: they need a footprint, a facing and a centre, and both kinds have all
+ * three. Without this supertype every one of those functions would need a second copy per hierarchy,
+ * kept in agreement by hand, for as long as the migration takes — and the migration is a kind at a
+ * time by design.
+ *
+ * [reach] and [turns] rather than `kind` and `facing`, because those are the two things the shared
+ * code actually asks: how far the footprint goes, and how many quarter-turns from the canonical
+ * facing-Right frame its offsets need. The kind enums are genuinely different types; these two
+ * numbers are the same fact stated by both.
+ */
+sealed interface Placed {
     val wiring: Wiring
+
+    /** Half-width of the footprint — see [MachineKind.reach]. */
+    val reach: Int
+
+    /** Quarter-turns clockwise from the facing-Right frame. Zero for anything that does not face. */
+    val turns: Int
+}
+
+sealed interface Machine : Placed {
+    val kind: MachineKind
+    override val wiring: Wiring
+
+    override val reach: Int get() = kind.reach
+    override val turns: Int get() = (this as? Directed)?.facing?.ordinal ?: 0
 
     /**
      * How much thermal energy this machine is holding, in the millijoules [org.emerge.demo.outofspace.world.Material] documents —

@@ -7,6 +7,7 @@ import org.emerge.demo.outofspace.world.machine.Directed
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -61,8 +62,8 @@ private data class LocalPort(
 /**
  * Machine connection points in local frame, rotated into world. Unrotated definition (one variant per machine, not per orientation).
  */
-private fun localPorts(machine: Machine): List<LocalPort> {
-    val r = machine.kind.reach
+private fun localPorts(machine: Placed): List<LocalPort> {
+    val r = machine.reach
     return when (machine) {
         // Bridge: 3 tiles, connects at ends.
         is Bridge -> listOf(
@@ -96,10 +97,23 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         // bought nothing: two lines arriving at one tank is a merge, and a merge is something the
         // player should have to build out of track where they can see it, not something a building
         // does for them out of sight.
-        is Storage, is ThermalDecomposer -> listOf(
+        is ThermalDecomposer -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )
+
+        // A vent is a hole. It takes whatever is put into it, from whichever face.
+        is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
+
+        // In one side, out the other, like everything else. The second input it used to have on top
+        // bought nothing: two lines arriving at one tank is a merge, and a merge is something the
+        // player should have to build out of track where they can see it, not something a building
+        // does for them out of sight.
+        is Storage -> listOf(
+            LocalPort(-r, 0, Direction.Left, PortKind.Input),
+            LocalPort(r, 0, Direction.Right, PortKind.Output),
+        )
+        is Hull, is Airlock -> emptyList()
 
         // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
         // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
@@ -107,17 +121,10 @@ private fun localPorts(machine: Machine): List<LocalPort> {
         is Sensor, is WireButton, is Pump -> emptyList()
     }
 }
-private fun localPorts(machine: DeckMachine): List<LocalPort> {
-    return when (machine) {
-        // A vent is a hole. It takes whatever is put into it, from whichever face.
-        is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
-        is Hull, is Airlock -> emptyList()
-    }
-}
 
 /** The ports of the machine stored at [centreTile], in world tiles. Empty if it has none or is clipped. */
-fun portsOf(grid: Grid, machine: Machine, centreTile: TileIndex): List<Port> {
-    val turns = (machine as? Directed)?.facing?.ordinal ?: 0
+fun portsOf(grid: Grid, machine: Placed, centreTile: TileIndex): List<Port> {
+    val turns = machine.turns
     val cx = grid.xOf(centreTile)
     val cy = grid.yOf(centreTile)
     val out = ArrayList<Port>(4)
@@ -136,37 +143,21 @@ fun portsOf(grid: Grid, machine: Machine, centreTile: TileIndex): List<Port> {
         val x = cx + dx
         val y = cy + dy
         if (grid.inBounds(x, y)) {
-            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, machine is Bridge))
+            out.add(
+                Port(
+                    grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile,
+                    fromBridge = machine is Bridge,
+                    fromDeck = machine is DeckMachine,
+                )
+            )
         }
     }
     return out
 }
-fun portsOf(grid: Grid, machine: DeckMachine): List<Port> {
-    val turns = (machine as? Directed)?.facing?.ordinal ?: 0
-    val centreTile = machine.center
-    val cx = grid.xOf(centreTile)
-    val cy = grid.yOf(centreTile)
-    val out = ArrayList<Port>(4)
-    for (p in localPorts(machine)) {
-        var dx = p.dx
-        var dy = p.dy
-        var side = p.side
-        // Direction's declaration order is clockwise, so facing.ordinal is exactly how many quarter
-        // turns to apply. (dx, dy) -> (-dy, dx) is that turn with +y pointing down the screen.
-        repeat(turns) {
-            val nx = -dy
-            dy = dx
-            dx = nx
-            side = side.clockwise
-        }
-        val x = cx + dx
-        val y = cy + dy
-        if (grid.inBounds(x, y)) {
-            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, fromDeck = true))
-        }
-    }
-    return out
-}
+/**
+ * The ports of a deck machine, which knows where it stands — see the twin above for the rest.
+ */
+fun portsOf(grid: Grid, machine: DeckMachine): List<Port> = portsOf(grid, machine, machine.center)
 
 /**
  * The port of [conduit] that this machine exposes at [tile], if any.

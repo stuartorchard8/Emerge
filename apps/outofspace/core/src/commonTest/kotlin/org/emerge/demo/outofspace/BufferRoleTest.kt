@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -36,9 +37,9 @@ class BufferRoleTest {
     private val grid = Grid(21, 21)
     private val centre get() = grid.tile(10, 10)
 
-    private fun kinds(facing: Direction): List<Machine> = listOf(
+    private fun kinds(facing: Direction): List<Placed> = listOf(
         Extractor(facing), Vaporizer(facing), Thruster(facing),
-        Processor(facing), Smelter(facing), ThermalDecomposer(facing), Storage(facing),
+        Processor(facing), Smelter(facing), ThermalDecomposer(facing), Storage(centre, facing),
     )
 
     @Test
@@ -77,7 +78,7 @@ class BufferRoleTest {
     @Test
     fun `every store lies inside its own machine's footprint`() {
         for (facing in Direction.ALL) for (m in kinds(facing)) {
-            val r = m.kind.reach
+            val r = m.reach
             for (role in bufferRolesOf(m)) {
                 val tile = bufferTile(grid, m, centre, role)!!
                 val dx = grid.xOf(tile) - grid.xOf(centre)

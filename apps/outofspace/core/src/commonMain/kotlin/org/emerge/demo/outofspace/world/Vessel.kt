@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
@@ -460,7 +461,7 @@ data class VesselState(
      * Derived rather than stored, for the same reason [structure] is — a cached copy is one more
      * thing that can disagree with the world, and this is cheap to fold.
      */
-    val stockpile: Stockpile get() = Stockpile.of(grid, machines, buffers)
+    val stockpile: Stockpile get() = Stockpile.of(grid, deck, buffers)
 
     /**
      * Where the air is going, tile by tile — see [FlowField].
@@ -798,7 +799,7 @@ data class VesselState(
 
         fun empty(grid: Grid): VesselState {
             val machines = List<Machine?>(grid.size) { null }
-            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(grid, machines), RailLayer.empty(grid.size))
+            return VesselState(grid, machines, DeckArray(grid), BufferLayer.forMachines(grid, machines), RailLayer.empty(grid.size))
         }
     }
 }
@@ -808,7 +809,7 @@ data class VesselState(
  * separate. Defined in terms of [contentsBreakdown] so there is exactly one list of "where a machine
  * keeps things" — a second one would drift, and the drift would look like a conservation bug.
  */
-fun spoilsOf(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Resource> =
+fun spoilsOf(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Resource> =
     contentsBreakdown(machine, centre, grid, buffers).map { it.second }.filter { !it.isEmpty }
 
 /**
@@ -818,7 +819,7 @@ fun spoilsOf(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLa
  * no longer has to be extended when a machine gains a buffer. A [Bridge] is the one exception, since
  * what it holds is packets in transit rather than a store.
  */
-fun massIn(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Long = when (machine) {
+fun massIn(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Long = when (machine) {
     null -> 0L
     is Bridge -> machine.mass
     else -> {
@@ -838,7 +839,7 @@ fun massIn(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLaye
  * capacity differs by kind (a belt's is its slots, a storage's is its tank), which is the point: the
  * question a sensor asks is "is this backing up?", not "how much mass".
  */
-fun fullness(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Int = when (machine) {
+fun fullness(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Int = when (machine) {
     null -> 0
     is Bridge -> machine.carried.size * SignalField.FULL / Bridge.SLOTS
     // An extractor reads on its output buffer alone: what is in the jaws is a whole cell of rock and
@@ -864,7 +865,7 @@ fun fullness(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLa
  * smelter's [BufferRole.Waste] is slag and a processor's is tailings, and telling the player
  * "WASTE" for both would throw away the only word that says which machine they are looking at.
  */
-private fun labelOf(machine: Machine, role: BufferRole): String = when (machine) {
+private fun labelOf(machine: Placed, role: BufferRole): String = when (machine) {
     is Extractor -> if (role == BufferRole.Inside) "CRUSHING" else "BUFFER"
     is Storage -> "STORED"
     is Thruster -> "PROPELLANT"
@@ -887,7 +888,7 @@ private fun labelOf(machine: Machine, role: BufferRole): String = when (machine)
  * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
-fun contentsBreakdown(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
+fun contentsBreakdown(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
     null -> emptyList()
     // Slot by slot, input end first: "which end of the span is it on" is the only thing worth
     // knowing about a bridge, and one lump labelled IN TRANSIT could not say it.
@@ -905,7 +906,7 @@ fun contentsBreakdown(machine: Machine?, centre: TileIndex, grid: Grid, buffers:
 }
 
 /** Everything a machine holds, species by species — the finer-grained version of [massIn]. */
-fun contentsOf(machine: Machine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Mixture = when (machine) {
+fun contentsOf(machine: Placed?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Mixture = when (machine) {
     null -> Mixture.EMPTY
     is Bridge -> machine.carried.fold(Mixture.EMPTY) { acc, p -> acc + p.contents }
     else -> {
@@ -989,7 +990,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     // is remapped in two passes rather than one. `+=` seeds a freshly placed machine at ambient, and
     // this machine is not freshly placed: the stores are copied over the seed afterwards, which is
     // also the only order in which `+=`'s "nothing here yet" requirement can hold.
-    val newDeck = DeckArray(newGrid.size)
+    val newDeck = DeckArray(newGrid)
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val m = deck[grid.tile(ox, oy)] ?: continue
         val ni = remapTile(ox, oy) ?: continue

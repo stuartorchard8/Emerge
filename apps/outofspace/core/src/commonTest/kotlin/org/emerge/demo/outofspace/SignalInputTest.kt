@@ -60,7 +60,7 @@ class SignalInputTest {
     /** One button on one run of wire, going nowhere in particular. */
     private fun rig(key: InputKey = InputKey.Up): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         machines[grid.tile(buttonAt.first, buttonAt.second).index] = WireButton(key)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, buttonAt.first, farEnd.first, buttonAt.second)
@@ -107,7 +107,7 @@ class SignalInputTest {
     @Test
     fun `holding two keys drives both their buttons`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         machines[grid.tile(2, 2).index] = WireButton(InputKey.Left)
         machines[grid.tile(2, 6).index] = WireButton(InputKey.Right)
         val wires = arrayOfNulls<Segment>(grid.size)
@@ -126,7 +126,7 @@ class SignalInputTest {
     @Test
     fun `a button with no wire under it is harmless`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         machines[grid.tile(2, 4).index] = WireButton(InputKey.Up)
         val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
@@ -155,7 +155,7 @@ class SignalInputTest {
         val w = 8
         val h = 8
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))

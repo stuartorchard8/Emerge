@@ -124,7 +124,7 @@ class SignalWireTest {
     fun `wire displaces nothing`() {
         fun room(): VesselState {
             val machines = arrayOfNulls<Machine>(grid.size)
-            val deck = DeckArray(grid.size)
+            val deck = DeckArray(grid)
             for (x in 1 until grid.width - 1) {
                 deck += Hull(grid.tile(x, 1))
                 deck += Hull(grid.tile(x, grid.height - 2))

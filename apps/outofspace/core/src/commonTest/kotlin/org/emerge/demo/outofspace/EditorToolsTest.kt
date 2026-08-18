@@ -43,10 +43,10 @@ class EditorToolsTest {
     /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
     private fun layered(): OutofspaceController {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 2..10) { deck += Hull(grid.tile(x, 2)); deck += Hull(grid.tile(x, 8)) }
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
-        machines[grid.tile(6, 5).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(6, 5), Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)))
         c.brush = MachineKind.Rail
         c.dragTo(grid.tile(5, 5))
@@ -69,14 +69,14 @@ class EditorToolsTest {
         val tile = grid.tile(6, 5)
         assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the fixture built no rail")
         assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "the fixture built no pipe")
-        assertTrue(c.state[tile] as? Storage != null, "the fixture built no tank")
+        assertTrue(c.state.deck[tile] as? Storage != null, "the fixture built no tank")
 
         c.removeAt(tile, DeleteLayer.Pipe)
         c.stepOnce()
 
         assertNull(c.state.conduits[Conduit.Pipe][tile.index], "the pipe survived being named")
         assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the rail came off with the pipe")
-        assertTrue(c.state[tile] as? Storage != null, "the tank came off with the pipe")
+        assertTrue(c.state.deck[tile] as? Storage != null, "the tank came off with the pipe")
     }
 
     /** The deck can be reached through what is threaded over it, which TOP could never do in one go. */
@@ -88,7 +88,7 @@ class EditorToolsTest {
         c.removeAt(at, DeleteLayer.Deck)
         c.stepOnce()
 
-        assertNull(c.state[at], "the tank is still there")
+        assertNull(c.state.deck[at], "the tank is still there")
         assertNotNull(c.state.conduits[Conduit.Rail][at.index], "the rail went with it")
         assertNotNull(c.state.conduits[Conduit.Pipe][at.index], "the pipe went with it")
     }
@@ -101,7 +101,7 @@ class EditorToolsTest {
         c.removeAt(at, DeleteLayer.All)
         c.stepOnce()
 
-        assertNull(c.state[at])
+        assertNull(c.state.deck[at])
         assertNull(c.state.conduits[Conduit.Rail][at.index])
         assertNull(c.state.conduits[Conduit.Pipe][at.index])
     }
@@ -120,16 +120,16 @@ class EditorToolsTest {
         c.stepOnce()
         assertNull(c.state.conduits[Conduit.Rail][tile.index], "rail is the first conduit layer, so it goes first")
         assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "two layers came off in one click")
-        assertTrue(c.state[tile] is Storage)
+        assertTrue(c.state.deck[tile] is Storage)
 
         c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
         assertNull(c.state.conduits[Conduit.Pipe][tile.index])
-        assertTrue(c.state[tile] is Storage, "the tank came off before its fittings had")
+        assertTrue(c.state.deck[tile] is Storage, "the tank came off before its fittings had")
 
         c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
-        assertNull(c.state[tile])
+        assertNull(c.state.deck[tile])
     }
 
     // ── the bellows ────────────────────────────────────────────────────────────────

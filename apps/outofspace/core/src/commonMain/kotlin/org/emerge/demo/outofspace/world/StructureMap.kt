@@ -71,7 +71,7 @@ class StructureMap(private val kinds: ByteArray) {
                 if (m.kind.isPermeable) continue
                 if ((openness?.get(tile.index) ?: 0) > 0) continue
                 val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
-                for (t in m.tiles) kinds[t.index] = kind.ordinal.toByte()
+                for (t in m.tiles(grid)) kinds[t.index] = kind.ordinal.toByte()
             }
 
             // Breadth-first from the border. An explicit stack rather than recursion: a 48x28 grid is

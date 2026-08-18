@@ -59,15 +59,15 @@ class BridgeTest {
      */
     private fun crossing(bridged: Boolean = false, horizontalSupply: Resource? = ingots): VesselState {
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val bridges = arrayOfNulls<Bridge>(grid.size)
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
         // send, anything arriving at its tank must have come off the *other* line.
-        m[grid.tile(3, 5).index] = Storage(Direction.Right)   // out at (4, 5)
-        m[grid.tile(15, 5).index] = Storage(Direction.Right)             // in at (14, 5)
-        m[grid.tile(9, 2).index] = Storage(Direction.Down)       // out at (9, 3)
-        m[grid.tile(9, 9).index] = Storage(Direction.Down)               // in at (9, 8)
+        deck += Storage(grid.tile(3, 5), Direction.Right)   // out at (4, 5)
+        deck += Storage(grid.tile(15, 5), Direction.Right)             // in at (14, 5)
+        deck += Storage(grid.tile(9, 2), Direction.Down)       // out at (9, 3)
+        deck += Storage(grid.tile(9, 9), Direction.Down)               // in at (9, 8)
 
         val track = rails(grid) {
             col(9, 3, 8)

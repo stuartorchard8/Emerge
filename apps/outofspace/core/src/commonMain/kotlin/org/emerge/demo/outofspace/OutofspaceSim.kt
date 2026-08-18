@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.machine.Directed
+import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.growToFit
 import org.emerge.demo.outofspace.world.Grid
@@ -48,6 +49,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.machine.MachineKind
@@ -177,7 +179,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
                             val seen = if (target == TileIndex.NONE) TileIndex.NONE else w.originOf[target]
-                            if (seen != TileIndex.NONE) raise(tile, fullness(w[seen], seen, w.grid, w.buffers))
+                            // Either list: a sensor looks at whatever building is there, and a
+                            // warehouse — the thing sensors are most often pointed at — stands on
+                            // the deck. `w[seen]` cannot answer this, since its reified lookup
+                            // resolves one hierarchy or the other and would read a tank as absent.
+                            if (seen != TileIndex.NONE) {
+                                val target: Placed? = w.machines.getOrNull(seen.index) ?: w.deck[seen]
+                                raise(tile, fullness(target, seen, w.grid, w.buffers))
+                            }
                         }
                         // A finger on a key, on the same footing as any other transmitter.
                         is WireButton -> if (InputKey.heldIn(heldKeys, m.key)) raise(tile, SignalField.FULL)
@@ -207,14 +216,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Smelter -> w.melt(cfg, m, activation, tile)
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
-                    is Bridge, is Pump, is Sensor, is Storage, is WireButton -> m
+                    is Bridge, is Pump, is Sensor, is WireButton -> m
                 }
             }
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Hull, is Airlock, is Vent -> m
+                    is Hull, is Airlock, is Vent, is Storage -> m
                 }
             }
         }
@@ -250,7 +259,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     w[tile] = m.withEnergy(m.energy.plusEnergySpread(added))
                 } else {
                     val dm : DeckMachine? = w[tile]
-                    dm?.addEnergySpread(added, w.deck)
+                    dm?.addEnergySpread(added, w.grid, w.deck)
                 }
             }
             val bodies = bodiesOf(state.grid, w.machines, w.conduitsSnapshot(), w.bridges, w.deck, w.buffers)
@@ -1211,6 +1220,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val tile = originAt(edit.tile) ?: return
                     val m = machines[tile.index]
                     if (m is Directed) machines[tile.index] = m.rotated()
+                    // The same for the deck. A turned machine keeps its tiles — footprints are
+                    // square — so this moves its ports and nothing else, and `set` leaves the
+                    // stores and the casing exactly where they were.
+                    val dm = deck[tile]
+                    if (dm is DirectedDeckMachine) deck[tile] = dm.rotated()
                 }
                 is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
@@ -1317,8 +1331,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The deck layer is the same click. Its energy is in the dense array rather than on the
             // object, so it is read *before* the removal — `-=` zeroes the stores on its way out.
             val deckMachine = deck[origin] ?: return false
-            for (t in deckMachine.tiles) originOf[t] = TileIndex.NONE
-            scrapped(deckMachine.energy(deck.stuff).sum())
+            for (t in deckMachine.tiles(grid)) originOf[t] = TileIndex.NONE
+            scrapped(deckMachine.energy(grid, deck.stuff).sum())
             deck -= origin
             return true
         }
@@ -1438,7 +1452,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
 
             deck += built
-            built(built.energy(deck.stuff).sum())
+            built(built.energy(grid, deck.stuff).sum())
             for (t in covered) originOf[t] = tile
         }
 
@@ -1608,7 +1622,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // part of the conduit step -- see [depositFromBridge].
             if (port.fromBridge) return
 
-            val m = machines[port.owner.index] ?: return
+            // Either list — a warehouse stands on the deck, and its output port is the one that
+            // most needs this: a tank that cannot push is a tank that silently swallows a line.
+            val m = machines[port.owner.index] ?: deck[port.owner] ?: return
             // A storage only lets go while its RUN activation is positive, which is what turns it
             // from a bucket into a valve the moment you wire something to it.
             if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
@@ -1645,13 +1661,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Which of a machine's buffers drains through [port]. */
-        private fun bufferFor(m: Machine, port: Port): Resource? {
+        private fun bufferFor(m: Placed, port: Port): Resource? {
             val role = outputBufferRole(m, port.stream) ?: return null
             return buffers.resourceAt(bufferTile(grid, m, port.owner, role) ?: return null)
         }
 
         /** Write back what is left in the buffer that drained through [port]. */
-        private fun drained(m: Machine, port: Port, rest: Resource?) {
+        private fun drained(m: Placed, port: Port, rest: Resource?) {
             val role = outputBufferRole(m, port.stream) ?: return
             buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
         }
@@ -1786,12 +1802,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         destination.copy(ventedMass = destination.ventedMass + packet.mass)
                     true
                 }
+                // A warehouse takes any form and fills to its tank — the one kind that does, and
+                // the whole of what "storage" means here. Everything else about the delivery is the
+                // machine-list path's, so it is done by the same two calls.
+                is Storage -> {
+                    val role = inputBufferRole(destination) ?: return false
+                    val store = bufferTile(grid, destination, destination.center, role) ?: return false
+                    val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
+                    buffers.put(store, merged)
+                    true
+                }
                 is Hull, is Airlock -> false
             }
         }
 
         /** The new input buffer if [packet] is acceptable, else null. */
-        private fun acceptInto(destination: Machine, existing: Resource?, packet: Packet): Resource? {
+        private fun acceptInto(destination: Placed, existing: Resource?, packet: Packet): Resource? {
             if (packet !is SolidPacket) return null
             // A warehouse takes any form and fills to its tank; a working machine takes ore only,
             // one lump at a time. That difference is the whole of what "storage" means here.
@@ -1813,7 +1839,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
             MachineKind.Vaporizer -> Vaporizer(facing)
             MachineKind.Smelter -> Smelter(facing)
-            MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.KeyInput -> WireButton()
             MachineKind.Thruster -> Thruster(facing)
@@ -1827,6 +1852,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile)
+            DeckMachineKind.Storage -> Storage(tile, facing)
         }
     }
 }

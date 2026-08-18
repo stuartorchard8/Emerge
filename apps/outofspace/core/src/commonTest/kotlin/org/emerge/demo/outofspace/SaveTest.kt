@@ -292,7 +292,7 @@ class SaveTest {
     @Test
     fun `two runs that cross without touching still do after a reload`() {
         val grid = Grid(8, 8)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         fun lay(x: Int, y: Int) { rails[grid.tile(x, y).index] = rails[grid.tile(x, y).index] ?: Segment(org.emerge.demo.outofspace.world.Conduit.Rail) }
         fun join(a: TileIndex, b: TileIndex, dir: Direction) {
@@ -314,7 +314,7 @@ class SaveTest {
     @Test
     fun `both layers of a crossing survive a save`() {
         val grid = Grid(8, 6)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val pipes = arrayOfNulls<Segment>(grid.size)
         val crossing = grid.tile(4, 3)
@@ -365,7 +365,7 @@ class SaveTest {
     @Test
     fun `a gauge keeps that it is one, and its last reading`() {
         val grid = Grid(6, 4)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0))
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
@@ -385,7 +385,7 @@ class SaveTest {
     fun `a machine keeps its wiring, its buffers and its fractional carry`() {
         val grid = Grid(10, 10)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         machines[grid.tile(4, 4).index] = Extractor(
             Direction.Right,
             carry = 37L,
@@ -393,7 +393,7 @@ class SaveTest {
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
-        machines[grid.tile(7, 4).index] = Storage(Direction.Left)
+        deck += Storage(grid.tile(7, 4), Direction.Left)
 
         val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))

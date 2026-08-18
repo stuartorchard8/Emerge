@@ -37,7 +37,7 @@ class RemappedTest {
     private fun simpleWorld(w: Int, h: Int): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1 until w - 1) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h - 2))
@@ -52,7 +52,7 @@ class RemappedTest {
     private fun populatedWorld(w: Int = 20, h: Int = 14): VesselState {
         val grid = Grid(w, h)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         // Hull
         for (x in 1 until w - 1) {
             deck += Hull(grid.tile(x, 1))

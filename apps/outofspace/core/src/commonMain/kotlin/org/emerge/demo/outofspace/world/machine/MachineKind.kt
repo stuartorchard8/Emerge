@@ -20,7 +20,6 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     ThermalDecomposer("THERMAL DECOMPOSER", isPermeable=true),
     Vaporizer("VAPORIZER", isPermeable=true),
     Smelter("SMELTER"),
-    Storage("STORAGE"),
     Sensor("SENSOR"),
     KeyInput("BUTTON", isPermeable=true),
     Thruster("THRUSTER", isPermeable=true),
@@ -44,6 +43,7 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
     Hull("HULL"),
     Airlock("AIRLOCK"),
     Vent("VENT"),
+    Storage("STORAGE"),
     ;
 
     companion object {

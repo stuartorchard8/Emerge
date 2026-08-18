@@ -40,7 +40,11 @@ class Occupancy(private val originOf: TileArray) {
             for (i in 0 until deck.size) {
                 val tile = TileIndex(i)
                 val m = deck[tile] ?: continue
-                for (tile in m.tiles) originOf[tile] = tile
+                // ⚠️ To the machine's **centre**, not to each tile itself. Identical while every
+                // deck machine was one tile across, and wrong the moment one is not: the origin
+                // index is how any tile of a footprint finds the machine standing on it, and a
+                // tile that points at itself finds nothing.
+                for (part in m.tiles(grid)) originOf[part] = m.center
             }
             return Occupancy(originOf)
         }

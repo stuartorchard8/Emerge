@@ -187,7 +187,7 @@ fun seriesConductance(a: Long, b: Long): Long {
 val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
-        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
+        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer,
         MachineKind.Sensor, MachineKind.Pump, MachineKind.KeyInput,
         MachineKind.Thruster,
         -> Material.Titanium
@@ -201,7 +201,7 @@ val DeckMachineKind.material: Material
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
         // A hole in the hull with a housing around it, and the housing is the part that is made of
         // anything — which is why it keeps the instrument's fill rather than the plate's.
-        DeckMachineKind.Vent -> Material.Titanium
+        DeckMachineKind.Vent, DeckMachineKind.Storage -> Material.Titanium
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -234,7 +234,7 @@ val MachineKind.fillPermille: Int
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
 
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
-        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
+        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer,
         MachineKind.Pump,
         -> 150
 
@@ -259,6 +259,8 @@ val DeckMachineKind.fillPermille: Int
         // Mostly a housing, as it was while it was a machine — the number is carried across, not
         // rechosen, so the migration does not quietly change what the ship weighs.
         DeckMachineKind.Vent -> 40
+        // A shell with a room's worth of space inside it — carried across unchanged.
+        DeckMachineKind.Storage -> 150
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

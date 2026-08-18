@@ -98,7 +98,7 @@ class ConduitLayersTest {
             Conduit.Pipe to pipes.toList(),
         )
 
-        val bodies = bodiesOf(grid, List(grid.size) { null }, conduits, List(grid.size) { null }, DeckArray(grid.size), BufferLayer.empty(grid.size))
+        val bodies = bodiesOf(grid, List(grid.size) { null }, conduits, List(grid.size) { null }, DeckArray(grid), BufferLayer.empty(grid.size))
 
         assertEquals(2, bodies.size, "one body per fitting, not one per tile")
         assertEquals(

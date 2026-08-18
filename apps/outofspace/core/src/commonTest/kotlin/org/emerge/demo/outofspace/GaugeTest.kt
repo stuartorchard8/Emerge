@@ -53,10 +53,10 @@ class GaugeTest {
     private fun line(carrying: Resource): VesselState {
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 2).index] = Storage(Direction.Right)
-        m[grid.tile(10, 2).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(3, 2), Direction.Right)
+        deck += Storage(grid.tile(10, 2), Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
         // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
@@ -120,10 +120,10 @@ class GaugeTest {
         val pure = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0))
         val grid = Grid(14, 6)
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 2).index] = Storage(Direction.Right)
-        m[grid.tile(10, 2).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(3, 2), Direction.Right)
+        deck += Storage(grid.tile(10, 2), Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
         val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 2), pure)
 
@@ -186,7 +186,7 @@ class GaugeTest {
     fun `machines that hold nothing report nothing rather than a phantom row`() {
         val grid = Grid(9, 9)
         val centre = grid.tile(4, 4)
-        assertEquals(emptyList(), contentsBreakdown(Storage(Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(Storage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
         assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 

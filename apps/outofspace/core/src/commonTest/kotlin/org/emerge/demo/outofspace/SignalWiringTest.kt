@@ -82,11 +82,11 @@ class SignalWiringTest {
      */
     private fun rig(fill: Long, wired: Boolean = true): VesselState {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
         machines[grid.tile(extractorAt.first, extractorAt.second).index] =
             Extractor(Direction.Right).withWiring(stopWhenFull)
-        machines[grid.tile(13, 5).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(13, 5), Direction.Right)
         // Looking up at the tank, which sits below the run.
         machines[grid.tile(sensorAt.first, sensorAt.second).index] = Sensor(Direction.Down)
 
@@ -171,9 +171,9 @@ class SignalWiringTest {
     @Test
     fun `two machines on one run see the same value`() {
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
-        machines[grid.tile(13, 5).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(13, 5), Direction.Right)
         machines[grid.tile(12, 3).index] = Sensor(Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 12, 3)

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.num.Budget
@@ -69,7 +70,7 @@ class AtmosphereTest {
     private fun sealedRoom(w: Int, h: Int): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))
@@ -100,7 +101,7 @@ class AtmosphereTest {
     fun `hull separates two rooms so their pressures do not equalise`() {
         // Two 3-wide rooms sharing a wall, one at double pressure.
         val grid = Grid(9, 5)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 2..6) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, 3)) }
         for (y in 1..2) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(7, y)) }
         deck += Hull(grid.tile(4, 2))   // the dividing wall
@@ -276,8 +277,8 @@ class AtmosphereTest {
         var s = run(room, 20)
         val aboard = s.atmosphereMass
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(tile, MachineKind.Storage, Direction.Right))))
-        val m: Machine? = s[tile]
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(tile, DeckMachineKind.Storage, Direction.Right))))
+        val m: DeckMachine? = s.deck[tile]
         assertTrue(m != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {
             assertEquals(0L, s.air.pressureAt(g.tile(x, y)), "($x,$y) is under the machine")

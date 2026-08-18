@@ -650,21 +650,6 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            is Storage -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Storage))
-            // Tank: room-sized fill (legible at distance).
-                val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
-                val level = (stored?.mass ?: 0L).toFloat() / Storage.CAP
-                if (level > 0f) {
-                    val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
-                    val bottom = y + n * 0.5f - Visual.TANK_BOTTOM_MARGIN
-                    rect(
-                        (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
-                        (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
-                        stored?.mixture?.color?.toLong() ?: 0x000000FF,
-                    )
-                }
-            }
             // A button: its face lights up while it is held, and its key is written on it by the
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
             is WireButton -> {
@@ -717,6 +702,21 @@ class OutofspaceRenderer {
             // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
             // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
             // and the player should read them as the same kind of thing.
+            // Tank: room-sized fill (legible at distance).
+            is Storage -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Storage))
+                val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
+                val level = (stored?.mass ?: 0L).toFloat() / Storage.CAP
+                if (level > 0f) {
+                    val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
+                    val bottom = y + n * 0.5f - Visual.TANK_BOTTOM_MARGIN
+                    rect(
+                        (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
+                        (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
+                        stored?.mixture?.color?.toLong() ?: 0x000000FF,
+                    )
+                }
+            }
             is Airlock -> {
                 tileRect(x, y, 1f, kindColor(DeckMachineKind.Airlock))
                 val open = airlockOpenness(m, state.signals) / ApertureField.OPEN
@@ -1275,7 +1275,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.ThermalDecomposer -> 0x5E5A3BFFL
     MachineKind.Vaporizer -> 0x905A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
-    MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.KeyInput -> 0x2E3A4AFFL
     MachineKind.Pump -> 0xB07840FFL
@@ -1287,6 +1286,7 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
     DeckMachineKind.Vent -> 0x3A3A44FFL
+    DeckMachineKind.Storage -> 0x3A4A5AFFL
 }
 
 /**

@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Machine
 import org.emerge.demo.outofspace.world.machine.Storage
 
@@ -45,13 +46,17 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
         val EMPTY: Stockpile = Stockpile(Array(Form.ALL.size) { Mixture.EMPTY })
 
         /** Everything sitting in every storage aboard, gathered by form. */
-        fun of(grid: Grid, machines: List<Machine?>, buffers: BufferLayer): Stockpile {
+        fun of(grid: Grid, deck: DeckArray, buffers: BufferLayer): Stockpile {
             var any = false
             val byForm = Array(Form.ALL.size) { Mixture.EMPTY }
-            for (i in machines.indices) {
-                val m = machines[i]
-                if (m !is Storage) continue
-                val store = bufferTile(grid, m, TileIndex(i), BufferRole.Inside) ?: continue
+            // Off the deck, which is where warehouses live now. Walked by centre: a tank is three
+            // tiles across and stored once, and adding its contents per covered tile would have the
+            // inventory report nine times what is aboard.
+            for (i in 0 until deck.size) {
+                val tile = TileIndex(i)
+                val m = deck[tile]
+                if (m !is Storage || m.center != tile) continue
+                val store = bufferTile(grid, m, tile, BufferRole.Inside) ?: continue
                 val held = buffers.resourceAt(store) ?: continue
                 if (held.isEmpty) continue
                 byForm[held.form.ordinal] = byForm[held.form.ordinal] + held.mixture

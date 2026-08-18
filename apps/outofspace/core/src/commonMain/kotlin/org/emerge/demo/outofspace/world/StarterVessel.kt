@@ -18,7 +18,7 @@ fun starterVessel(
     grid: Grid,
 ): VesselState {
     val machines = arrayOfNulls<Machine>(grid.size)
-    val deck = DeckArray(grid.size)
+    val deck = DeckArray(grid)
     val rails = arrayOfNulls<Segment>(grid.size)
     val wires = arrayOfNulls<Segment>(grid.size)
 
@@ -111,7 +111,7 @@ fun starterVessel(
     put(STARTER_PLATE_X, y, Extractor(Direction.Right))   // covers x 3..7
     put(13, y, Processor(Direction.Right))                                  // covers x 12..14
     put(22, y, Smelter(Direction.Right))                                    // covers x 20..24
-    put(29, y, Storage(Direction.Right))   // the inventory: what is in here is what you can build with
+    put(29, y) { Storage(it, Direction.Right) }   // the inventory: what you can build with
 
     // Extractor→Processor: a gauge reads raw ore. What it reports on is whatever wire runs under
     // it — nothing, here, until the player lays one.
@@ -130,7 +130,7 @@ fun starterVessel(
     // Wiring demo: 7 rows below.
     val wy = STARTER_DEMO_PLATE_Y
     put(STARTER_PLATE_X, wy, Extractor(Direction.Right).withWiring(STOP_WHEN_FULL))
-    put(11, wy, Storage(Direction.Right))
+    put(11, wy) { Storage(it, Direction.Right) }
     rail(7, 10, wy)
     // Sensor looks at tank bottom edge.
     put(11, wy + 2, Sensor(Direction.Up))

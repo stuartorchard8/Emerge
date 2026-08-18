@@ -31,7 +31,7 @@ class FlowFieldTest {
 
     private val grid = Grid(5, 5)
     private val edges = EdgeGrid(grid)
-    private val structure = StructureMap.derive(grid, List(grid.size) { null }, DeckArray(grid.size))
+    private val structure = StructureMap.derive(grid, List(grid.size) { null }, DeckArray(grid))
     private val apertures = ApertureField.derive(edges, structure)
 
     /**

@@ -36,7 +36,7 @@ class PumpTest {
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
     private fun hulled(): DeckArray {
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 0 until grid.width) {
             deck += Hull(grid.tile(x, 0))
             deck += Hull(grid.tile(x, grid.height - 1))

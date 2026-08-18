@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
@@ -10,6 +12,7 @@ import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.capacityPerTile
 import kotlin.jvm.JvmInline
@@ -31,12 +34,28 @@ import kotlin.jvm.JvmInline
  * [org.emerge.demo.outofspace.logistics.Rate] with the fraction kept in each machine's own `carry`.
  * Carry is machine state and not a global precisely so it survives a save.
  */
-sealed interface DeckMachine {
+sealed interface DeckMachine : Placed {
     val kind: DeckMachineKind
-    val wiring: Wiring
+    override val wiring: Wiring
 
-    val tiles: Array<TileIndex>
-    val center get() = tiles[tiles.size/2]
+    override val reach: Int get() = kind.reach
+    override val turns: Int get() = (this as? DirectedDeckMachine)?.facing?.ordinal ?: 0
+
+    /** The tile it is stored at, and the middle of its footprint. */
+    val center: TileIndex
+
+    /**
+     * Every tile this machine covers, on [grid].
+     *
+     * ⚠️ **A function of the grid, not a field.** A footprint is a set of flat tile indexes, and
+     * which indexes surround a centre depends on how wide the grid is — so a stored array would be
+     * silently wrong the moment the vessel grew, and an [Array] field would give every machine
+     * reference equality into the bargain (see [TileEnergy] for that bug in its previous life).
+     * Deriving it costs one small allocation at the sites that walk a footprint, all of which have a
+     * grid to hand because they are all iterating a world.
+     */
+    fun tiles(grid: Grid): Array<TileIndex> =
+        kind.footprint(center, grid) ?: error("a ${kind.label} at $center does not fit this grid")
 
     fun withWiring(wiring: Wiring): DeckMachine
 
@@ -49,16 +68,18 @@ sealed interface DeckMachine {
      */
     fun movedTo(center: TileIndex): DeckMachine
 
-    fun energy(deck: StuffLayer) = tiles.map { deck.energyAt(it) }
+    fun energy(grid: Grid, deck: StuffLayer) = tiles(grid).map { deck.energyAt(it) }
 
-    fun setEnergy(machineEnergy: LongArray, deck: StuffLayer) {
+    fun setEnergy(machineEnergy: LongArray, grid: Grid, deck: StuffLayer) {
+        val tiles = tiles(grid)
         require(machineEnergy.size == tiles.size)
         for (i in tiles.indices) {
             deck.setEnergy(tiles[i], machineEnergy[i])
         }
     }
 
-    fun addEnergySpread(added: Long, deck: DeckArray) {
+    fun addEnergySpread(added: Long, grid: Grid, deck: DeckArray) {
+        val tiles = tiles(grid)
         val each = added / tiles.size
         for (tile in tiles) {
             deck.stuff.addEnergy(tile, each)
@@ -76,25 +97,28 @@ sealed interface DeckMachine {
  * cares how much heat is in the thing, and the wrong one for anything that cares where the heat is.
  * Reach for [DeckMachine.energy] directly when the gradient is the subject.
  */
-fun DeckMachine.temperatureKelvin(deck: StuffLayer): Int {
+fun DeckMachine.temperatureKelvin(grid: Grid, deck: StuffLayer): Int {
     // Capacity summed from the matter actually stored, not from `kind.capacityPerTile × tiles`. The
     // two agree to within a part per million today — measured — and they stop agreeing the moment a
     // reaction changes what a tile is made of, which is exactly when the stored answer is the right
     // one and the constant is stale.
+    val tiles = tiles(grid)
     val capacity = tiles.sumOf { deck.heatCapacityAt(it) }
     val totalEnergy = tiles.sumOf { deck.energyAt(it) }
     return if (capacity <= 0L) Temperature.SPACE_KELVIN else (totalEnergy / capacity).toInt()
 }
 
 /** The same machine with every one of its tiles at [kelvin] — how a uniform body is stated. */
-fun DeckMachine.setTemperature(kelvin: Int, deck: StuffLayer) =
-    setEnergy(LongArray(tiles.size) { deck.heatCapacityAt(tiles[it]) * kelvin }, deck)
+fun DeckMachine.setTemperature(kelvin: Int, grid: Grid, deck: StuffLayer) {
+    val tiles = tiles(grid)
+    setEnergy(LongArray(tiles.size) { deck.heatCapacityAt(tiles[it]) * kelvin }, grid, deck)
+}
 
 /** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
 val DeckMachine.ambientEnergy : Long get() = kind.capacityPerTile * Temperature.AMBIENT_KELVIN
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
-sealed interface DirectedDeckMachine : Machine {
+sealed interface DirectedDeckMachine : DeckMachine {
     val facing: Direction
-    fun rotated(): Machine
+    fun rotated(): DeckMachine
 }

@@ -169,10 +169,10 @@ class FootprintTest {
         val grid = Grid(14, 14)
         val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(2, 6).index] = Storage(Direction.Right)   // output port at (3, 6)
-        m[grid.tile(6, 6).index] = Storage(Direction.Right)           // input ports at (5, 6) and (6, 5)
+        deck += Storage(grid.tile(2, 6), Direction.Right)   // output port at (3, 6)
+        deck += Storage(grid.tile(6, 6), Direction.Right)           // input ports at (5, 6) and (6, 5)
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
@@ -209,8 +209,8 @@ class FootprintTest {
         val grid = Grid(12, 12)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
-        m[grid.tile(6, 6).index] = Storage(Direction.Right)
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(6, 6), Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
         m[grid.tile(7, 8).index] = Sensor(Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
@@ -240,7 +240,7 @@ class FootprintTest {
         val grid = Grid(16, 16)
         fun room(kind: MachineKind): VesselState {
             val m = arrayOfNulls<Machine>(grid.size)
-            val deck = DeckArray(grid.size)
+            val deck = DeckArray(grid)
             for (i in 1..13) {
                 deck += Hull(grid.tile(i, 1))
                 deck += Hull(grid.tile(i+1, 14))

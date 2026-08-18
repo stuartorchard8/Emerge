@@ -94,7 +94,12 @@ inline fun forEachVesselMass(
         // are equal to the unit — [tileBillOfMaterials] apportions, and it is measured identical for
         // every kind — so this is a change of representation and not of what the ship weighs. It has
         // to move at the same time as the fill in `+=`, or the deck is counted twice or not at all.
-        for (tile in m.tiles) action(tile, deck.stuff.massAt(tile), 0L)
+        // Fabric tile by tile, cargo once at the centre. ⚠️ The cargo term is not optional now that
+        // buffered kinds live here: a warehouse's contents are aboard, and passing 0L for every deck
+        // machine made twenty tonnes of ore vanish from `cargoMass` — which reads as the world
+        // losing mass rather than as anything to do with storage.
+        for (tile in m.tiles(grid)) action(tile, deck.stuff.massAt(tile), 0L)
+        action(m.center, 0L, massIn(m, m.center, grid, buffers))
     }
     for (t in machines.indices) {
         val m = machines[t] ?: continue

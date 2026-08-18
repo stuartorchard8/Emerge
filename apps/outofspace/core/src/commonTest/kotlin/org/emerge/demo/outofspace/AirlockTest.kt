@@ -61,7 +61,7 @@ class AirlockTest {
     private fun roomWithDoor(door: DeckMachine?, w: Int = 8, h: Int = 8): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))

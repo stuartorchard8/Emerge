@@ -91,7 +91,7 @@ class HeatTest {
     ): VesselState {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))
@@ -136,7 +136,7 @@ class HeatTest {
     fun `only hull seals - a wall of machinery does not`() {
         val grid = Grid(5, 3)
         val machines = arrayOfNulls<Machine>(15)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 0 until 5) {
             machines[grid.tile(x, 0).index] = Sensor(Direction.Right)
             machines[grid.tile(x, 2).index] = Sensor(Direction.Right)
@@ -241,7 +241,7 @@ class HeatTest {
         val g = room.grid
         val hot = g.tile(3, 1)             // a wall tile, driven to 4000K
         val deck = room.deck.copyOf()
-        deck[hot]!!.setTemperature(4_000, deck.stuff)
+        deck[hot]!!.setTemperature(4_000, g, deck.stuff)
         var s = room.copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         var previousPeak = Int.MAX_VALUE
@@ -279,7 +279,7 @@ class HeatTest {
         val grid = Grid(11, 11)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         machines[grid.tile(5, 5).index] = Smelter(Direction.Right)
         var s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(5, 5), ore)
@@ -322,7 +322,7 @@ class HeatTest {
     fun `structure derivation is not fooled by a hull that only half encloses`() {
         val grid = Grid(6, 5)
         val machines = arrayOfNulls<Machine>(30)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         // Three walls and an open side: still outside.
         for (x in 1..4) deck += Hull(grid.tile(x, 1))
         for (y in 2..3) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(4, y)) }

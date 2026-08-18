@@ -47,10 +47,10 @@ class MotionTest {
     private fun line(tankX: Int = 9): VesselState {
         val grid = cfg.initialGrid
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
-        m[grid.tile(tankX, 3).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(tankX, 3), Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
         return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
     }
@@ -153,11 +153,11 @@ class MotionTest {
     private fun bridged(): VesselState {
         val grid = cfg.initialGrid
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3)
-        m[grid.tile(11, 3).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(11, 3), Direction.Right)
         bridges[grid.tile(6, 3).index] = Bridge(Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)

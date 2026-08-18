@@ -140,7 +140,7 @@ fun bodiesOf(
     // and its energy is already stored against them.
     for (tile in grid.tiles) {
         val m = deck[tile] ?: continue
-        for (part in m.tiles) {
+        for (part in m.tiles(grid)) {
             out.add(
                 Body(
                     slot = BodySlot.DeckStore,

@@ -25,13 +25,15 @@ val MachineKind.size: Int
         MachineKind.Sensor, MachineKind.Pump -> 1
         MachineKind.Thruster -> 1
         MachineKind.KeyInput -> 1
-        MachineKind.Processor, MachineKind.ThermalDecomposer, MachineKind.Vaporizer, MachineKind.Storage -> 3
+        MachineKind.Processor, MachineKind.ThermalDecomposer, MachineKind.Vaporizer -> 3
         // A floor to land a rock on, and a rock is five tiles across.
         MachineKind.Extractor, MachineKind.Smelter -> 5
     }
 val DeckMachineKind.diameter: Int
     get() = when (this) {
         DeckMachineKind.Hull, DeckMachineKind.Airlock, DeckMachineKind.Vent -> 1
+        // A room-sized installation, as it was on the machine list.
+        DeckMachineKind.Storage -> 3
     }
 
 /** Half-width: how far the footprint reaches from its centre in each direction. */

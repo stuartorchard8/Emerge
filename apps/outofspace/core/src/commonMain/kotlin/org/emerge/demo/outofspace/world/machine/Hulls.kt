@@ -17,7 +17,6 @@ data class Vent(
     val ventedMass: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DeckMachine {
-    override val tiles: Array<TileIndex> = Array(1) { center }
     override val kind: DeckMachineKind get() = DeckMachineKind.Vent
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
@@ -35,7 +34,6 @@ data class Hull(
     override val center: TileIndex,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DeckMachine {
-    override val tiles: Array<TileIndex> = Array(1) { center }
     override val kind: DeckMachineKind get() = DeckMachineKind.Hull
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
@@ -60,7 +58,6 @@ data class Airlock(
     override val center: TileIndex,
     override val wiring: Wiring = SEALED,
 ) : DeckMachine {
-    override val tiles: Array<TileIndex> = Array(1) { center }
     override val kind: DeckMachineKind get() = DeckMachineKind.Airlock
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)

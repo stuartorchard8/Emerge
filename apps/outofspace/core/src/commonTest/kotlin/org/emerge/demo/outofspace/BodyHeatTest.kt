@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
@@ -62,10 +63,12 @@ class BodyHeatTest {
         h: Int,
         rails: (Grid) -> List<Segment?> = { List(it.size) { null } },
         fill: (Int, Int) -> Machine? = { _, _ -> null },
+        /** The same, for the kinds that live on the deck. */
+        deckFill: (Int, Int, TileIndex) -> DeckMachine? = { _, _, _ -> null },
     ): VesselState {
         val grid = Grid(w + 2, h + 2)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         for (x in 1..w) {
             deck += Hull(grid.tile(x, 1))
             deck += Hull(grid.tile(x, h))
@@ -74,7 +77,10 @@ class BodyHeatTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w, y))
         }
-        for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
+        for (y in 2 until h) for (x in 2 until w) {
+            machines[grid.tile(x, y).index] = fill(x, y)
+            deckFill(x, y, grid.tile(x, y))?.let { deck += it }
+        }
         return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid)), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
     }
 
@@ -88,7 +94,7 @@ class BodyHeatTest {
     private fun VesselState.heatDeckMachine(tile: TileIndex, kelvin: Int): VesselState {
         val d = deck.copyOf()
         val m = d[tile]!!
-        m.setTemperature(kelvin, d.stuff)
+        m.setTemperature(kelvin, grid, d.stuff)
         return copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }
     }
 
@@ -113,7 +119,7 @@ class BodyHeatTest {
     fun `heat one face of a smelter and the far face lags behind`() {
         val g = Grid(14, 14)
         val tile = g.tile(6, 6)
-        val world = room(12, 12) { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null }
+        val world = room(12, 12, fill = { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null })
 
         // The whole machine cold, then one corner tile of it made very hot. Part 0 is the first
         // tile of the footprint — a corner — and part 24 is the opposite corner, four tiles away.
@@ -153,7 +159,7 @@ class BodyHeatTest {
         // ledger would eventually notice. Round-tripping an uneven machine covers both directions.
         val g = Grid(14, 14)
         val tile = g.tile(6, 6)
-        val world = room(12, 12) { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null }
+        val world = room(12, 12, fill = { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null })
         val list = world.machines.toMutableList()
         val m = (list[tile.index] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
         // Deliberately not divisible by twenty-five, so a lost remainder shows up.
@@ -179,7 +185,8 @@ class BodyHeatTest {
         val world = room(
             10, 10,
             rails = { grid -> grid.tiles.map { if (it == under) Segment(Conduit.Rail) else null } },
-        ) { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null }
+            fill = { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null },
+        )
             .heatMachine(under, 900)
 
         val settled = run(world, 30*HEAT_PERIOD)
@@ -268,16 +275,18 @@ class BodyHeatTest {
         val at = g.tile(5, 5)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 400L * Budget.KILOGRAM, energy = 0L))
 
-        var s = room(10, 10) { x, y -> if (x == 5 && y == 5) Storage(Direction.Right) else null }
-            .stocked(at, ore)
+        var s = room(10, 10, deckFill = { x, y, tile ->
+            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+        }).stocked(at, ore)
         // Put the charge in at room temperature, so what follows is heat arriving and not heat
         // that was already there.
         s.buffers.stuff.setEnergy(at, s.buffers.stuff.heatCapacityAt(at) * Temperature.AMBIENT_KELVIN)
 
-        val list = s.machines.toMutableList()
-        val m = list[at.index]!!
-        list[at.index] = m.withEnergy(m.energy.plusEnergySpread(40_000_000_000L))
-        s = s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+        // The casing is a deck machine now, so the heat goes into the deck layer rather than onto
+        // the machine — the same quantity, at the same tiles.
+        val d = s.deck.copyOf()
+        d[at]!!.addEnergySpread(40_000_000_000L, s.grid, d)
+        s = s.copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }
 
         val before = s.buffers.stuff.kelvinAt(at)
         val beforeEnergy = s.buffers.stuff.energyAt(at)
@@ -303,7 +312,9 @@ class BodyHeatTest {
         // nothing to warm" is also the physically right statement.
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
-        val s = room(10, 10) { x, y -> if (x == 5 && y == 5) Storage(Direction.Right) else null }
+        val s = room(10, 10, deckFill = { x, y, tile ->
+            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+        })
         assertEquals(0L, s.buffers.massAt(at))
         // It survives a run rather than dividing by zero somewhere in the solver.
         assertEquals(0L, run(s, 5).buffers.massAt(at))
@@ -313,19 +324,26 @@ class BodyHeatTest {
     fun `materials differ - the same heat moves a firebrick furnace less than a titanium tank`() {
         // The point of the whole exercise: identical footprints, identical energy, different stuff.
         val g = Grid(12, 12)
-        fun single(kind: (Direction) -> Machine): VesselState =
-            room(10, 10) { x, y -> if (x == 5 && y == 5) kind(Direction.Right) else null }
-
-        val furnace = single { Smelter(it) }
-        val tank = single { Storage(it) }
         val at = g.tile(5, 5)
+        val furnace = room(10, 10, fill = { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null })
+        val tank = room(10, 10, deckFill = { x, y, tile ->
+            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+        })
 
-        // The same number of energy into each, on top of ambient.
+        // The same number of energy into each, on top of ambient. Two paths rather than one now
+        // that the tank is a deck machine: its heat is in the layer and the furnace's is on the
+        // machine. The *quantity* is the same, which is the whole of what the test compares.
+        val added = 20_000_000_000L
         fun bump(s: VesselState): VesselState {
-            val list = s.machines.toMutableList()
-            val m = list[at.index]!!
-            list[at.index] = m.withEnergy(m.energy.plusEnergySpread(20_000_000_000L))
-            return s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+            val m = s.machines[at.index]
+            if (m != null) {
+                val list = s.machines.toMutableList()
+                list[at.index] = m.withEnergy(m.energy.plusEnergySpread(added))
+                return s.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+            }
+            val d = s.deck.copyOf()
+            d[at]!!.addEnergySpread(added, s.grid, d)
+            return s.copy(deck = d).let { it.copy(baselineEnergy = it.storedEnergy) }
         }
 
         val hotFurnace = bump(furnace).kelvinAt(at) - Temperature.AMBIENT_KELVIN

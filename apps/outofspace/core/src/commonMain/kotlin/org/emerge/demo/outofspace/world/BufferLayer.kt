@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.Placed
 
 /**
  * Machine buffers — every input, output, waste and processing store in the vessel, on **one** layer.
@@ -57,7 +58,7 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
      * world disagree about who has already claimed what: the reducer claims as it builds, a save
      * fills stores before the state exists, and a fixture states a machine list and nothing else.
      */
-    fun claimRoles(grid: Grid, machine: Machine, centre: TileIndex) {
+    fun claimRoles(grid: Grid, machine: Placed, centre: TileIndex) {
         for (role in BufferRole.entries) {
             if (localBufferOffset(machine, role) == NO_OFFSET) continue
             // Loud, because the alternative is a machine that stands but has nowhere to put

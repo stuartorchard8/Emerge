@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
@@ -22,7 +23,19 @@ import org.emerge.demo.outofspace.world.tileBillOfMaterials
  * crossing from a buffer into the casing around it, or carbon on a rail burning in the room's oxygen,
  * are facts about a *tile*, and they want every layer at that tile addressed the same way.
  */
-class DeckArray(private val machines: Array<DeckMachine?>, val stuff: StuffLayer) {
+class DeckArray(
+    /**
+     * The lattice its machines are anchored to.
+     *
+     * Held because a footprint is only meaningful against a grid — see [DeckMachine.tiles] — and
+     * this class is the one place that lays matter down across a whole footprint and takes it away
+     * again. Passing the grid to every call instead would put the burden on callers that have no
+     * business knowing why it is needed.
+     */
+    val grid: Grid,
+    private val machines: Array<DeckMachine?>,
+    val stuff: StuffLayer,
+) {
 
     operator fun get(key: TileIndex): DeckMachine? = machines[key.index]
 
@@ -36,7 +49,7 @@ class DeckArray(private val machines: Array<DeckMachine?>, val stuff: StuffLayer
      */
     operator fun minusAssign(tile: TileIndex) {
         val previous = machines[tile.index] ?: return
-        for (part in previous.tiles) stuff.release(part)
+        for (part in previous.tiles(grid)) stuff.release(part)
         machines[tile.index] = null
     }
 
@@ -58,7 +71,7 @@ class DeckArray(private val machines: Array<DeckMachine?>, val stuff: StuffLayer
         require(machines[m.center.index] == null) { "already a machine at ${m.center}" }
         machines[m.center.index] = m
         val bill = tileBillOfMaterials(m.kind)
-        for (tile in m.tiles) {
+        for (tile in m.tiles(grid)) {
             require(!stuff.occupies(tile)) { "deck already holds stuff at $tile" }
             // The casing is real matter, put there tile by tile. Energy comes *after* and is derived
             // from that matter rather than from the kind: ambient means "this much stuff, at room
@@ -69,7 +82,7 @@ class DeckArray(private val machines: Array<DeckMachine?>, val stuff: StuffLayer
         }
     }
 
-    fun copyOf(): DeckArray = DeckArray(machines.copyOf(), stuff.copyOf())
+    fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf())
 
     val size get() = machines.size
 
@@ -80,4 +93,4 @@ class DeckArray(private val machines: Array<DeckMachine?>, val stuff: StuffLayer
     fun setEnergy(tile: TileIndex, energy: Long) = stuff.setEnergy(tile, energy)
 }
 
-fun DeckArray(size: Int): DeckArray = DeckArray(arrayOfNulls(size), StuffLayer.empty(size))
+fun DeckArray(grid: Grid): DeckArray = DeckArray(grid, arrayOfNulls(grid.size), StuffLayer.empty(grid.size))

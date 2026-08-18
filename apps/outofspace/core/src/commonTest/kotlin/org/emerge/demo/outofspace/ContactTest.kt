@@ -407,7 +407,7 @@ class ContactTest {
     private fun wall(): VesselState {
         val grid = Grid(12, 12)
         val machines = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         deck += Hull(grid.tile(WALL.toInt(), ROW.toInt()))
         return VesselState(
             grid = grid,

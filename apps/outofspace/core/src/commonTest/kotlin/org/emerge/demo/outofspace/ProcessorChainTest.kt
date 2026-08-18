@@ -66,14 +66,14 @@ class ProcessorChainTest {
         val grid = Grid(12, 10)
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         m[grid.tile(3, 3).index] = Processor(Direction.Right)                // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
-        m[grid.tile(7, 3).index] = Storage(Direction.Right)                 // input port at (6, 3)
+        deck += Storage(grid.tile(7, 3), Direction.Right)                 // input port at (6, 3)
         // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
         // A tank has one input now, not two, so which way it faces is the whole of how you feed it.
-        m[grid.tile(3, 8).index] = Storage(Direction.Down)
+        deck += Storage(grid.tile(3, 8), Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
@@ -123,12 +123,12 @@ class ProcessorChainTest {
     fun `a processor with nowhere to put its tailings backs up instead of hoarding them`() {
         val grid = Grid(28, 10)
         val m = arrayOfNulls<Machine>(grid.size)
-        val deck = DeckArray(grid.size)
+        val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) m[grid.tile(x, 3).index] = Processor(Direction.Right)   // no waste runs anywhere
-        m[grid.tile(21, 3).index] = Storage(Direction.Right)
+        deck += Storage(grid.tile(21, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
