@@ -1,0 +1,64 @@
+# Track that builds itself. The build system with the free-build privilege turned off.
+#
+# Outside creative mode a drawn run lays GHOSTS -- track with a representation and no mass. A ghost
+# is a sink, so it pulls material down the line to itself; it refuses anything it cannot be built
+# from; and it skims what it needs off whatever passes over it. The iron comes out of the tank the
+# starter vessel begins with, which is the only reason a first rail is possible at all.
+#
+# What to read in the shots:
+#   `drawn`  -- a faint slate run east of the tank, clearly a plan rather than track;
+#   `built`  -- the same run in full rail colour, having paid for itself out of the tank;
+#   `going`  -- two tiles marked, warm instead of cold, handing their metal back.
+#
+# ⚠️ Two things this script gets right that are easy to get wrong, both learned the hard way:
+#
+#   - It starts at 32, clear of the track the starter vessel already has. A drag that begins on
+#     existing rail builds fewer tiles than it covers, and `builtMass` then looks short by exactly
+#     the tiles that were already there.
+#   - It marks 34 and 35, not 32. Track under a deck machine's port is LOCKED while that machine
+#     stands, so `remove` on the tank's own port tile is refused and nothing at all happens.
+#
+# The numbers:
+#   builtMass    grams that stopped being cargo and became fabric. One tile of rail is 130,642 g.
+#   massBalance  extracted + baseline == aboard + vented + built. Zero throughout, or something
+#                is being conjured. ⚠️ It cannot see conjured *fabric* -- only builtMass can.
+
+new
+creative 0
+camera centre 35 9 40
+
+# The tank's centre sits at 31 with its output port on 32, so a run drawn from there is fed by it.
+# Seven tiles, none of which existed before.
+brush RAIL
+drag 32 9 38 9
+
+# Nothing has been paid for yet: the run exists and is made of nothing.
+expect massBalance = 0
+expect builtMass = 0
+shot drawn
+
+run 1600
+
+# ...and now it is track, out of the tank rather than out of nowhere. Seven tiles at 130,642 g.
+expect massBalance = 0
+expect builtMass = 914494
+shot built
+
+# Mark two tiles. They go warm rather than cold, which is the whole point of the two colours: "not
+# yet" and "on its way out" are opposite mistakes and must not look alike.
+remove 34 9 RAIL
+remove 35 9 RAIL
+run 600
+expect massBalance = 0
+shot going
+
+# ⚠️ And here they sit. `builtMass` has not moved, because **a marked rail cannot hand its metal back
+# while a lump is standing on it** -- there is no room on the tile -- and in this world nothing is
+# drawing any more, so the lump never leaves. The tank went on pushing iron down the run after the
+# ghosts were satisfied and every tile is now occupied by a stall.
+#
+# That is a deadlock reachable by ordinary play: draw a run, let the tank overfill it, change your
+# mind. It is the same family as the bricking limitation the plan already accepts, but far easier to
+# hit, and it is NOT fixed. `GhostTest` proves deconstruction works when the metal has somewhere to
+# go; this records what happens when it does not.
+expect builtMass = 914494

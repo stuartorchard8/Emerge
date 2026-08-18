@@ -1071,7 +1071,7 @@ class OutofspaceRenderer {
         // A ghost is nearly the deck it is drawn on: present enough to see the shape of the run you
         // drew, faint enough that nobody mistakes it for track. It fades up to the conduit's own
         // colour as it fills — see [conduitColor].
-        const val GHOST      = 0x2A3244B0L
+        const val GHOST      = 0x1A2030C0L
 
         // A segment on its way out, warm where a ghost is cold. The direction has to be legible
         // without reading a number: "not yet" and "going" are opposite mistakes to make.

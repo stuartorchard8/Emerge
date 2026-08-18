@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.Mode
 import org.emerge.demo.outofspace.world.machine.InputKey
@@ -176,6 +177,13 @@ object OutofspaceAgentHarness {
                     val n = t[1].toInt()
                     repeat(n) { controller.stepOnce() }
                     println("[agent] ran $n ticks -> tick ${controller.tick}")
+                }
+                // Turn the free-build privilege off, so a drawn run arrives as ghosts and has to be
+                // paid for out of the tank. The switch is a world setting with no UI -- see
+                // [VesselState.creative] and `apps/outofspace/PLAN_self_building_rails.md`.
+                "creative" -> {
+                    controller.reset(state.copy(creative = t.getOrNull(1) != "0"))
+                    println("[agent] creative -> ${state.creative}")
                 }
                 "brush" -> {
                     controller.brush = kind(t[1])
@@ -636,6 +644,15 @@ object OutofspaceAgentHarness {
             println("[agent]   air       ${fmt(grams(air.total))}g  ${composition(air)}")
             println("[agent]   flow      x=${state.flow.xAt(tile)}g/t y=${state.flow.yAt(tile)}g/t " +
                 "speed=${"%.5f".format(state.flow.speedAt(tile))} tiles/tick")
+            // How built each conduit on this tile is, and whether it has been told to go — the two
+            // facts a self-building run turns on. See `apps/outofspace/PLAN_self_building_rails.md`.
+            for (c in Conduit.entries) {
+                val seg = state.conduits.at(c, tile) ?: continue
+                println("[agent]   ${c.label.lowercase().padEnd(9)} ${state.conduits.tracks.builtPermille(c, tile) / 10}% built" +
+                    "  ${fmt(grams(state.conduits.massAt(c, tile)))}g" +
+                    (if (seg.deconstructing) "  MARKED FOR DECONSTRUCTION" else "") +
+                    (if (state.conduits.isGhost(c, tile)) "  GHOST" else ""))
+            }
         }
 
         private fun composition(m: org.emerge.demo.outofspace.chem.Mixture): String =
@@ -724,6 +741,9 @@ object OutofspaceAgentHarness {
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
             // -- and the right thing for a script to assert, since `extractedMass` on its own is a fact
             // about how long the starter vessel's extractor has been running.
+            // Grams that have stopped being cargo and become fabric: up while a ghost builds
+            // itself, down while a marked segment hands its metal back.
+            "builtMass" -> grams(state.builtMass)
             "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass)
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
@@ -779,7 +799,7 @@ object OutofspaceAgentHarness {
             "airMass", "pipeMass", "airVented", "airBalance", "extractedMass",
             "ventedMass", "inTransitMass", "stockpileMass", "storedEnergy", "generatedEnergy",
             "radiatedEnergy", "solidToAirEnergy", "heatBalance", "airHeatBalance",
-            "massBalance", "rockCount", "rockMass",
+            "massBalance", "builtMass", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",
