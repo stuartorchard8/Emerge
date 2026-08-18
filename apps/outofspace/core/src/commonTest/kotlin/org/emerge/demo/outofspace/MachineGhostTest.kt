@@ -1,7 +1,19 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.machineBillOfMaterials
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.world.PortKind
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -9,6 +21,7 @@ import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Smelter
@@ -45,6 +58,119 @@ class MachineGhostTest {
         var s = state
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, mapOf(PlayerId(0) to OutofspaceInput(emptyList()))) }
         return s
+    }
+
+    /**
+     * A tank of iron at (3, 4), finished track running right from it, and a ghost machine standing
+     * at the far end with track threaded under its centre tile — where its construction port is.
+     *
+     * The machine is *stated* as a ghost rather than placed, for the reason `GhostTest`'s fixture
+     * states its rail ghosts: a fixture says what the world is, and what a placement puts down is
+     * the same thing by a longer road.
+     */
+    private fun tankAndGhost(machine: DeckMachine): VesselState {
+        val at = machine.center
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(3, 4), Direction.Right)
+        deck.stand(machine, withCasing = false)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, grid.xOf(at), 4)
+        return VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(
+            grid.tile(3, 4),
+            // What the machine is *made of*, not simply iron. A hull is steel and a smelter is
+            // firebrick, and a ghost is finished only when every species in its bill is there —
+            // so a tank of pure iron builds neither. See the plan's note on alloys.
+            // Several times what the machine costs: a run of track holds packets of its own while
+            // they travel, so a tank stocked to the bill exactly would leave the last of it strung
+            // out along the belt. A fixture should never be the reason a build stalls.
+            Resource(
+                Form.IronIngot,
+                machine.kind.material.composition.scaledTo(
+                    machineBillOfMaterials(machine.kind, machine.tiles(grid).size).total * 4,
+                ),
+            ),
+        ).copy(creative = false)
+    }
+
+    @Test
+    fun `a ghost machine at the end of a run draws material down it and builds itself`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        assertTrue(start.deck.isGhost(at), "the fixture stood a finished machine")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertFalse(s.deck.isGhost(at), "the machine never finished itself")
+        assertTrue(s.deck.stuff.massAt(at) > 0L, "it is finished but made of nothing")
+    }
+
+    /** Casing spreads over the footprint as it arrives, so no tile of it runs ahead of the others. */
+    @Test
+    fun `a big machine builds evenly across its footprint`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Smelter(at, Direction.Right))
+        val machine = start.deck[at]!!
+        val tiles = machine.tiles(grid)
+        assertTrue(tiles.size > 1, "a smelter is supposed to cover more than one tile")
+
+        // Part-way through, not finished: the question is how the metal is distributed while it is
+        // still arriving.
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 12)
+        val held = tiles.map { s.deck.stuff.massAt(it) }
+        assertTrue(held.sum() > 0L, "nothing arrived at all")
+        assertTrue(s.deck.isGhost(at), "it finished too fast for this to be measuring anything")
+        // Even to within the remainder of one division per delivery.
+        val spread = held.max() - held.min()
+        assertTrue(
+            spread * tiles.size <= held.sum() / 4,
+            "casing piled up on one tile: held $held",
+        )
+    }
+
+    /** ⛔ The anti-exploit, at machine scale: a ghost refuses what it cannot be built from. */
+    @Test
+    fun `a ghost machine refuses material it cannot be built from`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at)).stocked(
+            grid.tile(3, 4),
+            Resource(Form.Slag, Mixture.of(Species.Quartz to 40 * Capacity.PACKET_MASS, energy = 0)),
+        )
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertTrue(s.deck.isGhost(at), "a hull built itself out of silica")
+        assertEquals(0L, s.deck.stuff.massAt(at), "silica got into the casing")
+    }
+
+    /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */
+    @Test
+    fun `building a machine conserves mass`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        val opening = start.inTransitMass + start.builtMass
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertFalse(s.deck.isGhost(at), "it never finished, so this proves nothing")
+        assertEquals(
+            opening,
+            s.inTransitMass + s.builtMass,
+            "grams went missing between the cargo and the fabric ledger",
+        )
+    }
+
+    /** Once it holds its bill it is simply a machine: it runs, and its own ports are back. */
+    @Test
+    fun `a finished machine gets its ports back`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Smelter(at, Direction.Right))
+        assertTrue(start.deck.isGhost(at), "fixture")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 200)
+        assertFalse(s.deck.isGhost(at), "the smelter never finished")
+        val ports = portsOf(grid, s.deck[at]!!)
+        assertTrue(ports.any { it.kind == PortKind.Output }, "a finished smelter has an output port")
     }
 
     @Test

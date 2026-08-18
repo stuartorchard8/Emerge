@@ -320,6 +320,33 @@ the rest — a 3×3 smelter is the case to write first, not a hull.
 95%; absorption spread over the footprint; and the moment it holds its full bill it is simply a
 machine — ports back, runs, solid.
 
+### What 5c turned up: an alloy is not one species
+
+The rails never met this, because a rail is made of **iron** and nothing else. A hull is **steel** and
+a smelter is **firebrick**, and the moment a bill names two species three things surface that the
+single-species case hid:
+
+1. **A machine cannot be built from one of its components.** Pure iron is admitted for a steel hull —
+   it is 100% target species, so the 95% rule waves it through — and the hull then never finishes,
+   because its carbon never arrives. ⚠️ Worse than a refusal: it goes on accepting iron for ever,
+   past its own billed mass, so a tank of iron drains into a machine that can never complete. **A
+   matter sink reachable by ordinary play. Not fixed — for Stu.** The 95% rule asks *purity*, and
+   what an alloy needs asked is *completeness*.
+2. **A share per species rounds every share down**, so the machine lands a gram short of everything
+   at once and the next delivery is asked for a shortfall too small to divide — stuck at 999 per
+   mille with a loaded belt on it.
+3. **A share proportional to the delivery cannot close the last gram.** Even apportioned exactly, the
+   lump's ratio is not the shortfall's ratio, so the last unit goes to whichever species the rounding
+   favours and the other parks one gram short for ever.
+
+(2) and (3) are answered together by reading the plan's own sentence — *a ghost takes only what it
+still needs* — **per species**: the final top-up takes `min(what is here, what is missing)` of each.
+Junk still gets baked in, by the branch above it: while a ghost is hungrier than the lump is big it
+swallows the lump whole, junk and all. So "proportional, junk included" describes the swallow and
+"only what it needs" describes the top-up, and the two together terminate.
+
+(1) is untouched and needs a decision.
+
 **5d. Deconstruction.** The mark, the five-step ordering above, ceasing to be.
 
 **5e. Rendering, starter vessel, harness.** A ghost machine reads as one, a marked one reads as

@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -157,6 +158,39 @@ fun portsOf(grid: Grid, machine: DeckMachine, centreTile: TileIndex): List<Port>
     }
     return out
 }
+/**
+ * The one opening a **ghost** machine offers the network: its construction port.
+ *
+ * ### Why the centre tile
+ *
+ * A machine's real ports sit at ±[DeckMachine.reach], which is a different place for every footprint
+ * and every facing. The centre is the one tile every machine has, whatever size it is, so a single
+ * port there needs no knowledge of how wide the thing is and can never land on a side some kind
+ * already uses. That is what makes this one entry rather than a rule per kind.
+ *
+ * For a **1x1** machine `reach` is 0, so the centre is exactly where its input port would be — and
+ * this **overrides** it, because a ghost has no buffer to put anything in. A machine with no ports
+ * at all, a hull or an airlock, gains one for the first time in its life, which is the whole reason
+ * a hull can be built at all.
+ *
+ * Always on [Conduit.Rail], whatever the machine is for: casing is solid, so a pump and a vent are
+ * both built by track and the plumbing they exist to serve has nothing to do with it.
+ *
+ * It is a port like any other, so the track beneath it is locked from deconstruction while the ghost
+ * stands — a player cannot pull up the line they are feeding the thing with.
+ */
+fun constructionPortOf(machine: DeckMachine): Port =
+    Port(
+        machine.center,
+        // Facing only orients the drawing. A ghost is fed from whichever way material arrives, the
+        // same as a length of unbuilt track is.
+        (machine as? DirectedDeckMachine)?.facing ?: Direction.Right,
+        PortKind.Input,
+        conduit = Conduit.Rail,
+        owner = machine.center,
+        fromDeck = true,
+    )
+
 /**
  * The ports of a deck machine, which knows where it stands — see the twin above for the rest.
  */

@@ -22,6 +22,8 @@ import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.chem.SMELT_PRODUCTS
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.world.constructionPortOf
+import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.Conduit
@@ -1792,6 +1794,151 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
+         * The bill a ghost machine standing at [tile] still has to reach, and what it holds so far.
+         *
+         * Summed over the whole footprint, because casing spreads evenly as it arrives rather than
+         * completing tiles one at a time — see [DeckArray.holdsFullBill].
+         */
+        private fun machineShortfall(m: DeckMachine, into: LongArray): Long {
+            val tiles = m.tiles(grid)
+            val bill = machineBillOfMaterials(m.kind, tiles.size)
+            var need = 0L
+            for (sp in Species.ALL) {
+                into[sp.ordinal] = 0L
+                if (bill[sp] <= 0L) continue
+                var held = 0L
+                for (t in tiles) held += deck.stuff[t, sp]
+                val short = bill[sp] - held
+                if (short > 0L) { into[sp.ordinal] = short; need += short }
+            }
+            return need
+        }
+
+        /**
+         * Puts [mass] of [species] into a machine's casing, **spread evenly over its tiles**.
+         *
+         * The remainder of the division lands on the centre tile, which is where
+         * [DeckMachine.addEnergySpread] puts its own and for the same reason: somewhere has to take
+         * it, and the centre is the tile every machine has.
+         *
+         * Spread rather than piled up because every per-tile reader — [SolidHeat], [Flight],
+         * chemistry — believes what it finds on a tile. Pool nine tiles of iron on one and the heat
+         * solver conducts as though the furnace were a bar.
+         */
+        private fun spreadOverFootprint(tiles: Array<TileIndex>, species: Species, mass: Long) {
+            if (mass <= 0L) return
+            val each = mass / tiles.size
+            if (each > 0L) for (t in tiles) deck.stuff[t, species] = deck.stuff[t, species] + each
+            val rest = mass - each * tiles.size
+            if (rest > 0L) deck.stuff[tiles[0], species] = deck.stuff[tiles[0], species] + rest
+        }
+
+        private fun spreadEnergyOverFootprint(tiles: Array<TileIndex>, energy: Long) {
+            if (energy == 0L) return
+            val each = energy / tiles.size
+            if (each != 0L) for (t in tiles) deck.stuff.addEnergy(t, each)
+            deck.stuff.addEnergy(tiles[0], energy - each * tiles.size)
+        }
+
+        /**
+         * A ghost machine takes casing off the lump standing on its construction port.
+         *
+         * The deck's twin of [absorbIntoGhost], and deliberately the same arithmetic: admitted whole
+         * or not at all, a share of every species so the junk that came with the iron is skimmed at
+         * the same rate, heat carried rather than conjured, remainder rides on over the track.
+         *
+         * ### Finishing displaces the air, and may not
+         *
+         * A solid machine is solid, and the air standing where it now is has to go somewhere. That
+         * happens **here**, at completion, rather than at placement — a ghost has no metal to push
+         * anything aside with. So the delivery that would finish an impermeable machine is offered
+         * to the atmosphere first, and if the air has nowhere left to go the delivery is **refused
+         * whole** and the lump rides on: the machine stays a ghost and tries again.
+         *
+         * ⚠️ It has to be refused rather than absorbed, because a machine that completed with air
+         * still inside it would be buried by the next [StructureMap] and the air ledger would lose
+         * exactly that much. Conserving it is not optional. The room can change between placement
+         * and completion, so the check at placement cannot stand in for this one.
+         */
+        fun absorbIntoMachineGhost(tile: TileIndex, m: DeckMachine): Packet? {
+            val shortfall = LongArray(Species.COUNT)
+            val need = machineShortfall(m, shortfall)
+            if (need <= 0L) return null
+            val have = rail.massAt(tile)
+            if (have <= 0L) return null
+            val tiles = m.tiles(grid)
+
+            // Close enough to finish? Then the air has to be able to leave before anything is taken.
+            if (have >= need && !m.kind.isPermeable &&
+                !tryDisplaceAir(grid, masses, airEnergy, tiles.toList(), commit = false) {
+                    originOf[it] == TileIndex.NONE
+                }
+            ) return null
+
+            var taken = 0L
+            if (have <= need) {
+                // The whole lump goes in, wholesale — a fraction of a fraction is where the rounding
+                // would live, and the common case is exact.
+                val packet = rail.packetAt(tile) ?: return null
+                for (sp in Species.ALL) spreadOverFootprint(tiles, sp, packet.resource.mixture[sp])
+                spreadEnergyOverFootprint(tiles, packet.resource.mixture.energy)
+                rail.put(tile, null)
+                taken = have
+                builtMass += have
+                finishMachine(m, tiles)
+                return packet
+            }
+
+            val lump = rail.resourceAt(tile) ?: return null
+            // ⚠️ **What it is short of, species by species — not a share of the lump's own ratio.**
+            //
+            // The plan's rule is that a ghost takes only what it still needs, and for anything made
+            // of more than one species that has to be read per species or it does not terminate. A
+            // share proportional to the *delivery* hands the machine a little too much carbon and a
+            // little too little iron every time, and the last unit of the shortfall goes to whichever
+            // species the rounding favours — so a hull parks one gram short of its iron for ever with
+            // a loaded belt sitting on it. Measured, not theorised.
+            //
+            // ⚠️ Junk is *not* skimmed here, and that is the other half of the same rule: a lump that
+            // is nearly all target species is swallowed whole by the branch above, junk and all,
+            // while it is still hungry. This is the top-up at the end, and a top-up takes what is
+            // missing.
+            val rest = LongArray(Species.COUNT)
+            for (sp in Species.ALL) {
+                val mass = lump.mixture[sp]
+                if (mass == 0L) continue
+                val part = minOf(mass, shortfall[sp.ordinal])
+                spreadOverFootprint(tiles, sp, part)
+                taken += part
+                // Stated rather than subtracted, so the lump that rides on and the mass booked here
+                // are the same arithmetic and cannot drift apart.
+                rest[sp.ordinal] = mass - part
+            }
+            if (taken <= 0L) return null
+            val heat = scaledRatio(taken, have, lump.mixture.energy)
+            spreadEnergyOverFootprint(tiles, heat)
+            val remainder = Mixture.of(rest, lump.mixture.energy - heat)
+            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, Resource(lump.form, remainder))
+            builtMass += taken
+            finishMachine(m, tiles)
+            return null
+        }
+
+        /**
+         * The moment a ghost stops being one: if it now holds its whole bill and it is a solid thing,
+         * the air where it stands is pushed aside, exactly as a creative placement would have done.
+         *
+         * Everything else about becoming real is derived and needs no act — its ports come back, it
+         * runs, and [StructureMap] starts calling it solid — because all three ask
+         * [DeckArray.holdsFullBill] rather than a stored flag.
+         */
+        private fun finishMachine(m: DeckMachine, tiles: Array<TileIndex>) {
+            if (m.kind.isPermeable || !deck.holdsFullBill(m)) return
+            // Guaranteed to succeed: the delivery that got here was refused unless the air could go.
+            tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { originOf[it] == TileIndex.NONE }
+        }
+
+        /**
          * Whether a deck machine's port stands on this tile, which locks the conduit under it.
          *
          * Rebuilds the whole port map for one question, which is affordable only because it is asked
@@ -1814,9 +1961,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val m = deck[tile] ?: continue
                 if (m.center != tile) continue
                 // A ghost's real ports are not there yet: there is nothing behind them to feed and
-                // nothing to collect. What it has instead is a construction port, and that is the
-                // only opening a half-built machine offers the network.
-                if (deck.isGhost(tile)) continue
+                // nothing to collect. What it has instead is a construction port on its centre tile,
+                // and that is the only opening a half-built machine offers the network.
+                if (deck.isGhost(tile)) { add(constructionPortOf(m)); continue }
                 for (port in portsOf(grid, m)) add(port)
             }
             return out
@@ -1949,6 +2096,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (segment.deconstructing) continue
                 if (!tracks.holdsFullBill(Conduit.Rail, tile)) ghosts.add(tile)
             }
+            // A ghost machine is a sink at its **centre tile**, which is where its construction port
+            // stands — see [constructionPortOf]. Gathered here rather than asked per tile because
+            // the absorb callback runs for every loaded tile of every run on every step.
+            val machineGhosts = HashMap<TileIndex, DeckMachine>()
+            for (i in 0 until deck.size) {
+                val tile = TileIndex(i)
+                val m = deck[tile] ?: continue
+                if (m.center != tile) continue
+                if (rails[i] == null) continue
+                if (deck.isGhost(tile)) machineGhosts[tile] = m
+            }
+
             val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
@@ -1980,14 +2139,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Only a ghost refuses anything, and only a ghost is worth reading a lump off
                     // the layer for — `resourceAt` allocates, and this is asked of every candidate
                     // direction of every loaded tile on every step.
-                    if (!ghosts.contains(to)) true
-                    else rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it.mixture) } ?: false
+                    val ghostMachine = if (ghosts.contains(to)) null else machineGhosts[to]
+                    when {
+                        ghosts.contains(to) ->
+                            rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it.mixture) } ?: false
+                        // A machine's casing is refused on exactly the same terms as a rail's, off
+                        // its own bill — the anti-exploit does not get weaker because the thing being
+                        // built is bigger.
+                        ghostMachine != null -> rail.resourceAt(from)?.let {
+                            buildableFrom(
+                                machineBillOfMaterials(ghostMachine.kind, ghostMachine.tiles(grid).size),
+                                it.mixture,
+                            )
+                        } ?: false
+                        else -> true
+                    }
                 },
             ) { tile ->
                 // A ghost eats first, and eats instead of the machine rather than after it: being
                 // short of its bill *is* being an input, and the tile is the address, so a machine
                 // standing over unbuilt track is cut off until its feed is finished.
+                //
+                // ⚠️ **Track before the machine**, in that order: a ghost rail under a ghost machine
+                // takes what it needs and the remainder rides on into the casing. The rail has to
+                // win, because a machine standing on track that cannot carry anything is a machine
+                // nothing can ever reach.
                 if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile)
+                machineGhosts[tile]?.let { return@advanceSegments absorbIntoMachineGhost(tile, it) }
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
                 val at = ports[tile]
