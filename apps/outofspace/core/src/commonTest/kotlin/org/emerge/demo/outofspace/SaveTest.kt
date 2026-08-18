@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -389,17 +391,38 @@ class SaveTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0))
-        rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
-            .reading(SolidPacket(ore))
+        rails[grid.tile(2, 2).index] = Segment(Conduit.Rail)
+        deck += Gauge(grid.tile(2, 2)).reading(SolidPacket(ore))
 
         val state = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-        val back = Save.read(Save.write(state)).railAt(grid.tile(2, 2))
+        val back = Save.read(Save.write(state)).deck[grid.tile(2, 2)] as? Gauge
         assertNotNull(back)
-        assertTrue(back.isGauge)
         assertEquals(Form.Ore, back.lastForm)
         assertEquals(Species.Quartz, back.lastDominant)
         assertEquals(590, back.lastPurity)
         assertEquals(1000L, back.lastMass)
+    }
+
+    /**
+     * Every file up to this one wrote a gauge as `gauge=1` on the tile's `conduit` record, and a
+     * valve as `valve=1`. Both are buildings now, so an old file has to put one on the deck.
+     */
+    @Test
+    fun `a legacy gauge or valve flag loads as the building it became`() {
+        val state = Save.read(
+            """
+            outofspace 1
+            grid 6 4
+            conduit 8 Rail links=1 gauge=1 lastspecies=Quartz lastpurity=590 lastmass=1000
+            conduit 9 Pipe links=1 valve=1
+            """.trimIndent(),
+        )
+        val gauge = state.deck[TileIndex(8)] as? Gauge
+        assertNotNull(gauge, "the gauge flag did not become a gauge")
+        assertEquals(Species.Quartz, gauge.lastDominant, "its reading came back")
+        assertEquals(590, gauge.lastPurity)
+        assertNotNull(state.railAt(TileIndex(8)), "and the track it stands on is still track")
+        assertTrue(state.deck[TileIndex(9)] is Valve, "the valve flag did not become a valve")
     }
 
     @Test

@@ -19,8 +19,7 @@ import org.emerge.demo.outofspace.world.machine.MachineKind
 val MachineKind.size: Int
     get() = when (this) {
         // Fittings. Every one of them is a length of conduit, and a length of conduit is a tile.
-        MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve -> 1
-        MachineKind.Wire -> 1
+        MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> 1
         // A floor to land a rock on, and a rock is five tiles across.
     }
 val DeckMachineKind.diameter: Int
@@ -29,7 +28,7 @@ val DeckMachineKind.diameter: Int
         // A room-sized installation, as it was on the machine list.
         DeckMachineKind.Storage -> 3
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
-        DeckMachineKind.Thruster,
+        DeckMachineKind.Thruster, DeckMachineKind.Gauge, DeckMachineKind.Valve,
         -> 1
         DeckMachineKind.Vaporizer, DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
         // A furnace at five: it should dominate the deck it sits on, and its heat should have

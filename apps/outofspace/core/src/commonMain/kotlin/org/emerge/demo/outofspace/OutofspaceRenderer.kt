@@ -10,6 +10,8 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
 import org.emerge.demo.outofspace.world.outputBufferRole
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -495,10 +497,8 @@ class OutofspaceRenderer {
             )
         }
         rect(cx, cy, Visual.PIPE_DIAMETER * tilePx, Visual.PIPE_DIAMETER * tilePx, color)
-        // Valve: bright collar (wider than pipe, centred).
-        if (segment.isValve) {
-            rect(cx, cy, Visual.VALVE_COLLAR * tilePx, Visual.VALVE_COLLAR * tilePx, Colors.VALVE_CORE)
-        }
+        // The valve that may be standing on this tile is a deck machine and draws itself — see
+        // [drawDeckMachine]. The pipe under it is just pipe.
     }
 
     /** Track tile + packet (thin spine, gauge collar). */
@@ -518,18 +518,10 @@ class OutofspaceRenderer {
         }
         // The hub, always drawn
         rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(MachineKind.Rail))
-        // A gauge wears a collar so it reads as an instrument in the line rather than as track. It
-        // no longer wears a colour, because it no longer names one: what it reports on is the wire
-        // beneath it, and that wire says its own value.
-        if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
     }
 
     private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
         val segment = state.railAt(tile) ?: return
-        // A gauge wears a collar so it reads as an instrument in the line rather than as track. It
-        // no longer wears a colour, because it no longer names one: what it reports on is the wire
-        // beneath it, and that wire says its own value.
-        if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
         val packet = state.rail.packetAt(tile) ?: return
         val motion = state.motion
 
@@ -632,6 +624,12 @@ class OutofspaceRenderer {
             // Drawn by [drawBridge] in its own pass, above the track it crosses — a bridge is the
             // one deck machine that is *over* the tile rather than on it.
             is Bridge -> {}
+            // A collar rather than a body, so it reads as an instrument in the line rather than as
+            // a box sitting on it — it is a fitting the track runs through. It wears no colour,
+            // because it names none: what it reports on is the wire beneath it.
+            is Gauge -> frame(x, y, Colors.GAUGE_COLLAR)
+            // Bright core, wider than the pipe it opens, centred on the tile.
+            is Valve -> bodyRect(x, y, 1, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
             is Extractor -> {
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
@@ -1247,13 +1245,13 @@ class OutofspaceRenderer {
 /** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
 fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Rail -> 0x39445AFFL
-    MachineKind.Gauge -> 0x39445AFFL
     MachineKind.Pipe -> 0x7A5A3AFFL
-    MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
 }
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Bridge -> 0x1A2030FFL
+    DeckMachineKind.Gauge -> 0x39445AFFL
+    DeckMachineKind.Valve -> 0xD8A860FFL
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
     DeckMachineKind.Vent -> 0x3A3A44FFL

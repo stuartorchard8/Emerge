@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.SignalSource
@@ -346,21 +348,24 @@ class OutofspaceHud {
             // Rail on this tile (listed before machine — on top).
             val segment = s.railAt(tile)
             if (segment != null) {
-                title(if (segment.isGauge) "GAUGE" else "RAIL")
-                if (segment.isGauge) {
-                    if (segment.lastDominant == null) {
+                // The gauge is a building standing over the track now, so it is titled by whatever
+                // is on the deck and the track under it is just track.
+                val gauge = s.deck[tile] as? Gauge
+                title(if (gauge != null) "GAUGE" else "RAIL")
+                if (gauge != null) {
+                    if (gauge.lastDominant == null) {
                         row("nothing has passed through yet", 0x9A9A9AFFL)
                     } else {
-                        keyValue("LAST SEEN", segment.lastForm?.name ?: "?")
+                        keyValue("LAST SEEN", gauge.lastForm?.name ?: "?")
                         keyValue(
-                            segment.lastDominant.name.uppercase(),
-                            "${segment.lastPurity / 10}%",
+                            gauge.lastDominant.name.uppercase(),
+                            "${gauge.lastPurity / 10}%",
                             0x9A9A9AFFL,
-                            speciesColor(segment.lastDominant),
+                            speciesColor(gauge.lastDominant),
                         )
-                        keyValue("of", mass(segment.lastMass))
+                        keyValue("of", mass(gauge.lastMass))
                     }
-                    if (segment.isGauge) keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
+                    keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
                 }
                 val riding = controller.state.rail.massAt(tile)
                 if (riding == 0L) row("(nothing on it)", 0x9A9A9AFFL)
@@ -539,8 +544,8 @@ class OutofspaceHud {
                 gap()
             }
 
-            val gauge = controller.state.railAt(tile)
-            if (gauge?.isGauge == true) {
+            val gauge = controller.state.deck[tile] as? Gauge
+            if (gauge != null) {
                 keyValue(
                     "REPORTS",
                     if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[tile]}"

@@ -16,6 +16,8 @@ import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -285,7 +287,17 @@ object Save {
         when (m) {
             // An airlock is its wiring, and the common code around this writes that. A bridge is
             // its facing and its three slots, and both of those are written by the common code too.
-            is Hull, is Airlock, is Bridge -> {}
+            // A valve is its position and nothing else. An airlock is its wiring, and a bridge its
+            // facing and its three slots — all of those are written by the common code around this.
+            is Hull, is Airlock, is Bridge, is Valve -> {}
+            // A gauge's reading persists after the packet has gone, so it is state, not decoration.
+            // The field names are the ones the `conduit` record used while a gauge was a segment.
+            is Gauge -> {
+                m.lastForm?.let { put("lastform", it.name) }
+                m.lastDominant?.let { put("lastspecies", it.name) }
+                if (m.lastPurity != 0) put("lastpurity", m.lastPurity.toString())
+                if (m.lastMass != 0L) put("lastmass", m.lastMass.toString())
+            }
             is Vent -> put("vented", m.ventedMass.toString())
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
@@ -386,18 +398,9 @@ object Save {
     private fun writeSegment(s: Segment, tile: TileIndex, rail: RailLayer, conduits: Conduits): String {
         val f = StringBuilder(s.conduit.name)
         f.append(" links=").append(s.links)
-        if (s.isGauge) f.append(" gauge=1")
-        // Written only when set, like every other optional field: a file full of `valve=0` would
-        // hide the handful of tiles that are actually taps.
-        if (s.valve) f.append(" valve=1")
         // The load moved to [RailLayer]; the record keeps the field name it always had, so a file
         // written before that change still loads its belts full.
         if (s.conduit == Conduit.Rail) rail.packetAt(tile)?.let { f.append(" held=").append(writePacket(it)) }
-        // A gauge's reading persists after the packet has gone, so it is state, not decoration.
-        s.lastForm?.let { f.append(" lastform=").append(it.name) }
-        s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
-        if (s.lastPurity != 0) f.append(" lastpurity=").append(s.lastPurity)
-        if (s.lastMass != 0L) f.append(" lastmass=").append(s.lastMass)
         // Read off the layer, which is where a segment's heat lives now. The record is unchanged:
         // still `k=`, still omitted when the tile is at the temperature a freshly laid one would be,
         // so a file written before the migration and one written after are the same file.
@@ -666,6 +669,13 @@ object Save {
                     // two of the same conduit on one tile is still a corrupt file.
                     if (layer[t.index] != null) fail("two ${segment.conduit.label} segments at tile $t")
                     layer[t.index] = segment
+                    // A gauge or a valve the record was carrying as a flag. It becomes a building
+                    // standing on that tile — unless something is already standing there, which a
+                    // hand-edited file can say and the game cannot represent.
+                    readMigratedFitting(tokens.drop(2), t, scale, ::fail)?.let { fitting ->
+                        if (deck[t] != null) fail("a fitting and a machine both stand at tile $t")
+                        deck += fitting
+                    }
                 }
                 // A `bridge` record is how every file up to this one spelled it, back when a bridge
                 // was its own list. It is a deck machine now, so the keyword is a legacy spelling of
@@ -1045,6 +1055,20 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
             )
+            // Both are fittings that stand over a run and hold nothing. A gauge's reading is state
+            // and comes back with it; a valve is only a position.
+            DeckMachineKind.Gauge -> Gauge(
+                tile,
+                lastForm = f["lastform"]?.let { name ->
+                    Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
+                },
+                lastDominant = f["lastspecies"]?.let { name ->
+                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                },
+                lastPurity = num("lastpurity", 0L).toInt(),
+                lastMass = massNum("lastmass", 0L),
+            )
+            DeckMachineKind.Valve -> Valve(tile)
             DeckMachineKind.Bridge -> {
                 // ⛔ A pipe bridge is refused rather than quietly turned into a rail one. There was
                 // never a way to build one — `Edit.Place` only ever made rail bridges — so a file
@@ -1088,21 +1112,40 @@ object Save {
             if (packet is SolidPacket) rail.put(tile, packet.resource)
             else fail("only a solid rides the track; tile $tile carries $held")
         }
-        return Segment(
-            conduit = conduit,
-            links = links,
-            // `gauge=1` since v11; before that, *having* a channel was what made a segment a gauge.
-            isGauge = f["gauge"] == "1" || f["channel"] != null,
-            lastForm = f["lastform"]?.let { name ->
-                Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
-            },
-            lastDominant = f["lastspecies"]?.let { name ->
-                Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
-            },
-            lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
-            lastMass = scale.of(f["lastmass"]?.toLongOrNull() ?: 0L),
-            valve = f["valve"] == "1",
-        )
+        return Segment(conduit = conduit, links = links)
+    }
+
+    /**
+     * The fitting a **legacy** conduit record was carrying, if any — the gauge or the valve that
+     * used to be a flag on the segment itself.
+     *
+     * Both are buildings standing over their run now, so an old file's `gauge=1` or `valve=1` puts
+     * one on the deck at that tile. Nothing writes these fields any more; this is migration only,
+     * and it is why the reader needs the record after [readSegment] has finished with it.
+     */
+    private fun readMigratedFitting(
+        tokens: List<String>,
+        tile: TileIndex,
+        scale: Rescale,
+        fail: (String) -> Nothing,
+    ): DeckMachine? {
+        val f = fields(tokens.drop(1), fail)
+        // `gauge=1` since v11; before that, *having* a channel was what made a segment a gauge.
+        if (f["gauge"] == "1" || f["channel"] != null) {
+            return Gauge(
+                tile,
+                lastForm = f["lastform"]?.let { name ->
+                    Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
+                },
+                lastDominant = f["lastspecies"]?.let { name ->
+                    Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
+                },
+                lastPurity = f["lastpurity"]?.toIntOrNull() ?: 0,
+                lastMass = scale.of(f["lastmass"]?.toLongOrNull() ?: 0L),
+            )
+        }
+        if (f["valve"] == "1") return Valve(tile)
+        return null
     }
 
     /**

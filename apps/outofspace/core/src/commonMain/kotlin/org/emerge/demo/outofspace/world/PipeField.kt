@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
@@ -67,9 +69,14 @@ fun pipeApertures(edges: EdgeGrid, conduits: Conduits): ApertureField {
  * between, so a fully open valve moves the gas that fits and no more. A throttled valve is this
  * number scaled down, and comes free the moment anything wants to ask for one.
  */
-fun valveOpenings(grid: Grid, conduits: Conduits): IntArray =
+fun valveOpenings(grid: Grid, conduits: Conduits, deck: DeckArray): IntArray =
     IntArray(grid.size) { tile ->
-        if (conduits.at(Conduit.Pipe, TileIndex(tile))?.isValve == true) ApertureField.OPEN else ApertureField.CLOSED
+        // Both, and that is the rule a valve used to get for free by being a length of pipe: it
+        // opens the pipe it stands on, so with no pipe under it there is nothing to open. A valve on
+        // bare floor is a half-built vessel, not an error.
+        val at = TileIndex(tile)
+        val open = deck[at] is Valve && conduits.at(Conduit.Pipe, at) != null
+        if (open) ApertureField.OPEN else ApertureField.CLOSED
     }
 
 /**

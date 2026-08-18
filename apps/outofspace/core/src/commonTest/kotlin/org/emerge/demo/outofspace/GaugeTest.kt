@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -55,7 +56,9 @@ class GaugeTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Storage(grid.tile(3, 2), Direction.Right)
         deck += Storage(grid.tile(10, 2), Direction.Right)
-        joinRow(grid, rails, 4, 9, 2, setOf(6))
+        joinRow(grid, rails, 4, 9, 2)
+        // The gauge is a building standing over the run now, not a flag on it — two acts.
+        deck += Gauge(grid.tile(gaugeTileX, 2))
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
         // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
         val wires = arrayOfNulls<Segment>(grid.size)
@@ -71,7 +74,7 @@ class GaugeTest {
     /** Where [line] puts its gauge, so a test can ask what that tile's circuit reads. */
     private val gaugeTileX = 6
 
-    private fun gaugeOf(s: VesselState): Segment = s.railAt(s.grid.tile(6, 2))!!
+    private fun gaugeOf(s: VesselState): Gauge = s.deck[s.grid.tile(6, 2)] as Gauge
 
     @Test
     fun `a gauge reports the dominant species of what passes through`() {
@@ -120,7 +123,9 @@ class GaugeTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Storage(grid.tile(3, 2), Direction.Right)
         deck += Storage(grid.tile(10, 2), Direction.Right)
-        joinRow(grid, rails, 4, 9, 2, setOf(6))
+        joinRow(grid, rails, 4, 9, 2)
+        // The gauge is a building standing over the run now, not a flag on it — two acts.
+        deck += Gauge(grid.tile(gaugeTileX, 2))
         val bare = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 2), pure)
 
         val s = run(bare, 20*RAIL_PERIOD)
@@ -131,14 +136,11 @@ class GaugeTest {
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
         val s = run(workingVessel(Grid(40, 28)), 600)
-        // The starter plant's two gauges, read through the tiles they sit on rather than through
-        // names — which is the whole difference the wire layer makes. Neither has a run under it in
-        // the shipped vessel, so the readings come off the segments themselves.
         // Found by scanning rather than by coordinates: the vessel is fitted to its own contents on
         // construction, so a tile index written down here would be a hostage to its layout. The two
         // gauges on the main line are the first two in tile order, and that order is left-to-right.
         val readings = s.grid.tiles
-            .mapNotNull { t -> s.railAt(t)?.takeIf { it.isGauge }?.let { t to it.lastPurity } }
+            .mapNotNull { t -> (s.deck[t] as? Gauge)?.let { t to it.lastPurity } }
         assertTrue(readings.size >= 2, "the starter plant should ship two gauges, found ${readings.size}")
         val raw = readings[0].second
         val concentrated = readings[1].second

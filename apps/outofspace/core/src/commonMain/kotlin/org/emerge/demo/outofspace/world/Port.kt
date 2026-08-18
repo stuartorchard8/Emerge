@@ -4,7 +4,9 @@ import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -117,7 +119,9 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // A pump's traffic is gas: it draws from the room it faces and pushes into the pipe on
         // its own tile, neither of which is a port. Track arriving at one would have nothing to hand
         // over.
-        is Sensor, is WireButton, is Pump -> emptyList()
+        // No ports at all: a gauge only watches the run under it, and a valve only opens onto the
+        // room it stands in. Neither is a place material can be handed to.
+        is Sensor, is WireButton, is Pump, is Gauge, is Valve -> emptyList()
     }
 }
 

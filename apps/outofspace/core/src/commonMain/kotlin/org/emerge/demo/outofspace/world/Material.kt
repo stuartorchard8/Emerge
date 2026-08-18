@@ -185,8 +185,8 @@ fun seriesConductance(a: Long, b: Long): Long {
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
 val MachineKind.material: Material
     get() = when (this) {
-        MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
-        MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
+        MachineKind.Rail -> Conduit.Rail.material
+        MachineKind.Pipe -> Conduit.Pipe.material
         MachineKind.Wire -> Conduit.Signal.material
     }
 val DeckMachineKind.material: Material
@@ -201,7 +201,9 @@ val DeckMachineKind.material: Material
         -> Material.Titanium
         DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> Material.Firebrick
         // Iron, like the track it holds up.
-        DeckMachineKind.Bridge -> Conduit.Rail.material
+        DeckMachineKind.Bridge, DeckMachineKind.Gauge -> Conduit.Rail.material
+        // Copper, like the plumbing it opens.
+        DeckMachineKind.Valve -> Conduit.Pipe.material
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -233,12 +235,9 @@ val MachineKind.fillPermille: Int
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
 
 
-        // Instruments and fittings: mostly a housing.
-        MachineKind.Gauge -> 40
-
         // Track and pipework, laid across a tile rather than filling it.
         MachineKind.Rail -> 20
-        MachineKind.Pipe, MachineKind.Valve -> 15
+        MachineKind.Pipe -> 15
 
         // A cable.
         MachineKind.Wire -> 2
@@ -264,6 +263,10 @@ val DeckMachineKind.fillPermille: Int
         // rail held up in the air. Carried across from when a bridge was a fitting, so the migration
         // does not quietly change what the ship weighs.
         DeckMachineKind.Bridge -> 20
+        // Fittings on a run, keeping the fill each had while it was a flag on a `Segment` — so the
+        // migration does not quietly change what the ship weighs.
+        DeckMachineKind.Gauge -> 40
+        DeckMachineKind.Valve -> 15
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

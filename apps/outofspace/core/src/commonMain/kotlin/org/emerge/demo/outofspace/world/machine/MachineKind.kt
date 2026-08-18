@@ -16,9 +16,7 @@ import org.emerge.demo.outofspace.world.Conduit
  */
 enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPermeable: Boolean = false) {
     Rail("RAIL", Conduit.Rail),
-    Gauge("GAUGE", Conduit.Rail),
     Pipe("PIPE", Conduit.Pipe),
-    Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
     ;
 
@@ -54,6 +52,19 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
      * bridge, so crossing a run costs three tiles of deck.
      */
     Bridge("BRIDGE", isPermeable = true),
+
+    /**
+     * An instrument standing over a run, reading what goes past. Permeable: a belt with a gauge on
+     * it is still a corridor.
+     */
+    Gauge("GAUGE", isPermeable = true),
+
+    /**
+     * An opening between the pipe under it and the room it stands in. Permeable, and that is not a
+     * convenience — a valve that displaced the air out of its own tile would open onto the vacuum it
+     * had just made. See [Valve].
+     */
+    Valve("VALVE", isPermeable = true),
     ;
 
     companion object {

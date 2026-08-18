@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -27,11 +28,16 @@ fun starterVessel(
         if (grid.inBounds(x, y)) deck += m(grid.tile(x, y))
     }
 
-    /** Lay track, keeping existing joins (preserves crossings). */
+    /**
+     * Lay track, keeping existing joins (preserves crossings).
+     *
+     * [gauge] stands a [Gauge] on the tile as well. It is a building over the run now rather than a
+     * flag on it, so laying one is two acts and this does both — the starter vessel is stated, not
+     * played, and it never goes through the edit path that would otherwise pair them.
+     */
     fun lay(tile: TileIndex, gauge: Boolean = false) {
-        val existing = rails[tile.index]
-        rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
-            ?: Segment(Conduit.Rail, isGauge = gauge)
+        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
+        if (gauge && deck[tile] == null) deck += Gauge(tile)
     }
 
     /** Joins two adjacent tiles of track, both halves, exactly as a drag would. */

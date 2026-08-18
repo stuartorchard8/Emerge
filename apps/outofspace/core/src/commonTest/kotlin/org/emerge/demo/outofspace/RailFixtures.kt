@@ -45,12 +45,10 @@ class RailPlan(private val grid: Grid) {
      * direction only. That is exactly how the first version of this helper silently cut every
      * crossing it drew.
      */
-    fun lay(x: Int, y: Int, gauge: Boolean = false): RailPlan = apply {
+    fun lay(x: Int, y: Int): RailPlan = apply {
         if (!grid.inBounds(x, y)) return@apply
         val tile = grid.tile(x, y)
-        val existing = rails[tile.index]
-        rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
-            ?: Segment(Conduit.Rail, isGauge = gauge)
+        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
     }
 
     /** Joins two adjacent tiles, both halves, exactly as [Edit.Lay] does. */
@@ -62,11 +60,11 @@ class RailPlan(private val grid: Grid) {
         rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
     }
 
-    /** A horizontal run on row [y], inclusive, with optional gauges at given x positions. */
-    fun row(fromX: Int, toX: Int, y: Int, gaugeAt: Set<Int> = emptySet()): RailPlan = apply {
+    /** A horizontal run on row [y], inclusive. */
+    fun row(fromX: Int, toX: Int, y: Int): RailPlan = apply {
         val lo = minOf(fromX, toX)
         val hi = maxOf(fromX, toX)
-        for (x in lo..hi) lay(x, y, x in gaugeAt)
+        for (x in lo..hi) lay(x, y)
         for (x in lo until hi) join(x, y, Direction.Right)
     }
 
@@ -89,27 +87,25 @@ fun rails(grid: Grid, build: RailPlan.() -> Unit): List<Segment?> = RailPlan(gri
 // For fixtures that already own a segment array and only want a connected run laid into it. Same
 // rule as everywhere else: laying is not joining, so these do both.
 
-fun joinRow(grid: Grid, rails: Array<Segment?>, fromX: Int, toX: Int, y: Int, gaugeAt: Set<Int> = emptySet()) {
+fun joinRow(grid: Grid, rails: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
     val lo = minOf(fromX, toX)
     val hi = maxOf(fromX, toX)
-    for (x in lo..hi) layInto(grid, rails, x, y, x in gaugeAt)
+    for (x in lo..hi) layInto(grid, rails, x, y)
     for (x in lo until hi) linkPair(grid, rails, grid.tile(x, y), Direction.Right)
 }
 
 fun joinCol(grid: Grid, rails: Array<Segment?>, x: Int, fromY: Int, toY: Int) {
     val lo = minOf(fromY, toY)
     val hi = maxOf(fromY, toY)
-    for (y in lo..hi) layInto(grid, rails, x, y, false)
+    for (y in lo..hi) layInto(grid, rails, x, y)
     for (y in lo until hi) linkPair(grid, rails, grid.tile(x, y), Direction.Down)
 }
 
 /** Lays track, preserving the joins of anything already at that tile. See [RailPlan.lay]. */
-private fun layInto(grid: Grid, rails: Array<Segment?>, x: Int, y: Int, gauge: Boolean) {
+private fun layInto(grid: Grid, rails: Array<Segment?>, x: Int, y: Int) {
     if (!grid.inBounds(x, y)) return
     val tile = grid.tile(x, y)
-    val existing = rails[tile.index]
-    rails[tile.index] = existing?.copy(isGauge = gauge || existing.isGauge)
-        ?: Segment(Conduit.Rail, isGauge = gauge)
+    rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
 }
 
 private fun linkPair(grid: Grid, rails: Array<Segment?>, a: TileIndex, dir: Direction) {

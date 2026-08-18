@@ -17,6 +17,8 @@ import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
 import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.machine.Valve
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
@@ -197,8 +199,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 // Gauge persists after packet leaves.
                 for (tile in w.grid.tiles) {
-                    val r = w.rails[tile.index] ?: continue
-                    if (r.isGauge) raise(tile, (r.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
+                    val g = w.deck[tile] as? Gauge ?: continue
+                    raise(tile, (g.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
                 }
             }
             w.signals = signals
@@ -214,7 +216,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 w[tile] = when (m) {
                     // A bridge is inert like a length of track: its load is shuffled along by
                     // [advanceBridges] with the rest of the conduit step, not by running the machine.
-                    is Hull, is Airlock, is Vent, is Storage, is Bridge,
+                    // Inert: none of these is run by the tick. A gauge is read after the conduit
+                    // step (see [readGauges]) and a valve is a hole, not a mechanism.
+                    is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
                     is Sensor, is WireButton, is Pump -> m
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
@@ -278,7 +282,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Valves first: pressure propagates immediately, both layers see exchange
             // (see [exchangeLayers]).
             exchangeLayers(
-                openings = valveOpenings(state.grid, conduits),
+                openings = valveOpenings(state.grid, conduits, w.deck),
                 roomMass = w.masses,
                 roomEnergy = w.airEnergy,
                 pipeMass = w.pipeMass,
@@ -1170,21 +1174,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 built(tracks.lay(c, edit.tile))
                             }
                         }
-                        // Valve: upgrade existing pipe or lay new.
-                        MachineKind.Valve -> {
-                            // A valve is a fitting on a run, so laying one lays pipe — and a tile
-                            // with a belt on it has no room for pipe to lay.
-                            if (spokenFor(Conduit.Pipe, edit.tile)) return
-                            val existing = layer(Conduit.Pipe)[edit.tile.index]
-                            layer(Conduit.Pipe)[edit.tile.index] =
-                                existing?.copy(valve = true)
-                                    ?: Segment(Conduit.Pipe, valve = true)
-                                        .also { built(tracks.lay(Conduit.Pipe, edit.tile)) }
-                        }
-                        MachineKind.Gauge -> if (rails[edit.tile.index] == null && !spokenFor(Conduit.Rail, edit.tile)) {
-                            rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
-                                .also { built(tracks.lay(Conduit.Rail, edit.tile)) }
-                        }
                     }
                 }
                 is Edit.PlaceDeck -> {
@@ -1749,11 +1738,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * same moment the last of those writes used to happen.
          */
         fun readGauges() {
-            for (i in rails.indices) {
-                val segment = rails[i] ?: continue
-                if (!segment.isGauge) continue
-                val packet = rail.packetAt(TileIndex(i))
-                rails[i] = segment.reading(packet)
+            for (tile in grid.tiles) {
+                val gauge = deck[tile] as? Gauge ?: continue
+                // Reads the track under it. A gauge with no rail beneath sees nothing, which is a
+                // half-built vessel and not an error — the same as a sensor with no wire.
+                if (rails[tile.index] == null) continue
+                deck[tile] = gauge.reading(rail.packetAt(tile))
             }
         }
 
@@ -1809,9 +1799,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     buffers.put(store, merged)
                     true
                 }
-                // Neither a sensor nor a button nor a pump is on the material network at all:
-                // no ports, nothing to hand anything to.
-                is Sensor, is WireButton, is Pump -> false
+                // None of these is on the material network at all: no ports, nothing to hand
+                // anything to. A gauge watches the track under it and never takes anything off it;
+                // a valve is an opening onto the room, not a destination.
+                is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
                 is Vaporizer, is Thruster, is Processor, is ThermalDecomposer, is Smelter,
@@ -1858,6 +1849,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Smelter -> Smelter(tile, facing)
             DeckMachineKind.Extractor -> Extractor(tile, facing)
             DeckMachineKind.Bridge -> Bridge(tile, facing)
+            DeckMachineKind.Gauge -> Gauge(tile)
+            DeckMachineKind.Valve -> Valve(tile)
         }
     }
 }

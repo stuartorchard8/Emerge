@@ -7,6 +7,8 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.Gauge
+import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -827,6 +829,9 @@ fun massIn(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buffer
  */
 fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): Int = when (machine) {
     null -> 0
+    // Neither holds anything, so neither has a fullness. A gauge's reading is a different question
+    // and reaches the wire by its own route — see [OutofspaceReducer]'s gauge pass.
+    is Gauge, is Valve -> 0
     // Slots occupied, not mass: a bridge is full when there is nowhere to put the next lump, and
     // three small packets back it up exactly as three large ones do.
     is Bridge -> {

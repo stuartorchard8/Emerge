@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_PERIOD
@@ -65,7 +67,11 @@ class ValveTest {
     }
 
     private fun valveAt(state: VesselState, tile: TileIndex): VesselState =
-        edit(state, Edit.Place(tile, MachineKind.Valve, Direction.Right))
+        edit(state, Edit.PlaceDeck(tile, DeckMachineKind.Valve, Direction.Right))
+
+    /** Whether the pipe at [tile] is open to the room — a valve standing on a length of pipe. */
+    private fun isOpen(s: VesselState, tile: TileIndex): Boolean =
+        s.deck[tile] is Valve && s.conduits.at(Conduit.Pipe, tile) != null
 
     private fun pipeMass(s: VesselState, tile: TileIndex): Long {
         var sum = 0L
@@ -163,18 +169,22 @@ class ValveTest {
      * two jobs: open a run that is already there, and lay an open tile where there is none.
      */
     @Test
-    fun `the valve brush lays its own pipe on bare deck and opens one that is already there`() {
+    fun `a valve opens the pipe it stands on, and nothing on bare deck`() {
+        // ⚠️ The brush used to lay its own pipe, because the valve *was* the pipe. It is a building
+        // over a run now: on bare deck it stands there opening nothing, exactly as a sensor with no
+        // wire under it drives nothing.
         val bare = valveAt(VesselState(grid, hulled(), buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size)), grid.tile(6, 6))
-        val laid = bare.conduits.at(Conduit.Pipe, grid.tile(6, 6))
-        assertTrue(laid != null && laid.isValve, "the brush laid nothing on bare deck")
+        assertTrue(bare.deck[grid.tile(6, 6)] is Valve, "the valve was not placed at all")
+        assertEquals(null, bare.conduits.at(Conduit.Pipe, grid.tile(6, 6)), "the brush laid pipe of its own")
+        assertTrue(!isOpen(bare, grid.tile(6, 6)), "a valve on bare deck opened something")
 
         var run = pipeRun(VesselState(grid, hulled(), buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size)), 6, 4, 15)
         val before = run.conduits.at(Conduit.Pipe, grid.tile(6, 6))!!
-        assertTrue(!before.isValve, "the fixture laid a run that was already open")
+        assertTrue(!isOpen(run, grid.tile(6, 6)), "the fixture laid a run that was already open")
         run = valveAt(run, grid.tile(6, 6))
+        assertTrue(isOpen(run, grid.tile(6, 6)), "the valve did not open the pipe under it")
         val after = run.conduits.at(Conduit.Pipe, grid.tile(6, 6))!!
-        assertTrue(after.isValve, "the brush did not open the pipe already on the tile")
-        assertEquals(before.links, after.links, "opening a valve tore up the run it is part of")
+        assertEquals(before.links, after.links, "placing a valve tore up the run it stands on")
     }
 
     /**
@@ -187,11 +197,8 @@ class ValveTest {
         val back = org.emerge.demo.outofspace.world.Save.read(org.emerge.demo.outofspace.world.Save.write(after))
 
         val tile = grid.tile(6, 6)
-        assertTrue(back.conduits.at(Conduit.Pipe, tile)?.isValve == true, "the valve came back sealed")
-        assertTrue(
-            back.conduits.at(Conduit.Pipe, grid.tile(7, 6))?.isValve == false,
-            "an ordinary length of pipe came back open",
-        )
+        assertTrue(isOpen(back, tile), "the valve came back sealed")
+        assertTrue(!isOpen(back, grid.tile(7, 6)), "an ordinary length of pipe came back open")
         assertEquals(after.pipeAir, back.pipeAir, "the pipes came back holding something else")
     }
 
