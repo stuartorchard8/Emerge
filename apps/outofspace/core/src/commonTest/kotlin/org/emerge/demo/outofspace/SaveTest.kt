@@ -445,6 +445,38 @@ class SaveTest {
         }
     }
 
+    @Test
+    fun `a casing that chemistry has altered comes back altered`() {
+        val played = run(starterVessel(cfg.initialGrid), 20)
+        // Stand in for the reaction that does not exist yet: rust one plate. The point is that the
+        // deck's composition is no longer derivable from the machine's kind, which is the whole
+        // reason it has to be in the file.
+        val altered = played.grid.tiles.first { played.deck[it] != null }
+        val before = played.deck.stuff[altered, Species.Iron]
+        played.deck.stuff[altered, Species.Iron] = before / 2
+        played.deck.stuff[altered, Species.Oxygen] = before / 2
+
+        val back = Save.read(Save.write(played))
+        assertEquals(before / 2, back.deck.stuff[altered, Species.Iron], "iron at $altered")
+        assertEquals(before / 2, back.deck.stuff[altered, Species.Oxygen], "oxygen at $altered")
+        // And nothing else moved: every other deck tile is still what its kind is made of.
+        for (tile in played.grid.tiles) {
+            assertEquals(
+                played.deck.stuff.mixtureAt(tile),
+                back.deck.stuff.mixtureAt(tile),
+                "deck matter differs at tile $tile",
+            )
+        }
+    }
+
+    @Test
+    fun `an untouched vessel writes no deck matter at all`() {
+        // Absence means "made of what its kind is made of". If a plain vessel wrote a line per plate
+        // the file would grow by thousands of lines that say nothing the machine record does not.
+        val text = Save.write(run(starterVessel(cfg.initialGrid), 20))
+        assertTrue(text.lines().none { it.startsWith("deckstuff") }, "an unaltered deck wrote matter")
+    }
+
     // ── Reading things that are not saves ─────────────────────────────────────
 
     @Test

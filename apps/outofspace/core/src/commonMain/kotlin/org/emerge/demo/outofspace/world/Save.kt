@@ -158,6 +158,7 @@ object Save {
         // Packed sparsely like heat. Version 3 and earlier stored per-tile heat; absent loads ambient.
         writeSparse(out, "airheat", state.air.copyEnergy().data)
         writeDeckHeat(out, state.deck.stuff)
+        writeDeckStuff(out, state.deck)
         out.append("airventedheat ").append(state.airVentedEnergy).append('\n')
         // The debug bellows' admission. Appended rather than versioned, like the impulse line:
         // absent reads as zero, which is exactly what a world that never cheated has.
@@ -221,6 +222,35 @@ object Save {
             if (++onLine == HEAT_PER_LINE) { out.append('\n'); onLine = 0 }
         }
         if (onLine != 0) out.append('\n')
+    }
+
+    /**
+     * The deck's **matter**, one `deckstuff tile <mixture>` line per tile whose casing is no longer
+     * what it was built as.
+     *
+     * ### Why only the tiles that differ
+     *
+     * A casing starts as [tileBillOfMaterials] of its kind, and until something reacts with it that
+     * is *all* it ever is — a hull tile is a hull tile. Writing the composition of every deck tile
+     * would put thousands of identical lines in the file, one per plate, and none of them would say
+     * anything the machine record does not already say. So absence means "made of what its kind is
+     * made of", which is exactly what every file written before this line existed meant, and no
+     * version bump is needed to read one.
+     *
+     * The same reasoning as the conduit `k=` field, and the same trap: the comparison must be
+     * against **this tile's** bill, not a per-kind constant, because [Mixture.scaledTo] apportions
+     * and a multi-species material lands a unit or two off the round figure the table states.
+     */
+    private fun writeDeckStuff(out: StringBuilder, deck: DeckArray) {
+        for (tile in deck.grid.tiles) {
+            val m = deck[tile] ?: continue
+            val bill = tileBillOfMaterials(m.kind)
+            for (part in m.tiles(deck.grid)) {
+                if (Species.ALL.all { deck.stuff[part, it] == bill[it] }) continue
+                out.append("deckstuff ").append(part.index).append(' ')
+                    .append(writeMixture(deck.stuff.mixtureAt(part))).append('\n')
+            }
+        }
     }
 
     private fun writeSparse(out: StringBuilder, tag: String, values: LongArray) {
@@ -719,6 +749,15 @@ object Save {
                 }
                 "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
                 "deckheat" -> readDeckHeat(tokens, deck.stuff, energyScale, ::fail)
+                "deckstuff" -> {
+                    val t = tile(1)
+                    val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
+                    // The machine must already be down: this line *replaces* the bill of materials
+                    // `+=` laid, and writing it onto a bare tile would claim a row the deck has no
+                    // machine for. The writer emits it after the machine records for that reason.
+                    if (!deck.stuff.occupies(t)) fail("deckstuff at $t, where no deck machine stands")
+                    for (s in Species.ALL) deck.stuff[t, s] = mix[s]
+                }
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
