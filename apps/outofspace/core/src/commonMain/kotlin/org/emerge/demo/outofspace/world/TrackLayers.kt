@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
  * What the conduit networks are **made of**: one [StuffLayer] per [Conduit], holding the metal of
@@ -66,8 +65,7 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      */
     fun holdsFullBill(conduit: Conduit, tile: TileIndex): Boolean {
         val stuff = layers[conduit.ordinal]
-        val bill = conduitBillOfMaterials(conduit)
-        return Species.ALL.all { stuff[tile, it] >= bill[it] }
+        return holdsFullBill(conduitBillOfMaterials(conduit)) { stuff[tile, it] }
     }
 
     /**
@@ -84,16 +82,7 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      */
     fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
         val stuff = layers[conduit.ordinal]
-        val bill = conduitBillOfMaterials(conduit)
-        var worst = 1000L
-        for (s in Species.ALL) {
-            val want = bill[s]
-            if (want <= 0L) continue
-            val has = stuff[tile, s]
-            val ratio = if (has >= want) 1000L else scaledRatio(has, want, 1000L)
-            if (ratio < worst) worst = ratio
-        }
-        return worst.toInt()
+        return builtPermille(conduitBillOfMaterials(conduit)) { stuff[tile, it] }
     }
 
     fun occupies(conduit: Conduit, tile: TileIndex): Boolean = layers[conduit.ordinal].occupies(tile)

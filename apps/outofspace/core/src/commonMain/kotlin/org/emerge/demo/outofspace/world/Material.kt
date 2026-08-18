@@ -288,6 +288,26 @@ fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
     kind.material.composition.scaledTo(kind.massPerTile)
 
 /**
+ * **What a whole machine of [kind] is made of** — its per-tile bill, [tiles] times over.
+ *
+ * The bill a ghost of it has to reach. Stated here rather than multiplied at the call sites because
+ * construction, deconstruction, the readout and the renderer all have to mean the same number, and
+ * a machine's cost is a fact about the kind and its footprint rather than about any of them.
+ *
+ * ⚠️ **[tileBillOfMaterials] multiplied, not [Mixture.scaledTo] of the larger mass.** The two differ
+ * by the rounding in the apportioning, and this one has to equal what
+ * [org.emerge.demo.outofspace.world.machine.DeckArray.plusAssign] actually lays down — a tile's bill
+ * on each tile. Scale the total instead and the target is a few units away from anything the world
+ * can hold, so a finished machine reads as forever unfinished, or as finished a gram early.
+ */
+fun machineBillOfMaterials(kind: DeckMachineKind, tiles: Int): Mixture {
+    val each = tileBillOfMaterials(kind)
+    val masses = LongArray(Species.COUNT)
+    for (s in Species.ALL) masses[s.ordinal] = each[s] * tiles
+    return Mixture.of(masses, 0L)
+}
+
+/**
  * **The bill of materials for one tile of bare conduit** — the twin of [tileBillOfMaterials], and
  * the same apportioning, so a run of track weighs exactly [Conduit.massPerTile] a tile however its
  * material is composed.
@@ -315,8 +335,17 @@ const val BUILD_PURITY_PERCENT = 95
  *
  * Form is deliberately not part of it — powdered iron builds a rail exactly as an ingot does.
  */
-fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean {
-    val bill = conduitBillOfMaterials(conduit)
+fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean =
+    buildableFrom(conduitBillOfMaterials(conduit), mixture)
+
+/**
+ * Whether [mixture] is something a thing whose bill of materials is [bill] may be built from.
+ *
+ * The question asked of a bill rather than of a conduit, because a machine's casing is built from
+ * exactly the same rule as a length of track and the two must not be able to drift into two
+ * opinions about what 95% means. See the overload above for why this is the anti-exploit.
+ */
+fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
     var wanted = 0L
     var total = 0L
     for (s in Species.ALL) {
@@ -328,4 +357,39 @@ fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean {
     // Nothing is not a delivery. Answering true would let an empty lump idle on a ghost for ever.
     if (total <= 0L) return false
     return wanted * 100 >= total * BUILD_PURITY_PERCENT
+}
+
+/**
+ * Whether [held] carries every gram of [bill] — the question "is this finished", asked once.
+ *
+ * ⚠️ **Per species, and never against a total.** A ghost admits a few percent of whatever came with
+ * the material it was fed, so it can carry more mass than its bill while still being short of the
+ * one thing it is made of. A total-mass test would call that finished and hand the player the thing
+ * for free. See [TrackLayers.holdsFullBill], which is this asked of one tile of track.
+ *
+ * [held] is a function rather than a [Mixture] so that a caller with the matter already spread over
+ * a [StuffLayer] — every caller in the tick — can answer without building one. `inline`, so that
+ * costs no closure either: this is asked of every ghost tile every time the rails step.
+ */
+inline fun holdsFullBill(bill: Mixture, held: (Species) -> Long): Boolean =
+    Species.ALL.all { held(it) >= bill[it] }
+
+/**
+ * How much of [bill] is present in [held], in parts per thousand — 0 for nothing, 1000 for finished.
+ *
+ * The **minimum** of the per-species ratios rather than total over total, so it reaches 1000 exactly
+ * when [holdsFullBill] turns true. A total would run ahead of it: junk counts toward the mass and
+ * toward nothing else, so a thing could draw as finished while still short of what it is made of,
+ * and the player would be told a lie about why it is not working.
+ */
+inline fun builtPermille(bill: Mixture, held: (Species) -> Long): Int {
+    var worst = 1000L
+    for (s in Species.ALL) {
+        val want = bill[s]
+        if (want <= 0L) continue
+        val has = held(s)
+        val ratio = if (has >= want) 1000L else scaledRatio(has, want, 1000L)
+        if (ratio < worst) worst = ratio
+    }
+    return worst.toInt()
 }

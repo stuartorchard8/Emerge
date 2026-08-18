@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.holdsFullBill
+import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 
 /**
@@ -80,6 +82,23 @@ class DeckArray(
             for (s in Species.ALL) stuff[tile, s] = bill[s]
             stuff.setEnergy(tile, stuff.heatCapacityAt(tile) * Temperature.AMBIENT_KELVIN)
         }
+    }
+
+    /**
+     * Whether the machine at [m] carries every gram of casing it is made of — the opposite of a
+     * ghost, and the machine twin of [org.emerge.demo.outofspace.world.TrackLayers.holdsFullBill].
+     *
+     * Asked of the **whole footprint at once**, summed per species, because a machine's casing is
+     * spread evenly over its tiles as it is absorbed rather than completing them one at a time. A
+     * per-tile test would answer "finished" for the middle of a half-built furnace.
+     *
+     * ⚠️ Per species and never against a total — see [holdsFullBill] for why that is the whole
+     * anti-exploit.
+     */
+    fun holdsFullBill(m: DeckMachine): Boolean {
+        val tiles = m.tiles(grid)
+        val bill = machineBillOfMaterials(m.kind, tiles.size)
+        return holdsFullBill(bill) { s -> tiles.sumOf { stuff[it, s] } }
     }
 
     fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf())

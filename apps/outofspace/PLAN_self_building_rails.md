@@ -202,3 +202,125 @@ energy ledger is parked.
 Increment 1 touches `Conduits`, `Save` and `OutofspaceSim`'s work ledger. Gauge and valve work was in
 flight in `Save`, `Port` and `Segment` when this was written — it landed in `a52cd884`/`b5b0f3fd`
 before any of the above.
+
+---
+
+# Increment 5 — deck machines build themselves
+
+Scoped 2026-08-19, from Stu's design. Chosen ahead of pipes: a machine is the thing creative mode
+was actually for, so it is the case that decides whether the loop can replace creative placement at
+all. Pipes and wires stay where the plan left them.
+
+The rails are the runway and almost everything below is the same mechanism at a different address.
+What is new is that a machine *does something*, so it has a state a rail never had: **placed, and
+not yet a machine.**
+
+## Ghost-ness derives, again
+
+`DeckArray.stuff` already holds each machine's casing as real matter, laid from
+`tileBillOfMaterials` when it is placed. So a machine ghost is the same fact as a rail ghost — the
+deck layer short of the bill — and needs **no new save state**. Only the deconstruction mark is new
+on disk, exactly as `scrapping` was for a segment.
+
+The bill is the whole footprint: `tileBillOfMaterials(kind)` once per covered tile. A 3×3 machine
+costs nine tiles of casing and a 1×1 costs one, which is what it already weighs.
+
+## The construction port sits on the centre tile
+
+**One port, at local (0,0).** `localPorts` already speaks the machine's own frame at ±`reach`, so
+this is one entry that needs no knowledge of how wide the machine is — and that is the whole reason
+for choosing the centre. A port at an edge would have to be placed per kind, per footprint, and
+would clash with the real ports of a machine that already uses that side.
+
+For a **1×1** machine `reach` is 0, so the centre *is* where its input port already sits. There is
+no clash to resolve because the construction port **overrides** it: while the machine is a ghost the
+port at (0,0) accepts casing and nothing else. A machine with no ports at all — hull, airlock,
+button — gains one for the first time in its life, which is what makes a hull buildable.
+
+The port is on **`Conduit.Rail`** whatever the machine is for: casing is solid, so a pump and a vent
+are both built by track, and the plumbing they exist to serve has nothing to do with it.
+
+It is a port like any other, so `lockedByMachine` already applies: the rail under a ghost's
+construction port cannot be deconstructed while the ghost stands.
+
+## A ghost machine is inert and permeable — Stu, 2026-08-19
+
+It does not run: it is skipped at the tick's single machine-dispatch site, so a smelter smelts
+nothing until it is paid for. That is the anti-exploit, and it is the machine's version of "a ghost
+refuses material it cannot be built from".
+
+It is also **not there** as far as air is concerned. `StructureMap.derive` treats a ghost's
+footprint as the empty floor it is, and placing one displaces no air. A frame with no metal in it
+does not hold pressure.
+
+⚠️ **Consequence, accepted:** outside creative you cannot pressurise a room until the *last* hull
+tile of it finishes. A room under construction is open to space and everything that follows from
+that. This is the honest reading of a massless ghost and it is not to be softened.
+
+Its real ports are suppressed while it is a ghost — there is nothing to feed and nothing to collect.
+
+## Filling: spread evenly over the footprint — Stu, 2026-08-19
+
+Every absorbed packet is apportioned across all of the machine's tiles, so it grows uniformly and
+each tile's heat capacity stays proportional to the metal actually in it. `holdsFullBill` asks the
+whole footprint.
+
+Rejected: filling the centre outward (a half-built machine with a lopsided mass and heat
+distribution across its own footprint), and pooling on the centre tile (one tile briefly holding
+nine tiles of iron, which every per-tile reader — `SolidHeat`, `Flight`, chemistry — would see and
+believe).
+
+Absorption is otherwise exactly `absorbIntoGhost`: admitted at ≥95% of the bill by mass, admitted
+whole, junk baked in, proportional across species, heat carried not conjured, remainder rides on.
+
+## Deconstruction — Stu's ordering
+
+Mark a machine and it comes apart in a stated order, and the order is the design:
+
+1. **Its output ports drain as normal.** It is still a machine's worth of product and it leaves the
+   way it always did.
+2. **Its input port becomes an output** and hands back whatever is sitting in the input buffer, onto
+   the belt that fed it.
+3. **Each of these modified ports vanishes once its own buffer is clear.** A port with nothing left
+   behind it is not a port.
+4. **Only when every other buffer is clear** does the centre port start dribbling the **casing**
+   back onto the network — the mirror of construction, a packet at a time.
+5. The machine ceases to be when its casing and its buffers are both empty.
+
+The ordering is what stops a machine's contents being destroyed by its own demolition, and it is the
+reason the casing goes last rather than first: casing is the only thing whose removal is
+irreversible, so it is the last thing done.
+
+⚠️ The rails' lesson applies unchanged: **nothing leaves the deck layer until the belt has taken
+it** (`4e8d37a6`). Refused, the machine hands nothing back this tick and stays marked.
+
+## The mark
+
+`Segment` took a real `deconstructing` bit. A machine will not: `DeckMachine` is a sealed interface
+with eighteen implementations and the bit would have to be threaded through every `copy`. It lives
+instead as a set of marked **centre tiles** on the vessel, which is how machines are addressed
+everywhere else.
+
+⚠️ That is the parallel-array footgun `DeckArray`'s own doc warns about — a mark keyed by tile
+outlives the machine that earned it. Clearing it belongs with `removeMachine` and with `DeckArray`'s
+`-=`, and nowhere else.
+
+## Increments
+
+**5a. A bill is a bill.** Generalise `buildableFrom` and the completeness questions off `Conduit`
+and onto a `Mixture` bill, so a machine and a length of track ask the same code. Shared plumbing,
+no behaviour change, and it goes first only because it is genuinely shared and genuinely concrete.
+
+**5b. A placed machine is a ghost.** Outside creative, `placeDeckBuilding` puts the machine down
+with no casing, books nothing through `Work.built`, and displaces no air. Inert at the dispatch
+site, absent from `StructureMap`, real ports suppressed. This is the identity break and it decides
+the rest — a 3×3 smelter is the case to write first, not a hull.
+
+**5c. The construction port.** Centre port on the rail layer, overriding a 1×1's input; admission at
+95%; absorption spread over the footprint; and the moment it holds its full bill it is simply a
+machine — ports back, runs, solid.
+
+**5d. Deconstruction.** The mark, the five-step ordering above, ceasing to be.
+
+**5e. Rendering, starter vessel, harness.** A ghost machine reads as one, a marked one reads as
+marked, and `agent-scripts/` watches a machine build itself.
