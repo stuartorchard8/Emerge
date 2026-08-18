@@ -316,10 +316,12 @@ class SaveTest {
         val grid = Grid(8, 6)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val pipes = arrayOfNulls<Segment>(grid.size)
+        val wires = arrayOfNulls<Segment>(grid.size)
         val crossing = grid.tile(4, 3)
+        // A wire under the rail, not a pipe: track and plumbing compete for the floor and cannot
+        // share a tile at all now, so the crossing that has to round-trip is rail over wire.
         for (x in 2..6) rails[grid.tile(x, 3).index] = Segment(Conduit.Rail, links = 1 shl Direction.Right.ordinal)
-        for (y in 1..5) pipes[grid.tile(4, y).index] = Segment(Conduit.Pipe, links = 1 shl Direction.Down.ordinal)
+        for (y in 1..5) wires[grid.tile(4, y).index] = Segment(Conduit.Signal, links = 1 shl Direction.Down.ordinal)
 
         val state = VesselState(
             grid,
@@ -328,15 +330,32 @@ class SaveTest {
             conduits = Conduits.of(
                 grid.size,
                 Conduit.Rail to rails.toList(),
-                Conduit.Pipe to pipes.toList(),
+                Conduit.Signal to wires.toList(),
             ),
             buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size),
         )
         val back = Save.read(Save.write(state))
 
         assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, crossing)?.conduit, "rail lost at the crossing")
-        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, crossing)?.conduit, "pipe lost at the crossing")
+        assertEquals(Conduit.Signal, back.conduits.at(Conduit.Signal, crossing)?.conduit, "wire lost at the crossing")
         assertEquals(state.conduits, back.conduits, "a layer changed somewhere across the round trip")
+    }
+
+    /**
+     * A save that puts a belt and a pipe on one tile is refused, not loaded into a world the game
+     * cannot represent. Hand-editable means hand-breakable, and the exclusion rule is exactly the
+     * kind of thing a typed file gets wrong.
+     */
+    @Test
+    fun `a save that crosses a rail with a pipe is refused`() {
+        val text = """
+            outofspace 1
+            grid 6 4
+            conduit 9 Rail links=1
+            conduit 9 Pipe links=1
+        """.trimIndent()
+        val e = assertFailsWith<SaveError> { Save.read(text) }
+        assertTrue(e.message!!.contains("rail and a pipe"), "unhelpful message: ${e.message}")
     }
 
     /**

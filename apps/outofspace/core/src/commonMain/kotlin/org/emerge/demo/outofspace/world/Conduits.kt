@@ -53,7 +53,32 @@ class Conduits private constructor(
                 else if (!laid && tracks.occupies(conduit, tile)) tracks.clear(conduit, tile)
             }
         }
+        checkExclusion()
         return this
+    }
+
+    /**
+     * ⛔ **A tile carries track or plumbing, never both.**
+     *
+     * The rule the game is named after: matter transport competes for floor space, and a player who
+     * wants a belt and a pipe through the same gap has to solve that instead of stacking them. Wires
+     * are deliberately not in it — [Conduit.Power] and [Conduit.Signal] ride under anything, because
+     * what fights for space is stuff, not information, and a gauge sharing its tile with a wire is a
+     * convenience nobody has to read a second overlay to understand.
+     *
+     * Checked here rather than only at placement so that the state is *unconstructible*: [with] is
+     * the one door into a changed layer, [reconciled] already walks every tile, and a fixture or a
+     * save that expresses a crossing is refused the same way the player's drag tool is. A rule
+     * enforced only in the edit path is a rule the rest of the codebase gets to break by accident.
+     */
+    private fun checkExclusion() {
+        val rail = layers[Conduit.Rail.ordinal]
+        val pipe = layers[Conduit.Pipe.ordinal]
+        for (i in rail.indices) {
+            require(rail[i] == null || pipe[i] == null) {
+                "tile $i carries both a rail and a pipe; the two compete for the floor"
+            }
+        }
     }
 
     /** What one tile of one network is holding — its heat, and the metal holding it. */

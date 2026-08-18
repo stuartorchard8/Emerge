@@ -821,10 +821,18 @@ object Save {
 
         val structure = StructureMap.derive(grid, machines.toList(), deck)
         val occupancy = Occupancy.derive(grid, machines.toList(), deck)
-        val conduits = Conduits.of(
-            grid.size,
-            *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
-        )
+        // A file is hand-editable, so it is hand-breakable: a typed world that puts a belt and a
+        // pipe on one tile violates the exclusion rule, and that is a *bad save*, not a bug in the
+        // reader. Restated as a [SaveError] so the loader reports it the way it reports any other
+        // unreadable line rather than throwing something the caller has no reason to expect.
+        val conduits = try {
+            Conduits.of(
+                grid.size,
+                *Conduit.entries.map { it to layers[it.ordinal].toList() }.toTypedArray(),
+            )
+        } catch (e: IllegalArgumentException) {
+            throw SaveError(e.message ?: "the conduit layers do not describe a world")
+        }
         // Every laid tile came back at ambient; the ones the file had a reading for get theirs back.
         // A tile with no `k=` is left exactly as laid, which is what the writer's omission meant.
         for ((key, energy) in segmentEnergy) {

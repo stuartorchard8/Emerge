@@ -951,6 +951,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         fun layer(conduit: Conduit): MutableList<Segment?> = layers[conduit.ordinal]
 
+        /**
+         * Whether [tile] is already spoken for by the *other* matter network — see
+         * [Conduits.checkExclusion], which is the same rule stated where the state lives.
+         *
+         * The edit path enforces it as well as the invariant, and the difference is what the player
+         * gets: a `require` in [Conduits] would take the game down when somebody drags a pipe over a
+         * belt, whereas refusing here means the drag simply does not lay there. The invariant is for
+         * the code, this is for the hand on the mouse.
+         */
+        fun spokenFor(conduit: Conduit, tile: TileIndex): Boolean = when (conduit) {
+            Conduit.Rail -> layer(Conduit.Pipe)[tile.index] != null
+            Conduit.Pipe -> layer(Conduit.Rail)[tile.index] != null
+            // Wires ride under anything: information does not compete for the floor.
+            Conduit.Power, Conduit.Signal -> false
+        }
+
         /** The rail layer, which packets, gauges, bridges and motion all mean by "the track". */
         val rails: MutableList<Segment?> get() = layers[Conduit.Rail.ordinal]
 
@@ -1188,6 +1204,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         // Book energy for new body (heat arriving, not conjured).
                         MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
                             val c = edit.kind.conduit!!
+                            if (spokenFor(c, edit.tile)) return
                             if (layer(c)[edit.tile.index] == null) {
                                 layer(c)[edit.tile.index] = Segment(c)
                                 built(tracks.lay(c, edit.tile))
@@ -1195,13 +1212,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                         // Valve: upgrade existing pipe or lay new.
                         MachineKind.Valve -> {
+                            // A valve is a fitting on a run, so laying one lays pipe — and a tile
+                            // with a belt on it has no room for pipe to lay.
+                            if (spokenFor(Conduit.Pipe, edit.tile)) return
                             val existing = layer(Conduit.Pipe)[edit.tile.index]
                             layer(Conduit.Pipe)[edit.tile.index] =
                                 existing?.copy(valve = true)
                                     ?: Segment(Conduit.Pipe, valve = true)
                                         .also { built(tracks.lay(Conduit.Pipe, edit.tile)) }
                         }
-                        MachineKind.Gauge -> if (rails[edit.tile.index] == null) {
+                        MachineKind.Gauge -> if (rails[edit.tile.index] == null && !spokenFor(Conduit.Rail, edit.tile)) {
                             rails[edit.tile.index] = Segment(Conduit.Rail, isGauge = true)
                                 .also { built(tracks.lay(Conduit.Rail, edit.tile)) }
                         }
@@ -1495,8 +1515,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Draw a conduit line (both halves linked symmetrically; gauges keep channel). */
         private fun layConduit(from: TileIndex, to: TileIndex, conduit: Conduit) {
             val dir = adjacency(from, to) ?: return
-            // Each layer is its own grid, so a pipe drawn across a rail is a crossing rather than a
-            // junction — and, now, rather than nothing at all. It used to share one list with the
+            // Track and plumbing compete for the floor, so a drag that would cross the other one
+            // lays nothing across that step and joins nothing. The run stops at the obstacle rather
+            // than hopping it — which is the puzzle, and is what a bridge is for.
+            if (spokenFor(conduit, from) || spokenFor(conduit, to)) return
+            // Each layer is its own grid, so a pipe drawn across a *wire* is a crossing rather than
+            // a junction — and, now, rather than nothing at all. It used to share one list with the
             // track, find a conduit mismatch, and return having laid no pipe.
             val line = layer(conduit)
             // Drawing a run lays metal wherever there was none, and that metal arrives with its

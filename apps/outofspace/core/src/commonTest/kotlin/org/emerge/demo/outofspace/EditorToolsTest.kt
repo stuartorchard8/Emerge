@@ -40,7 +40,14 @@ class EditorToolsTest {
     private val OPEN_TILE get() = grid.tile(4, 7)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
-    /** A room with a rail and a pipe threaded through it, and a tank standing on one of the tiles. */
+    /**
+     * A room with a rail and a wire threaded through it, and a tank standing on one of the tiles.
+     *
+     * A **wire** as the second fitting rather than a pipe, because track and plumbing compete for
+     * the floor and can no longer share a tile — see `Conduits.checkExclusion`. Wires still ride
+     * under anything, so rail + wire + tank is what "a tile is not one thing" looks like now, and it
+     * is still three layers deep, which is what these tests need.
+     */
     private fun layered(): OutofspaceController {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
@@ -52,7 +59,7 @@ class EditorToolsTest {
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))
         c.dragTo(grid.tile(7, 5))
-        c.brush = MachineKind.Pipe
+        c.brush = MachineKind.Wire
         c.apply(grid.tile(4, 5))
         c.dragTo(grid.tile(7, 5))
         c.stepOnce()
@@ -68,15 +75,15 @@ class EditorToolsTest {
         val c = layered()
         val tile = grid.tile(6, 5)
         assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the fixture built no rail")
-        assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "the fixture built no pipe")
+        assertNotNull(c.state.conduits[Conduit.Signal][tile.index], "the fixture built no wire")
         assertTrue(c.state.deck[tile] as? Storage != null, "the fixture built no tank")
 
-        c.removeAt(tile, DeleteLayer.Pipe)
+        c.removeAt(tile, DeleteLayer.Rail)
         c.stepOnce()
 
-        assertNull(c.state.conduits[Conduit.Pipe][tile.index], "the pipe survived being named")
-        assertNotNull(c.state.conduits[Conduit.Rail][tile.index], "the rail came off with the pipe")
-        assertTrue(c.state.deck[tile] as? Storage != null, "the tank came off with the pipe")
+        assertNull(c.state.conduits[Conduit.Rail][tile.index], "the rail survived being named")
+        assertNotNull(c.state.conduits[Conduit.Signal][tile.index], "the wire came off with the rail")
+        assertTrue(c.state.deck[tile] as? Storage != null, "the tank came off with the rail")
     }
 
     /** The deck can be reached through what is threaded over it, which TOP could never do in one go. */
@@ -90,7 +97,7 @@ class EditorToolsTest {
 
         assertNull(c.state.deck[at], "the tank is still there")
         assertNotNull(c.state.conduits[Conduit.Rail][at.index], "the rail went with it")
-        assertNotNull(c.state.conduits[Conduit.Pipe][at.index], "the pipe went with it")
+        assertNotNull(c.state.conduits[Conduit.Signal][at.index], "the wire went with it")
     }
 
     @Test
@@ -103,7 +110,7 @@ class EditorToolsTest {
 
         assertNull(c.state.deck[at])
         assertNull(c.state.conduits[Conduit.Rail][at.index])
-        assertNull(c.state.conduits[Conduit.Pipe][at.index])
+        assertNull(c.state.conduits[Conduit.Signal][at.index])
     }
 
     /**
@@ -119,12 +126,12 @@ class EditorToolsTest {
         c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
         assertNull(c.state.conduits[Conduit.Rail][tile.index], "rail is the first conduit layer, so it goes first")
-        assertNotNull(c.state.conduits[Conduit.Pipe][tile.index], "two layers came off in one click")
+        assertNotNull(c.state.conduits[Conduit.Signal][tile.index], "two layers came off in one click")
         assertTrue(c.state.deck[tile] is Storage)
 
         c.removeAt(tile, DeleteLayer.Top)
         c.stepOnce()
-        assertNull(c.state.conduits[Conduit.Pipe][tile.index])
+        assertNull(c.state.conduits[Conduit.Signal][tile.index])
         assertTrue(c.state.deck[tile] is Storage, "the tank came off before its fittings had")
 
         c.removeAt(tile, DeleteLayer.Top)
