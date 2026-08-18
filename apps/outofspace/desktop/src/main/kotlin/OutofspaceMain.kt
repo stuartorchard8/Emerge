@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.FrameShift
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.audio.ImpactAudioSystem
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
@@ -51,6 +52,9 @@ fun main() {
     val hud = OutofspaceHud()
     val ui = Ui()
     renderer.centreOn(controller.state)
+    // Sound is a host's business and the loop's last passenger: it reads the state the tick just
+    // produced and never writes to it, so a machine with no sound device simply skips these lines.
+    val impactAudio = ImpactAudioSystem(DesktopImpactAudioEngine())
 
     hud.onTogglePause = { controller.paused = !controller.paused }
     hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
@@ -284,6 +288,10 @@ fun main() {
         val state = controller.tick(delta)
         if (frame.advance(state).moved) lastPainted = TileIndex.NONE
 
+        // After the camera has been moved for this frame and before it is used again, because the
+        // falloff is measured from where the player is actually looking.
+        impactAudio.onFrame(state, renderer.camX, renderer.camY)
+
         renderer.draw(state, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
@@ -291,6 +299,7 @@ fun main() {
         glfwSwapBuffers(window)
     }
 
+    impactAudio.release()
     renderer.cleanup()
     ui.cleanup()
     glfwDestroyWindow(window)

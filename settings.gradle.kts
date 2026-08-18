@@ -69,6 +69,8 @@ include(":engine:sim:codecs:ecs")
 include(":engine:render:torus")
 include(":engine:render:ui-gallery")
 
+include(":engine:audio:openal")
+
 include(":engine:net:api")
 include(":engine:net:transports:loopback")
 include(":engine:net:transports:tcp")

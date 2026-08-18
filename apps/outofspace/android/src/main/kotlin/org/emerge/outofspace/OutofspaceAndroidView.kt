@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
+import org.emerge.demo.outofspace.audio.ImpactAudioSystem
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.ui.Ui
 import javax.microedition.khronos.egl.EGLConfig
@@ -31,6 +32,16 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
     private val density = context.resources.displayMetrics.density
 
     private var renderer: OutofspaceRenderer? = null
+
+    /**
+     * ⚠️ `@Volatile` because it is written on the **main** thread, where the view is attached, and
+     * read on the **GL** thread, where frames are drawn. Everything else in this class is created in
+     * [setup] and therefore already on the GL thread; audio is not, because [SoundPool] wants making
+     * once per attach rather than once per GL context — a context is lost and rebuilt on any
+     * backgrounding, and a fresh pool each time would leak the old one's voices.
+     */
+    @Volatile
+    private var impactAudio: ImpactAudioSystem? = null
     private var hud: OutofspaceHud? = null
     private var ui: Ui? = null
     private var lastTimeNanos = 0L
@@ -65,6 +76,17 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         ui = Ui().also { it.setDensity(density) }
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        impactAudio = ImpactAudioSystem(AndroidImpactAudioEngine(context.assets))
+    }
+
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        impactAudio?.release()
+        impactAudio = null
+    }
+
     private fun drawFrame() {
         val renderer = renderer ?: return
         val ui = ui ?: return
@@ -75,8 +97,15 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         lastTimeNanos = now
 
         ui.advanceClock(delta)
+        // Hoisted out of the `draw` call it used to be written inside, because the audio system
+        // needs the same state: it reads the impacts of the tick that produced it, and a second
+        // `controller.tick` would be a second tick rather than a second look at the first.
+        val state = controller.tick(delta)
+        // Before the draw, so that a frame is never held up waiting on the mixer, and read off the
+        // camera the last frame left — which is where the player is looking to within one frame.
+        impactAudio?.onFrame(state, renderer.camX, renderer.camY)
         renderer.draw(
-            controller.tick(delta),
+            state,
             TileIndex.NONE,
             controller.overlay,
             controller.tickAlpha,

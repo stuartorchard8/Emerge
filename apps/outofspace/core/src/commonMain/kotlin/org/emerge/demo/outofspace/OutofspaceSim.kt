@@ -547,6 +547,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
             motion = motion,
+            impacts = bodiesDrifted.impacts,
         ).bookedFrameTurn(state.pose).resized(w.fitRequested)
     }
 

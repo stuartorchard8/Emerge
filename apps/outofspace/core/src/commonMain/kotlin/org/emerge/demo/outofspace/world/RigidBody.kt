@@ -363,6 +363,11 @@ class BodyStep(
      * does not. The ship owes itself the negative of this, exactly as it does of [handedX].
      */
     val handedTorque: Long = 0L,
+    /**
+     * What the tick sounded like — see [Impact]. Passed straight through from the sweep, because
+     * nothing between here and a host has anything to add to it.
+     */
+    val impacts: List<Impact> = emptyList(),
 )
 
 /**
@@ -486,5 +491,5 @@ fun driftBodies(
             impulseY = body.impulseY + worldPlatingY,
         )
     }
-    return BodyStep(moved, handedX, handedY, handedTorque)
+    return BodyStep(moved, handedX, handedY, handedTorque, swept.impacts)
 }

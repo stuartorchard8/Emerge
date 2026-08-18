@@ -459,13 +459,20 @@ private fun momentOf(rMilli: Long, j: Long): Long {
  * spent, and a manifold of several touches would converge on no bounce at all.
  *
  * @param ship the other operand, or `null` for an immovable one of infinite mass.
+ * @param impacts if given and sized [contacts]`.size`, filled with the normal impulse each contact
+ *   ended up spending — but **only for the contacts that arrived closing fast enough to bounce**,
+ *   and zero everywhere else. That is what makes it a *collision* report rather than a load report:
+ *   a rock lying on the deck is held up by a large impulse every tick of its life, and a reading
+ *   that included it would be a continuous roar. See [driftBodies] for what listens.
  */
 fun solveContacts(
     contacts: List<Contact>,
     bodies: List<Operand>,
     ship: Operand?,
     iterations: Int = DEFAULT_ITERATIONS,
+    impacts: LongArray? = null,
 ) {
+    if (impacts != null) impacts.fill(0L)
     if (contacts.isEmpty()) return
     val n = contacts.size
 
@@ -542,7 +549,12 @@ fun solveContacts(
         else scaledRatio(RockContact.RESTITUTION_NUM, RockContact.RESTITUTION_DEN, speed)
     }
 
-    repeat(iterations) {
+    // Which contacts arrived as a *collision* rather than as a weight already resting. Captured
+    // beside [target] because it is the same question: a touch the restitution pass declined to
+    // bounce is a touch that was already there, and a rock lying on the deck must not be audible.
+    val struck = if (impacts == null) null else BooleanArray(n) { target[it] > 0L }
+
+    run { repeat(iterations) {
         // ── Every contact answered from the same starting velocities ──────────────
         //
         // ⚠️ **Jacobi, not Gauss-Seidel, and the difference is not convergence speed — it is
@@ -616,7 +628,15 @@ fun solveContacts(
             bodies[c.body].apply(arx[i], ary[i], jx, jy)
             otherOf(c)?.takeIf { it.mass > 0L }?.apply(brx[i], bry[i], -jx, -jy)
         }
-        if (!moved) return
+        if (!moved) return@run
+    } }
+
+    // ⚠️ Reported **after** the whole solve, off the accumulated normal impulse rather than off any
+    // one pass's. A manifold converges by taking impulse back from contacts an earlier pass
+    // over-gave, so a per-pass sum reports a collision louder than it was — sometimes several times
+    // over, on exactly the many-touch landings that are already the loudest.
+    if (impacts != null && struck != null) {
+        for (i in 0 until n) if (struck[i]) impacts[i] = accumulated[i]
     }
 }
 

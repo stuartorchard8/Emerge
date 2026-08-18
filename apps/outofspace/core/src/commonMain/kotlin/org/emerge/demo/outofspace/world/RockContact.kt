@@ -160,6 +160,41 @@ class SweptBodies(
     val handedY: Long,
     /** The twist that went with it, about the vessel's own centre of mass. */
     val handedTorque: Long,
+    /** Every collision this tick that was a collision rather than a weight — see [Impact]. */
+    val impacts: List<Impact> = emptyList(),
+)
+
+/**
+ * A body hitting something, hard enough that the hit was a hit.
+ *
+ * This is the sweep's only account of itself to anything that is not physics: a host turns one of
+ * these into a bang. It says *where*, *how hard*, and *against what*, and nothing else — the volume
+ * curve, the distance falloff and the choice of clip are the listener's business and not the
+ * solver's.
+ *
+ * ### Why the impulse and not the speed
+ *
+ * [impulse] is what the contact actually spent, `mass × Δv`, which is the quantity an ear is built
+ * for: an 83-tonne ore body settling slowly against a bulkhead moves the air far more than a pebble
+ * flicked at it fast. Reported off the *normal* alone — the tangent is a scrape and sounds nothing
+ * like a strike, and it is a separate sound to add rather than the same one louder.
+ *
+ * ### One per body per tick, and it is the loudest
+ *
+ * A rock landing flat makes a dozen contacts across a dozen substeps and they are all the same
+ * event. Summed, a wide body would be louder than a narrow one falling just as hard, which is
+ * backwards for a *peak* — what a listener hears is the hardest touch, not the total.
+ */
+class Impact(
+    /** Which body, as an index into the list handed to [sweepBodies]. */
+    val bodyIndex: Int,
+    /** Where it happened, world frame, at [Flight.PER_TILE] to the tile. */
+    val x: Long,
+    val y: Long,
+    /** The normal impulse the touch spent, in the same units as [RigidBody.impulseX]. */
+    val impulse: Long,
+    /** The vessel, or another body — a hull strike rings and rubble on rubble does not. */
+    val againstHull: Boolean,
 )
 
 /**
@@ -214,6 +249,14 @@ fun sweepBodies(
 ): SweptBodies {
     val n = bodies.size
     if (n == 0) return SweptBodies(bodies, 0L, 0L, 0L)
+
+    // The loudest touch each body has taken so far this tick, and where it took it — see [Impact]
+    // for why it is the loudest and not the sum. Zero means "nothing worth hearing yet".
+    val loudest = LongArray(n)
+    val loudestX = LongArray(n)
+    val loudestY = LongArray(n)
+    val loudestHull = BooleanArray(n)
+    var contactImpulses = LongArray(0)
 
     val px = LongArray(n) { bodies[it].positionX }
     val py = LongArray(n) { bodies[it].positionY }
@@ -447,7 +490,31 @@ fun sweepBodies(
             velocityY = -rotScale(svx, next.sin) + rotScale(svy, next.cos),
             angVel = sav,
         )
-        solveContacts(contacts, ops, shipOp)
+        if (contactImpulses.size < contacts.size) contactImpulses = LongArray(contacts.size)
+        solveContacts(contacts, ops, shipOp, impacts = contactImpulses)
+
+        // ⚠️ The point comes back in **grid** axes, like the normal it was measured along, and an
+        // [Impact] is a place in the world — the same frame boundary the impulses cross two blocks
+        // below. Left unturned a bang on the port bulkhead of a ship lying on its side plays from
+        // somewhere off the bow.
+        for (i in contacts.indices) {
+            val spent = contactImpulses[i]
+            if (spent <= 0L) continue
+            val c = contacts[i]
+            val hull = c.other == Contact.HULL
+            // Booked against **both** sides: two rocks that meet are two rocks that were struck, and
+            // a report that named only the first operand would go quiet whenever the loudest thing
+            // in the room happened to be second in the list.
+            for (side in 0..1) {
+                val b = if (side == 0) c.body else c.other
+                if (b < 0 || b >= n) continue
+                if (spent <= loudest[b]) continue
+                loudest[b] = spent
+                loudestX[b] = next.toWorldX(c.pointX, c.pointY)
+                loudestY[b] = next.toWorldY(c.pointX, c.pointY)
+                loudestHull[b] = hull
+            }
+        }
 
         // ⚠️ The impulse comes back in grid axes and a body's momentum is in the world, so it is
         // turned before it is booked — on both halves of the exchange, or the ledger leaks the
@@ -616,6 +683,12 @@ fun sweepBodies(
             )
         },
         handedX, handedY, handedTorque,
+        buildList {
+            for (i in 0 until n) {
+                if (loudest[i] <= 0L) continue
+                add(Impact(i, loudestX[i], loudestY[i], loudest[i], loudestHull[i]))
+            }
+        },
     )
 }
 

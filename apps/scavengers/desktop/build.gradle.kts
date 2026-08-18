@@ -8,6 +8,7 @@ dependencies {
     implementation(project(":apps:scavengers:core"))
     implementation(project(":engine:render:torus"))
     implementation(project(":engine:sim:core"))
+    implementation(project(":engine:audio:openal"))
     implementation(project(":engine:sim:sync"))
     implementation(project(":engine:sim:codecs:ecs"))
     implementation(project(":engine:net:api"))

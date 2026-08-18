@@ -105,6 +105,16 @@ data class VesselState(
      */
     val motion: Motion = Motion.NONE,
     /**
+     * What hit what during the tick that produced this state, for a host to make a noise out of —
+     * see [Impact].
+     *
+     * Presentation only, exactly like [motion], and stated in the same place for the same reason:
+     * only the sweep knows which touches were collisions rather than weights, and by the time a host
+     * has the next state the velocities that would have told it are already spent. The save does not
+     * carry it — a loaded world starts silent, which is what a loaded world should sound like.
+     */
+    val impacts: List<Impact> = emptyList(),
+    /**
      * Cumulative tiles the grid origin has moved since this world was created, in the world's own
      * frame — bumped whenever the grid grows on a near edge (see `growToFit`).
      *
