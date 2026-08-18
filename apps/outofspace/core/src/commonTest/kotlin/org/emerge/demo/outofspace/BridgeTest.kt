@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
@@ -260,7 +259,7 @@ class BridgeTest {
         // port there too, and has to be refused: a segment on that tile could not say which of the
         // two it feeds.
         var s = crossing()
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(13, 5), DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(13, 5), Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         assertNull(s.deck[grid.tile(13, 5)], "its output port would collide with the tank's input")
     }
 
@@ -268,23 +267,23 @@ class BridgeTest {
     fun `two bridges cannot share an end`() {
         var s = crossing()
         val first = grid.tile(9, 5)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(first, DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(first, Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         assertNotNull(s.deck[first], "the first one goes down fine")
 
         // Two tiles along: its input port would land on the first bridge's output port.
         val second = grid.tile(11, 5)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(second, DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(second, Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         assertNull(s.deck[second], "ends may not overlap")
     }
 
     @Test
     fun `two bridges may not cross, even only at their middles`() {
         var s = crossing()
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(9, 5), DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(9, 5), Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         // Perpendicular, crossing the first bridge's middle. This used to be legal, and it is the
         // regression the migration knowingly accepts: a bridge stands on all three of its tiles now,
         // so two of them cannot make a `+`. Crossing a crossing costs a detour, which is the puzzle.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(9, 5), DeckMachineKind.Bridge, Direction.Down))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(9, 5), Brush.Building(DeckMachineKind.Bridge), Direction.Down))))
         assertEquals(Direction.Right, (s.deck[grid.tile(9, 5)] as? Bridge)?.facing, "the first is still there")
     }
 
@@ -294,10 +293,10 @@ class BridgeTest {
         // three tiles of deck, so a cramped vessel has to be laid out rather than stacked.
         var s = crossing()
         val under = grid.tile(9, 7)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(under, DeckMachineKind.Pump, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(under, Brush.Building(DeckMachineKind.Pump), Direction.Right))))
         assertNotNull(s.deck[under], "the fixture built no pump")
         // Centred one tile away, so its span would land on the vent.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(8, 7), DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(8, 7), Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         assertNull(s.deck[grid.tile(8, 7)], "a bridge went up across a pump")
     }
 
@@ -305,11 +304,11 @@ class BridgeTest {
     fun `turning a bridge is refused when it has nowhere to swing`() {
         var s = crossing()
         val at = grid.tile(9, 5)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Bridge, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Bridge), Direction.Right))))
         // Block one of the tiles it would turn onto. A pump because it is permeable and one tile:
         // this test is about geometry, and an airtight machine would also have to find room for the
         // air it displaces before it could stand anywhere.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(9, 4), DeckMachineKind.Pump, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(9, 4), Brush.Building(DeckMachineKind.Pump), Direction.Right))))
         assertNotNull(s.deck[grid.tile(9, 4)], "nothing was standing in the way, so this proved nothing")
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(at))))

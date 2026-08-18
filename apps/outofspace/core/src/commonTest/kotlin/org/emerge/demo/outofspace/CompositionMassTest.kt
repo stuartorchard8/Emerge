@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BodyKind
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.biteCell
@@ -212,11 +211,11 @@ class CompositionMassTest {
     @Test
     fun `a boulder outweighs the ship's own fabric, tile for tile`() {
         val oreTile = massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        // One of each hierarchy: the fabric is split across two lists mid-migration, and the claim
-        // is about the fabric rather than about either list.
+        // A building and a length of conduit: the two things the vessel is made of, and the claim
+        // is about the fabric rather than about either of them in particular.
         for ((label, perTile) in listOf(
             DeckMachineKind.Smelter.label to DeckMachineKind.Smelter.massPerTile,
-            MachineKind.Rail.label to MachineKind.Rail.massPerTile,
+            Conduit.Rail.label to Conduit.Rail.massPerTile,
         )) {
             assertTrue(
                 oreTile > perTile * 4,

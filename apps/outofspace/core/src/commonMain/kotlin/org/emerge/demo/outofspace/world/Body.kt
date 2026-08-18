@@ -72,14 +72,14 @@ class Body(
     val permeable: Boolean,
     /** Thermal energy, in the millijoules [Material] documents. */
     val energy: Long,
-    /** Millijoules/kelvin. Uses MachineKind.thermalTiles (not tiles[]) to avoid grid-edge clipping. */
+    /** Millijoules/kelvin, per tile — so a footprint clipped by the grid edge cannot change it. */
     val capacity: Long,
     /**
      * What crosses a contact of it, per kelvin per tick.
      *
      * Carried rather than read off [material] because a joint conducts through the metal that is
      * actually there: a hull plate is a few per cent of its tile, and so is its cross-section. It
-     * therefore takes the same [org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille] its [capacity] does, and the pair of them
+     * therefore takes the same [DeckMachineKind.fillPermille] its [capacity] does, and the pair of them
      * moving together is what holds every thermal time constant in the game still while the masses
      * underneath them become real. Divide one by the other and you get the number
      * [Material.conductanceCentiTicks] states.

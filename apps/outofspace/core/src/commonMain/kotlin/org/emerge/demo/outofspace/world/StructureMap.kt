@@ -45,7 +45,7 @@ class StructureMap(private val kinds: ByteArray) {
          * all: rails and bridges live on their own layers and share a tile with the deck beneath
          * them, so a belt running through a room does not divide it.
          *
-         * The exception is a [org.emerge.demo.outofspace.world.machine.MachineKind.isPermeable] one, which is a plate and not a block: it is
+         * The exception is a [DeckMachineKind.isPermeable] one, which is a plate and not a block: it is
          * skipped entirely, so the tile it stands on is whatever the flood fill would have made it.
          * Nothing downstream needs a case for it — air, heat and rock contact all read this map, and
          * all three then treat the tile as the empty floor it is.

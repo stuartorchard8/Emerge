@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
@@ -166,24 +165,17 @@ class OutofspaceHud {
                 gap()
                 if (controller.tool == Tool.Build) {
                     title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
-                    for (kind in DeckMachineKind.ALL) {
-                        val selected = controller.brushKind == BrushKind.Deck && kind == controller.deckBrush
+                    for (option in Brush.ALL) {
+                        val selected = option == controller.brush
                         button(
-                            if (selected) "> ${kind.label}" else "  ${kind.label}",
-                            if (selected) kindColor(kind) or 0xFFL else 0x232A38FFL,
-                        ) { controller.deckBrush = kind }
-                    }
-                    for (kind in MachineKind.ALL) {
-                        val selected = controller.brushKind == BrushKind.Machine && kind == controller.brush
-                        button(
-                            if (selected) "> ${kind.label}" else "  ${kind.label}",
-                            if (selected) kindColor(kind) or 0xFFL else 0x232A38FFL,
-                        ) { controller.brush = kind }
+                            if (selected) "> ${option.label}" else "  ${option.label}",
+                            if (selected) brushColor(option) or 0xFFL else 0x232A38FFL,
+                        ) { controller.brush = option }
                     }
                     gap()
                     row("click or drag to place", 0x9A9A9AFFL)
                     // Track: drag to connect (not by touching).
-                    if (controller.brush.conduit != null) {
+                    if (controller.brush is Brush.Run) {
                         row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
                     }
                     row("R rotate brush", 0x9A9A9AFFL)

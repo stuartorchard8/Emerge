@@ -4,13 +4,11 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.fitToFrame
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,10 +117,10 @@ class GridFitTriggerTest {
     private fun sprawled(): VesselState {
         var s = fitted()
         val leftTile = s.grid.tile(1, s.grid.height / 2)
-        s = edit(s, Edit.PlaceDeck(leftTile, DeckMachineKind.Hull, Direction.Right))
+        s = edit(s, Edit.Place(leftTile, Brush.Building(DeckMachineKind.Hull), Direction.Right))
         s = run(s, 1)
         val rightTile = s.grid.tile(s.grid.width - 2, s.grid.height / 2)
-        s = edit(s, Edit.PlaceDeck(rightTile, DeckMachineKind.Hull, Direction.Right))
+        s = edit(s, Edit.Place(rightTile, Brush.Building(DeckMachineKind.Hull), Direction.Right))
         s = run(s, 1)
         // Take both back off. The grid does not follow — P3 only grows — so the world is now
         // carrying padding it does not need, which is the whole situation P4 exists for.
@@ -229,7 +227,7 @@ class GridFitTriggerTest {
         var s = fitted()
         s = run(s, 50)
         val leftTile = s.grid.tile(1, s.grid.height / 2)
-        s = run(edit(s, Edit.PlaceDeck(leftTile, DeckMachineKind.Hull, Direction.Right)), 1)
+        s = run(edit(s, Edit.Place(leftTile, Brush.Building(DeckMachineKind.Hull), Direction.Right)), 1)
         s = run(edit(s, Edit.Remove(s.grid.tile(4, s.grid.height / 2))), 50)
         assertBalanced(s, "before the fit — the fixture itself")
 

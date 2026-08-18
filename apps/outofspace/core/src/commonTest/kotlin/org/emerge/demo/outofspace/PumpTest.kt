@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
@@ -88,7 +87,7 @@ class PumpTest {
     private fun pumped(pumpX: Int = 6, y: Int = 6, facing: Direction = Direction.Up): VesselState {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
         s = pipeRun(s, y, 4, 15)
-        return edit(s, Edit.PlaceDeck(grid.tile(pumpX, y), DeckMachineKind.Pump, facing))
+        return edit(s, Edit.Place(grid.tile(pumpX, y), Brush.Building(DeckMachineKind.Pump), facing))
     }
 
     @Test
@@ -143,8 +142,8 @@ class PumpTest {
         // keeps working until the whole run is full. That is the machine behaving correctly, and it
         // is also indistinguishable from a stall that does nothing.
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-        s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
-        s = edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.Place(grid.tile(6, 6), Brush.Run(Conduit.Pipe), Direction.Right))
+        s = edit(s, Edit.Place(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), Direction.Up))
         val early = run(s, 400*PUMP_PERIOD)
         val late = run(early, 1_200)
 
@@ -163,7 +162,7 @@ class PumpTest {
     @Test
     fun `a pump with no pipe beneath it has nowhere to push`() {
         var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
-        s = edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, Direction.Up))
+        s = edit(s, Edit.Place(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), Direction.Up))
         val roomBefore = s.air.totalMass
 
         val after = run(s, 200)
@@ -194,10 +193,10 @@ class PumpTest {
             var s = VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
             for (x in 1 until grid.width - 1) {
                 if (x == 6) continue
-                s = edit(s, Edit.PlaceDeck(grid.tile(x, 6), DeckMachineKind.Hull, Direction.Right))
+                s = edit(s, Edit.Place(grid.tile(x, 6), Brush.Building(DeckMachineKind.Hull), Direction.Right))
             }
-            s = edit(s, Edit.Place(grid.tile(6, 6), MachineKind.Pipe, Direction.Right))
-            return run(edit(s, Edit.PlaceDeck(grid.tile(6, 6), DeckMachineKind.Pump, facing)), 400)
+            s = edit(s, Edit.Place(grid.tile(6, 6), Brush.Run(Conduit.Pipe), Direction.Right))
+            return run(edit(s, Edit.Place(grid.tile(6, 6), Brush.Building(DeckMachineKind.Pump), facing)), 400)
         }
 
         fun chamber(s: VesselState, rows: IntRange): Long {

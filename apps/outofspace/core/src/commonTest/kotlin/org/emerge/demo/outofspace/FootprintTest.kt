@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Smelter
@@ -27,7 +26,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.portsOf
-import org.emerge.demo.outofspace.world.size
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
 import kotlin.test.Test
@@ -54,12 +52,8 @@ class FootprintTest {
         return s
     }
 
-    private fun place(grid: Grid, tile: TileIndex, kind: MachineKind, facing: Direction = Direction.Right): VesselState =
-        run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.Place(tile, kind, facing))))
-
-    /** The same for a kind that lives on the deck, which is most of them now. */
     private fun placeDeck(grid: Grid, tile: TileIndex, kind: DeckMachineKind, facing: Direction = Direction.Right): VesselState =
-        run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.PlaceDeck(tile, kind, facing))))
+        run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(kind), facing))))
 
     // ── Occupancy ─────────────────────────────────────────────────────────────
 
@@ -83,7 +77,7 @@ class FootprintTest {
         val grid = Grid(12, 12)
         var s = placeDeck(grid, grid.tile(5, 5), DeckMachineKind.Smelter)
         // Two tiles away: outside the *centre* but well inside the footprint.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(7, 5), DeckMachineKind.Sensor, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(7, 5), Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
         assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
     }
 

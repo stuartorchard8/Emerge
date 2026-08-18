@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VolumeField
@@ -19,7 +18,6 @@ import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.size
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -449,7 +447,7 @@ class NumericLimitsTest {
         // way steps 4 and 4b did, so the row keeps its slope and goes red again a little past 1e7.
         budget(
             "machine joules: hottest single tile of the heaviest machine",
-            MachineKind.ALL.maxOf { it.capacityPerTile } * designMaxKelvin,
+            DeckMachineKind.ALL.maxOf { it.capacityPerTile } * designMaxKelvin,
             1, Dim.ENERGY,
         )
         // The densest a tile can be, machine and air together — the true per-tile energy ceiling,

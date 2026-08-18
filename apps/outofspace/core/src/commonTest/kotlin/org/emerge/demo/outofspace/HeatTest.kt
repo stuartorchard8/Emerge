@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.setTemperature
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Vent
@@ -290,7 +289,7 @@ class HeatTest {
     fun `placing hull is an ordinary build action`() {
         val grid = Grid(4, 3)
         var s = VesselState.empty(grid)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(1, 1), DeckMachineKind.Hull, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(1, 1), Brush.Building(DeckMachineKind.Hull), Direction.Right))))
         assertTrue(s.deck[grid.tile(1, 1)] is Hull)
         assertEquals(Structure.Hull, s.structure[grid.tile(1, 1).index])
     }

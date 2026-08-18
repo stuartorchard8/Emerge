@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.diameter
-import org.emerge.demo.outofspace.world.size
 
 /**
  * Thermal energy stored **per tile** of something that occupies several.

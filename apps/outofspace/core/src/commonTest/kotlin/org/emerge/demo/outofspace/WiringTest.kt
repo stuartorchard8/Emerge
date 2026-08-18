@@ -21,7 +21,6 @@ import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.SignalNetworks
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -357,7 +356,7 @@ class WiringTest {
         val grid = Grid(8, 6)
         val at = grid.tile(3, 3)
         var s = VesselState.empty(grid)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Extractor, Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Extractor), Direction.Right))))
         assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 

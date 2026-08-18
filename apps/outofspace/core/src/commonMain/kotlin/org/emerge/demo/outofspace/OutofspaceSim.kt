@@ -52,7 +52,6 @@ import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.reach
@@ -117,7 +116,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
-import org.emerge.demo.outofspace.world.size
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
@@ -1162,23 +1160,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         fun apply(edit: Edit) {
             when (edit) {
+                // The one place the two kinds of placement diverge, and the only place they need
+                // to — see [Brush]. Everything before this point carries one value.
                 is Edit.Place -> {
-                    if (edit.tile.index !in 0 until deck.size) return
-                    when (edit.kind) {
-                        // Book energy for new body (heat arriving, not conjured).
-                        MachineKind.Rail, MachineKind.Pipe, MachineKind.Wire -> {
-                            val c = edit.kind.conduit!!
+                    if (edit.tile == TileIndex.NONE || edit.tile.index !in 0 until deck.size) return
+                    when (val brush = edit.brush) {
+                        is Brush.Run -> {
+                            val c = brush.conduit
                             if (spokenFor(c, edit.tile)) return
                             if (layer(c)[edit.tile.index] == null) {
+                                // Book energy for new body (heat arriving, not conjured).
                                 layer(c)[edit.tile.index] = Segment(c)
                                 built(tracks.lay(c, edit.tile))
                             }
                         }
+                        is Brush.Building -> placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck)
                     }
-                }
-                is Edit.PlaceDeck -> {
-                    if (edit.tile == TileIndex.NONE || edit.tile.index >= deck.size) return
-                    placeDeckBuilding(edit.tile, edit.kind, edit.facing, deck)
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
                 is Edit.Cut -> {

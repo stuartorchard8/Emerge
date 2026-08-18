@@ -26,7 +26,6 @@ import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -50,7 +49,6 @@ import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
-import org.emerge.demo.outofspace.world.size
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.shader.StarscapeShader
@@ -486,7 +484,7 @@ class OutofspaceRenderer {
         val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        val color = kindColor(MachineKind.Pipe)
+        val color = kindColor(Conduit.Pipe)
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
             rect(
@@ -513,11 +511,11 @@ class OutofspaceRenderer {
                 cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
                 (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
                 (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
-                kindColor(MachineKind.Rail),
+                kindColor(Conduit.Rail),
             )
         }
         // The hub, always drawn
-        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(MachineKind.Rail))
+        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(Conduit.Rail))
     }
 
     private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
@@ -1243,10 +1241,16 @@ class OutofspaceRenderer {
 }
 
 /** Palette colour for a machine kind, shared by the renderer and the HUD's brush swatch. */
-fun kindColor(kind: MachineKind): Long = when (kind) {
-    MachineKind.Rail -> 0x39445AFFL
-    MachineKind.Pipe -> 0x7A5A3AFFL
-    MachineKind.Wire -> 0x4A7A5AFFL
+fun kindColor(conduit: Conduit): Long = when (conduit) {
+    Conduit.Rail -> 0x39445AFFL
+    Conduit.Pipe -> 0x7A5A3AFFL
+    Conduit.Power, Conduit.Signal -> 0x4A7A5AFFL
+}
+
+/** The swatch the build menu shows for a brush, whichever of the two kinds it names. */
+fun brushColor(brush: Brush): Long = when (brush) {
+    is Brush.Run -> kindColor(brush.conduit)
+    is Brush.Building -> kindColor(brush.kind)
 }
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Bridge -> 0x1A2030FFL

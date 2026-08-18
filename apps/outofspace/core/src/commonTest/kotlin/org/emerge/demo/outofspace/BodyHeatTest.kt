@@ -28,7 +28,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.ambientEnergy
 import org.emerge.demo.outofspace.world.machine.setTemperature
 import org.emerge.demo.outofspace.world.material
@@ -354,7 +353,7 @@ class BodyHeatTest {
 
         s = OutofspaceReducer.reduce(
             cfg, s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Hull, Direction.Right)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Hull), Direction.Right)))),
         )
         // Derived from what a tile of hull is *made of*, not from a per-kind capacity constant. Those
         // two used to be one expression and are now two: since a casing became real matter, its

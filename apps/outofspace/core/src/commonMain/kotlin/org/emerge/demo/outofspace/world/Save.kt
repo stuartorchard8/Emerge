@@ -22,7 +22,6 @@ import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
@@ -884,7 +883,7 @@ object Save {
      * The `k=` heat off a pre-migration `machine` record, summed over its tiles.
      *
      * Summed rather than kept per tile because the two representations do not line up: a machine's
-     * `k=` has one entry per [MachineKind.thermalTiles], and a deck machine's heat is one entry per
+     * `k=` had one entry per tile of the machine, and a deck machine's heat is one entry per
      * tile of its footprint. For the one kind this applies to — a one-tile vent — the two are the
      * same number anyway, and the total is the quantity the ledger is checked against.
      */

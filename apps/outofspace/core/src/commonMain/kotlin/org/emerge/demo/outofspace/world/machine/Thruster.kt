@@ -36,7 +36,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * *nothing*, it is a wildly inefficient one. See [exhaustPath] for how "blocked" is decided.
  *
  * A motor bolted face-first against a wall is that case taken to its limit rather than a fourth
- * case needing a rule of its own: the machine is [MachineKind.isPermeable], so its own tile holds
+ * case needing a rule of its own: the machine is [DeckMachineKind.isPermeable], so its own tile holds
  * gas, and with nowhere further to send the exhaust it sends it there. It runs, it produces no
  * thrust, and it cooks itself — which is a legible thing to build by mistake and to have to fix.
  */

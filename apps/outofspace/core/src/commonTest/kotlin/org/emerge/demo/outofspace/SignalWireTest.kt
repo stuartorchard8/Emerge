@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -75,7 +74,7 @@ class SignalWireTest {
 
     @Test
     fun `a single tile can be placed on its own`() {
-        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(6, 2), MachineKind.Wire, Direction.Right))
+        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(6, 2), Brush.Run(Conduit.Signal), Direction.Right))
         val stub = wireAt(s, 6, 2)
 
         assertNotNull(stub, "placing the wire brush on one tile should leave a stub")

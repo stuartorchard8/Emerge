@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.PIPE_VOLUME
@@ -67,7 +66,7 @@ class ValveTest {
     }
 
     private fun valveAt(state: VesselState, tile: TileIndex): VesselState =
-        edit(state, Edit.PlaceDeck(tile, DeckMachineKind.Valve, Direction.Right))
+        edit(state, Edit.Place(tile, Brush.Building(DeckMachineKind.Valve), Direction.Right))
 
     /** Whether the pipe at [tile] is open to the room — a valve standing on a length of pipe. */
     private fun isOpen(s: VesselState, tile: TileIndex): Boolean =

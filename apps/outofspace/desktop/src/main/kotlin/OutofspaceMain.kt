@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
 import org.emerge.demo.outofspace.world.machine.InputKey
-import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.Brush
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.ui.Ui
@@ -137,7 +137,7 @@ fun main() {
             // the drag is what *connects* the tiles, since track no longer joins by touching, so the
             // gesture is handed to the controller whole rather than replayed as isolated placements.
             leftDown && controller.tool == Tool.Build -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
-                if (controller.brush.conduit != null) controller.dragTo(hovered) else controller.place(hovered)
+                if (controller.brush is Brush.Run) controller.dragTo(hovered) else controller.place(hovered)
                 lastPainted = hovered
             }
         }
@@ -245,8 +245,8 @@ fun main() {
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
-            in GLFW_KEY_1..GLFW_KEY_9 -> MachineKind.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
-            GLFW_KEY_0 -> MachineKind.ALL.getOrNull(9)?.let { controller.brush = it }
+            in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
+            GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let { controller.brush = it }
         }
     }
 

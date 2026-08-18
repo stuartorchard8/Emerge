@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X
 import org.emerge.demo.outofspace.world.STARTER_PLATE_Y
 import org.emerge.demo.outofspace.world.VesselState
@@ -10,7 +9,6 @@ import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.reach
-import org.emerge.demo.outofspace.world.size
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals

@@ -18,7 +18,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
-import org.emerge.demo.outofspace.world.machine.MachineKind
+import org.emerge.demo.outofspace.Brush
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
@@ -431,9 +431,16 @@ object OutofspaceAgentHarness {
             else println("[agent] landmarks: ${found.joinToString(" | ")}")
         }
 
-        private fun kind(name: String): MachineKind =
-            MachineKind.ALL.firstOrNull { it.name.equals(name, true) || it.label.equals(name, true) }
-                ?: error("unknown machine '$name' (have ${MachineKind.ALL.map { it.label }})")
+        /** A brush by name — a conduit or a building, since the build menu no longer tells them apart. */
+        private fun kind(name: String): Brush =
+            Brush.ALL.firstOrNull { it.label.equals(name, true) }
+                ?: Brush.ALL.firstOrNull { b ->
+                    when (b) {
+                        is Brush.Run -> b.conduit.name.equals(name, true)
+                        is Brush.Building -> b.kind.name.equals(name, true)
+                    }
+                }
+                ?: error("unknown brush '$name' (have ${Brush.ALL.map { it.label }})")
 
         private fun direction(name: String): Direction =
             Direction.entries.firstOrNull { it.name.equals(name, true) }

@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.sim.core.physics.primitives.Coord
 
@@ -65,11 +64,11 @@ class RigidBody(
     val angImpulse: Long = 0L,
     /** What a rock is made of, as proportions. Null for fragments (they carry [machineKind] instead). */
     val oreComposition: Mixture? = null,
-    /** Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction. */
     /**
-     * ⚠️ A **[DeckMachineKind]**, not a [MachineKind]: debris comes off the things that take up
-     * floor space, and those are all deck machines now. `MachineKind` is on its way to holding
-     * nothing but conduits and the bridge, none of which produces a fragment.
+     * Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction.
+     *
+     * A [DeckMachineKind], because debris comes off the things that take up floor space — and that
+     * is every building there is now. A length of conduit produces no fragment.
      */
     val machineKind: DeckMachineKind? = null,
     /**

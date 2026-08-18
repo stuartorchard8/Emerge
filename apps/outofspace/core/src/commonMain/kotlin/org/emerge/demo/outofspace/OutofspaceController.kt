@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
@@ -41,17 +40,7 @@ class OutofspaceController(
     var speed: Float = 1f
 
     /** What the player is about to place, and which way it will face. */
-    var brushKind: BrushKind = BrushKind.Machine
-    var brush: MachineKind = MachineKind.Rail
-        set(value) {
-            brushKind = BrushKind.Machine
-            field = value
-        }
-    var deckBrush: DeckMachineKind = DeckMachineKind.Hull
-        set(value) {
-            brushKind = BrushKind.Deck
-            field = value
-        }
+    var brush: Brush = Brush.Run(Conduit.Rail)
     var brushFacing: Direction = Direction.Right
 
     /** What a left-click does — see [Tool]. */
@@ -120,10 +109,7 @@ class OutofspaceController(
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
-    fun place(tile: TileIndex) = when (brushKind) {
-        BrushKind.Deck -> pending.add(Edit.PlaceDeck(tile, deckBrush, brushFacing))
-        BrushKind.Machine -> pending.add(Edit.Place(tile, brush, brushFacing))
-    }
+    fun place(tile: TileIndex) { pending.add(Edit.Place(tile, brush, brushFacing)) }
 
     /**
      * The tile the current drag last reached, or -1 when nothing is being dragged.
@@ -138,7 +124,7 @@ class OutofspaceController(
         when (tool) {
             Tool.Build -> {
                 place(tile)
-                if (brush.conduit != null) dragFrom = tile
+                if (brush is Brush.Run) dragFrom = tile
             }
             // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
             // selects the furnace rather than nothing.
@@ -172,7 +158,7 @@ class OutofspaceController(
             val next = grid.neighbour(at, dir)
             if (next == TileIndex.NONE) break
             place(next)
-            pending.add(Edit.Lay(at, next, brush.conduit ?: Conduit.Rail))
+            pending.add(Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail))
             at = next
         }
         dragFrom = at
@@ -249,7 +235,7 @@ class OutofspaceController(
     }
 
     fun cycleBrush(delta: Int) {
-        val all = MachineKind.ALL
+        val all = Brush.ALL
         brush = all[((all.indexOf(brush) + delta) % all.size + all.size) % all.size]
     }
 

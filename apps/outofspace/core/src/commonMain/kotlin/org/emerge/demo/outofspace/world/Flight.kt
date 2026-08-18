@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -43,7 +42,7 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
  * for thrust.
  *
  * ⚠️ These are real masses now: a real density from [Material.composition], at the fraction of a
- * tile the machine actually is ([org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille]). The dial that sets how briskly a given
+ * tile the machine actually is ([DeckMachineKind.fillPermille]). The dial that sets how briskly a given
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.
  */

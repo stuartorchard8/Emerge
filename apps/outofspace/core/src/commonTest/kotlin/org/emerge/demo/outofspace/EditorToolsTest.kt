@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
@@ -53,11 +52,11 @@ class EditorToolsTest {
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         deck += Storage(grid.tile(6, 5), Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)))
-        c.brush = MachineKind.Rail
+        c.brush = Brush.Run(Conduit.Rail)
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))
         c.dragTo(grid.tile(7, 5))
-        c.brush = MachineKind.Wire
+        c.brush = Brush.Run(Conduit.Signal)
         c.apply(grid.tile(4, 5))
         c.dragTo(grid.tile(7, 5))
         c.stepOnce()

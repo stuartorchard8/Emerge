@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.MachineKind
 
 /** Shared temperatures across all systems (air, fabric, vacuum). */
 object Temperature {
@@ -30,7 +29,7 @@ object Temperature {
  *
  * A tile of any of this is a full [org.emerge.demo.outofspace.chem.TILE_LITRES] of the solid — six
  * and a half tonnes of steel. Nothing is built out of full tiles of metal; what fraction of a tile
- * a given machine actually is lives on the machine, as [org.emerge.demo.outofspace.world.machine.MachineKind.fillPermille], because that is a
+ * a given machine actually is lives on the machine, as [DeckMachineKind.fillPermille], because that is a
  * fact about the machine and not about the steel.
  *
  * [conductanceCentiTicks] is the second half: how long heat takes to cross a contact of this stuff,
@@ -123,7 +122,7 @@ enum class Material(
          *
          * This one *does* scale, because it is the solid side: it sets how fast a hull plate sheds
          * its own heat to space. Anchored against the plate that actually does the radiating —
-         * [org.emerge.demo.outofspace.world.machine.MachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
+         * [DeckMachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
          * ship cools to space on the timescale it always did.
          */
         val RADIANCE: Long get() = DeckMachineKind.Hull.capacityPerTile / 6_533L
@@ -182,13 +181,6 @@ fun seriesConductance(a: Long, b: Long): Long {
     return if (sum <= 0L) 0L else scaledRatio(a, sum, 2L * b)
 }
 
-/** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
-val MachineKind.material: Material
-    get() = when (this) {
-        MachineKind.Rail -> Conduit.Rail.material
-        MachineKind.Pipe -> Conduit.Pipe.material
-        MachineKind.Wire -> Conduit.Signal.material
-    }
 val DeckMachineKind.material: Material
     get() = when (this) {
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
@@ -213,35 +205,6 @@ val Conduit.material: Material
         Conduit.Pipe, Conduit.Power, Conduit.Signal -> Material.Copper
     }
 
-/**
- * How much of its tile a machine is actually made of, in parts per thousand.
- *
- * A tile is [org.emerge.demo.outofspace.chem.TILE_LITRES] — the better part of a cubic metre — and
- * nothing aboard is a solid block of that. A hull plate is a few centimetres of steel across a
- * metre of face; a smelter is a thick lining around a void that the ore goes in; a wire is a wire.
- * This is that fraction, stated where it belongs: on the machine, because it is a fact about how
- * the machine is built and not about the steel it is built from.
- *
- * It replaces the old deflated `massPerTile`, which was the same idea kept implicitly and in the
- * wrong place — a density that quietly meant "and it is mostly empty", which is why an iron rail
- * used to be five times lighter *per unit of material* than a steel plate.
- *
- * ⚠️ These are the dial now. They set what a ship weighs and therefore how briskly a given thrust
- * moves it, and — once building lands — what it costs to put up. [RigidBody] does not appear here:
- * a rock is solid, fill 1000, which is the whole reason it outweighs the ship that mines it.
- */
-val MachineKind.fillPermille: Int
-    get() = when (this) {
-        // Casings with machinery in them: a shell, a mechanism, and a lot of air.
-
-
-        // Track and pipework, laid across a tile rather than filling it.
-        MachineKind.Rail -> 20
-        MachineKind.Pipe -> 15
-
-        // A cable.
-        MachineKind.Wire -> 2
-    }
 val DeckMachineKind.fillPermille: Int
     get() = when (this) {
         // Plate: a few centimetres of steel over a metre of face, plus framing.
@@ -272,21 +235,20 @@ val DeckMachineKind.fillPermille: Int
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */
 val Conduit.fillPermille: Int
     get() = when (this) {
-        Conduit.Rail -> MachineKind.Rail.fillPermille
-        Conduit.Pipe -> MachineKind.Pipe.fillPermille
-        Conduit.Power, Conduit.Signal -> MachineKind.Wire.fillPermille
+        // Track and pipework, laid across a tile rather than filling it.
+        Conduit.Rail -> 20
+        Conduit.Pipe -> 15
+        // A cable.
+        Conduit.Power, Conduit.Signal -> 2
     }
 
 /** What one tile of this kind weighs: its material's real density, at the fraction it fills. */
-val MachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
 val DeckMachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
 
 /** Millijoules per kelvin for one tile of it — the same fill, the same fact. */
-val MachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
 val DeckMachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
 
 /** What crosses a contact of it: the material's conductance through the metal actually present. */
-val MachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
 val DeckMachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
 
 /** What one tile of bare conduit weighs. */

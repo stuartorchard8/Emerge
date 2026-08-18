@@ -11,15 +11,17 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.InputKey
-import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
-    data class Place(val tile: TileIndex, val kind: MachineKind, val facing: Direction) : Edit
-    data class PlaceDeck(val tile: TileIndex, val kind: DeckMachineKind, val facing: Direction) : Edit
+    /**
+     * Put something on a tile. One case for both a run and a building — see [Brush] for why the
+     * difference belongs where the edit is applied rather than in the edit itself.
+     */
+    data class Place(val tile: TileIndex, val brush: Brush, val facing: Direction) : Edit
     data class Rotate(val tile: TileIndex) : Edit
     /**
      * Takes something off a tile — one layer of it, or a named one, or all of it.
