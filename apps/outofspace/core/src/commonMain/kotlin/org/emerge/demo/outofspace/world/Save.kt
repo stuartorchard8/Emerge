@@ -284,16 +284,6 @@ object Save {
                 put("progress", m.progress.toString())
                 put("temp", m.setTemperature.toString())
             }
-            is Vaporizer -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
-            // The exhaust path is derived from the hull every tick and so is not state — see
-            // [exhaustPath]; the propellant is a store, written by the role loop below.
-            is Thruster -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
             is Smelter -> {
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
@@ -336,6 +326,16 @@ object Save {
             // A pump holds nothing: what it moves is in the two air fields. Facing and wiring are
             // written by the common code around this.
             is Pump -> {}
+            is Vaporizer -> {
+                put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+            }
+            // The exhaust path is derived from the hull every tick and so is not state — see
+            // [exhaustPath]; the propellant is a store, written by the role loop below.
+            is Thruster -> {
+                put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+            }
         }
         // The same store loop the machine record has, and it is not optional: a deck machine's
         // buffers are on the same layer under the same keys, and leaving it out wrote a warehouse
@@ -1004,20 +1004,10 @@ object Save {
                 progress = num("actionProgress", 0L).toInt(),
                 setTemperature = num("temp", 900L).toInt(),
             )
-            MachineKind.Vaporizer -> Vaporizer(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Vaporizer(Direction.Right).massPerTick),
-            )
             MachineKind.Smelter -> Smelter(
                 facing = facing(),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Smelter(Direction.Right).massPerTick),
-            )
-            MachineKind.Thruster -> Thruster(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Thruster(Direction.Right).massPerTick),
             )
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
@@ -1100,6 +1090,18 @@ object Save {
                 } ?: InputKey.Up,
             )
             DeckMachineKind.Pump -> Pump(tile, facing())
+            DeckMachineKind.Vaporizer -> Vaporizer(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                massPerTick = rate(Vaporizer(tile, Direction.Right).massPerTick),
+            )
+            DeckMachineKind.Thruster -> Thruster(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
+            )
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted

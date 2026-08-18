@@ -218,8 +218,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Processor -> w.refine(cfg, m, activation, tile)
                     is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
                     is Smelter -> w.melt(cfg, m, activation, tile)
-                    is Vaporizer -> w.vaporize(m, activation, tile)
-                    is Thruster -> w.fire(cfg, m, activation, tile, structure)
                     is Bridge -> m
                 }
             }
@@ -229,6 +227,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 w[tile] = when (m) {
                     is Hull, is Airlock, is Vent, is Storage,
                     is Sensor, is WireButton, is Pump -> m
+                    is Vaporizer -> w.vaporize(m, activation, tile)
+                    is Thruster -> w.fire(cfg, m, activation, tile, structure)
                 }
             }
         }
@@ -657,11 +657,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * [bufferTile] returns null for a role it does not — so a null here is a machine being asked for
      * a store it has no concept of, which is a bug in the caller and not a state the world can be in.
      */
-    private fun Work.store(m: Machine, centre: TileIndex, role: BufferRole): Resource? =
+    private fun Work.store(m: Placed, centre: TileIndex, role: BufferRole): Resource? =
         buffers.resourceAt(bufferTile(grid, m, centre, role)!!)
 
     /** Replace the [role] store of the machine at [centre], or empty it if [resource] is null. */
-    private fun Work.putStore(m: Machine, centre: TileIndex, role: BufferRole, resource: Resource?) {
+    private fun Work.putStore(m: Placed, centre: TileIndex, role: BufferRole, resource: Resource?) {
         buffers.put(bufferTile(grid, m, centre, role)!!, resource)
     }
 
@@ -1820,6 +1820,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // Neither a sensor nor a button nor a pump is on the material network at all:
                 // no ports, nothing to hand anything to.
                 is Sensor, is WireButton, is Pump -> false
+                // Both take a feed, and both take it the way every buffered kind does — by role
+                // tile, kind-blind. See the machine-list twin above.
+                is Vaporizer, is Thruster -> {
+                    val role = inputBufferRole(destination) ?: return false
+                    val store = bufferTile(grid, destination, destination.center, role) ?: return false
+                    val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
+                    buffers.put(store, merged)
+                    true
+                }
                 is Hull, is Airlock -> false
             }
         }
@@ -1845,9 +1854,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Extractor -> Extractor(facing)
             MachineKind.Processor -> Processor(facing)
             MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
-            MachineKind.Vaporizer -> Vaporizer(facing)
             MachineKind.Smelter -> Smelter(facing)
-            MachineKind.Thruster -> Thruster(facing)
             // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
             MachineKind.Wire -> null
@@ -1861,6 +1868,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Sensor -> Sensor(tile, facing)
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)
+            DeckMachineKind.Vaporizer -> Vaporizer(tile, facing)
+            DeckMachineKind.Thruster -> Thruster(tile, facing)
         }
     }
 }

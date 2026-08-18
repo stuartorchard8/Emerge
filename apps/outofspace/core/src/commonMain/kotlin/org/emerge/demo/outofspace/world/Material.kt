@@ -187,9 +187,7 @@ fun seriesConductance(a: Long, b: Long): Long {
 val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
-        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer,
-        MachineKind.Thruster,
-        -> Material.Titanium
+        MachineKind.Extractor, MachineKind.Processor -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
         MachineKind.Bridge -> Conduit.Rail.material
@@ -202,6 +200,7 @@ val DeckMachineKind.material: Material
         // anything — which is why it keeps the instrument's fill rather than the plate's.
         DeckMachineKind.Vent, DeckMachineKind.Storage,
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
+        DeckMachineKind.Vaporizer, DeckMachineKind.Thruster,
         -> Material.Titanium
     }
 
@@ -235,11 +234,8 @@ val MachineKind.fillPermille: Int
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
 
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
-        MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer -> 150
+        MachineKind.Extractor, MachineKind.Processor -> 150
 
-        // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
-        // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
-        MachineKind.Thruster -> 120
 
         // Instruments and fittings: mostly a housing.
         MachineKind.Gauge -> 40
@@ -259,7 +255,10 @@ val DeckMachineKind.fillPermille: Int
         // rechosen, so the migration does not quietly change what the ship weighs.
         DeckMachineKind.Vent -> 40
         // A shell with a room's worth of space inside it — carried across unchanged.
-        DeckMachineKind.Storage, DeckMachineKind.Pump -> 150
+        DeckMachineKind.Storage, DeckMachineKind.Pump, DeckMachineKind.Vaporizer -> 150
+        // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
+        // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
+        DeckMachineKind.Thruster -> 120
         // Instruments and fittings: mostly a housing. Carried across unchanged.
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
     }

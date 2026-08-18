@@ -38,7 +38,7 @@ class BufferRoleTest {
     private val centre get() = grid.tile(10, 10)
 
     private fun kinds(facing: Direction): List<Placed> = listOf(
-        Extractor(facing), Vaporizer(facing), Thruster(facing),
+        Extractor(facing), Vaporizer(centre, facing), Thruster(centre, facing),
         Processor(facing), Smelter(facing), ThermalDecomposer(facing), Storage(centre, facing),
     )
 

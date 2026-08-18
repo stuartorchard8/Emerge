@@ -242,8 +242,8 @@ class ThrusterTest {
         val played = controller.state
         val loaded = Save.read(Save.write(played))
         val here = cfg.initialGrid.tile(HULL_RIGHT, BAY_Y)
-        val before = played[here] as? Thruster
-        val after = loaded[here] as? Thruster
+        val before = played.deck[here] as? Thruster
+        val after = loaded.deck[here] as? Thruster
         assertEquals(before, after, "the thruster did not survive the round trip")
         assertEquals(played.ventedMass, loaded.ventedMass)
         assertEquals(played.exhaustMomentumX, loaded.exhaustMomentumX)
@@ -267,7 +267,7 @@ class ThrusterTest {
         // Mounted *in* the wall, so the plate it replaces comes out first — a tile carries one
         // deck machine, and the motor is the one that is there.
         deck -= tile
-        machines[tile.index] = Thruster(facing = facing)
+        deck += Thruster(tile, facing = facing)
         return VesselState(
             grid = grid,
             machines = machines.toList(),

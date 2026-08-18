@@ -241,7 +241,7 @@ class RotationTest {
         for (y in bays) {
             // The bay replaces the plate that was there — see `ThrusterTest`'s fixture.
             deck -= grid.tile(HULL_RIGHT, y)
-            machines[grid.tile(HULL_RIGHT, y).index] = Thruster(facing = Direction.Right)
+            deck += Thruster(grid.tile(HULL_RIGHT, y), facing = Direction.Right)
         }
         return VesselState(
             grid = grid,

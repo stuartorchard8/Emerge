@@ -18,9 +18,7 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Extractor("EXTRACTOR", isPermeable=true),
     Processor("PROCESSOR"),
     ThermalDecomposer("THERMAL DECOMPOSER", isPermeable=true),
-    Vaporizer("VAPORIZER", isPermeable=true),
     Smelter("SMELTER"),
-    Thruster("THRUSTER", isPermeable=true),
     Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
     ;
@@ -44,6 +42,8 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
     Sensor("SENSOR"),
     KeyInput("BUTTON", isPermeable = true),
     Pump("PUMP", isPermeable = true),
+    Vaporizer("VAPORIZER", isPermeable = true),
+    Thruster("THRUSTER", isPermeable = true),
     ;
 
     companion object {

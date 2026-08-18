@@ -3,12 +3,14 @@ package org.emerge.demo.outofspace.world.machine
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Mineral vaporizer: emits input ore into the fluid sim as species.
  */
 data class Vaporizer(
+    override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
     /**
@@ -26,10 +28,9 @@ data class Vaporizer(
      */
     val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Processor),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Vaporizer
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Vaporizer
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }

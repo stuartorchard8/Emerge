@@ -41,6 +41,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * thrust, and it cooks itself — which is a legible thing to build by mistake and to have to fix.
  */
 data class Thruster(
+    override val center: TileIndex,
     override val facing: Direction,
     /** Propellant waiting to be thrown. Solid, arriving by rail, exactly as a smelter's feed does. */
     val carry: Long = 0L,
@@ -54,12 +55,11 @@ data class Thruster(
      */
     val massPerTick: Long = Capacity.PACKET_MASS / 30L,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Thruster),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Thruster
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Thruster
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
 

@@ -642,19 +642,9 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.ThermalDecomposer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            is Vaporizer -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Vaporizer))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
             is Smelter -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
-            // The bell marks the exhaust face, so which way a motor pushes is readable without
-            // selecting it — the one thing about a thruster you cannot afford to get wrong.
-            is Thruster -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Thruster))
-                edgeMark(x, y, m.facing, Colors.VENT_CORE)
             }
         }
         drawPorts(state, tile, m)
@@ -679,6 +669,17 @@ class OutofspaceRenderer {
         }
         when (m) {
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            is Vaporizer -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vaporizer))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+            // The bell marks the exhaust face, so which way a motor pushes is readable without
+            // selecting it — the one thing about a thruster you cannot afford to get wrong.
+            is Thruster -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Thruster))
+                edgeMark(x, y, m.facing, Colors.VENT_CORE)
+            }
+
             // A button: its face lights up while it is held, and its key is written on it by the
             // wiring panel rather than by the tile — a letter at this size would be a smudge.
             is WireButton -> {
@@ -1278,9 +1279,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Extractor -> 0x6B4A2AFFL
     MachineKind.Processor -> 0x2E5A6BFFL
     MachineKind.ThermalDecomposer -> 0x5E5A3BFFL
-    MachineKind.Vaporizer -> 0x905A6BFFL
     MachineKind.Smelter -> 0x8A3A2AFFL
-    MachineKind.Thruster -> 0xC04A30FFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
 }
@@ -1292,6 +1291,8 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Sensor -> 0x24303CFFL
     DeckMachineKind.KeyInput -> 0x2E3A4AFFL
     DeckMachineKind.Pump -> 0xB07840FFL
+    DeckMachineKind.Vaporizer -> 0x905A6BFFL
+    DeckMachineKind.Thruster -> 0xC04A30FFL
 }
 
 /**
