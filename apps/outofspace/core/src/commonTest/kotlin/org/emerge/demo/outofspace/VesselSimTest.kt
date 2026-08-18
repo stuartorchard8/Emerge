@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsOf
@@ -156,7 +157,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, machines, 2, 5)
         machines[grid.tile(8, 5).index] = Storage(Direction.Right)          // in at (7, 5)
-        machines[grid.tile(5, 2).index] = Vent()                            // in at its own tile
+        deck += Vent(grid.tile(5, 2))                                       // in at its own tile
         joinRow(grid, rails, 4, 7, 5)
         joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
 
@@ -189,7 +190,7 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, machines, 2, 5)
-        machines[grid.tile(5, 2).index] = Vent()                            // two tiles up from the fork
+        deck += Vent(grid.tile(5, 2))                                       // two tiles up from the fork
         machines[grid.tile(9, 5).index] = Storage(Direction.Right)          // four tiles along, in at (8, 5)
         joinRow(grid, rails, 4, 8, 5)
         joinCol(grid, rails, 5, 2, 5)
@@ -309,7 +310,7 @@ class VesselSimTest {
         // anything, so the line drains from the front — the tile nearest the consumer moves first.
         s = run(s, 40, OutofspaceInput(listOf(
             Edit.Remove(grid.tile(8, 2)),
-            Edit.Place(grid.tile(7, 2), MachineKind.Vent, Direction.Right),
+            Edit.PlaceDeck(grid.tile(7, 2), DeckMachineKind.Vent, Direction.Right),
         )))
         assertTrue(s.ventedMass > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
@@ -384,7 +385,7 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, machines, 2, 2)
-        machines[grid.tile(5, 2).index] = Vent()   // takes everything, so the extractor never backs up
+        deck += Vent(grid.tile(5, 2))   // takes everything, so the extractor never backs up
         joinRow(grid, rails, 4, 5, 2)
         var s = VesselState(
             grid, machines.toList(), deck,
@@ -412,7 +413,7 @@ class VesselSimTest {
         val feed = feedExtractor(grid, machines, 2, 3)
         machines[grid.tile(7, 3).index] = Smelter(Direction.Right)     // covers x 5..9
         machines[grid.tile(12, 3).index] = Storage(Direction.Right)
-        machines[grid.tile(7, 6).index] = Vent()   // under the smelter's slag port: where slag goes
+        deck += Vent(grid.tile(7, 6))   // under the smelter's slag port: where slag goes
         val rails = arrayOfNulls<Segment>(grid.size)
         // One run under the lot, from the extractor's port to the tank's.
         joinRow(grid, rails, 4, 11, 3)

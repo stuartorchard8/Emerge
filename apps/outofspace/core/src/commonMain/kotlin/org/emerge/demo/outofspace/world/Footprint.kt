@@ -22,7 +22,7 @@ val MachineKind.size: Int
         // them, so its size says nothing about space -- only its two ports place it.
         MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> 1
         MachineKind.Wire -> 1
-        MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump -> 1
+        MachineKind.Sensor, MachineKind.Pump -> 1
         MachineKind.Thruster -> 1
         MachineKind.KeyInput -> 1
         MachineKind.Processor, MachineKind.ThermalDecomposer, MachineKind.Vaporizer, MachineKind.Storage -> 3
@@ -31,7 +31,7 @@ val MachineKind.size: Int
     }
 val DeckMachineKind.diameter: Int
     get() = when (this) {
-        DeckMachineKind.Hull, DeckMachineKind.Airlock -> 1
+        DeckMachineKind.Hull, DeckMachineKind.Airlock, DeckMachineKind.Vent -> 1
     }
 
 /** Half-width: how far the footprint reaches from its centre in each direction. */

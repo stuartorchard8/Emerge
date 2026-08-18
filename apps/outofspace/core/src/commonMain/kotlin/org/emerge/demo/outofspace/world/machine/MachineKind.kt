@@ -23,7 +23,6 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
     Storage("STORAGE"),
     Sensor("SENSOR"),
     KeyInput("BUTTON", isPermeable=true),
-    Vent("VENT"),
     Thruster("THRUSTER", isPermeable=true),
     Valve("VALVE", Conduit.Pipe),
     Wire("WIRE", Conduit.Signal),
@@ -44,6 +43,7 @@ enum class MachineKind(val label: String, val conduit: Conduit? = null, val isPe
 enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) {
     Hull("HULL"),
     Airlock("AIRLOCK"),
+    Vent("VENT"),
     ;
 
     companion object {

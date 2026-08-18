@@ -27,6 +27,7 @@ import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
@@ -85,6 +86,8 @@ class HeatTest {
         h: Int,
         track: RailPlan.() -> Unit = {},
         fill: (Int, Int) -> Machine? = { _, _ -> null },
+        /** The same, for the kinds that live on the deck — a vent is one. */
+        deckFill: (Int, Int, TileIndex) -> DeckMachine? = { _, _, _ -> null },
     ): VesselState {
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val machines = arrayOfNulls<Machine>(grid.size)
@@ -97,7 +100,10 @@ class HeatTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w, y))
         }
-        for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
+        for (y in 2 until h) for (x in 2 until w) {
+            machines[grid.tile(x, y).index] = fill(x, y)
+            deckFill(x, y, grid.tile(x, y))?.let { deck += it }
+        }
         return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid, track)), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
     }
 
@@ -199,14 +205,20 @@ class HeatTest {
             // anything and stalls on its output cap after four kilograms, never getting warm enough
             // to measure. Which is what happened the first time.
             track = { row(7, 8, 5); col(5, 7, 8) },
-        ) { x, y ->
-            when {
-                x == 5 && y == 5 -> Smelter(Direction.Right)
-                x == 8 && y == 5 -> Vent()      // refined leaves forward
-                x == 5 && y == 8 -> Vent()      // slag leaves through the floor
-                else -> null
-            }
-        }.stocked(g0.tile(5, 5), ore)
+            deckFill = { x, y, tile ->
+                when {
+                    x == 8 && y == 5 -> Vent(tile)      // refined leaves forward
+                    x == 5 && y == 8 -> Vent(tile)      // slag leaves through the floor
+                    else -> null
+                }
+            },
+            fill = { x, y ->
+                when {
+                    x == 5 && y == 5 -> Smelter(Direction.Right)
+                    else -> null
+                }
+            },
+        ).stocked(g0.tile(5, 5), ore)
         val g = room.grid
         val s = run(room, 120*HEAT_PERIOD)
 

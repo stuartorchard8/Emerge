@@ -305,7 +305,6 @@ object Save {
             // A pump holds nothing: what it moves is in the two air fields. Facing, wiring and
             // heat are all written by the common code around this.
             is Pump -> {}
-            is Vent -> put("vented", m.ventedMass.toString())
         }
         // Every store the machine keeps, under the key that record has always used for it. What a
         // machine holds moved to the buffer layer without the file noticing — see [storeKey].
@@ -332,6 +331,7 @@ object Save {
         when (m) {
             // An airlock is its wiring, and the common code around this writes that.
             is Hull, is Airlock -> {}
+            is Vent -> put("vented", m.ventedMass.toString())
         }
         // Omitted when a machine is wired the way a freshly placed one is, which is almost all of
         // them — the file should show the wiring somebody actually did.
@@ -656,6 +656,16 @@ object Save {
                     machines[t.index] = m
                     if (dm != null) {
                         deck += dm
+                        // A kind that has since become a deck machine — a vent — is still written as
+                        // a `machine` record by every file saved before it moved. Its heat rode that
+                        // record in `k=`, and `deckheat` was not written for it, so without this the
+                        // machine comes back at ambient and the thermal ledger reports the
+                        // difference on the first tick after the load.
+                        readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
+                            val each = total / dm.tiles.size
+                            for (tile in dm.tiles) deck.stuff.setEnergy(tile, each)
+                            deck.stuff.addEnergy(dm.center, total % dm.tiles.size)
+                        }
                     }
                 }
                 "deckmachine" -> {
@@ -865,6 +875,26 @@ object Save {
         )
     }
 
+    /**
+     * The `k=` heat off a pre-migration `machine` record, summed over its tiles.
+     *
+     * Summed rather than kept per tile because the two representations do not line up: a machine's
+     * `k=` has one entry per [MachineKind.thermalTiles], and a deck machine's heat is one entry per
+     * tile of its footprint. For the one kind this applies to — a one-tile vent — the two are the
+     * same number anyway, and the total is the quantity the ledger is checked against.
+     */
+    private fun readMigratedDeckHeat(
+        tokens: List<String>,
+        energyScale: Rescale,
+        fail: (String) -> Nothing,
+    ): Long? {
+        val f = fields(tokens.drop(1), fail)
+        val field = f["k"] ?: return null
+        var sum = 0L
+        for (part in field.split(',')) sum += energyScale.of(part.toLongOrNull() ?: fail("bad energy '$field'"))
+        return sum
+    }
+
     /** The reading half of [writeSparse]. */
     private fun readDeckHeat(tokens: List<String>, deck: StuffLayer, scale: Rescale, fail: (String) -> Nothing) {
         for (i in 1 until tokens.size) {
@@ -986,7 +1016,6 @@ object Save {
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(Direction.Right).massPerTick),
             )
-            MachineKind.Vent -> Vent(ventedMass = massNum("vented", 0L))
             MachineKind.Pump -> Pump(facing())
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
@@ -1055,6 +1084,7 @@ object Save {
         val machine: DeckMachine = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
+            DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
         }
         // Falls back to what a *freshly placed one of these* is wired to, not to RUNNING. They are
         // the same for every machine but the airlock, which ships sealed — and a door that defaulted

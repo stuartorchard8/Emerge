@@ -556,13 +556,20 @@ data class VesselState(
             val b = bridges[tile.index] ?: continue
             for (port in portsOf(grid, b, tile)) add(port)
         }
+        // See the twin of this in the reducer for why deck machines are visited by centre.
+        for (tile in grid.tiles) {
+            val m = deck[tile] ?: continue
+            if (m.center != tile) continue
+            for (port in portsOf(grid, m)) add(port)
+        }
         return out
     }
 
-    /** Every connection point of the machine stored at [tile]. */
+    /** Every connection point of whatever is stored at [tile], on the deck or on the machine list. */
     fun portsAt(tile: TileIndex): List<Port> {
-        val m = machines.getOrNull(tile.index) ?: return emptyList()
-        return portsOf(grid, m, tile)
+        machines.getOrNull(tile.index)?.let { return portsOf(grid, it, tile) }
+        val d = deck[tile] ?: return emptyList()
+        return if (d.center == tile) portsOf(grid, d) else emptyList()
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */

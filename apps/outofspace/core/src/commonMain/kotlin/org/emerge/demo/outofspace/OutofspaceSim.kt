@@ -207,15 +207,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Smelter -> w.melt(cfg, m, activation, tile)
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
-                    is Bridge, is Pump, is Sensor, is Storage,
-                    is Vent, is WireButton -> m
+                    is Bridge, is Pump, is Sensor, is Storage, is WireButton -> m
                 }
             }
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Hull, is Airlock -> m
+                    is Hull, is Airlock, is Vent -> m
                 }
             }
         }
@@ -1590,6 +1589,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val b = bridges[i] ?: continue
                 for (port in portsOf(grid, b, TileIndex(i))) add(port)
             }
+            // Deck machines have ports too, now that a vent is one. Visited by centre — a machine
+            // covering several tiles is stored once, and adding its ports once per covered tile
+            // would offer the same packet to it as many times as it is wide.
+            for (i in 0 until deck.size) {
+                val tile = TileIndex(i)
+                val m = deck[tile] ?: continue
+                if (m.center != tile) continue
+                for (port in portsOf(grid, m)) add(port)
+            }
             return out
         }
 
@@ -1760,11 +1768,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Puts [packet] into the accepting machine's own buffers, or refuses it. */
         private fun deliver(target: Int, destination: Machine, packet: Packet): Boolean {
             val centre = TileIndex(target)
-            if (destination is Vent) {
-                ventedMass += packet.mass
-                machines[target] = destination.copy(ventedMass = destination.ventedMass + packet.mass)
-                return true
-            }
             val role = inputBufferRole(destination) ?: return false
             val store = bufferTile(grid, destination, centre, role) ?: return false
             val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
@@ -1774,6 +1777,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
+                // Overboard, and booked as it goes: [ventedMass] is the only legitimate way for mass
+                // to leave the vessel, so the ledger term and the machine's own running total move
+                // together or the world stops adding up.
+                is Vent -> {
+                    ventedMass += packet.mass
+                    deck[destination.center] =
+                        destination.copy(ventedMass = destination.ventedMass + packet.mass)
+                    true
+                }
                 is Hull, is Airlock -> false
             }
         }
@@ -1804,7 +1816,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             MachineKind.Storage -> Storage(facing)
             MachineKind.Sensor -> Sensor(facing)
             MachineKind.KeyInput -> WireButton()
-            MachineKind.Vent -> Vent()
             MachineKind.Thruster -> Thruster(facing)
             MachineKind.Pump -> Pump(facing)
             // Fittings placed directly on layers.
@@ -1815,6 +1826,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
+            DeckMachineKind.Vent -> Vent(tile)
         }
     }
 }

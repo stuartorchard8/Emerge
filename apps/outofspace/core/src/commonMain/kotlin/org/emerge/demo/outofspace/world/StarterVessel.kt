@@ -122,9 +122,9 @@ fun starterVessel(
     rail(24, 28, y)
 
     // Waste: vertical drops to vents.
-    put(13, y + 4, Vent())
+    put(13, y + 4) { Vent(it) }
     column(13, y + 1, y + 4)
-    put(22, y + 5, Vent())
+    put(22, y + 5) { Vent(it) }
     column(22, y + 2, y + 5)
 
     // Wiring demo: 7 rows below.

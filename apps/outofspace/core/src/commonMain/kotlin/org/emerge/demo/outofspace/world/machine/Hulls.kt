@@ -5,15 +5,22 @@ import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
-/** A vent: throws material overboard. Somewhere for slag to go that is not "jam the line". */
+/**
+ * A vent: throws material overboard. Somewhere for slag to go that is not "jam the line".
+ *
+ * A deck machine, because it takes a tile away from anything else that wants one — which is the
+ * whole of what makes something a deck machine. Its casing is matter in [DeckArray.stuff] like every
+ * other, so a vent has a temperature made of the metal it is built from rather than of a constant.
+ */
 data class Vent(
+    override val center: TileIndex,
     val ventedMass: Long = 0L,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Vent),
-) : Machine {
-    override val kind: MachineKind get() = MachineKind.Vent
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DeckMachine {
+    override val tiles: Array<TileIndex> = Array(1) { center }
+    override val kind: DeckMachineKind get() = DeckMachineKind.Vent
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }
 
 /**

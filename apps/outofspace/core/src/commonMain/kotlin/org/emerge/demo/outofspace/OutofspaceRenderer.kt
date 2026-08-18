@@ -685,10 +685,6 @@ class OutofspaceRenderer {
                 tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Pump))
                 intakeArrow(x, y, m.facing)
             }
-            is Vent -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(MachineKind.Vent))
-                tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
-            }
             // The bell marks the exhaust face, so which way a motor pushes is readable without
             // selecting it — the one thing about a thruster you cannot afford to get wrong.
             is Thruster -> {
@@ -714,6 +710,10 @@ class OutofspaceRenderer {
         }
         when (m) {
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            is Vent -> {
+                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vent))
+                tileRect(x, y, Visual.VENT_CORE_SCALE, Colors.VENT_CORE)
+            }
             // An iris: hull-coloured door, with a hole in it that grows as the signal does. The
             // opening is drawn in the vent's colour on purpose — both are holes onto the same space,
             // and the player should read them as the same kind of thing.
@@ -1278,7 +1278,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Storage -> 0x3A4A5AFFL
     MachineKind.Sensor -> 0x24303CFFL
     MachineKind.KeyInput -> 0x2E3A4AFFL
-    MachineKind.Vent -> 0x3A3A44FFL
     MachineKind.Pump -> 0xB07840FFL
     MachineKind.Thruster -> 0xC04A30FFL
     MachineKind.Valve -> 0xD8A860FFL
@@ -1287,6 +1286,7 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
 fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Hull -> 0x4A5464FFL
     DeckMachineKind.Airlock -> 0x6E7C90FFL
+    DeckMachineKind.Vent -> 0x3A3A44FFL
 }
 
 /**

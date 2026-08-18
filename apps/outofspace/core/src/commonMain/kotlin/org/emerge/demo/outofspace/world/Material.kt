@@ -188,7 +188,7 @@ val MachineKind.material: Material
     get() = when (this) {
         MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
         MachineKind.Extractor, MachineKind.Processor, MachineKind.Vaporizer, MachineKind.Storage,
-        MachineKind.Sensor, MachineKind.Vent, MachineKind.Pump, MachineKind.KeyInput,
+        MachineKind.Sensor, MachineKind.Pump, MachineKind.KeyInput,
         MachineKind.Thruster,
         -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
@@ -199,6 +199,9 @@ val MachineKind.material: Material
 val DeckMachineKind.material: Material
     get() = when (this) {
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
+        // A hole in the hull with a housing around it, and the housing is the part that is made of
+        // anything — which is why it keeps the instrument's fill rather than the plate's.
+        DeckMachineKind.Vent -> Material.Titanium
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -240,7 +243,7 @@ val MachineKind.fillPermille: Int
         MachineKind.Thruster -> 120
 
         // Instruments and fittings: mostly a housing.
-        MachineKind.Sensor, MachineKind.Vent, MachineKind.KeyInput, MachineKind.Gauge -> 40
+        MachineKind.Sensor, MachineKind.KeyInput, MachineKind.Gauge -> 40
 
         // Track and pipework, laid across a tile rather than filling it.
         MachineKind.Rail, MachineKind.Bridge -> 20
@@ -253,6 +256,9 @@ val DeckMachineKind.fillPermille: Int
     get() = when (this) {
         // Plate: a few centimetres of steel over a metre of face, plus framing.
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> 60
+        // Mostly a housing, as it was while it was a machine — the number is carried across, not
+        // rechosen, so the migration does not quietly change what the ship weighs.
+        DeckMachineKind.Vent -> 40
     }
 
 /** The same fraction for a bare conduit, which is what a fitting-free length of it is. */

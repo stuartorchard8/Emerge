@@ -34,6 +34,15 @@ data class Port(
     val owner: TileIndex = TileIndex.NONE,
     /** Whether the owner lives on the bridge list rather than the deck. */
     val fromBridge: Boolean = false,
+    /**
+     * Whether the owner is a [DeckMachine] — looked up in [VesselState.deck] rather than in
+     * [VesselState.machines].
+     *
+     * Three homes for two flags is one home too many, and it will collapse into a single "where is
+     * my owner" enum once the last kind has moved off the machine list. Until then a port has to
+     * say which of the two lists to ask, because a tile index alone no longer answers it.
+     */
+    val fromDeck: Boolean = false,
 )
 
 /**
@@ -61,8 +70,6 @@ private fun localPorts(machine: Machine): List<LocalPort> {
             LocalPort(1, 0, Direction.Right, PortKind.Output, conduit = machine.conduit),
         )
 
-        // A vent is a hole. It takes whatever is put into it, from whichever face.
-        is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
 
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
 
@@ -102,6 +109,8 @@ private fun localPorts(machine: Machine): List<LocalPort> {
 }
 private fun localPorts(machine: DeckMachine): List<LocalPort> {
     return when (machine) {
+        // A vent is a hole. It takes whatever is put into it, from whichever face.
+        is Vent -> Direction.ALL.map { LocalPort(0, 0, it, PortKind.Input) }
         is Hull, is Airlock -> emptyList()
     }
 }
@@ -153,7 +162,7 @@ fun portsOf(grid: Grid, machine: DeckMachine): List<Port> {
         val x = cx + dx
         val y = cy + dy
         if (grid.inBounds(x, y)) {
-            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, machine is Bridge))
+            out.add(Port(grid.tile(x, y), side, p.kind, p.stream, p.conduit, centreTile, fromDeck = true))
         }
     }
     return out
