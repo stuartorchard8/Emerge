@@ -337,7 +337,7 @@ data class VesselState(
      * chosen at creation. It has no UI: it is the switch in the code, and it is on by default until
      * a ghost can actually finish building itself.
      */
-    val creative: Boolean = true,
+    val creative: Boolean = false,
     /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.

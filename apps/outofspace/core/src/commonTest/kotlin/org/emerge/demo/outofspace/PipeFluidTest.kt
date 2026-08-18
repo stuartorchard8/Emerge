@@ -64,7 +64,7 @@ class PipeFluidTest {
 
     /** A pipe run along row [y] from [fromX] to [toX], with gas put into its first cell. */
     private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, mass: Long = 400L): VesselState {
-        var s = VesselState(grid, hulled(), buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size))
+        var s = VesselState(grid, hulled(), buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size), creative=true)
         for (x in fromX until toX) s = lay(s, grid.tile(x, y), grid.tile(x + 1, y))
 
         val tile = grid.tile(fromX, y)

@@ -84,7 +84,7 @@ class SignalWireTest {
 
     @Test
     fun `wire comes off again`() {
-        var s = drag(VesselState.empty(grid), y = 3, fromX = 2, toX = 4)
+        var s = drag(VesselState.empty(grid).copy(creative = true), y = 3, fromX = 2, toX = 4)
         s = edit(s, Edit.Remove(grid.tile(3, 3), DeleteLayer.Top))
 
         assertNull(wireAt(s, 3, 3), "the wire should be gone")

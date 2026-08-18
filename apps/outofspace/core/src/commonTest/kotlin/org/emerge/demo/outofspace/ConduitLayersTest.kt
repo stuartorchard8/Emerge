@@ -166,7 +166,7 @@ class ConduitLayersTest {
             // In vacuum, with no hull: a room's air is an enormous reservoir beside a tile of copper
             // and drains the run to ambient long before the signal shows. Real conduction, and it
             // would drown what this test is asking about.
-            var s = VesselState.empty(grid)
+            var s = VesselState.empty(grid).copy(creative = true)
             s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
             s = dragDown(s, Conduit.Signal, x = 5, fromY = wireFromY, toY = wireToY)
 
@@ -194,7 +194,7 @@ class ConduitLayersTest {
 
     @Test
     fun `heat runs along a layer to the far end of its own run`() {
-        var s = VesselState.empty(grid)
+        var s = VesselState.empty(grid).copy(creative = true)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
 
         val hotEnd = grid.tile(2, 3)
