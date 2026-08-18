@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Species
+
 /**
  * Conduit layers: one List<Segment?> per [Conduit] (rail/pipe/power/signal).
  * One slot per tile was wrong (fight for floor space; pipe over track silently failed).
@@ -30,32 +32,74 @@ class Conduits private constructor(
         require(layer.size == tileCount) { "layer is ${layer.size}, grid holds $tileCount" }
         val next = layers.copyOf()
         next[conduit.ordinal] = layer
-        return Conduits(next, tracks.copyOf()).reconciled()
+        return Conduits(next, tracks.copyOf()).swept()
     }
 
     /**
-     * This, with every laid tile holding a segment's worth of metal and every bare tile holding
-     * none.
+     * This, with no matter left at any tile that carries no segment.
      *
-     * Stated as "make the matter agree with the track" rather than as a diff of what changed,
-     * because the two callers know different things: [with] knows the layer it replaced, the tick
-     * reducer knows only the lists it has been mutating all tick. A rule that needs no history is
-     * one both can apply, and applying it twice does nothing — a surviving tile is already in the
-     * state it wants, so its heat is never touched and a hot run of pipe stays hot.
+     * ### What this deliberately no longer does
+     *
+     * It used to make the matter agree with the track in *both* directions — a laid tile with no
+     * metal got a full [conduitBillOfMaterials], conjured at ambient. That made a segment's
+     * existence and a segment's matter one fact, and it is exactly the identity a **ghost** breaks:
+     * ghost track has a representation and no mass, and fills itself from the network. Laying can
+     * therefore no longer conjure, and a segment that arrives here matter-free is left that way.
+     *
+     * The clearing half stays, and stays here rather than at the call sites, because matter at a
+     * tile with no segment is not a ghost — it is an orphan no walk can reach and no ledger can
+     * see. Applying this twice still does nothing, so both callers can say it without knowing what
+     * the other changed.
+     *
+     * A world that means to state *finished* track says [finished]; a world that means to lay
+     * ghosts says nothing.
      */
-    private fun reconciled(): Conduits {
+    private fun swept(): Conduits {
         for (conduit in Conduit.entries) {
             val layer = layers[conduit.ordinal]
             for (i in layer.indices) {
                 val tile = TileIndex(i)
-                val laid = layer[i] != null
-                if (laid && !tracks.occupies(conduit, tile)) tracks.lay(conduit, tile)
-                else if (!laid && tracks.occupies(conduit, tile)) tracks.clear(conduit, tile)
+                if (layer[i] == null && tracks.occupies(conduit, tile)) tracks.clear(conduit, tile)
             }
         }
         checkExclusion()
         return this
     }
+
+    /**
+     * This, with every laid tile holding a full segment's worth of metal at ambient.
+     *
+     * What a *stated* vessel means: a fixture, a starting ship or a save describes track that is
+     * already built, not a drawing of track someone intends to build. The matter it fills in has
+     * arrived from off-world, and for the callers that say this the ledger is satisfied by
+     * construction — a baseline is taken from the world after it is built.
+     *
+     * Deliberately **not** what [swept] does. The reducer lays ghosts; only a stated world says this.
+     */
+    private fun finished(): Conduits {
+        for (conduit in Conduit.entries) {
+            val layer = layers[conduit.ordinal]
+            for (i in layer.indices) {
+                val tile = TileIndex(i)
+                if (layer[i] != null && !tracks.occupies(conduit, tile)) tracks.lay(conduit, tile)
+            }
+        }
+        return this
+    }
+
+    /** Whether the segment at [tile] holds every gram its kind is made of — the opposite of a ghost. */
+    fun isComplete(conduit: Conduit, tile: TileIndex): Boolean {
+        if (at(conduit, tile) == null) return false
+        val stuff = tracks[conduit]
+        val bill = conduitBillOfMaterials(conduit)
+        // Per species, and not against a total: a ghost admits a few percent of whatever came with
+        // the material it was fed, so its total mass can pass the bill while its iron is still short.
+        return Species.ALL.all { stuff[tile, it] >= bill[it] }
+    }
+
+    /** True for a segment that is laid but not yet made of everything it needs — see [isComplete]. */
+    fun isGhost(conduit: Conduit, tile: TileIndex): Boolean =
+        at(conduit, tile) != null && !isComplete(conduit, tile)
 
     /**
      * ⛔ **A tile carries track or plumbing, never both.**
@@ -67,7 +111,7 @@ class Conduits private constructor(
      * convenience nobody has to read a second overlay to understand.
      *
      * Checked here rather than only at placement so that the state is *unconstructible*: [with] is
-     * the one door into a changed layer, [reconciled] already walks every tile, and a fixture or a
+     * the one door into a changed layer, [swept] already walks every tile, and a fixture or a
      * save that expresses a crossing is refused the same way the player's drag tool is. A rule
      * enforced only in the edit path is a rule the rest of the codebase gets to break by accident.
      */
@@ -141,24 +185,24 @@ class Conduits private constructor(
          * and every test that has an opinion about rails and none about anything else.
          */
         fun ofRails(rails: List<Segment?>): Conduits =
-            empty(rails.size).with(Conduit.Rail, rails)
+            empty(rails.size).with(Conduit.Rail, rails).finished()
 
         /** Built layer by layer, for the save and for tests that lay more than one network. */
         fun of(tileCount: Int, vararg layers: Pair<Conduit, List<Segment?>>): Conduits {
             var out = empty(tileCount)
             for ((conduit, layer) in layers) out = out.with(conduit, layer)
-            return out
+            return out.finished()
         }
 
         /**
          * The networks as the tick reducer has them: one mutable list per conduit and the matter
          * layers it has been laying into and clearing out of all tick.
          *
-         * [reconciled] runs anyway, so a segment the reducer created without telling the matter
-         * layer still ends up made of something — but it ends up made of something *at ambient*,
-         * which is why the reducer lays explicitly where it can and books the heat as arriving.
+         * ⚠️ Deliberately **not** [finished]: a segment the reducer created without being given
+         * any metal stays matter-free, which is what a ghost is. [swept] only takes orphaned matter
+         * off tiles the reducer cleared. The reducer lays explicitly, and only in creative mode.
          */
         fun of(layers: Array<out List<Segment?>>, tracks: TrackLayers): Conduits =
-            Conduits(Array(Conduit.entries.size) { layers[it] }, tracks).reconciled()
+            Conduits(Array(Conduit.entries.size) { layers[it] }, tracks).swept()
     }
 }

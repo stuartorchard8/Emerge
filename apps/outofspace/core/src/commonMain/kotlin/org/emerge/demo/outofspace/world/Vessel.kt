@@ -1015,15 +1015,24 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
             newLayer[ni.index] = oldLayer[oi.index]
         }
         newConduits = newConduits.with(c, newLayer)
-        // ⚠️ The metal came back at ambient — [Conduits.with] lays what it finds, and it has no way
-        // to know these segments are the *same* ones one grid over rather than new ones. So the heat
-        // is carried across by hand, tile by tile. Without this a grid growth quietly cools every
-        // pipe aboard to room temperature and the thermal ledger loses the difference.
+        // ⚠️ The **matter** is carried across by hand, not just the heat. [Conduits.with] lays
+        // nothing now — a segment arriving with no metal is a ghost, which is the whole point — so
+        // a growth that did not copy the metal would turn every length of track aboard into a ghost
+        // and delete the ship out from under the player.
+        //
+        // It used to copy only the energy and let `with` re-derive the mass from the kind's bill.
+        // That was already wrong and could not say so: a length of track whose composition had been
+        // altered came back as pristine iron one grid over, and no ledger could see the difference
+        // because the mass was identical. Copying what is actually there is both the fix and the
+        // only thing that can carry a half-built ghost across a growth.
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
             val ni = remapTile(ox, oy) ?: continue
             val oi = grid.tile(ox, oy)
             if (oldLayer[oi.index] == null) continue
-            newConduits.tracks.setEnergy(c, ni, conduits.energyAt(c, oi))
+            val from = conduits.tracks[c]
+            val to = newConduits.tracks[c]
+            from.forEachSpecies(oi) { sp, mass -> to[ni, sp] = mass }
+            to.setEnergy(ni, conduits.energyAt(c, oi))
         }
     }
 

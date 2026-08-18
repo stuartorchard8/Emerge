@@ -7,6 +7,8 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.Flight
@@ -458,6 +460,35 @@ class RemappedTest {
         // mass = mass + ventedMass + extractedMass (should be invariant)
         fun massBalance(s: VesselState) = s.mass + s.ventedMass + s.extractedMass
         assertEquals(massBalance(s0), massBalance(s1), "massBalance must be preserved")
+    }
+
+    @Test
+    fun `a length of track keeps what it is made of across a remap`() {
+        // The remap used to copy a segment's heat by hand and let `Conduits.with` re-derive its
+        // mass from its kind's bill. That could not carry a composition anything had altered, and
+        // it cannot carry a ghost at all — a half-built rail would have come back finished, or,
+        // once laying stopped conjuring, every rail aboard would have come back a ghost.
+        val base = populatedWorld()
+        // `populatedWorld` lays no track, so state some: three tiles of rail across the room.
+        val rails = MutableList<Segment?>(base.grid.size) { null }
+        for (x in 4..6) rails[base.grid.tile(x, 7).index] = Segment(Conduit.Rail)
+        val s0 = base.copy(conduits = Conduits.ofRails(rails))
+        val laid = base.grid.tile(5, 7)
+        val stuff = s0.conduits.tracks[Conduit.Rail]
+        val iron = stuff[laid, Species.Iron]
+        assertTrue(iron > 1L, "a length of rail should be made of some iron, got $iron")
+        // Half-built, and rusted: neither is derivable from the fact that a rail is laid here.
+        stuff[laid, Species.Iron] = iron / 2
+        stuff[laid, Species.Oxygen] = 7L
+
+        val newGrid = Grid(s0.grid.width + 3, s0.grid.height + 2)
+        val s1 = s0.remapped(newGrid, 3, 2)
+        val moved = newGrid.tile(s0.grid.xOf(laid) + 3, s0.grid.yOf(laid) + 2)
+
+        val after = s1.conduits.tracks[Conduit.Rail]
+        assertEquals(iron / 2, after[moved, Species.Iron], "iron at $moved")
+        assertEquals(7L, after[moved, Species.Oxygen], "oxygen at $moved")
+        assertTrue(s1.conduits.isGhost(Conduit.Rail, moved), "a half-built rail is still a ghost")
     }
 
     @Test
