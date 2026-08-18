@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Species
@@ -77,7 +78,7 @@ class AtmosphereTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w, y))
         }
-        return VesselState(grid, machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        return VesselState(grid, machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
     }
 
     // ── Conservation ──────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ class AtmosphereTest {
         for (x in 2..6) { deck += Hull(grid.tile(x, 1)); deck += Hull(grid.tile(x, 3)) }
         for (y in 1..2) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(7, y)) }
         deck += Hull(grid.tile(4, 2))   // the dividing wall
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), deck=deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()))
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), deck=deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
 
         val mass = MassArray(grid.size)
         for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram

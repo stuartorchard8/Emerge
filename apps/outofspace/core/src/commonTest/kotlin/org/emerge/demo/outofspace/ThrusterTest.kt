@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -272,7 +273,7 @@ class ThrusterTest {
             machines = machines.toList(),
             deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         ).stocked(tile, Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)))
     }
 

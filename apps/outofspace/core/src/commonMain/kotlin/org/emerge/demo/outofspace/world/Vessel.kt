@@ -70,6 +70,13 @@ data class VesselState(
      */
     val buffers: BufferLayer,
     /**
+     * Everything riding on the rail network — see [RailLayer].
+     *
+     * Required for the reason [buffers] is: a layer that defaults to empty is silent in exactly the
+     * direction that matters, handing back a well-formed world with every belt mysteriously clear.
+     */
+    val rail: RailLayer,
+    /**
      * The conduit layers — one grid of segments per network, sharing tiles freely with the deck
      * beneath and with each other.
      *
@@ -645,13 +652,13 @@ data class VesselState(
     /**
      * Every gram still aboard: in belts or machine buffers.
      */
-    val inTransitMass: Long get() = cargoMass(grid, machines, conduits, bridges, deck, buffers)
+    val inTransitMass: Long get() = cargoMass(grid, machines, rail, conduits, bridges, deck, buffers)
 
     /**
      * What a thrust is divided by: the fabric, plus what it carries, and **not** the gas — see
      * [Flight].
      */
-    val mass: Long get() = vesselMass(grid, machines, conduits, bridges, deck, buffers)
+    val mass: Long get() = vesselMass(grid, machines, rail, conduits, bridges, deck, buffers)
 
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
@@ -660,7 +667,7 @@ data class VesselState(
      * its cargo, so storing it would be storing a second answer to a question the walk already
      * answers. The tick computes it once and passes it down; a readout can afford to ask again.
      */
-    val distribution: MassDistribution get() = massDistribution(grid, machines, conduits, bridges, deck, buffers)
+    val distribution: MassDistribution get() = massDistribution(grid, machines, rail, conduits, bridges, deck, buffers)
 
     /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
@@ -784,7 +791,7 @@ data class VesselState(
 
         fun empty(grid: Grid): VesselState {
             val machines = List<Machine?>(grid.size) { null }
-            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(grid, machines))
+            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(grid, machines), RailLayer.empty(grid.size))
         }
     }
 }
@@ -1005,6 +1012,15 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         newBuffers.put(ni, buffers.resourceAt(oi))
     }
 
+    // What is riding on the track moves with the lattice too — same rule, same reason.
+    val newRail = RailLayer.empty(newGrid.size)
+    for (ox in 0 until oldW) for (oy in 0 until oldH) {
+        val ni = remapTile(ox, oy) ?: continue
+        val oi = grid.tile(ox, oy)
+        if (rail.isEmpty(oi)) continue
+        newRail.put(ni, rail.resourceAt(oi))
+    }
+
     val newBridges = MutableList(newGrid.size) { null as Bridge? }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue
@@ -1143,6 +1159,7 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         machines = newMachines,
         deck = newDeck,
         buffers = newBuffers,
+        rail = newRail,
         conduits = newConduits,
         bridges = newBridges,
         diverters = newDiverters,

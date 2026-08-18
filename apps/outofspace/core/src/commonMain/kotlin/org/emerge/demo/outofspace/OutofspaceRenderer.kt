@@ -532,7 +532,7 @@ class OutofspaceRenderer {
         // no longer wears a colour, because it no longer names one: what it reports on is the wire
         // beneath it, and that wire says its own value.
         if (segment.isGauge) frame(x, y, Colors.GAUGE_COLLAR)
-        val packet = segment.held ?: return
+        val packet = state.rail.packetAt(tile) ?: return
         val motion = state.motion
 
         // Previous position (offset in tiles; packet slides from there).

@@ -623,7 +623,7 @@ object OutofspaceAgentHarness {
             val air = state.air.mixtureAt(tile)
             println("[agent] probe ($x,$y) tile $tile @ tick ${controller.tick}")
             println("[agent]   machine   ${state.machineCovering(tile)?.let { it::class.simpleName } ?: "-"}" +
-                "  rail ${state.railAt(tile)?.let { "yes held=${it.held != null}" } ?: "-"}" +
+                "  rail ${state.railAt(tile)?.let { "yes held=${!state.rail.isEmpty(tile)}" } ?: "-"}" +
                 "  bridge ${if (state.bridges[tile.index] != null) "yes" else "-"}")
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")

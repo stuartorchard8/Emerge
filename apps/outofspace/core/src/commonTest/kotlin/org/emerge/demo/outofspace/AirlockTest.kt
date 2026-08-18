@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.EnergyArray
@@ -81,7 +82,7 @@ class AirlockTest {
             deck -= doorTile
             deck += door.movedTo(doorTile)
         }
-        return VesselState(grid, machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        return VesselState(grid, machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
     }
 
     /** The tile just inside the door — the one whose containment the flood fill has to get right. */

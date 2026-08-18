@@ -363,9 +363,9 @@ class OutofspaceHud {
                     }
                     if (segment.isGauge) keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
                 }
-                val riding = segment.held
-                if (riding == null) row("(nothing on it)", 0x9A9A9AFFL)
-                else keyValue("carrying", mass(riding.mass))
+                val riding = controller.state.rail.massAt(tile)
+                if (riding == 0L) row("(nothing on it)", 0x9A9A9AFFL)
+                else keyValue("carrying", mass(riding))
                 gap()
             }
 

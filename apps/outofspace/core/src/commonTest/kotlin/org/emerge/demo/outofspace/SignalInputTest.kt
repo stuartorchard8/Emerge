@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Airlock
@@ -68,7 +69,7 @@ class SignalInputTest {
             machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
     }
 
@@ -113,7 +114,7 @@ class SignalInputTest {
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList())),
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)),
             1,
             held = InputKey.Left.bit or InputKey.Right.bit,
         )
@@ -127,7 +128,7 @@ class SignalInputTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         machines[grid.tile(2, 4).index] = WireButton(InputKey.Up)
-        val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList())), 1, held = InputKey.Up.bit)
+        val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
 
@@ -180,7 +181,7 @@ class SignalInputTest {
             machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
 
         val idle = run(start, 60, held = 0)

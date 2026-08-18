@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.chem.Mixture
@@ -108,21 +109,37 @@ class TransportTest {
 
     private fun net(): Net = Net()
 
-    private fun held(net: Net, vararg placed: Pair<TileIndex, Packet>): Array<Packet?> {
-        val out = arrayOfNulls<Packet>(grid.size)
+    private fun held(net: Net, vararg placed: Pair<TileIndex, Packet>): RailLayer {
+        val out = RailLayer.empty(grid.size)
         for ((tile, packet) in placed) {
             require(tile in net.tiles) { "packet placed off the run" }
-            out[tile.index] = packet
+            out.put(tile, (packet as SolidPacket).resource)
         }
         return out
     }
 
+    /** Reading a tile by raw index, so the assertions below read as they did against an array. */
+    private operator fun RailLayer.get(index: Int): Resource? = resourceAt(TileIndex(index))
+
+    /** True when nothing is anywhere on the layer. */
+    private fun RailLayer.allEmpty(): Boolean = (0 until tileCount).all { isEmpty(TileIndex(it)) }
+
+    /**
+     * A consumer at [tile] taking whatever is there — what [advanceSegments] wants back is the lump
+     * that left, and taking it is the caller's job now that the layer is the one copy of it.
+     */
+    private fun RailLayer.take(tile: TileIndex): Packet? {
+        val packet = packetAt(tile) ?: return null
+        put(tile, null)
+        return packet
+    }
+
     private fun step(
         flow: FlowGraph,
-        held: Array<Packet?>,
+        held: RailLayer,
         cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
-        absorb: (TileIndex, Packet) -> Packet? = { _, p -> p },
+        absorb: (TileIndex) -> Packet? = { null },
     ): Int = advanceSegments(flow, held, cursors, log, absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
@@ -200,7 +217,7 @@ class TransportTest {
 
         var delivered = 0L
         val h = held(n, grid.tile(2, 3) to lump())
-        repeat(10) { step(f, h) { tile, p -> if (tile == sink) { delivered += p.mass; null } else p } }
+        repeat(10) { step(f, h) { tile -> if (tile == sink) h.take(tile)?.also { delivered += it.mass } else null } }
         assertEquals(Capacity.PACKET_MASS, delivered, "all of it reached the building")
         assertNull(h[deadEnd.index], "and none of it went up the stub")
     }
@@ -277,10 +294,10 @@ class TransportTest {
 
         val taken = mutableListOf<Int>()
         repeat(10) {
-            step(f, h) { tile, packet ->
+            step(f, h) { tile ->
                 if (tile == grid.tile(5, 3) || tile == grid.tile(7, 3)) {
-                    taken.add(grid.xOf(tile)); null
-                } else packet
+                    taken.add(grid.xOf(tile)); h.take(tile)
+                } else null
             }
         }
         assertEquals(listOf(5), taken, "upstream starves downstream, and that is the mechanic")
@@ -294,9 +311,9 @@ class TransportTest {
 
         val taken = mutableListOf<Int>()
         repeat(10) {
-            step(f, h) { tile, packet ->
+            step(f, h) { tile ->
                 // The near building is full and refuses; the far one takes it.
-                if (tile == grid.tile(7, 3)) { taken.add(grid.xOf(tile)); null } else packet
+                if (tile == grid.tile(7, 3)) { taken.add(grid.xOf(tile)); h.take(tile) } else null
             }
         }
         assertEquals(listOf(7), taken)
@@ -365,8 +382,8 @@ class TransportTest {
         val stranded = grid.tile(8, 4)
         val held = held(n, stranded to lump())
         val cursors = FlowCursors()
-        repeat(20) { advanceSegments(f, held, cursors) { tile, packet -> if (tile == grid.tile(5, 1)) null else packet } }
-        assertTrue(held.all { it == null }, "material stranded on a dead branch never got off it")
+        repeat(20) { advanceSegments(f, held, cursors) { tile -> if (tile == grid.tile(5, 1)) held.take(tile) else null } }
+        assertTrue(held.allEmpty(), "material stranded on a dead branch never got off it")
         assertNull(held[grid.tile(9, 4).index], "and nothing was pushed further into the dead end")
     }
 
@@ -419,8 +436,8 @@ class TransportTest {
         var arrived = false
         // Nine steps to walk; give it room to spare and stop when the consumer takes it.
         repeat(20) {
-            advanceSegments(f, held, cursors) { tile, packet ->
-                if (tile == sink) { arrived = true; null } else packet
+            advanceSegments(f, held, cursors) { tile ->
+                if (tile == sink) { arrived = true; held.take(tile) } else null
             }
         }
         assertTrue(arrived, "the far producer's material never reached the consumer")
@@ -466,9 +483,9 @@ class TransportTest {
         val cursors = FlowCursors()
         val taken = mutableListOf<Int>()
         repeat(20) {
-            step(f, h, cursors) { tile, packet ->
+            step(f, h, cursors) { tile ->
                 // The near building refuses everything; the far one takes it.
-                if (tile == end) { taken.add(grid.xOf(tile)); null } else packet
+                if (tile == end) { taken.add(grid.xOf(tile)); h.take(tile) } else null
             }
         }
         assertEquals(listOf(8), taken, "it should have got past the machine that refused it")
@@ -521,10 +538,10 @@ class TransportTest {
 
         val taken = mutableListOf<Int>()
         repeat(10) {
-            step(f, h) { tile, packet ->
+            step(f, h) { tile ->
                 if (tile == grid.tile(5, 3) || tile == grid.tile(7, 3)) {
-                    taken.add(grid.xOf(tile)); null
-                } else packet
+                    taken.add(grid.xOf(tile)); h.take(tile)
+                } else null
             }
         }
         assertEquals(listOf(7), taken, "flowing right-to-left, 7 is the upstream one")
@@ -627,7 +644,7 @@ class TransportTest {
         assertNull(h[grid.tile(4, 3).index], "the two piles became one")
         assertEquals(Capacity.PACKET_MASS, merged.mass, "and nothing was lost doing it")
         // 375g + 200g of iron in a kilogram: the concentrate has been spoiled, and deservedly.
-        assertEquals(share(575), merged.contents[Species.Iron], "purity is now somewhere in between")
+        assertEquals(share(575), merged.mixture[Species.Iron], "purity is now somewhere in between")
     }
 
     @Test
@@ -883,11 +900,11 @@ class TransportTest {
         val cursors = FlowCursors()
         var arrived = 0
         repeat(8) {
-            step(f, h, cursors) { tile, packet ->
+            step(f, h, cursors) { tile ->
                 // The near consumer refuses everything; only the far one takes delivery.
-                if (tile == grid.tile(10, 3)) { arrived++; null } else packet
+                if (tile == grid.tile(10, 3)) { arrived++; h.take(tile) } else null
             }
-            if (h[grid.tile(2, 3).index] == null) h[grid.tile(2, 3).index] = lump()
+            if (h.isEmpty(grid.tile(2, 3))) h.put(grid.tile(2, 3), (lump() as SolidPacket).resource)
         }
         assertEquals(Capacity.PACKET_MASS, h[partway.index]?.mass, "the run is packed right through the near consumer")
         assertEquals(Capacity.PACKET_MASS, h[grid.tile(6, 3).index]?.mass, "including the tile just past it")

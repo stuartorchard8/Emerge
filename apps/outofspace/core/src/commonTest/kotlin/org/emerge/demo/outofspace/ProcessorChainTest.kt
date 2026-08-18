@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -75,7 +76,7 @@ class ProcessorChainTest {
         m[grid.tile(3, 8).index] = Storage(Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(3, 3), ore)
         s = run(s, 800)
 
@@ -132,13 +133,13 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
         // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
         // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
         s = run(s, 1800)
 
         for (x in stages) {
-            val held = s.held(grid.tile(x, 3), BufferRole.Waste)?.mass ?: 0L
+            val held = s.inStore(grid.tile(x, 3), BufferRole.Waste)?.mass ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",

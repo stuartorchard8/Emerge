@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.bufferTile
@@ -114,7 +115,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
     }
 
@@ -126,10 +127,10 @@ class VesselSimTest {
         // Long enough to fill the tank and then back the line up behind it.
         s = run(s, ticksToMove(Storage.CAP + Extractor.BUFFER_CAP))
 
-        val carried = (4..7).map { s.railAt(grid.tile(it, 2))?.held?.mass ?: 0L }
+        val carried = (4..7).map { s.rail.massAt(grid.tile(it, 2)) }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
         assertTrue(
-            (s.held(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
+            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
             "and the extractor should have stopped digging",
         )
         assertBalanced(s, "jammed line")
@@ -165,7 +166,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
-                buffers = BufferLayer.forMachines(grid, machines.toList()),
+                buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
             ),
             480*RAIL_PERIOD,
         )
@@ -198,7 +199,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
-                buffers = BufferLayer.forMachines(grid, machines.toList()),
+                buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
             ),
             120*RAIL_PERIOD,
         )
@@ -253,7 +254,7 @@ class VesselSimTest {
                 grid, machines.toList(), deck,
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
-                buffers = BufferLayer.forMachines(grid, machines.toList()),
+                buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
             ),
             120*RAIL_PERIOD,
         )
@@ -262,7 +263,7 @@ class VesselSimTest {
         // exactly what went quiet, so material standing on it is the whole assertion.
         val farArm = listOf(grid.tile(9, 5), grid.tile(9, 6), grid.tile(9, 7), grid.tile(8, 7))
         assertTrue(
-            farArm.any { s.railAt(it)?.held != null },
+            farArm.any { s.onRail(it) != null },
             "the storage's own material never got out onto the loop",
         )
 
@@ -330,11 +331,11 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
         s = run(s, 80)
 
-        assertEquals(0L, (5..8).sumOf { s.railAt(grid.tile(it, 2))?.held?.mass ?: 0L })
+        assertEquals(0L, (5..8).sumOf { s.rail.massAt(grid.tile(it, 2)) })
         assertBalanced(s, "orphan track")
     }
 
@@ -354,7 +355,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
         s = run(s, 120)
 
@@ -363,11 +364,11 @@ class VesselSimTest {
         // It gets no further, which is the part that matters.
         assertEquals(
             0L,
-            (5..7).sumOf { s.railAt(grid.tile(it, 2))?.held?.mass ?: 0L },
+            (5..7).sumOf { s.rail.massAt(grid.tile(it, 2)) },
             "nothing travelled: there is nothing to travel toward",
         )
         assertTrue(
-            (s.held(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
+            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
             "and the backlog is where you can see it, in the extractor",
         )
         assertBalanced(s, "unconsumed line")
@@ -389,7 +390,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
         s = run(s, ticksToMove(FEEDSTOCK_MASS))
 
@@ -420,7 +421,7 @@ class VesselSimTest {
             grid, machines.toList(), deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         )
 
         s = run(s, ticksToMove(Storage.CAP))
@@ -449,18 +450,18 @@ class VesselSimTest {
         val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L, energy = 0))
         val m = arrayOfNulls<Machine>(grid.size)
         m[centre.index] = Smelter(Direction.Right)
-        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()))
+        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
             .stocked(centre, ironOre)
         s = run(s, 20)
-        assertEquals(Form.IronIngot, assertNotNull(s.held(centre, BufferRole.Product)).form)
+        assertEquals(Form.IronIngot, assertNotNull(s.inStore(centre, BufferRole.Product)).form)
 
         // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
         val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L, energy = 0))
         var s2 = s.stocked(centre, copperOre)
-        val heldBefore = s2.held(centre, BufferRole.Product)!!.mass
+        val heldBefore = s2.inStore(centre, BufferRole.Product)!!.mass
         s2 = run(s2, 20)
-        assertEquals(heldBefore, s2.held(centre, BufferRole.Product)!!.mass, "output should not have grown")
-        assertEquals(copperOre.mass, s2.held(centre, BufferRole.Input)!!.mass, "and the copper ore should be untouched")
+        assertEquals(heldBefore, s2.inStore(centre, BufferRole.Product)!!.mass, "output should not have grown")
+        assertEquals(copperOre.mass, s2.inStore(centre, BufferRole.Input)!!.mass, "and the copper ore should be untouched")
     }
 
     @Test
@@ -472,8 +473,9 @@ class VesselSimTest {
         // The tank faces open deck beyond it, so it fills rather than draining.
         m[grid.tile(4, 2).index] = Storage(Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
-        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)   // its input port
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail)                 // its input port
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+            .riding(grid.tile(3, 2), ingot.resource)
         s = run(s, RAIL_PERIOD)
         assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.mass, "it landed in the tank")
         assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
@@ -493,11 +495,12 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         m[grid.tile(4, 2).index] = Processor(Direction.Right)               // input port at (3, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
-        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, held = ingot)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail)
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(4, 2), ore)
+            .riding(grid.tile(3, 2), ingot.resource)
         s = run(s, RAIL_PERIOD * 2)
-        assertNotNull(s.railAt(grid.tile(3, 2))?.held, "the ingot should still be waiting on the track")
+        assertNotNull(s.onRail(grid.tile(3, 2)), "the ingot should still be waiting on the track")
     }
 
     /**
@@ -529,8 +532,10 @@ class VesselSimTest {
         // above it and its outputs are at (4,4) and (3,3), where there is no track to receive them.
         m[grid.tile(4, 3).index] = machine
 
-        rails[grid.tile(1, 2).index] = rails[grid.tile(1, 2).index]!!.copy(held = carried)
-        val s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
+        // The lump itself goes on the layer once the state exists, since the track no longer
+        // carries its own load.
+        val s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
+            .riding(grid.tile(1, 2), (carried as? SolidPacket)?.resource)
         return run(s, 12*RAIL_PERIOD)
     }
 
@@ -539,7 +544,7 @@ class VesselSimTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Processor(Direction.Down), ingot)
 
-        assertNull(s.held(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
+        assertNull(s.inStore(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
         assertEquals(
             1_000L,
             s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
@@ -570,7 +575,7 @@ class VesselSimTest {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
         val s = tappedBelt(Smelter(Direction.Down), ingot)
 
-        assertNull(s.held(grid43(s), BufferRole.Input), "the smelter should not have taken an ingot")
+        assertNull(s.inStore(grid43(s), BufferRole.Input), "the smelter should not have taken an ingot")
         assertEquals(
             1_000L,
             s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
@@ -588,7 +593,7 @@ class VesselSimTest {
         val deck = DeckArray(grid.size)
         val store = Storage(Direction.Right)
         val held = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0))
-        var s = VesselState(grid, listOf(store, null), deck, buffers = BufferLayer.forMachines(grid, listOf(store, null))).stocked(TileIndex(0), held)
+        var s = VesselState(grid, listOf(store, null), deck, buffers = BufferLayer.forMachines(grid, listOf(store, null)), rail = RailLayer.empty(grid.size)).stocked(TileIndex(0), held)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))))
         // Compared with its heat put back, because a tick of conduction has moved it: the machine
         // is a thermal body now and radiating for one tick is not the same as being overwritten.
@@ -607,7 +612,7 @@ class VesselSimTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         m[grid.tile(4, 3).index] = Storage(Direction.Right)
-        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList())).stocked(grid.tile(4, 3), stored)
+        var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size)).stocked(grid.tile(4, 3), stored)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(4, 3)))))
         val tank = s[grid.tile(4, 3)] as? Storage
         assertEquals(Direction.Down, tank!!.facing)
@@ -618,7 +623,7 @@ class VesselSimTest {
     fun `edits apply in PlayerId order, not map order`() {
         val grid = Grid(2, 1)
         val deck = DeckArray(grid.size)
-        val base = VesselState(grid, listOf(null, null), deck, buffers = BufferLayer.forMachines(grid, listOf(null, null)))
+        val base = VesselState(grid, listOf(null, null), deck, buffers = BufferLayer.forMachines(grid, listOf(null, null)), rail = RailLayer.empty(grid.size))
         val a = mapOf(
             PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Sensor, Direction.Right))),
             PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), MachineKind.Storage, Direction.Right))),
@@ -682,7 +687,7 @@ class VesselSimTest {
         // allowing only for the vented total.
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
-        val onTrack = s.rails.fold(Mixture.EMPTY) { acc, r -> acc + (r?.held?.contents ?: Mixture.EMPTY) }
+        val onTrack = s.rails.indices.fold(Mixture.EMPTY) { acc, i -> acc + (s.onRail(TileIndex(i))?.mixture ?: Mixture.EMPTY) }
         val inWorld = s.machines.indices.fold(onTrack) { acc, i -> acc + contentsOf(s.machines[i], TileIndex(i), s.grid, s.buffers) }
         val accountedFor = inWorld.total + s.ventedMass
         assertEquals(s.extractedMass, accountedFor)
@@ -715,9 +720,10 @@ class VesselSimTest {
         var s = workingVessel(cfg.initialGrid)
         repeat(160) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            for (r in s.rails) {
-                val p = r?.held ?: continue
-                assertTrue(p.mass in 1L..Capacity.PACKET_MASS, "bad packet on the track: ${p.mass}g")
+            for (i in s.rails.indices) {
+                val mass = s.rail.massAt(TileIndex(i))
+                if (mass == 0L) continue
+                assertTrue(mass in 1L..Capacity.PACKET_MASS, "bad packet on the track: ${mass}g")
             }
         }
     }

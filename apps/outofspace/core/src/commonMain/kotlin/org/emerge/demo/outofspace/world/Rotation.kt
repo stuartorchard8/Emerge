@@ -116,6 +116,7 @@ data class MassDistribution(
 fun massDistribution(
     grid: Grid,
     machines: List<Machine?>,
+    rail: RailLayer,
     conduits: Conduits,
     bridges: List<Machine?>,
     deck: DeckArray,
@@ -127,7 +128,7 @@ fun massDistribution(
     // the division below recovers anyway.
     var momentX = 0L
     var momentY = 0L
-    forEachVesselMass(grid, machines, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
+    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         mass += m
@@ -143,7 +144,7 @@ fun massDistribution(
     val comY = scaledRatio(momentY, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
 
     var gyrationSq = 0L
-    forEachVesselMass(grid, machines, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
+    forEachVesselMass(grid, machines, rail, conduits, bridges, deck, buffers) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
         val rx = tileCentre(grid.xOf(tile)) - comX

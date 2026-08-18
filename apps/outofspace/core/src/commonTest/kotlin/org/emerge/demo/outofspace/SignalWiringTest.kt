@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -98,7 +99,7 @@ class SignalWiringTest {
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
-            buffers = BufferLayer.forMachines(grid, machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size),
         ).stocked(grid.tile(13, 5), stored)
     }
 
@@ -106,7 +107,7 @@ class SignalWiringTest {
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
     private fun ground(s: VesselState): Long =
-        s.extractedMass - (s.held(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Inside)?.mass ?: 0L)
+        s.extractedMass - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Inside)?.mass ?: 0L)
 
     // ── The point of the plan ─────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ class SignalWiringTest {
         signalRow(wires, 2, 12, 3)
 
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()))
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
                 .stocked(grid.tile(13, 5), stored),
             2,
         )

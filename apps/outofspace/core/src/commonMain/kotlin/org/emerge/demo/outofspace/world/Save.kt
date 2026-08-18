@@ -127,7 +127,7 @@ object Save {
         // record always named its own network, but while there was one list per tile the keyword
         // could pretend otherwise. A version 5 file writes `rail 42 PIPE ...` and means it.
         state.conduits.all { _, tile, r ->
-            out.append("conduit ").append(tile.index).append(' ').append(writeSegment(r))
+            out.append("conduit ").append(tile.index).append(' ').append(writeSegment(r, tile, state.rail))
             out.append("   # ").append(where(state.grid, tile)).append(' ').append(linkLetters(r)).append('\n')
         }
         for (tile in state.grid.tiles) {
@@ -400,14 +400,16 @@ object Save {
         return TileEnergy.of(LongArray(tiles) { scale.of(parts[it].toLongOrNull() ?: fail("bad energy '$field'")) })
     }
 
-    private fun writeSegment(s: Segment): String {
+    private fun writeSegment(s: Segment, tile: TileIndex, rail: RailLayer): String {
         val f = StringBuilder(s.conduit.name)
         f.append(" links=").append(s.links)
         if (s.isGauge) f.append(" gauge=1")
         // Written only when set, like every other optional field: a file full of `valve=0` would
         // hide the handful of tiles that are actually taps.
         if (s.valve) f.append(" valve=1")
-        s.held?.let { f.append(" held=").append(writePacket(it)) }
+        // The load moved to [RailLayer]; the record keeps the field name it always had, so a file
+        // written before that change still loads its belts full.
+        if (s.conduit == Conduit.Rail) rail.packetAt(tile)?.let { f.append(" held=").append(writePacket(it)) }
         // A gauge's reading persists after the packet has gone, so it is state, not decoration.
         s.lastForm?.let { f.append(" lastform=").append(it.name) }
         s.lastDominant?.let { f.append(" lastspecies=").append(it.name) }
@@ -533,6 +535,7 @@ object Save {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         val buffers = BufferLayer.empty(grid.size)
+        val rail = RailLayer.empty(grid.size)
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         val bridges = arrayOfNulls<Bridge>(grid.size)
         val diverters = HashMap<TileIndex, Int>()
@@ -652,7 +655,7 @@ object Save {
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
                     val t = tile(1)
-                    val segment = readSegment(tokens.drop(2), scale, energyScale, ::fail)
+                    val segment = readSegment(tokens.drop(2), t, rail, scale, energyScale, ::fail)
                     val layer = layers[segment.conduit.ordinal]
                     // Per layer, not per tile. Two segments on one tile is what layers are *for*;
                     // two of the same conduit on one tile is still a corrupt file.
@@ -749,7 +752,7 @@ object Save {
 
         // V9: body momentum moved from vessel frame to world frame. `p_world = p_vessel + m_body · v_ship`.
         val momentumFixed = if (version >= 9 || bodies.isEmpty()) bodies.toList() else {
-            val shipMass = vesselMass(grid, machines.toList(), conduits, bridges.toList(), deck, buffers)
+            val shipMass = vesselMass(grid, machines.toList(), rail, conduits, bridges.toList(), deck, buffers)
             if (shipMass <= 0L) bodies.toList() else bodies.map {
                 it.copy(
                     impulseX = it.impulseX + it.mass * impulseX / shipMass,
@@ -784,6 +787,7 @@ object Save {
             // default derives empty stores from the machine list, so every warehouse comes back with
             // its store standing and its contents gone.
             buffers = buffers,
+            rail = rail,
             conduits = conduits,
             bridges = bridges.toList(),
             diverters = FlowCursors(diverters, merges),
@@ -1039,6 +1043,8 @@ object Save {
 
     private fun readSegment(
         tokens: List<String>,
+        tile: TileIndex,
+        rail: RailLayer,
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
@@ -1048,10 +1054,16 @@ object Save {
         val f = fields(tokens.drop(1), fail)
         val links = f["links"]?.toIntOrNull() ?: fail("a segment needs its links")
         if (links !in 0..15) fail("links must be a 4-bit mask, got $links")
+        // The load is the layer's now, but the field is still the segment's — the record was written
+        // before the two were separate and nothing about the file has changed.
+        f["held"]?.let { held ->
+            val packet = readPacket(held, scale, fail)
+            if (packet is SolidPacket) rail.put(tile, packet.resource)
+            else fail("only a solid rides the track; tile $tile carries $held")
+        }
         return Segment(
             conduit = conduit,
             links = links,
-            held = f["held"]?.let { readPacket(it, scale, fail) },
             // `gauge=1` since v11; before that, *having* a channel was what made a segment a gauge.
             isGauge = f["gauge"] == "1" || f["channel"] != null,
             lastForm = f["lastform"]?.let { name ->

@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.logistics.SolidPacket
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
@@ -50,7 +52,7 @@ class MotionTest {
         val feed = feedExtractor(grid, m, 2, 3)
         m[grid.tile(tankX, 3).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()))
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -61,7 +63,7 @@ class MotionTest {
         // Long enough that the run is carrying material but not yet backed up against the tank.
         s = run(s, 12)
 
-        val moving = (3..8).filter { s.railAt(cfg.initialGrid.tile(it, 3))?.held != null }
+        val moving = (3..8).filter { !s.rail.isEmpty(cfg.initialGrid.tile(it, 3)) }
         assertTrue(moving.isNotEmpty(), "the line should be carrying something by now")
         // Everything on this run came from its left-hand neighbour, because that is the only way
         // material can be moving: the extractor is at the left end and the tank at the right.
@@ -80,7 +82,7 @@ class MotionTest {
         s = run(s, 12)
         for (x in 3..8) {
             val tile = cfg.initialGrid.tile(x, 3)
-            if (s.railAt(tile)?.held != null) continue
+            if (!s.rail.isEmpty(tile)) continue
             assertEquals(0L, s.motion.previousMassAt(tile), "($x, 3) is empty but claims a mass")
         }
     }
@@ -102,29 +104,43 @@ class MotionTest {
             }
         }
         assertTrue(appeared != TileIndex.NONE, "the extractor never put anything on the track")
-        assertNotNull(s.railAt(appeared)?.held, "and what appeared should actually be there")
+        assertNotNull(s.onRail(appeared), "and what appeared should actually be there")
         assertEquals(0L, s.motion.previousMassAt(appeared), "a thing that appeared had no mass before")
         assertNull(s.motion.arrivedFrom(appeared), "it came from a port, not from a neighbour")
     }
 
     @Test
     fun `a packet a machine took off the track is recorded as leaving it`() {
+        val tank = cfg.initialGrid.tile(9, 3)
         var s = line()
         var seen = false
+        var lastMotion = s.motion
         repeat(60*RAIL_PERIOD) {
+            val stored = s.buffers.massAt(tank)
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            // Only on a tick the track actually stepped. Between rail steps the same motion log is
+            // carried forward unchanged, so its departures are last step's news read a second time
+            // — and the tank has taken nothing since.
+            if (s.motion === lastMotion) return@repeat
+            lastMotion = s.motion
             val d = s.motion.departures.firstOrNull() ?: return@repeat
             assertEquals(cfg.initialGrid.tile(8, 3), d.tile, "the tank's input port is at (8, 3)")
             assertTrue(d.packet.mass > 0L, "and something real went into it")
-            // Not the *same* packet, rather than no packet at all. Those were the same statement
-            // while a belt was starved: a machine produced a fraction of a packet per tick, so the
-            // port tile sat empty most ticks and "empty" was a fine proxy for "left". Now every
-            // producer runs at exactly one belt-load per tick, so the line is saturated and the tile
-            // is refilled from behind on the very tick it is emptied. Emptiness stopped being
-            // evidence of departure; identity still is.
-            assertTrue(
-                s.railAt(d.tile)?.held !== d.packet,
-                "the packet that departed is still sitting on the tile it left",
+            // Where the lump went, rather than whether the tile it left is empty. Those were the
+            // same statement while a belt was starved: a machine produced a fraction of a packet
+            // per tick, so the port tile sat empty most ticks and "empty" was a fine proxy for
+            // "left". Now every producer runs at exactly one belt-load per tick, so the line is
+            // saturated and the tile is refilled from behind on the very tick it is emptied.
+            //
+            // That used to be settled by identity — the tile holding a *different* packet object
+            // than the one recorded. There are no packet objects any more: what rides the track is
+            // matter on [RailLayer], and two belt-loads of the same ore off a saturated line are
+            // equal in every respect. So the claim is made where it is still visible, and where it
+            // was always the thing worth asserting: the mass that departed arrived in the tank.
+            assertEquals(
+                d.packet.mass,
+                s.buffers.massAt(tank) - stored,
+                "the packet recorded as leaving the track is the one the tank took",
             )
             seen = true
         }
@@ -150,7 +166,7 @@ class MotionTest {
             conduits = Conduits.ofRails(rails.toList()),
             bridges = bridges.toList(),
             bodies = feed,
-            buffers = BufferLayer.forMachines(grid, m.toList()),
+            buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
         )
     }
 

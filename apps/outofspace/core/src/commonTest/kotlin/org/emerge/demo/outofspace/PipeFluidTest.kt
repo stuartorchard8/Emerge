@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
@@ -64,7 +65,7 @@ class PipeFluidTest {
 
     /** A pipe run along row [y] from [fromX] to [toX], with gas put into its first cell. */
     private fun charged(y: Int = 4, fromX: Int = 3, toX: Int = 11, mass: Long = 400L): VesselState {
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()))
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
         for (x in fromX until toX) s = lay(s, grid.tile(x, y), grid.tile(x + 1, y))
 
         val tile = grid.tile(fromX, y)
@@ -141,7 +142,7 @@ class PipeFluidTest {
 
     @Test
     fun `no pipe means no open face anywhere`() {
-        val bare = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()))
+        val bare = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
         val edges = EdgeGrid(grid)
         val apertures = pipeApertures(edges, bare.conduits)
 
@@ -151,7 +152,7 @@ class PipeFluidTest {
 
     @Test
     fun `pipes laid side by side without being drawn together stay separate`() {
-        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()))
+        var s = VesselState(grid, arrayOfNulls<Machine>(grid.size).toList(), hulled(), buffers = BufferLayer.forMachines(grid, arrayOfNulls<Machine>(grid.size).toList()), rail = RailLayer.empty(grid.size))
         // Two parallel runs one tile apart, each drawn on its own.
         for (x in 3 until 8) s = lay(s, grid.tile(x, 4), grid.tile(x + 1, 4))
         for (x in 3 until 8) s = lay(s, grid.tile(x, 5), grid.tile(x + 1, 5))

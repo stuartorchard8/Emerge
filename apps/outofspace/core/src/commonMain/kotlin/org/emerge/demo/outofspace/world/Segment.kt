@@ -21,8 +21,6 @@ data class Segment(
     val conduit: Conduit,
     /** Neighbour join bits (one per Direction). Explicit links ≠ adjacency — two tiles must be explicitly joined. Symmetric only. */
     val links: Int = 0,
-    /** What is riding on this tile. Partial packets are normal — see [org.emerge.demo.outofspace.logistics.mergeInto]. */
-    val held: Packet? = null,
     /**
      * Gauge: reads what passes through (full speed, persists after). Segment property, not a building.
      *

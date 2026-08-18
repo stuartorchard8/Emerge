@@ -9,9 +9,9 @@ import org.emerge.demo.outofspace.logistics.Packet
  * written to by the ejection and conduit passes, and frozen into a [Motion] at the end. The sim
  * never reads back from it.
  */
-class MotionLog(rails: List<Segment?>) {
+class MotionLog(rails: List<Segment?>, rail: RailLayer) {
     private val arrivals = ByteArray(rails.size)
-    private val previousMass = LongArray(rails.size) { rails[it]?.held?.mass ?: 0L }
+    private val previousMass = LongArray(rails.size) { rail.massAt(TileIndex(it)) }
     private val bridgeSlots = HashMap<TileIndex, Int>()
     private val departures = ArrayList<Departure>()
     private val ontoBridge = HashSet<TileIndex>()

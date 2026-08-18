@@ -235,8 +235,14 @@ fun VesselState.stocked(tile: TileIndex, resource: Resource?, role: BufferRole? 
     it.buffers.put(bufferTile(grid, m, tile, use) ?: error("$m keeps no $use store"), resource)
 }
 
+/** What is riding on the track at [tile]. */
+fun VesselState.onRail(tile: TileIndex): Resource? = rail.resourceAt(tile)
+
+/** A world with [resource] already riding on the track at [tile]. */
+fun VesselState.riding(tile: TileIndex, resource: Resource?): VesselState = also { it.rail.put(tile, resource) }
+
 /** What the machine at [tile] is holding in its [role] store. */
-fun VesselState.held(tile: TileIndex, role: BufferRole): Resource? {
+fun VesselState.inStore(tile: TileIndex, role: BufferRole): Resource? {
     val m = machines[tile.index] ?: return null
     return buffers.resourceAt(bufferTile(grid, m, tile, role) ?: return null)
 }

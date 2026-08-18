@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
@@ -68,7 +69,7 @@ class GaugeTest {
             m.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(grid, m.toList()),
+            buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size),
         ).stocked(grid.tile(3, 2), carrying)
     }
 
@@ -92,7 +93,7 @@ class GaugeTest {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         val s = run(line(ore), 120*RAIL_PERIOD)
         val gauge = gaugeOf(s)
-        assertEquals(null, gauge.held, "the packet moved on")
+        assertEquals(null, s.onRail(s.grid.tile(6, 2)), "the packet moved on")
         assertEquals(410, gauge.lastPurity, "but the reading stayed")
         assertEquals(Capacity.PACKET_MASS, s.stockpile.totalMass, "and it was passed through, not consumed")
     }
@@ -126,7 +127,7 @@ class GaugeTest {
         m[grid.tile(3, 2).index] = Storage(Direction.Right)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
-        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList())).stocked(grid.tile(3, 2), pure)
+        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 2), pure)
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")
@@ -199,8 +200,8 @@ class GaugeTest {
         // window where anything is on it at all is a handful of advances wide. `12` used to be two
         // advances and is now twelve, by which time the lone packet is in the far tank.
         val s = run(line(ore), RAIL_PERIOD * 3)
-        val carried = s.grid.tiles.mapNotNull { s.railAt(it)?.held }
+        val carried = s.grid.tiles.mapNotNull { s.onRail(it) }
         assertTrue(carried.isNotEmpty(), "something should be on the line by now")
-        assertTrue(carried.all { it is SolidPacket }, "and it is a solid, with a form to name")
+        assertTrue(carried.all { it.form == Form.Ore }, "and it is a solid, with a form to name")
     }
 }

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -303,7 +304,7 @@ class SaveTest {
         for (x in 1..4) join(grid.tile(x, 3), grid.tile(x + 1, 3), Direction.Right)
         for (y in 1..4) join(grid.tile(3, y), grid.tile(3, y + 1), Direction.Down)
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size))
         val reloaded = Save.read(Save.write(state))
         for (tile in grid.tiles) {
             assertEquals(rails[tile.index]?.links, reloaded.railAt(tile)?.links, "links differ at tile $tile")
@@ -329,7 +330,7 @@ class SaveTest {
                 Conduit.Rail to rails.toList(),
                 Conduit.Pipe to pipes.toList(),
             ),
-            buffers = BufferLayer.forMachines(grid, List(grid.size) { null }),
+            buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size),
         )
         val back = Save.read(Save.write(state))
 
@@ -370,7 +371,7 @@ class SaveTest {
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }), rail = RailLayer.empty(grid.size))
         val back = Save.read(Save.write(state)).railAt(grid.tile(2, 2))
         assertNotNull(back)
         assertTrue(back.isGauge)
@@ -394,7 +395,7 @@ class SaveTest {
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.tile(7, 4).index] = Storage(Direction.Left)
 
-        val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)), BufferRole.Inside)
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
@@ -402,8 +403,8 @@ class SaveTest {
 
         val extractor = back[grid.tile(4, 4)] as? Extractor
         assertEquals(37L, extractor!!.carry)
-        assertEquals(123L, back.held(grid.tile(4, 4), BufferRole.Product)?.mass)
-        assertEquals(700L, back.held(grid.tile(4, 4), BufferRole.Inside)?.mixture?.get(Species.Iron), "the cell in the jaws too")
+        assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.mass)
+        assertEquals(700L, back.inStore(grid.tile(4, 4), BufferRole.Inside)?.mixture?.get(Species.Iron), "the cell in the jaws too")
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
@@ -448,7 +449,7 @@ class SaveTest {
         assertEquals(Direction.Up, (state[TileIndex(8)] as? Sensor)?.facing)
         // The save says 250 and 250, and a version-1 save is written in mass — so what comes back is
         // half a kilogram in whatever this build's unit is, not the digits on the page.
-        assertEquals(500L * Budget.GRAM, state.railAt(TileIndex(10))?.held?.mass)
+        assertEquals(500L * Budget.GRAM, state.rail.massAt(TileIndex(10)))
         assertTrue(state.railAt(TileIndex(9))!!.linkedTo(Direction.Right))
     }
 

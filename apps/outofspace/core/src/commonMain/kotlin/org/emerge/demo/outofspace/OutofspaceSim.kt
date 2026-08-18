@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
 import org.emerge.demo.outofspace.world.outputBufferRole
@@ -227,6 +228,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port)
             }
+            w.readGauges()
             motion = w.motion.freeze()
         } else {
             // Same motion is still in progress from last time.
@@ -367,7 +369,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val machines = w.machines.toList()
         val bridges = w.bridges.toList()
-        val mass = vesselMass(w.grid, machines, conduits, bridges, w.deck, w.buffers)
+        val mass = vesselMass(w.grid, machines, w.rail, conduits, bridges, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -482,6 +484,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             machines = machines,
             deck = w.deck,
             buffers = w.buffers,
+            rail = w.rail,
             conduits = conduits,
             bridges = bridges,
             diverters = FlowCursors(w.diverters.snapshot(), w.diverters.mergeSnapshot()),
@@ -904,6 +907,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val machines: MutableList<Machine?> = state.machines.toMutableList()
         val deck: DeckArray = state.deck.copyOf()
         val buffers: BufferLayer = state.buffers.copyOf()
+
+        /** Everything riding on the track — see [RailLayer]. Mutated in place through the tick. */
+        val rail: RailLayer = state.rail.copyOf()
         inline operator fun <reified T> get(tile: TileIndex): T? = when(T::class) {
             Machine::class -> machines.getOrNull(tile.index)
             DeckMachine::class -> deck[tile]
@@ -970,7 +976,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * points at once. The same choice, for the same reason, that hands `state.velocityX` to
          * [driftBodies] and integrates the position from it: one frame per tick, stated once.
          */
-        val about: MassDistribution = massDistribution(state.grid, state.machines, state.conduits, state.bridges, state.deck, state.buffers)
+        val about: MassDistribution = massDistribution(state.grid, state.machines, state.rail, state.conduits, state.bridges, state.deck, state.buffers)
 
         /**
          * Where the grid sits in the world, taken once from the incoming state and shared — the same
@@ -1049,7 +1055,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 
         // Motion log for renderer, built from pre-tick rail state.
-        val motion: MotionLog = MotionLog(state.rails)
+        val motion: MotionLog = MotionLog(state.rails, state.rail)
 
         // tile → machine index (maintained incrementally for O(n)).
         val originOf: TileArray = TileArray(state.grid.size).also { o ->
@@ -1591,11 +1597,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
-            val room = segment.held?.let { Capacity.headroom(it) } ?: Capacity.PACKET_MASS
+            val room = rail.headroom(tile)
             val buffer = bufferFor(m, port) ?: return
             val (packet, rest) = takePacket(buffer, room) ?: return
-            val wasEmpty = segment.held == null
-            if (!load(tile, segment, packet)) return
+            val wasEmpty = rail.isEmpty(tile)
+            if (!rail.loadOnto(tile, packet.resource)) return
             drained(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
@@ -1613,10 +1619,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * lump simply continues — off the bridge and along the track in one unbroken slide.
          */
         private fun depositFromBridge(tile: TileIndex, port: Port) {
-            val segment = rails[tile.index] ?: return
+            if (rails[tile.index] == null) return
             val bridge = bridges[port.owner.index] ?: return
-            val held = bridge.exit ?: return
-            if (!load(tile, segment, held)) return
+            val held = bridge.exit as? SolidPacket ?: return
+            if (!rail.loadOnto(tile, held.resource)) return
             bridges[port.owner.index] = bridge.copy(exit = null)
         }
 
@@ -1630,18 +1636,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun drained(m: Machine, port: Port, rest: Resource?) {
             val role = outputBufferRole(m, port.stream) ?: return
             buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
-        }
-
-        /** Places or merges [packet] onto the segment at [tile]. False if there was no room. */
-        private fun load(tile: TileIndex, segment: Segment, packet: Packet): Boolean {
-            val existing = segment.held
-            if (existing == null) {
-                rails[tile.index] = segment.copy(held = packet).reading(packet)
-                return true
-            }
-            val merged = squashOnto(existing, packet) ?: return false
-            rails[tile.index] = segment.copy(held = merged.merged).reading(merged.merged)
-            return merged.rejected == null
         }
 
         /** Advance all conduits one step (flow derived from input ports). */
@@ -1682,26 +1676,45 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 grid,
             )
 
-            val carried = arrayOfNulls<Packet>(rails.size)
-            for (i in rails.indices) carried[i] = rails[i]?.held
-
-            advanceSegments(flow, carried, diverters, motion) { tile, packet ->
-                var left: Packet? = packet
-                for (port in ports[tile].orEmpty()) {
-                    if (port.kind != PortKind.Input) continue
-                    val remaining = left ?: break
-                    left = offerTo(port, remaining)
-                    if (left == null && port.fromBridge) motion.handedToBridge(tile)
+            advanceSegments(flow, rail, diverters, motion) { tile ->
+                // Nothing here can take anything, so the lump is not even read off the layer. Every
+                // loaded tile of every run reaches this on every step; only a handful have a port.
+                val at = ports[tile]
+                if (at == null || at.none { it.kind == PortKind.Input }) null
+                else {
+                    val packet = rail.packetAt(tile)
+                    var left: Packet? = packet
+                    for (port in at) {
+                        if (port.kind != PortKind.Input) continue
+                        val remaining = left ?: break
+                        left = offerTo(port, remaining)
+                        if (left == null && port.fromBridge) motion.handedToBridge(tile)
+                    }
+                    // A machine takes a lump whole or refuses it, so `left` is what arrived or
+                    // nothing — there is no partial case to write back.
+                    if (left == null && packet != null) {
+                        rail.put(tile, null)
+                        packet
+                    } else null
                 }
-                left
             }
+        }
 
+        /**
+         * Gauges read whatever is standing on them once the track has finished moving.
+         *
+         * A gauge used to be updated by whoever put a packet down, which worked while a segment
+         * carried its own load: the write and the reading were one `copy`. The load lives on
+         * [RailLayer] now and the segment does not see it go by, so the reading is taken here
+         * instead — after the step and after machines have pushed their output out, which is the
+         * same moment the last of those writes used to happen.
+         */
+        fun readGauges() {
             for (i in rails.indices) {
                 val segment = rails[i] ?: continue
-                val now = carried[i]
-                if (now !== segment.held) {
-                    rails[i] = if (now == null) segment.copy(held = null) else segment.copy(held = now).reading(now)
-                }
+                if (!segment.isGauge) continue
+                val packet = rail.packetAt(TileIndex(i)) ?: continue
+                rails[i] = segment.reading(packet)
             }
         }
 

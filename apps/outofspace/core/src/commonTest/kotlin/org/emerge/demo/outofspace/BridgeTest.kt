@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
@@ -82,7 +84,7 @@ class BridgeTest {
             }
         }
         if (bridged) bridges[grid.tile(9, 5).index] = Bridge(Direction.Right)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList(), buffers = BufferLayer.forMachines(grid, m.toList()))
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList(), buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(3, 5), horizontalSupply)
             .stocked(grid.tile(9, 2), ingots)
     }
@@ -179,10 +181,7 @@ class BridgeTest {
     /** The bridged crossing with nothing feeding the horizontal run, and one lump placed by hand. */
     private fun withLumpAtTheEntrance(): VesselState {
         val s = crossing(bridged = true, horizontalSupply = null)
-        val rails = s.rails.toMutableList()
-        val at = grid.tile(8, 5)
-        rails[at.index] = rails[at.index]!!.copy(held = SolidPacket(ingots))
-        return s.copy(conduits = Conduits.ofRails(rails))
+        return s.riding(grid.tile(8, 5), ingots)
     }
 
     @Test
@@ -204,14 +203,14 @@ class BridgeTest {
         s = run(s, RAIL_PERIOD)
         assertEquals(20 * Capacity.PACKET_MASS, s.bridges[at.index]?.exit?.mass, "resting on the far end, for a whole step")
         assertNull(s.bridges[at.index]?.middle, "and the middle is free for the next one")
-        assertNull(s.railAt(grid.tile(10, 5))?.held, "not yet put down — that is next step's job")
+        assertNull(s.onRail(grid.tile(10, 5)), "not yet put down — that is next step's job")
 
         s = run(s, RAIL_PERIOD)
         assertNull(s.bridges[at.index]?.exit, "and now down onto the track")
         // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
         // setting down there and running on one tile is a single tile of travel, not two. The
         // deposit happens first precisely so the track can carry it in the same step.
-        assertEquals(20 * Capacity.PACKET_MASS, s.railAt(grid.tile(11, 5))?.held?.mass, "and away down the far run")
+        assertEquals(20 * Capacity.PACKET_MASS, s.onRail(grid.tile(11, 5))?.mass, "and away down the far run")
     }
 
     @Test
@@ -301,7 +300,7 @@ class BridgeTest {
             repeat(600) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
             return buildString {
                 append(s.inTransitMass).append('|').append(s.ventedMass).append('|').append(s.diverters)
-                for (r in s.rails) append(r?.held?.mass ?: 0L).append(',')
+                for (i in s.rails.indices) append(s.rail.massAt(TileIndex(i))).append(',')
             }
         }
         assertEquals(digest(), digest())

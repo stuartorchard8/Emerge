@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -86,7 +87,7 @@ class VaporizerTest {
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         machines[grid.tile(BAY_X, BAY_Y).index] = Vaporizer(facing = Direction.Right)
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             // A volatile, so what comes out is a gas anybody would recognise as one.
             .stocked(grid.tile(BAY_X, BAY_Y), Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)))
     }

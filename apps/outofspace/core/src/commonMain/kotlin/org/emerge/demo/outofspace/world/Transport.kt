@@ -14,10 +14,10 @@ import org.emerge.demo.outofspace.logistics.mergeInto
  */
 fun advanceSegments(
     flow: FlowGraph,
-    held: Array<Packet?>,
+    rail: RailLayer,
     cursors: FlowCursors,
     log: MotionLog? = null,
-    absorb: (tile: TileIndex, packet: Packet) -> Packet?,
+    absorb: (tile: TileIndex) -> Packet?,
 ): Int {
     var moved = 0
     /**
@@ -29,7 +29,7 @@ fun advanceSegments(
      * keeps the step to one. It also means such a tile does not offer the new arrival to its own
      * port until next pass, which is what every other tile on the run does anyway.
      */
-    val arrived = BooleanArray(held.size)
+    val arrived = BooleanArray(rail.tileCount)
 
     /**
      * Tiles already walked this pass.
@@ -38,28 +38,28 @@ fun advanceSegments(
      * have a turn coming — one already walked has had its chance and either moved or could not, and
      * holding the junction open for it would idle the junction for a tick.
      */
-    val walked = BooleanArray(held.size)
+    val walked = BooleanArray(rail.tileCount)
 
     for (tile in flow.order) {
         walked[tile.index] = true
         if (arrived[tile.index]) continue
-        val packet = held[tile.index] ?: continue
+        if (rail.isEmpty(tile)) continue
 
-        val leftover = absorb(tile, packet)
-        held[tile.index] = leftover
-        if (leftover == null) {
-            log?.takenFromRail(tile, packet)
+        // Whatever a port took, if it took the lot. Returned rather than read back off the layer
+        // because by then it is gone, and the departure ghost is drawn from what left.
+        val taken = absorb(tile)
+        if (rail.isEmpty(tile)) {
+            if (taken != null) log?.takenFromRail(tile, taken)
             continue
         }
 
         val way = cursors.choose(flow, tile) { target ->
-            held[target.index] == null && mayMerge(flow, cursors, held, walked, tile, target)
+            rail.isEmpty(target) && mayMerge(flow, cursors, rail, walked, tile, target)
         }
         if (way != null) {
             val target = flow.neighbour(tile, way)
             cursors.mergeUsed(flow.feeders(target), target, tile)
-            held[target.index] = leftover
-            held[tile.index] = null
+            rail.moveInto(tile, target)
             arrived[target.index] = true
             log?.moved(tile, target, way)
             moved++
@@ -69,10 +69,8 @@ fun advanceSegments(
         // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
         // in the successors' own order so a fork behaves the same way it would when moving.
         for (option in flow.successorTiles(tile)) {
-            val ahead = held[option.index] ?: continue
-            val squashed = squashOnto(ahead, leftover) ?: continue
-            held[option.index] = squashed.merged
-            held[tile.index] = squashed.rejected
+            if (rail.isEmpty(option)) continue
+            if (rail.squashInto(tile, option) == Squash.Refused) continue
             arrived[option.index] = true
             moved++
             break
@@ -95,7 +93,7 @@ fun advanceSegments(
 private fun mayMerge(
     flow: FlowGraph,
     cursors: FlowCursors,
-    held: Array<Packet?>,
+    rail: RailLayer,
     walked: BooleanArray,
     from: TileIndex,
     target: TileIndex,
@@ -103,7 +101,7 @@ private fun mayMerge(
     val feeders = flow.feeders(target)
     if (feeders.size <= 1) return true
     val turn = cursors.preferredFeeder(feeders, target) { feeder ->
-        held[feeder.index] != null && (feeder == from || !walked[feeder.index])
+        !rail.isEmpty(feeder) && (feeder == from || !walked[feeder.index])
     }
     return turn == from
 }

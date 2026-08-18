@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -97,7 +98,7 @@ class HeatTest {
             deck += Hull(grid.tile(w, y))
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
-        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid, track)), buffers = BufferLayer.forMachines(grid, machines.toList()))
+        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid, track)), buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────
@@ -134,7 +135,7 @@ class HeatTest {
             machines[grid.tile(x, 0).index] = Sensor(Direction.Right)
             machines[grid.tile(x, 2).index] = Sensor(Direction.Right)
         }
-        val s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        val s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
         assertEquals(
             Structure.Vacuum,
             s.structure[grid.tile(2, 1).index],
@@ -268,7 +269,7 @@ class HeatTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         machines[grid.tile(5, 5).index] = Smelter(Direction.Right)
-        var s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        var s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(5, 5), ore)
         s = run(s, 40*HEAT_PERIOD)
 
@@ -313,7 +314,7 @@ class HeatTest {
         // Three walls and an open side: still outside.
         for (x in 1..4) deck += Hull(grid.tile(x, 1))
         for (y in 2..3) { deck += Hull(grid.tile(1, y)); deck += Hull(grid.tile(4, y)) }
-        val s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+        val s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
         assertEquals(Structure.Vacuum, s.structure[grid.tile(2, 2).index], "an open-bottomed box is not a room")
         assertEquals(0, s.structure.interiorCount)
     }

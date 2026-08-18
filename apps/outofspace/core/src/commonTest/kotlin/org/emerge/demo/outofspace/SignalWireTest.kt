@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -132,7 +133,7 @@ class SignalWireTest {
                 deck += Hull(grid.tile(1, y))
                 deck += Hull(grid.tile(grid.width - 2, y))
             }
-            return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
+            return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
         }
 
         var wired = room()
