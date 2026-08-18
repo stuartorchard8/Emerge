@@ -276,7 +276,9 @@ class GridFitTriggerTest {
 
         // Any real machine will do; found rather than named, because a fit is exactly the moment a
         // written-down tile stops meaning what it meant.
-        val target = controller.state.grid.tiles.first { controller.state[it] != null }
+        // On the deck: with the migration done, every building is a deck machine and the machine
+        // list holds nothing but bridges.
+        val target = controller.state.grid.tiles.first { controller.state.deck[it] != null }
         controller.tool = Tool.Wire
         controller.apply(target)
         assertEquals(target, controller.selected, "the fixture did not select anything")
@@ -301,7 +303,7 @@ class GridFitTriggerTest {
         )
         assertNotEquals(
             null,
-            controller.state.machines[controller.selected.index],
+            controller.state.deck[controller.selected],
             "the selection landed on an empty tile",
         )
     }

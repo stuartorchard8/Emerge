@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.temperatureKelvin
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -119,17 +120,22 @@ class BodyHeatTest {
     fun `heat one face of a smelter and the far face lags behind`() {
         val g = Grid(14, 14)
         val tile = g.tile(6, 6)
-        val world = room(12, 12, fill = { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null })
+        val world = room(12, 12, deckFill = { x, y, at ->
+            if (x == 6 && y == 6) Smelter(at, Direction.Right) else null
+        })
 
-        // The whole machine cold, then one corner tile of it made very hot. Part 0 is the first
-        // tile of the footprint — a corner — and part 24 is the opposite corner, four tiles away.
-        val list = world.machines.toMutableList()
-        val cold = (list[tile.index] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
-        val perTile = MachineKind.Smelter.capacityPerTile
-        list[tile.index] = cold.withEnergy(cold.energy.with(0, perTile * 2_000L))
-        val seeded = world.copy(machines = list.toList()).let { it.copy(baselineEnergy = it.storedEnergy) }
+        // The whole machine cold, then one corner tile of it made very hot. The first tile of the
+        // footprint is a corner and the last is the opposite corner, four tiles away.
+        val deck = world.deck.copyOf()
+        val furnace = deck[tile]!!
+        furnace.setTemperature(Temperature.AMBIENT_KELVIN, world.grid, deck.stuff)
+        val corner = furnace.tiles(world.grid).first()
+        deck.stuff.setEnergy(corner, deck.stuff.heatCapacityAt(corner) * 2_000L)
+        val seeded = world.copy(deck = deck).let { it.copy(baselineEnergy = it.storedEnergy) }
 
-        fun tiles(s: VesselState) = s[tile]!!.energy
+        // Off the deck layer, tile by tile — the same twenty-five figures, in the place a deck
+        // machine keeps them.
+        fun tiles(s: VesselState) = s.deck[tile]!!.energy(s.grid, s.deck.stuff)
         val start = tiles(seeded)
         assertEquals(25, start.size, "a five-by-five smelter stores twenty-five figures, not one")
 
@@ -159,18 +165,21 @@ class BodyHeatTest {
         // ledger would eventually notice. Round-tripping an uneven machine covers both directions.
         val g = Grid(14, 14)
         val tile = g.tile(6, 6)
-        val world = room(12, 12, fill = { x, y -> if (x == 6 && y == 6) Smelter(Direction.Right) else null })
-        val list = world.machines.toMutableList()
-        val m = (list[tile.index] as Machine).atKelvin(Temperature.AMBIENT_KELVIN)
+        val world = room(12, 12, deckFill = { x, y, at ->
+            if (x == 6 && y == 6) Smelter(at, Direction.Right) else null
+        })
+        val deck = world.deck.copyOf()
+        val m = deck[tile]!!
+        m.setTemperature(Temperature.AMBIENT_KELVIN, world.grid, deck.stuff)
         // Deliberately not divisible by twenty-five, so a lost remainder shows up.
-        list[tile.index] = m.withEnergy(m.energy.with(3, m.energy[3] + 1_000_000_007L))
-        val before = world.copy(machines = list.toList())
+        val uneven = m.tiles(world.grid)[3]
+        deck.stuff.addEnergy(uneven, 1_000_000_007L)
+        val before = world.copy(deck = deck)
 
         val after = Save.read(Save.write(before))
-        val restored = after[tile]
         assertEquals(
-            before[tile]!!.energy,
-            restored!!.energy,
+            before.deck[tile]!!.energy(before.grid, before.deck.stuff),
+            after.deck[tile]!!.energy(after.grid, after.deck.stuff),
             "a saved machine must come back holding exactly what it held, tile by tile",
         )
     }
@@ -185,9 +194,9 @@ class BodyHeatTest {
         val world = room(
             10, 10,
             rails = { grid -> grid.tiles.map { if (it == under) Segment(Conduit.Rail) else null } },
-            fill = { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null },
+            deckFill = { x, y, at -> if (x == 5 && y == 5) Smelter(at, Direction.Right) else null },
         )
-            .heatMachine(under, 900)
+            .heatDeckMachine(g.tile(5, 5), 900)
 
         val settled = run(world, 30*HEAT_PERIOD)
         assertTrue(
@@ -196,8 +205,8 @@ class BodyHeatTest {
         )
         // And it is *its own* temperature, not the furnace's: iron holds far less than firebrick, so
         // it warms fast, but the two are separate bodies and never become one number.
-        val furnace = settled[under] ?: error("no machine at $under")
-        val furnaceKelvin = furnace.kelvin
+        val furnace = settled.deck[under] ?: error("no machine at $under")
+        val furnaceKelvin = furnace.temperatureKelvin(settled.grid, settled.deck.stuff)
         assertTrue(
             settled.railKelvin(under) != furnaceKelvin,
             "but the two are still separate bodies with separate temperatures: rail=${settled.railKelvin(under)}K furnace=${furnaceKelvin}K",
@@ -325,7 +334,9 @@ class BodyHeatTest {
         // The point of the whole exercise: identical footprints, identical energy, different stuff.
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
-        val furnace = room(10, 10, fill = { x, y -> if (x == 5 && y == 5) Smelter(Direction.Right) else null })
+        val furnace = room(10, 10, deckFill = { x, y, at ->
+            if (x == 5 && y == 5) Smelter(at, Direction.Right) else null
+        })
         val tank = room(10, 10, deckFill = { x, y, tile ->
             if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
         })

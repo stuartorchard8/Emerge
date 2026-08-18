@@ -56,8 +56,8 @@ class BudgetParityTest {
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.
-        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(Direction.Right).massPerTick, "40 ticks of buffer")
-        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(Direction.Right).massPerTick, "50 ticks of buffer")
+        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(TileIndex(0), Direction.Right).massPerTick, "40 ticks of buffer")
+        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(TileIndex(0), Direction.Right).massPerTick, "50 ticks of buffer")
 
         // ── Machine throughput ──
         //
@@ -66,8 +66,8 @@ class BudgetParityTest {
         // or it starves its own output. Asserted for every producer rather than for one, because
         // this is the property that broke when the belt-load shrank and it broke silently.
         for ((what, rate) in listOf(
-            "extractor" to Extractor(Direction.Right).massPerTick,
-            "smelter" to Smelter(Direction.Right).massPerTick,
+            "extractor" to Extractor(TileIndex(0), Direction.Right).massPerTick,
+            "smelter" to Smelter(TileIndex(0), Direction.Right).massPerTick,
             "vaporizer" to Vaporizer(TileIndex(0), Direction.Right).massPerTick,
         )) {
             assertEquals(Capacity.PACKET_MASS, rate, "$what must produce exactly one belt-load a tick")

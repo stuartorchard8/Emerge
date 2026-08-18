@@ -626,26 +626,6 @@ class OutofspaceRenderer {
         when (m) {
             // Bridges not on deck list (separate pass).
             is Bridge -> Unit
-            is Extractor -> {
-                // A tray, not a block. The recessed floor is what says "things go on top of this",
-                // and the rock pass draws over it — see [drawRock].
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Extractor))
-                bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
-                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.mass ?: 0L)
-                    .toFloat() / Extractor.BUFFER_CAP)
-            }
-            is Processor -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Processor))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
-            is ThermalDecomposer -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.ThermalDecomposer))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
-            is Smelter -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(MachineKind.Smelter))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
         }
         drawPorts(state, tile, m)
     }
@@ -669,6 +649,28 @@ class OutofspaceRenderer {
         }
         when (m) {
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
+            is Extractor -> {
+                // A tray, not a block. The recessed floor is what says "things go on top of this",
+                // and the rock pass draws over it — see [drawRock].
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Extractor))
+                bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
+                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.mass ?: 0L)
+                    .toFloat() / Extractor.BUFFER_CAP)
+            }
+
+            is Processor -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Processor))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+            is ThermalDecomposer -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+            is Smelter -> {
+                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Smelter))
+                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
+            }
+
             is Vaporizer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vaporizer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
@@ -1276,10 +1278,6 @@ fun kindColor(kind: MachineKind): Long = when (kind) {
     MachineKind.Gauge -> 0x39445AFFL
     MachineKind.Pipe -> 0x7A5A3AFFL
     MachineKind.Bridge -> 0x1A2030FFL
-    MachineKind.Extractor -> 0x6B4A2AFFL
-    MachineKind.Processor -> 0x2E5A6BFFL
-    MachineKind.ThermalDecomposer -> 0x5E5A3BFFL
-    MachineKind.Smelter -> 0x8A3A2AFFL
     MachineKind.Valve -> 0xD8A860FFL
     MachineKind.Wire -> 0x4A7A5AFFL
 }
@@ -1293,6 +1291,10 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Pump -> 0xB07840FFL
     DeckMachineKind.Vaporizer -> 0x905A6BFFL
     DeckMachineKind.Thruster -> 0xC04A30FFL
+    DeckMachineKind.Processor -> 0x2E5A6BFFL
+    DeckMachineKind.ThermalDecomposer -> 0x5E5A3BFFL
+    DeckMachineKind.Smelter -> 0x8A3A2AFFL
+    DeckMachineKind.Extractor -> 0x6B4A2AFFL
 }
 
 /**

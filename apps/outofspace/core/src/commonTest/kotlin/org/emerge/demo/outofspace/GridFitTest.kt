@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.STARTER_PLATE_X
@@ -178,7 +179,7 @@ class GridFitTest {
         assertEquals(26, fitted.grid.height, "fitted height")
 
         val anchor = fitted.grid.tiles.firstOrNull {
-            fitted[it]?.kind == MachineKind.Extractor
+            fitted.deck[it]?.kind == DeckMachineKind.Extractor
         } ?: TileIndex.NONE
         assertTrue(anchor != TileIndex.NONE, "the starter vessel has an extractor")
         assertEquals(STARTER_PLATE_X + 3, fitted.grid.xOf(anchor), "extractor x in the fitted frame")

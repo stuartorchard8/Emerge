@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -133,19 +134,19 @@ private fun linkPair(grid: Grid, rails: Array<Segment?>, a: TileIndex, dir: Dire
  * bodies do not collide with each other, only with the ship — and the extractor works through them
  * one at a time.
  *
- * Writes the machine into [machines] and returns the bodies, since bodies are not on the deck and
+ * Writes the machine into [deck] and returns the bodies, since bodies are not deck machines and
  * cannot be written to the same array.
  */
 fun feedExtractor(
     grid: Grid,
-    machines: Array<Machine?>,
+    deck: DeckArray,
     x: Int,
     y: Int,
     facing: Direction = Direction.Right,
     wiring: Wiring = Wiring.RUNNING,
     bodies: Int = 1,
 ): List<RigidBody> {
-    machines[grid.tile(x, y).index] = Extractor(facing).withWiring(wiring)
+    deck += Extractor(grid.tile(x, y), facing).withWiring(wiring)
     return rockOnPlate(x, y, bodies)
 }
 

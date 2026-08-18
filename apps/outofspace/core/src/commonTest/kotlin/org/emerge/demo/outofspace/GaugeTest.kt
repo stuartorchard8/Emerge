@@ -168,7 +168,7 @@ class GaugeTest {
     fun `a processor names each of its buffers separately`() {
         val grid = Grid(5, 5)
         val centre = grid.tile(2, 2)
-        val p = Processor(Direction.Right)
+        val p = Processor(centre, Direction.Right)
         val buffers = BufferLayer.empty(grid.size)
         buffers.claimRoles(grid, p, centre)
         for ((role, resource) in listOf(
@@ -187,7 +187,7 @@ class GaugeTest {
         val grid = Grid(9, 9)
         val centre = grid.tile(4, 4)
         assertEquals(emptyList(), contentsBreakdown(Storage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
-        assertEquals(emptyList(), contentsBreakdown(Smelter(Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(Smelter(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 
     @Test

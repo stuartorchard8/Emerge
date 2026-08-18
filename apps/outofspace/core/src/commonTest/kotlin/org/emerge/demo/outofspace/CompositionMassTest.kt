@@ -172,11 +172,11 @@ class CompositionMassTest {
             kind = BodyKind.FRAGMENT,
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
-            machineKind = MachineKind.Smelter,
+            machineKind = DeckMachineKind.Smelter,
             energy = TileEnergy.uniform(1, 0L),
         )
-        assertEquals(MachineKind.Smelter.massPerTile, fragment.mass)
-        assertEquals(MachineKind.Smelter.capacityPerTile, fragment.capacity)
+        assertEquals(DeckMachineKind.Smelter.massPerTile, fragment.mass)
+        assertEquals(DeckMachineKind.Smelter.capacityPerTile, fragment.capacity)
     }
 
     /**
@@ -211,10 +211,15 @@ class CompositionMassTest {
     @Test
     fun `a boulder outweighs the ship's own fabric, tile for tile`() {
         val oreTile = massPerTileOf(OutofspaceReducer.DEFAULT_ORE_BODY)
-        for (kind in listOf(MachineKind.Smelter, MachineKind.Rail)) {
+        // One of each hierarchy: the fabric is split across two lists mid-migration, and the claim
+        // is about the fabric rather than about either list.
+        for ((label, perTile) in listOf(
+            DeckMachineKind.Smelter.label to DeckMachineKind.Smelter.massPerTile,
+            MachineKind.Rail.label to MachineKind.Rail.massPerTile,
+        )) {
             assertTrue(
-                oreTile > kind.massPerTile * 4,
-                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.massPerTile} g)",
+                oreTile > perTile * 4,
+                "a tile of ore ($oreTile g) should dwarf a tile of $label ($perTile g)",
             )
         }
         for (kind in listOf(DeckMachineKind.Hull)) {

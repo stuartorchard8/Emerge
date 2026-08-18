@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.CellShape
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.floorTile
 import org.emerge.demo.outofspace.world.overlapBetween
@@ -45,6 +46,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * a cell at a time, while the belt fills smoothly.
  */
 data class Extractor(
+    override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
     /**
@@ -62,12 +64,11 @@ data class Extractor(
      */
     val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Extractor),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Extractor
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Extractor
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
         /**

@@ -186,8 +186,6 @@ fun seriesConductance(a: Long, b: Long): Long {
 /** MachineKind → Material (hull=steel, smelter=firebrick, rest=titanium; conduits follow network material). */
 val MachineKind.material: Material
     get() = when (this) {
-        MachineKind.Smelter, MachineKind.ThermalDecomposer -> Material.Firebrick
-        MachineKind.Extractor, MachineKind.Processor -> Material.Titanium
         MachineKind.Rail, MachineKind.Gauge -> Conduit.Rail.material
         MachineKind.Pipe, MachineKind.Valve -> Conduit.Pipe.material
         MachineKind.Bridge -> Conduit.Rail.material
@@ -200,8 +198,10 @@ val DeckMachineKind.material: Material
         // anything — which is why it keeps the instrument's fill rather than the plate's.
         DeckMachineKind.Vent, DeckMachineKind.Storage,
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
-        DeckMachineKind.Vaporizer, DeckMachineKind.Thruster,
+        DeckMachineKind.Vaporizer, DeckMachineKind.Thruster, DeckMachineKind.Processor,
+        DeckMachineKind.Extractor,
         -> Material.Titanium
+        DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> Material.Firebrick
     }
 
 /** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
@@ -230,11 +230,7 @@ val Conduit.material: Material
  */
 val MachineKind.fillPermille: Int
     get() = when (this) {
-        // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
-        MachineKind.Smelter, MachineKind.ThermalDecomposer -> 250
-
         // Casings with machinery in them: a shell, a mechanism, and a lot of air.
-        MachineKind.Extractor, MachineKind.Processor -> 150
 
 
         // Instruments and fittings: mostly a housing.
@@ -259,6 +255,9 @@ val DeckMachineKind.fillPermille: Int
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         DeckMachineKind.Thruster -> 120
+        DeckMachineKind.Processor, DeckMachineKind.Extractor -> 150
+        // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
+        DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> 250
         // Instruments and fittings: mostly a housing. Carried across unchanged.
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
     }

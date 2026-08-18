@@ -3,10 +3,12 @@ package org.emerge.demo.outofspace.world.machine
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /** A smelter: refined metal out the front, slag out the side. */
 data class Smelter(
+    override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
     /**
@@ -24,10 +26,9 @@ data class Smelter(
      */
     val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Smelter),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Smelter
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Smelter
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }

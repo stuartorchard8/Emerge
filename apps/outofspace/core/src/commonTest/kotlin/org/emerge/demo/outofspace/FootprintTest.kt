@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -57,16 +58,20 @@ class FootprintTest {
     private fun place(grid: Grid, tile: TileIndex, kind: MachineKind, facing: Direction = Direction.Right): VesselState =
         run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.Place(tile, kind, facing))))
 
+    /** The same for a kind that lives on the deck, which is most of them now. */
+    private fun placeDeck(grid: Grid, tile: TileIndex, kind: DeckMachineKind, facing: Direction = Direction.Right): VesselState =
+        run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.PlaceDeck(tile, kind, facing))))
+
     // ── Occupancy ─────────────────────────────────────────────────────────────
 
     @Test
     fun `a machine is stored once and covers the tiles around it`() {
         val grid = Grid(12, 12)
         val tile = grid.tile(5, 5)
-        val s = place(grid, tile, MachineKind.Smelter)
+        val s = placeDeck(grid, tile, DeckMachineKind.Smelter)
 
-        assertNotNull(s[tile], "the smelter lives at the tile it was placed on")
-        assertNull(s[grid.tile(4, 5)], "and nowhere else -- one machine, one copy")
+        assertNotNull(s.deck[tile], "the smelter lives at the tile it was placed on")
+        assertNull(s.deck[grid.tile(4, 5)], "and nowhere else -- one machine, one copy")
         // But every tile of the five-by-five reports it.
         for (y in 3..7) for (x in 3..7) {
             assertEquals(tile, s.occupancy[grid.tile(x, y)], "($x,$y) should belong to the smelter")
@@ -77,7 +82,7 @@ class FootprintTest {
     @Test
     fun `placing is refused when anything already occupies the footprint`() {
         val grid = Grid(12, 12)
-        var s = place(grid, grid.tile(5, 5), MachineKind.Smelter)
+        var s = placeDeck(grid, grid.tile(5, 5), DeckMachineKind.Smelter)
         // Two tiles away: outside the *centre* but well inside the footprint.
         s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(grid.tile(7, 5), DeckMachineKind.Sensor, Direction.Right))))
         assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
@@ -86,16 +91,16 @@ class FootprintTest {
     @Test
     fun `placing is refused when the footprint would hang off the grid`() {
         val grid = Grid(12, 12)
-        val s = place(grid, grid.tile(1, 5), MachineKind.Smelter)
-        assertNull(s[grid.tile(1, 5)], "a five-tile machine needs two tiles of clearance")
-        assertTrue(s.machines.all { it == null }, "and nothing partial is left behind")
+        val s = placeDeck(grid, grid.tile(1, 5), DeckMachineKind.Smelter)
+        assertNull(s.deck[grid.tile(1, 5)], "a five-tile machine needs two tiles of clearance")
+        assertTrue(grid.tiles.all { s.deck[it] == null }, "and nothing partial is left behind")
     }
 
     @Test
     fun `clicking any tile of a machine edits the whole machine`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        var s = place(grid, at, MachineKind.Smelter)
+        var s = placeDeck(grid, at, DeckMachineKind.Smelter)
 
         // A corner of the footprint, as far from the centre as it gets.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(7, 7)))))
@@ -107,13 +112,13 @@ class FootprintTest {
     fun `rotating leaves the footprint where it was and moves only the ports`() {
         val grid = Grid(12, 12)
         val tile = grid.tile(5, 5)
-        var s = place(grid, tile, MachineKind.Processor)
+        var s = placeDeck(grid, tile, DeckMachineKind.Processor)
         val before = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(6, 6)))))
         val after = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
         assertEquals(before, after, "anchoring at the centre is what makes a rotate not also a move")
-        assertEquals(Direction.Down, (s[tile] as? Processor)?.facing)
+        assertEquals(Direction.Down, (s.deck[tile] as? Processor)?.facing)
     }
 
     // ── Ports ─────────────────────────────────────────────────────────────────
@@ -122,7 +127,7 @@ class FootprintTest {
     fun `a processor's three ports are three different tiles`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        val ports = portsOf(grid, Processor(Direction.Right), at)
+        val ports = portsOf(grid, Processor(at, Direction.Right), at)
 
         val input = ports.single { it.kind == PortKind.Input }
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
@@ -138,7 +143,7 @@ class FootprintTest {
     fun `rotating a machine carries its ports round with it`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        val ports = portsOf(grid, Processor(Direction.Down), at)
+        val ports = portsOf(grid, Processor(at, Direction.Down), at)
 
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
         val waste = ports.single { it.kind == PortKind.Output && it.stream == Stream.Waste }
@@ -153,13 +158,13 @@ class FootprintTest {
     fun `a smelter's ports sit on the edge of its footprint, not beside its centre`() {
         val grid = Grid(16, 16)
         val at = grid.tile(8, 8)
-        val ports = portsOf(grid, Smelter(Direction.Right), at)
+        val ports = portsOf(grid, Smelter(at, Direction.Right), at)
         assertEquals(grid.tile(6, 8), ports.single { it.kind == PortKind.Input }.tile)
         assertEquals(
             grid.tile(10, 8),
             ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }.tile,
         )
-        assertEquals(5, MachineKind.Smelter.size, "and it really is five across")
+        assertEquals(5, DeckMachineKind.Smelter.diameter, "and it really is five across")
     }
 
     /**
@@ -239,7 +244,7 @@ class FootprintTest {
     fun `a machine's thermal mass scales with how much of it there is`() {
         // Inside a hull, because an unenclosed tile is space and space has no heat capacity at all.
         val grid = Grid(16, 16)
-        fun room(kind: MachineKind): VesselState {
+        fun room(kind: DeckMachineKind): VesselState {
             val m = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid)
             for (i in 1..13) {
@@ -248,16 +253,14 @@ class FootprintTest {
                 deck += Hull(grid.tile(1, i+1))
                 deck += Hull(grid.tile(14, i))
             }
-            m[grid.tile(8, 8).index] = OutofspaceReducer.let { _ ->
-                when (kind) {
-                    MachineKind.Processor -> Processor(Direction.Right)
-                    else -> Smelter(Direction.Right)
-                }
+            deck += when (kind) {
+                DeckMachineKind.Processor -> Processor(grid.tile(8, 8), Direction.Right)
+                else -> Smelter(grid.tile(8, 8), Direction.Right)
             }
             return VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
         }
-        val small = room(MachineKind.Processor).storedEnergy
-        val large = room(MachineKind.Smelter).storedEnergy
+        val small = room(DeckMachineKind.Processor).storedEnergy
+        val large = room(DeckMachineKind.Smelter).storedEnergy
         assertTrue(
             large > small,
             "twenty-five tiles of furnace should hold more heat than nine of mill: $large vs $small",

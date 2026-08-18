@@ -270,24 +270,6 @@ object Save {
                 put("span", m.middle?.let { writePacket(it) })
                 put("out", m.exit?.let { writePacket(it) })
             }
-            is Extractor -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
-            is Processor -> {
-                put("carry", m.carry.toString())
-                put("progress", m.progress.toString())
-                put("eff", m.efficiencyPermille.toString())
-            }
-            is ThermalDecomposer -> {
-                put("carry", m.carry.toString())
-                put("progress", m.progress.toString())
-                put("temp", m.setTemperature.toString())
-            }
-            is Smelter -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
             is Storage -> {}
         }
         // Every store the machine keeps, under the key that record has always used for it. What a
@@ -318,6 +300,24 @@ object Save {
             is Vent -> put("vented", m.ventedMass.toString())
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
+            is Processor -> {
+                put("carry", m.carry.toString())
+                put("progress", m.progress.toString())
+                put("eff", m.efficiencyPermille.toString())
+            }
+            is ThermalDecomposer -> {
+                put("carry", m.carry.toString())
+                put("progress", m.progress.toString())
+                put("temp", m.setTemperature.toString())
+            }
+            is Smelter -> {
+                put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+            }
+            is Extractor -> {
+                put("carry", m.carry.toString())
+                put("rate", m.massPerTick.toString())
+            }
             is Storage -> {}
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
@@ -939,14 +939,17 @@ object Save {
         fail: (String) -> Nothing,
     ): Pair<Machine?, DeckMachine?> {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
-        if (kindName in DeckMachineKind.ALL.map { it.toString() }) {
-            return null to readDeckMachine(tokens, version, tile, grid, buffers, scale, energyScale, fail)
-        }
         // A v9 world's `Miner` loads as the [Extractor] that replaced it: same buffer, same port,
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
-        // body of its own, because the rock it is standing on is the ore body now.
+        // body of its own, because the rock it is standing on is the ore body now. The rename is
+        // applied here rather than in the deck reader so that both spellings land on one path.
+        val deckName = if (version < 10 && kindName == "Miner") "Extractor" else kindName
+        if (deckName in DeckMachineKind.ALL.map { it.toString() }) {
+            return null to readDeckMachine(
+                listOf(deckName) + tokens.drop(1), version, tile, grid, buffers, scale, energyScale, fail,
+            )
+        }
         val kind = MachineKind.ALL.firstOrNull { it.name == kindName }
-            ?: (MachineKind.Extractor.takeIf { version < 10 && kindName == "Miner" })
             ?: fail("unknown machine '$kindName'")
         val f = fields(tokens.drop(1), fail)
 
@@ -986,28 +989,6 @@ object Save {
                 entry = (f["in"] ?: f["held"])?.let { readPacket(it, scale, fail) },
                 middle = f["span"]?.let { readPacket(it, scale, fail) },
                 exit = f["out"]?.let { readPacket(it, scale, fail) },
-            )
-            MachineKind.Extractor -> Extractor(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Extractor(Direction.Right).massPerTick),
-            )
-            MachineKind.Processor -> Processor(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                progress = num("actionProgress", 0L).toInt(),
-                efficiencyPermille = num("eff", 900L).toInt(),
-            )
-            MachineKind.ThermalDecomposer -> ThermalDecomposer(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                progress = num("actionProgress", 0L).toInt(),
-                setTemperature = num("temp", 900L).toInt(),
-            )
-            MachineKind.Smelter -> Smelter(
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Smelter(Direction.Right).massPerTick),
             )
             // Track is a segment, not a machine, and has its own line.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Wire ->
@@ -1095,6 +1076,32 @@ object Save {
                 facing = facing(),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Vaporizer(tile, Direction.Right).massPerTick),
+            )
+            DeckMachineKind.Processor -> Processor(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                progress = num("actionProgress", 0L).toInt(),
+                efficiencyPermille = num("eff", 900L).toInt(),
+            )
+            DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                progress = num("actionProgress", 0L).toInt(),
+                setTemperature = num("temp", 900L).toInt(),
+            )
+            DeckMachineKind.Extractor -> Extractor(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                massPerTick = rate(Extractor(tile, Direction.Right).massPerTick),
+            )
+            DeckMachineKind.Smelter -> Smelter(
+                tile,
+                facing = facing(),
+                carry = massNum("carry", 0L),
+                massPerTick = rate(Smelter(tile, Direction.Right).massPerTick),
             )
             DeckMachineKind.Thruster -> Thruster(
                 tile,

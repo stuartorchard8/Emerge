@@ -207,17 +207,13 @@ class HeatTest {
             track = { row(7, 8, 5); col(5, 7, 8) },
             deckFill = { x, y, tile ->
                 when {
+                    x == 5 && y == 5 -> Smelter(tile, Direction.Right)
                     x == 8 && y == 5 -> Vent(tile)      // refined leaves forward
                     x == 5 && y == 8 -> Vent(tile)      // slag leaves through the floor
                     else -> null
                 }
             },
-            fill = { x, y ->
-                when {
-                    x == 5 && y == 5 -> Smelter(Direction.Right)
-                    else -> null
-                }
-            },
+            fill = { _, _ -> null },
         ).stocked(g0.tile(5, 5), ore)
         val g = room.grid
         val s = run(room, 120*HEAT_PERIOD)
@@ -280,7 +276,7 @@ class HeatTest {
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
-        machines[grid.tile(5, 5).index] = Smelter(Direction.Right)
+        deck += Smelter(grid.tile(5, 5), Direction.Right)
         var s = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(5, 5), ore)
         s = run(s, 40*HEAT_PERIOD)

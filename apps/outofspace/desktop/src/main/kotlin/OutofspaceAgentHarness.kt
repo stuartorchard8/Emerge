@@ -377,7 +377,7 @@ object OutofspaceAgentHarness {
 
         /**
          * A landmark is **any deck machine kind**, plus `origin` for the minimum corner of
-         * everything placed. Derived from [MachineKind] rather than listed, so a new machine becomes
+         * everything placed. Derived from [DeckMachineKind] rather than listed, so a new machine becomes
          * a landmark by existing — a hand-kept list and the kinds it names drift apart silently, and
          * the drift shows up as a script addressing a landmark the harness has never heard of.
          *
@@ -385,11 +385,11 @@ object OutofspaceAgentHarness {
          * would have meant both "the first hull tile" and "the corner of the bounding box", which
          * are different tiles the moment a ship is not a rectangle.
          */
-        private fun landmarkKind(name: String): MachineKind? =
-            MachineKind.DECK.firstOrNull { it.name.equals(name, true) }
+        private fun landmarkKind(name: String): DeckMachineKind? =
+            DeckMachineKind.ALL.firstOrNull { it.name.equals(name, true) }
 
         private fun landmarkNames(): List<String> =
-            (MachineKind.DECK.map { it.name.lowercase() } + "origin").sorted()
+            (DeckMachineKind.ALL.map { it.name.lowercase() } + "origin").sorted()
 
         /** The minimum corner of every placed machine, or null if the world is empty. */
         private fun hullCorner(grid: Grid): Pair<Int, Int>? {
@@ -406,8 +406,6 @@ object OutofspaceAgentHarness {
         }
 
         /** The first tile holding a machine of this kind, in row-major order, or null. */
-        private fun anchorOf(kind: MachineKind): TileIndex? =
-            state.grid.tiles.firstOrNull { state[it]?.kind == kind }
         private fun anchorOf(kind: DeckMachineKind): TileIndex? =
             state.grid.tiles.firstOrNull { (state.deck[it])?.kind == kind }
 
@@ -425,7 +423,7 @@ object OutofspaceAgentHarness {
             val grid = state.grid
             // Exactly the set a coordinate may name — printing anything else would advertise a
             // landmark that fails when used.
-            val found = MachineKind.DECK.mapNotNull { kind ->
+            val found = DeckMachineKind.ALL.mapNotNull { kind ->
                 anchorOf(kind)?.let { "${kind.name.lowercase()} (${grid.xOf(it)},${grid.yOf(it)})" }
             } + listOfNotNull(hullCorner(grid)?.let { "origin (${it.first},${it.second})" })
 

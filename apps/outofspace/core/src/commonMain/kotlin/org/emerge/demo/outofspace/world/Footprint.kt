@@ -22,9 +22,7 @@ val MachineKind.size: Int
         // them, so its size says nothing about space -- only its two ports place it.
         MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge -> 1
         MachineKind.Wire -> 1
-        MachineKind.Processor, MachineKind.ThermalDecomposer -> 3
         // A floor to land a rock on, and a rock is five tiles across.
-        MachineKind.Extractor, MachineKind.Smelter -> 5
     }
 val DeckMachineKind.diameter: Int
     get() = when (this) {
@@ -34,7 +32,10 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Thruster,
         -> 1
-        DeckMachineKind.Vaporizer -> 3
+        DeckMachineKind.Vaporizer, DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
+        // A furnace at five: it should dominate the deck it sits on, and its heat should have
+        // somewhere to be.
+        DeckMachineKind.Smelter, DeckMachineKind.Extractor -> 5
     }
 
 /** Half-width: how far the footprint reaches from its centre in each direction. */

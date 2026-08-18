@@ -386,22 +386,32 @@ class SaveTest {
         val grid = Grid(10, 10)
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
-        machines[grid.tile(4, 4).index] = Extractor(
+        val starter = starterVessel(cfg.initialGrid)
+        deck += Extractor(
+            grid.tile(4, 4),
             Direction.Right,
             carry = 37L,
             // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
-        ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
-        deck += Storage(grid.tile(7, 4), Direction.Left)
+        ).withWiring(
+            starter.grid.tiles
+                .mapNotNull { starter.deck[it] }
+                .first { it is Extractor && it.wiring != Wiring.RUNNING }
+                .wiring,
+        )
+        // At (8,4), not (7,4): the extractor is five across and covers x 2..6, and both of them
+        // are deck machines now — a warehouse whose footprint overlapped it used to be legal only
+        // because the two lived on different lists.
+        deck += Storage(grid.tile(8, 4), Direction.Left)
 
         val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size))
-            .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
+            .stocked(grid.tile(8, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)), BufferRole.Inside)
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
         val back = Save.read(Save.write(state))
 
-        val extractor = back[grid.tile(4, 4)] as? Extractor
+        val extractor = back.deck[grid.tile(4, 4)] as? Extractor
         assertEquals(37L, extractor!!.carry)
         assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.mass)
         assertEquals(700L, back.inStore(grid.tile(4, 4), BufferRole.Inside)?.mixture?.get(Species.Iron), "the cell in the jaws too")
@@ -411,7 +421,7 @@ class SaveTest {
 
         // The contents survive in the buffer layer; the record still carries `stored`, so the file
         // format is unchanged and an older save loads into the new home unaltered.
-        val tank = back.buffers.resourceAt(grid.tile(7, 4))
+        val tank = back.buffers.resourceAt(grid.tile(8, 4))
         assertEquals(Form.IronIngot, tank?.form)
         assertEquals(900L, tank?.mass)
     }
@@ -476,15 +486,17 @@ class SaveTest {
             grid 8 6
             machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
         """.trimIndent() + "\n"
-        val extractor = assertNotNull(Save.read(v1)[TileIndex(20)] as? Extractor)
+        val extractor = assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
         assertEquals(250L * Budget.GRAM, extractor.massPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
     }
 
     @Test
     fun `a version 1 save with no rate at all gets the current default`() {
         val v1 = "outofspace 1\ngrid 8 6\nmachine 20 Miner facing=Right ore=Iron=1000\n"
-        val extractor = assertNotNull(Save.read(v1)[TileIndex(20)] as? Extractor)
-        assertEquals(Extractor(Direction.Right).massPerTick, extractor.massPerTick)
+        // A `machine … Miner` record from v1, landing on the deck: the rename and the move are
+        // applied on one path, so the oldest file in the game still loads.
+        val extractor = assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
+        assertEquals(Extractor(TileIndex(20), Direction.Right).massPerTick, extractor.massPerTick)
     }
 
     @Test

@@ -84,8 +84,8 @@ class SignalWiringTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
-        machines[grid.tile(extractorAt.first, extractorAt.second).index] =
-            Extractor(Direction.Right).withWiring(stopWhenFull)
+        deck += Extractor(grid.tile(extractorAt.first, extractorAt.second), Direction.Right)
+            .withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
         // Looking up at the tank, which sits below the run.
         deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
@@ -103,7 +103,7 @@ class SignalWiringTest {
         ).stocked(grid.tile(13, 5), stored)
     }
 
-    private fun extractor(s: VesselState) = s[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
+    private fun extractor(s: VesselState) = s.deck[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
     private fun ground(s: VesselState): Long =

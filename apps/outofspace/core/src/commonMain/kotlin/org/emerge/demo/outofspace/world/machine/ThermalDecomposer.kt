@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -10,6 +11,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * No reagent, just heat, which makes it the natural tier-1 refinery and a good sink for waste heat from the reactor.
  */
 data class ThermalDecomposer(
+    override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
     /**
@@ -19,10 +21,9 @@ data class ThermalDecomposer(
     val progress: Int = 0,
     val setTemperature: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Processor),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Processor
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.ThermalDecomposer
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }

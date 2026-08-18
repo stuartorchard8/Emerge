@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.Machine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.MachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.sim.core.physics.primitives.Coord
@@ -65,7 +66,12 @@ class RigidBody(
     /** What a rock is made of, as proportions. Null for fragments (they carry [machineKind] instead). */
     val oreComposition: Mixture? = null,
     /** Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction. */
-    val machineKind: MachineKind? = null,
+    /**
+     * ⚠️ A **[DeckMachineKind]**, not a [MachineKind]: debris comes off the things that take up
+     * floor space, and those are all deck machines now. `MachineKind` is on its way to holding
+     * nothing but conduits and the bridge, none of which produces a fragment.
+     */
+    val machineKind: DeckMachineKind? = null,
     /**
      * Thermal energy, **per filled cell**, in the energy unit [org.emerge.demo.outofspace.num.Budget]
      * states — indexed by a cell's ordinal among the filled ones, not by its position in [cells].
@@ -236,7 +242,7 @@ class RigidBody(
         ang: Coord = this.ang,
         angImpulse: Long = this.angImpulse,
         oreComposition: Mixture? = this.oreComposition,
-        machineKind: MachineKind? = this.machineKind,
+        machineKind: DeckMachineKind? = this.machineKind,
         energy: TileEnergy = this.energy,
     ): RigidBody = RigidBody(
         kind = kind, width = width, height = height, cells = cells,

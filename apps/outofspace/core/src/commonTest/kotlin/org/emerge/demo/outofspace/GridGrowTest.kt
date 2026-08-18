@@ -353,7 +353,7 @@ class GridGrowTest {
         // and the wiring tool would select nothing.
         controller.stepOnce()
         val before = controller.state
-        val extractor = before.grid.tiles.first { before[it]?.kind == MachineKind.Extractor }
+        val extractor = before.grid.tiles.first { before.deck[it]?.kind == DeckMachineKind.Extractor }
         controller.tool = Tool.Wire
         controller.apply(extractor)
         assertEquals(extractor, controller.selected, "the fixture did not select the extractor")
@@ -367,8 +367,8 @@ class GridGrowTest {
         assertNotEquals(before.grid, after.grid, "the reducer did not grow the grid")
         assertTrue(controller.selected != TileIndex.NONE, "the selection was thrown away")
         assertEquals(
-            MachineKind.Extractor,
-            after.machines[controller.selected.index]?.kind,
+            DeckMachineKind.Extractor,
+            after.deck[controller.selected]?.kind,
             "the selection now names a different tile",
         )
         assertEquals(

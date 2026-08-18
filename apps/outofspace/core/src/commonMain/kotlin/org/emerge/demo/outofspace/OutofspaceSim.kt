@@ -214,10 +214,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val m : Machine = w[tile] ?: continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
-                    is Extractor -> w.leech(m, activation, tile)
-                    is Processor -> w.refine(cfg, m, activation, tile)
-                    is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
-                    is Smelter -> w.melt(cfg, m, activation, tile)
                     is Bridge -> m
                 }
             }
@@ -229,6 +225,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Sensor, is WireButton, is Pump -> m
                     is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
+                    is Processor -> w.refine(cfg, m, activation, tile)
+                    is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
+                    is Smelter -> w.melt(cfg, m, activation, tile)
+                    is Extractor -> w.leech(m, activation, tile)
                 }
             }
         }
@@ -1572,7 +1572,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun bite(index: Int, tile: TileIndex): Resource? {
             val body = bodies[index]
-            val reach = machines[tile.index]!!.kind.reach
+            // Off the deck: an extractor is a deck machine, and asking the machine list for one
+            // is a null-pointer rather than a wrong answer — which is at least loud.
+            val reach = deck[tile]!!.reach
             val cell = reachableCell(
                 body, pose, grid.xOf(tile) - reach, grid.yOf(tile) - reach,
                 grid.xOf(tile) + reach, grid.yOf(tile) + reach,
@@ -1822,7 +1824,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Sensor, is WireButton, is Pump -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Vaporizer, is Thruster -> {
+                is Vaporizer, is Thruster, is Processor, is ThermalDecomposer, is Smelter,
+                is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
@@ -1851,10 +1854,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
 
         private fun newMachine(kind: MachineKind, facing: Direction): Machine? = when (kind) {
-            MachineKind.Extractor -> Extractor(facing)
-            MachineKind.Processor -> Processor(facing)
-            MachineKind.ThermalDecomposer -> ThermalDecomposer(facing)
-            MachineKind.Smelter -> Smelter(facing)
             // Fittings placed directly on layers.
             MachineKind.Rail, MachineKind.Pipe, MachineKind.Gauge, MachineKind.Valve, MachineKind.Bridge,
             MachineKind.Wire -> null
@@ -1870,6 +1869,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Pump -> Pump(tile, facing)
             DeckMachineKind.Vaporizer -> Vaporizer(tile, facing)
             DeckMachineKind.Thruster -> Thruster(tile, facing)
+            DeckMachineKind.Processor -> Processor(tile, facing)
+            DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(tile, facing)
+            DeckMachineKind.Smelter -> Smelter(tile, facing)
+            DeckMachineKind.Extractor -> Extractor(tile, facing)
         }
     }
 }

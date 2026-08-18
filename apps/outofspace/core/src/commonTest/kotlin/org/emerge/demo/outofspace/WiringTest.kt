@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Placed
 import org.emerge.demo.outofspace.world.RailLayer
@@ -216,7 +217,7 @@ class WiringTest {
             val grid = Grid(5, 5)
             val machines = arrayOfNulls<Machine>(grid.size)
             val deck = DeckArray(grid)
-            val feed = feedExtractor(grid, machines, 2, 2, wiring = w)
+            val feed = feedExtractor(grid, deck, 2, 2, wiring = w)
             val s = run(VesselState(grid, machines.toList(), deck, bodies = feed, buffers = BufferLayer.forMachines(grid, machines.toList()), rail = RailLayer.empty(grid.size)), 4)
             return s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L
         }
@@ -224,7 +225,7 @@ class WiringTest {
         // the same number only by the coincidence that a packet was four ticks' output — a
         // coincidence that died when the belt-load dropped to 100 kg. What the throttle governs is
         // the *rate*, so the rate is what the expectation is built from.
-        val full = 4L * Extractor(Direction.Right).massPerTick
+        val full = 4L * Extractor(TileIndex(0), Direction.Right).massPerTick
         assertEquals(full, groundInASecond(wiring(SignalSource.Always to 1000)))
         assertEquals(full / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
         assertEquals(full / 4, groundInASecond(wiring(SignalSource.Always to 250)))
@@ -270,7 +271,7 @@ class WiringTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val feed = feedExtractor(
-            grid, machines, 2, 3,
+            grid, deck, 2, 3,
             wiring = wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000),
             bodies = 4,
         )
@@ -328,7 +329,7 @@ class WiringTest {
         // construction, so a written-down tile index would be a hostage to its layout. There is
         // exactly one machine aboard that reads a wire, and it is the demonstration extractor.
         val throttled = s.grid.tiles.filter { t ->
-            s[t]?.wiring?.triggers(Action.Run)?.any { it.source == SignalSource.Wire } == true
+            s.deck[t]?.wiring?.triggers(Action.Run)?.any { it.source == SignalSource.Wire } == true
         }
         assertEquals(1, throttled.size, "expected one wire-driven machine aboard, found ${throttled.size}")
         val onTheWire = s.signals.at(throttled.single())
@@ -346,17 +347,18 @@ class WiringTest {
         val grid = Grid(9, 9)
         val at = grid.tile(4, 4)
         val deck = DeckArray(grid)
-        val m = arrayOfNulls<Machine>(grid.size).also { it[at.index] = Extractor(Direction.Right) }
+        deck += Extractor(at, Direction.Right)
+        val m = arrayOfNulls<Machine>(grid.size)
         val base = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
 
         val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
-        assertEquals(2, added[at]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
+        assertEquals(2, added.deck[at]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
 
         val changed = run(added, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 1, Trigger(SignalSource.Wire, 500)))))
-        assertEquals(Trigger(SignalSource.Wire, 500), changed[at]!!.wiring.triggers(Action.Run)[1])
+        assertEquals(Trigger(SignalSource.Wire, 500), changed.deck[at]!!.wiring.triggers(Action.Run)[1])
 
         val removed = run(changed, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 1, null))))
-        assertEquals(1, removed[at]!!.wiring.triggers(Action.Run).size)
+        assertEquals(1, removed.deck[at]!!.wiring.triggers(Action.Run).size)
     }
 
     @Test
@@ -365,21 +367,22 @@ class WiringTest {
         val grid = Grid(8, 6)
         val at = grid.tile(3, 3)
         var s = VesselState.empty(grid)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, MachineKind.Extractor, Direction.Right))))
-        assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s[at]!!.wiring.triggers(Action.Run))
+        s = run(s, 1, OutofspaceInput(listOf(Edit.PlaceDeck(at, DeckMachineKind.Extractor, Direction.Right))))
+        assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 
     @Test
     fun `wiring survives rotation`() {
         val grid = Grid(9, 9)
         val at = grid.tile(4, 4)
-        val wired = Extractor(Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
+        val wired = Extractor(at, Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
         val deck = DeckArray(grid)
-        val m = arrayOfNulls<Machine>(grid.size).also { it[at.index] = wired }
+        deck += wired
+        val m = arrayOfNulls<Machine>(grid.size)
         var s = VesselState(grid, m.toList(), deck, buffers = BufferLayer.forMachines(grid, m.toList()), rail = RailLayer.empty(grid.size))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(at))))
-        assertEquals(Direction.Down, (s[at] as? Extractor)!!.facing)
-        assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s[at]!!.wiring.triggers(Action.Run))
+        assertEquals(Direction.Down, (s.deck[at] as? Extractor)!!.facing)
+        assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────

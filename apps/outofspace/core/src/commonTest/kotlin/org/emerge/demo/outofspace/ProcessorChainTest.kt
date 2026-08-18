@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -68,7 +69,7 @@ class ProcessorChainTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        m[grid.tile(3, 3).index] = Processor(Direction.Right)                // covers x 2..4
+        deck += Processor(grid.tile(3, 3), Direction.Right)                // covers x 2..4
         // Forward of the processor's product port, and below its tailings port.
         deck += Storage(grid.tile(7, 3), Direction.Right)                 // input port at (6, 3)
         // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
@@ -110,7 +111,7 @@ class ProcessorChainTest {
      */
     private fun threeStagePurity(): Int {
         var r = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
-        repeat(3) { r = process(r, Processor(Direction.Right).efficiencyPermille).product }
+        repeat(3) { r = process(r, Processor(TileIndex(0), Direction.Right).efficiencyPermille).product }
         return purity(r)
     }
 
@@ -125,9 +126,9 @@ class ProcessorChainTest {
         val m = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val feed = feedExtractor(grid, m, 2, 3, bodies = 8)
+        val feed = feedExtractor(grid, deck, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
-        for (x in stages) m[grid.tile(x, 3).index] = Processor(Direction.Right)   // no waste runs anywhere
+        for (x in stages) deck += Processor(grid.tile(x, 3), Direction.Right)   // no waste runs anywhere
         deck += Storage(grid.tile(21, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)

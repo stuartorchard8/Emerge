@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -9,6 +10,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material).
  */
 data class Processor(
+    override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
     /**
@@ -18,10 +20,9 @@ data class Processor(
     val progress: Int = 0,
     val efficiencyPermille: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
-    override val energy: TileEnergy = ambientEnergy(MachineKind.Processor),
-) : Directed {
-    override val kind: MachineKind get() = MachineKind.Processor
-    override fun rotated(): Machine = copy(facing = facing.clockwise)
-    override fun withWiring(wiring: Wiring): Machine = copy(wiring = wiring)
-    override fun withEnergy(energy: TileEnergy): Machine = copy(energy = energy)
+) : DirectedDeckMachine {
+    override val kind: DeckMachineKind get() = DeckMachineKind.Processor
+    override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
+    override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 }
