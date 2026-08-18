@@ -214,6 +214,19 @@ data class VesselState(
     val tick: Long = 0L,
     val extractedMass: Long = 0L,
     val ventedMass: Long = 0L,
+    /**
+     * Every gram that has stopped being cargo and become **fabric** — material a ghost has absorbed
+     * to build itself with.
+     *
+     * The mass is still aboard, so nothing has been lost; but [inTransitMass] counts what the vessel
+     * is *carrying* and not what it is *made of*, and building moves a gram from one to the other.
+     * Without this term the conservation check would read a completed length of track as a leak of
+     * exactly its bill of materials.
+     *
+     * Signed, and it goes **down** when track is deconstructed and its metal handed back to the
+     * network — which is why it is one running total rather than a built and a salvaged pair.
+     */
+    val builtMass: Long = 0L,
 
     /**
      * Cumulative energy put into the world by machines doing work, and cumulative energy radiated

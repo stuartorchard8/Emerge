@@ -172,12 +172,32 @@ class GhostTest {
     }
 
     @Test
-    fun `a ghost at the end of a run draws material down it`() {
+    fun `a ghost at the end of a run draws material down it and builds itself`() {
         val s = run(tankAndRun(ghostAt = 7), RAIL_PERIOD * 8)
+        val ghost = s.grid.tile(7, 3)
         assertTrue(onTheRun(s) > 0L, "the tank held on: a ghost is not pulling as a sink")
         assertTrue(
-            s.rail.massAt(s.grid.tile(7, 3)) > 0L,
-            "material moved but did not reach the ghost at (7, 3)",
+            s.conduits.massAt(Conduit.Rail, ghost) > 0L,
+            "material reached (7, 3) but the track there is still made of nothing",
+        )
+        assertTrue(s.conduits.isComplete(Conduit.Rail, ghost), "the ghost never finished building")
+        assertTrue(s.builtMass > 0L, "a length of track was built and the ledger did not hear")
+    }
+
+    /**
+     * The whole point, stated end to end: iron in a tank becomes a length of track, and the world
+     * neither gains nor loses a gram doing it.
+     */
+    @Test
+    fun `building a rail conserves mass`() {
+        val before = tankAndRun(ghostAt = 7)
+        val opening = before.inTransitMass + before.builtMass
+        val after = run(before, RAIL_PERIOD * 8)
+        assertTrue(after.builtMass > 0L, "nothing was built, so this proves nothing")
+        assertEquals(
+            opening,
+            after.inTransitMass + after.builtMass,
+            "grams went missing between the cargo ledger and the fabric",
         )
     }
 
@@ -192,7 +212,8 @@ class GhostTest {
     @Test
     fun `a ghost refuses material it cannot be built from`() {
         val s = run(tankAndRun(ghostAt = 7, stored = slag()), RAIL_PERIOD * 8)
-        assertEquals(0L, s.rail.massAt(s.grid.tile(7, 3)), "slag walked into a ghost")
+        assertEquals(0L, s.rail.massAt(s.grid.tile(7, 3)), "slag walked onto a ghost's tile")
+        assertEquals(0L, s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)), "a ghost built itself out of slag")
     }
 
     @Test
@@ -209,7 +230,15 @@ class GhostTest {
             ),
         )
         val s = run(tankAndRun(ghostAt = 7, stored = nearly), RAIL_PERIOD * 8)
-        assertTrue(s.rail.massAt(s.grid.tile(7, 3)) > 0L, "a 95% delivery was turned away")
+        assertTrue(
+            s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)) > 0L,
+            "a 95% delivery was turned away",
+        )
+        // And what came with the iron is in the tile, not picked out of the lump and discarded.
+        assertTrue(
+            s.conduits.tracks[Conduit.Rail][s.grid.tile(7, 3), Species.Silicon] > 0L,
+            "the silicon that came with the iron went nowhere",
+        )
     }
 
     @Test
@@ -223,7 +252,7 @@ class GhostTest {
             ),
         )
         val s = run(tankAndRun(ghostAt = 7, stored = dirty), RAIL_PERIOD * 8)
-        assertEquals(0L, s.rail.massAt(s.grid.tile(7, 3)), "a 90% delivery got in")
+        assertEquals(0L, s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)), "a 90% delivery got in")
     }
 
     private fun slag(): Resource =

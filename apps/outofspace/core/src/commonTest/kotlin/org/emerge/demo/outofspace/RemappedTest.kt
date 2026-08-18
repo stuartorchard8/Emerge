@@ -458,7 +458,7 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // mass = mass + ventedMass + extractedMass (should be invariant)
-        fun massBalance(s: VesselState) = s.mass + s.ventedMass + s.extractedMass
+        fun massBalance(s: VesselState) = s.mass + s.ventedMass + s.extractedMass + s.builtMass
         assertEquals(massBalance(s0), massBalance(s1), "massBalance must be preserved")
     }
 

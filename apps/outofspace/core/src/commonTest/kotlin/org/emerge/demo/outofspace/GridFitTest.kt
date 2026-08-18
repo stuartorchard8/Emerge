@@ -195,7 +195,7 @@ class GridFitTest {
         // which cost a qwen session; the rest of the suite says it correctly, e.g. VesselSimTest:61.
         assertEquals(
             0L,
-            s.inTransitMass + s.ventedMass - s.extractedMass,
+            s.inTransitMass + s.ventedMass + s.builtMass - s.extractedMass,
             "massBalance $whenever",
         )
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.

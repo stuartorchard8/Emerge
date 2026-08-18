@@ -724,7 +724,7 @@ object OutofspaceAgentHarness {
             // The ore ledger as one number, the twin of `airBalance` and `heatBalance`. Zero, always
             // -- and the right thing for a script to assert, since `extractedMass` on its own is a fact
             // about how long the starter vessel's extractor has been running.
-            "massBalance" -> grams(state.inTransitMass + state.ventedMass - state.extractedMass)
+            "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass)
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when

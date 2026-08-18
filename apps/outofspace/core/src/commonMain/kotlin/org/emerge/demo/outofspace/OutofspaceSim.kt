@@ -20,6 +20,8 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
@@ -491,6 +493,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             tick = state.tick + 1,
             extractedMass = w.extractedMass,
             ventedMass = w.ventedMass,
+            builtMass = w.builtMass,
             signals = signals,
             networks = networks,
             structure = structure,
@@ -952,6 +955,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             Conduits.of(Array(layers.size) { layers[it].toList() }, tracks.copyOf())
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
+        var builtMass: Long = state.builtMass
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
         var injectedAirMass: Long = state.injectedAirMass
@@ -1577,6 +1581,79 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.mass))
         }
 
+        /**
+         * A ghost takes what it still needs off the lump standing on it, and books the transfer.
+         *
+         * Returns the whole packet when the tile is left empty — the contract [advanceSegments]
+         * already had — and null when a remainder rides on. The remainder is the reason this is not
+         * a machine's port: a machine takes a lump whole or refuses it, while a ghost skims what it
+         * needs and lets the rest past, over what is by then real track.
+         *
+         * ### Proportionally, across everything in the lump
+         *
+         * Not "pick the iron out". A delivery is admitted whole or not at all — see [buildableFrom]
+         * — so what came with the iron is part of what is being built with, and taking a fraction of
+         * every species is what keeps the tile's composition equal to what it was actually fed.
+         *
+         * ⚠️ That means junk **dilutes**: a ghost fed 95% iron spends 5% of its appetite on
+         * something that is not iron and needs a little more material to finish. That is the cost of
+         * the slack and it still terminates, because every delivery adds iron and the shortfall only
+         * ever shrinks.
+         *
+         * ⚠️ The heat comes with the mass, so a rail built out of cold iron is a cold rail. It moves
+         * from the transport layer to the structure layer, and **the transport layer's energy is not
+         * in [VesselState.storedEnergy]** — that is a gap older than this and the energy ledger is
+         * parked, so nothing here books it. Written down rather than papered over.
+         */
+        fun absorbIntoGhost(tile: TileIndex): Packet? {
+            val bill = conduitBillOfMaterials(Conduit.Rail)
+            val stuff = tracks[Conduit.Rail]
+            var need = 0L
+            for (sp in Species.ALL) {
+                val short = bill[sp] - stuff[tile, sp]
+                if (short > 0L) need += short
+            }
+            if (need <= 0L) return null
+            val have = rail.massAt(tile)
+            if (have <= 0L) return null
+
+            // The whole lump goes in. Taking it wholesale rather than by fraction keeps the common
+            // case exact — a fraction of a fraction is where the rounding would live.
+            if (have <= need) {
+                val packet = rail.packetAt(tile) ?: return null
+                for (sp in Species.ALL) {
+                    val mass = packet.resource.mixture[sp]
+                    if (mass != 0L) stuff[tile, sp] = stuff[tile, sp] + mass
+                }
+                stuff.setEnergy(tile, stuff.energyAt(tile) + packet.resource.mixture.energy)
+                rail.put(tile, null)
+                builtMass += have
+                return packet
+            }
+
+            // More than it needs: a share of every species, and the rest rides on.
+            val lump = rail.resourceAt(tile) ?: return null
+            var taken = 0L
+            for (sp in Species.ALL) {
+                val mass = lump.mixture[sp]
+                if (mass == 0L) continue
+                val part = scaledRatio(need, have, mass)
+                if (part <= 0L) continue
+                stuff[tile, sp] = stuff[tile, sp] + part
+                taken += part
+            }
+            val heat = scaledRatio(need, have, lump.mixture.energy)
+            stuff.setEnergy(tile, stuff.energyAt(tile) + heat)
+            // What is left is stated rather than subtracted tile-side, so the lump the belt carries
+            // on and the mass booked here are the same arithmetic and cannot drift apart.
+            val rest = LongArray(Species.COUNT)
+            for (sp in Species.ALL) rest[sp.ordinal] = lump.mixture[sp] - scaledRatio(need, have, lump.mixture[sp])
+            val remainder = Mixture.of(rest, lump.mixture.energy - heat)
+            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, Resource(lump.form, remainder))
+            builtMass += taken
+            return null
+        }
+
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
         fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
             val out = HashMap<TileIndex, MutableList<Port>>()
@@ -1741,6 +1818,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     else rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it.mixture) } ?: false
                 },
             ) { tile ->
+                // A ghost eats first, and eats instead of the machine rather than after it: being
+                // short of its bill *is* being an input, and the tile is the address, so a machine
+                // standing over unbuilt track is cut off until its feed is finished.
+                if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile)
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
                 val at = ports[tile]

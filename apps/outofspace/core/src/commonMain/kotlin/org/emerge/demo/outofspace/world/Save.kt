@@ -85,6 +85,7 @@ object Save {
         out.append("airvented ").append(state.airVentedMass).append('\n')
         out.append("baselinejoules ").append(state.baselineEnergy).append('\n')
         out.append("inserted ").append(state.insertedEnergy).append('\n')
+        out.append("built ").append(state.builtMass).append('\n')
         // Absent reads as creative, which is what every world written before the switch existed was
         // — and what every world still is until a ghost can finish building itself.
         out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
@@ -564,6 +565,7 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         var creative = true
+        var built = 0L
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
         // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
         // segment has been read, and this line *replaces* the metal [Conduits.of] lays.
@@ -761,6 +763,9 @@ object Save {
                 "momx" -> readSparse(tokens, momentumX, scale, ::fail)
                 "momy" -> readSparse(tokens, momentumY, scale, ::fail)
                 "creative" -> creative = tokens.getOrNull(1) != "0"
+                // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
+                // what a world where nothing has ever been built out of its own stores has.
+                "built" -> built = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable built mass"))
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
                 "body", "rock" -> {
@@ -898,6 +903,7 @@ object Save {
             structure = structure,
             occupancy = occupancy,
             creative = creative,
+            builtMass = built,
             insertedEnergy = inserted,
             acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,
