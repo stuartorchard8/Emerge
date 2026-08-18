@@ -1657,19 +1657,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             val part = if (take >= held) mass else scaledRatio(take, held, mass)
                             if (part <= 0L) continue
                             masses[sp.ordinal] = part
-                            stuff[tile, sp] = mass - part
                             moved += part
                         }
-                        stuff.setEnergy(tile, stuff.energyAt(tile) - energy)
                         if (moved > 0L) {
                             val recovered = Mixture.of(masses, energy)
                             val form = SMELT_PRODUCTS[dominantSpecies(recovered)] ?: Form.Slag
+                            // ⚠️ **Nothing leaves the structure layer until the lump has taken it.**
+                            // The tile having room is not the same question as the lump accepting
+                            // it: an ingot never merges with the ore riding over it, whatever the
+                            // headroom, and taking the metal out first destroyed it — a rail
+                            // deconstructed under passing traffic came back light. So the deposit is
+                            // attempted first and the deduction is what a *successful* one books.
+                            //
+                            // Refused, the segment simply hands nothing back this tick and stays
+                            // marked; it is the occupied-tile wait the feature already has, not a
+                            // new one. `take <= room` means the deposit is whole or nothing, so a
+                            // false answer here has written nothing.
                             val onto = rail.resourceAt(tile)
-                            // Onto whatever is already standing there, since a part-load may be the
-                            // second helping. `loadOnto` is the same door a machine's output uses.
-                            if (onto == null) rail.put(tile, Resource(form, recovered))
-                            else rail.loadOnto(tile, Resource(form, recovered))
-                            builtMass -= moved
+                            val landed =
+                                if (onto == null) { rail.put(tile, Resource(form, recovered)); true }
+                                else rail.loadOnto(tile, Resource(form, recovered))
+                            if (landed) {
+                                for (sp in Species.ALL) {
+                                    val part = masses[sp.ordinal]
+                                    if (part != 0L) stuff[tile, sp] = stuff[tile, sp] - part
+                                }
+                                stuff.setEnergy(tile, stuff.energyAt(tile) - energy)
+                                builtMass -= moved
+                            }
                         }
                     }
                 }

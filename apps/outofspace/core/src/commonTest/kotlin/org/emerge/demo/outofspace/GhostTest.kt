@@ -66,7 +66,7 @@ class GhostTest {
 
     @Test
     fun `a run drawn in creative mode is finished track`() {
-        val s = drag(VesselState.empty(grid), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val s = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 8)
 
         for (x in 2..8) {
             val tile = grid.tile(x, 3)
@@ -85,7 +85,7 @@ class GhostTest {
         val ghosts = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 8)
         assertEquals(0L, ghosts.insertedEnergy, "a ghost cost the world energy it never received")
 
-        val real = drag(VesselState.empty(grid), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val real = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 8)
         assertTrue(real.insertedEnergy > 0L, "creative track arrived with heat nobody booked")
     }
 
@@ -111,7 +111,7 @@ class GhostTest {
      */
     @Test
     fun `a heavy tile short of its iron is still a ghost`() {
-        val s = drag(VesselState.empty(grid), Conduit.Rail, y = 3, fromX = 2, toX = 4)
+        val s = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 4)
         val tile = grid.tile(3, 3)
         val stuff = s.conduits.tracks[Conduit.Rail]
         val iron = stuff[tile, Species.Iron]
@@ -282,7 +282,7 @@ class GhostTest {
     @Test
     fun `in creative mode deleting a rail removes it outright`() {
         // Conjuring track out of nothing and making it vanish into nothing are the same privilege.
-        val laid = drag(VesselState.empty(grid), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val laid = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 8)
         val s = remove(laid, grid.tile(5, 3))
         assertNull(s.conduits.at(Conduit.Rail, grid.tile(5, 3)), "the rail was only marked")
     }
@@ -381,6 +381,125 @@ class GhostTest {
         // The same atoms, to the unit. Four tiles of travel and two ledger crossings later.
         assertEquals(had, s.conduits.massAt(Conduit.Rail, ghost), "the rail lost mass on the way")
     }
+
+
+    @Test
+    fun `deconstruction conserves mass with a lump standing on the marked tile`() {
+        val before = runWithGhostAtTheFarEnd()
+        val doomed = grid.tile(4, 3)
+        // A half packet of ore riding on the very tile being taken apart: room to spare, but not a
+        // form the recovered metal merges with.
+        before.rail.put(
+            doomed,
+            Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
+        )
+        val opening = before.inTransitMass + before.builtMass
+        val s = run(remove(before, doomed), RAIL_PERIOD * 24)
+        assertEquals(opening, s.inTransitMass + s.builtMass, "grams went missing under passing traffic")
+    }
+
+
+    /** Build a ghost out of the tank, then take the same tile apart again. */
+    @Test
+    fun `a build-then-deconstruct round trip mints nothing`() {
+        val before = tankAndRun(ghostAt = 7).copy(creative = false)
+        val opening = before.inTransitMass + before.builtMass
+        val ghost = before.grid.tile(7, 3)
+        val built = run(before, RAIL_PERIOD * 8)
+        assertTrue(built.conduits.isComplete(Conduit.Rail, ghost), "the ghost never finished building")
+        assertEquals(opening, built.inTransitMass + built.builtMass, "the build leg did not conserve")
+
+        var s = remove(built, ghost)
+        repeat(40) {
+            s = run(s, RAIL_PERIOD)
+            assertEquals(opening, s.inTransitMass + s.builtMass, "the round trip did not conserve")
+        }
+    }
+
+
+    private fun conserves(before: VesselState, label: String, ticks: Int, act: (VesselState) -> VesselState) {
+        val opening = before.inTransitMass + before.builtMass
+        var s = act(before)
+        repeat(ticks) {
+            s = run(s, RAIL_PERIOD)
+            val now = s.inTransitMass + s.builtMass
+            if (now != opening) {
+                throw AssertionError("$label drifted by ${now - opening} at tick $it (opening $opening)")
+            }
+        }
+    }
+
+    @Test
+    fun `scenario A - marking a half-built ghost conserves`() {
+        val built = run(tankAndRun(ghostAt = 7).copy(creative = false), RAIL_PERIOD * 2)
+        conserves(built, "half-built ghost marked", 40) { remove(it, it.grid.tile(7, 3)) }
+    }
+
+    @Test
+    fun `scenario B - redrawing over a marked tile conserves`() {
+        val built = tankAndRun(ghostAt = null).copy(creative = false)
+        val marked = remove(built, built.grid.tile(6, 3))
+        conserves(marked, "redraw over a marked tile", 40) {
+            lay(it, Conduit.Rail, it.grid.tile(6, 3), it.grid.tile(7, 3))
+        }
+    }
+
+    @Test
+    fun `scenario E - marking a whole run conserves`() {
+        val built = tankAndRun(ghostAt = null).copy(creative = false)
+        conserves(built, "whole run marked", 60) {
+            var s = it
+            for (x in 5..7) s = remove(s, s.grid.tile(x, 3))
+            s
+        }
+    }
+
+
+    @Test
+    fun `a ghost survives a save round trip`() {
+        val before = tankAndRun(ghostAt = 7).copy(creative = false)
+        val ghost = before.grid.tile(7, 3)
+        val after = org.emerge.demo.outofspace.world.Save.read(org.emerge.demo.outofspace.world.Save.write(before))
+        assertEquals(
+            before.conduits.massAt(Conduit.Rail, ghost),
+            after.conduits.massAt(Conduit.Rail, ghost),
+            "an empty ghost changed mass across a save",
+        )
+        assertEquals(before.inTransitMass + before.builtMass, after.inTransitMass + after.builtMass, "empty ghost total")
+    }
+
+    @Test
+    fun `a half-built ghost survives a save round trip`() {
+        val before = tankAndRun(ghostAt = 7).copy(creative = false)
+        val ghost = before.grid.tile(7, 3)
+        // Half of every gram of the bill: a ghost caught midway through building itself.
+        val stuff = before.conduits.tracks[Conduit.Rail]
+        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        for (sp in Species.ALL) if (bill[sp] > 0L) stuff[ghost, sp] = bill[sp] / 2
+        assertTrue(before.conduits.isGhost(Conduit.Rail, ghost), "the fixture finished building")
+        assertTrue(before.conduits.massAt(Conduit.Rail, ghost) > 0L, "the fixture never started building")
+        val after = org.emerge.demo.outofspace.world.Save.read(org.emerge.demo.outofspace.world.Save.write(before))
+        assertEquals(
+            before.conduits.massAt(Conduit.Rail, ghost),
+            after.conduits.massAt(Conduit.Rail, ghost),
+            "a half-built ghost changed mass across a save",
+        )
+    }
+
+    @Test
+    fun `a marked rail survives a save round trip`() {
+        val marked = remove(tankAndRun(ghostAt = null).copy(creative = false), grid.tile(6, 3))
+        val before = run(marked, RAIL_PERIOD * 2)
+        val doomed = before.grid.tile(6, 3)
+        val after = org.emerge.demo.outofspace.world.Save.read(org.emerge.demo.outofspace.world.Save.write(before))
+        assertEquals(
+            before.conduits.massAt(Conduit.Rail, doomed),
+            after.conduits.massAt(Conduit.Rail, doomed),
+            "a rail being taken apart changed mass across a save",
+        )
+        assertEquals(before.inTransitMass + before.builtMass, after.inTransitMass + after.builtMass, "marked total")
+    }
+
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
