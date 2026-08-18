@@ -1,5 +1,9 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Form
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Resource
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -159,10 +163,14 @@ fun starterVessel(
     // No rock on either plate, and that is the increment showing through rather than an omission:
     // an extractor has to be **given** something to eat. What H4 changes is where you get one — the
     // ore is out there in the field now, and the vessel flies to it. See §5i and [RockField].
+    // ⚠️ Stocked **before** the world is constructed, not after. [VesselState.baselineCargoMass]
+    // defaults from what it is handed, so iron poured in afterwards would be cargo the ledger never
+    // saw arrive — which reads as ore nobody extracted, and turns every conservation check red.
+    val buffers = BufferLayer.forDeck(grid, deck).withStartingIron(grid, deck)
     return VesselState(
         grid = grid,
         deck = deck,
-        buffers = BufferLayer.forDeck(grid, deck),
+        buffers = buffers,
         rail = RailLayer.empty(grid.size),
         conduits = Conduits.of(
             grid.size,
@@ -170,6 +178,31 @@ fun starterVessel(
             Conduit.Signal to wires.toList(),
         ),
     ).fitGrid()
+}
+
+/**
+ * The heap of iron the vessel starts with — the thing every length of track you draw is built from.
+ *
+ * A ship that has to *build* its rails needs something to build the first one out of, and there is
+ * nowhere else for it to come from: the extractor needs track to send its ore down, and laying that
+ * track is the thing being paid for. So the stock is stated here, in the tank that has always been
+ * commented "the inventory: what you can build with", rather than earned.
+ *
+ * ⚠️ Harmless while [VesselState.creative] is on, since nothing consumes it — track still arrives
+ * finished. It is what makes the world playable the moment that switch is turned off.
+ */
+private fun BufferLayer.withStartingIron(grid: Grid, deck: DeckArray): BufferLayer = also {
+    val tank = grid.tiles.firstOrNull { deck[it] is Storage } ?: return@also
+    val store = bufferTile(grid, deck[tank]!!, tank, BufferRole.Inside) ?: return@also
+    // Half a tank. Enough for a few hundred tiles of track, and short of [Storage.CAP] by enough
+    // that the first thing the player does cannot be to overflow it.
+    val mass = Storage.CAP / 2
+    val cold = Mixture.of(Species.Iron to mass, energy = 0)
+    // ⚠️ At **ambient**, not at zero energy. Ten tonnes of iron at absolute zero is not a stock of
+    // building material, it is a heat sink the size of the ship, and it would suck the vessel cold
+    // through the first machine that touched it.
+    val warm = Mixture.of(Species.Iron to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
+    it.put(store, Resource(Form.IronIngot, warm))
 }
 
 /**

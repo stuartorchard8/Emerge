@@ -279,9 +279,11 @@ class SaveTest {
         assertEquals(played.inTransitMass, reloaded.inTransitMass)
         assertEquals(played.baselineEnergy, reloaded.baselineEnergy)
         assertEquals(played.baselineAirMass, reloaded.baselineAirMass)
+        assertEquals(played.baselineCargoMass, reloaded.baselineCargoMass)
+        assertEquals(played.builtMass, reloaded.builtMass)
         assertEquals(
-            reloaded.extractedMass,
-            reloaded.inTransitMass + reloaded.ventedMass,
+            reloaded.extractedMass + reloaded.baselineCargoMass,
+            reloaded.inTransitMass + reloaded.ventedMass + reloaded.builtMass,
             "the mass balance did not survive the round trip",
         )
     }

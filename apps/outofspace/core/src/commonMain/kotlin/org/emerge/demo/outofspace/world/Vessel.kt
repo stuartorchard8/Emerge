@@ -462,6 +462,20 @@ data class VesselState(
      * exactly like a leak. What must not mix is what cannot mix.
      */
     val baselineAirMass: Long = air.totalMass + pipeAir.totalMass,
+    /**
+     * The **cargo** the world started with — the twin of [baselineAirMass], for solids.
+     *
+     * For as long as the vessel began with empty tanks this could be left implicit at zero, and the
+     * mass ledger read `aboard + vented == extracted`: everything solid aboard had been dug up. A
+     * ship that has to *build* its own track cannot start that way — it needs something to build the
+     * first rail out of, and there is nowhere for that to come from, because the extractor needs
+     * track to send its ore down. So the starting stock is stated, and stating it means saying so
+     * here rather than letting it read as ore nobody extracted.
+     *
+     * Defaulted from the world it is constructed with, exactly as the air and energy baselines are,
+     * so a fixture that states a stocked tank does not become a fixture that states a leak.
+     */
+    val baselineCargoMass: Long = cargoMass(grid, rail, conduits, deck, buffers),
 ) {
     init {
         require(deck.size == grid.size) { "deck is ${deck.size}, grid holds ${grid.size}" }

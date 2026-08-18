@@ -417,8 +417,8 @@ class WiringTest {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 89 == 0) {
                 assertEquals(
-                    s.extractedMass,
-                    s.inTransitMass + s.ventedMass,
+                    s.extractedMass + s.baselineCargoMass,
+                    s.inTransitMass + s.ventedMass + s.builtMass,
                     "tick ${s.tick}",
                 )
             }

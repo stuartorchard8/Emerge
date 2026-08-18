@@ -101,7 +101,7 @@ class GaugeTest {
         val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(4 * Capacity.PACKET_MASS))
         val s = run(line(ore), 120*RAIL_PERIOD)
         assertEquals(4 * Capacity.PACKET_MASS, s.stockpile.totalMass, "every gram arrived at the far end")
-        assertEquals(s.extractedMass + 4 * Capacity.PACKET_MASS, s.inTransitMass + s.ventedMass, "and none went missing")
+        assertEquals(s.extractedMass + s.baselineCargoMass + 4 * Capacity.PACKET_MASS, s.inTransitMass + s.ventedMass + s.builtMass, "and none went missing")
     }
 
     @Test
@@ -155,7 +155,7 @@ class GaugeTest {
         repeat(360) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (it % 91 == 0) {
-                assertEquals(s.extractedMass, s.inTransitMass + s.ventedMass, "tick ${s.tick}")
+                assertEquals(s.extractedMass + s.baselineCargoMass, s.inTransitMass + s.ventedMass + s.builtMass, "tick ${s.tick}")
             }
         }
     }

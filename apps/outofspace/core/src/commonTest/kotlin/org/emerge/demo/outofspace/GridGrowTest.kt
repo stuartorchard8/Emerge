@@ -250,7 +250,7 @@ class GridGrowTest {
         // before, which cost a whole session; the rest of the suite says it correctly.
         assertEquals(
             0L,
-            s.inTransitMass + s.ventedMass + s.builtMass - s.extractedMass,
+            s.inTransitMass + s.ventedMass + s.builtMass - s.extractedMass - s.baselineCargoMass,
             "massBalance $whenever",
         )
         // No body conservation (bodies spawn/despawn freely), just check bodies exist.

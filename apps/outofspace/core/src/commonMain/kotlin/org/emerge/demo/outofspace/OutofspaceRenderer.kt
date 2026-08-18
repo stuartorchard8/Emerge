@@ -484,7 +484,7 @@ class OutofspaceRenderer {
         val segment = state.conduits.at(Conduit.Pipe, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        val color = kindColor(Conduit.Pipe)
+        val color = conduitColor(state, Conduit.Pipe, tile)
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
             rect(
@@ -499,11 +499,35 @@ class OutofspaceRenderer {
         // [drawDeckMachine]. The pipe under it is just pipe.
     }
 
+    /**
+     * What a length of conduit is drawn in, given how much of it is actually there.
+     *
+     * Three states, one ramp. Finished track is [kindColor] and always has been. A **ghost** fades up
+     * from [Colors.GHOST] as it fills, so a run the player has just drawn reads at a glance as a plan
+     * rather than as track, and a half-fed one reads as half-fed. A segment being taken apart goes the
+     * other way, toward [Colors.SCRAPPING], so the two directions never look alike — the difference
+     * between "not yet" and "on its way out" is the difference between waiting and having made a
+     * mistake, and a player has to be able to see which they are looking at.
+     *
+     * ⚠️ The fraction is [TrackLayers.builtPermille], which is the *minimum* per-species ratio and not
+     * the total. It reaches full exactly when the tile does, so the picture cannot say finished while
+     * the sim says ghost.
+     */
+    private fun conduitColor(state: VesselState, conduit: Conduit, tile: TileIndex): Long {
+        val built = state.conduits.tracks.builtPermille(conduit, tile) / 1000f
+        val whole = kindColor(conduit)
+        if (state.conduits.at(conduit, tile)?.deconstructing == true) {
+            return lerpColor(Colors.SCRAPPING, whole, built)
+        }
+        return if (built >= 1f) whole else lerpColor(Colors.GHOST, whole, built)
+    }
+
     /** Track tile + packet (thin spine, gauge collar). */
     private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int) {
         val segment = state.railAt(tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
+        val railColor = conduitColor(state, Conduit.Rail, tile)
         // Only joined arms (not touching — two lines side by side stay separate).
         for (dir in Direction.ALL) {
             if (!segment.linkedTo(dir)) continue
@@ -511,11 +535,11 @@ class OutofspaceRenderer {
                 cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
                 (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
                 (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
-                kindColor(Conduit.Rail),
+                railColor,
             )
         }
         // The hub, always drawn
-        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, kindColor(Conduit.Rail))
+        rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, railColor)
     }
 
     private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
@@ -1042,6 +1066,16 @@ class OutofspaceRenderer {
         // ── Backgrounds ─────────────────────────────────────────────────
         const val TILE_LIGHT  = 0x141A2480L
         const val TILE_DARK   = 0x11172280L
+
+        // ── Building and unbuilding ─────────────────────────────────────
+        // A ghost is nearly the deck it is drawn on: present enough to see the shape of the run you
+        // drew, faint enough that nobody mistakes it for track. It fades up to the conduit's own
+        // colour as it fills — see [conduitColor].
+        const val GHOST      = 0x2A3244B0L
+
+        // A segment on its way out, warm where a ghost is cold. The direction has to be legible
+        // without reading a number: "not yet" and "going" are opposite mistakes to make.
+        const val SCRAPPING  = 0x8A4A2AFFL
 
         // ── Rock ────────────────────────────────────────────────────────
         // Warm, desaturated.

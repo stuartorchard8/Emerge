@@ -86,6 +86,9 @@ object Save {
         out.append("baselinejoules ").append(state.baselineEnergy).append('\n')
         out.append("inserted ").append(state.insertedEnergy).append('\n')
         out.append("built ").append(state.builtMass).append('\n')
+        // The solids the world started with. Absent reads as zero, which is what every world
+        // written before a ship had to build its own track began with.
+        out.append("baselinecargo ").append(state.baselineCargoMass).append('\n')
         // Absent reads as creative, which is what every world written before the switch existed was
         // — and what every world still is until a ghost can finish building itself.
         out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
@@ -454,12 +457,33 @@ object Save {
             action.name + ":" + w.triggers(action).joinToString(",") { "${it.source.name}@${it.weightPermille}" }
         }
 
-    private fun writeMixture(m: Mixture): String {
+    /**
+     * A mixture's species and masses, and — only where asked for — the heat in it.
+     *
+     * ⚠️ [withEnergy] is **not** a default, and must not become one. Most mixtures in the file have
+     * their energy written on a line of their own: the air's is in `airheat`, a casing's in
+     * `deckheat`, a length of conduit's in its `k=` field. Emitting it inline as well would have the
+     * reader add the same joules twice.
+     *
+     * A [Resource] is the case with nowhere else to put it, which is why it is the one caller — see
+     * [writeResource].
+     */
+    private fun writeMixture(m: Mixture, withEnergy: Boolean = false): String {
         if (m.isEmpty) return "-"
-        return Species.ALL.filter { m[it] > 0L }.joinToString(",") { "${it.name}=${m[it]}" }
+        val species = Species.ALL.filter { m[it] > 0L }.joinToString(",") { "${it.name}=${m[it]}" }
+        if (!withEnergy || m.energy <= 0L) return species
+        return "$species,energy=${m.energy}"
     }
 
-    private fun writeResource(r: Resource): String = "${r.form.name}/${writeMixture(r.mixture)}"
+    /**
+     * A resource, **with its heat**.
+     *
+     * The reader has always understood `energy=`; the writer never emitted it, so every gram of ore
+     * in a tank or riding on a belt arrived back from a save at whatever temperature the reader
+     * defaulted to. Invisible while everything a fixture stored happened to be at ambient, and it
+     * surfaced the moment the starting vessel was given a stock of iron that had a temperature.
+     */
+    private fun writeResource(r: Resource): String = "${r.form.name}/${writeMixture(r.mixture, withEnergy = true)}"
 
     private fun writePacket(p: Packet): String = when (p) {
         is SolidPacket -> "S:" + writeResource(p.resource)
@@ -569,6 +593,7 @@ object Save {
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         var creative = true
         var built = 0L
+        var baselineCargo: Long? = null
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
         // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
         // segment has been read, and this line *replaces* the metal [Conduits.of] lays.
@@ -768,6 +793,7 @@ object Save {
                 "creative" -> creative = tokens.getOrNull(1) != "0"
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
                 // what a world where nothing has ever been built out of its own stores has.
+                "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
                 "built" -> built = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable built mass"))
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
@@ -907,6 +933,9 @@ object Save {
             occupancy = occupancy,
             creative = creative,
             builtMass = built,
+            // A file that predates the field means "started empty", not "recompute from what is
+            // aboard now" -- recomputing would launder every leak the save was written to catch.
+            baselineCargoMass = baselineCargo ?: 0L,
             insertedEnergy = inserted,
             acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,

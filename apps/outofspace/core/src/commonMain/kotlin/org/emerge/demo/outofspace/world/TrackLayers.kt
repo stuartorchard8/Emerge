@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
  * What the conduit networks are **made of**: one [StuffLayer] per [Conduit], holding the metal of
@@ -67,6 +68,32 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
         val stuff = layers[conduit.ordinal]
         val bill = conduitBillOfMaterials(conduit)
         return Species.ALL.all { stuff[tile, it] >= bill[it] }
+    }
+
+    /**
+     * How built this tile is, in parts per thousand — 0 for a bare ghost, 1000 for finished track.
+     *
+     * The **minimum** of the per-species ratios, not the total mass over the total bill, so that it
+     * reaches 1000 exactly when [holdsFullBill] turns true. A total would run ahead of it: junk
+     * counts toward the mass and toward nothing else, so a tile could draw as finished while still
+     * short of the one thing it is made of, and a player would be told a lie about why their track
+     * is not working.
+     *
+     * For readouts and the renderer. The sim asks [holdsFullBill], which is the same question
+     * without the arithmetic.
+     */
+    fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
+        val stuff = layers[conduit.ordinal]
+        val bill = conduitBillOfMaterials(conduit)
+        var worst = 1000L
+        for (s in Species.ALL) {
+            val want = bill[s]
+            if (want <= 0L) continue
+            val has = stuff[tile, s]
+            val ratio = if (has >= want) 1000L else scaledRatio(has, want, 1000L)
+            if (ratio < worst) worst = ratio
+        }
+        return worst.toInt()
     }
 
     fun occupies(conduit: Conduit, tile: TileIndex): Boolean = layers[conduit.ordinal].occupies(tile)

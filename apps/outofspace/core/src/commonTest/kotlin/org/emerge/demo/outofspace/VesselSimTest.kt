@@ -84,9 +84,10 @@ class VesselSimTest {
         // Storage contents are part of inTransitMass -- the stockpile is a view over the storages,
         // not an account beside them -- so there is no separate "banked" term to add here.
         assertEquals(
-            s.extractedMass,
-            s.inTransitMass + s.ventedMass,
-            "$what: extracted ${s.extractedMass} != aboard ${s.inTransitMass} + vented ${s.ventedMass}",
+            s.extractedMass + s.baselineCargoMass,
+            s.inTransitMass + s.ventedMass + s.builtMass,
+            "$what: extracted ${s.extractedMass} + baseline ${s.baselineCargoMass} != " +
+                "aboard ${s.inTransitMass} + vented ${s.ventedMass} + built ${s.builtMass}",
         )
     }
 
@@ -687,8 +688,11 @@ class VesselSimTest {
             val m = s.deck[tile]
             if (m == null || m.center != tile) acc else acc + contentsOf(m, tile, s.grid, s.buffers)
         }
-        val accountedFor = inWorld.total + s.ventedMass
-        assertEquals(s.extractedMass, accountedFor)
+        val accountedFor = inWorld.total + s.ventedMass + s.builtMass
+        // Plus the stock the vessel started with, which was never dug up — see
+        // [VesselState.baselineCargoMass]. A ship that builds its own track begins with iron in a
+        // tank, and without this term that iron reads as ore nobody extracted.
+        assertEquals(s.extractedMass + s.baselineCargoMass, accountedFor)
 
         // And no species appeared from nowhere: only what the ore body contains is present.
         // Read off the ore body rather than restated, so changing what the extractor mines is not
