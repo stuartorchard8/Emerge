@@ -294,3 +294,38 @@ fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
  */
 fun conduitBillOfMaterials(conduit: Conduit): Mixture =
     conduit.material.composition.scaledTo(conduit.massPerTile)
+
+/**
+ * What fraction of a delivery has to be the thing being built, as a percentage.
+ *
+ * A ghost takes a packet **whole** or refuses it whole, and what comes with the target species is
+ * baked into the tile's composition. So this is the purity a player has to hit, and the slack is
+ * what stops a rail demanding perfectly separated iron before a smelter exists.
+ */
+const val BUILD_PURITY_PERCENT = 95
+
+/**
+ * Whether [mixture] is something a tile of [conduit] may be built from.
+ *
+ * ⛔ **This is the anti-exploit, not a convenience.** A ghost is a free length of track until it is
+ * paid for, so the one thing that must never happen is material passing *through* one without being
+ * usable: let anything in and a player builds a whole network out of slag and the network never
+ * costs them a gram of iron. So the question is asked of what wants to *enter the tile*, not of what
+ * the ghost would like to keep.
+ *
+ * Form is deliberately not part of it — powdered iron builds a rail exactly as an ingot does.
+ */
+fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean {
+    val bill = conduitBillOfMaterials(conduit)
+    var wanted = 0L
+    var total = 0L
+    for (s in Species.ALL) {
+        val mass = mixture[s]
+        if (mass == 0L) continue
+        total += mass
+        if (bill[s] > 0L) wanted += mass
+    }
+    // Nothing is not a delivery. Answering true would let an empty lump idle on a ghost for ever.
+    if (total <= 0L) return false
+    return wanted * 100 >= total * BUILD_PURITY_PERCENT
+}

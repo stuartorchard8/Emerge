@@ -130,13 +130,15 @@ class GhostTest {
      * far end. The only thing that can make the belt move is a **sink**, and the only candidate is
      * whatever is at (7, 3).
      */
-    private fun tankAndRun(ghostAt: Int?): VesselState {
+    private fun tankAndRun(
+        ghostAt: Int?,
+        stored: Resource = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0)),
+    ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
         val s = VesselState(
             grid,
             deck,
@@ -178,6 +180,54 @@ class GhostTest {
             "material moved but did not reach the ghost at (7, 3)",
         )
     }
+
+    // ── ...but only material it can be built from ─────────────────────────────
+
+    /**
+     * ⛔ The anti-exploit. If anything at all could cross a ghost's tile, a player would draw a whole
+     * network, run slag over it, and never pay a gram of iron for any of it. The refusal is at the
+     * door: material that a rail cannot be built from does not *enter*, whatever the ghost would
+     * like to keep once it is past.
+     */
+    @Test
+    fun `a ghost refuses material it cannot be built from`() {
+        val s = run(tankAndRun(ghostAt = 7, stored = slag()), RAIL_PERIOD * 8)
+        assertEquals(0L, s.rail.massAt(s.grid.tile(7, 3)), "slag walked into a ghost")
+    }
+
+    @Test
+    fun `a mostly-pure delivery is admitted whole`() {
+        // 95% iron, 5% something else. The slack is what stops a rail demanding perfectly separated
+        // material before there is anything aboard that can separate it — and what comes with the
+        // iron is baked into the tile rather than picked out of the lump.
+        val nearly = Resource(
+            Form.IronIngot,
+            Mixture.of(
+                Species.Iron to 95 * Capacity.PACKET_MASS / 100,
+                Species.Silicon to 5 * Capacity.PACKET_MASS / 100,
+                energy = 0,
+            ),
+        )
+        val s = run(tankAndRun(ghostAt = 7, stored = nearly), RAIL_PERIOD * 8)
+        assertTrue(s.rail.massAt(s.grid.tile(7, 3)) > 0L, "a 95% delivery was turned away")
+    }
+
+    @Test
+    fun `a delivery just under the bar is refused`() {
+        val dirty = Resource(
+            Form.IronIngot,
+            Mixture.of(
+                Species.Iron to 90 * Capacity.PACKET_MASS / 100,
+                Species.Silicon to 10 * Capacity.PACKET_MASS / 100,
+                energy = 0,
+            ),
+        )
+        val s = run(tankAndRun(ghostAt = 7, stored = dirty), RAIL_PERIOD * 8)
+        assertEquals(0L, s.rail.massAt(s.grid.tile(7, 3)), "a 90% delivery got in")
+    }
+
+    private fun slag(): Resource =
+        Resource(Form.Slag, Mixture.of(Species.Silicon to 4 * Capacity.PACKET_MASS, energy = 0))
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state

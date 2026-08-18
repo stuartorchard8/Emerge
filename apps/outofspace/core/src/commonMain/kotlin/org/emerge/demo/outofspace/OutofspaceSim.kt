@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.FlowCursors
@@ -1727,7 +1728,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 grid,
             )
 
-            advanceSegments(flow, rail, diverters, motion) { tile ->
+            advanceSegments(
+                flow,
+                rail,
+                diverters,
+                motion,
+                admits = { from, to ->
+                    // Only a ghost refuses anything, and only a ghost is worth reading a lump off
+                    // the layer for — `resourceAt` allocates, and this is asked of every candidate
+                    // direction of every loaded tile on every step.
+                    if (!ghosts.contains(to)) true
+                    else rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it.mixture) } ?: false
+                },
+            ) { tile ->
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
                 val at = ports[tile]

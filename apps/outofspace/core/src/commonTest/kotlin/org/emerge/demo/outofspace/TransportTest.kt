@@ -140,7 +140,7 @@ class TransportTest {
         cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
         absorb: (TileIndex) -> Packet? = { null },
-    ): Int = advanceSegments(flow, held, cursors, log, absorb)
+    ): Int = advanceSegments(flow, held, cursors, log, absorb = absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
 

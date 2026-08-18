@@ -17,6 +17,17 @@ fun advanceSegments(
     rail: RailLayer,
     cursors: FlowCursors,
     log: MotionLog? = null,
+    /**
+     * Whether what is standing at `from` may enter `to` at all.
+     *
+     * ⛔ Not a preference — the rule that stops a **ghost** being a free length of track. A ghost
+     * draws material to itself, and if anything at all could cross its tile a player would build a
+     * whole network out of whatever was to hand and never pay a gram of iron for it. So the refusal
+     * is at the door, on the way in, and not a matter of what the ghost keeps once material is past.
+     *
+     * Everything else admits everything, which is what a length of finished track has always done.
+     */
+    admits: (from: TileIndex, to: TileIndex) -> Boolean = { _, _ -> true },
     absorb: (tile: TileIndex) -> Packet?,
 ): Int {
     var moved = 0
@@ -54,7 +65,7 @@ fun advanceSegments(
         }
 
         val way = cursors.choose(flow, tile) { target ->
-            rail.isEmpty(target) && mayMerge(flow, cursors, rail, walked, tile, target)
+            rail.isEmpty(target) && admits(tile, target) && mayMerge(flow, cursors, rail, walked, tile, target)
         }
         if (way != null) {
             val target = flow.neighbour(tile, way)
@@ -70,6 +81,9 @@ fun advanceSegments(
         // in the successors' own order so a fork behaves the same way it would when moving.
         for (option in flow.successorTiles(tile)) {
             if (rail.isEmpty(option)) continue
+            // Squashing forward is still entering, so it is refused at the same door. Without this
+            // a ghost that had already admitted one lump would take anything pressed in behind it.
+            if (!admits(tile, option)) continue
             if (rail.squashInto(tile, option) == Squash.Refused) continue
             arrived[option.index] = true
             moved++
