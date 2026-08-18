@@ -287,8 +287,10 @@ class HeatTest {
 
     @Test
     fun `placing hull is an ordinary build action`() {
+        // Creative: a placement is a *build* here, arriving with its metal. Outside creative it
+        // arrives as a ghost, which is not a wall until it has been fed.
         val grid = Grid(4, 3)
-        var s = VesselState.empty(grid)
+        var s = VesselState.empty(grid).copy(creative = true)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(1, 1), Brush.Building(DeckMachineKind.Hull), Direction.Right))))
         assertTrue(s.deck[grid.tile(1, 1)] is Hull)
         assertEquals(Structure.Hull, s.structure[grid.tile(1, 1).index])

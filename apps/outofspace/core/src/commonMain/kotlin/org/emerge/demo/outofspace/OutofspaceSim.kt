@@ -214,6 +214,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
+                // ⛔ A ghost does nothing. This is the machine's half of "a ghost refuses material it
+                // cannot be built from": let a smelter run before it is paid for and the casing is a
+                // formality, because the player already has everything the machine was for.
+                if (w.deck.isGhost(tile)) continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
                     // A bridge is inert like a length of track: its load is shuffled along by
@@ -1483,10 +1487,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
             // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            if (!kind.isPermeable && !tryDisplaceAir(grid, masses, airEnergy, covered) { originOf[it] == TileIndex.NONE }) return
+            //
+            // ⚠️ **A ghost is refused on the same terms and displaces nothing.** It has no metal to
+            // push air aside with, so the room it stands in is unchanged until it is finished — but
+            // the restriction still governs where it may be put, or a player would draw a frame in a
+            // sealed room and be told only at completion that it could never have been built there.
+            // The displacement happens when the casing does.
+            if (!kind.isPermeable &&
+                !tryDisplaceAir(grid, masses, airEnergy, covered, commit = creative) { originOf[it] == TileIndex.NONE }
+            ) return
 
-            deck += built
-            built(built.energy(grid, deck.stuff).sum())
+            // Outside creative the machine arrives as a ghost: standing there, made of nothing, and
+            // nothing is booked because nothing came from off-world. See [DeckArray.stand].
+            deck.stand(built, withCasing = creative)
+            if (creative) built(built.energy(grid, deck.stuff).sum())
             // The stores go up with the building: an empty tank is a tank and not an absence, and a
             // bridge's three slots have to exist before anything can be set down in one.
             buffers.claimRoles(grid, built, tile)
@@ -1799,6 +1813,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val tile = TileIndex(i)
                 val m = deck[tile] ?: continue
                 if (m.center != tile) continue
+                // A ghost's real ports are not there yet: there is nothing behind them to feed and
+                // nothing to collect. What it has instead is a construction port, and that is the
+                // only opening a half-built machine offers the network.
+                if (deck.isGhost(tile)) continue
                 for (port in portsOf(grid, m)) add(port)
             }
             return out

@@ -61,6 +61,11 @@ class StructureMap(private val kinds: ByteArray) {
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
                 if (m.kind.isPermeable) continue
+                // ⚠️ A ghost is a frame with no metal in it and it does not hold pressure. Air blows
+                // straight through where the machine will be, which means a room under construction
+                // is open to space until its *last* hull tile is finished. That is the honest
+                // reading of a thing that weighs nothing, and it is not to be softened.
+                if (deck.isGhost(tile)) continue
                 if ((openness?.get(tile.index) ?: 0) > 0) continue
                 val kind = if (m is Hull || m is Airlock) Structure.Hull else Structure.Machine
                 for (t in m.tiles(grid)) kinds[t.index] = kind.ordinal.toByte()

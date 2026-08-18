@@ -235,7 +235,10 @@ class AtmosphereTest {
 
     @Test
     fun `building a wall through a room pushes its air aside rather than swallowing it`() {
-        val room = sealedRoom(8, 4)
+        // Creative: this is about a *finished* wall displacing air, and outside creative what a
+        // placement puts down is a ghost with no metal in it, which pushes nothing aside until it
+        // is built. See `apps/outofspace/PLAN_self_building_rails.md`.
+        val room = sealedRoom(8, 4).copy(creative = true)
         val g = room.grid
         val wall = g.tile(4, 3)
         var s = run(room, 20)   // settle first, so the wall tile is holding a known amount
@@ -268,7 +271,8 @@ class AtmosphereTest {
 
     @Test
     fun `a footprint displaces the air under all of it at once`() {
-        val room = sealedRoom(9, 5)   // a 7x3 interior, room for a 3x3 with a column either side
+        // Creative, for the reason above: a ghost footprint displaces nothing.
+        val room = sealedRoom(9, 5).copy(creative = true)   // a 7x3 interior, room for a 3x3 either side
         val g = room.grid
         val tile = g.tile(5, 3)
         var s = run(room, 20)

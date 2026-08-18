@@ -69,12 +69,28 @@ class DeckArray(
         machines[key.index] = m
     }
 
-    operator fun plusAssign(m: DeckMachine) {
+    operator fun plusAssign(m: DeckMachine) = stand(m, withCasing = true)
+
+    /**
+     * Stands [m] on the deck, with or without the metal it is made of.
+     *
+     * **Without is a ghost**: the machine is there, it covers its tiles, it is in the player's way —
+     * and it holds not one gram, so it weighs nothing, conducts nothing and does nothing. It fills
+     * itself off the network through its construction port and becomes a machine when it holds its
+     * whole bill. See `apps/outofspace/PLAN_self_building_rails.md`.
+     *
+     * The casing arriving with the machine is the identity increment 1 broke for track — a thing
+     * existing and a thing having its matter were one fact — and this is the same break at the deck
+     * layer. Creative mode is what still takes the `true` branch, and there the metal genuinely does
+     * arrive from off-world, which is why the caller books it.
+     */
+    fun stand(m: DeckMachine, withCasing: Boolean) {
         require(machines[m.center.index] == null) { "already a machine at ${m.center}" }
         machines[m.center.index] = m
         val bill = tileBillOfMaterials(m.kind)
         for (tile in m.tiles(grid)) {
             require(!stuff.occupies(tile)) { "deck already holds stuff at $tile" }
+            if (!withCasing) continue
             // The casing is real matter, put there tile by tile. Energy comes *after* and is derived
             // from that matter rather than from the kind: ambient means "this much stuff, at room
             // temperature", and the only way to state it without a second table that can drift from
@@ -95,6 +111,18 @@ class DeckArray(
      * ⚠️ Per species and never against a total — see [holdsFullBill] for why that is the whole
      * anti-exploit.
      */
+    /**
+     * Whether the machine at [tile] is standing there without the metal it is made of.
+     *
+     * The single answer to "is this a ghost", so the tick, the structure map and the renderer cannot
+     * form three opinions. Derived rather than stored — exactly as a ghost rail is `tracks[Rail]`
+     * short of its bill — which is why none of this needs a line on disk.
+     */
+    fun isGhost(tile: TileIndex): Boolean {
+        val m = this[tile] ?: return false
+        return !holdsFullBill(m)
+    }
+
     fun holdsFullBill(m: DeckMachine): Boolean {
         val tiles = m.tiles(grid)
         val bill = machineBillOfMaterials(m.kind, tiles.size)

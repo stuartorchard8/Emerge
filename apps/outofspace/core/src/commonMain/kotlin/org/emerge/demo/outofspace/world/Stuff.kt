@@ -161,6 +161,15 @@ fun tryDisplaceAir(
     masses: MassArray,
     energies: EnergyArray,
     area: Collection<TileIndex>,
+    /**
+     * Whether to actually move the air, or only answer whether it could be moved.
+     *
+     * A ghost machine is placed under the same restriction as a real one — air must have somewhere
+     * to go — but it displaces nothing until it has the metal to displace with, so placement asks
+     * the question and completion does the deed. Every move is worked out before any is made
+     * anyway, so answering without committing is a return statement and not a second code path.
+     */
+    commit: Boolean = true,
     permeable: (TileIndex) -> Boolean,
 ): Boolean {
     val order = area.toList()
@@ -228,6 +237,8 @@ fun tryDisplaceAir(
         val share = apportion(weights, energies[tile])
         for (e in exits.indices) movedEnergy[TileIndex(e)] += share[e]
     }
+
+    if (!commit) return true
 
     for (slot in order) {
         energies[slot] = 0L

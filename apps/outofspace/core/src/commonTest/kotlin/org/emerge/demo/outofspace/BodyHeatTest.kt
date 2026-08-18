@@ -346,9 +346,11 @@ class BodyHeatTest {
 
     @Test
     fun `building and scrapping a body books its energy in and out`() {
+        // Creative: the whole subject is the insertion ledger, and an insertion is what creative
+        // placement *is*. Outside it nothing arrives from off-world and there is nothing to book.
         val grid = Grid(6, 5)
         val at = grid.tile(2, 2)
-        var s = VesselState.empty(grid)
+        var s = VesselState.empty(grid).copy(creative = true)
         val cfg = cfgFor(grid)
 
         s = OutofspaceReducer.reduce(

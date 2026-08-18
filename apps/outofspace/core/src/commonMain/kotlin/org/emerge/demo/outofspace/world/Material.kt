@@ -301,11 +301,28 @@ fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
  * can hold, so a finished machine reads as forever unfinished, or as finished a gram early.
  */
 fun machineBillOfMaterials(kind: DeckMachineKind, tiles: Int): Mixture {
+    if (tiles in 1..MAX_CACHED_FOOTPRINT) {
+        machineBills[kind.ordinal][tiles]?.let { return it }
+    }
     val each = tileBillOfMaterials(kind)
     val masses = LongArray(Species.COUNT)
     for (s in Species.ALL) masses[s.ordinal] = each[s] * tiles
-    return Mixture.of(masses, 0L)
+    val bill = Mixture.of(masses, 0L)
+    if (tiles in 1..MAX_CACHED_FOOTPRINT) machineBills[kind.ordinal][tiles] = bill
+    return bill
 }
+
+/**
+ * Every machine's bill, worked out once.
+ *
+ * A [Mixture] is a hundred and sixty-five longs, and the question "is this thing finished" is asked
+ * of every machine on every tick — so building the answer fresh each time would allocate a kilobyte
+ * per machine per tick for a number that cannot change. Kinds are an enum and footprints are small,
+ * so the whole table is a handful of entries.
+ */
+private const val MAX_CACHED_FOOTPRINT = 32
+private val machineBills: Array<Array<Mixture?>> =
+    Array(DeckMachineKind.entries.size) { arrayOfNulls(MAX_CACHED_FOOTPRINT + 1) }
 
 /**
  * **The bill of materials for one tile of bare conduit** — the twin of [tileBillOfMaterials], and
@@ -372,7 +389,10 @@ fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
  * costs no closure either: this is asked of every ghost tile every time the rails step.
  */
 inline fun holdsFullBill(bill: Mixture, held: (Species) -> Long): Boolean =
-    Species.ALL.all { held(it) >= bill[it] }
+    // Only the species the bill actually names: everything else is junk, and junk is never short.
+    // That is what makes this affordable to ask of every machine every tick — a material is made of
+    // a handful of species and [Species] has a hundred and sixty-five.
+    Species.ALL.all { bill[it] <= 0L || held(it) >= bill[it] }
 
 /**
  * How much of [bill] is present in [held], in parts per thousand — 0 for nothing, 1000 for finished.
