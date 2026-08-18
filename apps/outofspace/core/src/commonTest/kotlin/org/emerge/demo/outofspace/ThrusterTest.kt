@@ -273,7 +273,7 @@ class ThrusterTest {
             machines = machines.toList(),
             deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         )
     }
 

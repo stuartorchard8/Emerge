@@ -46,7 +46,7 @@ class EditorToolsTest {
         for (x in 2..10) { deck += Hull(grid.tile(x, 2)); deck += Hull(grid.tile(x, 8)) }
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         machines[grid.tile(6, 5).index] = Storage(Direction.Right)
-        val c = OutofspaceController(cfg, VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(machines.toList())))
+        val c = OutofspaceController(cfg, VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList())))
         c.brush = MachineKind.Rail
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))

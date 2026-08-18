@@ -58,7 +58,7 @@ data class VesselState(
      * Every machine buffer aboard — input, output, waste and processing stores alike, on one layer
      * keyed by the tile the store stands on. See [BufferLayer] for why one layer suffices.
      *
-     * ⚠️ **Required, and deliberately so.** It defaulted to `BufferLayer.forMachines(machines)`, and
+     * ⚠️ **Required, and deliberately so.** It defaulted to `BufferLayer.forMachines(grid, machines)`, and
      * that default was silent in the one direction that matters: code which *built* a layer and then
      * forgot to pass it got back a perfectly well-formed world with every store standing, correctly
      * claimed, and **empty**. The save loader did exactly that and quietly emptied every tank in the
@@ -784,7 +784,7 @@ data class VesselState(
 
         fun empty(grid: Grid): VesselState {
             val machines = List<Machine?>(grid.size) { null }
-            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(machines))
+            return VesselState(grid, machines, DeckArray(grid.size), BufferLayer.forMachines(grid, machines))
         }
     }
 }

@@ -81,7 +81,7 @@ class AirlockTest {
             deck -= doorTile
             deck += door.movedTo(doorTile)
         }
-        return VesselState(grid, machines.toList(), deck = deck, buffers = BufferLayer.forMachines(machines.toList()))
+        return VesselState(grid, machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
     }
 
     /** The tile just inside the door — the one whose containment the flood fill has to get right. */

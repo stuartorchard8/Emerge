@@ -132,7 +132,7 @@ class SignalWireTest {
                 deck += Hull(grid.tile(1, y))
                 deck += Hull(grid.tile(grid.width - 2, y))
             }
-            return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(machines.toList()))
+            return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
         }
 
         var wired = room()

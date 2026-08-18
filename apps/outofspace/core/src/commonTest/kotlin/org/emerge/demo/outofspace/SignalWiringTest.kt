@@ -96,7 +96,7 @@ class SignalWiringTest {
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         ).stocked(grid.tile(13, 5), stored)
     }
 
@@ -175,7 +175,7 @@ class SignalWiringTest {
         signalRow(wires, 2, 12, 3)
 
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(machines.toList()))
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList()))
                 .stocked(grid.tile(13, 5), stored),
             2,
         )

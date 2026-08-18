@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Machine
-import org.emerge.demo.outofspace.world.machine.Storage
 
 /**
  * Machine buffers — every input, output, waste and processing store in the vessel, on **one** layer.
@@ -51,6 +50,26 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
     fun claimRole(tile: TileIndex) {
         require(!stuff.occupies(tile)) { "a buffer store already stands at $tile" }
         stuff.claim(tile)
+    }
+
+    /**
+     * Stand up every store [machine] keeps, all empty. Idempotent, because the routes that reach a
+     * world disagree about who has already claimed what: the reducer claims as it builds, a save
+     * fills stores before the state exists, and a fixture states a machine list and nothing else.
+     */
+    fun claimRoles(grid: Grid, machine: Machine, centre: TileIndex) {
+        for (role in BufferRole.entries) {
+            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            if (!hasRole(tile)) claimRole(tile)
+        }
+    }
+
+    /** Take down every store [machine] keeps, discarding whatever is in them. */
+    fun releaseRoles(grid: Grid, machine: Machine, centre: TileIndex) {
+        for (role in BufferRole.entries) {
+            val tile = bufferTile(grid, machine, centre, role) ?: continue
+            if (hasRole(tile)) releaseRole(tile)
+        }
     }
 
     /** Give up the store at [tile] entirely — whatever it held goes with it. */
@@ -131,10 +150,11 @@ class BufferLayer(val stuff: StuffLayer, private val forms: IntArray) {
          * store to put anything in. Deriving it from the machine list means the two routes cannot
          * disagree about which tiles have stores.
          */
-        fun forMachines(machines: List<Machine?>): BufferLayer {
+        fun forMachines(grid: Grid, machines: List<Machine?>): BufferLayer {
             val out = empty(machines.size)
             for (i in machines.indices) {
-                if (machines[i] is Storage) out.claimRole(storageBufferTile(TileIndex(i)))
+                val m = machines[i] ?: continue
+                out.claimRoles(grid, m, TileIndex(i))
             }
             return out
         }

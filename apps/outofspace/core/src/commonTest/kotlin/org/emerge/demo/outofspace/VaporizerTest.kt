@@ -88,7 +88,7 @@ class VaporizerTest {
             // A volatile, so what comes out is a gas anybody would recognise as one.
             input = Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)),
         )
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(machines.toList()))
+        return VesselState(grid = grid, machines = machines.toList(), deck = deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
     }
 
     private companion object {

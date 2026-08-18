@@ -68,7 +68,7 @@ class SignalInputTest {
             machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         )
     }
 
@@ -113,7 +113,7 @@ class SignalInputTest {
         signalRow(wires, 2, 8, 2)
         signalRow(wires, 2, 8, 6)
         val s = run(
-            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(machines.toList())),
+            VesselState(grid, machines.toList(), deck, conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()), buffers = BufferLayer.forMachines(grid, machines.toList())),
             1,
             held = InputKey.Left.bit or InputKey.Right.bit,
         )
@@ -127,7 +127,7 @@ class SignalInputTest {
         val machines = arrayOfNulls<Machine>(grid.size)
         val deck = DeckArray(grid.size)
         machines[grid.tile(2, 4).index] = WireButton(InputKey.Up)
-        val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(machines.toList())), 1, held = InputKey.Up.bit)
+        val s = run(VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList())), 1, held = InputKey.Up.bit)
         assertEquals(0, s.signals.networkCount)
     }
 
@@ -180,7 +180,7 @@ class SignalInputTest {
             machines.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         )
 
         val idle = run(start, 60, held = 0)

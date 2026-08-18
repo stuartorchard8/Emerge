@@ -234,7 +234,7 @@ class RockTest {
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
-        return VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(machines.toList()))
+        return VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forMachines(grid, machines.toList()))
     }
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */

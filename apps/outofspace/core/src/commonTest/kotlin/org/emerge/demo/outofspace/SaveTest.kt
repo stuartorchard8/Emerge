@@ -301,7 +301,7 @@ class SaveTest {
         for (x in 1..4) join(grid.tile(x, 3), grid.tile(x + 1, 3), Direction.Right)
         for (y in 1..4) join(grid.tile(3, y), grid.tile(3, y + 1), Direction.Down)
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(List(grid.size) { null }))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }))
         val reloaded = Save.read(Save.write(state))
         for (tile in grid.tiles) {
             assertEquals(rails[tile.index]?.links, reloaded.railAt(tile)?.links, "links differ at tile $tile")
@@ -327,7 +327,7 @@ class SaveTest {
                 Conduit.Rail to rails.toList(),
                 Conduit.Pipe to pipes.toList(),
             ),
-            buffers = BufferLayer.forMachines(List(grid.size) { null }),
+            buffers = BufferLayer.forMachines(grid, List(grid.size) { null }),
         )
         val back = Save.read(Save.write(state))
 
@@ -368,7 +368,7 @@ class SaveTest {
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, isGauge = true)
             .reading(SolidPacket(ore))
 
-        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(List(grid.size) { null }))
+        val state = VesselState(grid, List(grid.size) { null }, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, List(grid.size) { null }))
         val back = Save.read(Save.write(state)).railAt(grid.tile(2, 2))
         assertNotNull(back)
         assertTrue(back.isGauge)
@@ -394,7 +394,7 @@ class SaveTest {
         ).withWiring(starterVessel(cfg.initialGrid).machines.first { it is Extractor && it.wiring != Wiring.RUNNING }!!.wiring)
         machines[grid.tile(7, 4).index] = Storage(Direction.Left)
 
-        val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(machines.toList()))
+        val state = VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
             .stocked(grid.tile(7, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
         val back = Save.read(Save.write(state))
 

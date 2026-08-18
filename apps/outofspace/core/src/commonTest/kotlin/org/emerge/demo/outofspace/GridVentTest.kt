@@ -119,7 +119,7 @@ class GridVentTest {
             // there is for air — the sum is the invariant.
             vesselImpulseX = -(momX.sum() + pipeMomX.sum()),
             vesselImpulseY = -(momY.sum() + pipeMomY.sum()),
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         )
     }
 

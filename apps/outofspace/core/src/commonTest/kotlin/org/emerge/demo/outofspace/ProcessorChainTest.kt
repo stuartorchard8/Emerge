@@ -73,7 +73,7 @@ class ProcessorChainTest {
         m[grid.tile(3, 8).index] = Storage(Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList()))
         s = run(s, 800)
 
         val forward = s.buffers.resourceAt(grid.tile(7, 3))
@@ -129,7 +129,7 @@ class ProcessorChainTest {
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)
         joinRow(grid, rails, 17, 20, 3)
-        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(m.toList()))
+        var s = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forMachines(grid, m.toList()))
         // 1800, not the 1200 this used to need: a rock cell is four tonnes now and the extractor
         // chews it at 250 kg a tick, so priming a three-stage chain takes about a third longer.
         s = run(s, 1800)

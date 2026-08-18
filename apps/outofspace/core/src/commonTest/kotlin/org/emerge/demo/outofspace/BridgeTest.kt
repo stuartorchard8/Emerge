@@ -82,7 +82,7 @@ class BridgeTest {
             }
         }
         if (bridged) bridges[grid.tile(9, 5).index] = Bridge(Direction.Right)
-        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList(), buffers = BufferLayer.forMachines(m.toList()))
+        return VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(track), bridges = bridges.toList(), buffers = BufferLayer.forMachines(grid, m.toList()))
             .stocked(grid.tile(3, 5), horizontalSupply)
             .stocked(grid.tile(9, 2), ingots)
     }

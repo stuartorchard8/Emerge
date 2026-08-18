@@ -74,7 +74,7 @@ class BodyHeatTest {
             deck += Hull(grid.tile(w, y))
         }
         for (y in 2 until h) for (x in 2 until w) machines[grid.tile(x, y).index] = fill(x, y)
-        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid)), buffers = BufferLayer.forMachines(machines.toList()))
+        return VesselState(grid, machines.toList(), deck, conduits = Conduits.ofRails(rails(grid)), buffers = BufferLayer.forMachines(grid, machines.toList()))
     }
 
     /** The state with the body stored at [tile] set to [kelvin], and its ledger re-anchored. */

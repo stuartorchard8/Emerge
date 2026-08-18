@@ -281,7 +281,7 @@ class RockContactTest {
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in 1..WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
-        val state = VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.FREEFALL, buffers = BufferLayer.forMachines(machines.toList()))
+        val state = VesselState(grid = grid, machines = machines.toList(), deck = deck, gravity = VesselState.FREEFALL, buffers = BufferLayer.forMachines(grid, machines.toList()))
         return state.copy(air = Stuff.gas(MassArray(grid.size)))
     }
 

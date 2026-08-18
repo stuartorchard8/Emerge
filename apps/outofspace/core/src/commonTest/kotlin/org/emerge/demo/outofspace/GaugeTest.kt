@@ -66,7 +66,7 @@ class GaugeTest {
             m.toList(),
             deck,
             conduits = Conduits.of(grid.size, Conduit.Rail to rails.toList(), Conduit.Signal to wires.toList()),
-            buffers = BufferLayer.forMachines(m.toList()),
+            buffers = BufferLayer.forMachines(grid, m.toList()),
         ).stocked(grid.tile(3, 2), carrying)
     }
 
@@ -124,7 +124,7 @@ class GaugeTest {
         m[grid.tile(3, 2).index] = Storage(Direction.Right)
         m[grid.tile(10, 2).index] = Storage(Direction.Right)
         joinRow(grid, rails, 4, 9, 2, setOf(6))
-        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(m.toList())).stocked(grid.tile(3, 2), pure)
+        val bare = VesselState(grid, m.toList(), deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forMachines(grid, m.toList())).stocked(grid.tile(3, 2), pure)
 
         val s = run(bare, 20*RAIL_PERIOD)
         assertEquals(0, s.signals.networkCount, "no wire aboard means no circuits")

@@ -45,7 +45,7 @@ class RemappedTest {
             deck += Hull(grid.tile(1, y))
             deck += Hull(grid.tile(w - 2, y))
         }
-        return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(machines.toList()))
+        return VesselState(grid, machines.toList(), deck, buffers = BufferLayer.forMachines(grid, machines.toList()))
     }
 
     private fun populatedWorld(w: Int = 20, h: Int = 14): VesselState {
@@ -98,7 +98,7 @@ class RemappedTest {
             pipeAir = pipeAir,
             pipeMomentum = pipeMomentum,
             bodies = bodies,
-            buffers = BufferLayer.forMachines(machines.toList()),
+            buffers = BufferLayer.forMachines(grid, machines.toList()),
         )
     }
 

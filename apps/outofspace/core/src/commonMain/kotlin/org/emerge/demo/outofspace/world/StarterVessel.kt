@@ -164,7 +164,7 @@ fun starterVessel(
         grid = grid,
         machines = built,
         deck = deck,
-        buffers = BufferLayer.forMachines(built),
+        buffers = BufferLayer.forMachines(grid, built),
         conduits = Conduits.of(
             grid.size,
             Conduit.Rail to rails.toList(),
