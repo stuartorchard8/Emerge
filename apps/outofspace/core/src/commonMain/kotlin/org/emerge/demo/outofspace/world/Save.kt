@@ -435,6 +435,9 @@ object Save {
         // Read off the layer, which is where a segment's heat lives now. The record is unchanged:
         // still `k=`, still omitted when the tile is at the temperature a freshly laid one would be,
         // so a file written before the migration and one written after are the same file.
+        // Absent reads as "not marked", which is what every file written before deconstruction
+        // existed meant, so no version bump.
+        if (s.deconstructing) f.append(" scrapping=1")
         val energy = conduits.energyAt(s.conduit, tile)
         // Compared against what *this* tile would hold if freshly laid, not against
         // [Conduit.ambientPerTile]. The bill of materials apportions, so a multi-species conduit's
@@ -1170,7 +1173,7 @@ object Save {
             if (packet is SolidPacket) rail.put(tile, packet.resource)
             else fail("only a solid rides the track; tile $tile carries $held")
         }
-        return Segment(conduit = conduit, links = links)
+        return Segment(conduit = conduit, links = links, deconstructing = f["scrapping"] == "1")
     }
 
     /**

@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.chem.SMELT_PRODUCTS
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
@@ -1276,10 +1277,46 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
-        /** Takes one conduit layer off a tile, cutting the far halves of its joins. */
+        /**
+         * Takes one conduit layer off a tile, cutting the far halves of its joins.
+         *
+         * Outside creative mode this does not take anything off: it **marks** the segment, which
+         * grows it an output port and starts it handing its metal back to the network. The tile goes
+         * when it is holding nothing — see [Segment.deconstructing]. Conjuring track out of nothing
+         * and making it vanish into nothing are the same privilege, and they are granted together.
+         */
         private fun removeConduit(tile: TileIndex, c: Conduit): Boolean {
             val line = layer(c)
-            line.getOrNull(tile.index) ?: return false
+            val segment = line.getOrNull(tile.index) ?: return false
+            if (!creative) {
+                // ⛔ Track under a deck machine's port is **locked** while that machine stands.
+                //
+                // It is what makes the port rules tractable: a locked run can never be
+                // deconstructing, so "a ghost's output beats a real output" and "a real input beats
+                // a ghost's output" describe states that cannot arise, and the only case left is a
+                // ghost input on a machine's tile — which resolves itself, since the machine is cut
+                // off until its feed is built. It also stops a player stranding a machine by pulling
+                // up what feeds it.
+                if (lockedByMachine(tile, c)) return false
+                if (segment.deconstructing) return true
+                line[tile.index] = segment.copy(deconstructing = true)
+                return true
+            }
+            dropConduit(tile, c)
+            return true
+        }
+
+        /**
+         * Takes the segment off the tile for good, cutting the far halves of its joins.
+         *
+         * Two callers with opposite ledgers: the creative delete, where the metal vanishes and
+         * `scrapped` books it as leaving the world, and a segment that has finished handing its
+         * metal back, where there is nothing left to book. [TrackLayers.clear] answers zero for the
+         * second, so one call serves both — the deconstruction path takes the last of the energy out
+         * with the last of the mass precisely so that stays true.
+         */
+        private fun dropConduit(tile: TileIndex, c: Conduit) {
+            val line = layer(c)
             if (c == Conduit.Pipe) cutOpen(tile)
             line[tile.index] = null
             scrapped(tracks.clear(c, tile))
@@ -1288,7 +1325,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val n = grid.neighbour(tile, dir)
                 if (n != TileIndex.NONE) line[n.index]?.let { line[n.index] = it.cutFrom(dir.opposite) }
             }
-            return true
         }
 
         /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
@@ -1582,6 +1618,77 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
+         * A segment marked for deconstruction hands its metal back to the network, a packet at a
+         * time, and ceases to be once it is holding nothing.
+         *
+         * The mirror of [absorbIntoGhost] and deliberately the same shape: a ghost is an input
+         * because it is short of its bill, and this is an output because it has been told to be. It
+         * needs no port either — its own tile is the address.
+         *
+         * ⚠️ **It is still track while it does this.** A marked run carries traffic to the end, which
+         * is what lets a player walk a rail across the grid: draw ghosts ahead, mark the old tiles
+         * behind, and the same atoms travel down the line to the new ones.
+         *
+         * Ceasing to be needs *both* halves empty — the structure and the lump standing on it — or a
+         * tile would vanish under a packet and take it with it.
+         */
+        fun scrapDeconstructing() {
+            val line = layer(Conduit.Rail)
+            for (i in line.indices) {
+                val tile = TileIndex(i)
+                val segment = line[i] ?: continue
+                if (!segment.deconstructing) continue
+                val stuff = tracks[Conduit.Rail]
+                val held = stuff.massAt(tile)
+                if (held > 0L) {
+                    val room = rail.headroom(tile)
+                    if (room > 0L) {
+                        val take = minOf(held, room)
+                        // Taking the lot takes the heat with it, so a finished tile is genuinely
+                        // empty and [dropConduit] has nothing to book. A part-load takes its share.
+                        val energy =
+                            if (take >= held) stuff.energyAt(tile)
+                            else scaledRatio(take, held, stuff.energyAt(tile))
+                        val masses = LongArray(Species.COUNT)
+                        var moved = 0L
+                        for (sp in Species.ALL) {
+                            val mass = stuff[tile, sp]
+                            if (mass == 0L) continue
+                            val part = if (take >= held) mass else scaledRatio(take, held, mass)
+                            if (part <= 0L) continue
+                            masses[sp.ordinal] = part
+                            stuff[tile, sp] = mass - part
+                            moved += part
+                        }
+                        stuff.setEnergy(tile, stuff.energyAt(tile) - energy)
+                        if (moved > 0L) {
+                            val recovered = Mixture.of(masses, energy)
+                            val form = SMELT_PRODUCTS[dominantSpecies(recovered)] ?: Form.Slag
+                            val onto = rail.resourceAt(tile)
+                            // Onto whatever is already standing there, since a part-load may be the
+                            // second helping. `loadOnto` is the same door a machine's output uses.
+                            if (onto == null) rail.put(tile, Resource(form, recovered))
+                            else rail.loadOnto(tile, Resource(form, recovered))
+                            builtMass -= moved
+                        }
+                    }
+                }
+                if (stuff.massAt(tile) == 0L && rail.isEmpty(tile)) dropConduit(tile, Conduit.Rail)
+            }
+        }
+
+        /** Whichever species there is most of, for naming what a demolished thing comes back as. */
+        private fun dominantSpecies(mixture: Mixture): Species? {
+            var best: Species? = null
+            var most = 0L
+            for (sp in Species.ALL) {
+                val mass = mixture[sp]
+                if (mass > most) { most = mass; best = sp }
+            }
+            return best
+        }
+
+        /**
          * A ghost takes what it still needs off the lump standing on it, and books the transfer.
          *
          * Returns the whole packet when the tile is left empty — the contract [advanceSegments]
@@ -1653,6 +1760,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             builtMass += taken
             return null
         }
+
+        /**
+         * Whether a deck machine's port stands on this tile, which locks the conduit under it.
+         *
+         * Rebuilds the whole port map for one question, which is affordable only because it is asked
+         * on an edit and edits are a player action rather than a tick cost.
+         */
+        private fun lockedByMachine(tile: TileIndex, c: Conduit): Boolean =
+            portsByTile(c).containsKey(tile)
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
         fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
@@ -1774,6 +1890,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Bridge steps with layer (slots freed for track).
             advanceBridges()
 
+            // Before the flow graph is built, so a tile that finished dying this step is not in it
+            // and the run closes up in the same tick it was emptied.
+            scrapDeconstructing()
+
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
             //
             // A **ghost** is a sink too, and it does not get there by owning a port: a length of
@@ -1784,18 +1904,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val ghosts = mutableSetOf<TileIndex>()
             for (i in rails.indices) {
                 val tile = TileIndex(i)
-                if (rails[i] != null && !tracks.holdsFullBill(Conduit.Rail, tile)) ghosts.add(tile)
+                val segment = rails[i] ?: continue
+                // ⚠️ **A segment being taken apart is never a ghost**, however short of its bill it
+                // is — and it is always short of it, from the first load it hands back.
+                //
+                // Without this the two halves of the feature eat each other: the deconstruction pass
+                // puts a packet down on the tile, the tile reads as unbuilt, and it absorbs its own
+                // metal straight back off the belt. Perfectly stable, entirely stationary, and it
+                // looks from outside like deconstruction silently doing nothing at all.
+                if (segment.deconstructing) continue
+                if (!tracks.holdsFullBill(Conduit.Rail, tile)) ghosts.add(tile)
             }
             val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
                 .toMutableSet()
             sinks.addAll(ghosts)
-            // Sources (bridge far end gives crossing run its own direction).
+            // Sources (bridge far end gives crossing run its own direction). A segment being taken
+            // apart is one too, and by the same reasoning a ghost is a sink: having been told to
+            // empty itself *is* being an output, and it needs no port to say so.
             val sources = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Output } }
                 .map { it.key }
-                .toSet()
+                .toMutableSet()
+            for (i in rails.indices) if (rails[i]?.deconstructing == true) sources.add(TileIndex(i))
             val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
             val flow = FlowGraph.build(
                 railTiles,

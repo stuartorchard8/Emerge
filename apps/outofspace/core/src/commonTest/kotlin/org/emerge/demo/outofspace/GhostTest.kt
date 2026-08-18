@@ -23,6 +23,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -257,6 +258,129 @@ class GhostTest {
 
     private fun slag(): Resource =
         Resource(Form.Slag, Mixture.of(Species.Silicon to 4 * Capacity.PACKET_MASS, energy = 0))
+
+    // ── Taking it apart again ─────────────────────────────────────────────────
+
+    private fun remove(state: VesselState, tile: TileIndex): VesselState =
+        OutofspaceReducer.reduce(
+            cfg,
+            state,
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(tile, DeleteLayer.Rail)))),
+        )
+
+    @Test
+    fun `outside creative mode deleting a rail marks it rather than removing it`() {
+        val laid = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val tile = grid.tile(5, 3)
+        val s = remove(laid, tile)
+
+        val segment = s.conduits.at(Conduit.Rail, tile)
+        assertNotNull(segment, "the rail vanished instead of being marked")
+        assertTrue(segment.deconstructing, "the rail was not marked for deconstruction")
+    }
+
+    @Test
+    fun `in creative mode deleting a rail removes it outright`() {
+        // Conjuring track out of nothing and making it vanish into nothing are the same privilege.
+        val laid = drag(VesselState.empty(grid), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val s = remove(laid, grid.tile(5, 3))
+        assertNull(s.conduits.at(Conduit.Rail, grid.tile(5, 3)), "the rail was only marked")
+    }
+
+    /**
+     * A bare run from (4, 3) to (8, 3) with the far tile emptied of metal — the ghost the player has
+     * just drawn. No machines at all, so the only source and the only sink are the track itself.
+     */
+    private fun runWithGhostAtTheFarEnd(): VesselState {
+        val deck = DeckArray(grid)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 8, 3)
+        val s = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        s.conduits.tracks[Conduit.Rail].release(grid.tile(8, 3))
+        return s
+    }
+
+    @Test
+    fun `a marked rail hands its metal back and then ceases to be`() {
+        val before = runWithGhostAtTheFarEnd()
+        val doomed = grid.tile(4, 3)
+        assertTrue(before.conduits.massAt(Conduit.Rail, doomed) > 0L, "the fixture laid no metal to hand back")
+
+        val s = run(remove(before, doomed), RAIL_PERIOD * 24)
+        assertNull(s.conduits.at(Conduit.Rail, doomed), "the marked rail is still there")
+    }
+
+    /**
+     * ⚠️ The two halves of the feature eat each other unless a marked segment is exempt from being a
+     * ghost. It is short of its bill from the first load it hands back, so it reads as unbuilt and
+     * absorbs its own metal straight off the belt — perfectly stable, entirely stationary, and from
+     * outside it looks like deconstruction quietly doing nothing at all.
+     */
+    @Test
+    fun `a rail being taken apart does not build itself back up`() {
+        val doomed = grid.tile(4, 3)
+        val s = run(remove(runWithGhostAtTheFarEnd(), doomed), RAIL_PERIOD)
+        assertTrue(
+            s.conduits.massAt(Conduit.Rail, doomed) < s.conduits.massAt(Conduit.Rail, grid.tile(5, 3)),
+            "the marked rail is still holding as much metal as its untouched neighbour",
+        )
+    }
+
+    @Test
+    fun `deconstruction conserves mass`() {
+        val before = runWithGhostAtTheFarEnd()
+        val opening = before.inTransitMass + before.builtMass
+        val s = run(remove(before, grid.tile(4, 3)), RAIL_PERIOD * 24)
+        assertEquals(
+            opening,
+            s.inTransitMass + s.builtMass,
+            "grams went missing between the fabric and the cargo ledger",
+        )
+    }
+
+    /**
+     * ⛔ The lock. Track under a deck machine's port cannot be taken up while the machine stands.
+     *
+     * It is what makes the port rules tractable — a locked run can never be deconstructing, so the
+     * two awkward priority cases cannot arise — and it stops a player stranding a machine by pulling
+     * up the very thing feeding it.
+     */
+    @Test
+    fun `track under a machine's port cannot be marked`() {
+        val built = tankAndRun(ghostAt = null).copy(creative = false)
+        // The tank at (3, 3) faces right, so its output port stands on (4, 3).
+        val underPort = built.grid.tile(4, 3)
+        val s = remove(built, underPort)
+        val segment = s.conduits.at(Conduit.Rail, underPort)
+        assertNotNull(segment, "the locked rail was removed")
+        assertFalse(segment.deconstructing, "the rail under a machine's port was marked anyway")
+    }
+
+    /**
+     * The claim the whole design rests on: a length of track can be made to **walk**. Draw a ghost
+     * ahead of it, mark the tile behind, and the same atoms travel down the line to the new tile.
+     */
+    @Test
+    fun `a rail walks along the run when one end is drawn and the other marked`() {
+        val before = runWithGhostAtTheFarEnd()
+        val ghost = grid.tile(8, 3)
+        val doomed = grid.tile(4, 3)
+        val had = before.conduits.massAt(Conduit.Rail, doomed)
+        assertTrue(before.conduits.isGhost(Conduit.Rail, ghost), "the fixture did not make a ghost")
+
+        val s = run(remove(before, doomed), RAIL_PERIOD * 24)
+
+        assertNull(s.conduits.at(Conduit.Rail, doomed), "the near end never finished going")
+        assertTrue(s.conduits.isComplete(Conduit.Rail, ghost), "the far end never finished arriving")
+        // The same atoms, to the unit. Four tiles of travel and two ledger crossings later.
+        assertEquals(had, s.conduits.massAt(Conduit.Rail, ghost), "the rail lost mass on the way")
+    }
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state

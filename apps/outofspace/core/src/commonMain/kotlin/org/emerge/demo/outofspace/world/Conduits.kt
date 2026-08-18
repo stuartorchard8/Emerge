@@ -90,9 +90,18 @@ class Conduits private constructor(
     fun isComplete(conduit: Conduit, tile: TileIndex): Boolean =
         at(conduit, tile) != null && tracks.holdsFullBill(conduit, tile)
 
-    /** True for a segment that is laid but not yet made of everything it needs — see [isComplete]. */
-    fun isGhost(conduit: Conduit, tile: TileIndex): Boolean =
-        at(conduit, tile) != null && !isComplete(conduit, tile)
+    /**
+     * True for a segment that is laid but not yet made of everything it needs — see [isComplete].
+     *
+     * ⚠️ A segment marked for deconstruction is **never** a ghost, however short of its bill it is.
+     * Being told to go overrides being short: without that, a segment handing its metal back would
+     * read as unbuilt and absorb it straight off the belt again, and deconstruction would look from
+     * outside like it was doing nothing at all.
+     */
+    fun isGhost(conduit: Conduit, tile: TileIndex): Boolean {
+        val segment = at(conduit, tile) ?: return false
+        return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile)
+    }
 
     /**
      * ⛔ **A tile carries track or plumbing, never both.**
