@@ -1,7 +1,9 @@
 # Self-building rails
 
-Status: **increments 1–4 built and green** (2026-08-19). Creative mode is still on by default —
-flipping `VesselState.creative` is a one-line change and Stu's call.
+Status: **complete and green** (2026-08-19) — rails as increments 1–4, deck machines as 5a–5e.
+Creative mode defaults **off**, so the loop is the normal path in play. What is deliberately *not*
+done is listed under "Open" at the end of each half; pipes and wires by the same mechanism are the
+obvious next runway and are not started.
 
 Replace creative-mode placement with a closed construction loop. ONI does this with agents that
 walk to a ghost carrying materials; we do it with the rail network itself. No pathfinding, no
@@ -140,7 +142,7 @@ It is *not* in scope here.
 
 Keeping one layer per conduit type rather than merging them is what makes this possible at all.
 
-## Increments — all four built
+## Increments — rails 1–4, deck machines 5a–5e, all built
 
 **1. Break the identity ✅** `9da586d9`, `cfcbe610`, `2fea0f6b`. `reconciled` split into `swept`
 (clears orphans) and `finished` (only a *stated* world says it). `trackstuff` added so a partly-built
@@ -158,8 +160,8 @@ is locked. **A rail walks**, pinned to the unit by `GhostTest`.
 **4. Starter vessel and rendering ✅** `e8662a02`, `1e9e3035`. Half a tank of iron;
 `baselineCargoMass`; ghosts fade up from a dim slate, marked track goes warm; `agent-scripts/ghosts.txt`.
 
-Later, out of scope: pipes and wires by the same mechanism, then deck machines, then the fancier
-things a walking rail makes possible.
+Deck machines followed as increment 5 — see the second half of this document. Still out of scope:
+**pipes and wires by the same mechanism**, and the fancier things a walking rail makes possible.
 
 ## What building it turned up
 
@@ -307,16 +309,16 @@ outlives the machine that earned it. Clearing it belongs with `removeMachine` an
 
 ## Increments
 
-**5a. A bill is a bill.** Generalise `buildableFrom` and the completeness questions off `Conduit`
+**5a. A bill is a bill ✅** `de42b88c`. Generalise `buildableFrom` and the completeness questions off `Conduit`
 and onto a `Mixture` bill, so a machine and a length of track ask the same code. Shared plumbing,
 no behaviour change, and it goes first only because it is genuinely shared and genuinely concrete.
 
-**5b. A placed machine is a ghost.** Outside creative, `placeDeckBuilding` puts the machine down
+**5b. A placed machine is a ghost ✅** `b124cdc5`. Outside creative, `placeDeckBuilding` puts the machine down
 with no casing, books nothing through `Work.built`, and displaces no air. Inert at the dispatch
 site, absent from `StructureMap`, real ports suppressed. This is the identity break and it decides
 the rest — a 3×3 smelter is the case to write first, not a hull.
 
-**5c. The construction port.** Centre port on the rail layer, overriding a 1×1's input; admission at
+**5c. The construction port ✅** `00ffd271`, `32113814`. Centre port on the rail layer, overriding a 1×1's input; admission at
 95%; absorption spread over the footprint; and the moment it holds its full bill it is simply a
 machine — ports back, runs, solid.
 
@@ -383,7 +385,7 @@ construction and the processor concentrates toward one; every species of every m
 carbon, quartz, aluminium — is already producible on its own. Stu is leaning toward **deleting the
 smelter**; that is not in scope here.
 
-**5d. Deconstruction ✅** The mark, the five-step ordering above, ceasing to be.
+**5d. Deconstruction ✅** `54a232a3`, `bf452436`, `2d81b726`, `6d022e41`. The mark, the five-step ordering above, ceasing to be.
 
 The mark is `VesselState.scrapping`, a set of **centre tiles**, saved as `scrapping=1` on the
 machine's own record — the same spelling a segment uses, absent reads as unmarked, no version bump.
@@ -437,7 +439,7 @@ into a sink and drew its own metal straight back off the belt. Silent, stable, a
 from deconstruction doing nothing. **Being told to go overrides being short — in every place that
 asks.**
 
-**5e. Rendering, harness, and one implementation of "what ports" ✅**
+**5e. Rendering, harness, and one implementation of "what ports" ✅** `1c62f06d`.
 
 - A **ghost machine** is drawn as a body in `Colors.GHOST` with an outline in a dim version of its own
   colour, brightening as it fills (`DeckArray.builtPermille`, the same minimum-per-species ratio the
