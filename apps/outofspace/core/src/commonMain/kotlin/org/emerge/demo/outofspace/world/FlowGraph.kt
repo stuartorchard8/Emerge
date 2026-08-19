@@ -230,7 +230,18 @@ class FlowGraph internal constructor(
                     // Pointing the other way. Taking it back is the correction the whole mechanism
                     // exists for — this tile is not leading, so its claim to that edge was never
                     // justified by a producer and a consumer that needs the edge may have it.
-                    if (bit(allowed, at, dir)) revoke(allowed, at, dir)
+                    //
+                    // ⛔ **Unless this tile IS a producer.** Its outgoing edges are justified by what
+                    // it is, and reversing one points material *into* the tile that was feeding the
+                    // network. [leading] protects a producer's successors and never the producer
+                    // itself — which is exactly the tile whose claims were never in doubt — so
+                    // without this a second consumer asking later takes the first one's road away.
+                    // A storage feeding a ghost above it and a bridge to its right kept the bridge
+                    // and starved the ghost for good. Found in Stu's save.
+                    if (bit(allowed, at, dir)) {
+                        if (at in sources) continue
+                        revoke(allowed, at, dir)
+                    }
                     grant(allowed, next, dir.opposite)
 
                     queue.addLast(encode(next, dir.opposite))

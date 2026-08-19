@@ -720,6 +720,17 @@ object OutofspaceAgentHarness {
                     (if (standing.center in state.scrapping) "  MARKED FOR DECONSTRUCTION" else "") +
                     (if (state.deck.isGhost(standing.center)) "  GHOST" else ""))
             }
+            // ⚠️ **Whose ports stand here, and which way they face.** A tile is a *source* to the
+            // flow graph because some machine's OUTPUT port happens to sit on it, and that machine
+            // can be a tile away with nothing on this tile to show for it. When a run refuses to
+            // move the answer is very often a port nobody remembered was there.
+            val portsHere = Conduit.entries.flatMap { c ->
+                state.portsByTile(c)[tile].orEmpty().map { p ->
+                    "${c.label}/${p.kind}" +
+                        (state.deck[p.owner]?.let { " of ${it::class.simpleName}@(${grid.xOf(p.owner)},${grid.yOf(p.owner)})" } ?: "")
+                }
+            }
+            if (portsHere.isNotEmpty()) println("[agent]   ports     ${portsHere.joinToString("  ")}")
             // ⚠️ **What is standing on the track, which is not what the track is made of.** The two
             // are separate layers and a residue problem is invisible in either one alone: a tile can
             // read as perfectly ordinary rail with a lump of something nothing wants parked on it.
@@ -745,6 +756,12 @@ object OutofspaceAgentHarness {
                 // contaminated is refused by the next ghost down the line as something it cannot be
                 // built from — so it can never hand its metal back. Invisible in a mass figure.
                 println("[agent]   ${" ".repeat(9)} ${composition(state.conduits.tracks[c].mixtureAt(tile))}")
+                // ⚠️ **Which way it is joined**, which is the one thing about a run you cannot see.
+                // Conduit connects by being drawn, never by touching, so two tiles of track can sit
+                // side by side and be no more connected than two tiles a metre apart — and the only
+                // symptom is that nothing moves. Every "why will this not flow" hunt starts here.
+                val joins = Direction.entries.filter { seg.linkedTo(it) }
+                println("[agent]   ${" ".repeat(9)} joined ${if (joins.isEmpty()) "NOTHING" else joins.joinToString(" ") { it.name.uppercase() }}")
             }
         }
 

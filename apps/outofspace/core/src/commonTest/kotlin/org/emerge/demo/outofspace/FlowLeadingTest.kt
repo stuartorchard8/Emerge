@@ -102,6 +102,16 @@ class FlowLeadingTest {
      * `C` from `B`, the walk carries on and claims `D → C` — a consumer pointing into a producer,
      * backwards. If being fed protected that edge, `D` could never take it back and would starve on
      * a network that plainly ought to feed it.
+     *
+     * ⚠️ **The row is `A>B<C>D`, and it used to be `A>B>C>D`.** What this test is for is that `D`
+     * does not starve, and it does not: `D`'s walk takes `D → C` back and `C` feeds it. What changed
+     * is what happens to `C`'s *other* road. `C` is a producer, and a producer's outgoing edges are
+     * justified by what it is — so the walk no longer revokes `C → B` on its way through, and `C`
+     * forks, feeding the tank above `B` as well as `D`. See the case below, which is what forced it.
+     *
+     * The cost, stated so nobody has to rediscover it: `B`'s only outgoing edge is now to the tank,
+     * so `A` can no longer reach `D`. `A` feeds the tank, `C` feeds the tank and `D`. Stu's call,
+     * 2026-08-19.
      */
     @Test
     fun `a consumer starved by a claim made past a producer takes the edge back`() {
@@ -119,8 +129,46 @@ class FlowLeadingTest {
         val f = n.flow(sources = setOf(aT, cT), sinks = setOf(dT, xT))
         val names = listOf("A" to aT, "B" to bT, "C" to cT, "D" to dT)
 
-        assertEquals("A>B>C>D", picture(f, names), "the row")
+        assertEquals("A>B<C>D", picture(f, names), "the row")
         assertEquals(listOf(xT), f.successorTiles(bT).filter { it == xT }, "B feeds the tank above it")
         assertEquals(emptyList(), f.successorTiles(xT), "and the tank is the end of the line")
+    }
+
+    /**
+     * ⛔ **A producer may feed two consumers at once, and the second one to ask does not take the
+     * first one's road away.**
+     *
+     * From Stu's save. A storage's output port stands on a length of track; a ghost rail sits
+     * directly above it and a bridge's input port directly to its right. Both want iron, the storage
+     * has iron, and the iron sat on the port tile for ever.
+     *
+     * The walk from the ghost gets there first and grants `S → up`. The walk from the bridge's input
+     * arrives later, steps *past* the source into the tile above it, finds the source already
+     * pointing that way, and takes the edge back — reversing it, so the ghost is now told it may
+     * send *down into* the producer feeding it.
+     *
+     * ⛔ **A producer's own outgoing edges are justified by what it is.** Taking one back is the one
+     * correction the mechanism must never make: the [leading] mark protects a producer's
+     * *successors* and never the producer itself, which is precisely the tile whose claims were
+     * never in doubt. A fork out of a source is several one-way edges leaving one tile, which this
+     * has always said is allowed — it just could not survive a second consumer asking.
+     */
+    @Test
+    fun `a producer can feed two consumers at once`() {
+        val s = grid.tile(4, 3)
+        val up = grid.tile(4, 2)
+        val right = grid.tile(5, 3)
+        val net = Net().join(s, Direction.Up).join(s, Direction.Right)
+
+        // The ghost above is the lower tile index, so its traversal runs first and claims the edge;
+        // the bridge input to the right asks second. That order is the whole of the case.
+        val f = net.flow(sources = setOf(s), sinks = setOf(up, right))
+
+        assertEquals(
+            listOf(up, right).sortedBy { it.index },
+            f.successorTiles(s).sortedBy { it.index },
+            "the producer lost one of its two roads",
+        )
+        assertEquals(emptyList(), f.successorTiles(up), "the consumer was told it may feed the producer")
     }
 }
