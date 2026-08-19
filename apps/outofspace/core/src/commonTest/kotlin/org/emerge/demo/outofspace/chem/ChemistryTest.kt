@@ -205,71 +205,6 @@ class ChemistryTest {
         assertNull(Mixture.EMPTY.dominant)
     }
 
-    // ── Smelting ───────────────────────────────────────────────────────────────
-
-    @Test
-    fun `smelting conserves mass mineral by mineral`() {
-        val r = smelt(dirtyOre)
-        assertConserved(listOf(dirtyOre.mixture), listOf(r.refined.mixture, r.slag.mixture), "smelt")
-        assertEquals(dirtyOre.mass, r.totalMass)
-    }
-
-    @Test
-    fun `smelting yields a pure product of the dominant mineral`() {
-        // Note dirtyOre itself is too dirty to smelt at all (4100 iron against 5900 of everything
-        // else) — that is the point of it, and why the end-to-end test concentrates first.
-        val concentrated = Resource(
-            Form.Ore,
-            Mixture.of(Species.Iron to 4100L, Species.Quartz to 900L, Species.Copper to 500L, energy = 0),
-        )
-        val r = smelt(concentrated)
-        assertEquals(Form.IronIngot, r.refined.form)
-        assertEquals(r.refined.mass, r.refined.mixture[Species.Iron], "the ingot should be nothing but iron")
-        assertEquals(2700L, r.refined.mass, "4100 iron less 1400 impurity")
-    }
-
-    @Test
-    fun `impurities eat the product rather than dilute it`() {
-        val clean = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L, Species.Quartz to 100L, energy = 0))
-        val dirty = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L, Species.Quartz to 400L, energy = 0))
-        assertEquals(900L, smelt(clean).refined.mass, "1000 iron less 100 impurity")
-        assertEquals(600L, smelt(dirty).refined.mass, "1000 iron less 400 impurity")
-    }
-
-    @Test
-    fun `ore with more impurity than metal smelts entirely to slag`() {
-        // Iron is still the largest single mineral, but everything else together outweighs it.
-        val junk = Resource(
-            Form.Ore,
-            Mixture.of(Species.Iron to 1000L, Species.Quartz to 600L, Species.Copper to 600L, energy = 0),
-        )
-        val r = smelt(junk)
-        assertTrue(r.refined.isEmpty, "expected no product, got ${r.refined}")
-        assertEquals(Form.Slag, r.slag.form)
-        assertEquals(junk.mass, r.slag.mass)
-        assertConserved(listOf(junk.mixture), listOf(r.refined.mixture, r.slag.mixture), "smelt(junk)")
-    }
-
-    @Ignore
-    @Test
-    fun `every mineral has somewhere to go when smelted`() {
-        for (m in Species.ALL) {
-            val pure = Resource(Form.Ore, Mixture.of(m to 1000L, energy = 0))
-            val r = smelt(pure)
-            assertEquals(SMELT_PRODUCTS.getValue(m), r.refined.form)
-            assertEquals(1000L, r.refined.mass)
-            assertTrue(r.slag.isEmpty)
-        }
-    }
-
-    @Test
-    fun `smelting something mostly fluid yields slag rather than an exception`() {
-        val sludge = Resource(Form.Ore, Mixture.of(Species.Water to 900L, Species.Iron to 100L, energy = 0))
-        val r = smelt(sludge)
-        assertTrue(r.refined.isEmpty)
-        assertEquals(sludge.mass, r.slag.mass)
-        assertConserved(listOf(sludge.mixture), listOf(r.refined.mixture, r.slag.mixture), "smelt(sludge)")
-    }
 
     // ── Mineral processing ─────────────────────────────────────────────────────
 
@@ -324,13 +259,4 @@ class ChemistryTest {
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 
-    // ── The tree as a whole ────────────────────────────────────────────────────
-
-    @Test
-    fun `every form is reachable from ore`() {
-        val reachable = mutableSetOf(Form.Ore, Form.Slag)
-        reachable += SMELT_PRODUCTS.values
-        val orphans = Form.ALL.filterNot { it in reachable }
-        assertTrue(orphans.isEmpty(), "unreachable forms: $orphans")
-    }
 }

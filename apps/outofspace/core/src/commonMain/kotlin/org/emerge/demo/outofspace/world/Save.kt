@@ -25,7 +25,6 @@ import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -349,10 +348,6 @@ object Save {
                 put("carry", m.carry.toString())
                 put("progress", m.progress.toString())
                 put("temp", m.setTemperature.toString())
-            }
-            is Smelter -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
             }
             // An extractor is its facing and its one store, both written by the common code around
             // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
@@ -1140,12 +1135,6 @@ object Save {
             // The first two no longer exist, and the third is a hopper's worth of ore that a loaded
             // save quietly drops — accepted rather than migrated, Stu's call.
             DeckMachineKind.Extractor -> Extractor(tile, facing = facing())
-            DeckMachineKind.Smelter -> Smelter(
-                tile,
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Smelter(tile, Direction.Right).massPerTick),
-            )
             DeckMachineKind.Thruster -> Thruster(
                 tile,
                 facing = facing(),

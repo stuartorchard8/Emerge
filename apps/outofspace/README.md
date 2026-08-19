@@ -8,18 +8,18 @@ playable is one vessel interior with no flight) and what is deliberately deferre
 
 ## State of the app
 
-**Phases 1, 2 and 3 are built.** The game runs: a refinery line digs ore, concentrates it, smelts it,
-banks iron ingot and vents the waste; you can build more of it with the mouse; and you can wire
-machines to sensors so the vessel runs itself.
+**Phases 1, 2 and 3 are built.** The game runs: a refinery line digs ore, concentrates it, banks it
+and vents the waste; you can build more of it with the mouse; and you can wire machines to sensors so
+the vessel runs itself.
 
 | File | What it is |
 | --- | --- |
 | `chem/Species.kt` | `Species` (what matter is made of) and `Phase`. Solid vs fluid is the split logistics cares about. |
 | `chem/Mixture.kt` | `Mixture` — integer grams per species. Plus `apportion`, the exact proportional split every other operation rests on. |
 | `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
-| `chem/Chemistry.kt` | `smelt`, `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
+| `chem/Chemistry.kt` | `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
-| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), extractor, processor, smelter, fabricator, storage, sensor, node, vent. |
+| `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), extractor, processor, storage, sensor, node, vent. |
 | `world/Structure.kt` | `Structure` and `StructureMap` — hull, interior and vacuum, derived by flood fill from the grid edge. |
 | `world/Heat.kt` | `HeatField` (joules per tile), conduction, radiation to space, and per-gram machine heat. |
 | `world/Atmosphere.kt` | `AirField` (grams of each gas per tile), pressure flow, and `stratifyColumns`. |

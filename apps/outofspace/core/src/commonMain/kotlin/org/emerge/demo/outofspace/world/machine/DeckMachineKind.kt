@@ -17,7 +17,6 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
     Thruster("THRUSTER", isPermeable = true),
     Processor("PROCESSOR"),
     ThermalDecomposer("THERMAL DECOMPOSER", isPermeable = true),
-    Smelter("SMELTER"),
     Extractor("EXTRACTOR", isPermeable = true),
 
     /**

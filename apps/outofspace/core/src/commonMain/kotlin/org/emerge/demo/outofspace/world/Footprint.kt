@@ -11,9 +11,8 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Thruster, DeckMachineKind.Gauge, DeckMachineKind.Valve,
         -> 1
         DeckMachineKind.Vaporizer, DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
-        // A furnace at five: it should dominate the deck it sits on, and its heat should have
-        // somewhere to be.
-        DeckMachineKind.Smelter, DeckMachineKind.Extractor -> 5
+        // Five: it should dominate the deck it sits on, and its heat should have somewhere to be.
+        DeckMachineKind.Extractor -> 5
         // Three tiles end to end. Only ever three *along* its facing — see [span].
         DeckMachineKind.Bridge -> 3
     }

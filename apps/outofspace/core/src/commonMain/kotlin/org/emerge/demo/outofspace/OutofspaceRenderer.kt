@@ -30,7 +30,6 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Vent
@@ -726,11 +725,6 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            is Smelter -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Smelter))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
-
             is Vaporizer -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vaporizer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
@@ -1374,7 +1368,6 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Thruster -> 0xC04A30FFL
     DeckMachineKind.Processor -> 0x2E5A6BFFL
     DeckMachineKind.ThermalDecomposer -> 0x5E5A3BFFL
-    DeckMachineKind.Smelter -> 0x8A3A2AFFL
     DeckMachineKind.Extractor -> 0x6B4A2AFFL
 }
 

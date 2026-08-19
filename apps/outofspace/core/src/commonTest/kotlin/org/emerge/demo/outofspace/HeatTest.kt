@@ -18,8 +18,8 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.setTemperature
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.Structure
+import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -162,7 +162,7 @@ class HeatTest {
             if (it % 83 == 0) assertEnergyBalanced(s, "tick ${s.tick}")
         }
         assertEnergyBalanced(s, "final")
-        assertTrue(s.generatedEnergy > 0L, "the smelter should have produced waste heat")
+        assertTrue(s.generatedEnergy > 0L, "the processor should have produced waste heat")
     }
 
 //    @Test
@@ -186,7 +186,7 @@ class HeatTest {
     // ── Behaviour ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `a smelter warms its own tile first and its neighbours after`() {
+    fun `a processor warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0))
@@ -200,12 +200,12 @@ class HeatTest {
             // rather than pushed out of a machine. Without this the furnace has nowhere to put
             // anything and stalls on its output cap after four kilograms, never getting warm enough
             // to measure. Which is what happened the first time.
-            track = { row(7, 8, 5); col(5, 7, 8) },
+            track = { row(6, 7, 5); col(5, 6, 7) },
             deckFill = { x, y, tile ->
                 when {
-                    x == 5 && y == 5 -> Smelter(tile, Direction.Right)
-                    x == 8 && y == 5 -> Vent(tile)      // refined leaves forward
-                    x == 5 && y == 8 -> Vent(tile)      // slag leaves through the floor
+                    x == 5 && y == 5 -> Processor(tile, Direction.Right)
+                    x == 7 && y == 5 -> Vent(tile)      // concentrate leaves forward
+                    x == 5 && y == 7 -> Vent(tile)      // tailings leave through the floor
                     else -> null
                 }
             },
@@ -213,12 +213,12 @@ class HeatTest {
         val g = room.grid
         val s = run(room, 120*HEAT_PERIOD)
 
-        val atSmelter = s.kelvinAt(g.tile(5, 5))
+        val atMill = s.kelvinAt(g.tile(5, 5))
         val twoAway = s.kelvinAt(g.tile(2, 5))
         val farCorner = s.kelvinAt(g.tile(2, 9))
 
-        assertTrue(atSmelter > Temperature.AMBIENT_KELVIN + 15, "the furnace tile should be hot: ${atSmelter}K")
-        assertTrue(atSmelter > twoAway, "hottest at the source: $atSmelter vs $twoAway")
+        assertTrue(atMill > Temperature.AMBIENT_KELVIN + 15, "the machine tile should be hot: ${atMill}K")
+        assertTrue(atMill > twoAway, "hottest at the source: $atMill vs $twoAway")
         assertTrue(twoAway >= farCorner, "and cooler with distance: $twoAway vs $farCorner")
     }
 
@@ -265,12 +265,12 @@ class HeatTest {
 
     @Test
     fun `a machine outside the hull keeps its own heat and radiates it`() {
-        // Roomy enough that the five-tile furnace does not fill it: with nothing but space around
+        // Roomy enough that the machine does not fill it: with nothing but space around
         // it, every face of the thing is exposed.
         val grid = Grid(11, 11)
         val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
         val deck = DeckArray(grid)
-        deck += Smelter(grid.tile(5, 5), Direction.Right)
+        deck += Processor(grid.tile(5, 5), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(5, 5), ore)
         s = run(s, 40*HEAT_PERIOD)

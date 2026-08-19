@@ -13,7 +13,7 @@ import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Smelter
+import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import kotlin.test.Test
@@ -62,24 +62,24 @@ class MachineBillTest {
     fun aFullyStockedMachineHoldsItsBill() {
         val deck = DeckArray(grid)
         val centre = grid.tile(5, 4)
-        val smelter = Smelter(center = centre, facing = Direction.Right)
-        deck += smelter
-        assertTrue(deck.holdsFullBill(smelter), "a machine laid whole holds its whole bill")
+        val mill = Processor(center = centre, facing = Direction.Right)
+        deck += mill
+        assertTrue(deck.holdsFullBill(mill), "a machine laid whole holds its whole bill")
     }
 
     /**
-     * The middle of a half-built furnace is not a built furnace. Casing spreads evenly as it is
+     * The middle of a half-built machine is not a built machine. Casing spreads evenly as it is
      * absorbed, so a per-tile test would call a machine with one full tile finished.
      */
     @Test
     fun aMachineShortOnOneTileIsNotFinished() {
         val deck = DeckArray(grid)
         val centre = grid.tile(5, 4)
-        val smelter = Smelter(center = centre, facing = Direction.Right)
-        deck += smelter
-        val corner = smelter.tiles(grid).first { it != centre }
+        val mill = Processor(center = centre, facing = Direction.Right)
+        deck += mill
+        val corner = mill.tiles(grid).first { it != centre }
         for (s in Species.ALL) deck.stuff[corner, s] = 0L
-        assertFalse(deck.holdsFullBill(smelter), "a footprint short one tile of casing is a ghost")
+        assertFalse(deck.holdsFullBill(mill), "a footprint short one tile of casing is a ghost")
     }
 
     /** Junk counts toward mass and toward nothing else — the anti-exploit, asked of a machine. */
@@ -168,7 +168,7 @@ class MachineBillTest {
     /** Permille is the worst species, so it reaches 1000 exactly when the bill is held. */
     @Test
     fun permilleTracksTheWorstSpecies() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Smelter, 9)
+        val bill = machineBillOfMaterials(DeckMachineKind.Processor, 9)
         assertEquals(1000, builtPermille(bill) { bill[it] }, "the whole bill is finished")
         assertEquals(0, builtPermille(bill) { 0L }, "nothing is nothing")
         // The worst species is the answer: starving one of them alone reads exactly as starving

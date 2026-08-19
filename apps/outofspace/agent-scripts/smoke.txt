@@ -19,7 +19,7 @@ field speed
 field flow
 
 echo --- one tile, in full
-probe smelter smelter
+probe storage storage
 
 echo --- and what a player would see
 overlay PRESSURE

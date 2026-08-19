@@ -25,7 +25,6 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Processor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
@@ -400,65 +399,6 @@ class VesselSimTest {
     }
 
     @Test
-    fun `raw ore run straight into a smelter yields nothing but slag`() {
-        // The default ore body is 41% iron: too dirty to smelt. This is the lesson the world teaches.
-        val grid = Grid(16, 8)
-        val deck = DeckArray(grid)
-        val feed = feedExtractor(grid, deck, 2, 3)
-        deck += Smelter(grid.tile(7, 3), Direction.Right)     // covers x 5..9
-        deck += Storage(grid.tile(12, 3), Direction.Right)
-        deck += Vent(grid.tile(7, 6))   // under the smelter's slag port: where slag goes
-        val rails = arrayOfNulls<Segment>(grid.size)
-        // One run under the lot, from the extractor's port to the tank's.
-        joinRow(grid, rails, 4, 11, 3)
-        joinCol(grid, rails, 7, 3, 6)
-        var s = VesselState(
-            grid, deck,
-            conduits = Conduits.ofRails(rails.toList()),
-            bodies = feed,
-            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
-
-        s = run(s, ticksToMove(Storage.CAP))
-        assertTrue(s.ventedMass > 0L, "slag should be pouring out the side")
-        assertEquals(0L, s.stockpile[Form.IronIngot].total, "and no ingot should ever reach the store")
-        assertBalanced(s, "ore straight to smelter")
-    }
-
-    @Ignore // Passing in nearly 4 minutes (takes too long)
-    @Test
-    fun `a processor in front of the smelter is what makes ingots`() {
-        val s = run(workingVessel(cfg.initialGrid), 480*RAIL_PERIOD)
-        val ironIngots = s.stockpile[Form.IronIngot]
-        assertTrue(ironIngots.total > 0L, "the full line should store iron: ${s.stockpile}")
-        assertEquals(ironIngots.total, ironIngots[Species.Iron], "and the ingots should be pure iron")
-        assertBalanced(s, "starter vessel")
-    }
-
-    @Test
-    fun `a smelter stalls rather than mixing two metals`() {
-        // Five across, because a smelter is: its stores stand on its own port tiles, so a furnace
-        // in a grid too small to hold its footprint has nowhere to put anything.
-        val grid = Grid(9, 9)
-        val centre = grid.tile(4, 4)
-        val deck = DeckArray(grid)
-        val ironOre = Resource(Form.Ore, Mixture.of(Species.Iron to 2_000L, Species.Quartz to 100L, energy = 0))
-        deck += Smelter(centre, Direction.Right)
-        var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-            .stocked(centre, ironOre)
-        s = run(s, 20)
-        assertEquals(Form.IronIngot, assertNotNull(s.inStore(centre, BufferRole.Product)).form)
-
-        // Now feed it copper-dominant ore. It cannot make copper ingots while holding iron ones.
-        val copperOre = Resource(Form.Ore, Mixture.of(Species.Copper to 2_000L, Species.Quartz to 100L, energy = 0))
-        var s2 = s.stocked(centre, copperOre)
-        val heldBefore = s2.inStore(centre, BufferRole.Product)!!.mass
-        s2 = run(s2, 20)
-        assertEquals(heldBefore, s2.inStore(centre, BufferRole.Product)!!.mass, "output should not have grown")
-        assertEquals(copperOre.mass, s2.inStore(centre, BufferRole.Input)!!.mass, "and the copper ore should be untouched")
-    }
-
-    @Test
     fun `what a storage holds is what the vessel can build with`() {
         val grid = Grid(10, 5)
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
@@ -509,7 +449,7 @@ class VesselSimTest {
      * that just refused it.
      *
      * What is being tested is the split between the two halves of the rework. The flow graph does not
-     * know what a smelter eats — it says only which way material may travel, and the belt runs
+     * know what a processor eats — it says only which way material may travel, and the belt runs
      * left to right whatever is standing beside it. Whether *this* packet is taken is settled at the
      * tile, when it is offered. So ore is lifted off in passing and an ingot rides straight past to
      * the tank at the end, on the same belt, with nothing in the topology distinguishing them.
@@ -566,11 +506,11 @@ class VesselSimTest {
     }
 
     @Test
-    fun `an empty smelter lets an ingot go by`() {
+    fun `an empty processor lets an ingot go by`() {
         val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
-        val s = tappedBelt({ tile -> Smelter(tile, Direction.Down) }, ingot)
+        val s = tappedBelt({ tile -> Processor(tile, Direction.Down) }, ingot)
 
-        assertNull(s.inStore(grid43(s), BufferRole.Input), "the smelter should not have taken an ingot")
+        assertNull(s.inStore(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
         assertEquals(
             1_000L,
             s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
@@ -687,7 +627,7 @@ class VesselSimTest {
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
         val onTrack = s.rails.indices.fold(Mixture.EMPTY) { acc, i -> acc + (s.onRail(TileIndex(i))?.mixture ?: Mixture.EMPTY) }
-        // Both lists: what a warehouse holds is as much "in the world" as what a smelter holds, and
+        // Both lists: what a warehouse holds is as much "in the world" as what a processor holds, and
         // warehouses stand on the deck. Walking a second list left the tanks out and the world
         // looked short by exactly what was banked in them.
         val inWorld = s.grid.tiles.fold(onTrack) { acc, tile ->

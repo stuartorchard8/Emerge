@@ -172,11 +172,11 @@ class CompositionMassTest {
             kind = BodyKind.FRAGMENT,
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
-            machineKind = DeckMachineKind.Smelter,
+            machineKind = DeckMachineKind.ThermalDecomposer,
             energy = TileEnergy.uniform(1, 0L),
         )
-        assertEquals(DeckMachineKind.Smelter.massPerTile, fragment.mass)
-        assertEquals(DeckMachineKind.Smelter.capacityPerTile, fragment.capacity)
+        assertEquals(DeckMachineKind.ThermalDecomposer.massPerTile, fragment.mass)
+        assertEquals(DeckMachineKind.ThermalDecomposer.capacityPerTile, fragment.capacity)
     }
 
     /**
@@ -214,7 +214,7 @@ class CompositionMassTest {
         // A building and a length of conduit: the two things the vessel is made of, and the claim
         // is about the fabric rather than about either of them in particular.
         for ((label, perTile) in listOf(
-            DeckMachineKind.Smelter.label to DeckMachineKind.Smelter.massPerTile,
+            DeckMachineKind.ThermalDecomposer.label to DeckMachineKind.ThermalDecomposer.massPerTile,
             Conduit.Rail.label to Conduit.Rail.massPerTile,
         )) {
             assertTrue(

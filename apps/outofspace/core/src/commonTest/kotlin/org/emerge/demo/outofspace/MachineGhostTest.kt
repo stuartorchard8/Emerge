@@ -36,7 +36,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -95,8 +94,8 @@ class MachineGhostTest {
             rail = RailLayer.empty(grid.size),
         ).stocked(
             grid.tile(3, 4),
-            // What the machine is *made of*, not simply iron. A hull is steel and a smelter is
-            // firebrick, and a ghost is finished only when every species in its bill is there —
+            // What the machine is *made of*, not simply iron. A hull is steel and a processor is
+            // titanium, and a ghost is finished only when every species in its bill is there —
             // so a tank of pure iron builds neither. See the plan's note on alloys.
             // Several times what the machine costs: a run of track holds packets of its own while
             // they travel, so a tank stocked to the bill exactly would leave the last of it strung
@@ -125,10 +124,10 @@ class MachineGhostTest {
     @Test
     fun `a big machine builds evenly across its footprint`() {
         val at = grid.tile(10, 4)
-        val start = tankAndGhost(Smelter(at, Direction.Right))
+        val start = tankAndGhost(Processor(at, Direction.Right))
         val machine = start.deck[at]!!
         val tiles = machine.tiles(grid)
-        assertTrue(tiles.size > 1, "a smelter is supposed to cover more than one tile")
+        assertTrue(tiles.size > 1, "a processor is supposed to cover more than one tile")
 
         // Part-way through, not finished: the question is how the metal is distributed while it is
         // still arriving.
@@ -220,7 +219,7 @@ class MachineGhostTest {
     @Test
     fun `a finished machine gets its ports back`() {
         val at = grid.tile(10, 4)
-        val start = tankAndGhost(Smelter(at, Direction.Right))
+        val start = tankAndGhost(Processor(at, Direction.Right))
         assertTrue(start.deck.isGhost(at), "fixture")
 
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 200)
@@ -507,12 +506,12 @@ class MachineGhostTest {
     @Test
     fun `a machine placed outside creative mode arrives with no metal in it`() {
         val at = grid.tile(8, 5)
-        val s = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Smelter)
+        val s = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Processor)
 
         val m = s.deck[at]
-        assertNotNull(m, "the smelter did not go down at all")
-        assertTrue(m is Smelter)
-        assertTrue(s.deck.isGhost(at), "the smelter arrived with its casing")
+        assertNotNull(m, "the processor did not go down at all")
+        assertTrue(m is Processor)
+        assertTrue(s.deck.isGhost(at), "the processor arrived with its casing")
         for (tile in m.tiles(grid)) {
             assertEquals(0L, s.deck.stuff.massAt(tile), "casing at $tile")
         }
@@ -521,7 +520,7 @@ class MachineGhostTest {
     @Test
     fun `a machine placed in creative mode is finished`() {
         val at = grid.tile(8, 5)
-        val s = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Smelter)
+        val s = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Processor)
 
         assertFalse(s.deck.isGhost(at), "creative placement is supposed to conjure the whole machine")
         assertTrue(s.deck.stuff.massAt(at) > 0L, "and its casing is real matter")
@@ -531,10 +530,10 @@ class MachineGhostTest {
     @Test
     fun `a ghost machine costs the world nothing`() {
         val at = grid.tile(8, 5)
-        val ghost = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Smelter)
+        val ghost = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Processor)
         assertEquals(0L, ghost.insertedEnergy, "a ghost brought heat into the world from nowhere")
 
-        val real = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Smelter)
+        val real = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Processor)
         assertTrue(real.insertedEnergy > 0L, "creative placement is an insertion and is booked as one")
     }
 
@@ -566,7 +565,7 @@ class MachineGhostTest {
     @Test
     fun `a ghost machine weighs nothing`() {
         val empty = VesselState.empty(grid).copy(creative = false)
-        val withGhost = place(empty, grid.tile(8, 5), DeckMachineKind.Smelter)
+        val withGhost = place(empty, grid.tile(8, 5), DeckMachineKind.Processor)
         assertEquals(
             empty.deck.stuff.totalMass,
             withGhost.deck.stuff.totalMass,

@@ -16,8 +16,8 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.PortKind
+import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.TileIndex
@@ -69,13 +69,13 @@ class FootprintTest {
     fun `a machine is stored once and covers the tiles around it`() {
         val grid = Grid(12, 12)
         val tile = grid.tile(5, 5)
-        val s = placeDeck(grid, tile, DeckMachineKind.Smelter)
+        val s = placeDeck(grid, tile, DeckMachineKind.Extractor)
 
-        assertNotNull(s.deck[tile], "the smelter lives at the tile it was placed on")
+        assertNotNull(s.deck[tile], "the extractor lives at the tile it was placed on")
         assertNull(s.deck[grid.tile(4, 5)], "and nowhere else -- one machine, one copy")
         // But every tile of the five-by-five reports it.
         for (y in 3..7) for (x in 3..7) {
-            assertEquals(tile, s.occupancy[grid.tile(x, y)], "($x,$y) should belong to the smelter")
+            assertEquals(tile, s.occupancy[grid.tile(x, y)], "($x,$y) should belong to the extractor")
         }
         assertTrue(s.occupancy.isFree(grid.tile(2, 5)), "and the tile beyond it should not")
     }
@@ -83,16 +83,16 @@ class FootprintTest {
     @Test
     fun `placing is refused when anything already occupies the footprint`() {
         val grid = Grid(12, 12)
-        var s = placeDeck(grid, grid.tile(5, 5), DeckMachineKind.Smelter)
+        var s = placeDeck(grid, grid.tile(5, 5), DeckMachineKind.Extractor)
         // Two tiles away: outside the *centre* but well inside the footprint.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(7, 5), Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
-        assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside a furnace")
+        assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside an extractor")
     }
 
     @Test
     fun `placing is refused when the footprint would hang off the grid`() {
         val grid = Grid(12, 12)
-        val s = placeDeck(grid, grid.tile(1, 5), DeckMachineKind.Smelter)
+        val s = placeDeck(grid, grid.tile(1, 5), DeckMachineKind.Extractor)
         assertNull(s.deck[grid.tile(1, 5)], "a five-tile machine needs two tiles of clearance")
         assertTrue(grid.tiles.all { s.deck[it] == null }, "and nothing partial is left behind")
     }
@@ -101,11 +101,11 @@ class FootprintTest {
     fun `clicking any tile of a machine edits the whole machine`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        var s = placeDeck(grid, at, DeckMachineKind.Smelter)
+        var s = placeDeck(grid, at, DeckMachineKind.Extractor)
 
         // A corner of the footprint, as far from the centre as it gets.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(7, 7)))))
-        assertTrue(grid.tiles.all { s.deck[it] == null }, "the whole furnace goes, not a slice of it")
+        assertTrue(grid.tiles.all { s.deck[it] == null }, "the whole extractor goes, not a slice of it")
         assertTrue(grid.tiles.all { s.occupancy.isFree(it) }, "and it releases every tile")
     }
 
@@ -156,16 +156,14 @@ class FootprintTest {
     }
 
     @Test
-    fun `a smelter's ports sit on the edge of its footprint, not beside its centre`() {
+    fun `an extractor's port sits on the edge of its footprint, not beside its centre`() {
         val grid = Grid(16, 16)
         val at = grid.tile(8, 8)
-        val ports = portsOf(grid, Smelter(at, Direction.Right), at)
-        assertEquals(grid.tile(6, 8), ports.single { it.kind == PortKind.Input }.tile)
-        assertEquals(
-            grid.tile(10, 8),
-            ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }.tile,
-        )
-        assertEquals(5, DeckMachineKind.Smelter.diameter, "and it really is five across")
+        val ports = portsOf(grid, Extractor(at, Direction.Right), at)
+        // Two tiles out, not one: a port belongs to the face of the building, and a five-tile
+        // machine whose ports sat beside its centre would be handing material to its own insides.
+        assertEquals(grid.tile(10, 8), ports.single { it.kind == PortKind.Output }.tile)
+        assertEquals(5, DeckMachineKind.Extractor.diameter, "and it really is five across")
     }
 
     /**
@@ -252,16 +250,16 @@ class FootprintTest {
             }
             deck += when (kind) {
                 DeckMachineKind.Processor -> Processor(grid.tile(8, 8), Direction.Right)
-                else -> Smelter(grid.tile(8, 8), Direction.Right)
+                else -> Extractor(grid.tile(8, 8), Direction.Right)
             }
             return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
                 .copy(creative = true)
         }
         val small = room(DeckMachineKind.Processor).storedEnergy
-        val large = room(DeckMachineKind.Smelter).storedEnergy
+        val large = room(DeckMachineKind.Extractor).storedEnergy
         assertTrue(
             large > small,
-            "twenty-five tiles of furnace should hold more heat than nine of mill: $large vs $small",
+            "twenty-five tiles of extractor should hold more heat than nine of mill: $large vs $small",
         )
     }
 

@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
 import org.emerge.demo.outofspace.chem.process
-import org.emerge.demo.outofspace.chem.smelt
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Rate
@@ -20,7 +19,6 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
-import org.emerge.demo.outofspace.chem.SMELT_PRODUCTS
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.constructionPortOf
 import org.emerge.demo.outofspace.world.constructionTileOf
@@ -71,7 +69,6 @@ import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.SignalNetworks
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.machine.Vent
@@ -239,7 +236,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
                     is Processor -> w.refine(cfg, m, activation, tile)
                     is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
-                    is Smelter -> w.melt(cfg, m, activation, tile)
                     is Extractor -> w.leech(m, activation, tile)
                 }
             }
@@ -720,29 +716,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m.copy(progress = 0, carry = carry)
         }
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
-    }
-
-    private fun Work.melt(cfg: OutofspaceConfig, m: Smelter, activation: Int, tile: TileIndex): Smelter {
-        val input = store(m, tile, BufferRole.Input) ?: return m
-        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-        val heldRefined = store(m, tile, BufferRole.Product)
-        val heldSlag = store(m, tile, BufferRole.Waste)
-        if (blocked(heldRefined, heldSlag)) return m.copy(carry = carry)
-        val chunkMass = minOf(mass, input.mass)
-        if (chunkMass <= 0L) return m.copy(carry = carry)
-
-        val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        heat(tile, heatOfWorking(chunkMass, m))
-        val r = smelt(chunk)
-        // Smelter stalls if dominant species differs (stopped machine signals ore change). Both
-        // merges are resolved before anything is written, or a stall would leave the ore consumed.
-        val refined = heldRefined.merged(r.refined) ?: return m.copy(carry = carry)
-        val slag = heldSlag.merged(r.slag) ?: return m.copy(carry = carry)
-
-        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
-        putStore(m, tile, BufferRole.Product, refined.buffer)
-        putStore(m, tile, BufferRole.Waste, slag.buffer)
-        return m.copy(carry = carry)
     }
 
     private fun Work.vaporize(m: Vaporizer, activation: Int, tile: TileIndex): Vaporizer {
@@ -1713,7 +1686,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                         if (moved > 0L) {
                             val recovered = Mixture.of(masses, energy)
-                            val form = SMELT_PRODUCTS[dominantSpecies(recovered)] ?: Form.Slag
+                            val form = Form.Ore
                             // ⚠️ **Nothing leaves the structure layer until the lump has taken it.**
                             // The tile having room is not the same question as the lump accepting
                             // it: an ingot never merges with the ore riding over it, whatever the
@@ -1908,7 +1881,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (t in tiles) energy += deck.stuff.energyAt(t)
             val movedEnergy = if (take >= held) energy else scaledRatio(take, held, energy)
             val recovered = Mixture.of(masses, movedEnergy)
-            val form = SMELT_PRODUCTS[recovered.dominant] ?: Form.Slag
+            val form = Form.Ore
 
             // The deposit first, the deduction only if it lands — see the note on this pass.
             val landed =
@@ -2543,7 +2516,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Vaporizer, is Thruster, is Processor, is ThermalDecomposer, is Smelter,
+                is Vaporizer, is Thruster, is Processor, is ThermalDecomposer,
                 is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
@@ -2584,7 +2557,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Thruster -> Thruster(tile, facing)
             DeckMachineKind.Processor -> Processor(tile, facing)
             DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(tile, facing)
-            DeckMachineKind.Smelter -> Smelter(tile, facing)
             DeckMachineKind.Extractor -> Extractor(tile, facing)
             DeckMachineKind.Bridge -> Bridge(tile, facing)
             DeckMachineKind.Gauge -> Gauge(tile)

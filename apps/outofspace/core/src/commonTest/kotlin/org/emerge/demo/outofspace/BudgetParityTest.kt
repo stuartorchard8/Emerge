@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.millimolesOf
@@ -56,7 +55,7 @@ class BudgetParityTest {
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.
-        assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(TileIndex(0), Direction.Right).massPerTick, "40 ticks of buffer")
+        assertEquals(40L, MACHINE_BUFFER_CAP / Vaporizer(TileIndex(0), Direction.Right).massPerTick, "40 ticks of buffer")
         // ⚠️ The extractor has no rate of its own any more — its two stores became one and the rail
         // sets its throughput — so its buffer is sized in belt-loads rather than in ticks.
         assertEquals(50L, Extractor.BUFFER_CAP / Capacity.PACKET_MASS, "fifty belt-loads of buffer")
@@ -71,7 +70,6 @@ class BudgetParityTest {
         // has room and stops when it does not, so the belt is the only thing metering it. That is
         // this invariant satisfied structurally rather than by a number that has to agree.
         for ((what, rate) in listOf(
-            "smelter" to Smelter(TileIndex(0), Direction.Right).massPerTick,
             "vaporizer" to Vaporizer(TileIndex(0), Direction.Right).massPerTick,
         )) {
             assertEquals(Capacity.PACKET_MASS, rate, "$what must produce exactly one belt-load a tick")

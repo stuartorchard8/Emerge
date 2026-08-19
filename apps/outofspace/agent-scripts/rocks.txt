@@ -18,7 +18,7 @@ new 0
 gravity 0 1
 
 echo --- one rock, dropped amidships
-rock smelter smelter+8
+rock storage storage+8
 expect rockCount = 1
 expect rockMass > 0
 expect rockBalance = 0
@@ -36,9 +36,9 @@ run 6
 expect rockVY > 0
 
 echo --- three more, and the books still close
-rock smelter-10 smelter+8
-rock smelter-5 smelter+8
-rock smelter+5 smelter+8
+rock storage-10 storage+8
+rock storage-5 storage+8
+rock storage+5 storage+8
 expect rockCount = 4
 expect rockBalance = 0
 expect airBalance = 0
@@ -49,7 +49,7 @@ shot rocks-falling
 echo --- now with the plating off, and the engine lit
 new 0
 gravity 0 0
-rock 18 smelter+20
+rock 18 storage+20
 run 1
 expect rockVY = 0
 expect rockVX = 0

@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -78,7 +77,7 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
 
         // Propellant in at the back, which for a one-tile machine is its own tile — a rail is
-        // threaded underneath it exactly as it is under a smelter. The exhaust leaves out the front
+        // threaded underneath it exactly as it is under an extractor. The exhaust leaves out the front
         // and is not a port: nothing on a belt is going to catch it.
         is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
 
@@ -86,11 +85,6 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Processor -> listOf(
-            LocalPort(-r, 0, Direction.Left, PortKind.Input),
-            LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
-            LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
-        )
-        is Smelter -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
             LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),

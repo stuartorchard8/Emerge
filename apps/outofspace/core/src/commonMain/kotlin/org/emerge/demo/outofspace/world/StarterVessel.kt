@@ -11,7 +11,6 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
 
@@ -114,22 +113,17 @@ fun starterVessel(
 
     put(STARTER_PLATE_X, y) { Extractor(it, Direction.Right) }   // covers x 3..7
     put(13, y) { Processor(it, Direction.Right) }                           // covers x 12..14
-    put(22, y) { Smelter(it, Direction.Right) }                             // covers x 20..24
     put(29, y) { Storage(it, Direction.Right) }   // the inventory: what you can build with
 
     // Extractor→Processor: a gauge reads raw ore. What it reports on is whatever wire runs under
     // it — nothing, here, until the player lays one.
     rail(7, 12, y, setOf(9))
-    // Processor→Smelter: a gauge reads concentrate.
-    rail(14, 20, y, setOf(17))
-    // Smelter's output to the tank.
-    rail(24, 28, y)
+    // Processor→tank: a gauge reads concentrate on the way.
+    rail(14, 28, y, setOf(17))
 
     // Waste: vertical drops to vents.
     put(13, y + 4) { Vent(it) }
     column(13, y + 1, y + 4)
-    put(22, y + 5) { Vent(it) }
-    column(22, y + 2, y + 5)
 
     // Wiring demo: 7 rows below.
     val wy = STARTER_DEMO_PLATE_Y
@@ -202,7 +196,7 @@ private fun BufferLayer.withStartingIron(grid: Grid, deck: DeckArray): BufferLay
     // building material, it is a heat sink the size of the ship, and it would suck the vessel cold
     // through the first machine that touched it.
     val warm = Mixture.of(Species.Iron to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
-    it.put(store, Resource(Form.IronIngot, warm))
+    it.put(store, Resource(Form.Ore, warm))
 }
 
 /**

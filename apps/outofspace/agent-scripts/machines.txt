@@ -14,8 +14,8 @@
 # ⚠️ **A GAUGE, and that is not an arbitrary choice.** The purity rule is asked of every species in a
 # machine's bill against its own share of the recipe, so a thing made of an alloy cannot be built out
 # of one of its components. The starter vessel's tank holds iron, and of every deck machine in the
-# game only the gauge and the bridge are made of iron -- a hull and an airlock are steel, a smelter
-# and a thermal decomposer are firebrick, and everything else is titanium. Until something aboard can
+# game only the gauge and the bridge are made of iron -- a hull and an airlock are steel, a thermal
+# decomposer is firebrick, and everything else is titanium. Until something aboard can
 # blend a storage to a recipe, those two are the only machines a starter vessel can build.
 #
 # The numbers:

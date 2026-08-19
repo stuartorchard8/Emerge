@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsBreakdown
@@ -185,7 +184,7 @@ class GaugeTest {
         val grid = Grid(9, 9)
         val centre = grid.tile(4, 4)
         assertEquals(emptyList(), contentsBreakdown(Storage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
-        assertEquals(emptyList(), contentsBreakdown(Smelter(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(Processor(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 
     @Test

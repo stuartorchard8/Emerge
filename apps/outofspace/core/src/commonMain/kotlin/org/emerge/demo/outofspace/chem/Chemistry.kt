@@ -28,53 +28,9 @@ data class Resource(val form: Form, val mixture: Mixture) {
  * [conservationOf] exists so tests can say so out loud.
  */
 
-/** The two streams out of a smelter. Either may be empty. */
-data class SmeltResult(val refined: Resource, val slag: Resource) {
-    val totalMass: Long get() = refined.mass + slag.mass
-}
-
 /** The two streams out of a species processor: a concentrated product and its tailings. */
 data class ProcessResult(val product: Resource, val tailings: Resource) {
     val totalMass: Long get() = product.mass + tailings.mass
-}
-
-/**
- * Smelts [input], yielding a refined product of its dominant species plus slag.
- *
- * The impurities do not merely dilute the product — they *consume* it: the refined mass is
- * `dominant - impurities`. Smelting ore that is half rubbish gives you almost nothing, and smelting
- * ore that is more rubbish than metal gives you nothing at all. That is the pressure that makes a
- * species processor worth building upstream.
- *
- * Deviation from the Godot original: the all-slag case triggers at `impurities >= dominant` rather
- * than `>`, because the boundary case produced a zero-mass product that every downstream consumer
- * would have had to special-case.
- */
-fun smelt(input: Resource): SmeltResult {
-    val dominant = input.mixture.dominant
-        ?: return SmeltResult(Resource(Form.Slag, Mixture.EMPTY), Resource(Form.Slag, Mixture.EMPTY))
-
-    val dominantMass = input.mixture[dominant]
-    val impurities = input.mixture.total - dominantMass
-
-    // Nothing to smelt a fluid into, and too dirty is too dirty: either way the lot is slag.
-    if (dominant !in SMELT_PRODUCTS || impurities >= dominantMass) {
-        return SmeltResult(
-            refined = Resource(Form.Slag, Mixture.EMPTY),
-            slag = Resource(Form.Slag, input.mixture),
-        )
-    }
-
-    val refinedMass = dominantMass-impurities
-    val refinedEnergy = scaledRatio(refinedMass, input.mass, input.mixture.energy)
-
-    val refinedMixture = Mixture.of(dominant to refinedMass, energy=refinedEnergy)
-    return SmeltResult(
-        refined = Resource(SMELT_PRODUCTS.getValue(dominant), refinedMixture),
-        // The remainder, so nothing can go missing: the impurities plus an equal mass of the
-        // dominant species that they dragged out with them.
-        slag = Resource(Form.Slag, input.mixture - refinedMixture),
-    )
 }
 
 /**

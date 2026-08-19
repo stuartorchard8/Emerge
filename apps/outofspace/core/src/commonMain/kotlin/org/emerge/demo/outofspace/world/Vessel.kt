@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -921,7 +920,6 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     is ThermalDecomposer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
     is Vaporizer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
-    is Smelter -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
     is Hull, is Airlock -> 0
@@ -933,8 +931,8 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
  * What the inspector calls each of a machine's stores.
  *
  * The role says where a thing is in the machine; this says what the machine calls it there. A
- * smelter's [BufferRole.Waste] is slag and a processor's is tailings, and telling the player
- * "WASTE" for both would throw away the only word that says which machine they are looking at.
+ * thruster's [BufferRole.Input] is propellant and a processor's is feed, and telling the player
+ * "INPUT" for both would throw away the only word that says which machine they are looking at.
  */
 private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (machine) {
     // Which end of the span it is on, which is the only thing worth knowing about a bridge — and
@@ -947,11 +945,6 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
     is Extractor -> if (role == BufferRole.Inside) "CRUSHING" else "BUFFER"
     is Storage -> "STORED"
     is Thruster -> "PROPELLANT"
-    is Smelter -> when (role) {
-        BufferRole.Input -> "INPUT"
-        BufferRole.Product -> "REFINED"
-        else -> "SLAG"
-    }
     else -> when (role) {
         BufferRole.Input -> "INPUT"
         BufferRole.Inside -> "PROCESSING"

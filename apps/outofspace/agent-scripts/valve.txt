@@ -11,7 +11,7 @@
 #   at once, because it has to flow there through the pipe like anything else.
 # Along row 9, which is open deck. Worth saying because the obvious row to pick is not: a valve needs
 # ROOM AIR on its own tile to exchange with, and a machine's footprint has none — placing a building
-# displaces the air out of every tile it covers. A valve buried under the starter vessel's smelter
+# displaces the air out of every tile it covers. A valve buried under the starter vessel's processor
 # opens onto a vacuum and does nothing, which looks exactly like a broken valve.
 new
 

@@ -191,7 +191,7 @@ val DeckMachineKind.material: Material
         DeckMachineKind.Vaporizer, DeckMachineKind.Thruster, DeckMachineKind.Processor,
         DeckMachineKind.Extractor,
         -> Material.Titanium
-        DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> Material.Firebrick
+        DeckMachineKind.ThermalDecomposer -> Material.Firebrick
         // Iron, like the track it holds up.
         DeckMachineKind.Bridge, DeckMachineKind.Gauge -> Conduit.Rail.material
         // Copper, like the plumbing it opens.
@@ -219,7 +219,7 @@ val DeckMachineKind.fillPermille: Int
         DeckMachineKind.Thruster -> 120
         DeckMachineKind.Processor, DeckMachineKind.Extractor -> 150
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
-        DeckMachineKind.Smelter, DeckMachineKind.ThermalDecomposer -> 250
+        DeckMachineKind.ThermalDecomposer -> 250
         // Instruments and fittings: mostly a housing. Carried across unchanged.
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
         // A gantry: the same fill as the track it carries, because that is what it is — a length of

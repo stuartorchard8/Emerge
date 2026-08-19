@@ -380,10 +380,18 @@ Mixing is therefore a **logistics** problem:
 ⚠️ This is why the tolerance matters more than the exact recipe: a player maintains a *ratio*, not a
 number.
 
-Consequence worth recording: nothing else in the game mixes. `smelt` returns a single species by
-construction and the processor concentrates toward one; every species of every material — iron,
-carbon, quartz, aluminium — is already producible on its own. Stu is leaning toward **deleting the
-smelter**; that is not in scope here.
+Consequence worth recording: nothing else in the game mixes. The processor concentrates toward one
+species; every species of every material — iron, carbon, quartz, aluminium — is already producible on
+its own.
+
+**The smelter and `Form` were deleted on 2026-08-19**, as the first step of the demand work that
+follows this plan. The case had three parts, and only the first was the one anticipated here:
+smelting was the sole producer of a non-`Ore` form; every machine except a storage already refused
+anything that was not `Ore`; and `Form.isPowder` refused to merge anything but `Ore`/`Slag` — so
+belt merging, the mechanism this section describes, only ever worked *because* everything was ore.
+Keeping `Form` would have kept a rule whose only effect was to break blending. It also removed a
+hazard nobody chose: deconstruction handed casing back through the smelt table, so a dismantled hull
+came off the rail as `IronIngot` — the non-merging form that only a storage would accept.
 
 **5d. Deconstruction ✅** `54a232a3`, `bf452436`, `2d81b726`, `6d022e41`. The mark, the five-step ordering above, ceasing to be.
 

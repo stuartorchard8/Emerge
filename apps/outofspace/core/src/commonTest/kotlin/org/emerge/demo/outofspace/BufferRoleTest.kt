@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -38,7 +37,7 @@ class BufferRoleTest {
 
     private fun kinds(facing: Direction): List<DeckMachine> = listOf(
         Extractor(centre, facing), Vaporizer(centre, facing), Thruster(centre, facing),
-        Processor(centre, facing), Smelter(centre, facing), ThermalDecomposer(centre, facing),
+        Processor(centre, facing), ThermalDecomposer(centre, facing),
         Storage(centre, facing),
     )
 

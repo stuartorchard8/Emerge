@@ -67,7 +67,7 @@ import kotlin.math.roundToInt
  *                            # is what a script that counts or weighs its own rocks wants
  * load <path> | save <path>  # the text save format (Save.kt) — how a world gets handed over
  * run <ticks>                # advance exactly N ticks. The ONLY clock; nothing here is real-time
- * brush <kind> [dir]         # RAIL/EXTRACTOR/SMELTER/VENT/... and Right|Down|Left|Up
+ * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/VENT/... and Right|Down|Left|Up
  * place <x> <y>              # build with the current brush
  * fit                        # shrink grid back to ship + pad
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not

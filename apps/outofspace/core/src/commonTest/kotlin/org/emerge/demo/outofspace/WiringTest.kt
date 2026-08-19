@@ -319,7 +319,8 @@ class WiringTest {
 
     @Test
     fun `the starter vessel ships that same loop, working`() {
-        val s = run(workingVessel(Grid(40, 28)), ticksToMove(Storage.CAP) * 3 / 2)
+        val start = workingVessel(Grid(40, 28))
+        val s = run(start, ticksToMove(Storage.CAP) * 3 / 2)
         // Found by its wiring rather than by coordinates — the vessel is fitted to its contents on
         // construction, so a written-down tile index would be a hostage to its layout. There is
         // exactly one machine aboard that reads a wire, and it is the demonstration extractor.
@@ -329,8 +330,13 @@ class WiringTest {
         assertEquals(1, throttled.size, "expected one wire-driven machine aboard, found ${throttled.size}")
         val onTheWire = s.signals.at(throttled.single())
         assertTrue(onTheWire > 800, "the demonstration storage should have nearly filled, wire reads $onTheWire")
-        // And the main line is unaffected by it.
-        assertTrue(s.stockpile[Form.IronIngot].total > 0L, "the refinery line still stores iron")
+        // And the main line is unaffected by it. Stated as *growth*, because the vessel is built
+        // holding half a tank of iron to build with — a bare "there is iron aboard" would pass on a
+        // line that never turned a wheel.
+        assertTrue(
+            s.stockpile[Form.Ore].total > start.stockpile[Form.Ore].total,
+            "the refinery line still banks what it digs: ${start.stockpile} then ${s.stockpile}",
+        )
     }
 
     // ── Editing wiring ────────────────────────────────────────────────────────

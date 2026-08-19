@@ -17,7 +17,7 @@ new 0
 rock 5 12
 run 400
 
-echo --- the fabric, after four hundred ticks of smelting
+echo --- the fabric, after four hundred ticks of milling
 field temp
 
 echo --- and the air it is heating

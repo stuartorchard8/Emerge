@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
-import org.emerge.demo.outofspace.world.machine.Smelter
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -106,20 +105,13 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         is Vaporizer -> if (role == BufferRole.Input) pack(r, 0) else NO_OFFSET
         is Thruster -> if (role == BufferRole.Input) pack(0, 0) else NO_OFFSET
 
-        // In at the back, concentrate out the front, tailings out of the floor — and, for a
-        // processor, a lump held in the middle while it is worked. A smelter has no such lump: it
-        // converts what arrives in the same breath.
+        // In at the back, concentrate out the front, tailings out of the floor, and a lump held in
+        // the middle while it is worked.
         is Processor -> when (role) {
             BufferRole.Input -> pack(-r, 0)
             BufferRole.Inside -> pack(0, 0)
             BufferRole.Product -> pack(r, 0)
             BufferRole.Waste -> pack(0, r)
-        }
-        is Smelter -> when (role) {
-            BufferRole.Input -> pack(-r, 0)
-            BufferRole.Product -> pack(r, 0)
-            BufferRole.Waste -> pack(0, r)
-            BufferRole.Inside -> NO_OFFSET
         }
         is ThermalDecomposer -> when (role) {
             BufferRole.Input -> pack(-r, 0)
