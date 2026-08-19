@@ -2011,6 +2011,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun absorbIntoGhost(tile: TileIndex): Packet? {
             val bill = conduitBillOfMaterials(Conduit.Rail)
             val stuff = tracks[Conduit.Rail]
+            // ⛔ **The door, asked of what is standing here rather than of what is coming in.**
+            //
+            // Every lump *entering* a tile is weighed against the site's bill, and that was taken to
+            // be the whole story until a save turned up a length of track reading 56% iron and 43%
+            // titanium — the full bill, plus one whole packet of somebody else's cargo, welded into
+            // the fabric. It had been a storage; the storage went; its titanium stayed standing on
+            // the belt; and the tile under it became a construction site. Nothing pushed anything
+            // anywhere. A tile can *become* a ghost beneath a lump that was already there — take a
+            // marked run, let it hand some metal back, then CANCEL it — and the entry check has
+            // nothing to say about that.
+            //
+            // ⚠️ Contamination is permanent and silent. The tile then reads as ordinary finished
+            // track, and the first thing anyone notices is that it will not come apart: what it is
+            // made of is not something the next ghost down the line can be built from, so nothing on
+            // the network wants its metal back. Asked here, it cannot matter how the lump arrived.
+            val standing = rail.resourceAt(tile) ?: return null
+            if (!buildableFrom(bill, standing)) return null
             val shortfall = LongArray(Species.COUNT)
             var need = 0L
             for (sp in Species.ALL) {
@@ -2139,6 +2156,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         fun absorbIntoMachineGhost(tile: TileIndex, m: DeckMachine): Packet? {
             val shortfall = LongArray(Species.COUNT)
+            // The deck's half of the same door — see [absorbIntoGhost]. A machine footprint is a
+            // far easier place to strand somebody's cargo than a single rail tile.
+            val standing = rail.resourceAt(tile) ?: return null
+            if (!buildableFrom(machineBillOfMaterials(m.kind, m.tiles(grid).size), standing)) return null
             val need = machineShortfall(m, shortfall)
             if (need <= 0L) return null
             val have = rail.massAt(tile)

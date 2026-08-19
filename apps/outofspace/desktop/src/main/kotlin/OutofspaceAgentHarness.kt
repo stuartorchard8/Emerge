@@ -669,6 +669,11 @@ object OutofspaceAgentHarness {
                     "  ${fmt(grams(state.conduits.massAt(c, tile)))}g" +
                     (if (seg.deconstructing) "  MARKED FOR DECONSTRUCTION" else "") +
                     (if (state.conduits.isGhost(c, tile)) "  GHOST" else ""))
+                // ⚠️ **What it is made of, not merely how much.** A ghost bakes in whatever junk
+                // came with the delivery that built it, and a length of track that came out
+                // contaminated is refused by the next ghost down the line as something it cannot be
+                // built from — so it can never hand its metal back. Invisible in a mass figure.
+                println("[agent]   ${" ".repeat(9)} ${composition(state.conduits.tracks[c].mixtureAt(tile))}")
             }
         }
 

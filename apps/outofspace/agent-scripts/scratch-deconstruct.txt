@@ -1,0 +1,6 @@
+load "apps/outofspace/desktop/outofspace.save"
+probe 21 21
+probe 23 21
+probe 22 19
+probe 21 22
+probe 23 22

@@ -203,6 +203,91 @@ class GhostTest {
         )
     }
 
+    /**
+     * ⛔ **A ghost refuses what it cannot be built from, including what is already standing on it.**
+     *
+     * From Stu's save: a length of finished track reading **56% iron, 43% titanium** — the full iron
+     * bill plus one whole packet of titanium — marked for deconstruction and unable to hand a gram
+     * of itself back, because what it is made of is not something the ghost below it can be built
+     * from and nothing else on the network wanted it. Nothing had pushed that titanium in; there is
+     * no machine and no bridge within a tile of it. It arrived as ordinary traffic.
+     *
+     * The anti-exploit was asked of every lump *entering* a tile and never of one already there. A
+     * tile carrying traffic can become a construction site under the lump standing on it — mark a
+     * length of track, let it hand some metal back, then CANCEL it, and it is short of its bill with
+     * somebody else's cargo parked on top. The ghost then swallowed it whole, junk and all, exactly
+     * as it is supposed to for a delivery that got past the door.
+     *
+     * ⚠️ Silent and permanent: the tile reads as ordinary finished track and only its composition
+     * says otherwise. Asking the door here rather than at the three ways in means it cannot matter
+     * how the lump arrived.
+     */
+    @Test
+    fun `a ghost does not swallow a lump that was already standing on it`() {
+        val start = tankAndRun(ghostAt = 7)
+        val ghost = start.grid.tile(7, 3)
+        // Somebody else's titanium, parked on the tile before it was ever a construction site.
+        start.rail.loadOnto(ghost, Mixture.of(Species.Titanium to Capacity.PACKET_MASS, energy = 0))
+
+        val s = run(start, RAIL_PERIOD * 20)
+
+        assertEquals(
+            0L,
+            s.conduits.tracks[Conduit.Rail][ghost, Species.Titanium],
+            "the ghost ate titanium it could never have been built from",
+        )
+    }
+
+    /**
+     * ⛔ **A machine's port does not get to skip the site's own door.**
+     *
+     * From Stu's save: a length of finished track reading **56% iron, 43% titanium**, marked for
+     * deconstruction and unable to hand a gram of itself back — because what it is made of is not
+     * something the ghost below it can be built from, so nothing on the network wants it. The rail
+     * was fine; its *contents* were poisoned, one whole packet of titanium baked into the fabric.
+     *
+     * The anti-exploit was asked on exactly one of the three ways matter lands on a tile — track to
+     * track, in [advanceSegments]. A storage whose output port stands on a ghost, and a bridge
+     * setting its load down at its far end, both put material straight onto the tile without ever
+     * asking whether the thing standing there could be built from it. The ghost then swallowed it
+     * whole, junk and all, exactly as it is supposed to for a delivery that got past the door.
+     *
+     * ⚠️ Silent, and permanent: the tile reads as ordinary finished track, and only its composition
+     * says otherwise.
+     */
+    @Test
+    fun `a port cannot push into a ghost what the ghost cannot be built from`() {
+        val grid = Grid(12, 6)
+        val deck = DeckArray(grid)
+        // Titanium, with its output port standing on the ghost itself.
+        deck += Storage(grid.tile(3, 3), Direction.Right)
+        // A real sink at the far end, so the network genuinely does want titanium *somewhere* —
+        // without it the whitelist refuses the push for an unrelated reason and proves nothing.
+        deck += Storage(grid.tile(8, 3), Direction.Left)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 9, 3)
+        val start = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(
+            grid.tile(3, 3),
+            Mixture.of(Species.Titanium to 8 * Capacity.PACKET_MASS, energy = 0),
+        ).copy(creative = false)
+        val ghost = grid.tile(4, 3)
+        start.conduits.tracks[Conduit.Rail].release(ghost)
+
+        val s = run(start, RAIL_PERIOD * 40)
+
+        assertEquals(
+            0L,
+            s.conduits.tracks[Conduit.Rail].let { it[ghost, Species.Titanium] },
+            "titanium was pushed straight into a ghost rail and baked into the track",
+        )
+    }
+
     @Test
     fun `a ghost at the end of a run draws material down it and builds itself`() {
         val start = tankAndRun(ghostAt = 7)
