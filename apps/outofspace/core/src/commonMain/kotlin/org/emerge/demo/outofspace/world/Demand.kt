@@ -51,6 +51,21 @@ class Acceptance private constructor(
      */
     val shortOf: Mixture?,
     /**
+     * Whether this sink stands **in the road** — refusing passage to what it cannot use, not merely
+     * declining to take it.
+     *
+     * ⛔ **True for unpaid track and nothing else.** A ghost *rail* must refuse what it cannot be
+     * built from, or a player routes their whole network over a free length of track they have not
+     * paid for; that is the anti-exploit the ghost design rests on. A ghost *machine* has no such
+     * claim — the track under it is finished and paid for, the machine is inert and permeable, and a
+     * lump crossing it takes nothing that is not already there. The same rule was being applied to
+     * two different things, and a storage 90% built stopped a run of iron dead. Found in Stu's save.
+     *
+     * A site that does not stop traffic still pulls what it can use and still refuses what it cannot
+     * at its own door. It simply is not a wall.
+     */
+    val stopsTraffic: Boolean,
+    /**
      * Mass still wanted before this sink is done for good, or [UNLIMITED].
      *
      * Not "room right now". See the class note.
@@ -119,7 +134,7 @@ class Acceptance private constructor(
         const val UNLIMITED: Long = Long.MAX_VALUE
 
         /** Takes any matter, for ever: every machine on the vessel. */
-        val ANYTHING: Acceptance = Acceptance(null, null, UNLIMITED)
+        val ANYTHING: Acceptance = Acceptance(null, null, stopsTraffic = false, wanted = UNLIMITED)
 
         /**
          * Takes what [bill] can be built from, and [shortOf] more of it.
@@ -128,8 +143,8 @@ class Acceptance private constructor(
          * half-built rail wants half a rail. **How much of it is already on its way is not asked
          * here** — that is a fact about a *route*, not about the site, and it lives in [Whitelist].
          */
-        fun forBill(bill: Mixture, shortOf: Mixture): Acceptance =
-            Acceptance(bill, shortOf, shortOf.total)
+        fun forBill(bill: Mixture, shortOf: Mixture, stopsTraffic: Boolean = true): Acceptance =
+            Acceptance(bill, shortOf, stopsTraffic, shortOf.total)
     }
 }
 
@@ -389,7 +404,8 @@ class Whitelist private constructor(
                         here = (here ?: mutableListOf()).also {
                             it.add(Demand(a, loadOn(tile, a.bill), null))
                         }
-                        if (plug == null || a.wanted > plug.wanted) plug = a
+                        // Only a site that stands in the road is one — see [Acceptance.stopsTraffic].
+                        if (a.stopsTraffic && (plug == null || a.wanted > plug.wanted)) plug = a
                     }
                 }
 

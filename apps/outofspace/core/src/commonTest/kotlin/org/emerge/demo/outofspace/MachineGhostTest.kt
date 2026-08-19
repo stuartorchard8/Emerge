@@ -236,6 +236,63 @@ class MachineGhostTest {
         assertFalse(s.deck.isGhost(grid.tile(13, 4)), "the storage past the plug never finished")
     }
 
+    /**
+     * ⛔ **A half-built machine standing on paid-for track does not stop the traffic on it.**
+     *
+     * From Stu's save: iron sitting on a belt, refusing to travel down a fully built run to a ghost
+     * rail beyond, because a storage 90% of the way through building itself stood over one tile of
+     * that run. The storage wants titanium; the iron is not titanium; so the iron was turned away at
+     * a tile whose *track* was finished and paid for, and it never went anywhere again.
+     *
+     * ⛔ **The anti-exploit is about unpaid track, and only that.** A ghost *rail* must refuse what
+     * it cannot be built from, because otherwise a player routes their network over a free length of
+     * track they have not paid for. A ghost *machine* has no such claim: the track under it is
+     * finished, the machine is inert and permeable, and a lump crossing it takes nothing that is not
+     * already there. It was the same rule applied to two different things.
+     *
+     * A machine site still *pulls* what it can use — that is what builds it — and it still refuses
+     * what it cannot use at its own door, so nothing wrong gets absorbed. It simply no longer stands
+     * in the road.
+     *
+     * ⚠️ A ghost machine standing on ghost **track** is a different matter, and unchanged: the track
+     * blocks, on its own account. See `a ghost machine standing on ghost track feeds both`.
+     */
+    @Test
+    fun `iron crosses a half-built machine to reach the ghost beyond it`() {
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(1, 4), Direction.Right)
+        // Titanium, and 3x3, so its construction port sits on the run at its centre.
+        val blocking = Storage(grid.tile(7, 4), Direction.Right)
+        deck.stand(blocking, withCasing = false)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 2, 12, 4)
+        val start = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(
+            grid.tile(1, 4),
+            Material.Iron.composition.scaledTo(20 * Capacity.PACKET_MASS),
+        ).copy(creative = false)
+        val target = grid.tile(12, 4)
+        start.conduits.tracks[Conduit.Rail].release(target)
+        assertTrue(start.deck.isGhost(grid.tile(7, 4)), "fixture: the machine in the way should be unbuilt")
+        assertTrue(
+            start.conduits.isComplete(Conduit.Rail, grid.tile(7, 4)),
+            "fixture: the track under it is finished and paid for — that is the whole point",
+        )
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 120)
+
+        assertTrue(
+            s.conduits.isComplete(Conduit.Rail, target),
+            "the ghost beyond the machine never got its iron",
+        )
+        assertTrue(s.deck.isGhost(grid.tile(7, 4)), "the storage ate iron it cannot be built from")
+    }
+
     /** Casing spreads over the footprint as it arrives, so no tile of it runs ahead of the others. */
     @Test
     fun `a big machine builds evenly across its footprint`() {

@@ -2529,8 +2529,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for ((tile, m) in machineGhosts) {
                 val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
                 machineShortfall(m, scratch)
+                // ⛔ **A machine site does not stand in the road.** The track under it is finished
+                // and paid for; the anti-exploit is about unpaid *track*. See [Acceptance.stopsTraffic].
                 accepts.getOrPut(tile) { mutableListOf() }
-                    .add(Acceptance.forBill(bill, Mixture.of(scratch.copyOf(), energy = 0L)))
+                    .add(Acceptance.forBill(bill, Mixture.of(scratch.copyOf(), energy = 0L), stopsTraffic = false))
             }
 
             // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is
@@ -2593,7 +2595,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // ⚠️ The lump is read off the layer at most once, and only when something might
                     // refuse it: `resourceAt` allocates, and this runs for every candidate direction
                     // of every loaded tile on every step.
-                    val site = accepts[to]
+                    // ⛔ **Only a site that stands in the road is asked** — unpaid track, and nothing
+                    // else. A half-built machine over finished track declines what it cannot use
+                    // without refusing it passage. See [Acceptance.stopsTraffic].
+                    val site = accepts[to]?.filter { it.stopsTraffic }?.takeIf { it.isNotEmpty() }
                     if (site == null && whitelist.permitsAnything(to)) true
                     else rail.resourceAt(from)?.let { lump ->
                         // ⛔ Rationed only where the lump has somewhere else it could go — see
