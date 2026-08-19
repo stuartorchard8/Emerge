@@ -134,6 +134,35 @@ class Acceptance private constructor(
 }
 
 /**
+ * A construction site standing **in the way**, and what it is still owed.
+ *
+ * ⛔ A ghost refuses everything it cannot be built from, so an unbuilt iron rail is a **plug** in the
+ * line for titanium: send the titanium and it comes to rest against the ghost, the iron behind it
+ * can never get through, the rails never finish, the plug never dissolves. Nothing downstream is at
+ * fault and no amount of counting *quantity* sees it — it is an ordering failure.
+ *
+ * So a route running past a hungry site carries what that site is owed, and is refused until the
+ * debt is paid: enough material the *site* can use already standing between here and it. Then the
+ * plug is guaranteed to have dissolved before anything sent now arrives, because nothing overtakes
+ * on a rail.
+ *
+ * ⛔ **A site is not a plug for the thing it is made of**, and this is asked of [bill] at the door
+ * rather than folded into a number, because it is a question about the *material* being sent. A
+ * ghost fed what it is short of takes what it needs and lets the remainder ride on — that is the
+ * whole design. Charging the debt against iron as well as titanium made a column of nine ghosts
+ * drain the column beside it one rail at a time, since only the nearest one's demand was ever
+ * visible. Stu's case, and it is the difference between rebuilding a network being playable and not.
+ *
+ * One entry per distinct bill: what pays a rail's debt down is not what pays a firebrick furnace's.
+ */
+class Block(
+    /** What the site in the way is built from — and so what it will let past. */
+    val bill: Mixture,
+    /** Mass it is still short by, less whatever it can use standing between here and it. */
+    val owed: Long,
+)
+
+/**
  * One reachable appetite, as seen **from one tile** — a demand, and what already stands between here
  * and it.
  *
@@ -161,36 +190,24 @@ class Demand(
      * sees nothing and pours.
      */
     val covered: Long,
-    /**
-     * What a **construction site in the way** still has to be given before anything may be sent
-     * along this route.
-     *
-     * ⛔ The ordering rule. A ghost refuses everything it cannot be built from, so an unbuilt rail is
-     * a **plug** in the line for every other species: send titanium down a run with an unfinished
-     * iron rail on it and the titanium comes to rest against the ghost, the iron behind it can never
-     * get through, and the run is jammed for good. Nothing downstream is at fault and no amount of
-     * counting *quantity* sees it — it is an ordering failure.
-     *
-     * So a demand propagating upstream **past** a hungry ghost picks up that ghost's shortfall as a
-     * debt, and is permitted only once the debt is paid: enough material the *ghost* can use is
-     * already standing between here and it. Then the plug is guaranteed to have dissolved before
-     * anything sent now arrives, because nothing overtakes on a rail.
-     *
-     * ⚠️ The ghost's **own** demand never carries the debt, which is what stops this deadlocking:
-     * iron keeps flowing to the plug and dissolves it.
-     */
-    val debt: Long,
-    /** What the nearest blocking ghost is built from — what pays the [debt] down. Null when clear. */
-    val blockerBill: Mixture?,
+    /** Construction sites in the way, by what they are built from. Null when the road is clear. */
+    val blocks: List<Block>?,
 ) {
-    /** Whether [mixture] sent from this tile along this route has somewhere to be, and is wanted. */
+    /**
+     * Whether this route is usable for [mixture] at all — the *kind* and *order* questions.
+     *
+     * ⚠️ Deliberately **not** the quantity question. How much more is worth sending is a sum over
+     * every sink on the route and cannot be answered one route at a time — see [Whitelist.permits].
+     */
     fun wants(mixture: Mixture): Boolean {
-        if (debt > 0L) return false
-        if (!acceptance.isUnlimited && acceptance.wanted <= covered) return false
+        val inTheWay = blocks
+        if (inTheWay != null) {
+            for (b in inTheWay) if (b.owed > 0L && !buildableFrom(b.bill, mixture)) return false
+        }
         return acceptance.admits(mixture)
     }
 
-    override fun toString(): String = "Demand($acceptance, covered=$covered, debt=$debt)"
+    override fun toString(): String = "Demand($acceptance, covered=$covered, blocks=${blocks?.size ?: 0})"
 }
 
 /**
@@ -212,14 +229,17 @@ class Demand(
  *
  * ## Three questions, not one
  *
- * A tile permits a lump when some route out of it answers yes to all three — see [Demand]:
+ * A tile permits a lump when the routes out of it answer all three:
  *
  *  1. **Kind** — something out there can use this sort of matter at all.
- *  2. **Quantity** — it is not already covered by what is standing between here and it. This is
- *     what stops a tank emptying itself onto a run for a job that needed one packet.
- *  3. **Order** — no unfinished construction site in the way is still short of what it needs. A
- *     ghost is a plug for everything it cannot be built from, and material sent past one before it
- *     dissolves comes to rest against it and jams the run for good.
+ *  2. **Order** — no construction site in the way still refuses it. See [Block].
+ *  3. **Quantity** — the total still wanted by everything reachable exceeds what is already standing
+ *     between here and it.
+ *
+ * ⚠️ **Quantity is a sum, and it has to be.** Nine ghosts wanting a rail apiece want nine rails.
+ * Asked one route at a time the far ones always look covered, because the material standing in the
+ * corridor is counted against each of them separately when it can only ever be eaten once — so the
+ * column drained one rail at a time and the tiles that emptied first ceased to be and cut the road.
  *
  * All three are read **at the tile being entered**, never at the tile being left, which is what
  * keeps them from blocking the very traffic they are counting: a lump moving into a tile is not part
@@ -253,16 +273,29 @@ class Whitelist private constructor(
 
     /**
      * Whether [mixture] standing on [tile] has somewhere to go that can use it, wants more of it,
-     * and can be reached without jamming against a construction site on the way.
+     * and can be reached without coming to rest against a construction site on the way.
      *
      * ⚠️ Asked of every candidate direction of every loaded tile on every step, so the unlimited
-     * case is answered before the mixture is so much as looked at.
+     * case is answered before the mixture is so much as looked at, and the arithmetic here stays
+     * scalar — the per-species reading belongs in [room], which runs once per port per tick.
      */
     fun permits(tile: TileIndex, mixture: Mixture): Boolean {
         if (permitsAnything(tile)) return true
         val here = routes.getOrNull(tile.index) ?: return false
-        for (d in here) if (d.wants(mixture)) return true
-        return false
+        var wanted = 0L
+        var covered = 0L
+        var found = false
+        for (d in here) {
+            if (!d.wants(mixture)) continue
+            if (d.acceptance.isUnlimited) return true
+            found = true
+            wanted = saturated(wanted, d.acceptance.wanted)
+            // ⚠️ The **largest**, not the sum. On a corridor feeding several sites the same lumps
+            // stand between here and every one of them; adding the counts up would charge the same
+            // packet once per site and shut the source off with the job barely started.
+            if (d.covered > covered) covered = d.covered
+        }
+        return found && wanted > covered
     }
 
     /**
@@ -279,18 +312,25 @@ class Whitelist private constructor(
     fun room(tile: TileIndex, mixture: Mixture): Long {
         if (permitsAnything(tile)) return Acceptance.UNLIMITED
         val here = routes.getOrNull(tile.index) ?: return 0L
-        var most = 0L
+        var wanted = 0L
+        var covered = 0L
         for (d in here) {
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
-            most = maxOf(most, d.acceptance.room(mixture) - d.covered)
+            wanted = saturated(wanted, d.acceptance.room(mixture))
+            if (d.covered > covered) covered = d.covered
         }
-        return most
+        return if (wanted > covered) wanted - covered else 0L
     }
 
     companion object {
         /** Permits nothing anywhere: a world whose flow has not been worked out yet. */
         fun empty(): Whitelist = Whitelist(arrayOfNulls(0), BooleanArray(0))
+
+        private fun saturated(a: Long, b: Long): Long {
+            val sum = a + b
+            return if (sum < a) Long.MAX_VALUE / 2 else sum
+        }
 
         /**
          * Walk the flow downstream-first, carrying each tile's appetite back to whoever feeds it.
@@ -316,13 +356,10 @@ class Whitelist private constructor(
                 var any = false
                 var here: MutableList<Demand>? = null
 
-                // What stands on this tile is between whoever feeds it and everything beyond, so
-                // every count a feeder inherits from here includes it. Asked lazily: on a quiet run
-                // most tiles are empty and most tiles have no route worth the question.
                 val own = acceptanceAt(tile)
-                // A construction site standing here is a plug in the line for everything it cannot
-                // be built from. The **hungriest** one speaks for the tile: where a ghost machine
-                // stands on ghost track there are two, and the debt has to cover the larger.
+                // A construction site standing here is in the way of everything beyond it. The
+                // **hungriest** speaks for the tile: where a ghost machine stands on ghost track
+                // there are two, and what is owed has to cover the larger.
                 var plug: Acceptance? = null
                 if (own == null && tile in flow.sinks) any = true
                 if (own != null) {
@@ -333,11 +370,11 @@ class Whitelist private constructor(
                         // so keeping those instead silently stops finite demand propagating at all
                         // and no source ever feeds a construction site again. Eighteen tests say so.
                         if (a.isSatisfied) continue
-                        // Nothing stands between a site and itself, and a site never plugs its own
-                        // supply — both numbers are zero on its own tile, and that is what keeps
-                        // material flowing to the plug that dissolves it.
+                        // Nothing stands between a site and itself, and a site is never in its own
+                        // way — both are empty on its own tile, and that is what keeps material
+                        // flowing to the site that dissolves the obstruction.
                         here = (here ?: mutableListOf()).also {
-                            it.add(Demand(a, loadOn(tile, a.bill), 0L, null))
+                            it.add(Demand(a, loadOn(tile, a.bill), null))
                         }
                         if (plug == null || a.wanted > plug.wanted) plug = a
                     }
@@ -345,55 +382,33 @@ class Whitelist private constructor(
 
                 for (next in flow.successorTiles(tile)) {
                     val j = next.index
-                    // What stands on the successor is between this tile and everything beyond it.
                     if (unlimited[j]) {
-                        if (plug == null) any = true
+                        val blocks = carried(null, plug, tile, loadOn)
+                        if (blocks == null) any = true
                         else {
                             val list = here ?: mutableListOf<Demand>().also { here = it }
                             if (list.none { it.acceptance === Acceptance.ANYTHING }) {
-                                list.add(
-                                    Demand(
-                                        Acceptance.ANYTHING, 0L,
-                                        plug.wanted - loadOn(tile, plug.bill), plug.bill,
-                                    ),
-                                )
+                                list.add(Demand(Acceptance.ANYTHING, 0L, blocks))
                             }
                         }
                     }
                     val theirs = routes[j] ?: continue
                     for (d in theirs) {
+                        // What stands on this tile is between whoever feeds it and everything beyond.
                         val covered =
                             if (d.acceptance.isUnlimited) 0L else d.covered + loadOn(tile, d.acceptance.bill)
-                        // A fresh plug at this tile adds its shortfall on top of whatever is owed
-                        // further down, and only then is what stands here counted against the total.
-                        //
-                        // ⚠️ **In that order, and the tile's load taken off exactly once.** Where a
-                        // plug stands on a tile that already owed something — two ghost rails in a
-                        // row, which is what a freshly drawn run *is* — subtracting the load once
-                        // per debt credits the same packet to both of them. Two rails needing a
-                        // packet each read as paid for by one, the titanium set off, and the run
-                        // jammed with a rail at 530 permille and the iron for it stranded behind.
-                        var debt = d.debt
-                        var bill = d.blockerBill
-                        if (plug != null) {
-                            debt = maxOf(debt, 0L) + plug.wanted
-                            bill = plug.bill
-                        }
-                        if (bill != null) debt -= loadOn(tile, bill)
-                        val route = Demand(d.acceptance, covered, debt, bill)
+                        val route = Demand(d.acceptance, covered, carried(d.blocks, plug, tile, loadOn))
                         val list = here ?: mutableListOf<Demand>().also { here = it }
-                        // One entry per sink, and the **most permissive** one wins: where two
-                        // routes lead to the same place, "there is a way this is still wanted" is
-                        // the answer, and taking it costs nothing — turning down the branch that is
-                        // covered or plugged is refused at that branch's own tile a step later.
+                        // One entry per sink, and the **most permissive** one wins: where two routes
+                        // lead to the same place, "there is a way this is still wanted" is the
+                        // answer, and taking it costs nothing — turning down the branch that is
+                        // covered or obstructed is refused at that branch's own tile a step later.
                         // Without this a network of diamonds grows a list per route rather than per
                         // sink, and the walk stops being linear.
                         val at = list.indexOfFirst { it.acceptance === route.acceptance }
                         when {
                             at < 0 -> list.add(route)
-                            route.debt < list[at].debt ||
-                                (route.debt == list[at].debt && route.covered < list[at].covered) ->
-                                list[at] = route
+                            better(route, list[at]) -> list[at] = route
                         }
                     }
                 }
@@ -404,6 +419,54 @@ class Whitelist private constructor(
                 routes[i] = if (any) null else here
             }
             return Whitelist(routes, unlimited)
+        }
+
+        private fun owed(blocks: List<Block>?): Long {
+            var total = 0L
+            if (blocks != null) for (b in blocks) total += b.owed
+            return total
+        }
+
+        private fun better(a: Demand, b: Demand): Boolean {
+            val oa = owed(a.blocks)
+            val ob = owed(b.blocks)
+            return oa < ob || (oa == ob && a.covered < b.covered)
+        }
+
+        /**
+         * What is owed along a route, one tile further upstream.
+         *
+         * A [plug] standing on this tile adds its own shortfall, and then **everything owed is paid
+         * down by what stands here that its own bill can use** — each bill's load taken off exactly
+         * once.
+         *
+         * ⚠️ **Once.** Where a plug stands on a tile that already owed something for the same bill —
+         * two ghost rails in a row, which is what a freshly drawn run *is* — subtracting the load
+         * once per debt credits the same packet to both of them. Two rails needing a packet apiece
+         * read as paid for by one, the titanium set off, and the run jammed.
+         */
+        private fun carried(
+            inherited: List<Block>?,
+            plug: Acceptance?,
+            tile: TileIndex,
+            loadOn: (TileIndex, Mixture?) -> Long,
+        ): List<Block>? {
+            val plugBill = plug?.bill
+            if (inherited == null && plugBill == null) return null
+            val owedBy = ArrayList<Pair<Mixture, Long>>(2)
+            if (inherited != null) for (b in inherited) owedBy.add(b.bill to b.owed)
+            if (plug != null && plugBill != null) {
+                val at = owedBy.indexOfFirst { it.first === plugBill }
+                if (at < 0) owedBy.add(plugBill to plug.wanted)
+                else owedBy[at] = plugBill to (owedBy[at].second + plug.wanted)
+            }
+            var out: ArrayList<Block>? = null
+            for ((bill, total) in owedBy) {
+                val left = total - loadOn(tile, bill)
+                if (left <= 0L) continue
+                (out ?: ArrayList<Block>(owedBy.size).also { out = it }).add(Block(bill, left))
+            }
+            return out
         }
     }
 }

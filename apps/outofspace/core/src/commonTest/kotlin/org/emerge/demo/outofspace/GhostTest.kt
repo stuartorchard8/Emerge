@@ -206,6 +206,66 @@ class GhostTest {
     }
 
     /**
+     * ⛔ **A column being taken apart pays for the column being built beside it.**
+     *
+     * Stu's case, and the one that decides whether rebuilding a network is playable at all. Nine
+     * lengths of track marked for deconstruction, nine ghosts alongside them, joined at one end. The
+     * matter in the first column is exactly what the second column costs, so the whole job is one
+     * transfer and it ought to simply happen.
+     *
+     * What happened instead: the first rail tick was right — every marked tile dropped a packet and
+     * sent it toward the ghosts — and then everything stalled but the tiles nearest the join. A
+     * ghost is a **plug** for anything it cannot be built from, and the debt that rule levies was
+     * charged against *every* route past it whatever the material was. So the demand of the eight
+     * ghosts beyond the first was invisible, the column drained one rail at a time, and the tiles
+     * that had already emptied ceased to be and cut the two columns apart.
+     *
+     * ⛔ **A ghost is not a plug for the thing it is made of.** It takes what it needs and the
+     * remainder rides on — that is the whole design. The debt is for material the site *refuses*,
+     * and asking that question needs the material, so it is asked at the door rather than baked into
+     * the number.
+     *
+     * ⚠️ And demand **accumulates**: nine ghosts wanting a rail apiece want nine rails, not one. Read
+     * one route at a time the far ghosts always look covered, because the material standing in the
+     * corridor is counted against each of them separately when it can only ever be eaten once.
+     */
+    @Test
+    fun `a column being deconstructed builds the column beside it`() {
+        val grid = Grid(10, 14)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinCol(grid, rails, 5, 2, 10)
+        joinCol(grid, rails, 4, 2, 10)
+        // Joined at one end, in the last tick — which is where Stu left it.
+        run {
+            val a = grid.tile(5, 10)
+            rails[a.index] = rails[a.index]!!.joinedTo(Direction.Left)
+            val b = grid.tile(4, 10)
+            rails[b.index] = rails[b.index]!!.joinedTo(Direction.Right)
+        }
+        for (y in 2..10) {
+            val t = grid.tile(5, y)
+            rails[t.index] = rails[t.index]!!.copy(deconstructing = true)
+        }
+        val start = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        for (y in 2..10) start.conduits.tracks[Conduit.Rail].release(grid.tile(4, y))
+
+        val s = run(start, RAIL_PERIOD * 200)
+
+        val unbuilt = (2..10).filterNot { s.conduits.isComplete(Conduit.Rail, s.grid.tile(4, it)) }
+        val left = (2..10).filter { s.conduits.at(Conduit.Rail, s.grid.tile(5, it)) != null }
+        assertTrue(
+            unbuilt.isEmpty(),
+            "ghosts at y=$unbuilt never got built; marked track still standing at y=$left",
+        )
+    }
+
+    /**
      * ⛔ **Building with impure material does not precipitate the impurity.**
      *
      * From Stu's save: 181g of **pure carbon** parked on a rail at (12, 28), refusing to take any
