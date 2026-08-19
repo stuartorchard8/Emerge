@@ -326,12 +326,14 @@ class FlightTest {
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         if (ballast) for (x in HULL_LEFT..HULL_RIGHT) for (y in HULL_TOP + 1 until BREACH_Y) put(x, y)
+        // Creative: the engine here is a *hole*, punched by removing a hull tile. Outside creative
+        // that delete marks the tile and the wall stays up, so there is nothing to vent through.
         return VesselState(
             grid = grid,
                         deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).copy(creative = true)
     }
 
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
@@ -340,7 +342,9 @@ class FlightTest {
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }
         for (x in HULL_LEFT..HULL_RIGHT) { put(x, HULL_TOP); put(x, HULL_BOTTOM) }
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
+        // Creative, for the reason above: the breach is made by deleting a hull tile.
         return VesselState(grid = grid, deck=deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .copy(creative = true)
     }
 
     private fun abs(v: Long): Long = if (v < 0L) -v else v

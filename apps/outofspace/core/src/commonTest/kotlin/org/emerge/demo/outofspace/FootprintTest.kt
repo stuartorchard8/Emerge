@@ -52,8 +52,16 @@ class FootprintTest {
         return s
     }
 
+    /**
+     * Creative, because these are about **geometry** — which tiles a footprint claims and releases.
+     * Outside creative a placement is a ghost and a delete is a mark, and neither answers the
+     * question this file asks.
+     */
     private fun placeDeck(grid: Grid, tile: TileIndex, kind: DeckMachineKind, facing: Direction = Direction.Right): VesselState =
-        run(VesselState.empty(grid), 1, OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(kind), facing))))
+        run(
+            VesselState.empty(grid).copy(creative = true), 1,
+            OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(kind), facing))),
+        )
 
     // ── Occupancy ─────────────────────────────────────────────────────────────
 
@@ -247,6 +255,7 @@ class FootprintTest {
                 else -> Smelter(grid.tile(8, 8), Direction.Right)
             }
             return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+                .copy(creative = true)
         }
         val small = room(DeckMachineKind.Processor).storedEnergy
         val large = room(DeckMachineKind.Smelter).storedEnergy

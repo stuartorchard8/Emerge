@@ -383,7 +383,27 @@ construction and the processor concentrates toward one; every species of every m
 carbon, quartz, aluminium — is already producible on its own. Stu is leaning toward **deleting the
 smelter**; that is not in scope here.
 
-**5d. Deconstruction.** The mark, the five-step ordering above, ceasing to be.
+**5d. Deconstruction ✅** The mark, the five-step ordering above, ceasing to be.
+
+The mark is `VesselState.scrapping`, a set of **centre tiles**, saved as `scrapping=1` on the
+machine's own record — the same spelling a segment uses, absent reads as unmarked, no version bump.
+It is cleared by `dropMachine` and nowhere else.
+
+A marked machine **does not run**, and that is forced rather than chosen: one that kept running would
+refill the very stores deconstruction is waiting on. (A rail being taken apart still carries traffic,
+because carrying is not producing.)
+
+⚠️ **A store a surviving output port still drains is left to that port.** A `Storage` keeps only an
+`Inside` store and that *is* what its output port drains, so two mouths would empty one tank in a
+tick — harmless for the ledger, but it comes apart at twice the rate it appears to and puts the same
+cargo down twice.
+
+⚠️ **The rails' collision, again, and in a second place.** A machine handing its casing back is short
+of its bill from the first load, so it reads as a ghost. Guarding `machineGhosts` was not enough:
+`portsByTile` asked `isGhost` *before* the mark, so the machine grew a **construction** port, turned
+into a sink and drew its own metal straight back off the belt. Silent, stable, and indistinguishable
+from deconstruction doing nothing. **Being told to go overrides being short — in every place that
+asks.**
 
 **5e. Rendering, starter vessel, harness.** A ghost machine reads as one, a marked one reads as
 marked, and `agent-scripts/` watches a machine build itself.

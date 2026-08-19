@@ -121,6 +121,9 @@ object Save {
         for (tile in state.grid.tiles) {
             val m = state.deck[tile] ?: continue
             out.append("deckmachine ").append(tile.index).append(' ').append(writeDeckMachine(m, state.grid, state.buffers))
+            // The same spelling a segment being taken apart uses, for the same fact. Absent reads as
+            // "not marked", so no version bump and no migration.
+            if (tile in state.scrapping) out.append(" scrapping=1")
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
@@ -592,6 +595,7 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         var creative = false
+        val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
         var baselineCargo: Long? = null
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
@@ -718,6 +722,9 @@ object Save {
                     val t = tile(1)
                     if (deck[t] != null) fail("two machines at tile $t")
                     deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    // Read off the raw tokens rather than through the machine, because the mark is a
+                    // fact about the vessel and not about the machine — see [VesselState.scrapping].
+                    if (tokens.any { it == "scrapping=1" }) scrapping.add(t)
                 }
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
@@ -932,6 +939,7 @@ object Save {
             structure = structure,
             occupancy = occupancy,
             creative = creative,
+            scrapping = scrapping,
             builtMass = built,
             // A file that predates the field means "started empty", not "recompute from what is
             // aboard now" -- recomputing would launder every leak the save was written to catch.

@@ -111,12 +111,14 @@ class VesselSimTest {
         deck += Storage(grid.tile(toX + 1, 2), Direction.Right)
         // The plate is five tiles across, so the port is at x=4 and the run starts there.
         joinRow(grid, rails, 4, toX, 2)
+        // Creative: one of these tears the tank out mid-run to watch the jam clear, and a marked
+        // tank would stand there full instead.
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).copy(creative = true)
     }
 
     @Test
@@ -465,7 +467,11 @@ class VesselSimTest {
         deck += Storage(grid.tile(4, 2), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail)                 // its input port
+        // Creative: the point is that the stockpile is *where things are*, shown by taking the tank
+        // away. Outside creative a delete marks the tank and it stands there, still holding the
+        // ingot, which would be a different question.
         var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .copy(creative = true)
             .riding(grid.tile(3, 2), ingot.resource)
         s = run(s, RAIL_PERIOD)
         assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.mass, "it landed in the tank")

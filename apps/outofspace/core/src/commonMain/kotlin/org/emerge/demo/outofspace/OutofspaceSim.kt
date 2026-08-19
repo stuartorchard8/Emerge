@@ -220,6 +220,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // cannot be built from": let a smelter run before it is paid for and the casing is a
                 // formality, because the player already has everything the machine was for.
                 if (w.deck.isGhost(tile)) continue
+                // ⚠️ **Nor does one being taken apart**, and here that is forced rather than chosen:
+                // a machine that kept running would refill the very buffers deconstruction is
+                // waiting on, and it would never empty. A rail being taken apart still carries
+                // traffic because carrying is not producing; this is.
+                if (tile in w.scrapping) continue
                 val activation = m.wiring.activation(Action.Run, signals.at(tile))
                 w[tile] = when (m) {
                     // A bridge is inert like a length of track: its load is shuffled along by
@@ -501,6 +506,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             extractedMass = w.extractedMass,
             ventedMass = w.ventedMass,
             builtMass = w.builtMass,
+            scrapping = w.scrapping.toSet(),
             signals = signals,
             networks = networks,
             structure = structure,
@@ -1118,6 +1124,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Held because `state` is a constructor parameter and the edit path runs long after init.
          */
         val creative: Boolean = state.creative
+
+        /** Deck machines marked for deconstruction, by centre tile — see [VesselState.scrapping]. */
+        val scrapping: MutableSet<TileIndex> = state.scrapping.toMutableSet()
         var acquiredEnergy: Long = state.acquiredEnergy
 
         /** Charges [energy] of waste heat to the machine stored at [index]. */
@@ -1337,6 +1346,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Takes the whole building out (not a slice of it). Whatever it held drops to the deck. */
         private fun removeMachine(tile: TileIndex): Boolean {
             val origin = originAt(tile) ?: return false
+            if (!creative) {
+                // Outside creative this **marks** rather than removes, exactly as deleting a rail
+                // does: the machine grows an output, hands back what it is holding and then what it
+                // is made of, and goes when it holds nothing. Conjuring a machine out of nothing and
+                // making one vanish into nothing are the same privilege and are granted together.
+                scrapping.add(origin)
+                return true
+            }
+            dropMachine(origin)
+            return true
+        }
+
+        /**
+         * Takes the machine off the deck for good.
+         *
+         * Two callers with opposite ledgers, the same pair [dropConduit] has: the creative delete,
+         * where the casing vanishes and `scrapped` books it as leaving the world, and a machine that
+         * has finished handing itself back, where there is nothing left to book — its stores and its
+         * casing are already empty, so the energy read here is zero.
+         *
+         * ⚠️ **The mark goes with it.** A mark keyed by tile would otherwise outlive the machine and
+         * condemn whatever was built there next.
+         */
+        private fun dropMachine(tile: TileIndex): Boolean {
+            val origin = originAt(tile) ?: return false
             // Energy is in the layer rather than on the object, so it is read *before* the removal —
             // `-=` zeroes the stores on its way out.
             val deckMachine = deck[origin] ?: return false
@@ -1347,6 +1381,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // reach, and it still counts toward the vessel's mass.
             buffers.releaseRoles(grid, deckMachine, origin)
             deck -= origin
+            scrapping.remove(origin)
             return true
         }
 
@@ -1709,6 +1744,174 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
         }
 
+        /**
+         * A deck machine marked for deconstruction comes apart, in the order it has to come apart in.
+         *
+         * The deck's twin of [scrapDeconstructing], and the ordering is the design rather than an
+         * implementation detail:
+         *
+         * 1. **Its output ports drain as normal.** A machine's product is still its product and
+         *    leaves the way it always did — [portsByTile] keeps those ports, so this needs no code.
+         * 2. **Its input port hands back** whatever is sitting in the input buffer, onto the belt
+         *    that fed it. Its inputs are gone as *ports* (nothing new comes in), so the handing back
+         *    is done here, at the tile the port stood on.
+         * 3. **Each of those stops the moment its own store is clear.** A store with nothing behind
+         *    it is not a place anything leaves from.
+         * 4. **Only when every other store is clear** does the centre port start handing back the
+         *    **casing**, a packet at a time. Casing is the one thing whose removal cannot be undone,
+         *    so it is the last thing done — that ordering is what stops a machine's contents being
+         *    destroyed by its own demolition.
+         * 5. It ceases to be when its stores and its casing are all empty.
+         *
+         * ⚠️ **Nothing leaves until the belt has taken it**, which is the lesson `4e8d377` cost:
+         * offering first and deducting what a *successful* offer books. A refusal is ordinary — an
+         * ingot will not merge with the ore riding over it however much headroom there is — and a
+         * refused machine simply hands nothing back this tick and stays marked.
+         *
+         * ⚠️ A machine with **no track** at the tile it wants to hand back through waits for ever.
+         * That is the same occupied-tile family as the rails' open question, not a new one.
+         */
+        fun scrapMachines() {
+            if (scrapping.isEmpty()) return
+            for (centre in scrapping.toList()) {
+                val m = deck[centre] ?: run { scrapping.remove(centre); return@run null } ?: continue
+
+                // Steps 2 and 3: the stores, each at the tile its own port stood on. Product and
+                // waste are drained by their ports and are only *waited* on here.
+                // ⚠️ A store that a surviving output port still drains is **left to that port**.
+                // Otherwise two mouths empty one store in a tick — harmless for the ledger, since
+                // each deducts what it takes, but it makes a machine come apart at twice the rate it
+                // appears to and puts the same cargo down in two places. A tank is the case that
+                // matters: a `Storage` keeps only an `Inside` store and that *is* what its output
+                // port drains, so the tank empties the way it always did and this pass only waits.
+                val drainedByPort = HashSet<BufferRole>()
+                for (stream in Stream.entries) outputBufferRole(m, stream)?.let { drainedByPort.add(it) }
+
+                var storesHeld = 0L
+                var handedBack = false
+                for (role in BufferRole.entries) {
+                    val store = bufferTile(grid, m, centre, role) ?: continue
+                    val held = buffers.resourceAt(store) ?: continue
+                    if (held.mass <= 0L) continue
+                    storesHeld += held.mass
+                    if (role in drainedByPort) continue
+                    if (handBack(store, held)) handedBack = true
+                }
+                if (storesHeld > 0L || handedBack) continue
+
+                // Step 4: the casing, only now that the machine is empty.
+                val tiles = m.tiles(grid)
+                if (!handCasingBack(centre, tiles)) continue
+
+                // Step 5.
+                if (tiles.all { deck.stuff.massAt(it) == 0L }) dropMachine(centre)
+            }
+        }
+
+        /**
+         * Puts a store's contents down on the track at [store]'s own tile, and empties it if it lands.
+         *
+         * Answers whether anything moved, so the caller can wait a tick rather than moving on to the
+         * casing while a store is still emptying.
+         */
+        private fun handBack(store: TileIndex, held: Resource): Boolean {
+            if (rails[store.index] == null) return false
+            val room = rail.headroom(store)
+            if (room <= 0L) return false
+            val take = minOf(held.mass, room)
+            val moving = if (take >= held.mass) held.mixture else held.mixture.take(take)
+            if (moving.total <= 0L) return false
+            val offered = Resource(held.form, moving)
+            val landed =
+                if (rail.resourceAt(store) == null) { rail.put(store, offered); true }
+                else rail.loadOnto(store, offered)
+            if (!landed) return false
+            buffers.put(store, Resource(held.form, held.mixture - moving).takeIf { it.mass > 0L })
+            return true
+        }
+
+        /**
+         * Hands one packet of casing back onto the track at the machine's centre tile.
+         *
+         * Answers whether the machine is now empty of casing — `true` also when there was nothing
+         * left to hand back, which is how a ghost marked for deconstruction goes straight out: it is
+         * exactly a partially-built machine, it dumps what it has, and it needs no special case.
+         *
+         * Taken **evenly off the footprint**, which is how it went on. A machine whose casing came
+         * off one tile at a time would drift through the heat solver as a half-thing.
+         */
+        private fun handCasingBack(centre: TileIndex, tiles: Array<TileIndex>): Boolean {
+            var held = 0L
+            for (t in tiles) held += deck.stuff.massAt(t)
+            if (held <= 0L) return true
+            if (rails[centre.index] == null) return false
+            val room = rail.headroom(centre)
+            if (room <= 0L) return false
+
+            val take = minOf(held, room)
+            val masses = LongArray(Species.COUNT)
+            var moved = 0L
+            for (sp in Species.ALL) {
+                var mass = 0L
+                for (t in tiles) mass += deck.stuff[t, sp]
+                if (mass == 0L) continue
+                val part = if (take >= held) mass else scaledRatio(take, held, mass)
+                if (part <= 0L) continue
+                masses[sp.ordinal] = part
+                moved += part
+            }
+            if (moved <= 0L) return false
+            var energy = 0L
+            for (t in tiles) energy += deck.stuff.energyAt(t)
+            val movedEnergy = if (take >= held) energy else scaledRatio(take, held, energy)
+            val recovered = Mixture.of(masses, movedEnergy)
+            val form = SMELT_PRODUCTS[recovered.dominant] ?: Form.Slag
+
+            // The deposit first, the deduction only if it lands — see the note on this pass.
+            val landed =
+                if (rail.resourceAt(centre) == null) { rail.put(centre, Resource(form, recovered)); true }
+                else rail.loadOnto(centre, Resource(form, recovered))
+            if (!landed) return false
+
+            for (sp in Species.ALL) {
+                val part = masses[sp.ordinal]
+                if (part == 0L) continue
+                takeEvenlyOffFootprint(tiles, sp, part)
+            }
+            takeEnergyEvenlyOffFootprint(tiles, movedEnergy)
+            builtMass -= moved
+            var left = 0L
+            for (t in tiles) left += deck.stuff.massAt(t)
+            return left == 0L
+        }
+
+        /** The mirror of [spreadOverFootprint]: takes [mass] of [species] evenly back off the tiles. */
+        private fun takeEvenlyOffFootprint(tiles: Array<TileIndex>, species: Species, mass: Long) {
+            var owed = mass
+            // Bounded by what each tile actually holds, so an uneven footprint — one tile short
+            // because a reaction ate part of it — cannot be driven negative by an even division.
+            for (t in tiles) {
+                if (owed <= 0L) break
+                val here = deck.stuff[t, species]
+                if (here <= 0L) continue
+                val part = minOf(here, owed)
+                deck.stuff[t, species] = here - part
+                owed -= part
+            }
+        }
+
+        private fun takeEnergyEvenlyOffFootprint(tiles: Array<TileIndex>, energy: Long) {
+            var owed = energy
+            for (t in tiles) {
+                if (owed <= 0L) break
+                val here = deck.stuff.energyAt(t)
+                if (here <= 0L) continue
+                val part = minOf(here, owed)
+                deck.stuff.setEnergy(t, here - part)
+                owed -= part
+            }
+        }
+
         /** Whichever species there is most of, for naming what a demolished thing comes back as. */
         private fun dominantSpecies(mixture: Mixture): Species? {
             var best: Species? = null
@@ -1963,6 +2166,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // A ghost's real ports are not there yet: there is nothing behind them to feed and
                 // nothing to collect. What it has instead is a construction port on its centre tile,
                 // and that is the only opening a half-built machine offers the network.
+                // ⚠️ **Being told to go overrides being short**, and this test has to come *first*.
+                // A machine handing its casing back is short of its bill from the first load, so
+                // asked in the other order it grows a *construction* port, turns into a sink, and
+                // draws its own metal straight back off the belt. That is the rails' collision at
+                // the deck layer (see [scrapDeconstructing]) and it is silent: the machine sits
+                // there at a stable weight looking exactly like deconstruction doing nothing.
+                //
+                // A machine being taken apart keeps its **outputs** — its product is still its
+                // product and leaves the way it always did — and loses its **inputs**: nothing new
+                // is fed to a thing that is being dismantled. Handing back what is already inside it
+                // is [scrapMachines]' job, not a port's.
+                if (tile in scrapping) {
+                    for (port in portsOf(grid, m)) if (port.kind == PortKind.Output) add(port)
+                    continue
+                }
                 if (deck.isGhost(tile)) { add(constructionPortOf(m)); continue }
                 for (port in portsOf(grid, m)) add(port)
             }
@@ -2074,6 +2292,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Before the flow graph is built, so a tile that finished dying this step is not in it
             // and the run closes up in the same tick it was emptied.
             scrapDeconstructing()
+            scrapMachines()
 
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
             //
@@ -2105,6 +2324,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val m = deck[tile] ?: continue
                 if (m.center != tile) continue
                 if (rails[i] == null) continue
+                // ⚠️ **A machine being taken apart is never a ghost**, however short of its bill it
+                // is — and it is short of it from the first load it hands back. This is the rail's
+                // collision (see [scrapDeconstructing]) at the deck layer: without it the machine
+                // puts casing down on its own tile, reads as unbuilt, and absorbs it straight back.
+                // Stable, stationary, and indistinguishable from deconstruction doing nothing.
+                if (tile in scrapping) continue
                 if (deck.isGhost(tile)) machineGhosts[tile] = m
             }
 
@@ -2121,6 +2346,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 .map { it.key }
                 .toMutableSet()
             for (i in rails.indices) if (rails[i]?.deconstructing == true) sources.add(TileIndex(i))
+            // A machine being taken apart is a source at every tile it hands something back at: its
+            // stores at the tiles their ports stood on, and its casing at its centre. Without this
+            // the metal it puts down has nowhere to be pulled to and sits on the tile for ever.
+            for (centre in scrapping) {
+                val m = deck[centre] ?: continue
+                if (rails[centre.index] != null) sources.add(centre)
+                for (role in BufferRole.entries) {
+                    val store = bufferTile(grid, m, centre, role) ?: continue
+                    if (rails[store.index] != null) sources.add(store)
+                }
+            }
             val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
             val flow = FlowGraph.build(
                 railTiles,

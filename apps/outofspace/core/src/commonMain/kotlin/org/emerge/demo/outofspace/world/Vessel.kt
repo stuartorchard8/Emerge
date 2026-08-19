@@ -349,6 +349,22 @@ data class VesselState(
      */
     val creative: Boolean = false,
     /**
+     * The centre tiles of the deck machines the player has marked for deconstruction.
+     *
+     * A **set on the vessel rather than a bit on the machine**, which is the one place this differs
+     * from [Segment.deconstructing]. `DeckMachine` is a sealed interface with eighteen
+     * implementations and the flag would have to be threaded through every one of their `copy`
+     * signatures for a fact that has nothing to do with what any of them is. Machines are addressed
+     * by centre tile everywhere else, so a set of centre tiles is the same key the rest of the code
+     * already uses.
+     *
+     * ⚠️ It is the parallel-array footgun [org.emerge.demo.outofspace.world.machine.DeckArray]'s own
+     * doc warns about: a mark keyed by tile outlives the machine that earned it, and the next thing
+     * built on that tile would arrive already condemned. Clearing it belongs with the removal, and
+     * nowhere else.
+     */
+    val scrapping: Set<TileIndex> = emptySet(),
+    /**
      * Energy the player has inserted into the grid via debug features (placing machines, etc.).
      * Decreases when such things are scrapped.
      */

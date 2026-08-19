@@ -7,8 +7,11 @@ import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.Segment
@@ -16,6 +19,7 @@ import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Structure
@@ -215,6 +219,149 @@ class MachineGhostTest {
         assertFalse(s.deck.isGhost(at), "the smelter never finished")
         val ports = portsOf(grid, s.deck[at]!!)
         assertTrue(ports.any { it.kind == PortKind.Output }, "a finished smelter has an output port")
+    }
+
+    // ── Deconstruction (increment 5d) ─────────────────────────────────────────
+
+    private fun remove(state: VesselState, tile: TileIndex): VesselState =
+        OutofspaceReducer.reduce(
+            cfg, state,
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(tile, DeleteLayer.Deck)))),
+        )
+
+    /**
+     * A finished machine standing on track, with somewhere for its metal to *go*.
+     *
+     * The far end of the run is a **ghost rail**, which is the simplest honest sink: a length of
+     * track short of its bill draws material down the line to itself. Without a sink the first
+     * packet the machine hands back stands on its own tile for ever and the machine jams — the
+     * occupied-tile family the rails already have written up, not something to paper over here.
+     */
+    private fun builtMachine(machine: DeckMachine): VesselState {
+        val deck = DeckArray(grid)
+        deck += machine
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, grid.xOf(machine.center), 4)
+        val s = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        s.conduits.tracks[Conduit.Rail].release(grid.tile(4, 4))
+        return s
+    }
+
+    @Test
+    fun `outside creative mode deleting a machine marks it rather than removing it`() {
+        val at = grid.tile(10, 4)
+        val s = remove(builtMachine(Hull(at)), at)
+        assertNotNull(s.deck[at], "the machine was taken away outright")
+        assertTrue(at in s.scrapping, "and it was not marked either")
+    }
+
+    @Test
+    fun `in creative mode deleting a machine removes it outright`() {
+        val at = grid.tile(10, 4)
+        val s = remove(builtMachine(Hull(at)).copy(creative = true), at)
+        assertNull(s.deck[at], "creative deletion is supposed to be immediate")
+        assertTrue(s.scrapping.isEmpty(), "and it should mark nothing")
+    }
+
+    @Test
+    fun `a marked machine hands its casing back and then ceases to be`() {
+        val at = grid.tile(10, 4)
+        val before = builtMachine(Hull(at))
+        assertTrue(before.deck.stuff.massAt(at) > 0L, "the fixture stood a machine with no casing")
+
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD * 60)
+        assertNull(s.deck[at], "the marked machine is still standing")
+        assertTrue(at !in s.scrapping, "the mark outlived the machine that earned it")
+    }
+
+    /** Every gram of it comes back as cargo — deconstruction is a transfer, not a deletion. */
+    @Test
+    fun `deconstructing a machine conserves mass`() {
+        val at = grid.tile(10, 4)
+        val before = builtMachine(Hull(at))
+        val opening = before.inTransitMass + before.builtMass
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD * 60)
+        assertNull(s.deck[at], "it never finished, so this proves nothing")
+        assertEquals(
+            opening,
+            s.inTransitMass + s.builtMass,
+            "grams went missing between the fabric and the cargo ledger",
+        )
+    }
+
+    /**
+     * ⚠️ The rails' collision, at the deck layer. A machine handing its casing back is short of its
+     * bill from the first load, so it reads as a ghost and absorbs its own metal straight off the
+     * belt — stable, stationary, and indistinguishable from deconstruction doing nothing.
+     */
+    @Test
+    fun `a machine being taken apart does not build itself back up`() {
+        val at = grid.tile(10, 4)
+        val before = builtMachine(Hull(at))
+        val full = before.deck.stuff.massAt(at)
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD * 2)
+        val casing = if (s.deck[at] == null) 0L else s.deck.stuff.massAt(at)
+        assertTrue(casing < full, "the marked machine is still holding all of its casing")
+    }
+
+    /**
+     * ⛔ Stu's ordering: the casing is the one thing whose removal cannot be undone, so it goes
+     * **last**. A machine still holding cargo must hand that back before it starts on itself, or its
+     * own demolition destroys its contents.
+     */
+    @Test
+    fun `a machine hands its contents back before its casing`() {
+        val at = grid.tile(10, 4)
+        val tank = Storage(at, Direction.Right)
+        val before = builtMachine(tank).stocked(
+            at,
+            Resource(Form.IronIngot, Mixture.of(Species.Iron to 3 * Capacity.PACKET_MASS, energy = 0)),
+            BufferRole.Inside,
+        )
+        val full = before.deck.stuff.massAt(at)
+        val stored = before.buffers.massAt(bufferTile(grid, tank, at, BufferRole.Inside)!!)
+        assertTrue(stored > 0L, "the fixture stocked nothing")
+
+        // One step: enough to start handing back, nowhere near enough to finish.
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
+        assertEquals(full, s.deck.stuff.massAt(at), "the casing came apart while cargo was still inside")
+    }
+
+    /** A ghost marked for deconstruction is just a part-built machine: it dumps what it has and goes. */
+    @Test
+    fun `a ghost marked for deconstruction simply goes`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        assertTrue(start.deck.isGhost(at), "fixture")
+
+        val s = run(remove(start, at), OutofspaceReducer.RAIL_PERIOD * 8)
+        assertNull(s.deck[at], "an empty ghost had nothing to hand back and should have gone at once")
+    }
+
+    /**
+     * The mark is the only thing about any of this that is new on disk. Ghost-ness is derived from
+     * the casing and saves for free; being condemned is a decision and has to be written down.
+     */
+    @Test
+    fun `a machine marked for deconstruction survives a save`() {
+        val at = grid.tile(10, 4)
+        val before = remove(builtMachine(Hull(at)), at)
+        assertTrue(at in before.scrapping, "fixture")
+
+        val after = Save.read(Save.write(before))
+        assertTrue(at in after.scrapping, "the machine came back from the save reprieved")
+    }
+
+    @Test
+    fun `an unmarked machine comes back unmarked`() {
+        val after = Save.read(Save.write(builtMachine(Hull(grid.tile(10, 4)))))
+        assertTrue(after.scrapping.isEmpty(), "a save condemned a machine nobody had marked")
     }
 
     @Test

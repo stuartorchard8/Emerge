@@ -57,8 +57,13 @@ class GridFitTriggerTest {
         return s
     }
 
+    /**
+     * Creative: this file's fixtures grow the world and then **take the pieces back off** to leave
+     * padding behind, which is the premise P4 exists for. Outside creative a delete only marks, so
+     * nothing would ever come off and there would be no slack to reclaim.
+     */
     private fun fitted(): VesselState =
-        starterVessel(Grid(96, 60)).fitGrid(pad)
+        starterVessel(Grid(96, 60)).fitGrid(pad).copy(creative = true)
 
     // ── The oracle ────────────────────────────────────────────────────────
 

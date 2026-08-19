@@ -83,7 +83,10 @@ class BridgeTest {
             }
         }
         if (bridged) deck += Bridge(grid.tile(9, 5), Direction.Right)
+        // Creative: a test that clears a bridge to see what it was holding wants the bridge *gone*,
+        // not marked for deconstruction and standing until a belt has carried its metal away.
         return VesselState(grid, deck, conduits = Conduits.ofRails(track), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .copy(creative = true)
             .stocked(grid.tile(3, 5), horizontalSupply)
             .stocked(grid.tile(9, 2), ingots)
     }

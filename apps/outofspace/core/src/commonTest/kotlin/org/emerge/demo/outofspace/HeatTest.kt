@@ -84,6 +84,9 @@ class HeatTest {
         /** The same, for the kinds that live on the deck — a vent is one. */
         deckFill: (Int, Int, TileIndex) -> DeckMachine? = { _, _, _ -> null },
     ): VesselState {
+        // ⚠️ Creative, because a room is breached in these tests by *deleting* a hull tile. Outside
+        // creative that marks the tile for deconstruction and the wall stays up until a belt has
+        // carried its metal away — and a sealed box has no belt.
         val grid = Grid(w + 2, h + 2)   // a ring of open space around the box, so it is not clipped
         val deck = DeckArray(grid)
         for (x in 1..w) {
@@ -98,6 +101,7 @@ class HeatTest {
             deckFill(x, y, grid.tile(x, y))?.let { deck += it }
         }
         return VesselState(grid, deck, conduits = Conduits.ofRails(rails(grid, track)), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .copy(creative = true)
     }
 
     // ── Structure ─────────────────────────────────────────────────────────────
