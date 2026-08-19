@@ -154,8 +154,12 @@ class Whitelist private constructor(
                 val own = acceptanceAt(tile)
                 when {
                     own == null && tile in flow.sinks -> any = true
-                    own != null && own.isUnlimited -> any = true
-                    own != null && !own.isSatisfied -> here = mutableListOf(own)
+                    own != null && own.any { it.isUnlimited } -> any = true
+                    // ⚠️ **Not `filter`** — the ones worth carrying upstream are the ones still
+                    // WANTING something. A satisfied acceptance answers `false` to everything, so
+                    // keeping those instead silently stops finite demand propagating at all and no
+                    // source ever feeds a construction site again. Eighteen tests say so.
+                    own != null -> here = own.filterNot { it.isSatisfied }.takeIf { it.isNotEmpty() }?.toMutableList()
                 }
 
                 for (next in flow.successorTiles(tile)) {

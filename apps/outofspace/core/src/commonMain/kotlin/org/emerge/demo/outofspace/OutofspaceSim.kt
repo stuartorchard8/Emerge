@@ -2491,7 +2491,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val site = accepts[to]
                     if (site == null && whitelist.permitsAnything(to)) true
                     else rail.resourceAt(from)?.let { lump ->
-                        (site == null || site.admits(lump)) && whitelist.permits(to, lump)
+                        (site == null || site.any { it.admits(lump) }) && whitelist.permits(to, lump)
                     } ?: false
                 },
             ) { tile ->

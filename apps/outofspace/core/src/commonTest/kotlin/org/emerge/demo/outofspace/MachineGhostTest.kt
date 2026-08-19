@@ -33,8 +33,10 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -113,6 +115,68 @@ class MachineGhostTest {
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
         assertFalse(s.deck.isGhost(at), "the machine never finished itself")
         assertTrue(s.deck.stuff.massAt(at) > 0L, "it is finished but made of nothing")
+    }
+
+    /**
+     * ⚠️ **Two ghosts on one tile, and both are heard.**
+     *
+     * A ghost machine is fed at its centre and a ghost *rail* is fed at its own tile, so an unbuilt
+     * machine standing on unbuilt track puts two construction sinks at one address. They are not
+     * alternatives: the rail takes what it needs and the remainder rides on into the casing, which
+     * is the order the whole loop depends on — a machine standing on track that cannot carry
+     * anything is a machine nothing can ever reach.
+     *
+     * ⛔ Whatever holds a tile's appetites must therefore hold **all** of them. Stu found this: one
+     * acceptance was overwriting the other, so whichever lost was invisible to the network and the
+     * pair could never both finish. Kept as a test because a map keyed by tile is the obvious shape
+     * to reach for and silently drops the second entry.
+     */
+    @Test
+    fun `a ghost machine standing on ghost track feeds both`() {
+        val at = grid.tile(10, 4)
+        // ⚠️ **A gauge**, for two reasons that both matter. It is one tile, so the machine's own tile
+        // and the tile it is fed at are the same place — which is what puts two sinks at one address.
+        // And it is made of **iron**, like the track, so one pure delivery can satisfy both: an alloy
+        // here would drag in a separate defect that has nothing to do with the question (see the
+        // ignored test below).
+        val start = tankAndGhost(Gauge(at))
+        start.conduits.tracks[Conduit.Rail].release(at)
+        assertTrue(start.deck.isGhost(at), "fixture: the machine should start unbuilt")
+        assertTrue(start.conduits.isGhost(Conduit.Rail, at), "fixture: the track under it too")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 120)
+
+        assertTrue(s.conduits.isComplete(Conduit.Rail, at), "the track under the machine never finished")
+        assertFalse(s.deck.isGhost(at), "the machine never finished")
+    }
+
+    /**
+     * ⛔ **A ghost rail finished off an alloy never quite finishes.** Found while covering the case
+     * above; parked rather than fixed, because it is nothing to do with the whitelist and Stu has not
+     * been asked.
+     *
+     * [absorbIntoGhost] takes a proportional share of **every** species in the lump, including ones
+     * the bill does not want. While the shortfall is bigger than a packet the whole lump goes in and
+     * all is well. Once the shortfall drops below a packet the proportional branch takes over, and a
+     * rail wanting only iron gets `need × ironFraction` of iron per pass — always a shade under what
+     * it asked for. It converges on the bill and never reaches it: 999 permille for ever, with the
+     * run jammed solid behind it.
+     *
+     * The deck path already has the fix — a final top-up capped per species at that species'
+     * shortfall — and the conduit path never got it.
+     */
+    @Ignore
+    @Test
+    fun `a ghost rail finished off an alloy gets within one gram and stops`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        start.conduits.tracks[Conduit.Rail].release(at)
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 120)
+        assertTrue(
+            s.conduits.isComplete(Conduit.Rail, at),
+            "the rail stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, at)} permille",
+        )
     }
 
     /** Casing spreads over the footprint as it arrives, so no tile of it runs ahead of the others. */
