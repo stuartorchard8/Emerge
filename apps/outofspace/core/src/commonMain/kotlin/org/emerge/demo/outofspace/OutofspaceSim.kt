@@ -29,6 +29,10 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.FlowGraph
+import org.emerge.demo.outofspace.world.railTiles
+import org.emerge.demo.outofspace.world.railEnds
+import org.emerge.demo.outofspace.world.railMachineGhosts
+import org.emerge.demo.outofspace.world.railGhosts
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.squashOnto
@@ -2435,70 +2439,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // build itself. Its own tile is the address, so it overrides whatever else wants
             // material there — a machine standing over a ghost is simply cut off from the network
             // until its feed has finished building. See `apps/outofspace/PLAN_self_building_rails.md`.
-            val ghosts = mutableSetOf<TileIndex>()
-            for (i in rails.indices) {
-                val tile = TileIndex(i)
-                val segment = rails[i] ?: continue
-                // ⚠️ **A segment being taken apart is never a ghost**, however short of its bill it
-                // is — and it is always short of it, from the first load it hands back.
-                //
-                // Without this the two halves of the feature eat each other: the deconstruction pass
-                // puts a packet down on the tile, the tile reads as unbuilt, and it absorbs its own
-                // metal straight back off the belt. Perfectly stable, entirely stationary, and it
-                // looks from outside like deconstruction silently doing nothing at all.
-                if (segment.deconstructing) continue
-                if (!tracks.holdsFullBill(Conduit.Rail, tile)) ghosts.add(tile)
-            }
-            // A ghost machine is a sink at its **centre tile**, which is where its construction port
-            // stands — see [constructionPortOf]. Gathered here rather than asked per tile because
-            // the absorb callback runs for every loaded tile of every run on every step.
-            val machineGhosts = HashMap<TileIndex, DeckMachine>()
-            for (i in 0 until deck.size) {
-                val tile = TileIndex(i)
-                val m = deck[tile] ?: continue
-                if (m.center != tile) continue
-                if (rails[i] == null) continue
-                // ⚠️ **A machine being taken apart is never a ghost**, however short of its bill it
-                // is — and it is short of it from the first load it hands back. This is the rail's
-                // collision (see [scrapDeconstructing]) at the deck layer: without it the machine
-                // puts casing down on its own tile, reads as unbuilt, and absorbs it straight back.
-                // Stable, stationary, and indistinguishable from deconstruction doing nothing.
-                if (tile in scrapping) continue
-                // Keyed by the tile it is **fed at**, which is its centre for everything but a
-                // bridge — see [constructionTileOf]. The absorb callback is handed a tile, not a
-                // machine, so the key has to be the address material actually arrives at.
-                if (deck.isGhost(tile)) machineGhosts[constructionTileOf(grid, m)] = m
-            }
-
-            val sinks = ports.entries
-                .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
-                .map { it.key }
-                .toMutableSet()
-            sinks.addAll(ghosts)
-            // Sources (bridge far end gives crossing run its own direction). A segment being taken
-            // apart is one too, and by the same reasoning a ghost is a sink: having been told to
-            // empty itself *is* being an output, and it needs no port to say so.
-            val sources = ports.entries
-                .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Output } }
-                .map { it.key }
-                .toMutableSet()
-            for (i in rails.indices) if (rails[i]?.deconstructing == true) sources.add(TileIndex(i))
-            // A machine being taken apart is a source at every tile it hands something back at: its
-            // stores at the tiles their ports stood on, and its casing at its centre. Without this
-            // the metal it puts down has nowhere to be pulled to and sits on the tile for ever.
-            for (centre in scrapping) {
-                val m = deck[centre] ?: continue
-                val out = constructionTileOf(grid, m)
-                if (rails[out.index] != null) sources.add(out)
-                if (rails[centre.index] != null) sources.add(centre)
-                for (role in BufferRole.entries) {
-                    val store = bufferTile(grid, m, centre, role) ?: continue
-                    if (rails[store.index] != null) sources.add(store)
-                }
-            }
-            val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
+            val ghosts = railGhosts(rails, tracks)
+            // A ghost machine is a sink at the tile it is fed at — see [constructionPortOf].
+            // Gathered here rather than asked per tile because the absorb callback runs for every
+            // loaded tile of every run on every step.
+            val machineGhosts = railMachineGhosts(grid, rails, deck, scrapping)
+            val ends = railEnds(grid, rails, ports, deck, buffers, scrapping, ghosts)
+            val sinks = ends.sinks
+            val sources = ends.sources
+            val tilesWithTrack = railTiles(rails)
             var flow = FlowGraph.build(
-                railTiles,
+                tilesWithTrack,
                 sources,
                 sinks,
                 { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },

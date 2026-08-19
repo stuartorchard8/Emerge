@@ -64,7 +64,8 @@ fun advanceSegments(
         }
 
         val way = cursors.choose(flow, tile) { target ->
-            rail.isEmpty(target) && admits(tile, target) && mayMerge(flow, cursors, rail, walked, tile, target)
+            rail.isEmpty(target) && admits(tile, target) &&
+                mayMerge(flow, cursors, rail, walked, tile, target, admits)
         }
         if (way != null) {
             val target = flow.neighbour(tile, way)
@@ -99,9 +100,20 @@ fun advanceSegments(
  * feeder happened to sort earlier — which is not a preference but a starvation: the same run won
  * every tick for ever and the other never moved at all. A merge takes turns, exactly as a fork does.
  *
- * A feeder only counts as waiting if it has something to hand over and has not already been walked
- * this pass. Otherwise a junction would hold its turn open for a run that is empty, or for one that
- * has already been past, and lose a tick of throughput to a queue that was never there.
+ * A feeder only counts as waiting if it has something the junction **will take**, and has not
+ * already been walked this pass. Otherwise a junction holds its turn open for a run that is empty,
+ * for one that has already been past, or — the expensive one — for one that can never move at all.
+ *
+ * ⛔ **"Has something" is not the same question as "can hand it over".** A stub of raw ore ending at
+ * a junction on the way to a ghost rail has something, for ever: the ghost refuses it, so it never
+ * moves, so the cursor — which only advances when a move actually happens — never leaves it, and
+ * the branch carrying the iron is starved permanently by a branch that is not moving either. Found
+ * in Stu's save, and called from the symptom: a ghost stuck at 24% with a full packet of iron
+ * standing five tiles away on a road that was open the whole time.
+ *
+ * ⚠️ The turn is only *held* by a feeder that has already had its go this pass. That much was always
+ * right, and it is why the same jam does not appear when the stuck branch happens to be walked
+ * first — which is exactly why it took a save to find.
  */
 private fun mayMerge(
     flow: FlowGraph,
@@ -110,11 +122,14 @@ private fun mayMerge(
     walked: BooleanArray,
     from: TileIndex,
     target: TileIndex,
+    admits: (TileIndex, TileIndex) -> Boolean,
 ): Boolean {
     val feeders = flow.feeders(target)
     if (feeders.size <= 1) return true
     val turn = cursors.preferredFeeder(feeders, target) { feeder ->
-        !rail.isEmpty(feeder) && (feeder == from || !walked[feeder.index])
+        // ⚠️ [admits] reads a lump off the layer, so it is asked last and only at a junction — the
+        // one place in the transport pass where more than one tile's contents decide the answer.
+        !rail.isEmpty(feeder) && (feeder == from || !walked[feeder.index]) && admits(feeder, target)
     }
     return turn == from
 }

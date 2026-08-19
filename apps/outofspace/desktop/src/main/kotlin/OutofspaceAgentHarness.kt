@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.railFlow
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.Brush
@@ -374,6 +375,7 @@ object OutofspaceAgentHarness {
                 "probe" -> probe(index(t[1], t[2]))
                 "landmarks" -> printLandmarks()
                 "stalls" -> stalls()
+                "flow" -> flowAt(index(t[1], t[2]))
                 "trend" -> trend(t[1].toInt(), t[2].toInt())
                 "state" -> dumpState(t.getOrElse(1) { "state" })
                 "shot" -> shot(t.getOrElse(1) { "shot" })
@@ -700,6 +702,46 @@ object OutofspaceAgentHarness {
             println("[agent]   unfinished (${ghosts.size}): ${ghosts.joinToString("; ")}")
             println("[agent]   marked     (${marked.size}): ${marked.joinToString("; ")}")
             println("[agent]   standing   (${standing.size}): ${standing.joinToString("; ")}")
+        }
+
+        /**
+         * Which way material may actually leave [tile], and its neighbours — the flow graph itself.
+         *
+         * ⚠️ **This is the one thing about a run that nothing else can tell you.** Track joins are
+         * symmetric and `probe` shows them, but an *edge* carries material one way only, and which
+         * way is decided by a walk over the whole network. Two tiles can be joined, both be part of
+         * a perfectly sensible route, and still have their edge pointing the wrong way because some
+         * other consumer claimed it first. Every "why will this not move" that survives `probe` is
+         * this.
+         *
+         * Reads [railFlow], which is the derivation the reducer itself uses — a second one written
+         * for the harness would be a second opinion about exactly the thing under suspicion.
+         */
+        private fun flowAt(tile: TileIndex) {
+            val grid = state.grid
+            val flow = state.railFlow()
+            fun line(at: TileIndex): String {
+                val x = grid.xOf(at); val y = grid.yOf(at)
+                if (state.railAt(at) == null) return "($x,$y) no track"
+                val out = Direction.entries.filter { flow.allows(at, it) }
+                // ⚠️ **Where it falls in the walk order**, which the whitelist depends on utterly:
+                // demand is carried upstream in one pass over it, so a tile that appears BEFORE
+                // something it can send to is read before that thing's appetite is known, and comes
+                // out looking like a dead end. `-` means it is not in the order at all.
+                val order = flow.order.indexOf(at)
+                return "($x,$y) " +
+                    (if (at in flow.sinks) "SINK " else "") +
+                    (if (out.isEmpty()) "sends NOWHERE" else "sends ${out.joinToString(" ") { it.name.uppercase() }}") +
+                    "  order ${if (order < 0) "-" else order}" +
+                    (if (!flow.isFed(at)) "  (not in the flow at all)" else "")
+            }
+            println("[agent] flow @ tick ${controller.tick}")
+            println("[agent]   ${line(tile)}")
+            for (dir in Direction.entries) {
+                val next = grid.neighbour(tile, dir)
+                if (next == TileIndex.NONE) continue
+                println("[agent]   ${dir.name.lowercase().padEnd(5)} ${line(next)}")
+            }
         }
 
         private fun probe(tile: TileIndex) {

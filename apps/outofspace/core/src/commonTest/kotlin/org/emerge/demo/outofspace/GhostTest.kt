@@ -308,6 +308,62 @@ class GhostTest {
     }
 
     /**
+     * ⛔ **A merge does not hold its turn open for a run that cannot move.**
+     *
+     * Stu's, and he called it from the symptom alone. Two runs join; one carries iron toward a ghost
+     * rail, the other carries raw ore — 5% iron, which the ghost refuses outright. The ore sits at
+     * the junction for ever and the iron behind the *other* branch never gets a turn.
+     *
+     * The junction takes turns, and a feeder counts as waiting if it **has something**. That is the
+     * wrong question: the ore has something and can never hand it over, so it holds the turn, and
+     * the cursor only advances when a move actually happens — which it never does. One branch is
+     * starved permanently by a branch that is not moving either.
+     *
+     * ⚠️ The right question is whether the feeder has something *the junction will take*. Already
+     * asked one line up for the tile actually moving, and now asked of the others too.
+     */
+    @Test
+    fun `a merge does not give its turn to a feeder that cannot move`() {
+        val grid = Grid(14, 8)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 5, 10, 4)
+        // The two feeders, joining at (5, 4): a run of iron coming along the row, and a dead-end
+        // stub of ore coming up from below.
+        joinRow(grid, rails, 2, 5, 4)
+        joinCol(grid, rails, 5, 4, 5)
+        val start = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        val ghost = grid.tile(10, 4)
+        start.conduits.tracks[Conduit.Rail].release(ghost)
+        // ⚠️ **More iron than one packet, and the assertion is that the job FINISHES.** The first
+        // packet always gets through — the junction's cursor starts on the iron branch — and it is
+        // the handover that kills the run: moving advances the cursor onto the ore, the ore is not
+        // empty so it reads as a run waiting its turn, and it can never take one. Assert only that
+        // some iron arrived and the bug is invisible.
+        for (x in 2..4) {
+            start.rail.loadOnto(grid.tile(x, 4), Material.Iron.composition.scaledTo(Capacity.PACKET_MASS))
+        }
+        start.rail.loadOnto(
+            grid.tile(5, 5),
+            Mixture.of(Species.Quartz to Capacity.PACKET_MASS, energy = 0),
+        )
+
+        val s = run(start, RAIL_PERIOD * 60)
+
+        assertTrue(
+            s.conduits.isComplete(Conduit.Rail, ghost),
+            "the ghost stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, ghost)} permille: " +
+                "the ore branch held the junction open without ever moving",
+        )
+        assertFalse(s.rail.isEmpty(grid.tile(5, 5)), "the ore moved, and it has nowhere it could go")
+    }
+
+    /**
      * ⛔ **A column being taken apart pays for the column being built beside it.**
      *
      * Stu's case, and the one that decides whether rebuilding a network is playable at all. Nine
