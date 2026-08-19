@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.Species
@@ -13,7 +15,6 @@ import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -55,7 +56,11 @@ class BudgetParityTest {
         assertEquals(5_000_000L, Extractor.BUFFER_CAP.grams, "extractor buffer is five tonnes")
 
         // The relationships that actually matter, stated as the ratios they are.
-        assertEquals(40L, MACHINE_BUFFER_CAP / Vaporizer(TileIndex(0), Direction.Right).massPerTick, "40 ticks of buffer")
+        // Against the belt-load rather than against a machine: the buffer is sized in ticks of a
+        // producer running flat out, and flat out *is* one belt-load a tick (see below). It used to
+        // be stated through the vaporizer's rate, which was that same constant wearing a machine's
+        // name; that machine is gone and the relationship it stood for is not.
+        assertEquals(40L, MACHINE_BUFFER_CAP / Capacity.PACKET_MASS, "40 ticks of buffer")
         // ⚠️ The extractor has no rate of its own any more — its two stores became one and the rail
         // sets its throughput — so its buffer is sized in belt-loads rather than in ticks.
         assertEquals(50L, Extractor.BUFFER_CAP / Capacity.PACKET_MASS, "fifty belt-loads of buffer")
@@ -69,10 +74,16 @@ class BudgetParityTest {
         // ⚠️ The extractor is absent because it no longer *has* a rate to exceed: it bites while it
         // has room and stops when it does not, so the belt is the only thing metering it. That is
         // this invariant satisfied structurally rather than by a number that has to agree.
+        // ⚠️ Stated as the **ceiling** it is. Every machine that had this rate exactly has since
+        // lost it — the vaporizer was deleted and the extractor is metered by the rail — and a
+        // motor deliberately runs well under it. Asserting equality would have made the invariant
+        // untestable the moment nothing sat on the limit, which is a rule that quietly stops being
+        // checked; asserting the bound is the rule itself.
         for ((what, rate) in listOf(
-            "vaporizer" to Vaporizer(TileIndex(0), Direction.Right).massPerTick,
+            "thruster" to Thruster(TileIndex(0), Direction.Right).massPerTick,
         )) {
-            assertEquals(Capacity.PACKET_MASS, rate, "$what must produce exactly one belt-load a tick")
+            assertTrue(rate <= Capacity.PACKET_MASS, "$what must not out-produce the belt it feeds: $rate")
+            assertTrue(rate > 0L, "$what must produce something")
         }
 
         // ── Debug tools ──
@@ -111,11 +122,12 @@ class BudgetParityTest {
      */
     @Test
     fun `a mole is a particle count and does not move with the mass unit`() {
-        for (species in Species.ALL) {
+        for (fluid in Fluid.ALL) {
+            val species = fluid.species
             val tile = MassArray(1)
             // Through the setter, not `tile.data[…]`: a raw write leaves the presence bitmask
             // stale, and this is exactly the tile a bitmask-driven `millimolesOf` would skip.
-            tile[TileIndex(0), species] = Budget.KILOGRAM
+            tile[TileIndex(0), fluid] = Budget.KILOGRAM
             assertEquals(
                 1_000L * 1_000L / species.molarMass,
                 millimolesOf(tile, TileIndex(0)),

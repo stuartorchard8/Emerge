@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
@@ -79,8 +80,8 @@ class GridVentTest {
         val airMass = MassArray(grid.size)
         val airEnergy = EnergyArray(grid.size)
         for (tile in grid.tiles) {
-            airMass[MassIndex(tile, Species.Oxygen)] = 100L + tile.index
-            airMass[MassIndex(tile, Species.Nitrogen)] = 7L * tile.index
+            airMass[MassIndex(tile, Fluid.Oxygen)] = 100L + tile.index
+            airMass[MassIndex(tile, Fluid.Nitrogen)] = 7L * tile.index
             airEnergy[tile] = 5_000L + 3L * tile.index
         }
         val air = Stuff.from(airMass, airEnergy)
@@ -90,7 +91,7 @@ class GridVentTest {
         val pipeMass = MassArray(grid.size)
         val pipeEnergy = EnergyArray(grid.size)
         for (tile in grid.tiles) {
-            pipeMass[MassIndex(tile, Species.Oxygen)] = 11L * tile.index
+            pipeMass[MassIndex(tile, Fluid.Oxygen)] = 11L * tile.index
             pipeEnergy[tile] = 900L + tile.index
         }
         val pipeAir = Stuff.from(pipeMass, pipeEnergy)

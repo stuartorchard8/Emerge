@@ -36,7 +36,6 @@ import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Rotation
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
@@ -753,10 +752,6 @@ class OutofspaceRenderer {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            is Vaporizer -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Vaporizer))
-                fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
-            }
             // The bell marks the exhaust face, so which way a motor pushes is readable without
             // selecting it — the one thing about a thruster you cannot afford to get wrong.
             is Thruster -> {
@@ -1428,7 +1423,6 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.Sensor -> 0x24303CFFL
     DeckMachineKind.KeyInput -> 0x2E3A4AFFL
     DeckMachineKind.Pump -> 0xB07840FFL
-    DeckMachineKind.Vaporizer -> 0x905A6BFFL
     DeckMachineKind.Thruster -> 0xC04A30FFL
     DeckMachineKind.Processor -> 0x2E5A6BFFL
     DeckMachineKind.ThermalDecomposer -> 0x5E5A3BFFL

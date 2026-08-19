@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Species
 
 /**
  * How much mass sits on a face, and how much sits in a tile.
@@ -38,6 +37,6 @@ private fun meanOf(tileMasses: LongArray, before: TileIndex, after: TileIndex): 
 fun tileMass(tileCount: Int, masses: MassArray): LongArray =
     LongArray(tileCount) {
         var sum = 0L
-        for (s in Species.ALL) sum += masses[MassIndex(TileIndex(it), s)]
+        masses.forEachFluid(TileIndex(it)) { _, mass -> sum += mass }
         sum
     }

@@ -10,7 +10,7 @@ val DeckMachineKind.diameter: Int
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
         DeckMachineKind.Thruster, DeckMachineKind.Gauge, DeckMachineKind.Valve,
         -> 1
-        DeckMachineKind.Vaporizer, DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
+        DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
         // Five: it should dominate the deck it sits on, and its heat should have somewhere to be.
         DeckMachineKind.Extractor -> 5
         // Three tiles end to end. Only ever three *along* its facing — see [span].

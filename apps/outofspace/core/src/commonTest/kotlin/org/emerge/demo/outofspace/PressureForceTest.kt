@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Grid
@@ -48,11 +49,11 @@ class PressureForceTest {
         }
 
         fun air(tile: TileIndex, share: Long = 1L) {
-            for (s in Species.ALL) masses[MassIndex(tile, s)] = Stuff.AMBIENT_AIR[s] * share
+            for (f in Fluid.ALL) masses[MassIndex(tile, f)] = Stuff.AMBIENT_AIR[f.species] * share
         }
 
         fun empty(tile: TileIndex) {
-            for (s in Species.ALL) masses[MassIndex(tile, s)] = 0L
+            for (f in Fluid.ALL) masses[MassIndex(tile, f)] = 0L
         }
 
         fun run() = applyPressureForce(

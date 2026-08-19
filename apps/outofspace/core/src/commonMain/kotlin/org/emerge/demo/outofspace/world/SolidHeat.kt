@@ -6,7 +6,6 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 
 /** Result of one solid conduction tick. [energy]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
 class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)
@@ -282,7 +281,6 @@ fun heatPerGram(machine: DeckMachine?): Long = when (machine) {
     // 400 kJ/g. Smelting costs ~1 MJ/kg.
     is Processor -> 40_000L    // crushing and grinding
     is Extractor -> 20_000L
-    is Vaporizer -> 100_000L   // vaporising minerals
     // A rocket's waste heat is what the bell does not throw away. The exhaust's own energy is not
     // this: it leaves with the exhaust, or lands where the exhaust lands. See [Thruster].
     is Thruster -> 50_000L

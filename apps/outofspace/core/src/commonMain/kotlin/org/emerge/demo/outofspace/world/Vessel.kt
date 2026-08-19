@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -19,7 +20,6 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.sim.core.physics.primitives.Coord
@@ -916,7 +916,6 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
         SignalField.FULL / Extractor.BUFFER_CAP).toInt()
     is Processor -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
     is ThermalDecomposer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
-    is Vaporizer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
@@ -1119,8 +1118,8 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         for (ox in 0 until oldW) for (oy in 0 until oldH) {
             val newTile = remapTile(ox, oy) ?: continue
             val oldTile = grid.tile(ox, oy)
-            for (s in Species.entries) {
-                newMass[MassIndex(newTile, s)] = src.massOf(oldTile, s)
+            for (f in Fluid.ALL) {
+                newMass[newTile, f] = src.massOf(oldTile, f)
             }
             newEnergy[newTile] = oldEnergy[oldTile]
         }

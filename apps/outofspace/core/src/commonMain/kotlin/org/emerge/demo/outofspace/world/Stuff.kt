@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.Budget
 
+import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportion
@@ -13,11 +15,21 @@ import org.emerge.demo.outofspace.chem.apportion
  */
 class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
 
-    fun massOf(tile: TileIndex, species: Species): Long = masses[MassIndex(tile, species)]
+    fun massOf(tile: TileIndex, fluid: Fluid): Long = masses[MassIndex(tile, fluid)]
+
+    /**
+     * The same question asked in [Species] terms — **zero** for the hundred and forty species that
+     * can never be here, because that is the true answer and not an evasion. A caller that means to
+     * *put* something in the air still has to name a [Fluid]; only asking is widened.
+     */
+    fun massOf(tile: TileIndex, species: Species): Long =
+        species.fluid?.let { masses[MassIndex(tile, it)] } ?: 0L
 
     /**
      * Pressure in millimoles (particle count, not mass — heavy gases sink).
-     * Assumes all species are gaseous. Invalid if any are solid or liquid.
+     *
+     * That every species here is a gas used to be a comment hoping to be true. It is now a
+     * [Fluid]: nothing solid can be indexed into this field at all.
      */
     fun pressureAt(tile: TileIndex): Long = millimolesOf(masses, tile)
 
@@ -41,13 +53,14 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
     /** Total mass in a tile — its density, since every tile is the same volume. */
     fun densityAt(tile: TileIndex): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += masses[MassIndex(tile, s)]
+        for (f in Fluid.ALL) sum += masses[MassIndex(tile, f)]
         return sum
     }
 
     /** The tile's air as a [Mixture], for the inspector. Allocates — not for the hot path. */
     /**
-     * Everything this field holds at [tile] — **every** species, not a chosen subset.
+     * Everything this field holds at [tile], widened to a [Species]-shaped [Mixture] — every
+     * species it *can* hold, not a chosen subset.
      *
      * The consequence was not cosmetic. [org.emerge.demo.outofspace.world.Save] serialises the
      * atmosphere through this, so a world with water in it saved fine and **came back without any**,
@@ -56,7 +69,7 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
      */
     fun mixtureAt(tile: TileIndex): Mixture {
         val out = LongArray(Species.COUNT)
-        for (s in Species.ALL) out[s.ordinal] = masses[MassIndex(tile, s)]
+        masses.forEachSpecies(tile) { s, mass -> out[s.ordinal] = mass }
         return Mixture.of(out, energies[tile])
     }
 
@@ -128,7 +141,7 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
          * One value, so the two cannot disagree.
          */
         fun gas(mass: MassArray): Stuff =
-            Stuff(mass.copyOf(), ambientGasEnergy(mass.size / Species.COUNT, mass))
+            Stuff(mass.copyOf(), ambientGasEnergy(mass.size / Fluid.COUNT, mass))
 
         /**
          * Empty space to put stuff later.
@@ -145,7 +158,7 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
             val mass = MassArray(grid.size)
             for (tile in grid.tiles) {
                 if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
-                for (s in Species.ALL) mass[MassIndex(tile, s)] = AMBIENT_AIR[s]
+                for (f in Fluid.ALL) mass[MassIndex(tile, f)] = AMBIENT_AIR[f.species]
             }
             return gas(mass)
         }
@@ -217,7 +230,7 @@ fun tryDisplaceAir(
     for (slot in order.indices) {
         val tile = order[slot]
         var totalMass = 0L
-        for (s in Species.ALL) totalMass += masses[MassIndex(tile, s)]
+        for (f in Fluid.ALL) totalMass += masses[MassIndex(tile, f)]
         if (totalMass <= 0L) continue
 
         var reachable = false
@@ -230,9 +243,9 @@ fun tryDisplaceAir(
         // Air with nowhere to go. Refuse, rather than delete it or bury it.
         if (!reachable) return false
 
-        for (s in Species.ALL) {
-            val share = apportion(weights, masses[MassIndex(tile, s)])
-            for (e in exits.indices) movedMass[MassIndex(TileIndex(e), s)] += share[e]
+        for (f in Fluid.ALL) {
+            val share = apportion(weights, masses[MassIndex(tile, f)])
+            for (e in exits.indices) movedMass.add(TileIndex(e), f, share[e])
         }
         val share = apportion(weights, energies[tile])
         for (e in exits.indices) movedEnergy[TileIndex(e)] += share[e]
@@ -242,13 +255,13 @@ fun tryDisplaceAir(
 
     for (slot in order) {
         energies[slot] = 0L
-        for (s in Species.ALL) masses[MassIndex(slot, s)] = 0L
+        for (f in Fluid.ALL) masses[slot, f] = 0L
     }
     for (i in exits.indices) {
         val exitTile = exits[i]
         val source = TileIndex(i)
         energies[exitTile] += movedEnergy[source]
-        for (s in Species.ALL) masses[MassIndex(exitTile, s)] += movedMass[MassIndex(source, s)]
+        for (f in Fluid.ALL) masses.add(exitTile, f, movedMass[source, f])
     }
     return true
 }

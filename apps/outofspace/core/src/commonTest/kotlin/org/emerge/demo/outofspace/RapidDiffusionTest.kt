@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.fluid
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.ApertureField
@@ -39,12 +41,12 @@ class RapidDiffusionTest {
     private fun emptyAir() = MassArray(grid.size)
 
     private fun put(masses: MassArray, tile: TileIndex, species: Species, mass: Long) {
-        masses[MassIndex(tile, species)] += mass
+        masses.add(tile, species.fluid!!, mass)
     }
 
     private fun massAt(masses: MassArray, tile: TileIndex): Long {
         var sum = 0L
-        for (s in Species.ALL) sum += masses[MassIndex(tile, s)]
+        for (f in Fluid.ALL) sum += masses[MassIndex(tile, f)]
         return sum
     }
 

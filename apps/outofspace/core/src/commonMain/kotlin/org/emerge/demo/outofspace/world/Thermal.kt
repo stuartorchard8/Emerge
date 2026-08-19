@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.Budget
 
-import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Gas thermal energy: belongs to atmosphere, travels with it, sets pressure.
@@ -23,7 +22,7 @@ fun heatCapacity(tileCount: Int, masses: MassArray): LongArray =
 /** Millijoules per kelvin held by the gas in one tile — see [heatCapacity] for the units. */
 fun heatCapacityAt(masses: MassArray, tile: TileIndex): Long {
     var sum = 0L
-    for (s in Species.ALL) sum += masses[MassIndex(tile,s)] * s.specificHeat
+    masses.forEachSpecies(tile) { s, mass -> sum += mass * s.specificHeat }
     // The whole product first, then the divisor: dividing per species would round a trace gas out of
     // its own capacity. [Budget.CAPACITY_DIVISOR] is 1 at today's units, so this is the expression it
     // has always been — see that constant for the relation it carries.

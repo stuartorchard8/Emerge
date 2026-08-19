@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.TileIndex
@@ -73,22 +74,27 @@ class FluidTest {
 
         assertTrue(field.isEmptyAt(tile))
 
-        field[tile, Species.Oxygen] = 500L
-        field[tile, Species.Nitrogen] = 1500L
+        field[tile, Fluid.Oxygen] = 500L
+        field[tile, Fluid.Nitrogen] = 1500L
         assertTrue(!field.isEmptyAt(tile))
         field.checkInvariants()
 
         val found = HashMap<Species, Long>()
         field.forEachSpecies(tile) { s, m -> found[s] = m }
         assertEquals(mapOf(Species.Oxygen to 500L, Species.Nitrogen to 1500L), found)
+
+        // And the same walk in the field's own terms, which is what everything inside the air uses.
+        val fluids = HashMap<Fluid, Long>()
+        field.forEachFluid(tile) { f, m -> fluids[f] = m }
+        assertEquals(mapOf(Fluid.Oxygen to 500L, Fluid.Nitrogen to 1500L), fluids)
     }
 
     @Test
     fun writingZeroClearsTheBit() {
         val field = MassArray(2)
         val tile = TileIndex(1)
-        field[tile, Species.Oxygen] = 100L
-        field[tile, Species.Oxygen] = 0L
+        field[tile, Fluid.Oxygen] = 100L
+        field[tile, Fluid.Oxygen] = 0L
 
         assertTrue(field.isEmptyAt(tile), "a tile emptied by writing zero still reads as occupied")
         var seen = 0
@@ -103,11 +109,11 @@ class FluidTest {
         // survived, an evacuated cell would iterate forever — the slow leak, not the loud one.
         val field = MassArray(2)
         val tile = TileIndex(0)
-        field.add(tile, Species.Water, 300L)
-        field.add(tile, Species.Water, -200L)
-        field.add(tile, Species.Water, -100L)
+        field.add(tile, Fluid.Water, 300L)
+        field.add(tile, Fluid.Water, -200L)
+        field.add(tile, Fluid.Water, -100L)
 
-        assertEquals(0L, field[tile, Species.Water])
+        assertEquals(0L, field[tile, Fluid.Water])
         assertTrue(field.isEmptyAt(tile))
         field.checkInvariants()
     }
@@ -118,14 +124,14 @@ class FluidTest {
         // leaves the mask stale.
         val field = MassArray(3)
         val tile = TileIndex(2)
-        field[MassIndex(tile, Species.Argon)] = 42L
+        field[MassIndex(tile, Fluid.Argon)] = 42L
         field.checkInvariants()
 
         var seen: Pair<Species, Long>? = null
         field.forEachSpecies(tile) { s, m -> seen = s to m }
         assertEquals(Species.Argon to 42L, seen)
 
-        field[MassIndex(tile, Species.Argon)] = 0L
+        field[MassIndex(tile, Fluid.Argon)] = 0L
         assertTrue(field.isEmptyAt(tile))
         field.checkInvariants()
     }
@@ -134,47 +140,47 @@ class FluidTest {
     fun theRawConstructorDerivesTheMask() {
         // Handed a populated array it never watched being filled, MassArray has to work the mask
         // out for itself — Save and copyMass both arrive this way.
-        val raw = LongArray(2 * Species.COUNT)
-        raw[1 * Species.COUNT + Species.Methane.ordinal] = 7L
+        val raw = LongArray(2 * Fluid.COUNT)
+        raw[1 * Fluid.COUNT + Fluid.Methane.ordinal] = 7L
         val field = MassArray(raw)
 
         field.checkInvariants()
         assertTrue(field.isEmptyAt(TileIndex(0)))
         assertTrue(!field.isEmptyAt(TileIndex(1)))
-        assertEquals(7L, field[TileIndex(1), Species.Methane])
+        assertEquals(7L, field[TileIndex(1), Fluid.Methane])
     }
 
     @Test
     fun copyKeepsTheMask() {
         val field = MassArray(2)
-        field[TileIndex(0), Species.Helium] = 9L
+        field[TileIndex(0), Fluid.Helium] = 9L
         val copy = field.copyOf()
 
         copy.checkInvariants()
-        assertEquals(9L, copy[TileIndex(0), Species.Helium])
+        assertEquals(9L, copy[TileIndex(0), Fluid.Helium])
 
         // And the copy is independent in both halves, not just the masses.
-        copy[TileIndex(0), Species.Helium] = 0L
+        copy[TileIndex(0), Fluid.Helium] = 0L
         assertTrue(copy.isEmptyAt(TileIndex(0)))
         assertTrue(!field.isEmptyAt(TileIndex(0)), "clearing the copy cleared the original's mask")
     }
 
     @Test
     fun iterationMatchesABruteForceScan() {
-        // The property that matters, stated independently of the implementation: forEachSpecies
+        // The property that matters, stated independently of the implementation: the walk
         // visits exactly the non-zero entries, no more and no less.
         val field = MassArray(3)
         val tile = TileIndex(1)
         val expected = mapOf(
-            Species.Hydrogen to 1L,
-            Species.Xenon to 2L,          // last declared volatile — exercises a high ordinal
-            Species.Water to 3L,
+            Fluid.Hydrogen to 1L,
+            Fluid.Sulfur to 2L,           // last declared fluid — exercises a high ordinal
+            Fluid.Water to 3L,
         )
-        for ((s, m) in expected) field[tile, s] = m
+        for ((f, m) in expected) field[tile, f] = m
 
-        val brute = Species.ALL.filter { field[tile, it] != 0L }.associateWith { field[tile, it] }
-        val walked = HashMap<Species, Long>()
-        field.forEachSpecies(tile) { s, m -> walked[s] = m }
+        val brute = Fluid.ALL.filter { field[tile, it] != 0L }.associateWith { field[tile, it] }
+        val walked = HashMap<Fluid, Long>()
+        field.forEachFluid(tile) { f, m -> walked[f] = m }
 
         assertEquals(brute, walked)
         assertEquals(expected, walked)

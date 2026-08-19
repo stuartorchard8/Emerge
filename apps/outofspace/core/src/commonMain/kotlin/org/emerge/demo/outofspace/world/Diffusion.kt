@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Rapid diffusion: the replacement for the momentum solver.
@@ -200,11 +199,9 @@ fun diffuseFluid(
         faceOut.fill(0L)
 
         var outMass = 0L
-        for (s in Species.ALL) {
-            val count = masses[tile, s]
-            if (count <= 0L) continue
+        masses.forEachFluid(tile) { fluid, count ->
             val share = count * FACE_SHARE / SLOTS
-            if (share <= 0L) continue
+            if (share <= 0L) return@forEachFluid
 
             for (f in 0 until FACES) {
                 val aperture = faceAperture[f]
@@ -219,9 +216,9 @@ fun diffuseFluid(
                     else share * aperture / ApertureField.OPEN
                 if (out <= 0L) continue
 
-                deltaMass.add(tile, s, -out)
+                deltaMass.add(tile, fluid, -out)
                 val neighbour = faceNeighbour[f]
-                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass.add(neighbour, s, out)
+                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass.add(neighbour, fluid, out)
                 faceOut[f] += out
                 outMass += out
             }
@@ -278,7 +275,7 @@ fun diffuseFluid(
     // Only the species that actually moved. This was `tiles × Species.COUNT` — 165 loads per tile to
     // apply the six deltas a tile of air really has — and it is the pass the presence bitmask was
     // added for. A delta of zero adds nothing, so skipping it is not an approximation.
-    for (t in grid.tiles) deltaMass.forEachSpecies(t) { s, delta -> masses.add(t, s, delta) }
+    for (t in grid.tiles) deltaMass.forEachFluid(t) { fluid, delta -> masses.add(t, fluid, delta) }
     if (energies != null && deltaEnergy != null) for (t in grid.tiles) energies[t] += deltaEnergy[t]
 
     // Snapshotted rather than folded on demand: [masses] belongs to the caller, which goes on editing

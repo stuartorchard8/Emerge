@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.RailLayer
@@ -611,6 +612,31 @@ class SaveTest {
         }
         assertTrue(error.message!!.startsWith("line 3"), error.message!!)
         assertTrue(error.message!!.contains("Wombat"), error.message!!)
+    }
+
+    @Test
+    fun `a solid in an air record is refused rather than dropped`() {
+        // The invariant `PLAN_ambient_chemistry.md` asks for at the one place it can still be
+        // broken. The field is typed now, but a save names its species in text, so this line is the
+        // last way a solid can try to get into the atmosphere.
+        //
+        // ⚠️ **Refused, not dropped.** Reading it and quietly discarding the mass is the worse
+        // failure: the ledger loses matter and the symptom turns up somewhere else entirely. This is
+        // the test that would have caught the missing invariant in the first place.
+        val error = assertFailsWith<SaveError> {
+            Save.read("outofspace 1\ngrid 4 4\nair 5 Serpentine=1000\n")
+        }
+        assertTrue(error.message!!.contains("Serpentine"), error.message!!)
+
+        // And the same line in a pipe, which shares the store and so shares the rule.
+        assertFailsWith<SaveError> {
+            Save.read("outofspace 1\ngrid 4 4\npipeair 5 Iron=1000\n")
+        }
+
+        // A gas on the same line loads exactly as it always did — the refusal is about the species,
+        // not about the record.
+        val fine = Save.read("outofspace 1\ngrid 4 4\nair 5 Oxygen=1000\n")
+        assertEquals(1000L * Budget.GRAM, fine.air.massOf(TileIndex(5), Fluid.Oxygen))
     }
 
     @Test

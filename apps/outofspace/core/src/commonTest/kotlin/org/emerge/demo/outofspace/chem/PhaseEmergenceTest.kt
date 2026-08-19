@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.MassArray
@@ -188,7 +189,7 @@ class PhaseEmergenceTest {
     /** A one-tile mass field, so the ideal-gas oracle can be asked the way the solver asks it. */
     private fun massFieldOf(vararg amounts: Pair<Species, Long>): MassArray {
         val out = MassArray(1)
-        for ((s, g) in amounts) out[MassIndex(TileIndex(0),s)] = g
+        for ((s, g) in amounts) out[TileIndex(0), s.fluid!!] = g
         return out
     }
 }

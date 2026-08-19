@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -105,8 +106,8 @@ class AtmosphereTest {
         var s = VesselState(grid, deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
 
         val mass = MassArray(grid.size)
-        for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 2_000L * gram
-        for (x in 5..6) mass[MassIndex(grid.tile(x, 2), Species.Oxygen)] = 500L * gram
+        for (x in 2..3) mass[MassIndex(grid.tile(x, 2), Fluid.Oxygen)] = 2_000L * gram
+        for (x in 5..6) mass[MassIndex(grid.tile(x, 2), Fluid.Oxygen)] = 500L * gram
         val field = Stuff.gas(mass)
         s = s.copy(air = field, baselineAirMass = field.totalMass)
 
@@ -132,7 +133,7 @@ class AtmosphereTest {
         val room = sealedRoom(8, 4)
         val g = room.grid
         val mass = MassArray(g.size)
-        mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 6_000L * gram
+        mass[MassIndex(g.tile(2, 2), Fluid.Oxygen)] = 6_000L * gram
         val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
@@ -180,7 +181,7 @@ class AtmosphereTest {
         val room = sealedRoom(6, 3)
         val g = room.grid
         val mass = MassArray(g.size)
-        mass[MassIndex(g.tile(2, 2), Species.Oxygen)] = 10_000L * gram
+        mass[MassIndex(g.tile(2, 2), Fluid.Oxygen)] = 10_000L * gram
         val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
@@ -205,8 +206,8 @@ class AtmosphereTest {
         val g = room.grid
         val mass = MassArray(g.size)
         val tile = g.tile(2, 2)
-        mass[MassIndex(tile, Species.Oxygen)] = 2_000L * gram
-        mass[MassIndex(tile, Species.Nitrogen)] = 6_000L * gram
+        mass[MassIndex(tile, Fluid.Oxygen)] = 2_000L * gram
+        mass[MassIndex(tile, Fluid.Nitrogen)] = 6_000L * gram
         val field = Stuff.gas(mass)
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
@@ -297,18 +298,18 @@ class AtmosphereTest {
         val exits = setOf(g.tile(1, 1), g.tile(7, 1))
         val masses = MassArray(g.size)
         val energies = EnergyArray(g.size)
-        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
-        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
+        masses[MassIndex(g.tile(3, 1), Fluid.Oxygen)] = 3_000L * gram
+        masses[MassIndex(g.tile(3, 1), Fluid.Oxygen)] = 3_000L * gram
         energies[g.tile(3, 1)] = 3_000L * joule
         energies[g.tile(3, 1)] = 3_000L * joule
 
         assertTrue(tryDisplaceAir(g, masses, energies, strip) { it in exits }, "both ends are open")
         for (tile in strip) {
-            assertEquals(0L, masses[MassIndex(tile, Species.Oxygen)], "the strip is empty")
+            assertEquals(0L, masses[MassIndex(tile, Fluid.Oxygen)], "the strip is empty")
             assertEquals(0L, energies[tile], "the strip has no energy")
         }
-        assertEquals(2_000L * gram, masses[MassIndex(g.tile(1, 1), Species.Oxygen)], "near door")
-        assertEquals(1_000L * gram, masses[MassIndex(g.tile(7, 1), Species.Oxygen)], "far door")
+        assertEquals(2_000L * gram, masses[MassIndex(g.tile(1, 1), Fluid.Oxygen)], "near door")
+        assertEquals(1_000L * gram, masses[MassIndex(g.tile(7, 1), Fluid.Oxygen)], "far door")
     }
 
     @Test
@@ -317,7 +318,7 @@ class AtmosphereTest {
         val strip = (2..6).map { g.tile(it, 1) }
         val masses = MassArray(g.size)
         val energies = EnergyArray(g.size)
-        masses[MassIndex(g.tile(3, 1), Species.Oxygen)] = 3_000L * gram
+        masses[MassIndex(g.tile(3, 1), Fluid.Oxygen)] = 3_000L * gram
         energies[g.tile(3, 1)] = 3_000L * gram
         val massesBefore = masses.copyOf()
         val energiesBefore = energies.copyOf()

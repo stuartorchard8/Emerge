@@ -99,7 +99,7 @@ Structure mass is `gramsPerTile × thermalTiles`, deflated by `fillPermille`.
 |---|---|---|---|
 | EXTRACTOR | 14,037,375 | 7,299,435,000 | 25 |
 | SMELTER | 13,862,425 | 10,951,315,750 | 25 |
-| PROCESSOR / VAPORIZER / STORAGE | 5,053,455 | 2,627,796,600 | 9 |
+| PROCESSOR / STORAGE | 5,053,455 | 2,627,796,600 | 9 |
 | PUMP | 561,495 | 291,977,400 | 1 |
 | BRIDGE | 391,926 | 176,366,700 | 3 |
 | HULL / AIRLOCK | 382,433 | 173,089,411 | 1 |

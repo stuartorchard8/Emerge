@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
 import org.emerge.demo.outofspace.chem.process
@@ -95,7 +96,6 @@ import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TrackLayers
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
@@ -236,7 +236,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // step (see [readGauges]) and a valve is a hole, not a mechanism.
                     is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
                     is Sensor, is WireButton, is Pump -> m
-                    is Vaporizer -> w.vaporize(m, activation, tile)
                     is Thruster -> w.fire(cfg, m, activation, tile, structure)
                     is Processor -> w.refine(cfg, m, activation, tile)
                     is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
@@ -722,31 +721,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
     }
 
-    private fun Work.vaporize(m: Vaporizer, activation: Int, tile: TileIndex): Vaporizer {
-        val input = store(m, tile, BufferRole.Input) ?: return m
-        val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-        val chunkMass = minOf(mass, input.total)
-        if (chunkMass <= 0L) return m.copy(carry = carry)
-
-        val chunk = input.take(chunkMass)
-        heat(tile, heatOfWorking(chunkMass, m))
-        val gas = chunk
-        val parcel = MassArray(1)
-        for (s in Species.ALL) {
-            val g = gas[s]
-            if (g <= 0L) continue
-            masses[MassIndex(tile, s)] += g
-            parcel[MassIndex(TileIndex(0), s)] = g
-        }
-        val energy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
-        airEnergy[tile] += energy
-        // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
-        solidBecameGas(chunkMass, energy)
-
-        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
-        return m.copy(carry = carry)
-    }
-
     /**
      * One tick of a [Thruster]: throw propellant out of the nozzle and take whatever was in the way
      * with it.
@@ -784,9 +758,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         heat(tile, heatOfWorking(chunkMass, m))
 
-        // The propellant, as gas: whatever went into the chamber is what comes out of the bell.
+        // The propellant, as gas: whatever went into the chamber is what comes out of the bell —
+        // as far as anything that can *be* a gas goes.
+        //
+        // ⚠️ **A solid fired at a bulkhead does not become atmosphere.** The chamber used to put the
+        // whole chunk into the air field, whatever it was made of, which is the same thing the
+        // mineral vaporizer did and the reason both are visible now that the air is a [Fluid]. What
+        // cannot be a fluid still leaves the vessel — it went out of the nozzle — so it is booked
+        // overboard as the solid it is and the air ledger is not told a gas appeared.
+        // TODO: a thruster fed gravel should arguably refuse to fire rather than throw it away.
+        //  That is an acceptance rule, not an arithmetic one, and it is Stu's call.
         val chunk = input.take(chunkMass)
-        val parcel = MassArray(1) { _,s -> chunk[s] }
+        val parcel = MassArray(1) { _, f -> chunk[f.species] }
+        var gaseousMass = 0L
+        for (f in Fluid.ALL) gaseousMass += chunk[f.species]
+        val solidMass = chunkMass - gaseousMass
         val propellantEnergy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
@@ -796,13 +782,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         for (tile in path.path) {
             // The destination keeps what it has — the exhaust is about to be added to it.
             if (!path.isClear && tile == path.destination) continue
-            for (s in Species.ALL) {
-                val massIndex = MassIndex(tile, s)
-                val held = masses[massIndex]
-                if (held <= 0L) continue
-                parcel[MassIndex(TileIndex(0),s)] += held
+            masses.forEachFluid(tile) { f, held ->
+                parcel.add(TileIndex(0), f, held)
                 scoopedMass += held
-                masses[massIndex] = 0L
+                masses[tile, f] = 0L
             }
             scoopedEnergy += airEnergy[tile]
             airEnergy[tile] = 0L
@@ -832,12 +815,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // went down the plume, the destination gained joules and no gas at all: capacity stayed
             // zero, and [gasKelvin] reads a zero capacity as ambient, so a tile with a rocket firing
             // into it reported room temperature however long the burn ran.
-            for (s in Species.ALL) masses[MassIndex(destination,s)] += parcel[MassIndex(TileIndex(0),s)]
+            for (f in Fluid.ALL) masses.add(destination, f, parcel[TileIndex(0), f])
             // The jet's kinetic energy stops here and becomes heat, which is what makes firing into
             // your own bulkhead expensive rather than merely useless.
             val landed = propellantEnergy + Thruster.kineticEnergy(ejectedMass)
             airEnergy[destination] += landed + scoopedEnergy
-            solidBecameGas(chunkMass, landed)
+            solidBecameGas(gaseousMass, landed)
+            // Out of the nozzle and gone, without ever having been a gas. See the parcel above.
+            ventedMass += solidMass
         }
 
         putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
@@ -1024,10 +1009,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * grow on its own ([VesselState.injectedAirMass]); book one and both identities are wrong
          * in opposite directions, which reads as two unrelated leaks.
          *
-         * ⚠️ [vaporize] did neither for the whole of its life — every running vaporizer drifted
+         * ⚠️ The mineral vaporizer did neither for the whole of its life — every running one drifted
          * `massBalance` down and `airBalance` up by its throughput, on every tick, and no test was
-         * pointed at the machine to say so. It is one call now, shared with [fire], because two
-         * copies of this would eventually be one copy plus a machine that forgot.
+         * pointed at the machine to say so. That machine is gone, but the lesson is why this is one
+         * call: two copies of it would eventually be one copy plus a caller that forgot.
          */
         fun solidBecameGas(mass: Long, energy: Long) {
             ventedMass += mass
@@ -1165,10 +1150,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // Cut pipe: release gas+heat into room (not deleted — shared ledger).
         fun cutOpen(tile: TileIndex) {
-            for (s in Species.ALL) {
-                val massIndex = MassIndex(tile, s)
-                masses[massIndex] += pipeMass[massIndex]
-                pipeMass[massIndex] = 0L
+            pipeMass.forEachFluid(tile) { f, held ->
+                masses.add(tile, f, held)
+                pipeMass[tile, f] = 0L
             }
             airEnergy[tile] += pipeEnergy[tile]
             pipeEnergy[tile] = 0L
@@ -1465,16 +1449,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // than from the tile it is arriving in — that gas is already at its own temperature.
             val parcel = MassArray(1)
             var added = 0L
-            // Every species, because the parcel is [AirField.AMBIENT_AIR] scaled and so already
+            // Every *fluid*, because the parcel is [Stuff.AMBIENT_AIR] scaled and so already
             // contains exactly what air contains — anything else contributes zero. A hardcoded list
             // here said "air is nitrogen, oxygen and carbon dioxide", which was true until argon
             // arrived and then silently injected 987 g of every requested kilogram. This is the same
-            // mistake [AirField.mixtureAt] documents: a caller that enumerates the species it thinks
-            // a field holds goes quietly wrong the moment the field holds one more.
-            for (s in Species.ALL) {
-                val g = shares[s]
-                parcel[MassIndex(TileIndex(0),s)] = g
-                masses[MassIndex(tile,s)] += g
+            // mistake [Stuff.mixtureAt] documents: a caller that enumerates the species it thinks
+            // a field holds goes quietly wrong the moment the field holds one more. [Fluid.ALL] is
+            // the whole of what this field can hold, so it cannot fall behind that way again.
+            for (f in Fluid.ALL) {
+                val g = shares[f.species]
+                parcel[TileIndex(0), f] = g
+                masses.add(tile, f, g)
                 added += g
             }
             if (added <= 0L) return
@@ -1498,8 +1483,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun injectWater(tile: TileIndex, mass: Long) {
             val parcel = MassArray(1)
-            parcel[MassIndex(TileIndex(0),Species.Water)] = mass
-            masses[MassIndex(tile, Species.Water)] += mass
+            parcel[TileIndex(0), Fluid.Water] = mass
+            masses.add(tile, Fluid.Water, mass)
             val energy = heatCapacityAt(parcel, TileIndex(0)) * Edit.WATER_INJECT_KELVIN
             airEnergy[tile] += energy
             injectedAirMass += mass
@@ -2674,7 +2659,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Vaporizer, is Thruster, is Processor, is ThermalDecomposer,
+                is Thruster, is Processor, is ThermalDecomposer,
                 is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
@@ -2716,7 +2701,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Sensor -> Sensor(tile, facing)
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)
-            DeckMachineKind.Vaporizer -> Vaporizer(tile, facing)
             DeckMachineKind.Thruster -> Thruster(tile, facing)
             DeckMachineKind.Processor -> Processor(tile, facing)
             DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(tile, facing)

@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.chem.Species
 
 /**
  * What crossed between room and pipe.
@@ -120,14 +119,13 @@ internal fun handOver(
     acceptorEnergy: EnergyArray?,
 ): Moved {
     var mass = 0L
-    for (s in Species.ALL) {
-        val donorMassIndex = MassIndex(donorTile, s)
-        val acceptorMassIndex = MassIndex(acceptorTile, s)
-        val take = share.of(donorMass[donorMassIndex])
-        if (take == 0L) continue
-        donorMass[donorMassIndex] -= take
-        acceptorMass[acceptorMassIndex] += take
-        mass += take
+    donorMass.forEachFluid(donorTile) { f, held ->
+        val take = share.of(held)
+        if (take != 0L) {
+            donorMass[donorTile, f] = held - take
+            acceptorMass.add(acceptorTile, f, take)
+            mass += take
+        }
     }
 
     // Energy as a fraction of donor (exact), not mass × temperature (accumulates rounding error).

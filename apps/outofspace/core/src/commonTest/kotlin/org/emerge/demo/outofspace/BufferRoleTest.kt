@@ -16,7 +16,6 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.portsOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,7 +35,7 @@ class BufferRoleTest {
     private val centre get() = grid.tile(10, 10)
 
     private fun kinds(facing: Direction): List<DeckMachine> = listOf(
-        Extractor(centre, facing), Vaporizer(centre, facing), Thruster(centre, facing),
+        Extractor(centre, facing), Thruster(centre, facing),
         Processor(centre, facing), ThermalDecomposer(centre, facing),
         Storage(centre, facing),
     )

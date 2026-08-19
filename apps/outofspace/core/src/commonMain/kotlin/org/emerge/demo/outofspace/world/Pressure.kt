@@ -103,9 +103,7 @@ fun tilePressure(
         // until something actually condenses — see [liquidVolumeFraction] for why it has to exist
         // at all.
         var liquidShare = 0L
-        for (s in Species.ALL) {
-            val g = masses[MassIndex(tile,s)]
-            if (g <= 0L) continue
+        masses.forEachSpecies(tile) { s, g ->
             liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
         }
         // Floored rather than allowed to reach zero: a cell packed entirely with liquid has no room
@@ -115,8 +113,7 @@ fun tilePressure(
         val gasRoom = (room - room * minOf(liquidShare, SCALE) / SCALE).coerceAtLeast(1L).toInt()
 
         var sum = 0L
-        for (s in Species.ALL) {
-            val g = masses[MassIndex(tile,s)]
+        masses.forEachSpecies(tile) { s, g ->
             // A condensing species is measured against the whole cell, because the lever rule has
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
@@ -269,7 +266,7 @@ private const val AMBIENT_KELVIN = Temperature.AMBIENT_KELVIN.toLong()
 /** The pressure of a single tile, for callers that want one rather than the whole field. */
 fun millimolesOf(masses: MassArray, tile: TileIndex): Long {
     var sum = 0L
-    for (s in Species.ALL) sum += masses[MassIndex(tile, s)] * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR
+    masses.forEachSpecies(tile) { s, mass -> sum += mass * MILLIMOLES_PER_KILOGRAM[s.ordinal] / MOLAR_DIVISOR }
     return sum
 }
 

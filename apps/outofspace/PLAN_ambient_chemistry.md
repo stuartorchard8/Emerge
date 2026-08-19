@@ -1,6 +1,6 @@
 # Ambient chemistry
 
-Status: **scoped, nothing built** (2026-08-19).
+Status: **increment 0 built** (2026-08-20). Increment 1 — one reaction, end to end — is next.
 
 Chemistry today is something one machine does to one buffer, and it does not actually do it —
 `cook` in `chem/Chemistry.kt` is a stub that returns its input unchanged. This plan makes chemistry
@@ -136,7 +136,24 @@ diffusion stencil behind a dependent load.
 
 ---
 
-# Increment 0 — the `Fluid` subset
+# Increment 0 — the `Fluid` subset ✅ BUILT
+
+Landed in two commits: `Fluid` and the presence bitmask (0a), then the remap and the vaporizer's
+deletion (0b). What actually happened against what is written below:
+
+- The stride is `Fluid.COUNT` (23), so the air and pipe fields are **7× narrower**, not 5× — the
+  volatile metals and halogens came in under the estimate. `PRESENCE_WORDS` is now **one** word.
+- `MassIndex(tile, Species.Serpentine)` does not compile. That was the point.
+- `MassArray` exposes both walks: `forEachFluid` for anything that stays inside the air, and
+  `forEachSpecies` widening to `Species` on top of it, so a chemical pass can be one loop over
+  either store.
+- `Save` refuses an `air` or `pipeair` record naming a non-fluid rather than dropping it, and
+  refuses a `VAPORIZER` machine by name — a machine holds cargo, and dropping it would take that
+  mass out of the ledger silently.
+- ⚠️ **The thruster turned out to be a second vaporizer.** Firing into a bulkhead put the whole
+  chunk into the air field whatever it was made of. Its non-fluid part is now booked overboard as
+  the solid it is. **Open:** a motor fed gravel should arguably refuse to fire rather than throw it
+  away, which is an acceptance rule and Stu's call.
 
 **Do this first. It is behaviour-neutral, it is the largest and most certain win in this plan, and
 it makes a class of bug uncompilable.** It is worth doing even if no chemistry ever lands.

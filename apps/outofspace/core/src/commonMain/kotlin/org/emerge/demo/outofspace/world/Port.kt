@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
 
@@ -81,7 +80,6 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // and is not a port: nothing on a belt is going to catch it.
         is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
 
-        is Vaporizer -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Input))
 
         // In at the back, concentrate out the front, tailings out of the floor.
         is Processor -> listOf(

@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
+import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 
@@ -27,7 +29,6 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.TileEnergy
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.ambientEnergy
@@ -357,10 +358,6 @@ object Save {
             // A pump holds nothing: what it moves is in the two air fields. Facing and wiring are
             // written by the common code around this.
             is Pump -> {}
-            is Vaporizer -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
             // The exhaust path is derived from the hull every tick and so is not state — see
             // [exhaustPath]; the propellant is a store, written by the role loop below.
             is Thruster -> {
@@ -783,7 +780,7 @@ object Save {
                 "pipeair" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) pipeMass[MassIndex(t, s)] = mix[s]
+                    readFluids(mix, ::fail) { f, mass -> pipeMass[t, f] = mass }
                 }
                 "pipeairheat" -> readSparse(tokens, pipeEnergy.data, energyScale, ::fail)
                 "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
@@ -840,7 +837,7 @@ object Save {
                 "air" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
-                    for (s in Species.ALL) airMass[MassIndex(t, s)] = mix[s]
+                    readFluids(mix, ::fail) { f, mass -> airMass[t, f] = mass }
                 }
                 else -> fail("unknown entry '${tokens[0]}'")
             }
@@ -1047,6 +1044,11 @@ object Save {
         fail: (String) -> Nothing,
     ): DeckMachine {
         val kindName = tokens.firstOrNull() ?: fail("expected a machine kind")
+        // The mineral vaporizer is gone (see PLAN_ambient_chemistry.md): it put whatever it was
+        // handed into the atmosphere, which is precisely what a typed air field forbids. Refused by
+        // name rather than dropped, because a machine holds cargo and dropping it would take that
+        // mass out of the ledger without saying so — a silent loss is the worse of the two failures.
+        if (kindName == "VAPORIZER") fail("the mineral vaporizer no longer exists")
         val kind = DeckMachineKind.ALL.firstOrNull { it.name == kindName }
             ?: fail("unknown machine '$kindName'")
         val f = fields(tokens.drop(1), fail)
@@ -1108,12 +1110,6 @@ object Save {
                 } ?: InputKey.Up,
             )
             DeckMachineKind.Pump -> Pump(tile, facing())
-            DeckMachineKind.Vaporizer -> Vaporizer(
-                tile,
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Vaporizer(tile, Direction.Right).massPerTick),
-            )
             DeckMachineKind.Processor -> Processor(
                 tile,
                 facing = facing(),
@@ -1312,6 +1308,25 @@ object Save {
         "Silica" to Species.Quartz,
         "RareEarth" to Species.Monazite,
     )
+
+    /**
+     * A mixture read from an air or pipe record, handed over one [Fluid] at a time — and **refused**
+     * if it names anything that cannot be one.
+     *
+     * A file is the one place a solid can still try to get into the atmosphere: the field is typed
+     * now, but a save names its species in text, and a hand-written or older file may say
+     * `Serpentine=5` in an `air` line. Dropping that quietly is the worse failure of the two — it
+     * loses mass from the ledger and reads as a bug somewhere else entirely — so it fails loudly
+     * here, at the line that says it, which is what would have caught the original invariant.
+     */
+    private inline fun readFluids(mix: Mixture, fail: (String) -> Nothing, put: (Fluid, Long) -> Unit) {
+        for (s in Species.ALL) {
+            val mass = mix[s]
+            if (mass == 0L) continue
+            val fluid = s.fluid ?: fail("'${s.name}' cannot be in the air or a pipe")
+            put(fluid, mass)
+        }
+    }
 
     private fun readMixture(text: String, scale: Rescale, fail: (String) -> Nothing): Mixture {
         if (text == "-") return Mixture.EMPTY

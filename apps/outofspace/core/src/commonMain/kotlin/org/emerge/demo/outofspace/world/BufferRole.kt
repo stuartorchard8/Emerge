@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
-import org.emerge.demo.outofspace.world.machine.Vaporizer
 
 /**
  * What a machine keeps a store *for*. One machine has at most one store of each role, and every
@@ -102,7 +101,6 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         is Extractor -> if (role == BufferRole.Product) pack(r, 0) else NO_OFFSET
         // One port, one store. Both are one-tile machines, so both stores are the centre tile —
         // legal precisely because neither keeps a second role there.
-        is Vaporizer -> if (role == BufferRole.Input) pack(r, 0) else NO_OFFSET
         is Thruster -> if (role == BufferRole.Input) pack(0, 0) else NO_OFFSET
 
         // In at the back, concentrate out the front, tailings out of the floor, and a lump held in

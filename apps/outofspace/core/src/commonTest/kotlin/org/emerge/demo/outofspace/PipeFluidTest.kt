@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Species
@@ -69,7 +70,7 @@ class PipeFluidTest {
 
         val tile = grid.tile(fromX, y)
         val pipe = s.pipeAir.copyMass()
-        pipe[MassIndex(tile, Species.Nitrogen)] = mass
+        pipe[MassIndex(tile, Fluid.Nitrogen)] = mass
         return s.copy(
             pipeAir = Stuff.gas(pipe),
             // Charging by hand puts gas into the world, so the baseline has to move with it or the
@@ -157,7 +158,7 @@ class PipeFluidTest {
         for (x in 3 until 8) s = lay(s, grid.tile(x, 5), grid.tile(x + 1, 5))
 
         val pipe = s.pipeAir.copyMass()
-        pipe[MassIndex(grid.tile(3, 4), Species.Nitrogen)] = 400L
+        pipe[MassIndex(grid.tile(3, 4), Fluid.Nitrogen)] = 400L
         s = s.copy(
             pipeAir = Stuff.gas(pipe),
             baselineAirMass = s.baselineAirMass + 400L,

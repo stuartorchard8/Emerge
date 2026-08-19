@@ -188,7 +188,7 @@ val DeckMachineKind.material: Material
         // anything — which is why it keeps the instrument's fill rather than the plate's.
         DeckMachineKind.Vent, DeckMachineKind.Storage,
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
-        DeckMachineKind.Vaporizer, DeckMachineKind.Thruster, DeckMachineKind.Processor,
+        DeckMachineKind.Thruster, DeckMachineKind.Processor,
         DeckMachineKind.Extractor,
         -> Material.Titanium
         DeckMachineKind.ThermalDecomposer -> Material.Firebrick
@@ -213,7 +213,7 @@ val DeckMachineKind.fillPermille: Int
         // rechosen, so the migration does not quietly change what the ship weighs.
         DeckMachineKind.Vent -> 40
         // A shell with a room's worth of space inside it — carried across unchanged.
-        DeckMachineKind.Storage, DeckMachineKind.Pump, DeckMachineKind.Vaporizer -> 150
+        DeckMachineKind.Storage, DeckMachineKind.Pump -> 150
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         DeckMachineKind.Thruster -> 120

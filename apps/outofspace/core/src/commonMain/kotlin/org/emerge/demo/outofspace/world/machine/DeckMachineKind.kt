@@ -13,7 +13,6 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
     Sensor("SENSOR"),
     KeyInput("BUTTON", isPermeable = true),
     Pump("PUMP", isPermeable = true),
-    Vaporizer("VAPORIZER", isPermeable = true),
     Thruster("THRUSTER", isPermeable = true),
     Processor("PROCESSOR"),
     ThermalDecomposer("THERMAL DECOMPOSER", isPermeable = true),

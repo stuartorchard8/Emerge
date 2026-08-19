@@ -1,5 +1,6 @@
 package org.emerge.desktop
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.OutofspaceController
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -97,7 +98,7 @@ object OutofspaceBench {
             // Only where there is already air: filling vacuum would change which tiles are worked at
             // all, and then this would measure a different world rather than a fuller one.
             if (full.data.sliceOfIsEmpty(base)) continue
-            for (s in Species.ALL) if (full[MassIndex(tile, s)] == 0L) full[MassIndex(tile, s)] = 1_000L
+            for (f in Fluid.ALL) if (full[MassIndex(tile, f)] == 0L) full[MassIndex(tile, f)] = 1_000L
         }
         val fullEnergy = energy.copyOf()
         println()

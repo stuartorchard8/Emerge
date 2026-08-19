@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import kotlin.jvm.JvmInline
 
@@ -30,11 +31,18 @@ fun TileArray(size: Int, init: (Int) -> TileIndex = { TileIndex.NONE}): TileArra
 
 @JvmInline
 value class MassIndex(val index: Int)
-fun MassIndex(i: TileIndex, s: Species) =
-    MassIndex(i.index*Species.COUNT + s.ordinal)
+fun MassIndex(i: TileIndex, f: Fluid) =
+    MassIndex(i.index*Fluid.COUNT + f.ordinal)
 
 /**
- * Mass per tile per species, stored **densely** and iterated **sparsely**.
+ * Mass per tile per [Fluid], stored **densely** and iterated **sparsely**.
+ *
+ * ### Why a [Fluid] and not a [Species]
+ *
+ * Because this field is the air and the pipes, and 142 of the 165 species can never be in either.
+ * Indexing it by [Species] made "no solid in the atmosphere" a doc comment that two call sites had
+ * already broken; indexing it by [Fluid] makes the same statement a thing the compiler checks, and
+ * incidentally makes the field seven times narrower. See [Fluid].
  *
  * ### Why both halves
  *
@@ -80,7 +88,7 @@ class MassArray(
     }
 
     /**
-     * ⚠️ **Divides.** [Species.COUNT] is a `val`, not a `const`, so recovering the tile and the
+     * ⚠️ **Divides.** [Fluid.COUNT] is a `val`, not a `const`, so recovering the tile and the
      * ordinal from a flat [MassIndex] costs two real integer divisions — and this is the setter the
      * diffusion stencil calls four times per species per tile per sub-step. Kept because it is the
      * signature every existing caller uses and the arithmetic is unavoidable once the two halves
@@ -89,31 +97,31 @@ class MassArray(
      */
     operator fun set(key: MassIndex, value: Long) {
         data[key.index] = value
-        val tile = key.index / Species.COUNT
-        val ordinal = key.index - tile * Species.COUNT
+        val tile = key.index / Fluid.COUNT
+        val ordinal = key.index - tile * Fluid.COUNT
         setPresence(tile, ordinal, value)
     }
 
-    /** Mass of [s] at [tile]. The division-free twin of `get(MassIndex(tile, s))`. */
-    operator fun get(tile: TileIndex, s: Species): Long = data[tile.index * Species.COUNT + s.ordinal]
+    /** Mass of [f] at [tile]. The division-free twin of `get(MassIndex(tile, f))`. */
+    operator fun get(tile: TileIndex, f: Fluid): Long = data[tile.index * Fluid.COUNT + f.ordinal]
 
-    /** Stores mass of [s] at [tile], maintaining the bitmask. No division — prefer this in a loop. */
-    operator fun set(tile: TileIndex, s: Species, value: Long) {
-        data[tile.index * Species.COUNT + s.ordinal] = value
-        setPresence(tile.index, s.ordinal, value)
+    /** Stores mass of [f] at [tile], maintaining the bitmask. No division — prefer this in a loop. */
+    operator fun set(tile: TileIndex, f: Fluid, value: Long) {
+        data[tile.index * Fluid.COUNT + f.ordinal] = value
+        setPresence(tile.index, f.ordinal, value)
     }
 
     /**
-     * Adds [delta] to the mass of [s] at [tile] — the stencil's operation, as one call.
+     * Adds [delta] to the mass of [f] at [tile] — the stencil's operation, as one call.
      *
      * `field[i] += d` on the flat index is a get *and* a set, so it pays the division in [set] and
      * re-derives an address the caller already knew. This pays neither.
      */
-    fun add(tile: TileIndex, s: Species, delta: Long) {
-        val at = tile.index * Species.COUNT + s.ordinal
+    fun add(tile: TileIndex, f: Fluid, delta: Long) {
+        val at = tile.index * Fluid.COUNT + f.ordinal
         val value = data[at] + delta
         data[at] = value
-        setPresence(tile.index, s.ordinal, value)
+        setPresence(tile.index, f.ordinal, value)
     }
 
     /** @suppress the one place a presence bit is written. */
@@ -135,11 +143,22 @@ class MassArray(
 
     /**
      * Every species this field holds at [tile], skipping the zeroes — the twin of
-     * [StuffLayer.forEachSpecies], down to the argument order, so one loop can serve both.
+     * [StuffLayer.forEachSpecies], down to the argument order, so one loop can serve both — the
+     * air's own species are a [Fluid] subset, and this is the widening back to [Species] that lets a
+     * chemical pass be written once.
      */
     inline fun forEachSpecies(tile: TileIndex, action: (Species, Long) -> Unit) {
+        forEachFluid(tile) { fluid, mass -> action(fluid.species, mass) }
+    }
+
+    /**
+     * The same walk in this field's own terms — what a caller that stays inside the air wants, and
+     * what [forEachSpecies] is written on top of. Prefer this unless the loop genuinely has to be
+     * the same source as one over a [StuffLayer].
+     */
+    inline fun forEachFluid(tile: TileIndex, action: (Fluid, Long) -> Unit) {
         forEachPresentOrdinal(tile) { ordinal ->
-            action(Species.ALL[ordinal], data[tile.index * Species.COUNT + ordinal])
+            action(Fluid.ALL[ordinal], data[tile.index * Fluid.COUNT + ordinal])
         }
     }
 
@@ -168,39 +187,39 @@ class MassArray(
 
     /** Asserts [present] agrees with [data] everywhere. Tests and debug builds; walks the whole field. */
     fun checkInvariants() {
-        val tiles = data.size / Species.COUNT
+        val tiles = data.size / Fluid.COUNT
         for (tile in 0 until tiles) {
-            for (s in Species.ALL) {
-                val mass = data[tile * Species.COUNT + s.ordinal]
-                val bit = present[tile * PRESENCE_WORDS + (s.ordinal ushr 6)] and (1L shl (s.ordinal and 63))
-                require((mass != 0L) == (bit != 0L)) { "tile $tile species $s: mass $mass, present ${bit != 0L}" }
+            for (f in Fluid.ALL) {
+                val mass = data[tile * Fluid.COUNT + f.ordinal]
+                val bit = present[tile * PRESENCE_WORDS + (f.ordinal ushr 6)] and (1L shl (f.ordinal and 63))
+                require((mass != 0L) == (bit != 0L)) { "tile $tile fluid $f: mass $mass, present ${bit != 0L}" }
             }
         }
     }
 
     companion object {
         /** Words of bitmask per tile, matching [StuffLayer.PRESENCE_WORDS]'s scheme. */
-        val PRESENCE_WORDS: Int = (Species.COUNT + 63) / 64
+        val PRESENCE_WORDS: Int = (Fluid.COUNT + 63) / 64
 
         /**
          * Derive a bitmask from masses that already exist — for the raw-array constructor, which is
          * handed a populated array and cannot have watched it being filled.
          */
         fun presenceFor(data: LongArray): LongArray {
-            val tiles = data.size / Species.COUNT
+            val tiles = data.size / Fluid.COUNT
             val present = LongArray(tiles * PRESENCE_WORDS)
             for (i in data.indices) {
                 if (data[i] == 0L) continue
-                val ordinal = i % Species.COUNT
-                present[(i / Species.COUNT) * PRESENCE_WORDS + (ordinal ushr 6)] =
-                    present[(i / Species.COUNT) * PRESENCE_WORDS + (ordinal ushr 6)] or (1L shl (ordinal and 63))
+                val ordinal = i % Fluid.COUNT
+                present[(i / Fluid.COUNT) * PRESENCE_WORDS + (ordinal ushr 6)] =
+                    present[(i / Fluid.COUNT) * PRESENCE_WORDS + (ordinal ushr 6)] or (1L shl (ordinal and 63))
             }
             return present
         }
     }
 }
-fun MassArray(size: Int, init: (TileIndex, Species) -> Long = { _,_ -> 0}): MassArray {
-    return MassArray(LongArray(size*Species.COUNT, {init(TileIndex(it/Species.COUNT), Species.ALL[it%Species.COUNT])}))
+fun MassArray(size: Int, init: (TileIndex, Fluid) -> Long = { _,_ -> 0}): MassArray {
+    return MassArray(LongArray(size*Fluid.COUNT, {init(TileIndex(it/Fluid.COUNT), Fluid.ALL[it%Fluid.COUNT])}))
 }
 
 @JvmInline

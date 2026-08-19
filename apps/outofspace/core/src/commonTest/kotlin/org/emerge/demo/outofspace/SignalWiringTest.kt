@@ -2,7 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
-import org.emerge.demo.outofspace.world.machine.Vaporizer
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Mixture
@@ -147,7 +147,7 @@ class SignalWiringTest {
     }
 
     /**
-     * The same rig with a **vaporizer** at the near end instead of an extractor, and ore already in it.
+     * The same rig with a **thruster** at the near end instead of an extractor, and propellant in it.
      *
      * ⚠️ The subject changed, not the question. This file is about *wire*, and an extractor stopped
      * being able to demonstrate a proportional throttle when its two buffers became one — what it
@@ -155,14 +155,18 @@ class SignalWiringTest {
      * its activation is binary (see `WiringTest`). Every other machine still reads its activation as
      * a rate, so the grammar is pinned on one of those rather than let go.
      *
-     * Measured as **input consumed** rather than product made: a vaporizer's output is gas into the
-     * room, and how much matter it worked through is the rate the throttle governs either way.
+     * Measured as **propellant consumed** rather than product made: a motor's output is exhaust, and
+     * how much matter it worked through is the rate the throttle governs either way.
+     *
+     * ⚠️ It was a mineral vaporizer until that machine was deleted (see `PLAN_ambient_chemistry.md`).
+     * A thruster is the nearest thing left: the same `throttled(massPerTick, …)`, so the same
+     * question is being asked of the same code.
      */
-    private fun vaporizerRig(fill: Long): VesselState {
+    private fun burnerRig(fill: Long): VesselState {
         val deck = DeckArray(grid)
         val stored = Mixture.of(Species.Iron to fill, energy = 0)
         val at = grid.tile(extractorAt.first, extractorAt.second)
-        deck += Vaporizer(at, Direction.Right).withWiring(stopWhenFull)
+        deck += Thruster(at, Direction.Right).withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
         deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
 
@@ -178,11 +182,11 @@ class SignalWiringTest {
             .stocked(grid.tile(13, 5), stored)
             // Plenty, so the machine is never short of something to work on: the throttle is the
             // only thing that may govern the rate over the window measured.
-            .stocked(at, Mixture.of(Species.Iron to Storage.CAP, energy = 0), BufferRole.Input)
+            .stocked(at, Mixture.of(Species.Water to Storage.CAP, energy = 0), BufferRole.Input)
     }
 
     /** How much the machine worked through: what is gone from its input store. */
-    private fun vaporized(s: VesselState): Long =
+    private fun burned(s: VesselState): Long =
         Storage.CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.total ?: 0L)
 
     /**
@@ -194,9 +198,9 @@ class SignalWiringTest {
         // Four ticks, not forty: over a longer window the machine's own buffer empties and it
         // stalls, and a stalled machine works the same amount whatever its throttle says. Measured
         // over the window where the throttle is the only thing governing the rate.
-        val empty = vaporized(run(vaporizerRig(0L), 4))
-        val quarter = vaporized(run(vaporizerRig(Storage.CAP / 4), 4))
-        val half = vaporized(run(vaporizerRig(Storage.CAP / 2), 4))
+        val empty = burned(run(burnerRig(0L), 4))
+        val quarter = burned(run(burnerRig(Storage.CAP / 4), 4))
+        val half = burned(run(burnerRig(Storage.CAP / 2), 4))
 
         assertTrue(empty > quarter, "an empty tank should not throttle at all: $empty vs $quarter")
         assertTrue(quarter > half, "a quarter-full tank should throttle less than a half-full one: $quarter vs $half")

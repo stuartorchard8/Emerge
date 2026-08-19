@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EdgeGrid
@@ -44,7 +45,7 @@ class FlowFieldTest {
      */
     private fun flowFrom(vararg loaded: Pair<TileIndex, Long>): FlowField {
         val mass = MassArray(grid.size)
-        for ((tile, count) in loaded) mass[MassIndex(tile, Species.Nitrogen)] = count
+        for ((tile, count) in loaded) mass[MassIndex(tile, Fluid.Nitrogen)] = count
         return diffuseFluid(edges, apertures, mass, energies = null, subSteps = 1).flow
     }
 
