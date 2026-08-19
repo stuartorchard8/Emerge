@@ -534,6 +534,10 @@ class OutofspaceRenderer {
         val built = state.conduits.tracks.builtPermille(conduit, tile) / 1000f
         val whole = kindColor(conduit)
         if (state.conduits.at(conduit, tile)?.deconstructing == true) {
+            if (built > 0.99f) {
+                // Deconstruction hasn't begun, so represent the conduit's condemnation with the X
+                markedForDeconstruction.add(tile)
+            }
             return lerpColor(Colors.SCRAPPING, whole, built)
         }
         return if (built >= 1f) whole else lerpColor(Colors.GHOST, whole, built)
