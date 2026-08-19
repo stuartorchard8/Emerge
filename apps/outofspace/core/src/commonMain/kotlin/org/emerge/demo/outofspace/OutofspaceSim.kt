@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.chem.SMELT_PRODUCTS
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.constructionPortOf
+import org.emerge.demo.outofspace.world.constructionTileOf
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
@@ -1805,8 +1806,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (storesHeld > 0L || handedBack) continue
 
                 // Step 4: the casing, only now that the machine is empty.
+                //
+                // Out of the same mouth it was built through — its centre, or for a bridge the end
+                // it puts material down at, which is where a run leaving it already goes.
                 val tiles = m.tiles(grid)
-                if (!handCasingBack(centre, tiles)) continue
+                val out = if (m is Bridge) {
+                    portsOf(grid, m).firstOrNull { it.kind == PortKind.Output }?.tile ?: centre
+                } else {
+                    centre
+                }
+                if (!handCasingBack(out, tiles)) continue
 
                 // Step 5.
                 if (tiles.all { deck.stuff.massAt(it) == 0L }) dropMachine(centre)
@@ -1920,6 +1929,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             var left = 0L
             for (t in tiles) left += deck.stuff.massAt(t)
             return left == 0L
+        }
+
+        /** Whether any of a machine's stores has anything in it — a bridge's three slots, in practice. */
+        private fun holdsAnything(m: DeckMachine, centre: TileIndex): Boolean {
+            for (role in BufferRole.entries) {
+                val store = bufferTile(grid, m, centre, role) ?: continue
+                if (buffers.massAt(store) > 0L) return true
+            }
+            return false
         }
 
         /** The mirror of [spreadOverFootprint]: takes [mass] of [species] evenly back off the tiles. */
@@ -2215,10 +2233,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // is fed to a thing that is being dismantled. Handing back what is already inside it
                 // is [scrapMachines]' job, not a port's.
                 if (tile in scrapping) {
+                    // ⛔ A **bridge goes on working while it is marked** — Stu, 2026-08-19. It is a
+                    // length of track held in the air, and a run does not stop carrying because the
+                    // player has condemned it. Its input stays open until it has nothing left inside
+                    // it; only then does it close and start giving its metal back. Closing it while
+                    // a lump was mid-span would strand that lump on the gantry.
+                    if (m is Bridge && holdsAnything(m, tile)) {
+                        for (port in portsOf(grid, m)) add(port)
+                        continue
+                    }
                     for (port in portsOf(grid, m)) if (port.kind == PortKind.Output) add(port)
                     continue
                 }
-                if (deck.isGhost(tile)) { add(constructionPortOf(m)); continue }
+                if (deck.isGhost(tile)) { add(constructionPortOf(grid, m)); continue }
                 for (port in portsOf(grid, m)) add(port)
             }
             return out
@@ -2367,7 +2394,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // puts casing down on its own tile, reads as unbuilt, and absorbs it straight back.
                 // Stable, stationary, and indistinguishable from deconstruction doing nothing.
                 if (tile in scrapping) continue
-                if (deck.isGhost(tile)) machineGhosts[tile] = m
+                // Keyed by the tile it is **fed at**, which is its centre for everything but a
+                // bridge — see [constructionTileOf]. The absorb callback is handed a tile, not a
+                // machine, so the key has to be the address material actually arrives at.
+                if (deck.isGhost(tile)) machineGhosts[constructionTileOf(grid, m)] = m
             }
 
             val sinks = ports.entries
@@ -2388,6 +2418,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // the metal it puts down has nowhere to be pulled to and sits on the tile for ever.
             for (centre in scrapping) {
                 val m = deck[centre] ?: continue
+                val out = constructionTileOf(grid, m)
+                if (rails[out.index] != null) sources.add(out)
                 if (rails[centre.index] != null) sources.add(centre)
                 for (role in BufferRole.entries) {
                     val store = bufferTile(grid, m, centre, role) ?: continue

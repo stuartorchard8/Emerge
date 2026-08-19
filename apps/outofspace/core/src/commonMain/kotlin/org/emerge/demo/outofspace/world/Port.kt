@@ -179,7 +179,31 @@ fun portsOf(grid: Grid, machine: DeckMachine, centreTile: TileIndex): List<Port>
  * It is a port like any other, so the track beneath it is locked from deconstruction while the ghost
  * stands — a player cannot pull up the line they are feeding the thing with.
  */
-fun constructionPortOf(machine: DeckMachine): Port =
+/**
+ * The tile a ghost is **fed at**, and the tile a machine being taken apart hands its casing back at.
+ *
+ * Its centre for everything except a **bridge**, which has no centre port at either end of its life:
+ * a gantry is a thing with two ends, and a port in the middle of a span is not a place a belt can
+ * reach — the tile is over the gap it is bridging. So a bridge is built through the end it takes
+ * material in at, and gives its metal back through the end it puts material down at, which is what
+ * every other length of track running through it already does.
+ */
+fun constructionTileOf(grid: Grid, machine: DeckMachine): TileIndex =
+    if (machine is Bridge) {
+        portsOf(grid, machine).firstOrNull { it.kind == PortKind.Input }?.tile ?: machine.center
+    } else {
+        machine.center
+    }
+
+fun constructionPortOf(grid: Grid, machine: DeckMachine): Port =
+    if (machine is Bridge) {
+        // Its own input, unchanged. A bridge needs no port invented for it.
+        portsOf(grid, machine).first { it.kind == PortKind.Input }
+    } else {
+        constructionPortAtCentre(machine)
+    }
+
+private fun constructionPortAtCentre(machine: DeckMachine): Port =
     Port(
         machine.center,
         // Facing only orients the drawing. A ghost is fed from whichever way material arrives, the

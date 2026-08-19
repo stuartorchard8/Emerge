@@ -16,6 +16,8 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.constructionTileOf
+import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
@@ -238,11 +240,14 @@ class MachineGhostTest {
      * packet the machine hands back stands on its own tile for ever and the machine jams — the
      * occupied-tile family the rails already have written up, not something to paper over here.
      */
-    private fun builtMachine(machine: DeckMachine): VesselState {
+    private fun builtMachine(machine: DeckMachine, sink: Boolean = true): VesselState {
         val deck = DeckArray(grid)
         deck += machine
         val rails = arrayOfNulls<Segment>(grid.size)
-        joinRow(grid, rails, 4, grid.xOf(machine.center), 4)
+        // Past the machine, not merely up to it: a bridge hands its casing back through its *output*
+        // end, a tile beyond its centre, and a run that stopped short would leave it nowhere to put
+        // anything.
+        joinRow(grid, rails, 4, minOf(grid.width - 2, grid.xOf(machine.center) + 2), 4)
         val s = VesselState(
             grid,
             deck,
@@ -250,7 +255,7 @@ class MachineGhostTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         ).copy(creative = false)
-        s.conduits.tracks[Conduit.Rail].release(grid.tile(4, 4))
+        if (sink) s.conduits.tracks[Conduit.Rail].release(grid.tile(4, 4))
         return s
     }
 
@@ -358,6 +363,65 @@ class MachineGhostTest {
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
         assertTrue(s.rail.massAt(input) > 0L, "the half-worked lump did not come back out of the input")
         assertEquals(0L, s.rail.massAt(at), "it came out of the centre instead")
+    }
+
+    /**
+     * ⛔ A **bridge has no centre port**, at either end of its life. The middle of a span is over the
+     * gap it is bridging and no belt can reach it, so a gantry is built through the end it takes
+     * material in at and gives its metal back through the end it puts material down at.
+     */
+    @Test
+    fun `a bridge is built through its own input rather than a centre port`() {
+        val at = grid.tile(9, 4)
+        val bridge = Bridge(at, Direction.Right)
+        val port = portsOf(grid, bridge).first { it.kind == PortKind.Input }
+        assertTrue(port.tile != at, "a bridge's input is supposed to be at its end, not its centre")
+
+        assertEquals(port.tile, constructionTileOf(grid, bridge), "a bridge is fed at its input end")
+        // Everything else is fed at its centre, which is the rule this is the exception to.
+        val hull = Hull(grid.tile(10, 4))
+        assertEquals(hull.center, constructionTileOf(grid, hull), "a hull is fed at its centre")
+    }
+
+    /**
+     * ⛔ A bridge **goes on working while it is marked**: it is a length of track held in the air, and
+     * a run does not stop carrying because the player condemned it. Its input closes only once it has
+     * nothing left inside — closing it mid-span would strand the lump on the gantry.
+     */
+    @Test
+    fun `a marked bridge carries what is on it out of the far end before it comes apart`() {
+        val at = grid.tile(9, 4)
+        val bridge = Bridge(at, Direction.Right)
+        val lump = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0))
+        val carried = lump.mass
+        val loaded = builtMachine(bridge).stocked(at, lump, BufferRole.Input)
+        val casing = loaded.deck.stuff.massAt(at)
+
+        // One step: the shuffle moves the load along, and the casing has not started yet.
+        val s = run(remove(loaded, at), OutofspaceReducer.RAIL_PERIOD)
+        assertEquals(casing, s.deck.stuff.massAt(at), "the span came apart with a lump still on it")
+        assertTrue(carried > 0L, "fixture")
+
+        // And it does eventually go, load first and metal after.
+        val done = run(s, OutofspaceReducer.RAIL_PERIOD * 40)
+        assertNull(done.deck[at], "the marked bridge never finished coming apart")
+    }
+
+    @Test
+    fun `an empty marked bridge closes its input and gives its casing back out its output`() {
+        val at = grid.tile(9, 4)
+        val bridge = Bridge(at, Direction.Right)
+        val exit = portsOf(grid, bridge).first { it.kind == PortKind.Output }.tile
+        val entry = portsOf(grid, bridge).first { it.kind == PortKind.Input }.tile
+        // ⚠️ **No sink**, deliberately: with one, the casing is deposited and carried off within the
+        // same step and the tile it was put down on reads as empty by the end of the tick. The
+        // question here is *which mouth it came out of*, so nothing may draw it away.
+        val before = builtMachine(bridge, sink = false)
+
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
+        assertTrue(s.rail.massAt(exit) > 0L, "no casing came out of the far end")
+        assertEquals(0L, s.rail.massAt(at), "casing came out of the middle of the span")
+        assertEquals(0L, s.rail.massAt(entry), "casing came back out of the end it takes deliveries at")
     }
 
     /** A ghost marked for deconstruction is just a part-built machine: it dumps what it has and goes. */

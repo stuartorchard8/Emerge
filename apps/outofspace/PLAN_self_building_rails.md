@@ -404,8 +404,21 @@ because carrying is not producing.)
   empties by its natural exit and deconstruction only waits.
 - **An `Extractor`** has a working store and no input port at all — what it is chewing came off a
   rock, not off a belt — so it falls back to its own tile, where the deconstruction port stands.
-- **A bridge's slots** are shuffled out of the far end by `advanceBridges`, which is part of the
-  conduit step rather than of running a machine and therefore keeps going while the bridge is marked.
+### A bridge has no centre port, at either end of its life — Stu, 2026-08-19
+
+The middle of a span is *over the gap it is bridging*, and no belt can reach it. So a gantry is the
+one machine with no construction or deconstruction port at its centre:
+
+- **Built through its own input port**, the end it takes material in at.
+- **Gives its casing back through its own output port**, the end it puts material down at — which is
+  where a run leaving it already goes.
+- **It goes on working while it is marked.** A bridge is a length of track held in the air, and a run
+  does not stop carrying because the player has condemned it. Its input stays open until it has
+  nothing left inside; only then does it close and the metal start coming back. Closing it earlier
+  would strand whatever was mid-span.
+- Its slots are shuffled along by `advanceBridges`, which is part of the conduit step rather than of
+  running a machine, so they keep moving while it is marked — which is also why this pass must not
+  hand them back itself.
 
 ⚠️ **A store a surviving output port still drains is left to that port.** A `Storage` keeps only an
 `Inside` store and that *is* what its output port drains, so two mouths would empty one tank in a
