@@ -148,6 +148,10 @@ class FlowGraph internal constructor(
 
             val allowed = ByteArray(grid.size)
 
+            // Which side of each edge a producer lies on. Computed once: it is a fact about the
+            // shape of the track, and every traversal asks it the same way.
+            val sourceSide = SourceSide.of(tileSet, sources, linked, grid)
+
             // On a route out of a producer. Survives across traversals — that is the whole point.
             val leading = BooleanArray(grid.size)
 
@@ -156,7 +160,7 @@ class FlowGraph internal constructor(
             // something a replay can rely on.
             for (sink in sinks.sortedBy { it.index }) {
                 if (sink in tileSet) {
-                    traverse(sink, allowed, leading, tileSet, sources, linked, grid)
+                    traverse(sink, allowed, leading, tileSet, sources, sinks, sourceSide, linked, grid)
                 }
             }
 
@@ -183,6 +187,8 @@ class FlowGraph internal constructor(
             leading: BooleanArray,
             tileSet: Set<TileIndex>,
             sources: Set<TileIndex>,
+            sinks: Set<TileIndex>,
+            sourceSide: SourceSide,
             linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
         ) {
@@ -224,6 +230,13 @@ class FlowGraph internal constructor(
                     val next = grid.neighbour(at, dir)
                     if (next == TileIndex.NONE || next !in tileSet) continue
 
+                    // ⛔ **A consumer with no producer behind it has nothing to send.** Giving one an
+                    // outgoing edge cannot move material that was never going to arrive, and the
+                    // edge is not free: it is the same edge, pointing the other way, that the
+                    // consumer needs to be fed by. A ghost rail hanging off a loaded belt, told it
+                    // may send its iron back down the spur it was waiting for. Found in Stu's save.
+                    if (next in sinks && sourceSide.anyAtAll(at) && !sourceSide.beyond(at, dir)) continue
+
                     // Already pointing at us: nothing to claim, and nothing new to say to it.
                     if (bit(allowed, next, dir.opposite)) continue
 
@@ -240,6 +253,28 @@ class FlowGraph internal constructor(
                     // and starved the ghost for good. Found in Stu's save.
                     if (bit(allowed, at, dir)) {
                         if (at in sources) continue
+                        // ⛔ **Taking an edge back has to be justified by a producer too.** Hunting
+                        // upstream where no producer lies cannot find anything, so all such a step
+                        // can do is undo the claim of a consumer that got there first — and the walk
+                        // that did it gains nothing whatever.
+                        //
+                        // A spur of ghost rail hanging off a loaded belt, its feed edge reversed by a
+                        // sink further along the line that could never have been fed through it.
+                        // Found in Stu's save, twice, at two different depths — which is why this is
+                        // stated about the whole branch beyond the edge and not about the tile on
+                        // the end of it.
+                        //
+                        // Note the asymmetry with granting, which is still free: an *un*contested
+                        // edge into a branch with no producer is how material stranded on a stub
+                        // drains back out, and nothing is taken from anyone to make it.
+                        //
+                        // ⚠️ **Asked only of a network that HAS a producer.** With none anywhere,
+                        // nothing justifies anything and every direction is as good as every other,
+                        // so the old greedy answer stands: the last consumer traversed takes the
+                        // line. That is the better answer there, and the one the belt tests reason
+                        // about — a line that commits is a through-route, where one that splits down
+                        // the middle sends half its traffic back at a machine that already said no.
+                        if (sourceSide.anyAtAll(at) && !sourceSide.beyond(at, dir)) continue
                         revoke(allowed, at, dir)
                     }
                     grant(allowed, next, dir.opposite)
@@ -342,6 +377,172 @@ class FlowGraph internal constructor(
                 }
             }
             return feeders
+        }
+
+        /**
+         * Which side of an edge a producer lies on — the question a revocation has to answer.
+         *
+         * An edge already claimed may only be taken back by a walk that has a producer behind it
+         * that way. Answering that per step means "is a source reachable from `next` without coming
+         * back through `at`", which is a question about **bridges**: cutting a non-bridge edge
+         * disconnects nothing, so the answer is simply whether the connected component holds a
+         * producer at all; cutting a bridge splits the network in two, and the answer is whether the
+         * far half holds one.
+         *
+         * So the whole thing is computed once per build — Tarjan's bridges, the 2-edge-connected
+         * components they separate, and a producer count per subtree of the resulting forest.
+         */
+        private class SourceSide(
+            private val comp: IntArray,
+            private val parent: IntArray,
+            private val subtree: IntArray,
+            private val treeTotal: IntArray,
+            private val root: IntArray,
+            private val grid: Grid,
+        ) {
+            /** Does the network [at] sits on have any producer at all? */
+            fun anyAtAll(at: TileIndex): Boolean {
+                val a = comp[at.index]
+                return a >= 0 && treeTotal[root[a]] > 0
+            }
+
+            /** Is a producer reachable from [at]'s neighbour in [dir], other than back through [at]? */
+            fun beyond(at: TileIndex, dir: Direction): Boolean {
+                val next = grid.neighbour(at, dir)
+                if (next == TileIndex.NONE) return false
+                val a = comp[at.index]
+                val b = comp[next.index]
+                if (a < 0 || b < 0) return false
+                // Not a bridge: cutting it leaves both ends able to reach everything they could
+                // before, so the only question left is whether this network has a producer at all.
+                if (a == b) return treeTotal[root[a]] > 0
+                return if (parent[b] == a) subtree[b] > 0 else treeTotal[root[a]] - subtree[a] > 0
+            }
+
+            companion object {
+                fun of(
+                    tileSet: Set<TileIndex>,
+                    sources: Set<TileIndex>,
+                    linked: (TileIndex, Direction) -> Boolean,
+                    grid: Grid,
+                ): SourceSide {
+                    val n = grid.size
+                    fun neighbours(t: TileIndex): List<Direction> =
+                        Direction.ALL.filter {
+                            val x = grid.neighbour(t, it)
+                            linked(t, it) && x != TileIndex.NONE && x in tileSet
+                        }
+
+                    // ── Bridges, by an iterative Tarjan. Iterative because a run of track is as
+                    // long as the player cares to draw it, and a recursive walk over one would be a
+                    // stack overflow nobody could see coming from the shape of their factory.
+                    val disc = IntArray(n) { -1 }
+                    val low = IntArray(n)
+                    val bridges = HashSet<Long>()
+                    fun key(a: TileIndex, b: TileIndex): Long {
+                        val lo = minOf(a.index, b.index).toLong()
+                        val hi = maxOf(a.index, b.index).toLong()
+                        return lo * n + hi
+                    }
+                    var timer = 0
+                    for (start in tileSet.sortedBy { it.index }) {
+                        if (disc[start.index] >= 0) continue
+                        // tile, the tile it was entered from, and how far through its neighbours.
+                        val stack = ArrayDeque<IntArray>()
+                        disc[start.index] = timer; low[start.index] = timer; timer++
+                        stack.addLast(intArrayOf(start.index, -1, 0))
+                        while (stack.isNotEmpty()) {
+                            val frame = stack.last()
+                            val at = TileIndex(frame[0])
+                            val dirs = neighbours(at)
+                            if (frame[2] < dirs.size) {
+                                val dir = dirs[frame[2]]
+                                frame[2]++
+                                val next = grid.neighbour(at, dir)
+                                if (next.index == frame[1]) continue
+                                if (disc[next.index] >= 0) {
+                                    if (disc[next.index] < low[at.index]) low[at.index] = disc[next.index]
+                                } else {
+                                    disc[next.index] = timer; low[next.index] = timer; timer++
+                                    stack.addLast(intArrayOf(next.index, at.index, 0))
+                                }
+                            } else {
+                                stack.removeLast()
+                                val from = frame[1]
+                                if (from >= 0) {
+                                    if (low[at.index] < low[from]) low[from] = low[at.index]
+                                    if (low[at.index] > disc[from]) bridges.add(key(TileIndex(from), at))
+                                }
+                            }
+                        }
+                    }
+
+                    // ── The 2-edge-connected components: everything reachable without crossing one.
+                    val comp = IntArray(n) { -1 }
+                    var comps = 0
+                    for (start in tileSet.sortedBy { it.index }) {
+                        if (comp[start.index] >= 0) continue
+                        val id = comps++
+                        val queue = ArrayDeque<TileIndex>()
+                        comp[start.index] = id
+                        queue.addLast(start)
+                        while (queue.isNotEmpty()) {
+                            val at = queue.removeFirst()
+                            for (dir in neighbours(at)) {
+                                val next = grid.neighbour(at, dir)
+                                if (comp[next.index] >= 0 || key(at, next) in bridges) continue
+                                comp[next.index] = id
+                                queue.addLast(next)
+                            }
+                        }
+                    }
+
+                    // ── The forest those components form, one node per component and one edge per
+                    // bridge, with a producer count per subtree.
+                    val adjacency = Array(comps) { mutableListOf<Int>() }
+                    for (at in tileSet) {
+                        for (dir in neighbours(at)) {
+                            val next = grid.neighbour(at, dir)
+                            if (key(at, next) !in bridges) continue
+                            adjacency[comp[at.index]].add(comp[next.index])
+                        }
+                    }
+                    val own = IntArray(comps)
+                    for (source in sources) if (source in tileSet) own[comp[source.index]]++
+
+                    val parent = IntArray(comps) { -1 }
+                    val root = IntArray(comps) { -1 }
+                    val subtree = IntArray(comps)
+                    val treeTotal = IntArray(comps)
+                    for (seed in 0 until comps) {
+                        if (root[seed] >= 0) continue
+                        // Down first, then back up the same list in reverse: a child is always
+                        // summed before the parent that wants its total.
+                        val order = mutableListOf(seed)
+                        root[seed] = seed
+                        var head = 0
+                        while (head < order.size) {
+                            val at = order[head++]
+                            for (next in adjacency[at]) {
+                                if (root[next] >= 0) continue
+                                root[next] = seed
+                                parent[next] = at
+                                order.add(next)
+                            }
+                        }
+                        for (at in order) subtree[at] = own[at]
+                        for (i in order.indices.reversed()) {
+                            val at = order[i]
+                            val up = parent[at]
+                            if (up >= 0) subtree[up] += subtree[at]
+                        }
+                        val total = subtree[seed]
+                        for (at in order) treeTotal[at] = total
+                    }
+
+                    return SourceSide(comp, parent, subtree, treeTotal, root, grid)
+                }
+            }
         }
 
         private fun empty(): FlowGraph =
