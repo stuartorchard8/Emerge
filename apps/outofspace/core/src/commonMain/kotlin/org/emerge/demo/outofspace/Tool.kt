@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Conduit
+
 /**
  * Which left-click means what.
  *
@@ -22,6 +24,25 @@ enum class Tool(val label: String) {
     Cancel("CANCEL"),
 
     /**
+     * Severs joins without taking anything up — drag across a belt and the belt is in two pieces.
+     *
+     * The exact opposite of the [Build] gesture, which is what makes it worth its own tool. Conduit
+     * connects by being *drawn*, never by touching, so a run is only a run where the player dragged;
+     * this is the other half of that idea, and until it existed the only way to break a line was to
+     * delete a tile of it and lay it again, which meant paying for the tile twice and, outside
+     * creative, waiting for a ghost to build itself back.
+     *
+     * **Every join of every tile the drag passes over**, not merely the joins along the drag. A
+     * stroke *across* a belt is the gesture this exists for, and one that only cut the edges running
+     * parallel to the stroke would do nothing at all in exactly the case it is reached for.
+     *
+     * ⚠️ One conduit at a time — see [OutofspaceController.cutConduit]. A wire is the one fitting
+     * that still shares its tile with a belt, and a tool that cut both would take down a signal
+     * network as a side effect of tidying the track. Same reasoning as [DeleteLayer.Wire].
+     */
+    Cut("CUT"),
+
+    /**
      * The atmosphere injector: hold over a permeable tile and gas appears there, a kilogram a tick.
      *
      * A **debug** tool and labelled as one, alongside the debug engine and the rock drop. It mints
@@ -42,6 +63,18 @@ enum class Tool(val label: String) {
      * model boils water near −33 °C. See that constant.
      */
     InjectWater("WATER"),
+    ;
+
+    companion object {
+        /**
+         * What [Cut] will sever, and in the order the key cycles them.
+         *
+         * ⚠️ **`Conduit.Power` is deliberately absent**, exactly as it is from [DeleteLayer]: nothing
+         * lays it yet, and a key that quietly reaches a fourth network is how a player loses a run
+         * of cable without ever learning what did it.
+         */
+        val CUTTABLE: List<Conduit> = listOf(Conduit.Rail, Conduit.Pipe, Conduit.Signal)
+    }
 }
 
 /**

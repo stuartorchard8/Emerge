@@ -204,6 +204,23 @@ object OutofspaceAgentHarness {
                     settle()
                     println("[agent] drag (${t[1]},${t[2]}) -> (${t[3]},${t[4]}) with ${controller.brush.label}")
                 }
+                // The build drag's opposite: severs every join it passes, on one conduit, and takes
+                // nothing up. Driven as a gesture for the same reason `drag` is — the path is
+                // stepped out, and a cut that skipped a tile leaves a run that looks severed and is
+                // not, which is the single most confusing thing to debug by eye.
+                "cut" -> {
+                    controller.tool = Tool.Cut
+                    t.getOrNull(5)?.let { name ->
+                        controller.cutConduit = Tool.CUTTABLE.firstOrNull { it.name.equals(name, true) }
+                            ?: error("cannot cut '$name' (have ${Tool.CUTTABLE.map { it.label }})")
+                    }
+                    controller.apply(index(t[1], t[2]))
+                    if (t.size > 4) controller.dragTo(index(t[3], t[4]))
+                    controller.endDrag()
+                    settle()
+                    println("[agent] cut ${controller.cutConduit.label} (${t[1]},${t[2]})" +
+                        if (t.size > 4) " -> (${t[3]},${t[4]})" else "")
+                }
                 "remove" -> {
                     // Optional third argument names the layer, so a script can take the pipes out of
                     // a room and leave the deck — the delete tool's aim, driven from a script.
@@ -298,10 +315,17 @@ object OutofspaceAgentHarness {
                     controller.tool = Tool.entries.firstOrNull { it.name.equals(t[1], true) }
                         ?: error("unknown tool '${t[1]}' (have ${Tool.entries.map { it.label }})")
                     t.getOrNull(2)?.let { name ->
-                        controller.deleteLayer = DeleteLayer.entries.firstOrNull { it.name.equals(name, true) }
-                            ?: error("unknown layer '$name'")
+                        if (controller.tool == Tool.Cut) {
+                            controller.cutConduit = Tool.CUTTABLE.firstOrNull { it.name.equals(name, true) }
+                                ?: error("cannot cut '$name'")
+                        } else {
+                            controller.deleteLayer = DeleteLayer.entries.firstOrNull { it.name.equals(name, true) }
+                                ?: error("unknown layer '$name'")
+                        }
                     }
-                    println("[agent] tool -> ${controller.tool.label} (${controller.deleteLayer.label})")
+                    println("[agent] tool -> ${controller.tool.label} " +
+                        if (controller.tool == Tool.Cut) "(${controller.cutConduit.label})"
+                        else "(${controller.deleteLayer.label})")
                 }
                 "overlay" -> {
                     overlay = Overlay.entries.firstOrNull { it.name.equals(t[1], true) || it.label.equals(t[1], true) }

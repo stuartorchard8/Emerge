@@ -1,0 +1,34 @@
+# The cut tool. Severs joins without taking anything up -- the exact opposite of the build gesture.
+#
+# Conduit connects by being DRAWN, never by touching, so a run is only a run where the player
+# dragged one. Until this existed the only way to break a line was to delete a tile of it and lay it
+# again, which meant paying for the tile twice and, outside creative, waiting for a ghost to build
+# itself back.
+#
+# What to read in the shots:
+#   `before` -- one unbroken run east of the tank, carrying;
+#   `after`  -- the same track, unchanged in colour and mass, with nothing moving past x=38.
+#
+# ⚠️ It cuts every join of every tile the stroke passes over, not merely the joins running along the
+# stroke. A stroke ACROSS a belt is the gesture it exists for, and one that only cut parallel edges
+# would do nothing at all in exactly that case.
+
+new
+creative 1
+camera centre 36 9 14
+
+brush RAIL
+drag 32 9 39 9
+run 60
+shot cut-before
+
+# A stroke across the belt, not along it.
+cut 36 8 36 10 RAIL
+run 60
+shot cut-after
+
+probe 36 9
+probe 35 9
+
+tool CUT RAIL
+shot cut-panel

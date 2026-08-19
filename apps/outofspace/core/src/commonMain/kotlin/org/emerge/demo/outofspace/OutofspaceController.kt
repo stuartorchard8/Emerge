@@ -49,6 +49,14 @@ class OutofspaceController(
     /** Which layer the delete tool takes off. Only read while [tool] is [Tool.Delete]. */
     var deleteLayer: DeleteLayer = DeleteLayer.Top
 
+    /**
+     * Which conduit the cut tool severs. Only read while [tool] is [Tool.Cut].
+     *
+     * ⚠️ One layer, deliberately. Rail and wire share a tile — they are the one pair that may — so a
+     * cut that took both would quietly break a signal network while the player was tidying track.
+     */
+    var cutConduit: Conduit = Conduit.Rail
+
     /** Which overlay the world is being viewed through. A view preference, so it lives here. */
     var overlay: Overlay = Overlay.None
 
@@ -131,6 +139,8 @@ class OutofspaceController(
             Tool.Wire -> selected = state.occupancy[tile]
             Tool.Delete -> removeAt(tile)
             Tool.Cancel -> cancelAt(tile)
+            // A drag, like building: the gesture is the point, and a click is a drag of one tile.
+            Tool.Cut -> { cutAt(tile); dragFrom = tile }
             // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
             // pushed one edit here would inject twice on the tick the button went down.
             Tool.Inject, Tool.InjectWater -> {}
@@ -146,7 +156,8 @@ class OutofspaceController(
      * did not.
      */
     fun dragTo(tile: TileIndex) {
-        if (dragFrom == TileIndex.NONE || tile == dragFrom || tool != Tool.Build) return
+        if (dragFrom == TileIndex.NONE || tile == dragFrom) return
+        if (tool != Tool.Build && tool != Tool.Cut) return
         val grid = state.grid
         if (tile == TileIndex.NONE) return
         var at = dragFrom
@@ -158,11 +169,34 @@ class OutofspaceController(
             }
             val next = grid.neighbour(at, dir)
             if (next == TileIndex.NONE) break
-            place(next)
-            pending.add(Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail))
+            // ⚠️ **Cutting steps the path for the same reason laying does, and needs it more.** A run
+            // with a hole in it is not a run; a run with one tile the drag skipped over is still a
+            // run, and looks cut.
+            if (tool == Tool.Cut) {
+                cutAt(next)
+            } else {
+                place(next)
+                pending.add(Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail))
+            }
             at = next
         }
         dragFrom = at
+    }
+
+    /**
+     * Severs every join [tile] has on [conduit], leaving the track itself where it is.
+     *
+     * Four edits rather than one, because [Edit.Cut] is stated as a fact about a *pair* of tiles and
+     * that is the honest shape: severing is symmetric, and each neighbour has to hear about it. An
+     * edge of the grid simply has fewer.
+     */
+    fun cutAt(tile: TileIndex, conduit: Conduit = cutConduit) {
+        if (tile == TileIndex.NONE) return
+        val grid = state.grid
+        for (dir in Direction.entries) {
+            val next = grid.neighbour(tile, dir)
+            if (next != TileIndex.NONE) pending.add(Edit.Cut(tile, next, conduit))
+        }
     }
 
     /** Ends a conduit drag. The next click starts a new one, unjoined to this. */

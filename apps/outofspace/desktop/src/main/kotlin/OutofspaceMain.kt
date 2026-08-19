@@ -140,6 +140,13 @@ fun main() {
             // Painting a run of machines is a Build-tool gesture. For conduit it is more than that:
             // the drag is what *connects* the tiles, since track no longer joins by touching, so the
             // gesture is handed to the controller whole rather than replayed as isolated placements.
+            // Cutting drags exactly as building does, and through the controller for the same
+            // reason: the gesture has to be stepped out tile by tile, or a fast stroke leaves an
+            // uncut tile behind and the belt is still joined where it looks severed.
+            leftDown && controller.tool == Tool.Cut -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
+                controller.dragTo(hovered)
+                lastPainted = hovered
+            }
             leftDown && controller.tool == Tool.Build -> if (hovered != TileIndex.NONE && hovered != lastPainted) {
                 if (controller.brush is Brush.Run) controller.dragTo(hovered) else controller.place(hovered)
                 lastPainted = hovered
@@ -235,9 +242,16 @@ fun main() {
             // is WASD's now.
             GLFW_KEY_Q -> controller.tool = Tool.entries[(controller.tool.ordinal + 1) % Tool.entries.size]
             // The delete tool's aim: which layer comes off. Does nothing under the other tools.
-            GLFW_KEY_E -> if (controller.tool == Tool.Delete) {
-                val all = DeleteLayer.entries
-                controller.deleteLayer = all[(controller.deleteLayer.ordinal + 1) % all.size]
+            GLFW_KEY_E -> when (controller.tool) {
+                Tool.Delete -> {
+                    val all = DeleteLayer.entries
+                    controller.deleteLayer = all[(controller.deleteLayer.ordinal + 1) % all.size]
+                }
+                Tool.Cut -> {
+                    val all = Tool.CUTTABLE
+                    controller.cutConduit = all[(all.indexOf(controller.cutConduit) + 1) % all.size]
+                }
+                else -> {}
             }
             GLFW_KEY_TAB -> controller.cycleBrush(1)
             // A debug drop, alongside the debug engine, until capture is a thing you fly at in H4.

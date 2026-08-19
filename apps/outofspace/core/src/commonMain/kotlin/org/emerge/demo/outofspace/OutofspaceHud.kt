@@ -190,6 +190,19 @@ class OutofspaceHud {
                     gap()
                     row("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
                     row("TOP takes one layer at a time", 0x9A9A9AFFL)
+                } else if (controller.tool == Tool.Cut) {
+                    title("CUT  ·  ${controller.cutConduit.label}")
+                    actionRow(
+                        Tool.CUTTABLE.map { conduit ->
+                            Triple(
+                                if (conduit == controller.cutConduit) "> ${conduit.label}" else conduit.label,
+                                if (conduit == controller.cutConduit) 0xA5453AFFL else 0x232A38FFL,
+                            ) { controller.cutConduit = conduit }
+                        },
+                    )
+                    gap()
+                    row("drag to sever · E cycles conduit", 0x9A9A9AFFL)
+                    row("cuts every join it passes · takes nothing up", 0xE8B84AFFL)
                 } else if (controller.tool == Tool.Inject) {
                     title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
                     row("hold over a permeable tile", 0x9A9A9AFFL)
