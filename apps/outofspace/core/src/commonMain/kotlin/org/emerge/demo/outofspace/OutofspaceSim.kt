@@ -120,6 +120,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
+import org.emerge.demo.outofspace.world.burnCarbon
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
@@ -145,6 +146,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     const val PUMP_PERIOD       = 8
     const val MACHINE_PERIOD    = 1
     const val RAIL_PERIOD       = 32
+
+    /**
+     * Ambient chemistry. Alongside heat rather than alongside the machines, because what gates a
+     * reaction is a temperature — running it more often than the heat that drives it would only ask
+     * the same question of the same numbers again.
+     */
+    const val CHEM_PERIOD       = 8
 
     /** Runs on tick 0 (all periods divide 0). */
     private fun shouldRun(tick: Long, period: Int): Boolean = tick % period == 0L
@@ -283,6 +291,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             conductedRadiated = result.radiated
             conductedToAir = result.toAir
             w.applyBodyHeat(bodies, result.energy)
+        }
+
+        // ── Chemistry ─────────────────────────────────────────────────────────────
+        //
+        // After the heat, because temperature is what decides whether anything happens; before the
+        // pressure and the fluid, so gas made this tick pushes and spreads in the tick it was made
+        // rather than sitting still for one and appearing from nowhere in the next.
+        //
+        // ⚠️ **The rail layer only, and that is a ledger statement rather than a physical one.**
+        // What rides a belt is cargo, so carbon leaving it is exactly what `solidBecameGas` books.
+        // The deck's matter and the conduits' own metal are fabric — a different identity, with no
+        // term for becoming gas — so a burning hull plate is not a thing this may do yet. See
+        // [burnCarbon] and `PLAN_ambient_chemistry.md`.
+        if (shouldRun(state.tick, CHEM_PERIOD)) {
+            val burnt = burnCarbon(w.rail.stuff, w.masses, w.airEnergy)
+            if (burnt.mass != 0L || burnt.energy != 0L) w.solidBecameGas(burnt.mass, burnt.energy)
         }
 
         val edges = EdgeGrid(state.grid)

@@ -1,6 +1,7 @@
 # Ambient chemistry
 
-Status: **increment 0 built** (2026-08-20). Increment 1 — one reaction, end to end — is next.
+Status: **increments 0 and 1 built** (2026-08-20). Increment 2 — reagent contention — is next, and
+is required before a *second* reaction may want the same tile's oxygen.
 
 Chemistry today is something one machine does to one buffer, and it does not actually do it —
 `cook` in `chem/Chemistry.kt` is a stub that returns its input unchanged. This plan makes chemistry
@@ -217,7 +218,34 @@ it is an enum entry plus whatever the phase model needs — the array widens, no
 
 ---
 
-# Increment 1 — one reaction, end to end
+# Increment 1 — one reaction, end to end ✅ BUILT
+
+`chem/Reaction.kt` (the arithmetic) and `world/AmbientChemistry.kt` (the sweep), run from a
+`CHEM_PERIOD` section of the tick that sits **after the heat and before the pressure**: temperature
+is what gates a reaction, and gas made this tick should push and spread in the tick it was made.
+
+What the build decided that the scope did not:
+
+- **The rate table is Arrhenius in reduced temperature**, `T/onset`, so one table serves every
+  reaction the way one saturation curve serves every fluid. Generated from the law and re-derived by
+  `ReactionTest`, per the `Saturation.kt` discipline.
+- ⚠️ **`ACTIVATION` is 6, and real carbon is 27.** At the real stiffness the curve is not a curve, it
+  is a step — matter sits inert and then vanishes inside one tick, and every question the player
+  could ask has the same two answers. The *shape* is the physics; the steepness is chosen. This is
+  the number to revisit when fire is tuned against a real save.
+- ⚠️ **129 knots, not 33.** An exponential is most convex just above onset, which is exactly where
+  the interesting play is; 33 knots put the chord 2% above the law there. The error falls fourfold
+  per doubling and the table is static data.
+- ⚠️ **The reaction is athermal.** It carries the heat the carbon *already had* — matter that
+  changes medium takes its joules with it — but releases none of its own. `enthalpyPerKg` belongs to
+  the table (increment 4), and inventing where the heat goes for one reaction and then deciding it
+  again for the table is two answers to one question.
+- ⚠️ **The rail layer only, and that is a ledger statement.** What rides a belt is cargo, which is
+  what `solidBecameGas` books. The deck's matter and the conduits' own metal are *fabric*, counted
+  by `builtMass`, and that identity has no term for becoming gas. Buffers are the same ledger as the
+  rail and are one call away; a burning hull plate needs the fabric side of the ledger first.
+
+Still true, and still the reason it was the right first reaction:
 
 `Carbon + Oxygen → CarbonDioxide`, ambient, on one layer. **This is the hard-shape case**: it is
 cross-layer (rail ↔ air), cross-phase (solid ↔ gas), cross-ledger, and rate-limited. Every other
