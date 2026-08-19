@@ -82,19 +82,41 @@ class MachineBillTest {
         assertFalse(deck.holdsFullBill(mill), "a footprint short one tile of casing is a ghost")
     }
 
-    /** Junk counts toward mass and toward nothing else — the anti-exploit, asked of a machine. */
+    /**
+     * ⛔ **The door is what keeps junk out, and it is the only thing that does.**
+     *
+     * Completion is a mass now — see [holdsFullBill] — so a footprint stuffed with the wrong species
+     * *would* read as finished. What makes that unreachable is that the wrong species never gets in:
+     * every gram is weighed against the bill by [buildableFrom] before it is allowed to become part
+     * of anything. This is that guarantee, asserted where it now lives.
+     *
+     * ⚠️ Stated as a pair on purpose. Moving a rule from one place to another is only safe if the
+     * new place actually holds it, and "the completion test no longer refuses this" is a fact about
+     * the old place. The second half is the one that matters.
+     */
     @Test
-    fun junkDoesNotFinishAMachine() {
+    fun junkCannotReachAMachineToFinishIt() {
         val deck = DeckArray(grid)
         val centre = grid.tile(5, 4)
         val hull = Hull(center = centre)
         deck += hull
         val bill = machineBillOfMaterials(hull.kind, hull.tiles(grid).size)
-        val short = Species.ALL.first { bill[it] > 0L }
         val junk = Species.ALL.first { bill[it] == 0L }
-        deck.stuff[centre, short] = bill[short] - 1L
+
+        // Ten times the bill in the wrong species, poured straight into the fabric: finished, by
+        // mass, because nothing here looks at what it is made of.
+        for (s in Species.ALL) deck.stuff[centre, s] = 0L
         deck.stuff[centre, junk] = bill.total * 10L
-        assertFalse(deck.holdsFullBill(hull), "ten times the mass in the wrong species is not a hull")
+        assertTrue(
+            deck.holdsFullBill(hull),
+            "completion is a mass — if this is false the rule has quietly moved back",
+        )
+
+        // And it can never arrive that way, which is the actual protection.
+        assertFalse(
+            buildableFrom(bill, Mixture.of(junk to bill.total * 10L, energy = 0L)),
+            "ten times the mass in the wrong species is not something a hull may be built from",
+        )
     }
 
     /** Track and machine ask one function, so 95% means one thing in both. */
@@ -165,26 +187,14 @@ class MachineBillTest {
         assertFalse(ironWith(6L), "a 94% delivery is under the bar")
     }
 
-    /** Permille is the worst species, so it reaches 1000 exactly when the bill is held. */
+    /** Permille is matter held over matter wanted, so it reaches 1000 exactly when the bill is. */
     @Test
-    fun permilleTracksTheWorstSpecies() {
+    fun permilleIsMatterHeldOverMatterWanted() {
         val bill = machineBillOfMaterials(DeckMachineKind.Processor, 9)
-        assertEquals(1000, builtPermille(bill) { bill[it] }, "the whole bill is finished")
-        assertEquals(0, builtPermille(bill) { 0L }, "nothing is nothing")
-        // The worst species is the answer: starving one of them alone reads exactly as starving
-        // all of them. That is the whole reason this is a minimum and not a total over a total.
-        val worst = Species.ALL.first { bill[it] > 0L }
-        assertEquals(
-            builtPermille(bill) { bill[it] / 2L },
-            builtPermille(bill) { if (it == worst) bill[it] / 2L else bill[it] },
-            "half of one species is as unbuilt as half of every species",
-        )
-        // Junk cannot make up the shortfall, however much of it there is.
-        val junk = Species.ALL.first { bill[it] == 0L }
-        assertEquals(
-            builtPermille(bill) { if (it == worst) 0L else bill[it] },
-            builtPermille(bill) { if (it == junk) bill.total * 10L else if (it == worst) 0L else bill[it] },
-            "ten times the mass in the wrong species moves nothing",
-        )
+        assertEquals(1000, builtPermille(bill, bill.total), "the whole bill is finished")
+        assertEquals(0, builtPermille(bill, 0L), "nothing is nothing")
+        assertEquals(500, builtPermille(bill, bill.total / 2L), "half the matter is half built")
+        // It cannot run past the end: a site holding more than its bill is finished, not 1100.
+        assertEquals(1000, builtPermille(bill, bill.total * 2L), "over the bill still reads as done")
     }
 }

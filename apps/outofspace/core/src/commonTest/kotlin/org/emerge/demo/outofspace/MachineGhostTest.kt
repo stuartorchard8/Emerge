@@ -122,6 +122,42 @@ class MachineGhostTest {
     }
 
     /**
+     * ⛔ **A site fed dirty stock finishes, and leaves nothing standing.**
+     *
+     * The end of a transfer is where every one of these bugs has lived, and impurity is what makes
+     * it hard: the site's appetite, the mass on the belt and the mass in the tank all have to close
+     * on the same number, and for as long as the appetite was counted in bill species while the
+     * traffic was counted in matter they could not. Stu's extractor asked for four more packets when
+     * it was one packet from its bill, took them, and left the surplus standing on the track with
+     * nothing downstream that wanted it — an immovable plug in front of the next delivery.
+     *
+     * So this asserts the whole close-out at once: the machine finishes, and the network is empty
+     * afterwards. ⚠️ **Both halves.** "It finished" was true before this change too — it finished
+     * by over-ordering.
+     */
+    @Test
+    fun `a ghost machine fed impure stock finishes with nothing left standing`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+
+        // Steel, cut with 4% quartz: through the door — the bar is 95% of each species' own share —
+        // and every delivery carries junk the site is not short of and cannot refuse.
+        val dirty = (bill.scaledTo(bill.total * 96L / 100L) + Mixture.of(Species.Quartz to bill.total * 4L / 100L, energy = 0))
+        start.stocked(grid.tile(3, 4), dirty.scaledTo(bill.total * 4L))
+        assertTrue(start.deck.isGhost(at), "the fixture stood a finished machine")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+
+        assertFalse(s.deck.isGhost(at), "the machine never finished")
+        assertEquals(
+            0L,
+            (0 until grid.size).sumOf { s.rail.massAt(TileIndex(it)) },
+            "the machine finished but left material standing on the track with nowhere to go",
+        )
+    }
+
+    /**
      * ⚠️ **Two ghosts on one tile, and both are heard.**
      *
      * A ghost machine is fed at its centre and a ghost *rail* is fed at its own tile, so an unbuilt

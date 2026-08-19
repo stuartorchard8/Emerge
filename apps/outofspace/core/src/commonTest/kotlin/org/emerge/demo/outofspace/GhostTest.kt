@@ -104,13 +104,20 @@ class GhostTest {
     }
 
     /**
-     * ⚠️ Completeness is per species, not against a total. A ghost admits a few percent of whatever
-     * came with the material it was fed, so a tile can carry more mass than its bill while still
-     * being short of the one thing it is made of — and a total-mass test would call it finished and
-     * hand the player a free rail.
+     * ⛔ **A tile heavy with the wrong stuff reads as finished, and the door is why that is safe.**
+     *
+     * Completeness is a mass — see [holdsFullBill] — so oxygen poured straight into a rail's fabric
+     * finishes it. Nothing in the tick can pour it: [buildableFrom] weighs every gram against the
+     * bill before it may become part of anything, and a lump that is mostly oxygen is turned away at
+     * the tile. That is the anti-exploit, and it is one test rather than two standards that can
+     * drift apart.
+     *
+     * ⚠️ Both halves stated together on purpose. "The completion test no longer refuses this" is a
+     * fact about the old rule; "it can never arrive" is the guarantee, and it is the one that has to
+     * hold.
      */
     @Test
-    fun `a heavy tile short of its iron is still a ghost`() {
+    fun `a rail can only be finished by material it may be built from`() {
         val s = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 4)
         val tile = grid.tile(3, 3)
         val stuff = s.conduits.tracks[Conduit.Rail]
@@ -121,7 +128,16 @@ class GhostTest {
         stuff[tile, Species.Oxygen] = iron * 10
 
         assertTrue(s.conduits.massAt(Conduit.Rail, tile) > iron, "the fixture did not make the tile heavier")
-        assertFalse(s.conduits.isComplete(Conduit.Rail, tile), "a tile short of its iron passed as finished")
+        assertTrue(
+            s.conduits.isComplete(Conduit.Rail, tile),
+            "completion is a mass — if this is false the rule has quietly moved back",
+        )
+
+        // And no delivery like that can ever be admitted, which is the actual protection.
+        assertFalse(
+            buildableFrom(Conduit.Rail, Mixture.of(Species.Oxygen to iron * 10, energy = 0)),
+            "a lump of oxygen is not something a rail may be built from",
+        )
     }
 
     // ── A ghost draws material to itself ──────────────────────────────────────

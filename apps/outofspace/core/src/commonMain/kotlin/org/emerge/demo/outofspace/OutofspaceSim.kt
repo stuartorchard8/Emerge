@@ -2063,12 +2063,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // the network wants its metal back. Asked here, it cannot matter how the lump arrived.
             val standing = rail.resourceAt(tile) ?: return null
             if (!buildableFrom(bill, standing)) return null
-            val shortfall = LongArray(Species.COUNT)
-            var need = 0L
-            for (sp in Species.ALL) {
-                val short = bill[sp] - stuff[tile, sp]
-                if (short > 0L) { shortfall[sp.ordinal] = short; need += short }
-            }
+            val need = bill.total - stuff.massAt(tile)
             if (need <= 0L) return null
             val have = rail.massAt(tile)
             if (have <= 0L) return null
@@ -2089,72 +2084,45 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // More than it needs: the top-up, and the rest rides on.
             //
-            // ⚠️ **What it is short of, species by species — not a share of the lump's own ratio.**
-            // The same rule, and for the same measured reason, as [absorbIntoMachineGhost]: a share
-            // proportional to the *delivery* hands a rail wanting only iron `need × ironFraction` of
-            // iron per pass, always a shade under what it asked for. It converges on the bill and
-            // never reaches it — 999 permille for ever, with the run jammed solid behind it.
+            // ⚠️ **A proportional slice, which is now simply what a top-up is.** A site short of
+            // `need` grams of matter takes `need` grams of what is standing on it, in the blend it
+            // arrived in — the same arithmetic as every other partial draw on the vessel, and the
+            // same blend the swallow-it-whole branch above gives it for every delivery but the last.
             //
-            // ⚠️ **The junk goes with it, at the rate the metal goes.** Species the bill has no use
-            // for are not left standing: taking only what is billed *concentrates* whatever is not,
-            // so a run built out of hull salvage — steel, 99 parts iron to 1 of carbon — stripped
-            // the iron off every delivery and precipitated the carbon, until 181g of the pure stuff
-            // stood on a tile too far off any bill for anything on the vessel to use. Found in Stu's
-            // save. Building with 99% pure material must not leave a 0% pure residue: what rides on
-            // is the blend that arrived, and the tile keeps a little carbon in its fabric exactly as
-            // the swallow-it-whole branch above gives it for every delivery but the last.
+            // ⚠️ **The junk goes with it, at the rate the metal goes**, and that has not changed:
+            // taking only what is billed *concentrates* whatever is not, so a run built out of hull
+            // salvage — steel, 99 parts iron to 1 of carbon — stripped the iron off every delivery
+            // and precipitated the carbon, until 181g of the pure stuff stood on a tile too far off
+            // any bill for anything on the vessel to use. Found in Stu's save. Building with 99%
+            // pure material must not leave a 0% pure residue. What used to arrange that by hand,
+            // species by species, a proportional slice arranges by construction.
             val lump = standing
-            var billedHere = 0L
-            var billedTaken = 0L
+            val taking = lump.take(need)
             for (sp in Species.ALL) {
-                if (bill[sp] <= 0L) continue
-                billedHere += lump[sp]
-                billedTaken += minOf(lump[sp], shortfall[sp.ordinal])
+                val mass = taking[sp]
+                if (mass != 0L) stuff[tile, sp] = stuff[tile, sp] + mass
             }
-            var taken = 0L
-            val rest = LongArray(Species.COUNT)
-            for (sp in Species.ALL) {
-                val mass = lump[sp]
-                if (mass == 0L) continue
-                val part =
-                    if (bill[sp] > 0L) minOf(mass, shortfall[sp.ordinal])
-                    else scaledRatio(billedTaken, billedHere, mass)
-                if (part > 0L) {
-                    stuff[tile, sp] = stuff[tile, sp] + part
-                    taken += part
-                }
-                // Stated rather than subtracted, so the lump that rides on and the mass booked here
-                // are the same arithmetic and cannot drift apart.
-                rest[sp.ordinal] = mass - part
-            }
-            // The heat goes with the mass that carried it.
-            val heat = if (have <= 0L) 0L else scaledRatio(taken, have, lump.energy)
-            stuff.setEnergy(tile, stuff.energyAt(tile) + heat)
-            val remainder = Mixture.of(rest, lump.energy - heat)
+            stuff.setEnergy(tile, stuff.energyAt(tile) + taking.energy)
+            val remainder = lump - taking
             if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
-            builtMass += taken
+            builtMass += taking.total
             return null
         }
 
         /**
-         * The bill a ghost machine standing at [tile] still has to reach, and what it holds so far.
+         * How much matter the ghost machine [m] is still short of.
          *
          * Summed over the whole footprint, because casing spreads evenly as it arrives rather than
-         * completing tiles one at a time — see [DeckArray.holdsFullBill].
+         * completing tiles one at a time — see [DeckArray.holdsFullBill]. A mass rather than a
+         * per-species shortfall, because that is what a site is short of: composition is the door's
+         * business and was settled before any of this arrived.
          */
-        private fun machineShortfall(m: DeckMachine, into: LongArray): Long {
+        private fun machineShortfall(m: DeckMachine): Long {
             val tiles = m.tiles(grid)
             val bill = machineBillOfMaterials(m.kind, tiles.size)
-            var need = 0L
-            for (sp in Species.ALL) {
-                into[sp.ordinal] = 0L
-                if (bill[sp] <= 0L) continue
-                var held = 0L
-                for (t in tiles) held += deck.stuff[t, sp]
-                val short = bill[sp] - held
-                if (short > 0L) { into[sp.ordinal] = short; need += short }
-            }
-            return need
+            var held = 0L
+            for (t in tiles) held += deck.stuff.massAt(t)
+            return bill.total - held
         }
 
         /**
@@ -2204,12 +2172,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and completion, so the check at placement cannot stand in for this one.
          */
         fun absorbIntoMachineGhost(tile: TileIndex, m: DeckMachine): Packet? {
-            val shortfall = LongArray(Species.COUNT)
             // The deck's half of the same door — see [absorbIntoGhost]. A machine footprint is a
             // far easier place to strand somebody's cargo than a single rail tile.
             val standing = rail.resourceAt(tile) ?: return null
             if (!buildableFrom(machineBillOfMaterials(m.kind, m.tiles(grid).size), standing)) return null
-            val need = machineShortfall(m, shortfall)
+            val need = machineShortfall(m)
             if (need <= 0L) return null
             val have = rail.massAt(tile)
             if (have <= 0L) return null
@@ -2222,7 +2189,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
             ) return null
 
-            var taken = 0L
             if (have <= need) {
                 // The whole lump goes in, wholesale — a fraction of a fraction is where the rounding
                 // would live, and the common case is exact.
@@ -2230,56 +2196,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 for (sp in Species.ALL) spreadOverFootprint(tiles, sp, packet.contents[sp])
                 spreadEnergyOverFootprint(tiles, packet.contents.energy)
                 rail.put(tile, null)
-                taken = have
                 builtMass += have
                 finishMachine(m, tiles)
                 return packet
             }
 
-            val lump = rail.resourceAt(tile) ?: return null
-            // ⚠️ **What it is short of, species by species — not a share of the lump's own ratio.**
-            //
-            // The plan's rule is that a ghost takes only what it still needs, and for anything made
-            // of more than one species that has to be read per species or it does not terminate. A
-            // share proportional to the *delivery* hands the machine a little too much carbon and a
-            // little too little iron every time, and the last unit of the shortfall goes to whichever
-            // species the rounding favours — so a hull parks one gram short of its iron for ever with
-            // a loaded belt sitting on it. Measured, not theorised.
-            //
-            // ⚠️ Junk is *not* skimmed here, and that is the other half of the same rule: a lump that
-            // is nearly all target species is swallowed whole by the branch above, junk and all,
-            // while it is still hungry. This is the top-up at the end, and a top-up takes what is
-            // missing.
-            // ⚠️ **And the junk goes with it, at the rate the metal goes** — see [absorbIntoGhost].
-            // Taking only what is billed concentrates whatever is not, until what rides on is too
-            // far off any bill for anything to use.
-            val bill = machineBillOfMaterials(m.kind, tiles.size)
-            var billedHere = 0L
-            var billedTaken = 0L
-            for (sp in Species.ALL) {
-                if (bill[sp] <= 0L) continue
-                billedHere += lump[sp]
-                billedTaken += minOf(lump[sp], shortfall[sp.ordinal])
-            }
-            val rest = LongArray(Species.COUNT)
-            for (sp in Species.ALL) {
-                val mass = lump[sp]
-                if (mass == 0L) continue
-                val part =
-                    if (bill[sp] > 0L) minOf(mass, shortfall[sp.ordinal])
-                    else scaledRatio(billedTaken, billedHere, mass)
-                spreadOverFootprint(tiles, sp, part)
-                taken += part
-                // Stated rather than subtracted, so the lump that rides on and the mass booked here
-                // are the same arithmetic and cannot drift apart.
-                rest[sp.ordinal] = mass - part
-            }
-            if (taken <= 0L) return null
-            val heat = scaledRatio(taken, have, lump.energy)
-            spreadEnergyOverFootprint(tiles, heat)
-            val remainder = Mixture.of(rest, lump.energy - heat)
+            // The top-up at the end: a proportional slice of what is standing here, and the rest
+            // rides on. ⚠️ **The junk goes with it, at the rate the metal goes** — see
+            // [absorbIntoGhost]. Taking only what is billed concentrates whatever is not, until what
+            // rides on is too far off any bill for anything to use.
+            val taking = standing.take(need)
+            for (sp in Species.ALL) spreadOverFootprint(tiles, sp, taking[sp])
+            spreadEnergyOverFootprint(tiles, taking.energy)
+            val remainder = standing - taking
             if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
-            builtMass += taken
+            builtMass += taking.total
             finishMachine(m, tiles)
             return null
         }
@@ -2489,23 +2420,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val bill = conduitBillOfMaterials(Conduit.Rail)
                 val stuff = tracks[Conduit.Rail]
                 for (tile in ghosts) {
-                    val gaps = LongArray(Species.COUNT)
-                    for (sp in Species.ALL) {
-                        val gap = bill[sp] - stuff[tile, sp]
-                        if (gap > 0L) gaps[sp.ordinal] = gap
-                    }
                     accepts.getOrPut(tile) { mutableListOf() }
-                        .add(Acceptance.forBill(bill, Mixture.of(gaps, energy = 0L)))
+                        .add(Acceptance.forBill(bill, bill.total - stuff.massAt(tile)))
                 }
             }
-            val scratch = LongArray(Species.COUNT)
             for ((tile, m) in machineGhosts) {
                 val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
-                machineShortfall(m, scratch)
                 // ⛔ **A machine site does not stand in the road.** The track under it is finished
                 // and paid for; the anti-exploit is about unpaid *track*. See [Acceptance.stopsTraffic].
                 accepts.getOrPut(tile) { mutableListOf() }
-                    .add(Acceptance.forBill(bill, Mixture.of(scratch.copyOf(), energy = 0L), stopsTraffic = false))
+                    .add(Acceptance.forBill(bill, machineShortfall(m), stopsTraffic = false))
             }
 
             // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is

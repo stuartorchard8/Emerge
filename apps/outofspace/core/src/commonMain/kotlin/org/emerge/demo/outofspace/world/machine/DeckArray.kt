@@ -109,8 +109,8 @@ class DeckArray(
      * spread evenly over its tiles as it is absorbed rather than completing them one at a time. A
      * per-tile test would answer "finished" for the middle of a half-built furnace.
      *
-     * ⚠️ Per species and never against a total — see [holdsFullBill] for why that is the whole
-     * anti-exploit.
+     * ⛔ A total and never per species — the composition was settled at the door. See
+     * [holdsFullBill].
      */
     /**
      * Whether the machine at [tile] is standing there without the metal it is made of.
@@ -127,7 +127,7 @@ class DeckArray(
     fun holdsFullBill(m: DeckMachine): Boolean {
         val tiles = m.tiles(grid)
         val bill = machineBillOfMaterials(m.kind, tiles.size)
-        return holdsFullBill(bill) { s -> tiles.sumOf { stuff[it, s] } }
+        return holdsFullBill(bill, tiles.sumOf { stuff.massAt(it) })
     }
 
     /**
@@ -141,7 +141,7 @@ class DeckArray(
     fun builtPermille(m: DeckMachine): Int {
         val tiles = m.tiles(grid)
         val bill = machineBillOfMaterials(m.kind, tiles.size)
-        return builtPermille(bill) { s -> tiles.sumOf { stuff[it, s] } }
+        return builtPermille(bill, tiles.sumOf { stuff.massAt(it) })
     }
 
     fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf())

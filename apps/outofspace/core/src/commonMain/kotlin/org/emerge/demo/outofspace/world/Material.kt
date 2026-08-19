@@ -404,39 +404,40 @@ fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
 }
 
 /**
- * Whether [held] carries every gram of [bill] — the question "is this finished", asked once.
+ * Whether [heldMass] is enough matter to have finished the thing [bill] describes.
  *
- * ⚠️ **Per species, and never against a total.** A ghost admits a few percent of whatever came with
- * the material it was fed, so it can carry more mass than its bill while still being short of the
- * one thing it is made of. A total-mass test would call that finished and hand the player the thing
- * for free. See [TrackLayers.holdsFullBill], which is this asked of one tile of track.
+ * ⛔ **A total, and deliberately not per species.** The composition of a construction site is not
+ * this function's business — it is [buildableFrom]'s, at the door, asked of every gram before it is
+ * allowed in. Nothing reaches a site's fabric without having passed that test, so by the time it is
+ * standing here it is already within [BUILD_PURITY_PERCENT] of the recipe, and asking a second time
+ * against a second standard only lets the two disagree.
  *
- * [held] is a function rather than a [Mixture] so that a caller with the matter already spread over
- * a [StuffLayer] — every caller in the tick — can answer without building one. `inline`, so that
- * costs no closure either: this is asked of every ghost tile every time the rails step.
+ * That disagreement was the bug. A per-species finish line is measured in *bill species*; a
+ * delivery is measured in *matter*; and the few percent of junk the door lets through is the
+ * difference. It accumulates: an extractor built from 97.85% titanium ended up short of its
+ * titanium by 391g while standing 100g of *mass* from its bill, so the site asked for four more
+ * packets, received four, and finished 291g heavier than its own recipe. Every quantity in the
+ * network was correct; the two ends were counting different things.
+ *
+ * Counted as matter, the sums close exactly: what a site is short of, what a source sends, and what
+ * arrives are one number in one unit, and no purity correction appears anywhere between them.
+ *
+ * ⚠️ **The cost is that a thing can finish slightly off its own recipe** — up to the door's
+ * tolerance, and no further. A titanium machine built from 95% titanium is 95% titanium when it is
+ * done. That is the deal the tolerance already offered on every individual delivery; this makes it
+ * the deal for the finished article too.
  */
-inline fun holdsFullBill(bill: Mixture, held: (Species) -> Long): Boolean =
-    // Only the species the bill actually names: everything else is junk, and junk is never short.
-    // That is what makes this affordable to ask of every machine every tick — a material is made of
-    // a handful of species and [Species] has a hundred and sixty-five.
-    Species.ALL.all { bill[it] <= 0L || held(it) >= bill[it] }
+fun holdsFullBill(bill: Mixture, heldMass: Long): Boolean = heldMass >= bill.total
 
 /**
- * How much of [bill] is present in [held], in parts per thousand — 0 for nothing, 1000 for finished.
+ * How much of [bill] is present, in parts per thousand — 0 for nothing, 1000 for finished.
  *
- * The **minimum** of the per-species ratios rather than total over total, so it reaches 1000 exactly
- * when [holdsFullBill] turns true. A total would run ahead of it: junk counts toward the mass and
- * toward nothing else, so a thing could draw as finished while still short of what it is made of,
- * and the player would be told a lie about why it is not working.
+ * Total over total, so it reaches 1000 exactly when [holdsFullBill] turns true: the picture and the
+ * sim answer the same question the same way, which is the whole reason both live here.
  */
-inline fun builtPermille(bill: Mixture, held: (Species) -> Long): Int {
-    var worst = 1000L
-    for (s in Species.ALL) {
-        val want = bill[s]
-        if (want <= 0L) continue
-        val has = held(s)
-        val ratio = if (has >= want) 1000L else scaledRatio(has, want, 1000L)
-        if (ratio < worst) worst = ratio
-    }
-    return worst.toInt()
+fun builtPermille(bill: Mixture, heldMass: Long): Int {
+    val want = bill.total
+    if (want <= 0L) return 1000
+    if (heldMass >= want) return 1000
+    return scaledRatio(heldMass, want, 1000L).toInt()
 }

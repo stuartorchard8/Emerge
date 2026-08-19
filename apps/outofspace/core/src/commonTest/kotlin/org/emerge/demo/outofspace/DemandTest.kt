@@ -4,23 +4,29 @@ import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
+import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.Whitelist
+import org.emerge.demo.outofspace.world.buildableFrom
+import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -209,5 +215,70 @@ class DemandTest {
             s.conduits[Conduit.Rail][grid.tile(6, 3).index] == null,
             "with a tank down the line the rail should have come apart",
         )
+    }
+
+    // ── 4. The two readings of one appetite agree ─────────────────────────────
+
+    /**
+     * ⛔ **[Whitelist.permits] and [Whitelist.room] answer the same question and must never
+     * disagree** — one says whether any more is worth committing, the other says how much, and a
+     * network in which "yes" and "nought grams" are both true stalls with material in the tank.
+     *
+     * They disagreed for as long as a site's appetite was measured in bill species while the
+     * traffic on the track was measured in matter: the junk the door lets through is the difference,
+     * and it grows with every delivery. Stu's extractor read as covered by 400g of 97.85% stock
+     * while still short of 391.638g of titanium — the stock carries 391.4g, so it fell short, and
+     * the gate that would have topped it up had already shut.
+     *
+     * Both are matter now, so the composition of the lump is not allowed to change either answer.
+     * That is what this asserts: the same two tiles, the same demand, one clean blend and one dirty
+     * one, and all four readings agree.
+     */
+    @Test
+    fun `permits and room agree however dirty the material is`() {
+        val grid = cfg.initialGrid
+        val bill = conduitBillOfMaterials(Conduit.Rail)
+        val gap = 98_000_000_000L
+        // Both are through the door — a rail's threshold is 95% iron — and both are 100g of matter.
+        val clean = iron(100_000_000_000L)
+        val dirty = Mixture.of(Species.Iron to 96_000_000_000L, Species.Quartz to 4_000_000_000L, energy = 0)
+
+        val source = grid.tile(3, 3)
+        val site = grid.tile(9, 3)
+        val tiles = (3..9).mapTo(mutableSetOf()) { grid.tile(it, 3) }
+
+        fun readings(lump: Mixture, carrying: TileIndex?): Pair<Boolean, Long> {
+            val flow = FlowGraph.build(
+                tiles,
+                sources = setOf(source),
+                sinks = setOf(site),
+                linked = { tile, dir ->
+                    (dir == Direction.Left || dir == Direction.Right) &&
+                        tile in tiles && grid.neighbour(tile, dir) in tiles
+                },
+                grid = grid,
+            )
+            val whitelist = Whitelist.of(
+                flow,
+                grid.size,
+                acceptanceAt = { tile -> if (tile == site) listOf(Acceptance.forBill(bill, gap)) else null },
+                loadOn = { tile, want ->
+                    if (tile != carrying) 0L
+                    else if (want == null || buildableFrom(want, lump)) lump.total else 0L
+                },
+            )
+            return whitelist.permits(source, lump, rationed = true) to whitelist.room(source, lump)
+        }
+
+        for ((what, lump) in listOf("clean" to clean, "dirty" to dirty)) {
+            val (openEmpty, roomEmpty) = readings(lump, carrying = null)
+            assertTrue(openEmpty, "$what: nothing is coming and the gate was shut")
+            assertEquals(gap, roomEmpty, "$what: with the road clear the whole shortfall is worth sending")
+
+            // 100g of matter standing on the route covers a 98g shortfall — whatever it is made of.
+            val (openFull, roomFull) = readings(lump, carrying = grid.tile(6, 3))
+            assertFalse(openFull, "$what: the shortfall is covered and the gate stayed open")
+            assertEquals(0L, roomFull, "$what: the shortfall is covered and room still wanted more")
+        }
     }
 }

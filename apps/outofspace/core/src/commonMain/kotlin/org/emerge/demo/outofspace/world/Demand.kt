@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
  * What a sink will take, and how much of it there is left to take.
@@ -40,16 +38,6 @@ class Acceptance private constructor(
      * given tile and that site.
      */
     val bill: Mixture?,
-    /**
-     * What this sink is still short of, **species by species**; null for an appetite with no end.
-     *
-     * ⚠️ Per species, because a total cannot answer how much of a given *blend* closes the gap. A
-     * hull short of 100g of steel is not short of 100g of anything that passes for steel: fed a
-     * blend running a shade lean on carbon it takes the iron it needs and stays short of carbon for
-     * ever, converging on its bill and never reaching it. Same trap as the alloy top-up, one layer
-     * up. See [room].
-     */
-    val shortOf: Mixture?,
     /**
      * Whether this sink stands **in the road** — refusing passage to what it cannot use, not merely
      * declining to take it.
@@ -92,40 +80,6 @@ class Acceptance private constructor(
         return buildableFrom(want, mixture)
     }
 
-    /**
-     * How much of [mixture] is worth sending — enough to close every gap, and not a gram more.
-     *
-     * ⚠️ **Read off the blend, not off the total.** Send a site exactly what it is short of by mass
-     * and any species the blend runs lean on stays lean: the gap shrinks by a constant fraction each
-     * delivery and the job never finishes. So the answer is the largest amount any one species
-     * demands, and the species that are over-represented in the blend simply arrive early.
-     *
-     * ⚠️ **Rounded up, but only when the division is inexact.** Rounding down leaves the job a
-     * fraction of a gram short and it never ends — the alloy trap again, one layer up. Adding a
-     * gram unconditionally is just as bad the other way: on a blend that divides exactly, which is
-     * every single-species job on the vessel, it leaves a one-gram lump standing on the belt, and a
-     * one-gram lump plugs a run exactly as well as a full packet does. Measured, both of them.
-     */
-    fun room(mixture: Mixture): Long {
-        val gaps = shortOf ?: return UNLIMITED
-        val total = mixture.total
-        if (total <= 0L) return 0L
-        var most = 0L
-        for (sp in Species.ALL) {
-            val gap = gaps[sp]
-            if (gap <= 0L) continue
-            val share = mixture[sp]
-            // Nothing of this species in the blend: no amount of it will do, and the door has
-            // already refused the delivery on those grounds. Ask for the whole gap and let it.
-            if (share <= 0L) return UNLIMITED
-            // ceil(gap × total ÷ share), asked without ever forming the product.
-            val exact = scaledRatio(gap, share, total)
-            val enough = if (scaledRatio(exact, total, share) >= gap) exact else exact + 1L
-            most = maxOf(most, enough)
-        }
-        return most
-    }
-
     override fun toString(): String =
         if (isUnlimited) "Acceptance(anything)" else "Acceptance(${wanted}g of $bill)"
 
@@ -134,17 +88,19 @@ class Acceptance private constructor(
         const val UNLIMITED: Long = Long.MAX_VALUE
 
         /** Takes any matter, for ever: every machine on the vessel. */
-        val ANYTHING: Acceptance = Acceptance(null, null, stopsTraffic = false, wanted = UNLIMITED)
+        val ANYTHING: Acceptance = Acceptance(null, stopsTraffic = false, wanted = UNLIMITED)
 
         /**
-         * Takes what [bill] can be built from, and [shortOf] more of it.
+         * Takes what [bill] can be built from, and [shortBy] more grams of it.
          *
-         * [shortOf] is what the site is *still* short by, per species, not what it costs — a
-         * half-built rail wants half a rail. **How much of it is already on its way is not asked
-         * here** — that is a fact about a *route*, not about the site, and it lives in [Whitelist].
+         * ⛔ **[shortBy] is a mass, not a per-species shortfall**, because that is what a site is
+         * actually short of — see [holdsFullBill]. A half-built rail wants half a rail's worth of
+         * matter, and what that matter is made of was settled at the door. **How much of it is
+         * already on its way is not asked here** — that is a fact about a *route*, not about the
+         * site, and it lives in [Whitelist].
          */
-        fun forBill(bill: Mixture, shortOf: Mixture, stopsTraffic: Boolean = true): Acceptance =
-            Acceptance(bill, shortOf, stopsTraffic, shortOf.total)
+        fun forBill(bill: Mixture, shortBy: Long, stopsTraffic: Boolean = true): Acceptance =
+            Acceptance(bill, stopsTraffic, shortBy)
     }
 }
 
@@ -291,8 +247,16 @@ class Whitelist private constructor(
      * and can be reached without coming to rest against a construction site on the way.
      *
      * ⚠️ Asked of every candidate direction of every loaded tile on every step, so the unlimited
-     * case is answered before the mixture is so much as looked at, and the arithmetic here stays
-     * scalar — the per-species reading belongs in [room], which runs once per port per tick.
+     * case is answered before the mixture is so much as looked at. What is left costs a walk of the
+     * bill per route, and only on a vessel with construction going on: a network with a tank or a
+     * vent reachable is answered by [permitsAnything] before any of this is read.
+     *
+     * ⛔ **Every quantity here is a mass of matter, and there is nothing to convert.** A site's
+     * appetite, what stands on the track, and what a source is about to let go of are the same kind
+     * of number, because composition is settled at the door and never enters the arithmetic — see
+     * [holdsFullBill]. When the shortfall was measured in bill species and the traffic in matter,
+     * the two disagreed by exactly the junk the door let through, and a route read as satisfied
+     * while it was still owed.
      *
      * ⛔ **[rationed] is false for a lump with nowhere else to go, and that is not an optimisation.**
      * The quantity question means "is it worth *committing* more of this", and a lump already on the
@@ -331,9 +295,9 @@ class Whitelist private constructor(
      *
      * ⚠️ **Because a packet is a lump and a bill is not a round number.** A source that may emit at
      * all used to emit a *whole* packet, so a run built to fill two rails of 130g apiece out of
-     * 100g packets put 300g on the belt and left 39g of iron standing at the far end with nothing
-     * that wants it. Harmless where an unlimited sink waits beyond — and a deadlock where one is
-     * still being built, because the residue sits in front of the material that would build it.
+     * 100g packets put 300g on the belt and left 39g standing at the far end with nothing that
+     * wants it. Harmless where an unlimited sink waits beyond — and a deadlock where one is still
+     * being built, because the residue sits in front of the material that would build it.
      *
      * So the answer is a quantity, and the source takes the smaller of it and what fits.
      */
@@ -345,7 +309,7 @@ class Whitelist private constructor(
         for (d in here) {
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
-            wanted = saturated(wanted, d.acceptance.room(mixture))
+            wanted = saturated(wanted, d.acceptance.wanted)
             if (d.covered > covered) covered = d.covered
         }
         return if (wanted > covered) wanted - covered else 0L

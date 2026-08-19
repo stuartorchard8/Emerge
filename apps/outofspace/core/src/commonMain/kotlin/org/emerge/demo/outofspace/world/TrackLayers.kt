@@ -53,36 +53,30 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
     }
 
     /**
-     * Whether the tile holds every gram of [conduit]'s bill of materials — the opposite of a ghost.
+     * Whether the tile holds enough matter to be [conduit] rather than a ghost of it.
      *
-     * ⚠️ **Per species, and never against a total.** A ghost admits a few percent of whatever came
-     * with the material it was fed, so a tile can carry more mass than its bill while still being
-     * short of the one thing it is made of. A total-mass test would call that finished and hand the
-     * player a free length of track.
+     * ⛔ A total, not a per-species reckoning — the composition was settled at the door. See
+     * [holdsFullBill] for why the two standards must not both exist.
      *
      * The single place the question is answered, so the routing, the ledger and the renderer cannot
      * drift into three different opinions about which tiles are ghosts.
      */
     fun holdsFullBill(conduit: Conduit, tile: TileIndex): Boolean {
         val stuff = layers[conduit.ordinal]
-        return holdsFullBill(conduitBillOfMaterials(conduit)) { stuff[tile, it] }
+        return holdsFullBill(conduitBillOfMaterials(conduit), stuff.massAt(tile))
     }
 
     /**
      * How built this tile is, in parts per thousand — 0 for a bare ghost, 1000 for finished track.
      *
-     * The **minimum** of the per-species ratios, not the total mass over the total bill, so that it
-     * reaches 1000 exactly when [holdsFullBill] turns true. A total would run ahead of it: junk
-     * counts toward the mass and toward nothing else, so a tile could draw as finished while still
-     * short of the one thing it is made of, and a player would be told a lie about why their track
-     * is not working.
+     * Matter held over matter wanted, so it reaches 1000 exactly when [holdsFullBill] turns true.
      *
      * For readouts and the renderer. The sim asks [holdsFullBill], which is the same question
      * without the arithmetic.
      */
     fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
         val stuff = layers[conduit.ordinal]
-        return builtPermille(conduitBillOfMaterials(conduit)) { stuff[tile, it] }
+        return builtPermille(conduitBillOfMaterials(conduit), stuff.massAt(tile))
     }
 
     fun occupies(conduit: Conduit, tile: TileIndex): Boolean = layers[conduit.ordinal].occupies(tile)
