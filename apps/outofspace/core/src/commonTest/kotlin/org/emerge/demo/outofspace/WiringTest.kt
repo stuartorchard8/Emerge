@@ -202,10 +202,16 @@ class WiringTest {
     // ── Throttling, not switching ─────────────────────────────────────────────
 
     @Test
-    fun `half activation is half throughput`() {
-        // Measured at the **belt side** of the extractor, not at the rock. Mass comes off a rock in
-        // whole 3 kg cells, so `extractedMass` moves in lurches that say nothing about a rate; what
-        // the throttle governs is how fast the cell in the jaws is ground into the buffer.
+    fun `an extractor is switched on and off rather than throttled`() {
+        // ⚠️ **Binary, and deliberately** — Stu, 2026-08-19. This used to read "half activation is
+        // half throughput", and it was true while the machine held a second store and ground the
+        // cell in its jaws into the buffer at `massPerTick x activation`. Merging the two stores
+        // deleted the grind, and with it the only place a fraction had any effect: what leaves an
+        // extractor is metered by the belt, so a rate upstream of a full buffer changed nothing that
+        // could be observed at the far end anyway.
+        //
+        // What was genuinely lost is the ability to run one *slowly* by wiring it to a weak signal.
+        // That is a wiring question rather than an extraction one, and it is Stu's to reopen.
         fun groundInASecond(w: Wiring): Long {
             val grid = Grid(5, 5)
             val deck = DeckArray(grid)
@@ -213,14 +219,13 @@ class WiringTest {
             val s = run(VesselState(grid, deck, bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)), 4)
             return s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L
         }
-        // Four ticks of the extractor's own rate. It used to read `Capacity.PACKET_MASS`, which was
-        // the same number only by the coincidence that a packet was four ticks' output — a
-        // coincidence that died when the belt-load dropped to 100 kg. What the throttle governs is
-        // the *rate*, so the rate is what the expectation is built from.
-        val full = 4L * Extractor(TileIndex(0), Direction.Right).massPerTick
-        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 1000)))
-        assertEquals(full / 2, groundInASecond(wiring(SignalSource.Always to 500)), "half the weight, half the ore")
-        assertEquals(full / 4, groundInASecond(wiring(SignalSource.Always to 250)))
+        // Whatever four ticks of biting comes to — cells are whole and their mass is the rock's, so
+        // the number is a property of the feed and not of the machine. What is pinned is that every
+        // positive signal gives the *same* answer and a non-positive one gives nothing.
+        val full = groundInASecond(wiring(SignalSource.Always to 1000))
+        assertTrue(full > 0L, "a fully wired extractor bit nothing at all")
+        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 500)), "half a signal is still on")
+        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 250)), "a quarter signal is still on")
         assertEquals(0L, groundInASecond(wiring(SignalSource.Always to -1000)), "negative activation stops it")
     }
 

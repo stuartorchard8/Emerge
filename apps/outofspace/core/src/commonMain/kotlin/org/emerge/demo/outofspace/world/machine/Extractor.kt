@@ -34,35 +34,24 @@ import org.emerge.demo.outofspace.world.Wiring
  *    [org.emerge.demo.outofspace.world.overlapsHull]. A solid deck machine would be a wall a rock could never get on top of, so an
  *    impermeable extractor could not do the one thing it exists to do.
  *
- * [input] is how a rate in mass meets a rock measured in whole cells, and it makes the extractor
- * read like every other machine in the game: an input buffer, a rate, an output buffer. Mass leaves
- * a rock one **cell** at a time — a few kilograms of whatever that rock assays at, see
- * [org.emerge.demo.outofspace.world.RigidBody.massPerTile] — so the machine bites a whole cell off, holds it, and grinds it into the
- * buffer at [massPerTick] like a processor working a lump. A dense body is worth more ore per bite
- * as well as taking more to shift. The rock is never half-eaten, which is what keeps the two ledgers
- * exact against each other, and the ore still comes out in a steady trickle rather than in lurches.
+ * **One store, and a bite goes straight into it.** Mass leaves a rock one **cell** at a time — a few
+ * kilograms of whatever that rock assays at, see [org.emerge.demo.outofspace.world.RigidBody.massPerTile] — and the machine takes a
+ * whole one or none. The rock is never half-eaten, which is what keeps the two ledgers exact against
+ * each other, and a dense body is worth more ore per bite as well as taking more to shift.
  *
- * You can see both halves of that: the rock visibly pits away from the side the machine is working,
- * a cell at a time, while the belt fills smoothly.
+ * It used to hold a second store: the cell in its jaws, ground across into the buffer at a rate. That
+ * bought nothing observable. **The rail sets the throughput** — a belt tile holds one packet and a
+ * machine hands over one packet a tick — so what actually leaves is capped by the track whatever
+ * rate is applied in here, and the grinding was a number nobody could see. What the second store was
+ * really for was meeting a rock measured in whole cells with a rate measured in mass, and
+ * [BUFFER_CAP] does that on its own: it bites while it has room and stops when it does not.
+ *
+ * You can still see both halves: the rock pits away from the side the machine is working, a cell at
+ * a time, while the belt carries ore off at the belt's own pace.
  */
 data class Extractor(
     override val center: TileIndex,
     override val facing: Direction,
-    val carry: Long = 0L,
-    /**
-     * Grams per tick at full activation: **one belt-load**.
-     *
-     * ⚠️ **A producer must never out-produce the belt it feeds.** A belt tile holds one packet and a
-     * machine hands over at most one packet per tick, so belt throughput *is* [Capacity.PACKET_MASS]
-     * per tick — which makes that the ceiling for every machine in the game. Deriving the rate from
-     * the packet states the invariant instead of leaving it to two literals that happen to agree:
-     * when the belt-load went from a tonne to 100 kg, the old hard-coded rates were suddenly 2.5x
-     * what the belts could carry and every refinery line silently became throughput-broken.
-     *
-     * Tunable per machine later — a slow smelter and a fast one are a reasonable thing to want — but
-     * the cap is structural and anything above it is a machine that starves its own output.
-     */
-    val massPerTick: Long = Capacity.PACKET_MASS,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Extractor
@@ -72,13 +61,15 @@ data class Extractor(
 
     companion object {
         /**
-         * How much chewed rock an extractor holds before it stops biting.
+         * How much ore an extractor holds before it stops biting.
          *
-         * **Derivation**: five tonnes — **20 ticks** at its own 250 kg/tick, so the machine keeps
-         * grinding for a while when the belt pauses. A bite is a whole cell and weighs more than
-         * this, but a bite lands in [input] and is ground into the buffer at [massPerTick], so what
-         * this sizes is the gap between grinding and collection rather than the bite. In ticks and
-         * not in belt-loads, for the reason on [MACHINE_BUFFER_CAP].
+         * **Five tonnes** — enough that the machine goes on working for a while when the belt pauses,
+         * and small enough that it is a hopper rather than a warehouse.
+         *
+         * ⚠️ It is a **floor, not a ceiling**: a bite is a whole cell and may weigh more than what is
+         * left of the room, so the store can end a tick above this. That is deliberate and it is what
+         * lets a rock measured in whole cells meet a limit measured in mass — refusing a bite that
+         * would overshoot would stall the machine against any rock dense enough.
          */
         val BUFFER_CAP = 5L * Budget.TONNE
     }

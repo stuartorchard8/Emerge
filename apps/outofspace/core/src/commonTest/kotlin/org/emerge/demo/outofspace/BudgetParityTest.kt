@@ -57,7 +57,9 @@ class BudgetParityTest {
 
         // The relationships that actually matter, stated as the ratios they are.
         assertEquals(40L, MACHINE_BUFFER_CAP / Smelter(TileIndex(0), Direction.Right).massPerTick, "40 ticks of buffer")
-        assertEquals(50L, Extractor.BUFFER_CAP / Extractor(TileIndex(0), Direction.Right).massPerTick, "50 ticks of buffer")
+        // ⚠️ The extractor has no rate of its own any more — its two stores became one and the rail
+        // sets its throughput — so its buffer is sized in belt-loads rather than in ticks.
+        assertEquals(50L, Extractor.BUFFER_CAP / Capacity.PACKET_MASS, "fifty belt-loads of buffer")
 
         // ── Machine throughput ──
         //
@@ -65,8 +67,10 @@ class BudgetParityTest {
         // machine hands over at most one per tick, so no producer may exceed one belt-load per tick
         // or it starves its own output. Asserted for every producer rather than for one, because
         // this is the property that broke when the belt-load shrank and it broke silently.
+        // ⚠️ The extractor is absent because it no longer *has* a rate to exceed: it bites while it
+        // has room and stops when it does not, so the belt is the only thing metering it. That is
+        // this invariant satisfied structurally rather than by a number that has to agree.
         for ((what, rate) in listOf(
-            "extractor" to Extractor(TileIndex(0), Direction.Right).massPerTick,
             "smelter" to Smelter(TileIndex(0), Direction.Right).massPerTick,
             "vaporizer" to Vaporizer(TileIndex(0), Direction.Right).massPerTick,
         )) {

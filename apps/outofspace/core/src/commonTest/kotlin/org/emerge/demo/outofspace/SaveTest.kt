@@ -435,7 +435,6 @@ class SaveTest {
         deck += Extractor(
             grid.tile(4, 4),
             Direction.Right,
-            carry = 37L,
             // Any non-default wiring will do; the starter vessel's second extractor is the one that has
             // some. Found rather than indexed, because the layout is free to move — it was pinned at
             // (5,19) until the vessel was centred in its grid, and then this broke.
@@ -452,14 +451,12 @@ class SaveTest {
 
         val state = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(8, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
-            .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 700L, Species.Carbon to 300L, energy = 0)), BufferRole.Inside)
             .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
         val back = Save.read(Save.write(state))
 
-        val extractor = back.deck[grid.tile(4, 4)] as? Extractor
-        assertEquals(37L, extractor!!.carry)
+        val extractor = assertNotNull(back.deck[grid.tile(4, 4)] as? Extractor)
+        // One store now: the jaws are gone, and with them `carry`. See [Extractor].
         assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.mass)
-        assertEquals(700L, back.inStore(grid.tile(4, 4), BufferRole.Inside)?.mixture?.get(Species.Iron), "the cell in the jaws too")
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
@@ -597,17 +594,18 @@ class SaveTest {
             grid 8 6
             machine 20 Miner facing=Right ore=Iron=1000 rate=1000 carry=0
         """.trimIndent() + "\n"
-        val extractor = assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
-        assertEquals(250L * Budget.GRAM, extractor.massPerTick, "1000 g/s at 4 ticks a second is 250 g/tick")
+        // The `rate=` this file carries no longer has anywhere to land — an extractor is metered by
+        // the belt — but the record still has to load, which is what the rename and the move onto the
+        // deck are for.
+        assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
     }
 
     @Test
-    fun `a version 1 save with no rate at all gets the current default`() {
+    fun `a version 1 save with no rate at all still loads`() {
         val v1 = "outofspace 1\ngrid 8 6\nmachine 20 Miner facing=Right ore=Iron=1000\n"
         // A `machine … Miner` record from v1, landing on the deck: the rename and the move are
         // applied on one path, so the oldest file in the game still loads.
-        val extractor = assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
-        assertEquals(Extractor(TileIndex(20), Direction.Right).massPerTick, extractor.massPerTick)
+        assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
     }
 
     @Test

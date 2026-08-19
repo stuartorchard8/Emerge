@@ -1606,27 +1606,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * the ledgers exist to catch.
          */
         fun leech(m: Extractor, activation: Int, tile: TileIndex): Extractor {
-            val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-            // Backed up: stop working, holding whatever cell is already in the jaws. It is counted
-            // as aboard either way, so nothing is forfeit by waiting.
+            // Backed up: stop biting. What is not taken is still in the rock, which is a better
+            // place for it than a buffer — nothing is forfeit by waiting.
             val held = buffers.resourceAt(bufferTile(grid, m, tile, BufferRole.Product)!!)
-            if ((held?.mass ?: 0L) >= Extractor.BUFFER_CAP) return m.copy(carry = carry)
+            if ((held?.mass ?: 0L) >= Extractor.BUFFER_CAP) return m
+            if (activation <= 0) return m
 
-            var input = store(m, tile, BufferRole.Inside)
-            if (input == null || input.mass <= 0L) {
-                val found = if (activation > 0) reachedBody(m, tile) else -1
-                input = if (found < 0) null else bite(found, tile)
-                putStore(m, tile, BufferRole.Inside, input)
-            }
-            if (input == null || mass <= 0L) return m.copy(carry = carry)
-
-            // The same shape as a processor working a lump: take a chunk off the input buffer.
-            val chunk = input.mixture.take(minOf(mass, input.mass))
-            if (chunk.total <= 0L) return m.copy(carry = carry)
-            heat(tile, heatOfWorking(chunk.total, m))
-            putStore(m, tile, BufferRole.Inside, Resource(input.form, input.mixture - chunk).orNull())
-            putStore(m, tile, BufferRole.Product, Resource(Form.Ore, (held?.mixture ?: Mixture.EMPTY) + chunk))
-            return m.copy(carry = carry)
+            // ⚠️ **A bite goes straight into the store it leaves from.** It used to land in a second
+            // buffer and be ground across at a rate; the rate was unobservable, because a belt tile
+            // holds one packet and a machine hands over one packet a tick, so what leaves is capped
+            // by the rail whatever happens in here. What the second store really bought was a way to
+            // meet a rock measured in whole cells with a rate measured in mass — and the buffer cap
+            // does that on its own, one cell at a time.
+            val found = reachedBody(m, tile)
+            if (found < 0) return m
+            val bitten = bite(found, tile) ?: return m
+            if (bitten.mass <= 0L) return m
+            heat(tile, heatOfWorking(bitten.mass, m))
+            putStore(m, tile, BufferRole.Product, Resource(Form.Ore, (held?.mixture ?: Mixture.EMPTY) + bitten.mixture))
+            return m
         }
 
         /** The first body with a cell over the plate at [at], or `-1`. */
@@ -1834,12 +1832,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * deliberate divergence between where a store *is* and where its contents are handed back,
          * and it is the only one.
          *
-         * A machine with a processing buffer and **no input port at all** falls back to the store's
-         * own tile. An `Extractor` is the case: what it is chewing came off a rock rather than off a
-         * belt, so there is no way it came in and the centre — where the deconstruction port stands —
-         * is the only place left.
-         *
-         * A `Storage` never reaches here: its `Inside` is what its own output port drains.
+         * Every machine that keeps a working store has an input port to give it back through: a
+         * `Processor` and a `ThermalDecomposer` are the two, and an `Extractor` used to be a third
+         * until its two stores became one. A `Storage` never reaches here at all — its `Inside` is
+         * what its own output port drains, so the tank empties itself the way it always did.
          */
         private fun handBackTileFor(
             m: DeckMachine,

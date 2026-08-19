@@ -305,7 +305,9 @@ object Save {
      */
     private fun storeKey(m: DeckMachine, role: BufferRole): String = when {
         m is Storage -> "stored"
-        m is Extractor -> if (role == BufferRole.Inside) "in" else "buffer"
+        // An extractor's one store has always been `buffer`, and it stays `buffer` now that its
+        // jaws are gone.
+        m is Extractor -> "buffer"
         // A bridge's middle slot has always been `span`, and it stays `span`: the three slots became
         // three role tiles without the file needing to know.
         m is Bridge && role == BufferRole.Inside -> "span"
@@ -352,10 +354,9 @@ object Save {
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
             }
-            is Extractor -> {
-                put("carry", m.carry.toString())
-                put("rate", m.massPerTick.toString())
-            }
+            // An extractor is its facing and its one store, both written by the common code around
+            // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
+            is Extractor -> {}
             is Storage -> {}
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
@@ -1135,12 +1136,10 @@ object Save {
                 progress = num("actionProgress", 0L).toInt(),
                 setTemperature = num("temp", 900L).toInt(),
             )
-            DeckMachineKind.Extractor -> Extractor(
-                tile,
-                facing = facing(),
-                carry = massNum("carry", 0L),
-                massPerTick = rate(Extractor(tile, Direction.Right).massPerTick),
-            )
+            // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.
+            // The first two no longer exist, and the third is a hopper's worth of ore that a loaded
+            // save quietly drops — accepted rather than migrated, Stu's call.
+            DeckMachineKind.Extractor -> Extractor(tile, facing = facing())
             DeckMachineKind.Smelter -> Smelter(
                 tile,
                 facing = facing(),

@@ -95,12 +95,12 @@ private fun pack(dx: Int, dy: Int): Int = ((dx + OFFSET_BIAS) shl 8) or (dy + OF
 internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
     val r = machine.reach
     return when (machine) {
-        // What it is chewing on is inside it; the ore it has ground goes out the one port it has.
-        is Extractor -> when (role) {
-            BufferRole.Inside -> pack(0, 0)
-            BufferRole.Product -> pack(r, 0)
-            else -> NO_OFFSET
-        }
+        // One store, on the one port it has. It used to hold a second — the cell in its jaws, ground
+        // into the buffer at a rate — and that bought nothing: a belt tile holds one packet and a
+        // machine hands over one packet a tick, so **the rail sets the throughput** and a rate
+        // upstream of a full buffer is a rate nobody can observe. A bite now lands straight in the
+        // store it leaves from.
+        is Extractor -> if (role == BufferRole.Product) pack(r, 0) else NO_OFFSET
         // One port, one store. Both are one-tile machines, so both stores are the centre tile —
         // legal precisely because neither keeps a second role there.
         is Vaporizer -> if (role == BufferRole.Input) pack(r, 0) else NO_OFFSET

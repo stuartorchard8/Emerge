@@ -402,8 +402,13 @@ because carrying is not producing.)
   are handed back deliberately differ.
 - **A storage uses its normal output.** Its `Inside` is what its own output port drains, so a tank
   empties by its natural exit and deconstruction only waits.
-- **An `Extractor`** has a working store and no input port at all — what it is chewing came off a
-  rock, not off a belt — so it falls back to its own tile, where the deconstruction port stands.
+- **An `Extractor` keeps one store now**, drained by its own output port, so deconstruction only
+  waits on it exactly as it does on a tank. It used to keep a second — the cell in its jaws, ground
+  into the buffer at a rate — and that made it the one working store in the game with no input port
+  to give itself back through, which is why it kept needing a clause of its own here. ⚠️ **The rail
+  sets an extractor's throughput**, so the grind was a rate nobody could observe; what the second
+  store really bought was meeting a rock measured in whole cells with a rate measured in mass, and
+  `BUFFER_CAP` does that alone. Consequence, accepted: its wiring activation is now **binary**.
 ### A bridge has no centre port, at either end of its life — Stu, 2026-08-19
 
 The middle of a span is *over the gap it is bridging*, and no belt can reach it. So a gantry is the

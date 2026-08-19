@@ -8,6 +8,9 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.Stream
+import org.emerge.demo.outofspace.world.bufferRolesOf
+import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.material
@@ -18,6 +21,7 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.constructionTileOf
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
@@ -363,6 +367,27 @@ class MachineGhostTest {
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
         assertTrue(s.rail.massAt(input) > 0L, "the half-worked lump did not come back out of the input")
         assertEquals(0L, s.rail.massAt(at), "it came out of the centre instead")
+    }
+
+    /**
+     * ⛔ An extractor keeps **one store**, and its own output port drains it — so deconstruction
+     * only waits, exactly as it does for a tank. It used to keep a second, the cell in its jaws,
+     * which was the one working store in the game with no input port to give itself back through.
+     */
+    @Test
+    fun `an extractor keeps one store and its output drains it`() {
+        val at = grid.tile(9, 4)
+        val extractor = Extractor(at, Direction.Right)
+        assertEquals(
+            listOf(BufferRole.Product),
+            bufferRolesOf(extractor),
+            "an extractor is supposed to keep one store now",
+        )
+        assertEquals(
+            BufferRole.Product,
+            outputBufferRole(extractor, Stream.Product),
+            "and its own output port is what drains it",
+        )
     }
 
     /**
