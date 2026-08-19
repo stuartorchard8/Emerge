@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -106,7 +107,62 @@ class MachineBillTest {
             buildableFrom(railBill, railBill),
             "the conduit overload is the bill overload",
         )
-        assertFalse(buildableFrom(railBill, org.emerge.demo.outofspace.chem.Mixture.EMPTY), "nothing is not a delivery")
+        assertFalse(buildableFrom(railBill, Mixture.EMPTY), "nothing is not a delivery")
+    }
+
+    /**
+     * ⛔ The alloy anti-exploit. Pure iron is 100% of a species steel names, so an aggregate purity
+     * test waves it through — and the hull then never finishes, because its carbon never comes, and
+     * it goes on swallowing iron for ever. A matter sink reachable in ordinary play.
+     */
+    @Test
+    fun `a steel bill refuses pure iron`() {
+        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        assertFalse(
+            buildableFrom(steel, Mixture.of(Species.Iron to 1_000_000L, energy = 0L)),
+            "a hull accepted a delivery with none of its carbon in it",
+        )
+        assertTrue(buildableFrom(steel, steel), "a hull refused exactly what it is made of")
+    }
+
+    /**
+     * The thresholds are 95% of each species' *own* share: steel is 990:10, so iron must clear
+     * 94.05% and carbon 0.95%. Those are the numbers a player keeps a storage at.
+     */
+    @Test
+    fun `each species is judged against its own share of the recipe`() {
+        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        fun blend(ironPpm: Long, carbonPpm: Long) = buildableFrom(
+            steel,
+            Mixture.of(Species.Iron to ironPpm, Species.Carbon to carbonPpm, energy = 0L),
+        )
+        // Carbon just under its 0.95% floor, with iron in abundance: refused.
+        assertFalse(blend(990_600L, 9_400L), "carbon below its share was admitted")
+        // Carbon just over it: admitted.
+        assertTrue(blend(990_400L, 9_600L), "carbon above its share was refused")
+        // Iron below its 94.05% floor, however much carbon there is: refused.
+        assertFalse(blend(940_000L, 60_000L), "iron below its share was admitted")
+        // A carbon-rich but legal blend — the window is six-fold wide for a trace component.
+        assertTrue(blend(945_000L, 55_000L), "a legal carbon-rich blend was refused")
+    }
+
+    /**
+     * ⚠️ The generalisation has to leave track exactly as it was: a rail is made of one species, so
+     * its threshold is 95% of 100%, which is the aggregate test it replaces.
+     */
+    @Test
+    fun `a single-species bill is the old aggregate rule`() {
+        val rail = conduitBillOfMaterials(Conduit.Rail)
+        fun ironWith(junkPercent: Long) = buildableFrom(
+            rail,
+            Mixture.of(
+                Species.Iron to (100L - junkPercent) * 1_000_000L,
+                Species.Silicon to junkPercent * 1_000_000L,
+                energy = 0L,
+            ),
+        )
+        assertTrue(ironWith(5L), "a 95% delivery is exactly at the bar and is admitted")
+        assertFalse(ironWith(6L), "a 94% delivery is under the bar")
     }
 
     /** Permille is the worst species, so it reaches 1000 exactly when the bill is held. */

@@ -333,11 +333,33 @@ fun conduitBillOfMaterials(conduit: Conduit): Mixture =
     conduit.material.composition.scaledTo(conduit.massPerTile)
 
 /**
- * What fraction of a delivery has to be the thing being built, as a percentage.
+ * How close to the recipe a delivery has to be, as a percentage — **asked of every species in the
+ * bill separately**.
  *
- * A ghost takes a packet **whole** or refuses it whole, and what comes with the target species is
- * baked into the tile's composition. So this is the purity a player has to hit, and the slack is
- * what stops a rail demanding perfectly separated iron before a smelter exists.
+ * A ghost takes a packet whole or refuses it whole, so this is the standard a player has to hit, and
+ * the slack is what stops a rail demanding perfectly separated iron.
+ *
+ * ### Per species, because an alloy is not one thing
+ *
+ * Read as a single figure — "95% of the delivery must be species the bill names" — this admits pure
+ * iron for a steel hull, since iron is 100% of a bill species. The hull then never finishes, because
+ * its carbon never arrives, and it goes on swallowing iron for ever: a matter sink reachable in
+ * ordinary play.
+ *
+ * So the question is asked of each species the bill names, against **its own share** of the recipe.
+ * Steel is 990:10, so a delivery must be at least 94.05% iron *and* at least 0.95% carbon. Pure iron
+ * fails the second and is turned away at the tile.
+ *
+ * Two properties make this the right generalisation rather than a new rule bolted on:
+ *
+ * - For a **single-species** bill it is exactly the old test — a rail's threshold is 95% of 100%,
+ *   which is 95% — so nothing about track changes.
+ * - The thresholds **sum to this percentage**, so anything that passes is automatically ≥95% bill
+ *   species by mass. The aggregate test it replaces is implied rather than dropped.
+ *
+ * ⚠️ The tolerance is *proportional*, so it is generous for a trace component and tight for a
+ * balanced mix: steel's carbon may be anywhere in 0.95%–5.95%, while firebrick's 550:450 pins each
+ * of its species to about ±2.5 points. That is the intended pressure — see the plan.
  */
 const val BUILD_PURITY_PERCENT = 95
 
@@ -363,17 +385,21 @@ fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean =
  * opinions about what 95% means. See the overload above for why this is the anti-exploit.
  */
 fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
-    var wanted = 0L
-    var total = 0L
-    for (s in Species.ALL) {
-        val mass = mixture[s]
-        if (mass == 0L) continue
-        total += mass
-        if (bill[s] > 0L) wanted += mass
-    }
+    val total = mixture.total
     // Nothing is not a delivery. Answering true would let an empty lump idle on a ghost for ever.
     if (total <= 0L) return false
-    return wanted * 100 >= total * BUILD_PURITY_PERCENT
+    val billTotal = bill.total
+    if (billTotal <= 0L) return false
+    for (s in Species.ALL) {
+        val want = bill[s]
+        if (want <= 0L) continue
+        // What a delivery this size would hold if it were exactly to recipe. Via [scaledRatio]
+        // rather than by cross-multiplying: a packet is around 1e11 in these units and a bill is of
+        // the same order, so `mass x billTotal x 100` is a long overflow and this is not.
+        val perfect = scaledRatio(want, billTotal, total)
+        if (mixture[s] * 100L < perfect * BUILD_PURITY_PERCENT) return false
+    }
+    return true
 }
 
 /**

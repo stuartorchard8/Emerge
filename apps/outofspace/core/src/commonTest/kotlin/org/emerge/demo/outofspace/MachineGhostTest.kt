@@ -145,6 +145,50 @@ class MachineGhostTest {
         assertEquals(0L, s.deck.stuff.massAt(at), "silica got into the casing")
     }
 
+    /**
+     * ⛔ The matter sink, closed. A steel machine fed pure iron takes **nothing**: it is refused at
+     * the tile rather than swallowed, so a tank of iron cannot drain into a hull that could never
+     * finish. Before the per-species rule it absorbed iron for ever, past its own billed mass.
+     */
+    @Test
+    fun `a steel machine fed pure iron takes nothing at all`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at)).stocked(
+            grid.tile(3, 4),
+            Resource(Form.IronIngot, Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0)),
+        )
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertTrue(s.deck.isGhost(at), "a hull built itself out of iron alone")
+        assertEquals(0L, s.deck.stuff.massAt(at), "iron went into a machine that can never finish")
+    }
+
+    /**
+     * The intended path: mixing is a **logistics** problem, not a refining one. A storage blended to
+     * the recipe emits packets that are proportional slices of what it holds, so keeping a tank
+     * inside the tolerance is what makes steel machines buildable.
+     *
+     * The blend here is deliberately *not* the exact recipe — 95:5 against steel's 99:1 — because
+     * the tolerance is the point: a player has to hold a ratio, not hit a number.
+     */
+    @Test
+    fun `a storage blended within tolerance builds a steel machine`() {
+        val at = grid.tile(10, 4)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        val start = tankAndGhost(Hull(at)).stocked(
+            grid.tile(3, 4),
+            Resource(
+                Form.IronIngot,
+                Mixture.of(
+                    Species.Iron to 95 * bill.total * 4 / 100,
+                    Species.Carbon to 5 * bill.total * 4 / 100,
+                    energy = 0,
+                ),
+            ),
+        )
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertFalse(s.deck.isGhost(at), "a blend inside the tolerance did not build the hull")
+    }
+
     /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */
     @Test
     fun `building a machine conserves mass`() {

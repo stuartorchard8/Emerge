@@ -328,10 +328,9 @@ single-species case hid:
 
 1. **A machine cannot be built from one of its components.** Pure iron is admitted for a steel hull —
    it is 100% target species, so the 95% rule waves it through — and the hull then never finishes,
-   because its carbon never arrives. ⚠️ Worse than a refusal: it goes on accepting iron for ever,
-   past its own billed mass, so a tank of iron drains into a machine that can never complete. **A
-   matter sink reachable by ordinary play. Not fixed — for Stu.** The 95% rule asks *purity*, and
-   what an alloy needs asked is *completeness*.
+   because its carbon never arrives. Worse than a refusal: it went on accepting iron for ever, past
+   its own billed mass, so a tank of iron drained into a machine that could never complete. A matter
+   sink reachable by ordinary play. **RESOLVED — see below.**
 2. **A share per species rounds every share down**, so the machine lands a gram short of everything
    at once and the next delivery is asked for a shortfall too small to divide — stuck at 999 per
    mille with a loaded belt on it.
@@ -345,7 +344,44 @@ Junk still gets baked in, by the branch above it: while a ghost is hungrier than
 swallows the lump whole, junk and all. So "proportional, junk included" describes the swallow and
 "only what it needs" describes the top-up, and the two together terminate.
 
-(1) is untouched and needs a decision.
+### The alloy rule — Stu, 2026-08-19
+
+**The purity test is asked of every species in the bill separately, against its own share of the
+recipe.** Steel is 990:10, so a delivery must be at least 94.05% iron *and* at least 0.95% carbon.
+Pure iron fails the second and is turned away at the tile, so the sink is closed at admission.
+
+Two properties make this a generalisation rather than a second rule:
+
+- For a **single-species** bill it *is* the old test — a rail's threshold is 95% of 100% — so nothing
+  about track changes, and the existing purity tests pass untouched.
+- The thresholds **sum to 95%**, so anything that passes is automatically ≥95% bill species by mass.
+  The aggregate test is implied, not discarded.
+
+⚠️ The tolerance is **proportional**, so it is generous for a trace component and tight for a
+balanced mix: steel's carbon may be anywhere in 0.95%–5.95%, a six-fold window, while firebrick's
+550:450 pins each species to about ±2.5 points. That unevenness is intended pressure.
+
+### Where the mixing happens — Stu, 2026-08-19
+
+**Not at the construction site, and not in a smelter.** Form is ignored for construction (decision 2),
+so raw powdered ore builds a casing exactly as an ingot does, and the site's job is *compaction into
+the shape required* — a real compaction-and-sintering analogue, with the metallurgy skipped.
+
+Mixing is therefore a **logistics** problem:
+
+- **On the belt**, by packets merging as they are loaded onto one tile — hard and unintuitive, and
+  possibly the ideal late-game setup.
+- **In a storage**, which is the controlled and forgiving method. `takePacket` slices a buffer
+  proportionally, so a tank held at >94.05% iron and >0.95% carbon emits packets that satisfy a steel
+  machine exactly. **Holding those concentrations while replenishing is the game.**
+
+⚠️ This is why the tolerance matters more than the exact recipe: a player maintains a *ratio*, not a
+number.
+
+Consequence worth recording: nothing else in the game mixes. `smelt` returns a single species by
+construction and the processor concentrates toward one; every species of every material — iron,
+carbon, quartz, aluminium — is already producible on its own. Stu is leaning toward **deleting the
+smelter**; that is not in scope here.
 
 **5d. Deconstruction.** The mark, the five-step ordering above, ceasing to be.
 
