@@ -1729,8 +1729,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // onto a run no consumer is on would jam that run and then be unable to hand back
                     // the rest, having stranded itself behind its own leavings. Waiting instead makes
                     // the refusal *reversible*: build somewhere for it to go and the rail resumes.
-                    if (!whitelist.permits(tile, stuff.mixtureAt(tile))) continue
-                    val room = rail.headroom(tile)
+                    val giving = stuff.mixtureAt(tile)
+                    if (!whitelist.permits(tile, giving)) continue
+                    // ⚠️ **And no more of it than is wanted**, which is the same rule [pushOut]
+                    // follows one step earlier and for the same reason: a bill is not a round number
+                    // of packets. A rail coming apart put a *whole* packet down for a neighbour
+                    // short of a fraction of one, and the difference stood on the track for ever —
+                    // a residue that comes to rest exactly in front of the material that would
+                    // finish the job. Stu found it, a marked rail beside a quarter-built one.
+                    val useful = whitelist.room(tile, giving)
+                    if (useful <= 0L) continue
+                    val room = minOf(rail.headroom(tile), useful)
                     if (room > 0L) {
                         val take = minOf(held, room)
                         // Taking the lot takes the heat with it, so a finished tile is genuinely
@@ -1840,7 +1849,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // Nowhere for it to go is a reason to wait, not a reason to dump. See the twin
                     // guard in [scrapDeconstructing].
                     if (!whitelist.permits(onto, held)) continue
-                    if (handBack(onto, held, store)) handedBack = true
+                    if (handBack(whitelist, onto, held, store)) handedBack = true
                 }
                 if (storesHeld > 0L || handedBack) continue
 
@@ -1901,10 +1910,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          *
          * Answers whether anything moved, so the caller can wait a tick rather than moving on to the
          * casing while a store is still emptying.
+         *
+         * ⛔ **[whitelist] is handed in, and must be.** This runs from [scrapMachines], which is
+         * called *before* the tick publishes its whitelist to the field of the same name — so a bare
+         * `whitelist` here reads last tick's answer, and on the first tick of a deconstruction reads
+         * [Whitelist.empty], which permits nothing anywhere. The store then never came back out and
+         * the machine sat on it for ever, looking exactly like a demand rule correctly refusing to
+         * strand cargo. It is the same object [scrapDeconstructing] is given, one method along.
          */
-        private fun handBack(onto: TileIndex, held: Mixture, store: TileIndex): Boolean {
+        private fun handBack(
+            whitelist: Whitelist,
+            onto: TileIndex,
+            held: Mixture,
+            store: TileIndex,
+        ): Boolean {
             if (rails[onto.index] == null) return false
-            val room = rail.headroom(onto)
+            val useful = whitelist.room(onto, held)
+            if (useful <= 0L) return false
+            val room = minOf(rail.headroom(onto), useful)
             if (room <= 0L) return false
             val take = minOf(held.total, room)
             val moving = if (take >= held.total) held else held.take(take)

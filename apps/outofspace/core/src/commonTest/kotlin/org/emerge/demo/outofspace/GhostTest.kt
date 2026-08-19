@@ -440,6 +440,52 @@ class GhostTest {
     }
 
     /**
+     * ⛔ **A rail coming apart hands back what is WANTED, not a whole packet.**
+     *
+     * Stu's save, a marked rail at (15,28) beside a quarter-built ghost at (14,28): the ghost was
+     * short of a fraction of a packet, the deconstruction put a whole one down, and the difference
+     * stood on the track with nothing left that wanted it. Harmless only while something unlimited
+     * waits beyond — a deadlock otherwise, because the residue comes to rest exactly in front of the
+     * material that would finish the job.
+     *
+     * [pushOut] has sized its emissions by the demand for a while; this is the same rule for the
+     * other kind of source, and the ghost being **partly built** is the whole point — a ghost
+     * starting from nothing wants a round number of packets and never shows it.
+     */
+    @Test
+    fun `a rail coming apart hands back only what the ghost beside it still wants`() {
+        val grid = Grid(10, 6)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 5, 3)
+        val ghost = grid.tile(4, 3)
+        val marked = grid.tile(5, 3)
+        rails[marked.index] = rails[marked.index]!!.copy(deconstructing = true)
+        val start = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+
+        // Part-built, and deliberately NOT short by a whole packet: the overshoot is the difference
+        // between what it wants and what a packet is, so a round shortfall hides the bug entirely.
+        val stuff = start.conduits.tracks[Conduit.Rail]
+        val full = stuff[ghost, Species.Iron]
+        stuff[ghost, Species.Iron] = full - Capacity.PACKET_MASS / 4
+        assertFalse(start.conduits.isComplete(Conduit.Rail, ghost), "the fixture left a finished rail")
+
+        val s = run(start, RAIL_PERIOD * 60)
+
+        assertTrue(s.conduits.isComplete(Conduit.Rail, s.grid.tile(4, 3)), "the ghost never finished")
+        assertEquals(
+            0L,
+            grid.tiles.sumOf { s.rail.massAt(it) },
+            "a residue was left standing once the job was done",
+        )
+    }
+
+    /**
      * ⛔ **Building with impure material does not precipitate the impurity.**
      *
      * From Stu's save: 181g of **pure carbon** parked on a rail at (12, 28), refusing to take any
