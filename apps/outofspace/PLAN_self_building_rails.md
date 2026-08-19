@@ -372,9 +372,14 @@ the shape required* — a real compaction-and-sintering analogue, with the metal
 
 Mixing is therefore a **logistics** problem:
 
-- **On the belt**, by packets merging as they are loaded onto one tile — hard and unintuitive, and
-  possibly the ideal late-game setup.
-- **In a storage**, which is the controlled and forgiving method. `takePacket` slices a buffer
+- ~~**On the belt**, by packets merging as they are loaded onto one tile — hard and unintuitive, and
+  possibly the ideal late-game setup.~~ ⛔ **Withdrawn, Stu 2026-08-19: a packet is never merged
+  into.** Once minted a lump can be *taken from* and never added to. Merging made a packet's
+  composition change under whatever happened to be routed at it, so a delivery a site had admitted
+  could become one it would have refused, and "what is on its way to this tile" stopped having a
+  stable answer — untenable once flow is decided by demand, where the whole point is knowing what a
+  packet is *before* deciding where it may go. Blending is a storage operation and only that.
+- **In a storage**, which is now the only method, and was always the intended one. `takePacket` slices a buffer
   proportionally, so a tank held at >94.05% iron and >0.95% carbon emits packets that satisfy a steel
   machine exactly. **Holding those concentrations while replenishing is the game.**
 

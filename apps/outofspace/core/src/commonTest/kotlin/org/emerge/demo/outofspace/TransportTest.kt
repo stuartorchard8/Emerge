@@ -596,56 +596,16 @@ class TransportTest {
 
     // ── Bunching up against a blockage ────────────────────────────────────────
 
-    @Test
-    fun `identical lumps squash together against a blockage`() {
-        val n = net().row(2, 5, 3)
-        val f = n.toward(grid.tile(5, 3).index)
-        val h = held(
-            n,
-            grid.tile(4, 3) to lump(share(400)),
-            grid.tile(5, 3) to lump(share(400)),   // on the consumer, which is refusing
-        )
-        step(f, h)
-        assertEquals(share(800), h[grid.tile(5, 3).index]?.total, "the one behind squashed into the one ahead")
-        assertNull(h[grid.tile(4, 3).index], "leaving its tile free")
-    }
-
-    @Test
-    fun `squashing stops at a full packet and the rest queues behind it`() {
-        val n = net().row(2, 5, 3)
-        val f = n.toward(grid.tile(5, 3).index)
-        val h = held(n, grid.tile(4, 3) to lump(share(600)), grid.tile(5, 3) to lump(share(700)))
-        step(f, h)
-        assertEquals(Capacity.PACKET_MASS, h[grid.tile(5, 3).index]?.total, "filled to capacity")
-        assertEquals(share(300), h[grid.tile(4, 3).index]?.total, "and the overflow stayed put")
-    }
-
     /**
-     * The consequence of powder being powder, and the reason routing matters.
+     * A jammed run queues, tile by tile, and loses nothing doing it.
      *
-     * Tip 41% ore into a line carrying 75% concentrate and you get one pile at a purity in between,
-     * with no way back. That is not a limitation to design around — it is the cost of merging two
-     * streams that should have been kept apart, and it is what makes the separation a processor
-     * performs worth protecting.
+     * ⚠️ This used to assert the opposite shape — that the four lumps *bunched into one* at the end.
+     * They no longer merge at all (Stu, 2026-08-19), so what a jam looks like now is a queue rather
+     * than a pile. The property worth keeping is the one underneath either behaviour: material
+     * pressed against a blockage is still all there, on as many tiles as it takes.
      */
     @Test
-    fun `ore of different purities blends, because that is what powder does`() {
-        val dirty = SolidPacket(Mixture.of(Species.Iron to share(200), Species.Quartz to share(300), energy = 0))
-        val clean = SolidPacket(Mixture.of(Species.Iron to share(375), Species.Quartz to share(125), energy = 0))
-        val n = net().row(2, 5, 3)
-        val f = n.toward(grid.tile(5, 3).index)
-        val h = held(n, grid.tile(4, 3) to dirty, grid.tile(5, 3) to clean)
-
-        step(f, h)
-        val merged = h[grid.tile(5, 3).index]!!
-        assertNull(h[grid.tile(4, 3).index], "the two piles became one")
-        assertEquals(Capacity.PACKET_MASS, merged.total, "and nothing was lost doing it")
-        // 375g + 200g of iron in a kilogram: the concentrate has been spoiled, and deservedly.
-        assertEquals(share(575), merged[Species.Iron], "purity is now somewhere in between")
-    }
-
-    @Test
-    fun `a jammed run bunches toward its destination over several ticks`() {
+    fun `a jammed run queues without losing anything`() {
         val n = net().row(2, 8, 3)
         val f = n.toward(grid.tile(8, 3).index)
         val h = held(
@@ -656,8 +616,13 @@ class TransportTest {
             grid.tile(8, 3) to lump(share(250)),
         )
         repeat(8) { step(f, h) }
-        assertEquals(Capacity.PACKET_MASS, h[grid.tile(8, 3).index]?.total, "all of it ended up in one lump at the end")
-        assertEquals(1, (2..8).count { h[grid.tile(it, 3).index] != null }, "and the rest of the run is clear")
+
+        assertEquals(4, (2..8).count { h[grid.tile(it, 3).index] != null }, "four lumps went in")
+        assertEquals(
+            listOf(share(250), share(250), share(250), share(250)),
+            (5..8).map { h[grid.tile(it, 3).index]?.total },
+            "and four identical lumps should be queued against the blocked end",
+        )
     }
 
     // ── Forks ─────────────────────────────────────────────────────────────────
@@ -785,6 +750,38 @@ class TransportTest {
             sent,
             "each feeder should get every other turn",
         )
+    }
+
+    /**
+     * ⛔ **A packet is never merged into.** Two half-loads pressed together on a jammed run stay two
+     * half-loads: the one behind queues, and neither changes composition.
+     *
+     * This is the rule that replaced belt blending (Stu, 2026-08-19). A lump whose contents can
+     * change under whatever happens to be routed at it has no stable answer to "what is on its way
+     * to this tile", and that question is the whole of demand-based flow. Blending is a storage
+     * operation now.
+     */
+    @Test
+    fun `two lumps pressed together stay two lumps`() {
+        val half = SolidPacket(Mixture.of(Species.Iron to share(400), energy = 0))
+        val n = net().row(2, 5, 3)
+        val f = n.toward(grid.tile(5, 3).index)
+        val h = held(n, grid.tile(4, 3) to half, grid.tile(5, 3) to half)
+
+        step(f, h)
+        assertEquals(share(400), h[grid.tile(5, 3).index]?.total, "the lump ahead grew")
+        assertEquals(share(400), h[grid.tile(4, 3).index]?.total, "and the one behind should have queued")
+    }
+
+    /** A tile carrying anything has no room at all, however light what it carries. */
+    @Test
+    fun `a loaded tile has no headroom`() {
+        val h = RailLayer.empty(grid.size)
+        val tile = grid.tile(4, 3)
+        assertEquals(Capacity.PACKET_MASS, h.headroom(tile), "an empty tile takes a whole belt-load")
+        h.put(tile, Mixture.of(Species.Iron to share(50), energy = 0))
+        assertEquals(0L, h.headroom(tile), "a tile with a crumb on it takes nothing more")
+        assertFalse(h.loadOnto(tile, Mixture.of(Species.Iron to share(50), energy = 0)), "and refuses a load")
     }
 
     @Test

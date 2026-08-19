@@ -42,8 +42,15 @@ class RailLayer(val stuff: StuffLayer) {
     /** Total mass riding at [tile]. Walks only what is present. */
     fun massAt(tile: TileIndex): Long = if (stuff.occupies(tile)) stuff.massAt(tile) else 0L
 
-    /** How much more this tile could take before it is a full belt-load. */
-    fun headroom(tile: TileIndex): Long = (Capacity.PACKET_MASS - massAt(tile)).coerceAtLeast(0L)
+    /**
+     * How much may be set down at [tile]: a whole belt-load, or nothing at all.
+     *
+     * ⛔ **A tile carrying anything has no room**, however light what it carries. Since a packet is
+     * never merged into (see [squashInto]) the only sizes that mean anything are "empty" and "not",
+     * and saying so here is what keeps every producer's `room <= 0` guard honest — otherwise they
+     * size a part-packet against a gap they will then be refused.
+     */
+    fun headroom(tile: TileIndex): Long = if (isEmpty(tile)) Capacity.PACKET_MASS else 0L
 
     /** The lump at [tile], or null if there is none. Allocates; not for the hot path. */
     fun resourceAt(tile: TileIndex): Mixture? {
@@ -86,44 +93,41 @@ class RailLayer(val stuff: StuffLayer) {
     }
 
     /**
-     * Press the lump at [from] into the one at [to], as far as it will go.
+     * Move the lump at [from] onto [to] if [to] is free.
      *
-     * [Squash.Refused] and [Squash.Partial] are different answers and the caller needs both: a belt
-     * backing up part way has still moved matter and the tile is spoken for, while a refusal has
-     * changed nothing and the lump should try the next way on.
+     * ⛔ **A packet is never merged into another packet.** Once minted a lump can be *taken from* —
+     * a construction site skims what it needs, a machine lifts it off — but nothing is ever poured
+     * into it. Stu, 2026-08-19.
+     *
+     * It used to press one into the other as far as it would go, which is what made belt blending
+     * possible and is why the plan's alloy section named it as a route. It caused more trouble than
+     * it was worth: a lump's composition changed under whatever was already routed toward it, so a
+     * delivery a construction site had admitted could turn into one it would have refused, and every
+     * question of the form "what is on its way to this tile" stopped having a stable answer. That
+     * becomes untenable with demand-based flow, where the whole point is knowing what a packet is
+     * *before* deciding where it may go. Blending is a **storage** operation now, and only that.
+     *
+     * [Squash.Partial] can therefore no longer happen, and the type keeps it only because
+     * [advanceSegments] reads [Squash.Refused] to mean "try the next way on".
      */
     fun squashInto(from: TileIndex, to: TileIndex): Squash {
         if (isEmpty(from)) return Squash.Complete
-        if (isEmpty(to)) {
-            moveInto(from, to)
-            return Squash.Complete
-        }
-        val ahead = packetAt(to) ?: return Squash.Refused
-        val incoming = packetAt(from) ?: return Squash.Complete
-        val merged = squashOnto(ahead, incoming) ?: return Squash.Refused
-        put(to, (merged.merged as SolidPacket).contents)
-        put(from, (merged.rejected as? SolidPacket)?.contents)
-        return if (merged.rejected == null) Squash.Complete else Squash.Partial
+        if (!isEmpty(to)) return Squash.Refused
+        moveInto(from, to)
+        return Squash.Complete
     }
 
     /**
-     * Put [resource] down at [tile], merging with whatever is already there.
+     * Put [resource] down at [tile], which must be free.
      *
-     * False when none of it would go — a different form, a lump that is not a powder, or no room.
-     *
-     * ⚠️ It also answers false for a **partial** merge, having already written the part that fit.
-     * That is what it has always done, and the one caller where the difference is reachable is
-     * [org.emerge.demo.outofspace.OutofspaceReducer]'s bridge deposit.
+     * False when something is already riding there — see [squashInto] for why nothing is ever added
+     * to a lump that already exists. A machine with nowhere to set its output down simply waits,
+     * which is what it did whenever the tile ahead was full anyway.
      */
     fun loadOnto(tile: TileIndex, resource: Mixture): Boolean {
-        if (isEmpty(tile)) {
-            put(tile, resource)
-            return true
-        }
-        val ahead = packetAt(tile) ?: return false
-        val merged = squashOnto(ahead, SolidPacket(resource)) ?: return false
-        put(tile, (merged.merged as SolidPacket).contents)
-        return merged.rejected == null
+        if (!isEmpty(tile)) return false
+        put(tile, resource)
+        return true
     }
 
     /** Every gram on the track — the ledger's "in transit" term. */
