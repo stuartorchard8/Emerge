@@ -158,15 +158,17 @@ class GhostTest {
     fun `a run of finished track with nothing at the end never advances`() {
         // The control. Without it the test below proves only that belts work.
         //
-        // A tank pushes onto its own output tile whether or not anything is drawing, so (4, 3) is
-        // loaded either way and the question is never "did the tank let go". It is whether the load
-        // *travels*, and with no sink anywhere the flow graph gives it nowhere to go.
+        // ⚠️ **This used to assert that the tank loaded its own output tile anyway**, on the grounds
+        // that a source pushes whether or not anything is drawing and the only question worth asking
+        // was whether the load *travelled*. That is no longer true and the change is the point: a
+        // source now holds on to what nothing downstream wants (see `DemandTest`). So the control
+        // asserts the stronger thing — with no sink anywhere, not one gram leaves the tank at all —
+        // and the run stays clear rather than filling up and jamming.
         val s = run(tankAndRun(ghostAt = null), RAIL_PERIOD * 8)
-        assertTrue(s.rail.massAt(s.grid.tile(4, 3)) > 0L, "the tank did not even load its own output tile")
         assertEquals(
             0L,
-            (5..7).sumOf { s.rail.massAt(s.grid.tile(it, 3)) },
-            "the load travelled down a run with no sink at the end of it",
+            (4..7).sumOf { s.rail.massAt(s.grid.tile(it, 3)) },
+            "material went out onto a run with no sink at the end of it",
         )
     }
 

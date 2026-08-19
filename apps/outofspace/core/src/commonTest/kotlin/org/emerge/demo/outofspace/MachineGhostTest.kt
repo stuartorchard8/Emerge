@@ -356,8 +356,13 @@ class MachineGhostTest {
         val half = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)
         val before = builtMachine(processor).stocked(at, half, BufferRole.Inside)
 
+        // ⚠️ Asserted as **which side of the machine it is on**, not as which tile it is standing on.
+        // The fixture has a ghost drawing to the left, so the moment the lump is handed back it
+        // starts travelling; pinning it to the input tile pinned how far it had got in one step,
+        // which is a fact about the belt's speed and not about which mouth it left by.
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
-        assertTrue(s.rail.massAt(input) > 0L, "the half-worked lump did not come back out of the input")
+        val inputSide = (4..grid.xOf(input)).sumOf { s.rail.massAt(grid.tile(it, 4)) }
+        assertTrue(inputSide > 0L, "the half-worked lump did not come back out of the input")
         assertEquals(0L, s.rail.massAt(at), "it came out of the centre instead")
     }
 
@@ -430,15 +435,23 @@ class MachineGhostTest {
         val bridge = Bridge(at, Direction.Right)
         val exit = portsOf(grid, bridge).first { it.kind == PortKind.Output }.tile
         val entry = portsOf(grid, bridge).first { it.kind == PortKind.Input }.tile
-        // ⚠️ **No sink**, deliberately: with one, the casing is deposited and carried off within the
-        // same step and the tile it was put down on reads as empty by the end of the tick. The
-        // question here is *which mouth it came out of*, so nothing may draw it away.
-        val before = builtMachine(bridge, sink = false)
+        // ⚠️ **A sink on the OUTPUT side**, which is a fixture change with a reason. This used to
+        // pass `sink = false` so that nothing drew the casing away and it could be found on the exit
+        // tile — but a machine with nowhere to put its metal now correctly refuses to shed any, so
+        // that fixture proves the bridge waits rather than which mouth it uses. The sink goes to the
+        // right instead, and the question is answered by where the casing is *not*: a run flowing
+        // rightward can never carry anything back over the entry or the middle of the span.
+        val before = builtMachine(bridge, sink = false).also {
+            it.conduits.tracks[Conduit.Rail].release(grid.tile(11, 4))
+        }
+        val casingBefore = before.deck.stuff.massAt(at)
+        assertTrue(casingBefore > 0L, "fixture: the bridge should start with its casing")
 
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
-        assertTrue(s.rail.massAt(exit) > 0L, "no casing came out of the far end")
+        assertTrue(s.deck.stuff.massAt(at) < casingBefore, "no casing came out of the bridge at all")
         assertEquals(0L, s.rail.massAt(at), "casing came out of the middle of the span")
         assertEquals(0L, s.rail.massAt(entry), "casing came back out of the end it takes deliveries at")
+        assertTrue(exit != entry, "fixture: a span's two ends are different tiles")
     }
 
     /** A ghost marked for deconstruction is just a part-built machine: it dumps what it has and goes. */

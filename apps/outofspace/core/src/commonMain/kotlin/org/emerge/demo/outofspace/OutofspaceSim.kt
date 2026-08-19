@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -1664,7 +1665,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Ceasing to be needs *both* halves empty — the structure and the lump standing on it — or a
          * tile would vanish under a packet and take it with it.
          */
-        fun scrapDeconstructing() {
+        fun scrapDeconstructing(whitelist: Whitelist) {
             val line = layer(Conduit.Rail)
             for (i in line.indices) {
                 val tile = TileIndex(i)
@@ -1673,6 +1674,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val stuff = tracks[Conduit.Rail]
                 val held = stuff.massAt(tile)
                 if (held > 0L) {
+                    // ⚠️ **Nothing comes apart with nowhere to put it.** A rail that dumped its metal
+                    // onto a run no consumer is on would jam that run and then be unable to hand back
+                    // the rest, having stranded itself behind its own leavings. Waiting instead makes
+                    // the refusal *reversible*: build somewhere for it to go and the rail resumes.
+                    if (!whitelist.permits(tile, stuff.mixtureAt(tile))) continue
                     val room = rail.headroom(tile)
                     if (room > 0L) {
                         val take = minOf(held, room)
@@ -1750,7 +1756,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * ⚠️ A machine with **no track** at the tile it wants to hand back through waits for ever.
          * That is the same occupied-tile family as the rails' open question, not a new one.
          */
-        fun scrapMachines() {
+        fun scrapMachines(whitelist: Whitelist) {
             if (scrapping.isEmpty()) return
             for (centre in scrapping.toList()) {
                 val m = deck[centre] ?: run { scrapping.remove(centre); return@run null } ?: continue
@@ -1779,7 +1785,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (held.total <= 0L) continue
                     storesHeld += held.total
                     if (role in drainedElsewhere) continue
-                    if (handBack(handBackTileFor(m, centre, role, store), held, store)) handedBack = true
+                    val onto = handBackTileFor(m, centre, role, store)
+                    // Nowhere for it to go is a reason to wait, not a reason to dump. See the twin
+                    // guard in [scrapDeconstructing].
+                    if (!whitelist.permits(onto, held)) continue
+                    if (handBack(onto, held, store)) handedBack = true
                 }
                 if (storesHeld > 0L || handedBack) continue
 
@@ -1793,6 +1803,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 } else {
                     centre
                 }
+                // The casing has the same rule as the stores: a machine does not shed its own
+                // fabric onto a network that cannot take it.
+                var casing = Mixture.EMPTY
+                for (t in tiles) casing += deck.stuff.mixtureAt(t)
+                if (casing.total > 0L && !whitelist.permits(out, casing)) continue
                 if (!handCasingBack(out, tiles)) continue
 
                 // Step 5.
@@ -2217,6 +2232,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val room = rail.headroom(tile)
             val buffer = bufferFor(m, port) ?: return
             val (packet, rest) = takePacket(buffer, room) ?: return
+            // ⚠️ **A source holds on to what nothing wants.** A tank that emptied itself down a run
+            // with no consumer on it used to fill that run solid, and a full run is what makes a
+            // marked rail unable to hand its metal back — the `ghosts.txt` deadlock, reached by
+            // ordinary play. Keeping it in the tank instead costs nothing and is reversible: build
+            // something that wants iron and the tank starts pouring again.
+            if (!whitelist.permits(tile, packet.contents)) return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return
             drained(m, port, rest.orNull())
@@ -2293,6 +2314,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
         }
 
+        /**
+         * What may usefully leave each tile, as of this step's flow.
+         *
+         * Held on [Work] rather than passed around because [pushOut] runs *after* [advanceRails] as
+         * a separate pass over the same ports, and it needs the same answer.
+         *
+         * Empty until the first rail step of a world, which is why it permits nothing: a source
+         * asked to emit before any flow has been worked out waits a tick, which is the safe way to
+         * be wrong.
+         */
+        var whitelist: Whitelist = Whitelist.empty()
+            private set
+
+        /** How many tiles carry track, so the flow can be rebuilt only when something ceased to be. */
+        private fun railCount(): Int = rails.count { it != null }
+
         /** Advance all conduits one step (flow derived from input ports). */
         fun advanceRails(ports: Map<TileIndex, List<Port>>) {
             // Bridges drain first (three real slots, not one).
@@ -2302,11 +2339,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Bridge steps with layer (slots freed for track).
             advanceBridges()
-
-            // Before the flow graph is built, so a tile that finished dying this step is not in it
-            // and the run closes up in the same tick it was emptied.
-            scrapDeconstructing()
-            scrapMachines()
 
             // All input ports are sinks; machine state (full/accepting) is handled by the absorb callback.
             //
@@ -2359,7 +2391,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ⚠️ Every machine is [Acceptance.ANYTHING] and that is deliberate, not a stub: a
             // machine's buffer filling up is momentary, and the delivery path already backs the belt
             // up correctly when it does. Only a construction site has an appetite that ends.
-            val accepts = HashMap<TileIndex, Acceptance>()
+            val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
             for (tile in ghosts) {
                 val bill = conduitBillOfMaterials(Conduit.Rail)
                 val stuff = tracks[Conduit.Rail]
@@ -2368,12 +2400,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val gap = bill[sp] - stuff[tile, sp]
                     if (gap > 0L) short += gap
                 }
-                accepts[tile] = Acceptance.forBill(bill, short)
+                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.forBill(bill, short))
             }
             val scratch = LongArray(Species.COUNT)
             for ((tile, m) in machineGhosts) {
                 val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
-                accepts[tile] = Acceptance.forBill(bill, machineShortfall(m, scratch))
+                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.forBill(bill, machineShortfall(m, scratch)))
             }
 
             val sinks = ports.entries
@@ -2403,7 +2435,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
             }
             val railTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
-            val flow = FlowGraph.build(
+            var flow = FlowGraph.build(
                 railTiles,
                 sources,
                 sinks,
@@ -2411,21 +2443,56 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 grid,
             )
 
+            // ── The whitelist, and the pass that reads it ─────────────────────
+            //
+            // ⚠️ **Built before anything comes apart, which is a reordering.** Deconstruction used to
+            // run first so that a tile finishing its death was out of the graph and the run closed up
+            // in the same tick. It cannot any more: whether a thing may come apart at all is now a
+            // question about where its metal could go, and that question *is* the graph.
+            //
+            // The tile set only changes when something actually ceases to be, which is rare, so the
+            // graph is rebuilt on that edge rather than built twice every step.
+            var whitelist = Whitelist.of(flow, rails.size) { accepts[it] }
+            val before = railCount()
+            scrapDeconstructing(whitelist)
+            scrapMachines(whitelist)
+            if (railCount() != before) {
+                val liveTiles = rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
+                flow = FlowGraph.build(
+                    liveTiles,
+                    sources.filterTo(mutableSetOf()) { rails[it.index] != null },
+                    sinks.filterTo(mutableSetOf()) { rails[it.index] != null },
+                    { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
+                    grid,
+                )
+                whitelist = Whitelist.of(flow, rails.size) { accepts[it] }
+            }
+            this.whitelist = whitelist
+
             advanceSegments(
                 flow,
                 rail,
                 diverters,
                 motion,
                 admits = { from, to ->
-                    // The door reads the statement the sink made about itself, and asks nothing
-                    // else. A tile with no statement takes anything, which is every tile of plain
-                    // track and every machine.
+                    // Two questions, and they are not the same question.
                     //
-                    // ⚠️ The lump is only read off the layer when something at `to` might actually
+                    // ⛔ **The site's own door, which is the anti-exploit.** A construction site is a
+                    // free length of track until it is paid for, so a lump it cannot be built from
+                    // must not cross it *whatever* is waiting further along. Drop this and a player
+                    // routes their whole network over unpaid ghosts.
+                    //
+                    // **The whitelist, which is the demand rule.** Somewhere reachable from `to` has
+                    // to actually want this, or the lump is being sent to fill a dead end.
+                    //
+                    // ⚠️ The lump is read off the layer at most once, and only when something might
                     // refuse it: `resourceAt` allocates, and this runs for every candidate direction
                     // of every loaded tile on every step.
-                    val at = accepts[to]
-                    if (at == null) true else rail.resourceAt(from)?.let { at.admits(it) } ?: false
+                    val site = accepts[to]
+                    if (site == null && whitelist.permitsAnything(to)) true
+                    else rail.resourceAt(from)?.let { lump ->
+                        (site == null || site.admits(lump)) && whitelist.permits(to, lump)
+                    } ?: false
                 },
             ) { tile ->
                 // A ghost eats first, and eats instead of the machine rather than after it: being
