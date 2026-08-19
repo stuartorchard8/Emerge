@@ -50,7 +50,7 @@ class AcceptanceTest {
 
     @Test
     fun `a construction site wants exactly what it is short by`() {
-        val site = Acceptance.forBill(railBill, shortfall = 400L)
+        val site = Acceptance.forBill(railBill, railBill.scaledTo(400L))
         assertFalse(site.isUnlimited, "a site is the one sink with a final total")
         assertFalse(site.isSatisfied)
         assertTrue(site.wanted == 400L, "it wants the shortfall, not the whole bill")
@@ -58,7 +58,7 @@ class AcceptanceTest {
 
     @Test
     fun `a finished site takes nothing at all`() {
-        val done = Acceptance.forBill(railBill, shortfall = 0L)
+        val done = Acceptance.forBill(railBill, railBill.scaledTo(0L))
         assertTrue(done.isSatisfied)
         assertFalse(
             done.admits(iron(Long.MAX_VALUE / 4)),
@@ -72,7 +72,7 @@ class AcceptanceTest {
      */
     @Test
     fun `a construction site refuses what it cannot be built from`() {
-        val site = Acceptance.forBill(railBill, shortfall = railBill.total)
+        val site = Acceptance.forBill(railBill, railBill)
         assertTrue(site.admits(iron(1_000L)), "a rail is iron and iron builds it")
         assertFalse(
             site.admits(Mixture.of(Species.Quartz to 1_000L, energy = 0)),
@@ -90,8 +90,8 @@ class AcceptanceTest {
         val wrongStuff = Mixture.of(Species.Quartz to 1_000L, energy = 0)
         val rightStuff = iron(1_000L)
 
-        val hungry = Acceptance.forBill(railBill, shortfall = railBill.total)
-        val full = Acceptance.forBill(railBill, shortfall = 0L)
+        val hungry = Acceptance.forBill(railBill, railBill)
+        val full = Acceptance.forBill(railBill, railBill.scaledTo(0L))
 
         assertTrue(hungry.admits(rightStuff))
         assertFalse(hungry.admits(wrongStuff), "hungry, but not indiscriminate")

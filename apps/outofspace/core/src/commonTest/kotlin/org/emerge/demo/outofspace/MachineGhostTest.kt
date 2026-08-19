@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.bufferRolesOf
 import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
+import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
@@ -181,6 +182,60 @@ class MachineGhostTest {
         )
     }
 
+    /**
+     * ⛔ **Titanium does not set off down a run with an unfinished iron rail on it.**
+     *
+     * Stu's case, and the one demand-by-kind alone cannot see. A ghost storage wants titanium; two
+     * ghost rails between it and the tanks want iron. Both appetites are real, both are reachable,
+     * and a whitelist that only asks *what sort of thing is wanted somewhere ahead* says yes to
+     * titanium — so the titanium sets off, comes to rest against the first ghost rail, which cannot
+     * be built from it and will not let it past, and the iron behind it can never get through. The
+     * rails never finish, so the plug never dissolves, so nothing ever moves again. A deadlock, in
+     * a network where every single thing on it is wanted.
+     *
+     * ⚠️ **The titanium joins the run in FRONT of the iron**, which is the tight version: what it
+     * lets go of can never be overtaken by the iron behind it, so holding it back is the only move
+     * available. A layout where the iron went first would pass by luck.
+     *
+     * What fixes it is [Demand.debt]: a route that runs past a hungry construction site carries that
+     * site's shortfall, and is refused until enough material the *site* can use is already standing
+     * between here and it. Nothing overtakes on a rail, so the plug is then guaranteed to have
+     * dissolved by the time anything sent now arrives.
+     */
+    @Test
+    fun `titanium waits behind a ghost rail until the iron for it is on its way`() {
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(2, 4), Direction.Right)
+        deck += Storage(grid.tile(5, 3), Direction.Down)
+        val target = Storage(grid.tile(13, 4), Direction.Right)
+        deck.stand(target, withCasing = false)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 3, 13, 4)
+        val start = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+            .stocked(grid.tile(2, 4), Material.Iron.composition.scaledTo(20 * Capacity.PACKET_MASS))
+            // Enough to finish a storage several times over: a fixture should never be the
+            // reason a build stalls, and a storage is some fifty packets of titanium.
+            .stocked(grid.tile(5, 3), Material.Titanium.composition.scaledTo(120 * Capacity.PACKET_MASS))
+            .copy(creative = false)
+        val plugs = listOf(grid.tile(7, 4), grid.tile(8, 4))
+        for (t in plugs) start.conduits.tracks[Conduit.Rail].release(t)
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 400)
+
+        for (t in plugs) assertTrue(
+            s.conduits.isComplete(Conduit.Rail, t),
+            "the ghost rail at $t stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, t)} permille: " +
+                "titanium got in front of the iron",
+        )
+        assertFalse(s.deck.isGhost(grid.tile(13, 4)), "the storage past the plug never finished")
+    }
+
     /** Casing spreads over the footprint as it arrives, so no tile of it runs ahead of the others. */
     @Test
     fun `a big machine builds evenly across its footprint`() {
@@ -255,7 +310,8 @@ class MachineGhostTest {
                 ),
         )
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
-        assertFalse(s.deck.isGhost(at), "a blend inside the tolerance did not build the hull")
+        val run = (4..10).joinToString(",") { x -> "${s.rail.resourceAt(grid.tile(x, 4))}" }
+        assertFalse(s.deck.isGhost(at), "a blend inside the tolerance did not build the hull: casing=${s.deck.stuff.massAt(at)} of ${bill.total}; run=$run; tank=${s.buffers.massAt(grid.tile(3,4))}")
     }
 
     /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */
@@ -305,6 +361,14 @@ class MachineGhostTest {
     private fun builtMachine(machine: DeckMachine, sink: Boolean = true): VesselState {
         val deck = DeckArray(grid)
         deck += machine
+        // ⚠️ **A real sink, not a construction site.** A ghost rail used to stand in for one here,
+        // and it worked only because demand was a question of *kind*: it said "iron is wanted" and
+        // the whole of a hull's casing rode down the run on the strength of it. Now that a tile
+        // knows how much is already covered, a one-tile appetite stops the second packet — and a
+        // machine that cannot put its metal anywhere correctly refuses to start coming apart.
+        // Facing Left puts its input on the run at (4, 4) and its output off the track entirely, so
+        // it is a sink and nothing else.
+        if (sink) deck += Storage(grid.tile(3, 4), Direction.Left)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Past the machine, not merely up to it: a bridge hands its casing back through its *output*
         // end, a tile beyond its centre, and a run that stopped short would leave it nowhere to put
@@ -317,7 +381,6 @@ class MachineGhostTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         ).copy(creative = false)
-        if (sink) s.conduits.tracks[Conduit.Rail].release(grid.tile(4, 4))
         return s
     }
 

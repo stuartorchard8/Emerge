@@ -205,9 +205,18 @@ class GhostTest {
 
     @Test
     fun `a ghost at the end of a run draws material down it and builds itself`() {
-        val s = run(tankAndRun(ghostAt = 7), RAIL_PERIOD * 8)
+        val start = tankAndRun(ghostAt = 7)
+        val stocked = start.buffers.massAt(start.grid.tile(3, 3))
+        val s = run(start, RAIL_PERIOD * 8)
         val ghost = s.grid.tile(7, 3)
-        assertTrue(onTheRun(s) > 0L, "the tank held on: a ghost is not pulling as a sink")
+        // ⚠️ **What left the tank**, not what is standing on the run. The run used to be the witness
+        // — a tank that let go left a trail of packets on it — but a source now lets go of exactly
+        // what the job needs and no more, so a finished job leaves the belt clean. Asserting on the
+        // run measured the over-draw rather than the pull.
+        assertTrue(
+            s.buffers.massAt(s.grid.tile(3, 3)) < stocked,
+            "the tank held on: a ghost is not pulling as a sink",
+        )
         assertTrue(
             s.conduits.massAt(Conduit.Rail, ghost) > 0L,
             "material reached (7, 3) but the track there is still made of nothing",

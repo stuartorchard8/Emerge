@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
-import org.emerge.demo.outofspace.world.InFlight
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
@@ -2257,17 +2256,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // from a bucket into a valve the moment you wire something to it.
             if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
 
+            val buffer = bufferFor(m, port) ?: return
+            // ⚠️ **A source holds on to what nothing wants, and lets go of no more than is wanted.**
+            // A tank that emptied itself down a run with no consumer on it used to fill that run
+            // solid, and a full run is what makes a marked rail unable to hand its metal back — the
+            // `ghosts.txt` deadlock, reached by ordinary play. Keeping it in the tank instead costs
+            // nothing and is reversible: build something that wants iron and the tank pours again.
+            //
+            // The *quantity* is the same rule one step further on. A bill is not a round number of
+            // packets, so a job wanting 30g more of iron used to be sent a whole 100g of it and the
+            // 70g left over stood at the end of the run for ever — which is only harmless while
+            // something unlimited waits beyond, and a deadlock while that something is still being
+            // built, because the residue comes to rest in front of the material that would build it.
+            val useful = whitelist.room(tile, buffer)
+            if (useful <= 0L) return
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
-            val room = rail.headroom(tile)
-            val buffer = bufferFor(m, port) ?: return
+            val room = minOf(rail.headroom(tile), useful)
             val (packet, rest) = takePacket(buffer, room) ?: return
-            // ⚠️ **A source holds on to what nothing wants.** A tank that emptied itself down a run
-            // with no consumer on it used to fill that run solid, and a full run is what makes a
-            // marked rail unable to hand its metal back — the `ghosts.txt` deadlock, reached by
-            // ordinary play. Keeping it in the tank instead costs nothing and is reversible: build
-            // something that wants iron and the tank starts pouring again.
-            if (!whitelist.permitsSource(tile, packet.contents)) return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return
             drained(m, port, rest.orNull())
@@ -2457,49 +2463,41 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // machine's buffer filling up is momentary, and the delivery path already backs the belt
             // up correctly when it does. Only a construction site has an appetite that ends.
             //
-            // ⚠️ **After the flow, which is a reordering.** A site's appetite now includes what is
-            // already rolling toward it, and "toward" is a question only the graph can answer. It is
-            // deliberately *not* recomputed when the graph is rebuilt below: that rebuild only ever
-            // happens because something ceased to be, and one tick of a slightly stale count errs
-            // toward underdraw, which is the safe way to be wrong.
             val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
-
-            // Every lump in the flow, read off the layer **once**. The in-flight pass visits every
-            // tile once per distinct bill and `resourceAt` allocates, so asking it there would
-            // allocate a mixture per tile per bill per tick.
-            val lumps = HashMap<TileIndex, Mixture>()
-            for (tile in flow.order) rail.resourceAt(tile)?.let { lumps[tile] = it }
-            // One pass per distinct **bill**, not per site: every rail ghost on the vessel is built
-            // from the same thing, and machines from one per kind and footprint. In practice a
-            // handful at most, however many sites there are.
-            val enRouteFor = HashMap<Any, LongArray>()
-            fun enRoute(key: Any, bill: Mixture): LongArray = enRouteFor.getOrPut(key) {
-                InFlight.toward(flow, rails.size) { t ->
-                    lumps[t]?.takeIf { buildableFrom(bill, it) }?.total ?: 0L
-                }
-            }
-
             if (ghosts.isNotEmpty()) {
                 val bill = conduitBillOfMaterials(Conduit.Rail)
                 val stuff = tracks[Conduit.Rail]
-                val coming = enRoute(Conduit.Rail, bill)
                 for (tile in ghosts) {
-                    var short = 0L
+                    val gaps = LongArray(Species.COUNT)
                     for (sp in Species.ALL) {
                         val gap = bill[sp] - stuff[tile, sp]
-                        if (gap > 0L) short += gap
+                        if (gap > 0L) gaps[sp.ordinal] = gap
                     }
                     accepts.getOrPut(tile) { mutableListOf() }
-                        .add(Acceptance.forBill(bill, short, coming[tile.index]))
+                        .add(Acceptance.forBill(bill, Mixture.of(gaps, energy = 0L)))
                 }
             }
             val scratch = LongArray(Species.COUNT)
             for ((tile, m) in machineGhosts) {
-                val footprint = m.tiles(grid).size
-                val bill = machineBillOfMaterials(m.kind, footprint)
-                val coming = enRoute(m.kind to footprint, bill)
+                val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
+                machineShortfall(m, scratch)
                 accepts.getOrPut(tile) { mutableListOf() }
-                    .add(Acceptance.forBill(bill, machineShortfall(m, scratch), coming[tile.index]))
+                    .add(Acceptance.forBill(bill, Mixture.of(scratch.copyOf(), energy = 0L)))
+            }
+
+            // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is
+            // standing on a tile once per route through it and `resourceAt` allocates, so answering
+            // from a layer read there would allocate a mixture per tile per route per tick.
+            val lumps = HashMap<TileIndex, Mixture>()
+            for (tile in flow.order) rail.resourceAt(tile)?.let { lumps[tile] = it }
+            val loadOn: (TileIndex, Mixture?) -> Long = { t, bill ->
+                val lump = lumps[t]
+                when {
+                    lump == null -> 0L
+                    bill == null -> lump.total
+                    buildableFrom(bill, lump) -> lump.total
+                    else -> 0L
+                }
             }
 
             // ── The whitelist, and the pass that reads it ─────────────────────
@@ -2511,7 +2509,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // The tile set only changes when something actually ceases to be, which is rare, so the
             // graph is rebuilt on that edge rather than built twice every step.
-            var whitelist = Whitelist.of(flow, rails.size) { accepts[it] }
+            var whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             val before = railCount()
             scrapDeconstructing(whitelist)
             scrapMachines(whitelist)
@@ -2524,7 +2522,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                     grid,
                 )
-                whitelist = Whitelist.of(flow, rails.size) { accepts[it] }
+                whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             }
             this.whitelist = whitelist
 
