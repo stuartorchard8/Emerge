@@ -1778,14 +1778,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
                 // Steps 2 and 3: the stores, each at the tile its own port stood on. Product and
                 // waste are drained by their ports and are only *waited* on here.
-                // ⚠️ A store that a surviving output port still drains is **left to that port**.
-                // Otherwise two mouths empty one store in a tick — harmless for the ledger, since
-                // each deducts what it takes, but it makes a machine come apart at twice the rate it
-                // appears to and puts the same cargo down in two places. A tank is the case that
-                // matters: a `Storage` keeps only an `Inside` store and that *is* what its output
-                // port drains, so the tank empties the way it always did and this pass only waits.
-                val drainedByPort = HashSet<BufferRole>()
-                for (stream in Stream.entries) outputBufferRole(m, stream)?.let { drainedByPort.add(it) }
+                // ⚠️ A store that **something else already drains** is left to it. Otherwise two
+                // mouths empty one store in a tick — harmless for the ledger, since each deducts
+                // what it takes, but the machine comes apart at twice the rate it appears to and the
+                // same cargo goes down in two places. Two cases, and both are real:
+                //
+                //  - A store an output port drains. A `Storage` keeps only an `Inside` and that *is*
+                //    what its output drains, so a tank empties by its natural exit and this waits.
+                //  - **A bridge's slots**, which [advanceBridges] shuffles along whether or not the
+                //    bridge is marked — it is part of the conduit step, not of running a machine —
+                //    so a marked gantry walks its load out of the far end as it always did.
+                val drainedElsewhere = HashSet<BufferRole>()
+                for (stream in Stream.entries) outputBufferRole(m, stream)?.let { drainedElsewhere.add(it) }
+                if (m is Bridge) drainedElsewhere.addAll(BufferRole.entries)
 
                 var storesHeld = 0L
                 var handedBack = false
@@ -1794,8 +1799,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val held = buffers.resourceAt(store) ?: continue
                     if (held.mass <= 0L) continue
                     storesHeld += held.mass
-                    if (role in drainedByPort) continue
-                    if (handBack(store, held)) handedBack = true
+                    if (role in drainedElsewhere) continue
+                    if (handBack(handBackTileFor(m, centre, role, store), held, store)) handedBack = true
                 }
                 if (storesHeld > 0L || handedBack) continue
 
@@ -1809,22 +1814,54 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
-         * Puts a store's contents down on the track at [store]'s own tile, and empties it if it lands.
+         * Where a store's contents are put down when the machine is being taken apart.
+         *
+         * ⛔ **A processing buffer goes back out through the input port** — Stu, 2026-08-19. A
+         * `Processor` or a `ThermalDecomposer` holds a lump *in the middle of being worked*, and that
+         * lump has no business leaving by an output: the output is for finished goods, and what is
+         * in there is not finished. The way it came in is the honest way back out.
+         *
+         * The store itself sits at the machine's centre — see [localBufferOffset] — so this is a
+         * deliberate divergence between where a store *is* and where its contents are handed back,
+         * and it is the only one.
+         *
+         * A machine with a processing buffer and **no input port at all** falls back to the store's
+         * own tile. An `Extractor` is the case: what it is chewing came off a rock rather than off a
+         * belt, so there is no way it came in and the centre — where the deconstruction port stands —
+         * is the only place left.
+         *
+         * A `Storage` never reaches here: its `Inside` is what its own output port drains.
+         */
+        private fun handBackTileFor(
+            m: DeckMachine,
+            centre: TileIndex,
+            role: BufferRole,
+            store: TileIndex,
+        ): TileIndex {
+            if (role != BufferRole.Inside) return store
+            return bufferTile(grid, m, centre, BufferRole.Input) ?: store
+        }
+
+        /**
+         * Puts a store's contents down on the track at [onto], and empties [store] if it lands.
+         *
+         * The two are the same tile for everything except a processing buffer — see
+         * [handBackTileFor], which is the one place they come apart.
          *
          * Answers whether anything moved, so the caller can wait a tick rather than moving on to the
          * casing while a store is still emptying.
          */
-        private fun handBack(store: TileIndex, held: Resource): Boolean {
-            if (rails[store.index] == null) return false
-            val room = rail.headroom(store)
+        private fun handBack(onto: TileIndex, held: Resource, store: TileIndex): Boolean {
+            if (rails[onto.index] == null) return false
+            val room = rail.headroom(onto)
             if (room <= 0L) return false
             val take = minOf(held.mass, room)
             val moving = if (take >= held.mass) held.mixture else held.mixture.take(take)
             if (moving.total <= 0L) return false
             val offered = Resource(held.form, moving)
             val landed =
-                if (rail.resourceAt(store) == null) { rail.put(store, offered); true }
-                else rail.loadOnto(store, offered)
+                if (rail.resourceAt(onto) == null) { rail.put(onto, offered); true }
+                else rail.loadOnto(onto, offered)
             if (!landed) return false
             buffers.put(store, Resource(held.form, held.mixture - moving).takeIf { it.mass > 0L })
             return true

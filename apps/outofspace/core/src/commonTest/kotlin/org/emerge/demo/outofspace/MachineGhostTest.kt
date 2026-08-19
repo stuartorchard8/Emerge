@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
@@ -331,6 +332,32 @@ class MachineGhostTest {
         // One step: enough to start handing back, nowhere near enough to finish.
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
         assertEquals(full, s.deck.stuff.massAt(at), "the casing came apart while cargo was still inside")
+    }
+
+    /**
+     * ⛔ A **processing buffer goes back out through the input port**, not the output and not the
+     * centre it is stored at.
+     *
+     * A processor holds a lump in the middle of being worked. That lump is not finished goods, so it
+     * has no business leaving by the output — the way it came in is the honest way back out. The
+     * store itself lives at the machine's centre, so this is the one place where where a store *is*
+     * and where its contents are handed back deliberately differ.
+     */
+    @Test
+    fun `a processing buffer is handed back through the input port`() {
+        val at = grid.tile(9, 4)
+        val processor = Processor(at, Direction.Right)
+        val inside = bufferTile(grid, processor, at, BufferRole.Inside)!!
+        val input = bufferTile(grid, processor, at, BufferRole.Input)!!
+        assertEquals(at, inside, "a processor's working store is supposed to sit at its centre")
+        assertTrue(input != at, "and its input port is supposed to be somewhere else")
+
+        val half = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0))
+        val before = builtMachine(processor).stocked(at, half, BufferRole.Inside)
+
+        val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
+        assertTrue(s.rail.massAt(input) > 0L, "the half-worked lump did not come back out of the input")
+        assertEquals(0L, s.rail.massAt(at), "it came out of the centre instead")
     }
 
     /** A ghost marked for deconstruction is just a part-built machine: it dumps what it has and goes. */

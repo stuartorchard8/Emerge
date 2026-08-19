@@ -393,6 +393,20 @@ A marked machine **does not run**, and that is forced rather than chosen: one th
 refill the very stores deconstruction is waiting on. (A rail being taken apart still carries traffic,
 because carrying is not producing.)
 
+### Where each store hands itself back — Stu, 2026-08-19
+
+- **A processing buffer goes back out through the input port.** A `Processor` or `ThermalDecomposer`
+  holds a lump *in the middle of being worked*, and that is not finished goods — it has no business
+  leaving by an output. The way it came in is the honest way back out. ⚠️ The store itself sits at
+  the machine's **centre**, so this is the one place where where a store *is* and where its contents
+  are handed back deliberately differ.
+- **A storage uses its normal output.** Its `Inside` is what its own output port drains, so a tank
+  empties by its natural exit and deconstruction only waits.
+- **An `Extractor`** has a working store and no input port at all — what it is chewing came off a
+  rock, not off a belt — so it falls back to its own tile, where the deconstruction port stands.
+- **A bridge's slots** are shuffled out of the far end by `advanceBridges`, which is part of the
+  conduit step rather than of running a machine and therefore keeps going while the bridge is marked.
+
 ⚠️ **A store a surviving output port still drains is left to that port.** A `Storage` keeps only an
 `Inside` store and that *is* what its output port drains, so two mouths would empty one tank in a
 tick — harmless for the ledger, but it comes apart at twice the rate it appears to and puts the same
