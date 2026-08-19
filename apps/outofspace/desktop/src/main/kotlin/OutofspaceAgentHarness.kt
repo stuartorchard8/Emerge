@@ -205,10 +205,9 @@ object OutofspaceAgentHarness {
                     settle()
                     println("[agent] drag (${t[1]},${t[2]}) -> (${t[3]},${t[4]}) with ${controller.brush.label}")
                 }
-                // The build drag's opposite: severs every join it passes, on one conduit, and takes
-                // nothing up. Driven as a gesture for the same reason `drag` is — the path is
-                // stepped out, and a cut that skipped a tile leaves a run that looks severed and is
-                // not, which is the single most confusing thing to debug by eye.
+                // The build drag's exact opposite: the edges the stroke draws become anti-edges on
+                // one conduit, and nothing is taken up. A single tile draws no edge and so cuts
+                // nothing — `cut x y` alone is a no-op, and every real cut names both ends.
                 "cut" -> {
                     controller.tool = Tool.Cut
                     t.getOrNull(5)?.let { name ->

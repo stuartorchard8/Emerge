@@ -61,27 +61,85 @@ class CutToolTest {
         s.conduits.at(conduit, grid.tile(x, 4))?.linkedTo(Direction.Right) == true
 
     /**
-     * ⛔ The gesture this exists for: a stroke **across** a belt, which is how a player says "not
-     * that one" about a junction they did not mean to make.
+     * ⛔ The rule the whole tool turns on: the stroke severs the edges it **draws**, and nothing
+     * else. Cutting between two tiles parts those two and leaves every other join each of them has.
      *
-     * A cut that only severed the joins running *parallel* to the stroke would do nothing whatever
-     * here, which is why the rule is every join of every tile passed rather than the literal inverse
-     * of the laying step.
+     * Stated against a stroke of one step in the middle of a long belt, because the failure this
+     * replaces — isolating every tile passed — passes any test that only looks at the edge drawn.
      */
     @Test
-    fun `a stroke across a belt cuts it`() {
+    fun `a cut severs the edge drawn and no other`() {
+        val c = controller()
+        c.tool = Tool.Cut
+        c.apply(grid.tile(6, 4))
+        c.dragTo(grid.tile(7, 4))
+        val s = c.stepOnce()
+
+        assertFalse(joined(s, Conduit.Rail, 6), "the edge the stroke drew survived")
+        assertTrue(joined(s, Conduit.Rail, 5), "the join *behind* the stroke went with it")
+        assertTrue(joined(s, Conduit.Rail, 7), "the join *ahead* of the stroke went with it")
+        assertTrue(
+            s.conduits.at(Conduit.Rail, grid.tile(6, 4)) != null,
+            "the tile came up: this is a cut, not a delete",
+        )
+    }
+
+    /**
+     * ⚠️ A click draws no edge, so it cuts nothing. The drag is the whole gesture.
+     */
+    @Test
+    fun `a click on its own cuts nothing`() {
+        val c = controller()
+        c.tool = Tool.Cut
+        c.apply(grid.tile(6, 4))
+        val s = c.stepOnce()
+
+        assertTrue(joined(s, Conduit.Rail, 5), "a click isolated the tile it landed on")
+        assertTrue(joined(s, Conduit.Rail, 6), "a click isolated the tile it landed on")
+    }
+
+    /**
+     * ⛔ A stroke **across** a belt draws no edge along it, and so leaves it whole. This is the
+     * gesture the tool used to be built around, and it is deliberately no longer a cut.
+     */
+    @Test
+    fun `a stroke across a belt leaves it joined`() {
         val c = controller()
         c.tool = Tool.Cut
         c.apply(grid.tile(6, 3))
         c.dragTo(grid.tile(6, 5))
         val s = c.stepOnce()
 
-        assertFalse(joined(s, Conduit.Rail, 5), "the belt is still joined where the stroke crossed it")
-        assertTrue(joined(s, Conduit.Rail, 2), "the stroke cut track it never went near")
-        assertTrue(joined(s, Conduit.Rail, 9), "the stroke cut track it never went near")
+        assertTrue(joined(s, Conduit.Rail, 5), "a crossing stroke cut a belt it drew no edge along")
+        assertTrue(joined(s, Conduit.Rail, 6), "a crossing stroke cut a belt it drew no edge along")
+    }
+
+    /**
+     * ⛔ The reason the rule is edges and not tiles: a **junction**. Cutting between the junction and
+     * one arm parts that arm alone — the other two stay joined to it, and to each other.
+     */
+    @Test
+    fun `cutting one arm of a junction leaves the others joined`() {
+        val c = controller(
+            OutofspaceReducer.reduce(
+                cfg, world(),
+                mapOf(
+                    org.emerge.sim.core.PlayerId(0) to OutofspaceInput(
+                        listOf(Edit.Lay(grid.tile(6, 4), grid.tile(6, 3), Conduit.Rail)),
+                    ),
+                ),
+            ),
+        )
+        c.tool = Tool.Cut
+        c.apply(grid.tile(6, 4))
+        c.dragTo(grid.tile(7, 4))
+        val s = c.stepOnce()
+
+        assertFalse(joined(s, Conduit.Rail, 6), "the arm the stroke drew along survived")
+        assertTrue(joined(s, Conduit.Rail, 5), "the junction's west arm went with it")
         assertTrue(
-            s.conduits.at(Conduit.Rail, grid.tile(6, 4)) != null,
-            "the tile came up: this is a cut, not a delete",
+            s.conduits.at(Conduit.Rail, grid.tile(6, 4))?.linkedTo(Direction.Up) == true,
+            "the junction's north arm went with it",
         )
     }
 
@@ -96,6 +154,7 @@ class CutToolTest {
         c.tool = Tool.Cut
         c.cutConduit = Conduit.Rail
         c.apply(grid.tile(6, 4))
+        c.dragTo(grid.tile(7, 4))
         val s = c.stepOnce()
 
         assertFalse(joined(s, Conduit.Rail, 6), "the rail was not cut")
@@ -146,6 +205,7 @@ class CutToolTest {
         val c = controller(start)
         c.tool = Tool.Cut
         c.apply(grid.tile(7, 4))
+        c.dragTo(grid.tile(8, 4))
         c.stepOnce()
         repeat(OutofspaceReducer.RAIL_PERIOD * 60) { c.stepOnce() }
         val s = c.state

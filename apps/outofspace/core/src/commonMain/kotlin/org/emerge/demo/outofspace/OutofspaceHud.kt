@@ -201,8 +201,8 @@ class OutofspaceHud {
                         },
                     )
                     gap()
-                    row("drag to sever · E cycles conduit", 0x9A9A9AFFL)
-                    row("cuts every join it passes · takes nothing up", 0xE8B84AFFL)
+                    row("drag ALONG a run to sever · E cycles conduit", 0x9A9A9AFFL)
+                    row("cuts the joins you draw · other joins stay", 0xE8B84AFFL)
                 } else if (controller.tool == Tool.Inject) {
                     title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
                     row("hold over a permeable tile", 0x9A9A9AFFL)

@@ -139,8 +139,9 @@ class OutofspaceController(
             Tool.Wire -> selected = state.occupancy[tile]
             Tool.Delete -> removeAt(tile)
             Tool.Cancel -> cancelAt(tile)
-            // A drag, like building: the gesture is the point, and a click is a drag of one tile.
-            Tool.Cut -> { cutAt(tile); dragFrom = tile }
+            // A drag, like building, and the exact inverse of it: what the stroke severs is the
+            // *edges* it draws, so a click on its own has nothing to cut and only arms the drag.
+            Tool.Cut -> dragFrom = tile
             // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
             // pushed one edit here would inject twice on the tick the button went down.
             Tool.Inject, Tool.InjectWater -> {}
@@ -173,7 +174,7 @@ class OutofspaceController(
             // with a hole in it is not a run; a run with one tile the drag skipped over is still a
             // run, and looks cut.
             if (tool == Tool.Cut) {
-                cutAt(next)
+                cutAt(at, dir)
             } else {
                 place(next)
                 pending.add(Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail))
@@ -184,19 +185,17 @@ class OutofspaceController(
     }
 
     /**
-     * Severs every join [tile] has on [conduit], leaving the track itself where it is.
+     * Severs the join between [tile] and its neighbour in [dir] on [conduit], leaving both tiles and
+     * every one of their *other* joins exactly where they are.
      *
-     * Four edits rather than one, because [Edit.Cut] is stated as a fact about a *pair* of tiles and
-     * that is the honest shape: severing is symmetric, and each neighbour has to hear about it. An
-     * edge of the grid simply has fewer.
+     * ⛔ **A cut is an anti-edge, not an isolation.** The stroke is read the same way laying reads
+     * it — the edges the player drew, and only those — so cutting along the middle of a junction
+     * parts the two runs the stroke stepped between and leaves the third arm joined.
      */
-    fun cutAt(tile: TileIndex, conduit: Conduit = cutConduit) {
+    fun cutAt(tile: TileIndex, dir: Direction, conduit: Conduit = cutConduit) {
         if (tile == TileIndex.NONE) return
-        val grid = state.grid
-        for (dir in Direction.entries) {
-            val next = grid.neighbour(tile, dir)
-            if (next != TileIndex.NONE) pending.add(Edit.Cut(tile, next, conduit))
-        }
+        val next = state.grid.neighbour(tile, dir)
+        if (next != TileIndex.NONE) pending.add(Edit.Cut(tile, next, conduit))
     }
 
     /** Ends a conduit drag. The next click starts a new one, unjoined to this. */
