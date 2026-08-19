@@ -592,6 +592,50 @@ class MachineGhostTest {
     }
 
     /**
+     * The other half of that, and the half that was missing: a ghost bridge fed through that port
+     * actually **builds itself with what arrives**.
+     *
+     * ⛔ **Track under the tile it is fed at, and none under its centre** — which is the real shape of
+     * a bridge and the reason this bit rather than the test above it. The map of ghost machines was
+     * keyed off "is there rail under the centre", so every bridge fell out of it: the absorb pass
+     * never saw a construction site at all and handed the iron to the ordinary input port instead.
+     * The bridge pulled its own metal into its **buffers** and stood at 23% holding it. Found in
+     * Stu's save, and invisible to the test above, which only ever asked where the port was.
+     */
+    @Test
+    fun `a ghost bridge builds itself from what comes down the belt`() {
+        val at = grid.tile(10, 4)
+        val bridge = Bridge(at, Direction.Right)
+        val fed = constructionTileOf(grid, bridge)
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(3, 4), Direction.Right)
+        deck.stand(bridge, withCasing = false)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        // Stops at the end it is fed at. The span itself carries no track — that is what a bridge is.
+        joinRow(grid, rails, 4, grid.xOf(fed), 4)
+        val start = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).stocked(
+            grid.tile(3, 4),
+            bridge.kind.material.composition.scaledTo(
+                machineBillOfMaterials(bridge.kind, bridge.tiles(grid).size).total * 4,
+            ),
+        ).copy(creative = false)
+
+        assertTrue(start.deck.isGhost(at), "the fixture stood a finished bridge")
+        assertNull(start.conduits.at(Conduit.Rail, at), "the fixture threaded track under the span")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+
+        assertFalse(s.deck.isGhost(at), "the bridge never finished itself")
+        assertTrue(s.deck.stuff.massAt(at) > 0L, "it is finished but made of nothing")
+    }
+
+    /**
      * ⛔ A bridge **goes on working while it is marked**: it is a length of track held in the air, and
      * a run does not stop carrying because the player condemned it. Its input closes only once it has
      * nothing left inside — closing it mid-span would strand the lump on the gantry.

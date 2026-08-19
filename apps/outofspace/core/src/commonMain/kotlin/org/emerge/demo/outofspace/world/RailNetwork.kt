@@ -55,9 +55,16 @@ fun railMachineGhosts(
         val tile = TileIndex(i)
         val m = deck[tile] ?: continue
         if (m.center != tile) continue
-        if (rails[i] == null) continue
         if (tile in scrapping) continue
-        if (deck.isGhost(tile)) out[constructionTileOf(grid, m)] = m
+        // ⛔ **Track under the tile it is FED at, which is not always its centre.** A bridge is fed
+        // at one end, and its centre is the tile over the gap it spans — the one tile it is
+        // guaranteed to have no track on. Asking about the centre dropped every ghost bridge out of
+        // this map, so the absorb pass fell through to the ordinary port delivery and the bridge
+        // pulled its own construction iron into its **buffers** instead of building itself with it.
+        // Stuck at 23% for ever, holding the metal it needed. Found in Stu's save.
+        val fed = constructionTileOf(grid, m)
+        if (rails[fed.index] == null) continue
+        if (deck.isGhost(tile)) out[fed] = m
     }
     return out
 }
