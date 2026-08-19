@@ -206,6 +206,108 @@ class GhostTest {
     }
 
     /**
+     * ⛔ **The run does not go quiet once the last source has gone.**
+     *
+     * The tail of the column transfer. Everything arrives and everything gets built, so the outcome
+     * test above is happy — but Stu could see the belt lose pressure for a few ticks the moment the
+     * last marked rail ceased to be, and go back to feeding one ghost at a time.
+     *
+     * It is the quantity gate, applied to a lump that has already been committed. At the end of a
+     * transfer what is in flight *exactly* covers what is left to build, because the two columns
+     * were the same size — so `wanted > covered` is false for every lump except the leading one,
+     * which alone is allowed forward because the count at the tile it moves into does not include
+     * itself. It is eaten, the total drops by one packet, and the next one goes. Single file.
+     *
+     * ⛔ Refusing a lump in a corridor with one way out **does not save the material**; it only stops
+     * it arriving. Rationing belongs where a lump has a *choice* — at a fork, where it is the
+     * difference between the branch that still needs feeding and the one already covered.
+     *
+     * Measured as dead rail periods rather than as a deadline: a tick budget would pass or fail on
+     * the length of the fixture, and what is wrong here is the *shape* of the delivery.
+     */
+    @Test
+    fun `the belt does not idle while it still holds what a ghost wants`() {
+        val grid = Grid(10, 14)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinCol(grid, rails, 5, 2, 10)
+        joinCol(grid, rails, 4, 2, 10)
+        rails[grid.tile(5, 10).index] = rails[grid.tile(5, 10).index]!!.joinedTo(Direction.Left)
+        rails[grid.tile(4, 10).index] = rails[grid.tile(4, 10).index]!!.joinedTo(Direction.Right)
+        for (y in 2..10) {
+            val t = grid.tile(5, y)
+            rails[t.index] = rails[t.index]!!.copy(deconstructing = true)
+        }
+        var s = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        for (y in 2..10) s.conduits.tracks[Conduit.Rail].release(grid.tile(4, y))
+
+        fun onGhosts() = (2..10).sumOf { s.conduits.massAt(Conduit.Rail, s.grid.tile(4, it)) }
+        var idle = 0
+        var worst = 0
+        repeat(60) {
+            val before = onGhosts()
+            val carrying = grid.tiles.any { t -> !s.rail.isEmpty(t) }
+            s = run(s, RAIL_PERIOD)
+            val wanting = (2..10).any { !s.conduits.isComplete(Conduit.Rail, s.grid.tile(4, it)) }
+            if (!carrying || !wanting) return@repeat
+            if (onGhosts() == before) idle++ else idle = 0
+            if (idle > worst) worst = idle
+        }
+
+        assertTrue(
+            (2..10).all { s.conduits.isComplete(Conduit.Rail, s.grid.tile(4, it)) },
+            "the transfer did not finish at all",
+        )
+        // One quiet period is a lump crossing a tile without reaching anything. A run of them is the
+        // belt delivering single file.
+        assertTrue(worst <= 1, "the belt idled for $worst rail periods with iron on it and ghosts waiting")
+    }
+
+    /**
+     * ⛔ **Material already on the belt keeps moving after the last source has gone.**
+     *
+     * The end of Stu's column transfer. The marked rails are the only producers on that network, so
+     * the tick the last one ceases to be there are **no sources at all** — only lumps in flight and
+     * ghosts still wanting them. If anything about the network depends on a producer existing, this
+     * is where it shows, and it shows as the run losing pressure and reverting to feeding only
+     * whichever ghost happens to be adjacent.
+     *
+     * Stated rather than played out, so the question is asked directly: enough iron for every ghost,
+     * standing on the run, and nothing anywhere that could ever emit another gram.
+     */
+    @Test
+    fun `a run with no source at all still delivers what is standing on it`() {
+        val grid = Grid(10, 14)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinCol(grid, rails, 4, 2, 12)
+        val start = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+        // Ghosts at the top of the column, iron standing below them on finished track.
+        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        for (y in 2..4) start.conduits.tracks[Conduit.Rail].release(grid.tile(4, y))
+        for (y in 9..12) start.rail.loadOnto(grid.tile(4, y), bill.scaledTo(Capacity.PACKET_MASS))
+
+        val s = run(start, RAIL_PERIOD * 200)
+
+        val unbuilt = (2..4).filterNot { s.conduits.isComplete(Conduit.Rail, s.grid.tile(4, it)) }
+        val stranded = (5..12).filter { !s.rail.isEmpty(s.grid.tile(4, it)) }
+        assertTrue(
+            unbuilt.isEmpty(),
+            "ghosts at y=$unbuilt never got built; iron still standing at y=$stranded",
+        )
+    }
+
+    /**
      * ⛔ **A column being taken apart pays for the column being built beside it.**
      *
      * Stu's case, and the one that decides whether rebuilding a network is playable at all. Nine

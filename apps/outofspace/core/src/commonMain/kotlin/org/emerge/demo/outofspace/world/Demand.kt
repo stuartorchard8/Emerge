@@ -278,8 +278,20 @@ class Whitelist private constructor(
      * ⚠️ Asked of every candidate direction of every loaded tile on every step, so the unlimited
      * case is answered before the mixture is so much as looked at, and the arithmetic here stays
      * scalar — the per-species reading belongs in [room], which runs once per port per tick.
+     *
+     * ⛔ **[rationed] is false for a lump with nowhere else to go, and that is not an optimisation.**
+     * The quantity question means "is it worth *committing* more of this", and a lump already on the
+     * belt in a corridor with one way out is committed: refusing it does not save the material, it
+     * only stops it arriving. When what is in flight exactly covers what is left to build — the
+     * ordinary end of any transfer, since the sums match — every lump but the leading one is held,
+     * the leading one alone advances and is eaten, and the run delivers single file. That is the few
+     * ticks of dead air at the end of a column transfer.
+     *
+     * Rationing belongs where a lump has a **choice**: at a fork it is the difference between the
+     * branch that still needs feeding and the one already covered, which is the whole reason the
+     * count moved onto the tile. Everywhere else the answer is simply yes.
      */
-    fun permits(tile: TileIndex, mixture: Mixture): Boolean {
+    fun permits(tile: TileIndex, mixture: Mixture, rationed: Boolean = true): Boolean {
         if (permitsAnything(tile)) return true
         val here = routes.getOrNull(tile.index) ?: return false
         var wanted = 0L
@@ -289,6 +301,7 @@ class Whitelist private constructor(
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return true
             found = true
+            if (!rationed) return true
             wanted = saturated(wanted, d.acceptance.wanted)
             // ⚠️ The **largest**, not the sum. On a corridor feeding several sites the same lumps
             // stand between here and every one of them; adding the counts up would charge the same

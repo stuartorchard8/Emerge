@@ -2596,7 +2596,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val site = accepts[to]
                     if (site == null && whitelist.permitsAnything(to)) true
                     else rail.resourceAt(from)?.let { lump ->
-                        (site == null || site.any { it.admits(lump) }) && whitelist.permits(to, lump)
+                        // ⛔ Rationed only where the lump has somewhere else it could go — see
+                        // [Whitelist.permits]. Holding back a lump with one way out saves nothing
+                        // and only stops it arriving.
+                        (site == null || site.any { it.admits(lump) }) &&
+                            whitelist.permits(to, lump, rationed = flow.outDegree(from) > 1)
                     } ?: false
                 },
             ) { tile ->

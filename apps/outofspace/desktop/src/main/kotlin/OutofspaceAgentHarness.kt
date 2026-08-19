@@ -349,6 +349,7 @@ object OutofspaceAgentHarness {
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })
                 "probe" -> probe(index(t[1], t[2]))
                 "landmarks" -> printLandmarks()
+                "stalls" -> stalls()
                 "trend" -> trend(t[1].toInt(), t[2].toInt())
                 "state" -> dumpState(t.getOrElse(1) { "state" })
                 "shot" -> shot(t.getOrElse(1) { "shot" })
@@ -637,6 +638,46 @@ object OutofspaceAgentHarness {
          * All four fluid quantities together, deliberately — pressure and density disagreeing is the
          * observation that has paid for itself most often (it is why `stratifyColumns` could go).
          */
+        /**
+         * Every construction site still unfinished and every lump standing still, in one list.
+         *
+         * A stall is a *global* fact — a run jams because of something several tiles away and often
+         * because of something on another run entirely — so hunting it a `probe` at a time means
+         * knowing where to look, which is exactly what you do not know. This says where to look.
+         *
+         * Run the world on a bit and run it again: what is still here both times is the stall, and
+         * what has moved is just traffic.
+         */
+        private fun stalls() {
+            val grid = state.grid
+            val ghosts = ArrayList<String>()
+            val standing = ArrayList<String>()
+            val marked = ArrayList<String>()
+            for (tile in grid.tiles) {
+                val x = grid.xOf(tile); val y = grid.yOf(tile)
+                for (c in Conduit.entries) {
+                    val seg = state.conduits.at(c, tile) ?: continue
+                    if (state.conduits.isGhost(c, tile)) {
+                        ghosts.add("($x,$y) ${c.label} ${state.conduits.tracks.builtPermille(c, tile) / 10}%")
+                    }
+                    if (seg.deconstructing) marked.add("($x,$y) ${c.label}")
+                }
+                val m = state.machineCovering(tile)
+                if (m != null && m.center == tile && state.deck.isGhost(tile)) {
+                    ghosts.add("($x,$y) ${m::class.simpleName} ${state.deck.builtPermille(m) / 10}%")
+                }
+                state.rail.resourceAt(tile)?.let {
+                    // ⚠️ Capped. A lump of raw ore carries a trace of all 165 species and printing
+                    // one in full buries the list this command exists to be.
+                    standing.add("($x,$y) ${fmt(grams(it.total))}g ${composition(it, top = 3)}")
+                }
+            }
+            println("[agent] stalls @ tick ${controller.tick}")
+            println("[agent]   unfinished (${ghosts.size}): ${ghosts.joinToString("; ")}")
+            println("[agent]   marked     (${marked.size}): ${marked.joinToString("; ")}")
+            println("[agent]   standing   (${standing.size}): ${standing.joinToString("; ")}")
+        }
+
         private fun probe(tile: TileIndex) {
             val grid = state.grid
             val x = grid.xOf(tile); val y = grid.yOf(tile)
@@ -683,11 +724,12 @@ object OutofspaceAgentHarness {
             }
         }
 
-        private fun composition(m: org.emerge.demo.outofspace.chem.Mixture): String =
-            if (m.total == 0L) "empty" else Species.ALL
-                .filter { m[it] > 0L }
-                .sortedByDescending { m[it] }
-                .joinToString("  ") { "${it.name} ${m[it] * 100 / m.total}%" }
+        private fun composition(m: org.emerge.demo.outofspace.chem.Mixture, top: Int = Int.MAX_VALUE): String {
+            if (m.total == 0L) return "empty"
+            val named = Species.ALL.filter { m[it] > 0L }.sortedByDescending { m[it] }
+            val shown = named.take(top).joinToString("  ") { "${it.name} ${m[it] * 100 / m.total}%" }
+            return if (named.size <= top) shown else "$shown  +${named.size - top} more"
+        }
 
         // ── conservation over time ───────────────────────────────────────────────────
         /**

@@ -42,6 +42,21 @@ class FlowGraph internal constructor(
     fun isFed(tile: TileIndex): Boolean =
         (tile in _tiles) && (allowed.getOrElse(tile.index) { 0 }.toInt() != 0 || tile in _sinks)
 
+    /**
+     * How many ways material on [tile] may leave it — 0, or 1 for an ordinary length of run.
+     *
+     * Cheap enough for the hot path, which [successorDirections] is not: it exists so the transport
+     * layer can ask "does this lump have a *choice*", and a lump with no choice must never be
+     * rationed. See [Whitelist.permits].
+     */
+    fun outDegree(tile: TileIndex): Int {
+        if (tile !in _tiles) return 0
+        var bits = allowed[tile.index].toInt() and 0xF
+        var n = 0
+        while (bits != 0) { n += bits and 1; bits = bits shr 1 }
+        return n
+    }
+
     fun allows(tile: TileIndex, dir: Direction): Boolean =
         tile in _tiles && (allowed[tile.index].toInt() and (1 shl dir.ordinal)) != 0
 
