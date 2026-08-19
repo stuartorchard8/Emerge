@@ -113,7 +113,9 @@ class BudgetParityTest {
     fun `a mole is a particle count and does not move with the mass unit`() {
         for (species in Species.ALL) {
             val tile = MassArray(1)
-            tile.data[species.ordinal] = Budget.KILOGRAM
+            // Through the setter, not `tile.data[…]`: a raw write leaves the presence bitmask
+            // stale, and this is exactly the tile a bitmask-driven `millimolesOf` would skip.
+            tile[TileIndex(0), species] = Budget.KILOGRAM
             assertEquals(
                 1_000L * 1_000L / species.molarMass,
                 millimolesOf(tile, TileIndex(0)),

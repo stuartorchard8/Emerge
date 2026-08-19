@@ -201,7 +201,7 @@ fun diffuseFluid(
 
         var outMass = 0L
         for (s in Species.ALL) {
-            val count = masses[MassIndex(tile, s)]
+            val count = masses[tile, s]
             if (count <= 0L) continue
             val share = count * FACE_SHARE / SLOTS
             if (share <= 0L) continue
@@ -219,9 +219,9 @@ fun diffuseFluid(
                     else share * aperture / ApertureField.OPEN
                 if (out <= 0L) continue
 
-                deltaMass[MassIndex(tile, s)] -= out
+                deltaMass.add(tile, s, -out)
                 val neighbour = faceNeighbour[f]
-                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass[MassIndex(neighbour, s)] += out
+                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass.add(neighbour, s, out)
                 faceOut[f] += out
                 outMass += out
             }
@@ -275,7 +275,10 @@ fun diffuseFluid(
         }
     }
 
-    for (t in grid.tiles) for (s in Species.ALL) masses[MassIndex(t,s)] += deltaMass[MassIndex(t,s)]
+    // Only the species that actually moved. This was `tiles × Species.COUNT` — 165 loads per tile to
+    // apply the six deltas a tile of air really has — and it is the pass the presence bitmask was
+    // added for. A delta of zero adds nothing, so skipping it is not an approximation.
+    for (t in grid.tiles) deltaMass.forEachSpecies(t) { s, delta -> masses.add(t, s, delta) }
     if (energies != null && deltaEnergy != null) for (t in grid.tiles) energies[t] += deltaEnergy[t]
 
     // Snapshotted rather than folded on demand: [masses] belongs to the caller, which goes on editing
