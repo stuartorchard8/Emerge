@@ -130,6 +130,7 @@ class OutofspaceController(
             // selects the furnace rather than nothing.
             Tool.Wire -> selected = state.occupancy[tile]
             Tool.Delete -> removeAt(tile)
+            Tool.Cancel -> cancelAt(tile)
             // Nothing: the bellows is a *hold*, so it is driven by [injectTile] and a click that
             // pushed one edit here would inject twice on the tick the button went down.
             Tool.Inject, Tool.InjectWater -> {}
@@ -227,6 +228,9 @@ class OutofspaceController(
      * Queues the grid back to the ship plus its pad. [followFrame] carries the selection across it.
      */
     fun fit() = pending.add(Edit.Fit)
+
+    /** Calls off a deconstruction on every layer of a tile — see [Edit.Cancel]. */
+    fun cancelAt(tile: TileIndex) = pending.add(Edit.Cancel(tile))
 
     /** Takes [deleteLayer] off a tile. Named explicitly by callers that mean a specific layer. */
     fun removeAt(tile: TileIndex, layer: DeleteLayer = deleteLayer) {

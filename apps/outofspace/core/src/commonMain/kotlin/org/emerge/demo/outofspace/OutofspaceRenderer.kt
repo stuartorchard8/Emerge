@@ -103,6 +103,15 @@ class OutofspaceRenderer {
     var viewAngle: Coord = Coord(0)
         private set
 
+    /**
+     * Tiles that drew themselves as condemned this frame, so the X can go over the top of them.
+     *
+     * A field rather than a fresh list per frame: this runs every frame at whatever rate the display
+     * manages, and the draw thread allocating a collection sixty times a second for a set that is
+     * almost always empty is exactly the kind of litter the renderer is careful about elsewhere.
+     */
+    private val markedForDeconstruction = mutableSetOf<TileIndex>()
+
     /** `(cos, sin)` of [viewAngle] in screen-pixel axes, y down. Recomputed only when it moves. */
     private var viewCos = 1f
     private var viewSin = 0f
@@ -344,6 +353,15 @@ class OutofspaceRenderer {
                 drawBridge(state, tile, b, x, y)
             }
         }
+
+        // ⚠️ **The condemned mark goes on last**, over every machine and every bridge. The frame
+        // each of them draws for itself is laid down *before* its own body and is promptly covered by
+        // it, which is why a marked building has been so easy to miss. Gathered while they draw and
+        // flushed here so the mark is on top of the thing it condemns.
+        for (tile in markedForDeconstruction) {
+            cross(state.grid.xOf(tile), state.grid.yOf(tile), Colors.SCRAPPING)
+        }
+        markedForDeconstruction.clear()
 
         // Departures.
         drawDepartures(state)
@@ -610,7 +628,10 @@ class OutofspaceRenderer {
         // it crosses rather than on a tile. ⚠️ A marked bridge goes on carrying, so its slots are
         // still drawn below: watching a condemned gantry walk its last load off is the point.
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, ghostColor(state, b))
-        if (tile in state.scrapping) frame(x, y, Colors.SCRAPPING)
+        if (tile in state.scrapping) {
+            frame(x, y, Colors.SCRAPPING)
+            markedForDeconstruction.add(tile)
+        }
         // One slot per tile (entry fixed, middle+exit slide along span). Read off the buffer layer,
         // where a bridge's load lives now — the three role tiles are these three positions.
         val slots = listOf(
@@ -696,7 +717,10 @@ class OutofspaceRenderer {
         // itself, because its stores are still real and the player wants to watch them drain — that
         // is the whole of the ordering the feature promises. Framed, because "on its way out" and
         // "not yet" are opposite mistakes and must never look alike.
-        if (tile in state.scrapping) frame(x, y, Colors.SCRAPPING)
+        if (tile in state.scrapping) {
+            frame(x, y, Colors.SCRAPPING)
+            markedForDeconstruction.add(tile)
+        }
         when (m) {
             // Drawn by [drawBridge] in its own pass, above the track it crosses — a bridge is the
             // one deck machine that is *over* the tile rather than on it.
@@ -841,6 +865,32 @@ class OutofspaceRenderer {
     }
 
     /** A hollow square of [color] around the tile edge — a border, not a fill. */
+    /**
+     * A saltire across a tile: condemned, and readable at a glance.
+     *
+     * The frame alone was not enough. It is a thin band in a colour a few shades off the machine it
+     * surrounds, which is legible when you are looking for it and invisible when you are not — and
+     * "is this thing on its way out?" is exactly the question a player asks *before* they know to
+     * look. An X is the one mark nothing else in the world uses, so it cannot be mistaken for a
+     * fitting, a port or a wire.
+     *
+     * ⚠️ **Stepped out of little squares rather than drawn as two rotated bars.** [rect]'s angle is
+     * applied *before* its non-uniform scale, so a long thin rect asked to lie at 45° comes out as a
+     * skewed parallelogram whose slope depends on the window's aspect ratio — and a [Coord] is half a
+     * turn rather than a whole one, so the obvious eighth-turn is 22.5° and the two bars very nearly
+     * lie on top of each other. Both were true of the first version of this, which drew one
+     * horizontal smudge. Squares along the diagonals have neither problem.
+     */
+    private fun cross(x: Int, y: Int, color: Long) {
+        val half = Visual.CROSS_SPAN * 0.5f
+        val dot = Visual.CROSS_THICKNESS * tilePx
+        for (i in 0..Visual.CROSS_STEPS) {
+            val t = -half + (Visual.CROSS_SPAN * i / Visual.CROSS_STEPS)
+            rect((x + 0.5f + t) * tilePx, (y + 0.5f + t) * tilePx, dot, dot, color)
+            rect((x + 0.5f + t) * tilePx, (y + 0.5f - t) * tilePx, dot, dot, color)
+        }
+    }
+
     private fun frame(x: Int, y: Int, color: Long) {
         val thickness = Visual.FRAME_THICKNESS
         val span = Visual.FRAME_SPAN
@@ -1294,6 +1344,16 @@ class OutofspaceRenderer {
         const val BRIDGE_PACKET_SIZE = 0.375f
 
         // ── Frame (channel collar) dimensions ───────────────────────────
+        /**
+         * The condemned mark: nearly the width of the tile, and thick enough to survive being drawn
+         * over a machine's own body without turning into a scratch.
+         */
+        const val CROSS_SPAN = 0.8f
+        const val CROSS_THICKNESS = 0.16f
+
+        /** How many squares each stroke is stepped out of. Enough to read as a line, not a dotted one. */
+        const val CROSS_STEPS = 8
+
         const val FRAME_THICKNESS = 0.13f
         const val FRAME_SPAN = 0.94f
 

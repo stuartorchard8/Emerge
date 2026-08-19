@@ -1247,6 +1247,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         removeMachine(edit.tile)
                     }
                 }
+                is Edit.Cancel -> {
+                    // Every layer at once — the mark is blind, so calling it off is blind too.
+                    //
+                    // ⚠️ **Nothing is restored except the target.** A machine that has already given
+                    // some of its casing back is left exactly as it stands and simply stops being
+                    // condemned; being short of its bill, it is now an ordinary construction site and
+                    // fills itself back up off the network. One that has given nothing back holds its
+                    // whole bill already and is a finished machine again the moment the mark goes.
+                    // There is no matter to put back and no ledger entry, because none ever left.
+                    originAt(edit.tile)?.let { scrapping.remove(it) }
+                    for (c in Conduit.entries) {
+                        val line = layer(c)
+                        val segment = line.getOrNull(edit.tile.index) ?: continue
+                        if (segment.deconstructing) line[edit.tile.index] = segment.copy(deconstructing = false)
+                    }
+                }
                 is Edit.Wire -> {
                     val tile = originAt(edit.tile) ?: return
                     val dm = deck[tile]

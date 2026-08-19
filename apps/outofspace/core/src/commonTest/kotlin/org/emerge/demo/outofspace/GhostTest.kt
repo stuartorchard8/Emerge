@@ -262,6 +262,29 @@ class GhostTest {
             mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(tile, DeleteLayer.Rail)))),
         )
 
+    /**
+     * Calling off a rail's deconstruction, which is the same operation as a machine's and shares its
+     * edit: the mark comes off, and what is left is judged on its bill like anything else. A rail
+     * that had not yet given any metal back is simply finished track again.
+     */
+    @Test
+    fun `cancelling puts a condemned rail back to work`() {
+        val laid = drag(VesselState.empty(grid).copy(creative = true), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        val tile = grid.tile(5, 3)
+        val before = laid.conduits.massAt(Conduit.Rail, tile)
+        assertTrue(before > 0L, "fixture: creative mode should have paid for the run")
+
+        val marked = remove(laid.copy(creative = false), tile)
+        assertTrue(marked.conduits.at(Conduit.Rail, tile)!!.deconstructing, "fixture: it should be condemned")
+
+        val s = OutofspaceReducer.reduce(
+            cfg, marked, mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Cancel(tile)))),
+        )
+        assertFalse(s.conduits.at(Conduit.Rail, tile)!!.deconstructing, "the mark should be gone")
+        assertTrue(s.conduits.isComplete(Conduit.Rail, tile), "and untouched track is finished track")
+        assertEquals(before, s.conduits.massAt(Conduit.Rail, tile), "not a gram of it moved")
+    }
+
     @Test
     fun `outside creative mode deleting a rail marks it rather than removing it`() {
         val laid = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 8)

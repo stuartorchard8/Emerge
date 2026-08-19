@@ -14,6 +14,14 @@ enum class Tool(val label: String) {
     Delete("DELETE"),
 
     /**
+     * Calls off a deconstruction — see [Edit.Cancel].
+     *
+     * Its own tool rather than a modifier on DELETE, because it is the only way to undo a mark and a
+     * player who has condemned the wrong building needs to be able to reach for it deliberately.
+     */
+    Cancel("CANCEL"),
+
+    /**
      * The atmosphere injector: hold over a permeable tile and gas appears there, a kilogram a tick.
      *
      * A **debug** tool and labelled as one, alongside the debug engine and the rock drop. It mints

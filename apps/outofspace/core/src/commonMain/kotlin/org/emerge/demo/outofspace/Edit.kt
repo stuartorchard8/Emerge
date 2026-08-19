@@ -34,6 +34,22 @@ sealed interface Edit {
     /** Lay conduit between adjacent tiles [from]→[to] (one drag step). Missing track laid at ends. Non-adjacent = ignored (no pathfind). */
     data class Lay(val from: TileIndex, val to: TileIndex, val conduit: Conduit = Conduit.Rail) : Edit
 
+    /**
+     * Calls off a deconstruction, on whatever layers of [tile] have been told to go.
+     *
+     * **It restores a target, not a machine.** Ghost-ness is derived — a thing is unbuilt exactly
+     * when it is short of its bill — so taking the mark off is the whole of the operation: something
+     * that has not yet given anything back is instantly a finished machine again, and something
+     * half-dismantled becomes an ordinary construction site and fills itself back up off the network.
+     * There is no third state to restore and nothing to book, because nothing left the world.
+     *
+     * The mirror of [Remove] and deliberately blind in the same way: it clears the mark from every
+     * layer of the tile at once. A player pointing at a condemned tile means "not that one", and
+     * having to name which of the four layers they meant would be a worse tool than the one that
+     * marked them.
+     */
+    data class Cancel(val tile: TileIndex) : Edit
+
     /** Severs the join between two adjacent tiles, leaving both lengths of track in place. */
     data class Cut(val from: TileIndex, val to: TileIndex, val conduit: Conduit = Conduit.Rail) : Edit
 

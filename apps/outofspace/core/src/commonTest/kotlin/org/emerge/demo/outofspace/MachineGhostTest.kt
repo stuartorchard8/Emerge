@@ -71,6 +71,10 @@ class MachineGhostTest {
         return s
     }
 
+    /** One tick carrying [edits], for the edits a test wants to name. */
+    private fun edit(state: VesselState, vararg edits: Edit): VesselState =
+        OutofspaceReducer.reduce(cfg, state, mapOf(PlayerId(0) to OutofspaceInput(edits.toList())))
+
     /**
      * A tank of iron at (3, 4), finished track running right from it, and a ghost machine standing
      * at the far end with track threaded under its centre tile — where its construction port is.
@@ -516,6 +520,62 @@ class MachineGhostTest {
         assertEquals(0L, s.rail.massAt(at), "casing came out of the middle of the span")
         assertEquals(0L, s.rail.massAt(entry), "casing came back out of the end it takes deliveries at")
         assertTrue(exit != entry, "fixture: a span's two ends are different tiles")
+    }
+
+    // ── Calling it off ────────────────────────────────────────────────────────
+
+    /**
+     * ⚠️ **Cancelling restores a target, not a machine.** Ghost-ness is derived — a thing is unbuilt
+     * exactly when it is short of its bill — so taking the mark off is the whole of the operation.
+     * A machine that has given nothing back still holds its whole bill, so it is a *finished*
+     * machine again the instant the mark goes, with no rebuilding to do and nothing to book.
+     */
+    @Test
+    fun `cancelling a machine that has given nothing back restores it at once`() {
+        val at = grid.tile(10, 4)
+        // ⚠️ **No sink**, so that "given nothing back" is actually true. With one, the hull starts
+        // shedding casing in the very tick it is marked and there is no untouched machine left to
+        // cancel. That it holds perfectly still without one is the demand rule doing its job — see
+        // `DemandTest`.
+        val start = builtMachine(Hull(at), sink = false)
+        val before = start.deck.stuff.massAt(at)
+
+        val marked = remove(start, at)
+        assertTrue(at in marked.scrapping, "fixture: it should be condemned")
+
+        val s = edit(marked, Edit.Cancel(at))
+        assertFalse(at in s.scrapping, "the mark should be gone")
+        assertFalse(s.deck.isGhost(at), "an untouched machine is finished, not a construction site")
+        assertEquals(before, s.deck.stuff.massAt(at), "and not a gram of it moved")
+    }
+
+    /**
+     * The other half: a machine short of its bill and then reprieved is an ordinary construction
+     * site, and fills itself back up off the network. Nothing puts the metal back — whatever went
+     * onto the belt has to come home the way anything else does.
+     *
+     * ⚠️ The half-built state is reached by letting a construction site fill **part** way rather
+     * than by driving a real deconstruction to its middle: the condition cancelling actually reads is
+     * "short of its bill", and a half-fed site is in it. It has to hold *some* casing, though — an
+     * entirely empty ghost has nothing to hand back and vanishes the instant it is marked, which is
+     * its own test further down.
+     */
+    @Test
+    fun `cancelling a machine short of its bill leaves a construction site that rebuilds`() {
+        val at = grid.tile(10, 4)
+        val start = run(tankAndGhost(Processor(at, Direction.Right)), OutofspaceReducer.RAIL_PERIOD * 8)
+        assertTrue(start.deck.isGhost(at), "fixture: it should still be short of its bill")
+        assertTrue(start.deck.stuff.massAt(at) > 0L, "fixture: and hold some casing already")
+
+        var s = remove(start, at)
+        assertTrue(at in s.scrapping, "fixture: and then be condemned")
+
+        s = edit(s, Edit.Cancel(at))
+        assertFalse(at in s.scrapping, "the mark should be gone")
+        assertTrue(s.deck.isGhost(at), "a machine short of its bill is a construction site")
+
+        val back = run(s, OutofspaceReducer.RAIL_PERIOD * 90)
+        assertFalse(back.deck.isGhost(at), "and a construction site with a tank behind it rebuilds")
     }
 
     /** A ghost marked for deconstruction is just a part-built machine: it dumps what it has and goes. */

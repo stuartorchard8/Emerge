@@ -73,6 +73,7 @@ import kotlin.math.roundToInt
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
  *                            # the same as placing each tile
  * remove <x> <y> [layer]    # layer = TOP|BRIDGE|RAIL|PIPE|DECK|ALL (default TOP, one layer/click)
+ * cancel <x> <y>            # calls off a deconstruction on every layer of the tile
  * rotate <x> <y>
  * wire <x> <y> <channel> <permille>  # append one RUN term. ALWAYS@1000 is "hold the button down",
  *                            # which is how a script opens an airlock — they ship wired to nothing
@@ -211,6 +212,12 @@ object OutofspaceAgentHarness {
                             ?: error("unknown layer '$name' (have ${DeleteLayer.entries.map { it.label }})")
                     } ?: DeleteLayer.Top
                     controller.removeAt(index(t[1], t[2]), layer)
+                    settle()
+                }
+                // Calls off a deconstruction on every layer of a tile — the mirror of `remove`, and
+                // blind in the same way.
+                "cancel" -> {
+                    controller.cancelAt(index(t[1], t[2]))
                     settle()
                 }
                 // One tick of the debug bellows per `inject`, which is what holding the button for
