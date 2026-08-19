@@ -1304,15 +1304,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val line = layer(c)
             val segment = line.getOrNull(tile.index) ?: return false
             if (!creative) {
-                // ⛔ Track under a deck machine's port is **locked** while that machine stands.
+                // ⛔ **Track under a machine's port used to be locked, and is not any more.**
                 //
-                // It is what makes the port rules tractable: a locked run can never be
-                // deconstructing, so "a ghost's output beats a real output" and "a real input beats
-                // a ghost's output" describe states that cannot arise, and the only case left is a
-                // ghost input on a machine's tile — which resolves itself, since the machine is cut
-                // off until its feed is built. It also stops a player stranding a machine by pulling
-                // up what feeds it.
-                if (lockedByMachine(tile, c)) return false
+                // The lock existed to keep the port rules tractable — a locked run can never be
+                // deconstructing, so two awkward priority cases could not arise — and to stop a
+                // player stranding a machine by pulling up the very thing feeding it. It bought
+                // both by making the most obvious edit in the game silently do nothing, which Stu
+                // hit a dozen times in one session. Protecting somebody from an edit they
+                // deliberately made is not worth a rule nobody can see.
+                //
+                // The four states it was avoiding all turned out to be answered already, by code
+                // written for other reasons:
+                //  - marked rail under a machine's OUTPUT — both are sources; they contend for the
+                //    tile and occupancy arbitrates, as two sources always have;
+                //  - marked rail under a machine's INPUT — the machine eats what the rail hands
+                //    back, which is where the metal was going anyway;
+                //  - ghost rail under a machine's INPUT — the ghost eats first, stated outright at
+                //    the tick's one consume site;
+                //  - ghost rail under a machine's OUTPUT — the machine feeds it, which is how a
+                //    tank builds the track at its own port and always was.
+                //
+                // ⚠️ A machine whose feed is pulled up is now simply disconnected. That is the same
+                // answer the game gives for anything else in the way, and it is reversible.
                 if (segment.deconstructing) return true
                 line[tile.index] = segment.copy(deconstructing = true)
                 return true
@@ -2262,15 +2275,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Guaranteed to succeed: the delivery that got here was refused unless the air could go.
             tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { originOf[it] == TileIndex.NONE }
         }
-
-        /**
-         * Whether a deck machine's port stands on this tile, which locks the conduit under it.
-         *
-         * Rebuilds the whole port map for one question, which is affordable only because it is asked
-         * on an edit and edits are a player action rather than a tick cost.
-         */
-        private fun lockedByMachine(tile: TileIndex, c: Conduit): Boolean =
-            portsByTile(c).containsKey(tile)
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
         fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {

@@ -15,8 +15,9 @@
 #   - It starts at 32, clear of the track the starter vessel already has. A drag that begins on
 #     existing rail builds fewer tiles than it covers, and `builtMass` then looks short by exactly
 #     the tiles that were already there.
-#   - It marks 34 and 35, not 32. Track under a deck machine's port is LOCKED while that machine
-#     stands, so `remove` on the tank's own port tile is refused and nothing at all happens.
+#   - It marks 34 and 35, not 32. Track under a machine's port used to be LOCKED and no longer is,
+#     so marking 32 now works — it would just be marking the tank's own feed, which is a different
+#     thing to measure than a length of run coming apart.
 #
 # The numbers:
 #   builtMass    grams that stopped being cargo and became fabric. One tile of rail is 130,642 g.

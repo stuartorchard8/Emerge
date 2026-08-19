@@ -690,21 +690,29 @@ class GhostTest {
     }
 
     /**
-     * ⛔ The lock. Track under a deck machine's port cannot be taken up while the machine stands.
+     * ⛔ **Track under a machine's port comes up like any other track**, and the lock that used to
+     * stop it is gone.
      *
-     * It is what makes the port rules tractable — a locked run can never be deconstructing, so the
-     * two awkward priority cases cannot arise — and it stops a player stranding a machine by pulling
-     * up the very thing feeding it.
+     * The lock kept the port rules tractable and stopped a player stranding a machine by pulling up
+     * the very thing feeding it. It bought both by making the most obvious edit in the game silently
+     * do nothing — click the tile in front of your tank, watch nothing happen, with no message and
+     * no mark. Stu hit it a dozen times in one session, which is the whole argument: protecting
+     * somebody from an edit they deliberately made is not worth a rule they cannot see.
+     *
+     * What the lock was avoiding turned out to be answered already — see [removeConduit]. A machine
+     * whose feed is pulled up is simply disconnected, which is the answer the game gives for
+     * anything else in the way, and it is reversible with CANCEL while the metal is still going
+     * back.
      */
     @Test
-    fun `track under a machine's port cannot be marked`() {
+    fun `track under a machine's port can be marked like any other`() {
         val built = tankAndRun(ghostAt = null).copy(creative = false)
         // The tank at (3, 3) faces right, so its output port stands on (4, 3).
         val underPort = built.grid.tile(4, 3)
         val s = remove(built, underPort)
         val segment = s.conduits.at(Conduit.Rail, underPort)
-        assertNotNull(segment, "the locked rail was removed")
-        assertFalse(segment.deconstructing, "the rail under a machine's port was marked anyway")
+        assertNotNull(segment, "marking is not removing: the track stands until its metal is back")
+        assertTrue(segment.deconstructing, "the rail under a machine's port refused the mark")
     }
 
     /**
