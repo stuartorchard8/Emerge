@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
@@ -2349,6 +2350,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (deck.isGhost(tile)) machineGhosts[constructionTileOf(grid, m)] = m
             }
 
+            // ── What each sink will take ──────────────────────────────────────
+            //
+            // One statement per sink, gathered here rather than asked at the door, because the door
+            // is the hottest path in the sim and because a sink's appetite is a fact about the sink
+            // rather than about the lump being offered. See [Acceptance].
+            //
+            // ⚠️ Every machine is [Acceptance.ANYTHING] and that is deliberate, not a stub: a
+            // machine's buffer filling up is momentary, and the delivery path already backs the belt
+            // up correctly when it does. Only a construction site has an appetite that ends.
+            val accepts = HashMap<TileIndex, Acceptance>()
+            for (tile in ghosts) {
+                val bill = conduitBillOfMaterials(Conduit.Rail)
+                val stuff = tracks[Conduit.Rail]
+                var short = 0L
+                for (sp in Species.ALL) {
+                    val gap = bill[sp] - stuff[tile, sp]
+                    if (gap > 0L) short += gap
+                }
+                accepts[tile] = Acceptance.forBill(bill, short)
+            }
+            val scratch = LongArray(Species.COUNT)
+            for ((tile, m) in machineGhosts) {
+                val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
+                accepts[tile] = Acceptance.forBill(bill, machineShortfall(m, scratch))
+            }
+
             val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
@@ -2390,24 +2417,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 diverters,
                 motion,
                 admits = { from, to ->
-                    // Only a ghost refuses anything, and only a ghost is worth reading a lump off
-                    // the layer for — `resourceAt` allocates, and this is asked of every candidate
-                    // direction of every loaded tile on every step.
-                    val ghostMachine = if (ghosts.contains(to)) null else machineGhosts[to]
-                    when {
-                        ghosts.contains(to) ->
-                            rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it) } ?: false
-                        // A machine's casing is refused on exactly the same terms as a rail's, off
-                        // its own bill — the anti-exploit does not get weaker because the thing being
-                        // built is bigger.
-                        ghostMachine != null -> rail.resourceAt(from)?.let {
-                            buildableFrom(
-                                machineBillOfMaterials(ghostMachine.kind, ghostMachine.tiles(grid).size),
-                                it,
-                            )
-                        } ?: false
-                        else -> true
-                    }
+                    // The door reads the statement the sink made about itself, and asks nothing
+                    // else. A tile with no statement takes anything, which is every tile of plain
+                    // track and every machine.
+                    //
+                    // ⚠️ The lump is only read off the layer when something at `to` might actually
+                    // refuse it: `resourceAt` allocates, and this runs for every candidate direction
+                    // of every loaded tile on every step.
+                    val at = accepts[to]
+                    if (at == null) true else rail.resourceAt(from)?.let { at.admits(it) } ?: false
                 },
             ) { tile ->
                 // A ghost eats first, and eats instead of the machine rather than after it: being
