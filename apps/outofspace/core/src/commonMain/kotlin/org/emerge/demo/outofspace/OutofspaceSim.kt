@@ -2011,10 +2011,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun absorbIntoGhost(tile: TileIndex): Packet? {
             val bill = conduitBillOfMaterials(Conduit.Rail)
             val stuff = tracks[Conduit.Rail]
+            val shortfall = LongArray(Species.COUNT)
             var need = 0L
             for (sp in Species.ALL) {
                 val short = bill[sp] - stuff[tile, sp]
-                if (short > 0L) need += short
+                if (short > 0L) { shortfall[sp.ordinal] = short; need += short }
             }
             if (need <= 0L) return null
             val have = rail.massAt(tile)
@@ -2034,23 +2035,35 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 return packet
             }
 
-            // More than it needs: a share of every species, and the rest rides on.
+            // More than it needs: the top-up, and the rest rides on.
+            //
+            // ⚠️ **What it is short of, species by species — not a share of the lump's own ratio.**
+            // The same rule, and for the same measured reason, as [absorbIntoMachineGhost]: a share
+            // proportional to the *delivery* hands a rail wanting only iron `need × ironFraction` of
+            // iron per pass, always a shade under what it asked for. It converges on the bill and
+            // never reaches it — 999 permille for ever, with the run jammed solid behind it.
+            //
+            // ⚠️ Junk is *not* skimmed here, and that is the other half of the same rule: while the
+            // tile is still properly hungry the branch above swallows the lump whole, junk and all.
+            // This is only the end of the job, and a top-up takes what is missing.
             val lump = rail.resourceAt(tile) ?: return null
             var taken = 0L
+            val rest = LongArray(Species.COUNT)
             for (sp in Species.ALL) {
                 val mass = lump[sp]
                 if (mass == 0L) continue
-                val part = scaledRatio(need, have, mass)
-                if (part <= 0L) continue
-                stuff[tile, sp] = stuff[tile, sp] + part
-                taken += part
+                val part = minOf(mass, shortfall[sp.ordinal])
+                if (part > 0L) {
+                    stuff[tile, sp] = stuff[tile, sp] + part
+                    taken += part
+                }
+                // Stated rather than subtracted, so the lump that rides on and the mass booked here
+                // are the same arithmetic and cannot drift apart.
+                rest[sp.ordinal] = mass - part
             }
-            val heat = scaledRatio(need, have, lump.energy)
+            // The heat goes with the mass that carried it.
+            val heat = if (have <= 0L) 0L else scaledRatio(taken, have, lump.energy)
             stuff.setEnergy(tile, stuff.energyAt(tile) + heat)
-            // What is left is stated rather than subtracted tile-side, so the lump the belt carries
-            // on and the mass booked here are the same arithmetic and cannot drift apart.
-            val rest = LongArray(Species.COUNT)
-            for (sp in Species.ALL) rest[sp.ordinal] = lump[sp] - scaledRatio(need, have, lump[sp])
             val remainder = Mixture.of(rest, lump.energy - heat)
             if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
             builtMass += taken

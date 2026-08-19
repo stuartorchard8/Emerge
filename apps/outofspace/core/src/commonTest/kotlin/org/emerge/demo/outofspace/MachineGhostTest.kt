@@ -36,7 +36,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.sim.core.PlayerId
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -166,12 +165,11 @@ class MachineGhostTest {
      * it asked for. It converges on the bill and never reaches it: 999 permille for ever, with the
      * run jammed solid behind it.
      *
-     * The deck path already has the fix — a final top-up capped per species at that species'
-     * shortfall — and the conduit path never got it.
+     * Fixed 2026-08-19 by giving the conduit path the deck path's rule: the final top-up is capped
+     * **per species** at that species' own shortfall, so the last gram of iron is actually taken.
      */
-    @Ignore
     @Test
-    fun `a ghost rail finished off an alloy gets within one gram and stops`() {
+    fun `a ghost rail finished off an alloy finishes`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
         start.conduits.tracks[Conduit.Rail].release(at)
