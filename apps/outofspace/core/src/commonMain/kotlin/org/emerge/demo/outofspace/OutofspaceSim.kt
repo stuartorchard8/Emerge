@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.Acceptance
+import org.emerge.demo.outofspace.world.InFlight
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
@@ -2266,7 +2267,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // marked rail unable to hand its metal back — the `ghosts.txt` deadlock, reached by
             // ordinary play. Keeping it in the tank instead costs nothing and is reversible: build
             // something that wants iron and the tank starts pouring again.
-            if (!whitelist.permits(tile, packet.contents)) return
+            if (!whitelist.permitsSource(tile, packet.contents)) return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return
             drained(m, port, rest.orNull())
@@ -2411,32 +2412,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (deck.isGhost(tile)) machineGhosts[constructionTileOf(grid, m)] = m
             }
 
-            // ── What each sink will take ──────────────────────────────────────
-            //
-            // One statement per sink, gathered here rather than asked at the door, because the door
-            // is the hottest path in the sim and because a sink's appetite is a fact about the sink
-            // rather than about the lump being offered. See [Acceptance].
-            //
-            // ⚠️ Every machine is [Acceptance.ANYTHING] and that is deliberate, not a stub: a
-            // machine's buffer filling up is momentary, and the delivery path already backs the belt
-            // up correctly when it does. Only a construction site has an appetite that ends.
-            val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
-            for (tile in ghosts) {
-                val bill = conduitBillOfMaterials(Conduit.Rail)
-                val stuff = tracks[Conduit.Rail]
-                var short = 0L
-                for (sp in Species.ALL) {
-                    val gap = bill[sp] - stuff[tile, sp]
-                    if (gap > 0L) short += gap
-                }
-                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.forBill(bill, short))
-            }
-            val scratch = LongArray(Species.COUNT)
-            for ((tile, m) in machineGhosts) {
-                val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
-                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.forBill(bill, machineShortfall(m, scratch)))
-            }
-
             val sinks = ports.entries
                 .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
                 .map { it.key }
@@ -2471,6 +2446,61 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                 grid,
             )
+
+            // ── What each sink will take, and how much is already on its way ──
+            //
+            // One statement per sink, gathered here rather than asked at the door, because the door
+            // is the hottest path in the sim and because a sink's appetite is a fact about the sink
+            // rather than about the lump being offered. See [Acceptance].
+            //
+            // ⚠️ Every machine is [Acceptance.ANYTHING] and that is deliberate, not a stub: a
+            // machine's buffer filling up is momentary, and the delivery path already backs the belt
+            // up correctly when it does. Only a construction site has an appetite that ends.
+            //
+            // ⚠️ **After the flow, which is a reordering.** A site's appetite now includes what is
+            // already rolling toward it, and "toward" is a question only the graph can answer. It is
+            // deliberately *not* recomputed when the graph is rebuilt below: that rebuild only ever
+            // happens because something ceased to be, and one tick of a slightly stale count errs
+            // toward underdraw, which is the safe way to be wrong.
+            val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
+
+            // Every lump in the flow, read off the layer **once**. The in-flight pass visits every
+            // tile once per distinct bill and `resourceAt` allocates, so asking it there would
+            // allocate a mixture per tile per bill per tick.
+            val lumps = HashMap<TileIndex, Mixture>()
+            for (tile in flow.order) rail.resourceAt(tile)?.let { lumps[tile] = it }
+            // One pass per distinct **bill**, not per site: every rail ghost on the vessel is built
+            // from the same thing, and machines from one per kind and footprint. In practice a
+            // handful at most, however many sites there are.
+            val enRouteFor = HashMap<Any, LongArray>()
+            fun enRoute(key: Any, bill: Mixture): LongArray = enRouteFor.getOrPut(key) {
+                InFlight.toward(flow, rails.size) { t ->
+                    lumps[t]?.takeIf { buildableFrom(bill, it) }?.total ?: 0L
+                }
+            }
+
+            if (ghosts.isNotEmpty()) {
+                val bill = conduitBillOfMaterials(Conduit.Rail)
+                val stuff = tracks[Conduit.Rail]
+                val coming = enRoute(Conduit.Rail, bill)
+                for (tile in ghosts) {
+                    var short = 0L
+                    for (sp in Species.ALL) {
+                        val gap = bill[sp] - stuff[tile, sp]
+                        if (gap > 0L) short += gap
+                    }
+                    accepts.getOrPut(tile) { mutableListOf() }
+                        .add(Acceptance.forBill(bill, short, coming[tile.index]))
+                }
+            }
+            val scratch = LongArray(Species.COUNT)
+            for ((tile, m) in machineGhosts) {
+                val footprint = m.tiles(grid).size
+                val bill = machineBillOfMaterials(m.kind, footprint)
+                val coming = enRoute(m.kind to footprint, bill)
+                accepts.getOrPut(tile) { mutableListOf() }
+                    .add(Acceptance.forBill(bill, machineShortfall(m, scratch), coming[tile.index]))
+            }
 
             // ── The whitelist, and the pass that reads it ─────────────────────
             //

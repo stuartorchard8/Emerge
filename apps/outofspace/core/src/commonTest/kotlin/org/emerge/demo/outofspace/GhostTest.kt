@@ -172,6 +172,37 @@ class GhostTest {
         )
     }
 
+    /**
+     * A source stops pouring once the site has **enough on its way** — the quantity half of demand.
+     *
+     * The whitelist answers what kind of thing may usefully leave a tile; on its own it answers that
+     * question the same way whether the site is short by a tonne or by a gram. So a tank facing a
+     * ghost opened right up and kept pouring, and everything past what the site could use rode down
+     * the run and stopped on it: an over-draw, and a full run is exactly what leaves a rail marked
+     * for deconstruction unable to hand its metal back.
+     *
+     * What is pinned is the *peak*, not the end state. Finishing is already covered above; the
+     * question here is how much material the network commits to a job while it is being done.
+     *
+     * ⚠️ The count is deliberately an over-count, so the bound is loose on purpose — see [InFlight].
+     * Tightening it would be measuring the approximation rather than the rule.
+     */
+    @Test
+    fun `a source stops pouring once the site has enough on its way`() {
+        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total
+        var s = tankAndRun(ghostAt = 7, stored = Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0))
+        var peak = 0L
+        repeat(RAIL_PERIOD * 20) {
+            s = run(s, 1)
+            peak = maxOf(peak, onTheRun(s))
+        }
+        assertTrue(s.conduits.isComplete(Conduit.Rail, s.grid.tile(7, 3)), "the ghost never finished")
+        assertTrue(
+            peak <= bill + Capacity.PACKET_MASS,
+            "the tank committed ${peak}g to a ${bill}g job: it is pouring past what the site can use",
+        )
+    }
+
     @Test
     fun `a ghost at the end of a run draws material down it and builds itself`() {
         val s = run(tankAndRun(ghostAt = 7), RAIL_PERIOD * 8)
