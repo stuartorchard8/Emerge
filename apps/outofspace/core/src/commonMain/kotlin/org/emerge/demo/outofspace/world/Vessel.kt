@@ -330,7 +330,8 @@ data class VesselState(
      *    [acquiredEnergy] cancels the double-count: `stored` holds the energy and `acquired`
      *    records the transfer so the ledger stays closed.
      */
-    val baselineEnergy: Long = solidEnergy(conduits) + deck.totalEnergy + buffers.totalEnergy,
+    val baselineEnergy: Long = solidEnergy(conduits) + deck.totalEnergy + buffers.totalEnergy +
+        rail.totalEnergy,
     /**
      * Whether the player may conjure things into being rather than build them.
      *
@@ -556,7 +557,7 @@ data class VesselState(
      * Every solid thing aboard, with its own temperature — see [Body]. Cached because the renderer
      * and the inspector both want it every frame while the state behind it changes once a tick.
      */
-    val solids: List<Body> by lazy { bodiesOf(grid, conduits, deck, buffers) }
+    val solids: List<Body> by lazy { bodiesOf(grid, conduits, deck, buffers, rail) }
 
     /**
      * Temperature of a tile's *fabric* in kelvin — the **hottest** thing standing on it.
@@ -634,8 +635,17 @@ data class VesselState(
         return if (d.center == tile) standingPortsOf(grid, deck, buffers, scrapping, d) else emptyList()
     }
 
-    /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
-    val storedEnergy: Long get() = solidEnergy(conduits) + deck.totalEnergy + buffers.totalEnergy
+    /**
+     * Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors.
+     *
+     * ⚠️ **[rail] is in it, and was not.** A lump on a belt has a temperature like everything else
+     * aboard, but for as long as it was not a [Body] its heat was outside this sum — so a machine
+     * setting a hot packet down destroyed that energy as far as the ledger was concerned, and
+     * picking one up minted it. Nothing failed, because this identity is parked (see [heatBalance]),
+     * which is exactly how a term goes missing and stays missing.
+     */
+    val storedEnergy: Long get() = solidEnergy(conduits) + deck.totalEnergy + buffers.totalEnergy +
+        rail.totalEnergy
 
     /** Total atmosphere still aboard, in the rooms and in the pipes — the ledger quantity. */
     val atmosphereMass: Long get() = air.totalMass + pipeAir.totalMass

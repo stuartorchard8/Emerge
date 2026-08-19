@@ -21,6 +21,20 @@ enum class BodySlot {
 
 
     /**
+     * [VesselState.rail] — the lump riding the track, at the tile it is riding on.
+     *
+     * Cargo is a thing with a temperature, and until this existed it was the one kind of matter
+     * aboard that was not. A packet kept whatever energy it was minted with for the whole of its
+     * journey: it did not warm the track it sat on, the track did not warm it, and the room it was
+     * crossing might as well not have been there. The same lump conducted while it sat in a
+     * machine's buffer and stopped the moment it was set down on a belt, which is not a distinction
+     * anything physical makes.
+     *
+     * Writes back through [Body.tile], like the two below — a lump is stored where it is.
+     */
+    RailCargo,
+
+    /**
      * [VesselState.buffers] — what a machine is holding, at the tile its store stands on.
      *
      * A body like any other, which is the whole point: the heat solver already joins every pair of
@@ -113,13 +127,14 @@ class Body(
 }
 
 /**
- * Every solid thing in the world, in a fixed order: deck, then fittings, then spans.
+ * Every solid thing in the world, in a fixed order: deck, then held matter, then cargo, then
+ * fittings.
  *
  * Rebuilt every tick rather than kept, exactly as [StructureMap] and [Occupancy] are, and for the
  * identical reason — a cache with an invalidation rule is a bug waiting for an edit case nobody
  * thought of, and walking three arrays is a rounding error next to the fluid solve.
  *
- * Takes the three lists rather than a [VesselState] so that the reducer can call it on its own
+ * Takes the layers rather than a [VesselState] so that the reducer can call it on its own
  * half-built working copies, which is where the heat step actually runs.
  */
 fun bodiesOf(
@@ -127,6 +142,7 @@ fun bodiesOf(
     conduits: Conduits,
     deck: DeckArray,
     buffers: BufferLayer,
+    rail: RailLayer,
 ): List<Body> {
     val out = ArrayList<Body>(64)
     // The deck layer first, so "deck, then fittings, then spans" still reads in order. One body per
@@ -169,6 +185,33 @@ fun bodiesOf(
                     energy = buffers.stuff.energyAt(tile),
                     capacity = capacity,
                     conductance = BUFFER_CONTACT_CONDUCTANCE,
+                )
+            )
+        }
+    }
+
+    // What the belts are carrying. Same shape as a buffer's contents and for the same reasons —
+    // including the capacity guard: a tile whose row outlived its lump (a reaction can empty one
+    // without releasing it) has nothing to hold a temperature with, and a zero-capacity node in a
+    // Jacobi solve is a division waiting to happen.
+    rail.stuff.forEachOccupiedTile { tile ->
+        val capacity = rail.stuff.heatCapacityAt(tile)
+        if (capacity > 0L) {
+            out.add(
+                Body(
+                    slot = BodySlot.RailCargo,
+                    tile = tile,
+                    anchor = tile,
+                    // Nominal: [material] does not feed conduction — [conductance] does — and a heap
+                    // of ore is not made of its container any more than a buffer's charge is.
+                    material = Material.Steel,
+                    // Permeable, so it touches the air of its own tile and the track under it, and
+                    // nothing across a face. A lump does not conduct into the tile in front of it;
+                    // it conducts into what it is sitting on and what it is sitting in.
+                    permeable = true,
+                    energy = rail.stuff.energyAt(tile),
+                    capacity = capacity,
+                    conductance = CARGO_CONTACT_CONDUCTANCE,
                 )
             )
         }
@@ -233,3 +276,22 @@ fun solidEnergy(
  * to heat its contents, and it is the number to reach for when the [ThermalDecomposer] feels wrong.
  */
 val BUFFER_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 30L
+
+/**
+ * How fast a lump on a belt equalises with the track under it and the air around it.
+ *
+ * The same *kind* of number as [BUFFER_CONTACT_CONDUCTANCE] — a contact, not a material property —
+ * and deliberately a third of it. A charge in a hopper is packed against the walls that hold it; a
+ * lump on a belt rests on the track and is otherwise standing in the room. Less contact, slower
+ * equalisation, and a lump that keeps its heat for a while as it travels rather than taking the
+ * temperature of every tile it crosses.
+ *
+ * What follows from it is the behaviour worth having: a belt-load leaving a furnace **cools on the
+ * way**, over a distance rather than instantly, so where a machine is put relative to what feeds it
+ * starts to matter. It is also what lets something arrive still hot enough to react — see
+ * `chem/Reaction.kt` and `PLAN_ambient_chemistry.md`.
+ *
+ * ⚠️ **A dial, not a measurement**, exactly as its twin is. Nothing physical pins the contact area
+ * between a heap of ore and a belt. Set it by how far a hot lump should travel before it goes cold.
+ */
+val CARGO_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 10L

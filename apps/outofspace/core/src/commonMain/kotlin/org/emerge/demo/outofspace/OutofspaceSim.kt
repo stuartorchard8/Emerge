@@ -280,7 +280,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (added == 0L) continue
                 w[tile]?.addEnergySpread(added, w.grid, w.deck)
             }
-            val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers)
+            val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
                 grid = state.grid,
                 bodies = bodies,
@@ -1163,6 +1163,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     BodySlot.DeckStore -> deck.setEnergy(body.tile, energy[i])
                     // Held matter, addressed by the tile its store stands on — same reason as above.
                     BodySlot.BufferStore -> buffers.stuff.setEnergy(body.tile, energy[i])
+                    // Carried matter, addressed by the tile it is riding on. ⚠️ Guarded, unlike the
+                    // two above: the rail step runs between the bodies being built and the heat
+                    // being written back, so the lump this body describes may have moved on or been
+                    // lifted off. Writing its energy to a tile that no longer holds it would put
+                    // heat on bare track — [StuffLayer.setEnergy] allocates a row for a non-zero
+                    // energy — and take it away from the lump that actually has it.
+                    BodySlot.RailCargo -> if (rail.stuff.occupies(body.tile)) {
+                        rail.stuff.setEnergy(body.tile, energy[i])
+                    }
                     // Keyed by layer as well as tile: two fittings can stand on one tile and each
                     // has its own temperature, so `at` alone would put a pipe's heat on a rail.
                     BodySlot.Fitting -> body.conduit?.let { c ->

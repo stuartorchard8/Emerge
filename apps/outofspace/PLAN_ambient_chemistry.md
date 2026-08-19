@@ -245,6 +245,41 @@ What the build decided that the scope did not:
   by `builtMass`, and that identity has no term for becoming gas. Buffers are the same ledger as the
   rail and are one call away; a burning hull plate needs the fabric side of the ledger first.
 
+## Cargo has a temperature (2026-08-20, found while doing the above)
+
+Increment 1 gates on the temperature of a lump on a belt, and **nothing could change it.** The heat
+solver builds bodies from the deck, the buffers and the conduits; `rail.stuff` — the lump itself —
+was not among them, and its energy was not in `storedEnergy` either. So a packet kept whatever it
+was minted with for its whole journey: it did not warm the track, the track did not warm it, and the
+room might as well not have been there. The same lump conducted while it sat in a machine's buffer
+and stopped the moment it was set down on a belt.
+
+Inter-layer conduction itself was never missing — `stepSolidHeat` joins **every pair of bodies
+sharing a tile**, unconditionally, before any face or permeability logic. Rail cargo simply was not
+a body, so it had nothing to be joined to.
+
+Fixed as `BodySlot.RailCargo`, shaped exactly like `BufferStore`: permeable, energy and capacity off
+the layer, written back through `Body.tile`, with the same zero-capacity guard. The shared-tile rule
+then gives it conduction with the track under it and the air around it for free.
+
+- ⚠️ `CARGO_CONTACT_CONDUCTANCE` is a **third** of the buffer's. A charge in a hopper is packed
+  against the walls that hold it; a lump on a belt rests on the track and is otherwise standing in
+  the room. It is a dial, and it is the one that decides how far a hot lump travels before it goes
+  cold.
+- ⚠️ Writing the heat back is **guarded** where the other slots are not: the rail step runs between
+  the bodies being built and the energy being applied, so the lump may have moved on or been lifted
+  off. `setEnergy` allocates a row for a non-zero energy, so an unguarded write would leave heat on
+  bare track and take it from the lump that actually has it.
+- ⚠️ `storedEnergy` and `baselineEnergy` gained `rail.totalEnergy`. Before this, a machine setting a
+  hot packet down **destroyed** that energy as far as the ledger was concerned and picking one up
+  minted it. Nothing failed, because the solid energy identity is parked (`EnergyLedgers.PARKED`,
+  for the overflow in `PLAN_unit_rescale.md` §2) — which is exactly how a term goes missing and
+  stays missing. A save written before this carries a baseline without its cargo term; not migrated,
+  because the identity it feeds is not being checked.
+- What it buys the game: a lump leaving a furnace **cools over a distance**, so where a machine sits
+  relative to what feeds it starts to matter, and a fire has to be *sustained* rather than running
+  to completion once lit.
+
 Still true, and still the reason it was the right first reaction:
 
 `Carbon + Oxygen → CarbonDioxide`, ambient, on one layer. **This is the hard-shape case**: it is

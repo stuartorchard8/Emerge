@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.CARBON_IGNITION_KELVIN
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -152,6 +153,51 @@ class AmbientChemistryTest {
         )
     }
 
+    // ── Cargo has a temperature ──────────────────────────────────────────────
+
+    @Test
+    fun `a hot lump on a belt cools into the world around it`() {
+        // Until cargo became a Body this was the one kind of matter aboard with no temperature to
+        // speak of: a packet kept whatever energy it was minted with for its whole journey. It
+        // conducted while it sat in a machine's buffer and stopped the moment it was set down on a
+        // belt, which is not a distinction anything physical makes.
+        val start = withLump(carbonAt(Temperature.AMBIENT_KELVIN * 2))
+        val here = grid.tile(5, ROW)
+
+        val before = start.rail.stuff.kelvinAt(here)
+        val after = run(start, COOLING_TICKS).rail.stuff.kelvinAt(here)
+
+        assertTrue(after < before, "the lump held its heat with cold track under it: ${before}K then ${after}K")
+        assertTrue(after > Temperature.AMBIENT_KELVIN, "it equalised instantly rather than cooling over time")
+    }
+
+    @Test
+    fun `a lump that cools below its ignition point goes out`() {
+        // The two halves meeting, and the reason the conduction mattered to the chemistry: a lump
+        // that starts just over its ignition point does not burn to nothing. It sheds heat into the
+        // track and the room, drops below the onset and stops — so fire is something that has to be
+        // sustained rather than something that runs to completion once lit.
+        val start = withLump(carbonAt(CARBON_IGNITION_KELVIN + 60))
+        val here = grid.tile(5, ROW)
+
+        val lit = run(start, TICKS)
+        assertTrue(railMass(lit, Species.Carbon) < railMass(start, Species.Carbon), "it never caught")
+
+        val cold = run(lit, COOLING_TICKS)
+        assertTrue(
+            cold.rail.stuff.kelvinAt(here) < CARBON_IGNITION_KELVIN,
+            "the lump never cooled below its ignition point: ${cold.rail.stuff.kelvinAt(here)}K",
+        )
+        // Out, and staying out: another run of the same length takes nothing more.
+        val settled = run(cold, COOLING_TICKS)
+        assertEquals(
+            railMass(cold, Species.Carbon),
+            railMass(settled, Species.Carbon),
+            "carbon kept burning after the lump had gone out",
+        )
+        assertTrue(railMass(settled, Species.Carbon) > 0L, "the whole lump went, so nothing was left to go out")
+    }
+
     // ── The ledgers ──────────────────────────────────────────────────────────
 
     @Test
@@ -245,5 +291,14 @@ class AmbientChemistryTest {
          * five-second rule. `CHEM_PERIOD` is 8, so this is four passes.
          */
         const val TICKS = 32
+
+        /**
+         * Long enough for a lump to shed a useful part of its heat into the track and the room.
+         *
+         * Conduction runs at `HEAT_PERIOD` and `CARGO_CONTACT_CONDUCTANCE` is deliberately slow — a
+         * lump is meant to stay hot for a while as it travels — so cooling is the slowest thing
+         * asserted here. Still well inside the five-second rule: this is a twelve-by-eight grid.
+         */
+        const val COOLING_TICKS = 600
     }
 }
