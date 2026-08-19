@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
  * What a sink will take, and how much of it there is left to take.
@@ -153,8 +154,19 @@ class Demand(
     /** The sink this is a route to. */
     val acceptance: Acceptance,
     /**
-     * How much of what [acceptance] is short of is already standing between this tile and it —
-     * **not** counting this tile.
+     * This route's **share** of what is already standing between this tile and its sink.
+     *
+     * A share and not a tally, because a lump in a corridor that feeds several sinks will be eaten
+     * exactly once and has to be counted exactly once. Charging its whole mass to every sink it
+     * could reach shut the source off with the job barely started — nine ghosts wanting a rail
+     * apiece read as fed by one packet. Charging it to none of them, which is what taking the
+     * largest tally instead of the sum amounted to, went wrong the other way: material sitting on a
+     * branch only one sink can draw from was credited against a sink that could never receive it,
+     * and the one that could was fed in dribs.
+     *
+     * So each lump is divided among the sinks it can serve, in proportion to what each of them
+     * still wants, and every gram on the network is counted once and against the sinks that will
+     * actually get it. See [Whitelist.of].
      *
      * A source three tiles back and a source thirty tiles back are looking at different numbers, and
      * that is the point: the near one sees the loaded run in front of it and holds off, the far one
@@ -204,13 +216,13 @@ class Demand(
  *
  *  1. **Kind** — something out there can use this sort of matter at all.
  *  2. **Order** — no construction site in the way still refuses it. See [Block].
- *  3. **Quantity** — the total still wanted by everything reachable exceeds what is already standing
- *     between here and it.
+ *  3. **Quantity** — something reachable still wants more than is already on its way to it.
  *
- * ⚠️ **Quantity is a sum, and it has to be.** Nine ghosts wanting a rail apiece want nine rails.
- * Asked one route at a time the far ones always look covered, because the material standing in the
- * corridor is counted against each of them separately when it can only ever be eaten once — so the
- * column drained one rail at a time and the tiles that emptied first ceased to be and cut the road.
+ * ⚠️ **Quantity is a sum of *remainders*, one per sink.** Nine ghosts wanting a rail apiece want
+ * nine rails, so the wants add up; but the packet standing in the corridor they share can only ever
+ * be eaten once, so it must not be charged to all nine. Both halves are load-bearing and neither
+ * survives on its own — see [Demand.covered], which is where the sharing is worked out, and
+ * [room], which adds up what is left.
  *
  * All three are read **at the tile being entered**, never at the tile being left, which is what
  * keeps them from blocking the very traffic they are counting: a lump moving into a tile is not part
@@ -273,21 +285,20 @@ class Whitelist private constructor(
     fun permits(tile: TileIndex, mixture: Mixture, rationed: Boolean = true): Boolean {
         if (permitsAnything(tile)) return true
         val here = routes.getOrNull(tile.index) ?: return false
-        var wanted = 0L
-        var covered = 0L
         var found = false
+        var owed = 0L
         for (d in here) {
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return true
             found = true
             if (!rationed) return true
-            wanted = saturated(wanted, d.acceptance.wanted)
-            // ⚠️ The **largest**, not the sum. On a corridor feeding several sites the same lumps
-            // stand between here and every one of them; adding the counts up would charge the same
-            // packet once per site and shut the source off with the job barely started.
-            if (d.covered > covered) covered = d.covered
+            // ⚠️ **Per sink, clamped at nought, and then added up.** A sink with more on its way
+            // than it can use is done — it does not lend its surplus to the sink beside it, which
+            // is what a single subtraction across the whole tile would have it do.
+            val remaining = d.acceptance.wanted - d.covered
+            if (remaining > 0L) owed = saturated(owed, remaining)
         }
-        return found && wanted > covered
+        return found && owed > 0L
     }
 
     /**
@@ -304,15 +315,14 @@ class Whitelist private constructor(
     fun room(tile: TileIndex, mixture: Mixture): Long {
         if (permitsAnything(tile)) return Acceptance.UNLIMITED
         val here = routes.getOrNull(tile.index) ?: return 0L
-        var wanted = 0L
-        var covered = 0L
+        var owed = 0L
         for (d in here) {
             if (!d.wants(mixture)) continue
             if (d.acceptance.isUnlimited) return Acceptance.UNLIMITED
-            wanted = saturated(wanted, d.acceptance.wanted)
-            if (d.covered > covered) covered = d.covered
+            val remaining = d.acceptance.wanted - d.covered
+            if (remaining > 0L) owed = saturated(owed, remaining)
         }
-        return if (wanted > covered) wanted - covered else 0L
+        return owed
     }
 
     companion object {
@@ -362,12 +372,12 @@ class Whitelist private constructor(
                         // so keeping those instead silently stops finite demand propagating at all
                         // and no source ever feeds a construction site again. Eighteen tests say so.
                         if (a.isSatisfied) continue
-                        // Nothing stands between a site and itself, and a site is never in its own
-                        // way — both are empty on its own tile, and that is what keeps material
-                        // flowing to the site that dissolves the obstruction.
-                        here = (here ?: mutableListOf()).also {
-                            it.add(Demand(a, loadOn(tile, a.bill), null))
-                        }
+                        // A site is never in its own way — no blocks on its own tile, which is what
+                        // keeps material flowing to the site that dissolves an obstruction. What
+                        // *stands* here is charged below, along with every other appetite this tile
+                        // can see: a lump on a ghost feeds that ghost first, but it is the same lump
+                        // the ghosts beyond are waiting for and it cannot be promised to them all.
+                        here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, null)) }
                         // Only a site that stands in the road is one — see [Acceptance.stopsTraffic].
                         if (a.stopsTraffic && (plug == null || a.wanted > plug.wanted)) plug = a
                     }
@@ -387,9 +397,9 @@ class Whitelist private constructor(
                     }
                     val theirs = routes[j] ?: continue
                     for (d in theirs) {
-                        // What stands on this tile is between whoever feeds it and everything beyond.
-                        val covered =
-                            if (d.acceptance.isUnlimited) 0L else d.covered + loadOn(tile, d.acceptance.bill)
+                        // ⚠️ **Inherited unchanged.** What stands on *this* tile is charged once,
+                        // after every appetite reachable from here is known — see below.
+                        val covered = if (d.acceptance.isUnlimited) 0L else d.covered
                         val route = Demand(d.acceptance, covered, carried(d.blocks, plug, tile, loadOn))
                         val list = here ?: mutableListOf<Demand>().also { here = it }
                         // One entry per sink, and the **most permissive** one wins: where two routes
@@ -406,12 +416,80 @@ class Whitelist private constructor(
                     }
                 }
 
+                // ── What stands on this tile, divided among the sinks that could eat it ──
+                //
+                // ⛔ **Once, and only among the sinks it can actually reach.** A lump is eaten by
+                // exactly one sink, so charging its whole mass to every route through this tile
+                // over-counts and starves the network, while charging it to none of them — which is
+                // what reading the largest tally instead of the sum amounted to — under-counts and
+                // feeds the far sinks a gram at a time.
+                //
+                // Each sink's share is its share of what is still wanted here, so a corridor feeding
+                // a site that needs 300g and one that needs 700g splits a packet 30:70. A sink the
+                // lump cannot be used by takes none of it and is not in the division at all — that
+                // is [loadOn] answering nought for a bill this lump does not suit.
+                here?.let { list -> chargeStandingLoad(list, tile, loadOn) }
+
                 unlimited[i] = any
                 // Nothing downstream is fussy *and* nothing downstream is boundless: the list is the
                 // only thing left worth keeping, and only while the unlimited flag is not set.
                 routes[i] = if (any) null else here
             }
             return Whitelist(routes, unlimited)
+        }
+
+        /**
+         * Charge what stands on [tile] against the demands [here] can see, in proportion to what
+         * each still wants.
+         *
+         * ⚠️ **The shares add up to the load exactly.** Integer division leaves a few grams over,
+         * and a few grams of demand that nobody is charged for is a few grams a source will send
+         * and nothing will eat — a residue, which is the failure this whole area exists to avoid.
+         * So the remainder goes to the hungriest sink rather than being dropped.
+         *
+         * ⚠️ A sink may be charged **more than it wants**, and that is correct: material already on
+         * its way to a sink that has enough is not thereby available to any other. The surplus is
+         * simply surplus, and [room] clamps each sink's remainder at nought rather than letting one
+         * sink's excess cancel another's need.
+         */
+        private fun chargeStandingLoad(
+            here: MutableList<Demand>,
+            tile: TileIndex,
+            loadOn: (TileIndex, Mixture?) -> Long,
+        ) {
+            var wantedHere = 0L
+            var hungriest = -1
+            var most = -1L
+            for (k in here.indices) {
+                val d = here[k]
+                if (d.acceptance.isUnlimited) continue
+                if (loadOn(tile, d.acceptance.bill) <= 0L) continue
+                val remaining = d.acceptance.wanted - d.covered
+                if (remaining <= 0L) continue
+                wantedHere += remaining
+                if (remaining > most) { most = remaining; hungriest = k }
+            }
+            if (wantedHere <= 0L || hungriest < 0) return
+
+            var given = 0L
+            for (k in here.indices) {
+                val d = here[k]
+                if (d.acceptance.isUnlimited) continue
+                val load = loadOn(tile, d.acceptance.bill)
+                if (load <= 0L) continue
+                val remaining = d.acceptance.wanted - d.covered
+                if (remaining <= 0L) continue
+                // This sink's share of the matter standing here, floored; the rounding is settled
+                // below so that nothing is charged twice and nothing goes uncharged.
+                val share = scaledRatio(remaining, wantedHere, load)
+                here[k] = Demand(d.acceptance, d.covered + share, d.blocks)
+                given += share
+            }
+            val load = loadOn(tile, here[hungriest].acceptance.bill)
+            if (given < load) {
+                val d = here[hungriest]
+                here[hungriest] = Demand(d.acceptance, d.covered + (load - given), d.blocks)
+            }
         }
 
         private fun owed(blocks: List<Block>?): Long {

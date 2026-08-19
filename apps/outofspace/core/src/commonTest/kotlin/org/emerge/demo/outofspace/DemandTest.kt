@@ -281,4 +281,107 @@ class DemandTest {
             assertEquals(0L, roomFull, "$what: the shortfall is covered and room still wanted more")
         }
     }
+
+    /**
+     * ⛔ **A lump is charged to the sinks that will actually eat it, and to no others.**
+     *
+     * Two sites past a fork, 300g and 700g short, and 500g standing on the branch only the first of
+     * them can draw from. The second is owed its full 700g: nothing on the network is on its way.
+     *
+     * Both of the rules this replaces get it wrong, in opposite directions, and each was adopted to
+     * fix the other:
+     *
+     *  - charging every lump to **every** route sums the same 500g against both sites, so the pair
+     *    read as 1000g wanted and 1000g coming, and the source shut off with 700g still to send;
+     *  - charging only the **largest** tally — the compensation — reads covered=500 across the whole
+     *    fork, so it sends 500g where 700g is owed and the far site is fed a dribble at a time.
+     *
+     * Apportionment is neither: the 500g is on a branch only the first site can reach, so the first
+     * site takes all of it and the second takes none.
+     */
+    @Test
+    fun `material on one branch is not counted against a sink that cannot receive it`() {
+        val grid = cfg.initialGrid
+        val bill = conduitBillOfMaterials(Conduit.Rail)
+        val lump = iron(500_000_000_000L)
+
+        //  (2,3)-(3,3)-(4,3)-(5,3)-[A]     A is 300g short, and the 500g stands at (5,3)
+        //                  |
+        //                (4,4)
+        //                  |
+        //                 [B]              B is 700g short, with a clear road
+        val source = grid.tile(2, 3)
+        val siteA = grid.tile(6, 3)
+        val siteB = grid.tile(4, 5)
+        val tiles = mutableSetOf(
+            grid.tile(2, 3), grid.tile(3, 3), grid.tile(4, 3), grid.tile(5, 3), siteA,
+            grid.tile(4, 4), siteB,
+        )
+        val shortA = 300_000_000_000L
+        val shortB = 700_000_000_000L
+
+        fun roomAtSource(standingAt: TileIndex): Long {
+            val flow = FlowGraph.build(
+                tiles,
+                sources = setOf(source),
+                sinks = setOf(siteA, siteB),
+                linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+                grid = grid,
+            )
+            val whitelist = Whitelist.of(
+                flow,
+                grid.size,
+                acceptanceAt = { tile ->
+                    when (tile) {
+                        siteA -> listOf(Acceptance.forBill(bill, shortA))
+                        siteB -> listOf(Acceptance.forBill(bill, shortB))
+                        else -> null
+                    }
+                },
+                loadOn = { tile, want ->
+                    if (tile != standingAt) 0L
+                    else if (want == null || buildableFrom(want, lump)) lump.total else 0L
+                },
+            )
+            return whitelist.room(source, lump)
+        }
+
+        assertEquals(
+            shortB,
+            roomAtSource(standingAt = grid.tile(5, 3)),
+            "500g on A's own branch left B looking fed",
+        )
+
+        // The other half of the same rule, and the reason the largest-tally hack existed: a lump in
+        // the corridor **both** sites draw from is split between them, not charged to each in full.
+        // 100g shared against 1000g wanted leaves 900g owed — not 800g, and not nothing.
+        val shared = iron(100_000_000_000L)
+        val flow = FlowGraph.build(
+            tiles,
+            sources = setOf(source),
+            sinks = setOf(siteA, siteB),
+            linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+            grid = grid,
+        )
+        val whitelist = Whitelist.of(
+            flow,
+            grid.size,
+            acceptanceAt = { tile ->
+                when (tile) {
+                    siteA -> listOf(Acceptance.forBill(bill, shortA))
+                    siteB -> listOf(Acceptance.forBill(bill, shortB))
+                    else -> null
+                }
+            },
+            loadOn = { tile, want ->
+                if (tile != grid.tile(3, 3)) 0L
+                else if (want == null || buildableFrom(want, shared)) shared.total else 0L
+            },
+        )
+        assertEquals(
+            shortA + shortB - shared.total,
+            whitelist.room(source, shared),
+            "a packet in the shared corridor was charged to both sites at once",
+        )
+    }
 }
