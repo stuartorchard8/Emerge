@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.chem.Mixture
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -18,16 +19,13 @@ import kotlin.test.assertTrue
 class ChemistryTest {
 
     /** Realistic dirty ore: mostly iron, with everything else along for the ride. */
-    private val dirtyOre = Resource(
-        Form.Ore,
-        Mixture.of(
+    private val dirtyOre = Mixture.of(
             Species.Iron to 4100L,
             Species.Quartz to 3000L,
             Species.Copper to 1800L,
             Species.Titanium to 1100L,
             energy = 0,
-        ),
-    )
+        )
 
     private fun assertConserved(inputs: List<Mixture>, outputs: List<Mixture>, what: String) {
         val delta = conservationOf(inputs, outputs)
@@ -171,20 +169,20 @@ class ChemistryTest {
     fun `take and its remainder sum back to the original`() {
         for (amount in longArrayOf(0, 1, 137, 5000, 10000, 99999)) {
             val (taken, left) = takeFrom(dirtyOre, amount)
-            assertConserved(listOf(dirtyOre.mixture), listOf(taken.mixture, left.mixture), "take($amount)")
+            assertConserved(listOf(dirtyOre), listOf(taken, left), "take($amount)")
         }
     }
 
     @Test
     fun `take of everything or more returns everything`() {
-        assertEquals(dirtyOre.mixture, dirtyOre.mixture.take(dirtyOre.mass))
-        assertEquals(dirtyOre.mixture, dirtyOre.mixture.take(dirtyOre.mass + 1000))
+        assertEquals(dirtyOre, dirtyOre.take(dirtyOre.total))
+        assertEquals(dirtyOre, dirtyOre.take(dirtyOre.total + 1000))
     }
 
     @Test
     fun `take preserves proportions`() {
         // Half of the ore should be half of each mineral, since all four masses are even.
-        val half = dirtyOre.mixture.take(dirtyOre.mass / 2)
+        val half = dirtyOre.take(dirtyOre.total / 2)
         assertEquals(2050L, half[Species.Iron])
         assertEquals(1500L, half[Species.Quartz])
         assertEquals(900L, half[Species.Copper])
@@ -213,8 +211,8 @@ class ChemistryTest {
         for (eff in intArrayOf(0, 250, 500, 750, 1000)) {
             val r = process(dirtyOre, eff)
             assertConserved(
-                listOf(dirtyOre.mixture),
-                listOf(r.product.mixture, r.tailings.mixture),
+                listOf(dirtyOre),
+                listOf(r.product, r.tailings),
                 "process(eff=$eff)",
             )
         }
@@ -223,8 +221,8 @@ class ChemistryTest {
     @Test
     fun `processing makes the product purer than the input`() {
         val r = process(dirtyOre, 1000)
-        val inputPurity = dirtyOre.mixture[Species.Iron].toDouble() / dirtyOre.mass
-        val outputPurity = r.product.mixture[Species.Iron].toDouble() / r.product.mass
+        val inputPurity = dirtyOre[Species.Iron].toDouble() / dirtyOre.total
+        val outputPurity = r.product[Species.Iron].toDouble() / r.product.total
         assertTrue(outputPurity > inputPurity, "purity should rise: $inputPurity -> $outputPurity")
     }
 
@@ -232,7 +230,7 @@ class ChemistryTest {
     fun `a perfect machine cannot beat the ore it is fed`() {
         // Efficiency is capped by purity, so a perfect machine and a machine matching the ore's own
         // purity produce identical output.
-        val purityPermille = (dirtyOre.mixture[Species.Iron] * 1000L / dirtyOre.mass).toInt()
+        val purityPermille = (dirtyOre[Species.Iron] * 1000L / dirtyOre.total).toInt()
         assertEquals(process(dirtyOre, 1000).product, process(dirtyOre, purityPermille).product)
     }
 
@@ -240,22 +238,22 @@ class ChemistryTest {
     fun `a worse machine yields a less pure product`() {
         val good = process(dirtyOre, 1000).product
         val bad = process(dirtyOre, 100).product
-        val goodPurity = good.mixture[Species.Iron].toDouble() / good.mass
-        val badPurity = bad.mixture[Species.Iron].toDouble() / bad.mass
+        val goodPurity = good[Species.Iron].toDouble() / good.total
+        val badPurity = bad[Species.Iron].toDouble() / bad.total
         assertTrue(goodPurity > badPurity, "expected $goodPurity > $badPurity")
     }
 
     @Test
     fun `processing already-pure material just halves it`() {
-        val pure = Resource(Form.Ore, Mixture.of(Species.Iron to 1000L, energy = 0))
+        val pure = Mixture.of(Species.Iron to 1000L, energy = 0)
         val r = process(pure, 1000)
-        assertEquals(500L, r.product.mass)
-        assertEquals(500L, r.tailings.mass)
+        assertEquals(500L, r.product.total)
+        assertEquals(500L, r.tailings.total)
     }
 
     @Test
     fun `processing empty input is a no-op rather than a crash`() {
-        val r = process(Resource(Form.Ore, Mixture.EMPTY))
+        val r = process(Mixture.EMPTY)
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 

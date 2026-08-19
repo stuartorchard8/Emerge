@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.SolidPacket
@@ -36,15 +34,10 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 /** What came of pressing one lump into another — see [RailLayer.squashInto]. */
 enum class Squash { Refused, Partial, Complete }
 
-class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
+class RailLayer(val stuff: StuffLayer) {
 
     /** True when nothing is riding at [tile]. */
     fun isEmpty(tile: TileIndex): Boolean = !stuff.occupies(tile) || stuff.massAt(tile) == 0L
-
-    /** What form the lump at [tile] is, or null if the tile is empty. */
-    fun formAt(tile: TileIndex): Form? =
-        if (tile.index < 0 || tile.index >= forms.size) null
-        else forms[tile.index].let { if (it == NO_FORM) null else Form.ALL[it] }
 
     /** Total mass riding at [tile]. Walks only what is present. */
     fun massAt(tile: TileIndex): Long = if (stuff.occupies(tile)) stuff.massAt(tile) else 0L
@@ -53,33 +46,27 @@ class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
     fun headroom(tile: TileIndex): Long = (Capacity.PACKET_MASS - massAt(tile)).coerceAtLeast(0L)
 
     /** The lump at [tile], or null if there is none. Allocates; not for the hot path. */
-    fun resourceAt(tile: TileIndex): Resource? {
-        val form = formAt(tile) ?: return null
+    fun resourceAt(tile: TileIndex): Mixture? {
+        if (tile.index < 0 || tile.index >= stuff.tileCount) return null
+        if (!stuff.occupies(tile)) return null
         val masses = LongArray(Species.COUNT)
         stuff.forEachSpecies(tile) { s, mass -> masses[s.ordinal] = mass }
         val mixture = Mixture.of(masses, stuff.energyAt(tile))
-        return if (mixture.isEmpty) null else Resource(form, mixture)
+        return if (mixture.isEmpty) null else mixture
     }
 
     /** The lump at [tile] as the packet the logistics code speaks in, or null. Allocates. */
     fun packetAt(tile: TileIndex): SolidPacket? = resourceAt(tile)?.let { SolidPacket(it) }
 
-    /**
-     * Put [resource] at [tile], replacing whatever was there, or clear the tile if it is null.
-     *
-     * Emptying clears the form with it, for the reason [BufferLayer.put] does: a tile that holds
-     * nothing is not a tile still claiming to hold ingots, which is what a gauge would then read.
-     */
-    fun put(tile: TileIndex, resource: Resource?) {
+    /** Put [resource] at [tile], replacing whatever was there, or clear the tile if it is null. */
+    fun put(tile: TileIndex, resource: Mixture?) {
         if (resource == null || resource.isEmpty) {
             if (stuff.occupies(tile)) stuff.release(tile)
-            forms[tile.index] = NO_FORM
             return
         }
         stuff.claim(tile)
-        forms[tile.index] = resource.form.ordinal
-        for (s in Species.ALL) stuff[tile, s] = resource.mixture[s]
-        stuff.setEnergy(tile, resource.mixture.energy)
+        for (s in Species.ALL) stuff[tile, s] = resource[s]
+        stuff.setEnergy(tile, resource.energy)
     }
 
     /**
@@ -87,17 +74,15 @@ class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
      *
      * This is a belt advancing, and it is the one operation that happens to every loaded tile of
      * every run on every step — so it walks the source's present species directly rather than going
-     * out through a [Resource] and back.
+     * out through a [Mixture] and back.
      */
     fun moveInto(from: TileIndex, to: TileIndex) {
         require(isEmpty(to)) { "something is already riding at $to" }
         if (isEmpty(from)) return
         stuff.claim(to)
-        forms[to.index] = forms[from.index]
         stuff.forEachSpecies(from) { s, mass -> stuff[to, s] = mass }
         stuff.setEnergy(to, stuff.energyAt(from))
         stuff.release(from)
-        forms[from.index] = NO_FORM
     }
 
     /**
@@ -116,8 +101,8 @@ class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
         val ahead = packetAt(to) ?: return Squash.Refused
         val incoming = packetAt(from) ?: return Squash.Complete
         val merged = squashOnto(ahead, incoming) ?: return Squash.Refused
-        put(to, (merged.merged as SolidPacket).resource)
-        put(from, (merged.rejected as? SolidPacket)?.resource)
+        put(to, (merged.merged as SolidPacket).contents)
+        put(from, (merged.rejected as? SolidPacket)?.contents)
         return if (merged.rejected == null) Squash.Complete else Squash.Partial
     }
 
@@ -130,14 +115,14 @@ class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
      * That is what it has always done, and the one caller where the difference is reachable is
      * [org.emerge.demo.outofspace.OutofspaceReducer]'s bridge deposit.
      */
-    fun loadOnto(tile: TileIndex, resource: Resource): Boolean {
+    fun loadOnto(tile: TileIndex, resource: Mixture): Boolean {
         if (isEmpty(tile)) {
             put(tile, resource)
             return true
         }
         val ahead = packetAt(tile) ?: return false
         val merged = squashOnto(ahead, SolidPacket(resource)) ?: return false
-        put(tile, (merged.merged as SolidPacket).resource)
+        put(tile, (merged.merged as SolidPacket).contents)
         return merged.rejected == null
     }
 
@@ -147,30 +132,20 @@ class RailLayer(val stuff: StuffLayer, private val forms: IntArray) {
     val totalEnergy: Long get() = stuff.totalEnergy
 
     /** How many tiles this layer is stated over — must match the world it belongs to. */
-    val tileCount: Int get() = forms.size
+    val tileCount: Int get() = stuff.tileCount
 
-    fun copyOf(): RailLayer = RailLayer(stuff.copyOf(), forms.copyOf())
+    fun copyOf(): RailLayer = RailLayer(stuff.copyOf())
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is RailLayer && stuff == other.stuff && forms.contentEquals(other.forms))
+        this === other || (other is RailLayer && stuff == other.stuff)
 
-    override fun hashCode(): Int = 31 * stuff.hashCode() + forms.contentHashCode()
+    override fun hashCode(): Int = stuff.hashCode()
 
-    /** Asserts a tile has a form exactly when something is riding on it. */
     fun checkInvariants() {
         stuff.checkInvariants()
-        for (i in forms.indices) {
-            val tile = TileIndex(i)
-            val loaded = stuff.occupies(tile) && stuff.massAt(tile) > 0L
-            require(!loaded || forms[i] != NO_FORM) { "tile $i carries matter with no form" }
-            require(forms[i] == NO_FORM || loaded) { "tile $i has a form but carries nothing" }
-        }
     }
 
     companion object {
-        private const val NO_FORM: Int = -1
-
-        fun empty(tileCount: Int): RailLayer =
-            RailLayer(StuffLayer.empty(tileCount), IntArray(tileCount) { NO_FORM })
+        fun empty(tileCount: Int): RailLayer = RailLayer(StuffLayer.empty(tileCount))
     }
 }

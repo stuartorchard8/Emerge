@@ -3,9 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 
 import org.emerge.demo.outofspace.logistics.FluidPacket
@@ -331,7 +329,6 @@ object Save {
             // A gauge's reading persists after the packet has gone, so it is state, not decoration.
             // The field names are the ones the `conduit` record used while a gauge was a segment.
             is Gauge -> {
-                m.lastForm?.let { put("lastform", it.name) }
                 m.lastDominant?.let { put("lastspecies", it.name) }
                 if (m.lastPurity != 0) put("lastpurity", m.lastPurity.toString())
                 if (m.lastMass != 0L) put("lastmass", m.lastMass.toString())
@@ -464,7 +461,7 @@ object Save {
      * `deckheat`, a length of conduit's in its `k=` field. Emitting it inline as well would have the
      * reader add the same joules twice.
      *
-     * A [Resource] is the case with nowhere else to put it, which is why it is the one caller — see
+     * A [Mixture] is the case with nowhere else to put it, which is why it is the one caller — see
      * [writeResource].
      */
     private fun writeMixture(m: Mixture, withEnergy: Boolean = false): String {
@@ -482,10 +479,10 @@ object Save {
      * defaulted to. Invisible while everything a fixture stored happened to be at ambient, and it
      * surfaced the moment the starting vessel was given a stock of iron that had a temperature.
      */
-    private fun writeResource(r: Resource): String = "${r.form.name}/${writeMixture(r.mixture, withEnergy = true)}"
+    private fun writeResource(r: Mixture): String = writeMixture(r, withEnergy = true)
 
     private fun writePacket(p: Packet): String = when (p) {
-        is SolidPacket -> "S:" + writeResource(p.resource)
+        is SolidPacket -> "S:" + writeResource(p.contents)
         is FluidPacket -> "F:" + writeMixture(p.contents)
     }
 
@@ -1062,12 +1059,12 @@ object Save {
          *
          * ⚠️ Tolerates the `S:` packet prefix, because a **legacy `bridge` record wrote its three
          * slots as packets** rather than as resources — a bridge carried `Packet`s while every other
-         * machine's store held a `Resource`, and that difference reached the file. Now that its slots
+         * machine's store held a `Mixture`, and that difference reached the file. Now that its slots
          * are ordinary role tiles there is one spelling going forward, and this reads the old one.
          * `F:` is refused rather than unwrapped: there was never a fluid bridge, and a file claiming
          * one is a file that means something this build cannot honour.
          */
-        fun res(key: String): Resource? = f[key]?.let {
+        fun res(key: String): Mixture? = f[key]?.let {
             when {
                 it.startsWith("S:") -> readResource(it.substring(2), scale, fail)
                 it.startsWith("F:") -> fail("a $kindName store cannot hold a fluid packet: '$it'")
@@ -1145,9 +1142,6 @@ object Save {
             // and comes back with it; a valve is only a position.
             DeckMachineKind.Gauge -> Gauge(
                 tile,
-                lastForm = f["lastform"]?.let { name ->
-                    Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
-                },
                 lastDominant = f["lastspecies"]?.let { name ->
                     Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
                 },
@@ -1195,7 +1189,7 @@ object Save {
         // before the two were separate and nothing about the file has changed.
         f["held"]?.let { held ->
             val packet = readPacket(held, scale, fail)
-            if (packet is SolidPacket) rail.put(tile, packet.resource)
+            if (packet is SolidPacket) rail.put(tile, packet.contents)
             else fail("only a solid rides the track; tile $tile carries $held")
         }
         return Segment(conduit = conduit, links = links, deconstructing = f["scrapping"] == "1")
@@ -1220,9 +1214,6 @@ object Save {
         if (f["gauge"] == "1" || f["channel"] != null) {
             return Gauge(
                 tile,
-                lastForm = f["lastform"]?.let { name ->
-                    Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
-                },
                 lastDominant = f["lastspecies"]?.let { name ->
                     Species.ALL.firstOrNull { it.name == name } ?: fail("unknown species '$name'")
                 },
@@ -1346,12 +1337,19 @@ object Save {
         return Mixture.of(masses, energy)
     }
 
-    private fun readResource(text: String, scale: Rescale, fail: (String) -> Nothing): Resource {
+    /**
+     * A pile of matter, read.
+     *
+     * ⚠️ **A leading `FORM/` is read and discarded.** Every file written before form was deleted
+     * names one here, and what it named is not recoverable into anything — there is nowhere left to
+     * put it. Dropping it silently is the migration, and it is lossless in the only sense that
+     * matters: form never affected a gram of mass or a joule of energy, so a save round-trips to
+     * exactly the same world it did before.
+     */
+    private fun readResource(text: String, scale: Rescale, fail: (String) -> Nothing): Mixture {
         val slash = text.indexOf('/')
-        if (slash < 0) fail("expected FORM/mixture, got '$text'")
-        val name = text.substring(0, slash)
-        val form = Form.ALL.firstOrNull { it.name == name } ?: fail("unknown form '$name'")
-        return Resource(form, readMixture(text.substring(slash + 1), scale, fail))
+        val body = if (slash < 0) text else text.substring(slash + 1)
+        return readMixture(body, scale, fail)
     }
 
     private fun readPacket(text: String, scale: Rescale, fail: (String) -> Nothing): Packet = when {

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer

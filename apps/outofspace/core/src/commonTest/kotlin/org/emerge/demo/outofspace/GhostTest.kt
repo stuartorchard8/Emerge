@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -133,7 +131,7 @@ class GhostTest {
      */
     private fun tankAndRun(
         ghostAt: Int?,
-        stored: Resource = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0)),
+        stored: Mixture = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0),
     ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
@@ -222,14 +220,11 @@ class GhostTest {
         // 95% iron, 5% something else. The slack is what stops a rail demanding perfectly separated
         // material before there is anything aboard that can separate it — and what comes with the
         // iron is baked into the tile rather than picked out of the lump.
-        val nearly = Resource(
-            Form.IronIngot,
-            Mixture.of(
+        val nearly = Mixture.of(
                 Species.Iron to 95 * Capacity.PACKET_MASS / 100,
                 Species.Silicon to 5 * Capacity.PACKET_MASS / 100,
                 energy = 0,
-            ),
-        )
+            )
         val s = run(tankAndRun(ghostAt = 7, stored = nearly), RAIL_PERIOD * 8)
         assertTrue(
             s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)) > 0L,
@@ -244,20 +239,17 @@ class GhostTest {
 
     @Test
     fun `a delivery just under the bar is refused`() {
-        val dirty = Resource(
-            Form.IronIngot,
-            Mixture.of(
+        val dirty = Mixture.of(
                 Species.Iron to 90 * Capacity.PACKET_MASS / 100,
                 Species.Silicon to 10 * Capacity.PACKET_MASS / 100,
                 energy = 0,
-            ),
-        )
+            )
         val s = run(tankAndRun(ghostAt = 7, stored = dirty), RAIL_PERIOD * 8)
         assertEquals(0L, s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)), "a 90% delivery got in")
     }
 
-    private fun slag(): Resource =
-        Resource(Form.Slag, Mixture.of(Species.Silicon to 4 * Capacity.PACKET_MASS, energy = 0))
+    private fun slag(): Mixture =
+        Mixture.of(Species.Silicon to 4 * Capacity.PACKET_MASS, energy = 0)
 
     // ── Taking it apart again ─────────────────────────────────────────────────
 
@@ -391,7 +383,7 @@ class GhostTest {
         // form the recovered metal merges with.
         before.rail.put(
             doomed,
-            Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)),
+            Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0),
         )
         val opening = before.inTransitMass + before.builtMass
         val s = run(remove(before, doomed), RAIL_PERIOD * 24)

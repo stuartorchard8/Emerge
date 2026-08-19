@@ -119,18 +119,16 @@ class OutofspaceHud {
             panel(Anchor.TopRight) {
                 title("STOCKPILE")
                 row("(sum of all storage aboard)", 0x7A8A9AFFL)
-                val entries = s.stockpile.entries()
-                if (entries.isEmpty()) {
+                val held = s.stockpile.held
+                if (held.isEmpty) {
                     row("(no storage holding anything)", 0x9A9A9AFFL)
                 } else {
-                    for ((form, mixture) in entries) {
-                        keyValue(form.name, mass(mixture.total))
-                        val dominant = mixture.dominant
-                        if (dominant != null && mixture[dominant] < mixture.total) {
-                            // Purity is the interesting number, so say it rather than hide it.
-                            val pct = mixture[dominant] * 100 / mixture.total
-                            row("   $pct% ${dominant.name}", 0x9A9A9AFFL)
-                        }
+                    keyValue("TOTAL", mass(held.total))
+                    val dominant = held.dominant
+                    if (dominant != null && held[dominant] < held.total) {
+                        // Purity is the interesting number, so say it rather than hide it.
+                        val pct = held[dominant] * 100 / held.total
+                        row("   $pct% ${dominant.name}", 0x9A9A9AFFL)
                     }
                 }
             }
@@ -348,7 +346,6 @@ class OutofspaceHud {
                     if (gauge.lastDominant == null) {
                         row("nothing has passed through yet", 0x9A9A9AFFL)
                     } else {
-                        keyValue("LAST SEEN", gauge.lastForm?.name ?: "?")
                         keyValue(
                             gauge.lastDominant.name.uppercase(),
                             "${gauge.lastPurity / 10}%",
@@ -372,8 +369,8 @@ class OutofspaceHud {
                 row("(empty)", 0x9A9A9AFFL)
             } else {
                 for ((label, resource) in buffers) {
-                    keyValue(label, "${mass(resource.mass)}  ${resource.form.name}")
-                    val rows = composition(resource.mixture).split('\n')
+                    keyValue(label, mass(resource.total))
+                    val rows = composition(resource).split('\n')
                     for (r in rows) {
                         row(" $r", 0x9AA4B4FFL)
                     }

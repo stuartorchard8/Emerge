@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
-import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -29,7 +27,6 @@ import org.emerge.demo.outofspace.world.Wiring
  */
 data class Gauge(
     override val center: TileIndex,
-    val lastForm: Form? = null,
     val lastDominant: Species? = null,
     /** The dominant species' share of the last thing through, in permille. */
     val lastPurity: Int = 0,
@@ -44,12 +41,11 @@ data class Gauge(
     fun reading(packet: Packet?): Gauge {
         if (packet == null) {
             if (lastMass == 0L) return this
-            return copy(lastForm = null, lastDominant = null, lastPurity = 0, lastMass = 0)
+            return copy(lastDominant = null, lastPurity = 0, lastMass = 0)
         }
         val dominant = packet.contents.dominant ?: return this
         val mass = packet.mass
         return copy(
-            lastForm = (packet as? SolidPacket)?.form,
             lastDominant = dominant,
             lastPurity = if (mass == 0L) 0 else (packet.contents[dominant] * SignalField.FULL / mass).toInt(),
             lastMass = mass,

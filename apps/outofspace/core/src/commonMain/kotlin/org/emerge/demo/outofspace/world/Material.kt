@@ -372,7 +372,8 @@ const val BUILD_PURITY_PERCENT = 95
  * costs them a gram of iron. So the question is asked of what wants to *enter the tile*, not of what
  * the ghost would like to keep.
  *
- * Form is deliberately not part of it — powdered iron builds a rail exactly as an ingot does.
+ * What matter has been *made into* is not part of it, and no longer exists to be: powdered iron
+ * builds a rail exactly as a bar of it would.
  */
 fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean =
     buildableFrom(conduitBillOfMaterials(conduit), mixture)

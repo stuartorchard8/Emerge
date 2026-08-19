@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.TileIndex
@@ -18,7 +16,7 @@ import kotlin.test.assertTrue
  * by having a layer each.
  *
  * The properties worth pinning are the ones that make one layer safe: two roles of the same machine
- * land on different tiles and cannot merge, and a buffer's [Form] cannot come apart from the matter
+ * land on different tiles and cannot merge, and a buffer's contents cannot come apart from the store
  * it labels.
  */
 class BufferLayerTest {
@@ -27,13 +25,12 @@ class BufferLayerTest {
     private fun tile(i: Int) = TileIndex(i)
 
     private fun ore(iron: Long, energy: Long = 0L) =
-        Resource(Form.Ore, Mixture.of(Species.Iron to iron, energy = energy))
+        Mixture.of(Species.Iron to iron, energy = energy)
 
     @Test
     fun `an empty layer holds nothing anywhere`() {
         val buffers = BufferLayer.empty(tiles)
         assertNull(buffers.resourceAt(tile(3)))
-        assertNull(buffers.formAt(tile(3)))
         assertEquals(0L, buffers.massAt(tile(3)))
         buffers.checkInvariants()
     }
@@ -42,7 +39,6 @@ class BufferLayerTest {
     fun `what goes in comes back out`() {
         val buffers = BufferLayer.empty(tiles)
         buffers.put(tile(5), ore(1_000L, energy = 77L))
-        assertEquals(Form.Ore, buffers.formAt(tile(5)))
         assertEquals(1_000L, buffers.massAt(tile(5)))
         assertEquals(ore(1_000L, energy = 77L), buffers.resourceAt(tile(5)))
         buffers.checkInvariants()
@@ -56,12 +52,10 @@ class BufferLayerTest {
         val input = tile(4)
         val output = tile(6)
         buffers.put(input, ore(500L))
-        buffers.put(output, Resource(Form.IronIngot, Mixture.of(Species.Iron to 300L, energy = 0L)))
+        buffers.put(output, Mixture.of(Species.Iron to 300L, energy = 0L))
 
         assertEquals(500L, buffers.massAt(input))
         assertEquals(300L, buffers.massAt(output))
-        assertEquals(Form.Ore, buffers.formAt(input))
-        assertEquals(Form.IronIngot, buffers.formAt(output))
         buffers.checkInvariants()
     }
 
@@ -84,48 +78,46 @@ class BufferLayerTest {
         buffers.checkInvariants()
     }
 
-    // ── Form cannot come apart from the matter it labels ──────────────────────
+    // ── Contents cannot come apart from the store that holds them ─────────────
 
     @Test
-    fun `emptying a store clears its form`() {
-        // A tank that still says "ingots" after the last ingot leaves is what a Sensor would read.
+    fun `emptying a store leaves nothing behind`() {
         val buffers = BufferLayer.empty(tiles)
         buffers.put(tile(5), ore(1_000L))
         buffers.put(tile(5), null)
-        assertNull(buffers.formAt(tile(5)))
         assertNull(buffers.resourceAt(tile(5)))
         assertEquals(0L, buffers.massAt(tile(5)))
         buffers.checkInvariants()
     }
 
     @Test
-    fun `replacing contents replaces the form with them`() {
+    fun `replacing contents replaces them wholly`() {
         val buffers = BufferLayer.empty(tiles)
         buffers.put(tile(5), ore(1_000L))
-        buffers.put(tile(5), Resource(Form.Slag, Mixture.of(Species.Quartz to 40L, energy = 0L)))
+        buffers.put(tile(5), Mixture.of(Species.Quartz to 40L, energy = 0L))
 
-        assertEquals(Form.Slag, buffers.formAt(tile(5)))
         assertEquals(40L, buffers.massAt(tile(5)))
-        // The iron from the previous occupant must not still be sitting underneath the new form.
+        // The iron from the previous occupant must not still be sitting underneath the new pile.
         assertEquals(0L, buffers.stuff[tile(5), Species.Iron])
         buffers.checkInvariants()
     }
 
     @Test
-    fun `an empty resource is stored as nothing at all`() {
+    fun `an empty pile is stored as nothing at all`() {
         val buffers = BufferLayer.empty(tiles)
-        buffers.put(tile(5), Resource(Form.Ore, Mixture.EMPTY))
-        assertNull(buffers.formAt(tile(5)))
+        buffers.put(tile(5), Mixture.EMPTY)
+        assertNull(buffers.resourceAt(tile(5)))
+        assertEquals(0L, buffers.massAt(tile(5)))
         buffers.checkInvariants()
     }
 
     @Test
-    fun `releasing a role takes its contents and its form`() {
+    fun `releasing a role takes its contents with it`() {
         val buffers = BufferLayer.empty(tiles)
         buffers.put(tile(5), ore(1_000L))
         buffers.releaseRole(tile(5))
         assertFalse(buffers.hasRole(tile(5)))
-        assertNull(buffers.formAt(tile(5)))
+        assertNull(buffers.resourceAt(tile(5)))
         assertEquals(0L, buffers.massAt(tile(5)))
         buffers.checkInvariants()
     }
@@ -133,11 +125,10 @@ class BufferLayerTest {
     @Test
     fun `a released tile can be reused without inheriting the old contents`() {
         val buffers = BufferLayer.empty(tiles)
-        buffers.put(tile(5), Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0L)))
+        buffers.put(tile(5), Mixture.of(Species.Iron to 999L, energy = 0L))
         buffers.releaseRole(tile(5))
-        buffers.put(tile(5), Resource(Form.Slag, Mixture.of(Species.Quartz to 1L, energy = 0L)))
+        buffers.put(tile(5), Mixture.of(Species.Quartz to 1L, energy = 0L))
 
-        assertEquals(Form.Slag, buffers.formAt(tile(5)))
         assertEquals(0L, buffers.stuff[tile(5), Species.Iron])
         assertEquals(1L, buffers.massAt(tile(5)))
         buffers.checkInvariants()
@@ -160,12 +151,12 @@ class BufferLayerTest {
         buffers.put(tile(1), ore(100L))
 
         val copy = buffers.copyOf()
-        copy.put(tile(1), Resource(Form.Slag, Mixture.of(Species.Quartz to 5L, energy = 0L)))
+        copy.put(tile(1), Mixture.of(Species.Quartz to 5L, energy = 0L))
         copy.put(tile(2), ore(9L))
 
-        assertEquals(Form.Ore, buffers.formAt(tile(1)))
         assertEquals(100L, buffers.massAt(tile(1)))
-        assertNull(buffers.formAt(tile(2)))
+        assertEquals(ore(100L), buffers.resourceAt(tile(1)))
+        assertNull(buffers.resourceAt(tile(2)))
         buffers.checkInvariants()
         copy.checkInvariants()
     }

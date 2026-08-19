@@ -8,9 +8,7 @@ import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -50,7 +48,7 @@ class BridgeTest {
         return s
     }
 
-    private val ingots = Resource(Form.IronIngot, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
+    private val ingots = Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0)
 
     /**
      * Two lines that want the same tile.
@@ -58,7 +56,7 @@ class BridgeTest {
      * The horizontal line runs left to right along row 5, from a full tank to an empty one. The
      * vertical line runs top to bottom down column 9. They meet at (9, 5).
      */
-    private fun crossing(bridged: Boolean = false, horizontalSupply: Resource? = ingots): VesselState {
+    private fun crossing(bridged: Boolean = false, horizontalSupply: Mixture? = ingots): VesselState {
         val deck = DeckArray(grid)
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
@@ -203,14 +201,14 @@ class BridgeTest {
         var s = withLumpAtTheEntrance()
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Input)?.mass, "lifted off the track at the input end")
+        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Input)?.total, "lifted off the track at the input end")
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Inside)?.mass, "over the tile it hops")
+        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Inside)?.total, "over the tile it hops")
         assertNull(s.inStore(at, BufferRole.Input), "and the entrance is free for the next one")
 
         s = run(s, RAIL_PERIOD)
-        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Product)?.mass, "resting on the far end, for a whole step")
+        assertEquals(20 * Capacity.PACKET_MASS, s.inStore(at, BufferRole.Product)?.total, "resting on the far end, for a whole step")
         assertNull(s.inStore(at, BufferRole.Inside), "and the middle is free for the next one")
         assertNull(s.onRail(grid.tile(10, 5)), "not yet put down — that is next step's job")
 
@@ -219,7 +217,7 @@ class BridgeTest {
         // At (11, 5) rather than (10, 5): the exit slot is drawn *at* the output port's tile, so
         // setting down there and running on one tile is a single tile of travel, not two. The
         // deposit happens first precisely so the track can carry it in the same step.
-        assertEquals(20 * Capacity.PACKET_MASS, s.onRail(grid.tile(11, 5))?.mass, "and away down the far run")
+        assertEquals(20 * Capacity.PACKET_MASS, s.onRail(grid.tile(11, 5))?.total, "and away down the far run")
     }
 
     @Test
@@ -242,12 +240,12 @@ class BridgeTest {
         // the shift wants it and the span stays a pipeline. Drain it after the shift instead and
         // every slot idles a step waiting for the one ahead, halving the throughput while looking
         // perfectly correct tile by tile. Occupancy cannot see that; only throughput can.
-        val supply = Resource(Form.IronIngot, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0))
+        val supply = Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0)
         var s = crossing(bridged = true, horizontalSupply = supply)
         // Priming: three steps of latency across the span, plus the run either side of it. The
         // window then has to close before the receiving tank fills, or this measures its capacity.
         s = run(s, RAIL_PERIOD * 13)
-        val before = s.buffers.resourceAt(grid.tile(15, 5))?.mass ?: 0L
+        val before = s.buffers.resourceAt(grid.tile(15, 5))?.total ?: 0L
         val steps = 15
         s = run(s, RAIL_PERIOD * steps)
         val delivered = s.buffers.massAt(grid.tile(15, 5)) - before

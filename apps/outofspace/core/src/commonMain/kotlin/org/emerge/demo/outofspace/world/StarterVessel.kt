@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -196,7 +194,7 @@ private fun BufferLayer.withStartingIron(grid: Grid, deck: DeckArray): BufferLay
     // building material, it is a heat sink the size of the ship, and it would suck the vessel cold
     // through the first machine that touched it.
     val warm = Mixture.of(Species.Iron to mass, energy = heatCapacityOf(cold) * Temperature.AMBIENT_KELVIN)
-    it.put(store, Resource(Form.Ore, warm))
+    it.put(store, warm)
 }
 
 /**

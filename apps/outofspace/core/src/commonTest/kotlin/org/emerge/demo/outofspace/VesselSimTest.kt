@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Wiring
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
@@ -9,9 +12,7 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Packet
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -131,7 +132,7 @@ class VesselSimTest {
         val carried = (4..7).map { s.rail.massAt(grid.tile(it, 2)) }
         assertTrue(carried.all { it > 0L }, "every tile should be carrying something: $carried")
         assertTrue(
-            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
+            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.total ?: 0L) >= Extractor.BUFFER_CAP,
             "and the extractor should have stopped digging",
         )
         assertBalanced(s, "jammed line")
@@ -171,7 +172,7 @@ class VesselSimTest {
             480*RAIL_PERIOD,
         )
 
-        assertEquals(Storage.CAP, s.buffers.resourceAt(grid.tile(8, 5))?.mass, "the tank filled")
+        assertEquals(Storage.CAP, s.buffers.resourceAt(grid.tile(8, 5))?.total, "the tank filled")
         assertTrue(s.ventedMass > 0L, "and the rest went up the branch and overboard")
         assertBalanced(s, "line with a full tank and an open vent")
     }
@@ -204,7 +205,7 @@ class VesselSimTest {
         )
 
         assertTrue(s.ventedMass > 0L, "the vent took a share")
-        val stored = s.buffers.resourceAt(grid.tile(9, 5))?.mass ?: 0L
+        val stored = s.buffers.resourceAt(grid.tile(9, 5))?.total ?: 0L
         assertTrue(stored > 0L, "and so did the tank, which used to get nothing at all")
         // Not an exact split: the tank stops pulling when it fills, and everything then goes
         // overboard. Both being fed while both can take is the property that matters.
@@ -364,7 +365,7 @@ class VesselSimTest {
             "nothing travelled: there is nothing to travel toward",
         )
         assertTrue(
-            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L) >= Extractor.BUFFER_CAP,
+            (s.inStore(grid.tile(2, 2), BufferRole.Product)?.total ?: 0L) >= Extractor.BUFFER_CAP,
             "and the backlog is where you can see it, in the extractor",
         )
         assertBalanced(s, "unconsumed line")
@@ -401,7 +402,7 @@ class VesselSimTest {
     @Test
     fun `what a storage holds is what the vessel can build with`() {
         val grid = Grid(10, 5)
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
+        val ingot = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
         val deck = DeckArray(grid)
         // The tank faces open deck beyond it, so it fills rather than draining.
         deck += Storage(grid.tile(4, 2), Direction.Right)
@@ -412,31 +413,15 @@ class VesselSimTest {
         // ingot, which would be a different question.
         var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .copy(creative = true)
-            .riding(grid.tile(3, 2), ingot.resource)
+            .riding(grid.tile(3, 2), ingot.contents)
         s = run(s, RAIL_PERIOD)
-        assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.mass, "it landed in the tank")
-        assertEquals(1_000L, s.stockpile[Form.IronIngot].total, "and the stockpile is that tank")
+        assertEquals(1_000L, s.buffers.resourceAt(grid.tile(4, 2))!!.total, "it landed in the tank")
+        assertEquals(1_000L, s.stockpile.totalMass, "and the stockpile is that tank")
 
         // Take the tank away and the stockpile goes with it: availability is a fact about where
         // things are, not a number banked somewhere safe.
         s = run(s, 1, OutofspaceInput(listOf(Edit.Remove(grid.tile(4, 2)))))
         assertEquals(0L, s.stockpile.totalMass)
-    }
-
-    @Test
-    fun `machines refuse a second form rather than mixing their input buffer`() {
-        val grid = Grid(10, 5)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 500L, energy = 0))
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
-        val deck = DeckArray(grid)
-        deck += Processor(grid.tile(4, 2), Direction.Right)               // input port at (3, 2)
-        val rails = arrayOfNulls<Segment>(grid.size)
-        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail)
-        var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-            .stocked(grid.tile(4, 2), ore)
-            .riding(grid.tile(3, 2), ingot.resource)
-        s = run(s, RAIL_PERIOD * 2)
-        assertNotNull(s.onRail(grid.tile(3, 2)), "the ingot should still be waiting on the track")
     }
 
     /**
@@ -454,7 +439,20 @@ class VesselSimTest {
      * tile, when it is offered. So ore is lifted off in passing and an ingot rides straight past to
      * the tank at the end, on the same belt, with nothing in the topology distinguishing them.
      */
-    private fun tappedBelt(machine: (TileIndex) -> DeckMachine, carried: Packet): VesselState {
+    private fun tappedBelt(
+        machine: (TileIndex) -> DeckMachine,
+        carried: Packet,
+        /**
+         * Fills the machine's input to the brim, so the only thing it can do with a passer-by is
+         * refuse it.
+         *
+         * ⚠️ **The processing chamber is filled too, and it has to be.** `refine` moves Input into
+         * Inside *before* it consults activation, so a processor with an empty chamber swallows its
+         * own input on the very first tick however hard it is wired shut — and then has room again.
+         * A full chamber is what makes "full" a state rather than a moment.
+         */
+        stuffed: Boolean = false,
+    ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
@@ -469,20 +467,46 @@ class VesselSimTest {
 
         // The lump itself goes on the layer once the state exists, since the track no longer
         // carries its own load.
-        val s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-            .riding(grid.tile(1, 2), (carried as? SolidPacket)?.resource)
+        var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .riding(grid.tile(1, 2), (carried as? SolidPacket)?.contents)
+        if (stuffed) {
+            val full = Mixture.of(Species.Iron to MACHINE_BUFFER_CAP, energy = 0)
+            s = s.stocked(grid.tile(4, 3), full, BufferRole.Inside)
+                .stocked(grid.tile(4, 3), full, BufferRole.Input)
+        }
         return run(s, 12*RAIL_PERIOD)
     }
 
+    /**
+     * A lump a machine will not take carries on to whatever will.
+     *
+     * ⚠️ The **reason** for the refusal changed and the claim did not. This used to offer a processor
+     * an ingot, which it refused for being the wrong form; form is gone and nothing on the delivery
+     * path filters by kind any more, so the refusal is now a full input buffer — the only kind of
+     * refusal left. The property under test is the belt's, not the machine's: a tapped line is a
+     * through-route, and a machine that says no does not thereby become a wall.
+     *
+     * ⚠️ **Wired shut, or the refusal does not last.** A running processor grinds its own buffer
+     * down and makes room, so "full" is a moment rather than a state and the lump gets taken after
+     * all — which is what the first version of this test measured.
+     */
     @Test
-    fun `an ingot the processor will not take rides the belt on to the tank`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
-        val s = tappedBelt({ tile -> Processor(tile, Direction.Down) }, ingot)
+    fun `a lump a full processor will not take rides the belt on to the tank`() {
+        val lump = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
+        val s = tappedBelt(
+            { tile -> Processor(tile, Direction.Down).withWiring(Wiring(mapOf(Action.Run to emptyList()))) },
+            lump,
+            stuffed = true,
+        )
 
-        assertNull(s.inStore(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
+        assertEquals(
+            MACHINE_BUFFER_CAP,
+            s.inStore(grid43(s), BufferRole.Input)?.total,
+            "the processor was full and took nothing more",
+        )
         assertEquals(
             1_000L,
-            s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
+            s.buffers.resourceAt(s.grid.tile(9, 2))?.total,
             "and the tank at the end of the belt should have caught it",
         )
     }
@@ -491,7 +515,7 @@ class VesselSimTest {
     fun `ore on the same belt is lifted off in passing`() {
         // The other half, on the identical layout: the belt has not changed shape, so the only thing
         // that decided this packet's fate is what the machine was willing to take.
-        val ore = SolidPacket(Resource(Form.Ore, Mixture.of(Species.Iron to 1_000L, energy = 0)))
+        val ore = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
         val s = tappedBelt({ tile -> Processor(tile, Direction.Down) }, ore)
         // Asserted as conservation rather than as "the input buffer is not empty", which is a moment
         // and not a fact: the processor grinds at 125 g a tick, so whether the ore is still in the
@@ -502,19 +526,6 @@ class VesselSimTest {
         assertNull(
             s.buffers.resourceAt(s.grid.tile(9, 2)),
             "so nothing should have reached the tank",
-        )
-    }
-
-    @Test
-    fun `an empty processor lets an ingot go by`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 1_000L, energy = 0)))
-        val s = tappedBelt({ tile -> Processor(tile, Direction.Down) }, ingot)
-
-        assertNull(s.inStore(grid43(s), BufferRole.Input), "the processor should not have taken an ingot")
-        assertEquals(
-            1_000L,
-            s.buffers.resourceAt(s.grid.tile(9, 2))?.mass,
-            "the ingot should have carried on to the tank",
         )
     }
 
@@ -531,7 +542,7 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val store = Storage(at, Direction.Right)
         deck += store
-        val held = Resource(Form.IronIngot, Mixture.of(Species.Iron to 999L, energy = 0))
+        val held = Mixture.of(Species.Iron to 999L, energy = 0)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(at, held)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
@@ -548,7 +559,7 @@ class VesselSimTest {
     @Test
     fun `rotating turns a machine clockwise and leaves its contents alone`() {
         val grid = Grid(10, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 100L, energy = 0))
+        val stored = Mixture.of(Species.Iron to 100L, energy = 0)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(4, 3), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(4, 3), stored)
@@ -626,7 +637,7 @@ class VesselSimTest {
         // allowing only for the vented total.
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
-        val onTrack = s.rails.indices.fold(Mixture.EMPTY) { acc, i -> acc + (s.onRail(TileIndex(i))?.mixture ?: Mixture.EMPTY) }
+        val onTrack = s.rails.indices.fold(Mixture.EMPTY) { acc, i -> acc + (s.onRail(TileIndex(i)) ?: Mixture.EMPTY) }
         // Both lists: what a warehouse holds is as much "in the world" as what a processor holds, and
         // warehouses stand on the deck. Walking a second list left the tanks out and the world
         // looked short by exactly what was banked in them.

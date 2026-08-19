@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferLayer
@@ -100,12 +98,9 @@ class MachineGhostTest {
             // Several times what the machine costs: a run of track holds packets of its own while
             // they travel, so a tank stocked to the bill exactly would leave the last of it strung
             // out along the belt. A fixture should never be the reason a build stalls.
-            Resource(
-                Form.IronIngot,
-                machine.kind.material.composition.scaledTo(
+            machine.kind.material.composition.scaledTo(
                     machineBillOfMaterials(machine.kind, machine.tiles(grid).size).total * 4,
                 ),
-            ),
         ).copy(creative = false)
     }
 
@@ -149,7 +144,7 @@ class MachineGhostTest {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at)).stocked(
             grid.tile(3, 4),
-            Resource(Form.Slag, Mixture.of(Species.Quartz to 40 * Capacity.PACKET_MASS, energy = 0)),
+            Mixture.of(Species.Quartz to 40 * Capacity.PACKET_MASS, energy = 0),
         )
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
         assertTrue(s.deck.isGhost(at), "a hull built itself out of silica")
@@ -166,7 +161,7 @@ class MachineGhostTest {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at)).stocked(
             grid.tile(3, 4),
-            Resource(Form.IronIngot, Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0)),
+            Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0),
         )
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
         assertTrue(s.deck.isGhost(at), "a hull built itself out of iron alone")
@@ -187,14 +182,11 @@ class MachineGhostTest {
         val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
         val start = tankAndGhost(Hull(at)).stocked(
             grid.tile(3, 4),
-            Resource(
-                Form.IronIngot,
-                Mixture.of(
+            Mixture.of(
                     Species.Iron to 95 * bill.total * 4 / 100,
                     Species.Carbon to 5 * bill.total * 4 / 100,
                     energy = 0,
                 ),
-            ),
         )
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
         assertFalse(s.deck.isGhost(at), "a blend inside the tolerance did not build the hull")
@@ -331,7 +323,7 @@ class MachineGhostTest {
         val tank = Storage(at, Direction.Right)
         val before = builtMachine(tank).stocked(
             at,
-            Resource(Form.IronIngot, Mixture.of(Species.Iron to 3 * Capacity.PACKET_MASS, energy = 0)),
+            Mixture.of(Species.Iron to 3 * Capacity.PACKET_MASS, energy = 0),
             BufferRole.Inside,
         )
         val full = before.deck.stuff.massAt(at)
@@ -361,7 +353,7 @@ class MachineGhostTest {
         assertEquals(at, inside, "a processor's working store is supposed to sit at its centre")
         assertTrue(input != at, "and its input port is supposed to be somewhere else")
 
-        val half = Resource(Form.Ore, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0))
+        val half = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)
         val before = builtMachine(processor).stocked(at, half, BufferRole.Inside)
 
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
@@ -417,8 +409,8 @@ class MachineGhostTest {
     fun `a marked bridge carries what is on it out of the far end before it comes apart`() {
         val at = grid.tile(9, 4)
         val bridge = Bridge(at, Direction.Right)
-        val lump = Resource(Form.IronIngot, Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0))
-        val carried = lump.mass
+        val lump = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)
+        val carried = lump.total
         val loaded = builtMachine(bridge).stocked(at, lump, BufferRole.Input)
         val casing = loaded.deck.stuff.massAt(at)
 

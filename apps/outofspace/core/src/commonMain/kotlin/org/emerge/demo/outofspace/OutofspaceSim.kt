@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.cook
 import org.emerge.demo.outofspace.chem.process
@@ -642,8 +640,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
     /** True when any output buffer is full, which stops the machine until something drains it. */
-    private fun blocked(vararg outputs: Resource?): Boolean =
-        outputs.any { (it?.mass ?: 0L) >= MACHINE_OUTPUT_CAP }
+    private fun blocked(vararg outputs: Mixture?): Boolean =
+        outputs.any { (it?.total ?: 0L) >= MACHINE_OUTPUT_CAP }
 
     /**
     * Activity per machine-tick: rate × activation, with carry-over via [Rate].
@@ -658,11 +656,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * [bufferTile] returns null for a role it does not — so a null here is a machine being asked for
      * a store it has no concept of, which is a bug in the caller and not a state the world can be in.
      */
-    private fun Work.store(m: DeckMachine, centre: TileIndex, role: BufferRole): Resource? =
+    private fun Work.store(m: DeckMachine, centre: TileIndex, role: BufferRole): Mixture? =
         buffers.resourceAt(bufferTile(grid, m, centre, role)!!)
 
     /** Replace the [role] store of the machine at [centre], or empty it if [resource] is null. */
-    private fun Work.putStore(m: DeckMachine, centre: TileIndex, role: BufferRole, resource: Resource?) {
+    private fun Work.putStore(m: DeckMachine, centre: TileIndex, role: BufferRole, resource: Mixture?) {
         buffers.put(bufferTile(grid, m, centre, role)!!, resource)
     }
 
@@ -678,7 +676,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
             putStore(m, tile, BufferRole.Input, null)
             putStore(m, tile, BufferRole.Inside, fresh)
-            heat(tile, heatOfWorking(fresh.mass, m))
+            heat(tile, heatOfWorking(fresh.total, m))
             fresh
         }
 
@@ -702,7 +700,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
             putStore(m, tile, BufferRole.Input, null)
             putStore(m, tile, BufferRole.Inside, fresh)
-            heat(tile, heatOfWorking(fresh.mass, m))
+            heat(tile, heatOfWorking(fresh.total, m))
             fresh
         }
 
@@ -721,12 +719,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     private fun Work.vaporize(m: Vaporizer, activation: Int, tile: TileIndex): Vaporizer {
         val input = store(m, tile, BufferRole.Input) ?: return m
         val (mass, carry) = throttled(m.massPerTick, activation, m.carry)
-        val chunkMass = minOf(mass, input.mass)
+        val chunkMass = minOf(mass, input.total)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
-        val chunk = Resource(input.form, input.mixture.take(chunkMass))
+        val chunk = input.take(chunkMass)
         heat(tile, heatOfWorking(chunkMass, m))
-        val gas = chunk.mixture
+        val gas = chunk
         val parcel = MassArray(1)
         for (s in Species.ALL) {
             val g = gas[s]
@@ -739,7 +737,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // The ore has left the cargo and the same mass has joined the atmosphere. See [solidBecameGas].
         solidBecameGas(chunkMass, energy)
 
-        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
+        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
         return m.copy(carry = carry)
     }
 
@@ -773,7 +771,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     ): Thruster {
         val input = store(m, tile, BufferRole.Input) ?: return m
         val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
-        val chunkMass = minOf(allowance, input.mass)
+        val chunkMass = minOf(allowance, input.total)
         if (chunkMass <= 0L) return m.copy(carry = carry)
 
         val path = exhaustPath(grid, structure, tile, m.facing)
@@ -781,8 +779,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         heat(tile, heatOfWorking(chunkMass, m))
 
         // The propellant, as gas: whatever went into the chamber is what comes out of the bell.
-        val chunk = Resource(input.form, input.mixture.take(chunkMass))
-        val parcel = MassArray(1) { _,s -> chunk.mixture[s] }
+        val chunk = input.take(chunkMass)
+        val parcel = MassArray(1) { _,s -> chunk[s] }
         val propellantEnergy = heatCapacityAt(parcel, TileIndex(0)) * Temperature.AMBIENT_KELVIN
 
         // Everything standing in the plume, taken with it. A jet does not thread between the gas in
@@ -836,21 +834,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             solidBecameGas(chunkMass, landed)
         }
 
-        putStore(m, tile, BufferRole.Input, Resource(input.form, input.mixture - chunk.mixture).orNull())
+        putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
         return m.copy(carry = carry)
     }
 
-/** Buffer merge: new contents, or null if forms cannot coexist. Null vs Merge(null) distinguishes "empty" from "cannot mix". */
-    private class Merge(val buffer: Resource?)
+/**
+     * Buffer merge: what the store now holds.
+     *
+     * ⚠️ The nullable return is **vestigial**, and deliberately kept for now. It used to mean "these
+     * two cannot coexist", which was a real answer while a store carried a form: ore pressed into a
+     * buffer of ingots had to be refused, and a machine that had to stall said so this way. Nothing
+     * is refusable any more — every two heaps combine — so this never answers null. It is left in
+     * place because the demand work is about to give refusal a *new* meaning, and re-threading the
+     * callers twice is worse than leaving the seam open once.
+     */
+    private class Merge(val buffer: Mixture?)
 
-    private fun Resource?.merged(addition: Resource): Merge? = when {
+    private fun Mixture?.merged(addition: Mixture): Merge? = when {
         addition.isEmpty -> Merge(this)
         this == null || this.isEmpty -> Merge(addition)
-        this.form != addition.form -> null
-        else -> Merge(Resource(form, mixture + addition.mixture))
+        else -> Merge(this + addition)
     }
 
-    private fun Resource.orNull(): Resource? = if (isEmpty) null else this
+    private fun Mixture.orNull(): Mixture? = if (isEmpty) null else this
 
     /** Moves everything one slot toward the head, leaving the tail free. */
     private fun shiftTowardHead(slots: List<Packet?>): List<Packet?> {
@@ -1583,7 +1589,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Backed up: stop biting. What is not taken is still in the rock, which is a better
             // place for it than a buffer — nothing is forfeit by waiting.
             val held = buffers.resourceAt(bufferTile(grid, m, tile, BufferRole.Product)!!)
-            if ((held?.mass ?: 0L) >= Extractor.BUFFER_CAP) return m
+            if ((held?.total ?: 0L) >= Extractor.BUFFER_CAP) return m
             if (activation <= 0) return m
 
             // ⚠️ **A bite goes straight into the store it leaves from.** It used to land in a second
@@ -1595,9 +1601,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val found = reachedBody(m, tile)
             if (found < 0) return m
             val bitten = bite(found, tile) ?: return m
-            if (bitten.mass <= 0L) return m
-            heat(tile, heatOfWorking(bitten.mass, m))
-            putStore(m, tile, BufferRole.Product, Resource(Form.Ore, (held?.mixture ?: Mixture.EMPTY) + bitten.mixture))
+            if (bitten.total <= 0L) return m
+            heat(tile, heatOfWorking(bitten.total, m))
+            putStore(m, tile, BufferRole.Product, (held ?: Mixture.EMPTY) + bitten)
             return m
         }
 
@@ -1616,7 +1622,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Takes one cell off body [index], which is where mass enters the ore ledger — at the body,
          * not at the belt, so that the two balances are hinged on the same number.
          */
-        private fun bite(index: Int, tile: TileIndex): Resource? {
+        private fun bite(index: Int, tile: TileIndex): Mixture? {
             val body = bodies[index]
             // Off the deck: an extractor is a deck machine, and asking the machine list for one
             // is a null-pointer rather than a wrong answer — which is at least loud.
@@ -1639,7 +1645,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 taken.impulseX, taken.impulseY,
             )
             if (taken.body == null) bodies.removeAt(index) else bodies[index] = taken.body
-            return Resource(Form.Ore, body.oreComposition!!.scaledTo(taken.mass))
+            return body.oreComposition!!.scaledTo(taken.mass)
         }
 
         /**
@@ -1686,7 +1692,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                         if (moved > 0L) {
                             val recovered = Mixture.of(masses, energy)
-                            val form = Form.Ore
                             // ⚠️ **Nothing leaves the structure layer until the lump has taken it.**
                             // The tile having room is not the same question as the lump accepting
                             // it: an ingot never merges with the ore riding over it, whatever the
@@ -1700,8 +1705,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             // false answer here has written nothing.
                             val onto = rail.resourceAt(tile)
                             val landed =
-                                if (onto == null) { rail.put(tile, Resource(form, recovered)); true }
-                                else rail.loadOnto(tile, Resource(form, recovered))
+                                if (onto == null) { rail.put(tile, recovered); true }
+                                else rail.loadOnto(tile, recovered)
                             if (landed) {
                                 for (sp in Species.ALL) {
                                     val part = masses[sp.ordinal]
@@ -1770,8 +1775,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 for (role in BufferRole.entries) {
                     val store = bufferTile(grid, m, centre, role) ?: continue
                     val held = buffers.resourceAt(store) ?: continue
-                    if (held.mass <= 0L) continue
-                    storesHeld += held.mass
+                    if (held.total <= 0L) continue
+                    storesHeld += held.total
                     if (role in drainedElsewhere) continue
                     if (handBack(handBackTileFor(m, centre, role, store), held, store)) handedBack = true
                 }
@@ -1830,19 +1835,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Answers whether anything moved, so the caller can wait a tick rather than moving on to the
          * casing while a store is still emptying.
          */
-        private fun handBack(onto: TileIndex, held: Resource, store: TileIndex): Boolean {
+        private fun handBack(onto: TileIndex, held: Mixture, store: TileIndex): Boolean {
             if (rails[onto.index] == null) return false
             val room = rail.headroom(onto)
             if (room <= 0L) return false
-            val take = minOf(held.mass, room)
-            val moving = if (take >= held.mass) held.mixture else held.mixture.take(take)
+            val take = minOf(held.total, room)
+            val moving = if (take >= held.total) held else held.take(take)
             if (moving.total <= 0L) return false
-            val offered = Resource(held.form, moving)
+            val offered = moving
             val landed =
                 if (rail.resourceAt(onto) == null) { rail.put(onto, offered); true }
                 else rail.loadOnto(onto, offered)
             if (!landed) return false
-            buffers.put(store, Resource(held.form, held.mixture - moving).takeIf { it.mass > 0L })
+            buffers.put(store, (held - moving).takeIf { it.total > 0L })
             return true
         }
 
@@ -1881,12 +1886,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (t in tiles) energy += deck.stuff.energyAt(t)
             val movedEnergy = if (take >= held) energy else scaledRatio(take, held, energy)
             val recovered = Mixture.of(masses, movedEnergy)
-            val form = Form.Ore
 
             // The deposit first, the deduction only if it lands — see the note on this pass.
             val landed =
-                if (rail.resourceAt(centre) == null) { rail.put(centre, Resource(form, recovered)); true }
-                else rail.loadOnto(centre, Resource(form, recovered))
+                if (rail.resourceAt(centre) == null) { rail.put(centre, recovered); true }
+                else rail.loadOnto(centre, recovered)
             if (!landed) return false
 
             for (sp in Species.ALL) {
@@ -1989,10 +1993,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (have <= need) {
                 val packet = rail.packetAt(tile) ?: return null
                 for (sp in Species.ALL) {
-                    val mass = packet.resource.mixture[sp]
+                    val mass = packet.contents[sp]
                     if (mass != 0L) stuff[tile, sp] = stuff[tile, sp] + mass
                 }
-                stuff.setEnergy(tile, stuff.energyAt(tile) + packet.resource.mixture.energy)
+                stuff.setEnergy(tile, stuff.energyAt(tile) + packet.contents.energy)
                 rail.put(tile, null)
                 builtMass += have
                 return packet
@@ -2002,21 +2006,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val lump = rail.resourceAt(tile) ?: return null
             var taken = 0L
             for (sp in Species.ALL) {
-                val mass = lump.mixture[sp]
+                val mass = lump[sp]
                 if (mass == 0L) continue
                 val part = scaledRatio(need, have, mass)
                 if (part <= 0L) continue
                 stuff[tile, sp] = stuff[tile, sp] + part
                 taken += part
             }
-            val heat = scaledRatio(need, have, lump.mixture.energy)
+            val heat = scaledRatio(need, have, lump.energy)
             stuff.setEnergy(tile, stuff.energyAt(tile) + heat)
             // What is left is stated rather than subtracted tile-side, so the lump the belt carries
             // on and the mass booked here are the same arithmetic and cannot drift apart.
             val rest = LongArray(Species.COUNT)
-            for (sp in Species.ALL) rest[sp.ordinal] = lump.mixture[sp] - scaledRatio(need, have, lump.mixture[sp])
-            val remainder = Mixture.of(rest, lump.mixture.energy - heat)
-            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, Resource(lump.form, remainder))
+            for (sp in Species.ALL) rest[sp.ordinal] = lump[sp] - scaledRatio(need, have, lump[sp])
+            val remainder = Mixture.of(rest, lump.energy - heat)
+            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
             builtMass += taken
             return null
         }
@@ -2108,8 +2112,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // The whole lump goes in, wholesale — a fraction of a fraction is where the rounding
                 // would live, and the common case is exact.
                 val packet = rail.packetAt(tile) ?: return null
-                for (sp in Species.ALL) spreadOverFootprint(tiles, sp, packet.resource.mixture[sp])
-                spreadEnergyOverFootprint(tiles, packet.resource.mixture.energy)
+                for (sp in Species.ALL) spreadOverFootprint(tiles, sp, packet.contents[sp])
+                spreadEnergyOverFootprint(tiles, packet.contents.energy)
                 rail.put(tile, null)
                 taken = have
                 builtMass += have
@@ -2133,7 +2137,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // missing.
             val rest = LongArray(Species.COUNT)
             for (sp in Species.ALL) {
-                val mass = lump.mixture[sp]
+                val mass = lump[sp]
                 if (mass == 0L) continue
                 val part = minOf(mass, shortfall[sp.ordinal])
                 spreadOverFootprint(tiles, sp, part)
@@ -2143,10 +2147,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 rest[sp.ordinal] = mass - part
             }
             if (taken <= 0L) return null
-            val heat = scaledRatio(taken, have, lump.mixture.energy)
+            val heat = scaledRatio(taken, have, lump.energy)
             spreadEnergyOverFootprint(tiles, heat)
-            val remainder = Mixture.of(rest, lump.mixture.energy - heat)
-            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, Resource(lump.form, remainder))
+            val remainder = Mixture.of(rest, lump.energy - heat)
+            if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
             builtMass += taken
             finishMachine(m, tiles)
             return null
@@ -2213,7 +2217,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val buffer = bufferFor(m, port) ?: return
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = rail.isEmpty(tile)
-            if (!rail.loadOnto(tile, packet.resource)) return
+            if (!rail.loadOnto(tile, packet.contents)) return
             drained(m, port, rest.orNull())
             // Only an empty tile counts as an appearance. Topping up a lump already standing there
             // is a change of mass, which draws itself from the mass the tile started the tick with.
@@ -2277,13 +2281,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Which of a machine's buffers drains through [port]. */
-        private fun bufferFor(m: DeckMachine, port: Port): Resource? {
+        private fun bufferFor(m: DeckMachine, port: Port): Mixture? {
             val role = outputBufferRole(m, port.stream) ?: return null
             return buffers.resourceAt(bufferTile(grid, m, port.owner, role) ?: return null)
         }
 
         /** Write back what is left in the buffer that drained through [port]. */
-        private fun drained(m: DeckMachine, port: Port, rest: Resource?) {
+        private fun drained(m: DeckMachine, port: Port, rest: Mixture?) {
             val role = outputBufferRole(m, port.stream) ?: return
             buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
         }
@@ -2392,14 +2396,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val ghostMachine = if (ghosts.contains(to)) null else machineGhosts[to]
                     when {
                         ghosts.contains(to) ->
-                            rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it.mixture) } ?: false
+                            rail.resourceAt(from)?.let { buildableFrom(Conduit.Rail, it) } ?: false
                         // A machine's casing is refused on exactly the same terms as a rail's, off
                         // its own bill — the anti-exploit does not get weaker because the thing being
                         // built is bigger.
                         ghostMachine != null -> rail.resourceAt(from)?.let {
                             buildableFrom(
                                 machineBillOfMaterials(ghostMachine.kind, ghostMachine.tiles(grid).size),
-                                it.mixture,
+                                it,
                             )
                         } ?: false
                         else -> true
@@ -2465,14 +2469,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Take packets (limit caps to available room). */
-        private fun takePacket(buffer: Resource, limit: Long = Capacity.PACKET_MASS): Pair<SolidPacket, Resource>? {
+        private fun takePacket(buffer: Mixture, limit: Long = Capacity.PACKET_MASS): Pair<SolidPacket, Mixture>? {
             val want = minOf(Capacity.PACKET_MASS, limit)
-            if (want <= 0L || buffer.mass <= 0L) return null
-            val taken = if (buffer.mass < want) buffer.mixture else buffer.mixture.take(want)
-            return SolidPacket(Resource(buffer.form, taken)) to Resource(buffer.form, buffer.mixture - taken)
+            if (want <= 0L || buffer.total <= 0L) return null
+            val taken = if (buffer.total < want) buffer else buffer.take(want)
+            return SolidPacket(taken) to buffer - taken
         }
 
-        private fun Resource.orNull(): Resource? = if (isEmpty) null else this
+        private fun Mixture.orNull(): Mixture? = if (isEmpty) null else this
 
         private fun deliver(target: Int, destination: DeckMachine, packet: Packet): Boolean {
             return when (destination) {
@@ -2487,7 +2491,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val solid = packet as? SolidPacket
                     if (store == null || solid == null || buffers.massAt(store) > 0L) false
                     else {
-                        buffers.put(store, solid.resource)
+                        buffers.put(store, solid.contents)
                         true
                     }
                 }
@@ -2529,21 +2533,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** The new input buffer if [packet] is acceptable, else null. */
-        private fun acceptInto(destination: DeckMachine, existing: Resource?, packet: Packet): Resource? {
+        private fun acceptInto(destination: DeckMachine, existing: Mixture?, packet: Packet): Mixture? {
             if (packet !is SolidPacket) return null
-            // A warehouse takes any form and fills to its tank; a working machine takes ore only,
-            // one lump at a time. That difference is the whole of what "storage" means here.
-            if (destination !is Storage && packet.resource.form != Form.Ore) return null
-            if (existing != null && existing.form != packet.form) return null
+            // A warehouse fills to its tank; a working machine takes one lump at a time. That
+            // difference is the whole of what "storage" means here.
+            //
+            // ⚠️ There used to be a second rule: a working machine took `Form.Ore` and refused
+            // anything else, and a store refused a lump whose form differed from what it already
+            // held. Both went with form. **Nothing filters by kind on this path any more** — the
+            // only refusals left are "full" and "not a solid". The demand work is where kind comes
+            // back, and it comes back as something a sink *asks for* rather than something it
+            // happens to reject at the door.
             val cap = if (destination is Storage) Storage.CAP else MACHINE_BUFFER_CAP
-            if ((existing?.mass ?: 0L) >= cap) return null
-            return if (existing == null) packet.resource
-            else Resource(existing.form, existing.mixture + packet.contents)
+            if ((existing?.total ?: 0L) >= cap) return null
+            return if (existing == null) packet.contents
+            else existing + packet.contents
         }
 
         /** What a packet becomes when it is tipped onto the deck. */
-        private fun asResource(packet: Packet): Resource =
-            Resource((packet as? SolidPacket)?.form ?: Form.Ore, packet.contents)
+        private fun asResource(packet: Packet): Mixture =
+            packet.contents
 
         private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
             DeckMachineKind.Hull -> Hull(tile)

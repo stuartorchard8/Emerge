@@ -2,9 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.CellShape
 import org.emerge.demo.outofspace.world.Direction
@@ -21,7 +19,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * The ore source: a deck plate that leeches mass off whatever rock is lying on it.
  *
  * It replaces the miner, which minted ore out of nothing at a rate somebody typed. Everything
- * downstream of it is unchanged — same output port, same [Form.Ore] buffer, same backing-up
+ * downstream of it is unchanged — same output port, same one buffer, same backing-up
  * behaviour — because the interesting difference is upstream: this thing has to be **given** a rock,
  * and when the rock is gone it stops. That is the loop closing — and what it gets out of one is what
  * that rock is made of.

@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.MergeResult
 import org.emerge.demo.outofspace.logistics.Packet
@@ -123,15 +122,12 @@ private fun mayMerge(
 /**
  * Merges [incoming] into [ahead] where the two can genuinely combine, else null.
  *
- * [mergeInto] already refuses to mix two different forms, or a solid with a fluid. The extra
- * condition here is [Form.isPowder]: within one form, only a powder actually flows together. Two
- * ingots of the same metal are still two ingots, and pressing them against each other on a jammed
- * belt does not make one bigger ingot.
+ * Only capacity stands in the way now. This used to also refuse anything that was not a powder —
+ * two ingots pressed together on a jammed belt are still two ingots — and that rule went with
+ * [org.emerge.demo.outofspace.chem.Mixture] becoming the only thing a packet is. It is the *reason*
+ * belt blending works: everything on a belt is a heap, and heaps combine.
  */
 fun squashOnto(ahead: Packet, incoming: Packet): MergeResult? {
     if (Capacity.headroom(ahead) <= 0L) return null
-    val form = (ahead as? SolidPacket)?.form
-    // Fluids always flow together; a solid only does if it is a powder.
-    if (form != null && !form.isPowder) return null
     return mergeInto(ahead, incoming)
 }

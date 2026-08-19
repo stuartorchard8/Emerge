@@ -5,9 +5,7 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.Vaporizer
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Conduit
@@ -82,7 +80,7 @@ class SignalWiringTest {
      */
     private fun rig(fill: Long, wired: Boolean = true): VesselState {
         val deck = DeckArray(grid)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
+        val stored = Mixture.of(Species.Iron to fill, energy = 0)
         deck += Extractor(grid.tile(extractorAt.first, extractorAt.second), Direction.Right)
             .withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
@@ -105,7 +103,7 @@ class SignalWiringTest {
 
     /** What the extractor has ground out — the measure of a throttle, see [WiringTest]. */
     private fun ground(s: VesselState): Long =
-        s.extractedMass - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Inside)?.mass ?: 0L)
+        s.extractedMass - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Inside)?.total ?: 0L)
 
     // ── The point of the plan ─────────────────────────────────────────────────
 
@@ -162,7 +160,7 @@ class SignalWiringTest {
      */
     private fun vaporizerRig(fill: Long): VesselState {
         val deck = DeckArray(grid)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
+        val stored = Mixture.of(Species.Iron to fill, energy = 0)
         val at = grid.tile(extractorAt.first, extractorAt.second)
         deck += Vaporizer(at, Direction.Right).withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
@@ -180,12 +178,12 @@ class SignalWiringTest {
             .stocked(grid.tile(13, 5), stored)
             // Plenty, so the machine is never short of something to work on: the throttle is the
             // only thing that may govern the rate over the window measured.
-            .stocked(at, Resource(Form.Ore, Mixture.of(Species.Iron to Storage.CAP, energy = 0)), BufferRole.Input)
+            .stocked(at, Mixture.of(Species.Iron to Storage.CAP, energy = 0), BufferRole.Input)
     }
 
     /** How much the machine worked through: what is gone from its input store. */
     private fun vaporized(s: VesselState): Long =
-        Storage.CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.mass ?: 0L)
+        Storage.CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.total ?: 0L)
 
     /**
      * Half a signal is half a machine, over a wire exactly as it was over a channel. The proportional
@@ -208,7 +206,7 @@ class SignalWiringTest {
     @Test
     fun `two machines on one run see the same value`() {
         val deck = DeckArray(grid)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to Storage.CAP, energy = 0))
+        val stored = Mixture.of(Species.Iron to Storage.CAP, energy = 0)
         deck += Storage(grid.tile(13, 5), Direction.Right)
         deck += Sensor(grid.tile(12, 3), Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)

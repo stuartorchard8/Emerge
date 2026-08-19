@@ -3,20 +3,6 @@ package org.emerge.demo.outofspace.chem
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
- * A pile of matter: what it has been made into, and what it is made of.
- *
- * [mixture] is not decoration. A [Form.IronIngot] smelted from dirty ore carries the impurities
- * that came with it, and they follow it up the whole crafting tree — so the quality of what you mine
- * is still legible in what you build.
- */
-data class Resource(val form: Form, val mixture: Mixture) {
-    val mass: Long get() = mixture.total
-    val isEmpty: Boolean get() = mixture.isEmpty
-
-    override fun toString(): String = "$form ${mass}g $mixture"
-}
-
-/**
  * Chemistry: the pure rules for turning matter into other matter.
  *
  * Every function here is total, deterministic and free of engine types, so the whole economy can be
@@ -29,8 +15,8 @@ data class Resource(val form: Form, val mixture: Mixture) {
  */
 
 /** The two streams out of a species processor: a concentrated product and its tailings. */
-data class ProcessResult(val product: Resource, val tailings: Resource) {
-    val totalMass: Long get() = product.mass + tailings.mass
+data class ProcessResult(val product: Mixture, val tailings: Mixture) {
+    val totalMass: Long get() = product.total + tailings.total
 }
 
 /**
@@ -44,17 +30,14 @@ data class ProcessResult(val product: Resource, val tailings: Resource) {
  * Consequence worth knowing: feeding in already-pure material simply halves it into two identical
  * piles. Processing is for dirty input; it does nothing useful to clean input.
  */
-fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
+fun process(input: Mixture, efficiencyPermille: Int = 1000): ProcessResult {
     require(efficiencyPermille in 0..1000) { "efficiency must be 0..1000 permille, got $efficiencyPermille" }
 
-    val total = input.mixture.total
-    val dominant = input.mixture.dominant
-    if (dominant == null || total == 0L) {
-        val empty = Resource(input.form, Mixture.EMPTY)
-        return ProcessResult(empty, empty)
-    }
+    val total = input.total
+    val dominant = input.dominant
+    if (dominant == null || total == 0L) return ProcessResult(Mixture.EMPTY, Mixture.EMPTY)
 
-    val dominantMass = input.mixture[dominant]
+    val dominantMass = input[dominant]
 
     // The effective efficiency is min(machine, purity), kept as an exact rational n/d so no float
     // enters the simulation. purity = dominantMass/total; machine = efficiencyPermille/1000.
@@ -83,37 +66,30 @@ fun process(input: Resource, efficiencyPermille: Int = 1000): ProcessResult {
     if (impuritiesForProduct > 0L) {
         // Spread the product's impurity allowance across the non-dominant species in proportion.
         val impurityWeights = LongArray(Species.COUNT)
-        for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input.mixture[m]
+        for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input[m]
         val share = apportion(impurityWeights, impuritiesForProduct)
         for (i in productMass.indices) if (i != dominant.ordinal) productMass[i] = share[i]
     }
 
-    val productMixture = Mixture.of(productMass, input.mixture.energy)
-    return ProcessResult(
-        product = Resource(input.form, productMixture),
-        tailings = Resource(input.form, input.mixture - productMixture),
-    )
+    val productMixture = Mixture.of(productMass, input.energy)
+    return ProcessResult(product = productMixture, tailings = input - productMixture)
 }
 
 /**
  * Heats [input] up to [setTemperature].
  */
-fun cook(input: Resource, setTemperature: Int): Resource {
-    // TODO: add temperature to resources
+fun cook(input: Mixture, setTemperature: Int): Mixture {
+    // TODO: add temperature to mixtures
     return input
 }
-
-/** Pours two piles of the same form together, or returns null if the forms differ. */
-fun merge(a: Resource, b: Resource): Resource? =
-    if (a.form != b.form) null else Resource(a.form, a.mixture + b.mixture)
 
 /**
  * Splits [amount] mass off [input], proportionally across its species — what a belt, a grabber or
  * a machine input buffer does. Returns `(taken, left)`, which always sum back to [input].
  */
-fun takeFrom(input: Resource, amount: Long): Pair<Resource, Resource> {
-    val taken = input.mixture.take(amount)
-    return Resource(input.form, taken) to Resource(input.form, input.mixture - taken)
+fun takeFrom(input: Mixture, amount: Long): Pair<Mixture, Mixture> {
+    val taken = input.take(amount)
+    return taken to (input - taken)
 }
 
 /**

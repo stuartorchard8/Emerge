@@ -1,13 +1,12 @@
 package org.emerge.demo.outofspace.world
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
 
 /**
- * The global construction inventory: how much of each [Form] the vessel has to build with, and what
- * it is made of.
+ * The global construction inventory: what the vessel has to build with, species by species.
  *
  * **This is a view over the vessel's [org.emerge.demo.outofspace.world.machine.Storage] machines, not an account of its own.** Material is
  * available for construction because it is sitting in a warehouse somewhere aboard, and it stops
@@ -16,38 +15,35 @@ import org.emerge.demo.outofspace.world.machine.Storage
  * two mutually exclusive places and the conservation check had to name both; deriving it instead
  * removes the seam entirely — there is no act of "banking", only of storing.
  *
- * Composition survives storage — a tank of steel smelted from filthy ore is still filthy, and
- * whatever gets built from it inherits that. It would be much easier to reduce everything to a count
- * of items here, and it would throw away the point of the chemistry.
+ * Composition survives storage — a tank filled from filthy ore is still filthy, and whatever gets
+ * built from it inherits that. It would be much easier to reduce everything to a count of items
+ * here, and it would throw away the point of the chemistry.
+ *
+ * ⚠️ It is **one heap**, not a heap per form. Two warehouses of different stuff read as their sum,
+ * which is what makes the inventory a statement about the vessel rather than about its shelving.
  */
-class Stockpile private constructor(private val byForm: Array<Mixture>) {
+class Stockpile private constructor(val held: Mixture) {
 
-    operator fun get(form: Form): Mixture = byForm[form.ordinal]
+    val totalMass: Long get() = held.total
 
-    val totalMass: Long get() {
-        var sum = 0L
-        for (m in byForm) sum += m.total
-        return sum
-    }
+    val isEmpty: Boolean get() = held.isEmpty
 
-    /** Everything held, in [Form] declaration order so the UI never reshuffles itself. */
-    fun entries(): List<Pair<Form, Mixture>> =
-        Form.ALL.mapNotNull { f -> byForm[f.ordinal].takeIf { !it.isEmpty }?.let { f to it } }
+    operator fun get(species: Species): Long = held[species]
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Stockpile && byForm.contentEquals(other.byForm))
+        this === other || (other is Stockpile && held == other.held)
 
-    override fun hashCode(): Int = byForm.contentHashCode()
+    override fun hashCode(): Int = held.hashCode()
 
-    override fun toString(): String = "Stockpile(${entries().joinToString { "${it.first}=${it.second.total}g" }})"
+    override fun toString(): String = "Stockpile(${held.total}g $held)"
 
     companion object {
-        val EMPTY: Stockpile = Stockpile(Array(Form.ALL.size) { Mixture.EMPTY })
+        val EMPTY: Stockpile = Stockpile(Mixture.EMPTY)
 
-        /** Everything sitting in every storage aboard, gathered by form. */
+        /** Everything sitting in every storage aboard, in one heap. */
         fun of(grid: Grid, deck: DeckArray, buffers: BufferLayer): Stockpile {
             var any = false
-            val byForm = Array(Form.ALL.size) { Mixture.EMPTY }
+            var total = Mixture.EMPTY
             // Off the deck, which is where warehouses live now. Walked by centre: a tank is three
             // tiles across and stored once, and adding its contents per covered tile would have the
             // inventory report nine times what is aboard.
@@ -58,10 +54,10 @@ class Stockpile private constructor(private val byForm: Array<Mixture>) {
                 val store = bufferTile(grid, m, tile, BufferRole.Inside) ?: continue
                 val held = buffers.resourceAt(store) ?: continue
                 if (held.isEmpty) continue
-                byForm[held.form.ordinal] = byForm[held.form.ordinal] + held.mixture
+                total += held
                 any = true
             }
-            return if (any) Stockpile(byForm) else EMPTY
+            return if (any) Stockpile(total) else EMPTY
         }
     }
 }

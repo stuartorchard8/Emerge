@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.num.Budget

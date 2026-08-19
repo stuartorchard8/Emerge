@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace.logistics
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.conservationOf
 import kotlin.test.Test
@@ -31,16 +29,13 @@ class PacketTest {
     // to leave. Written as multiples of [cap] rather than as a mass: these were once round numbers of
     // mass, which quietly became a tenth of a packet when the mass unit moved and turned every
     // "takes a whole packet" assertion into "takes the whole pile".
-    private val orePile = Resource(
-        Form.Ore,
-        Mixture.of(
+    private val orePile = Mixture.of(
             Species.Iron to 41L * cap,
             Species.Quartz to 30L * cap,
             Species.Copper to 18L * cap,
             Species.Titanium to 11L * cap,
             energy = 0,
-        ),
-    )
+        )
 
     private val atmosphere = Mixture.of(
         Species.Nitrogen to 78L * cap,
@@ -90,8 +85,8 @@ class PacketTest {
     fun `packing takes at most one packet's worth and leaves the rest`() {
         val (packet, left) = packSolid(orePile)
         assertEquals(cap, assertNotNull(packet).mass)
-        assertEquals(orePile.mass - cap, left.mass)
-        assertConserved(listOf(orePile.mixture), listOf(packet.contents, left.mixture), "packSolid")
+        assertEquals(orePile.total - cap, left.total)
+        assertConserved(listOf(orePile), listOf(packet.contents, left), "packSolid")
     }
 
     @Test
@@ -109,14 +104,14 @@ class PacketTest {
 
     @Test
     fun `packing an empty source yields no packet rather than an empty one`() {
-        val (packet, left) = packSolid(Resource(Form.Ore, Mixture.EMPTY))
+        val (packet, left) = packSolid(Mixture.EMPTY)
         assertNull(packet)
         assertTrue(left.isEmpty)
     }
 
     @Test
     fun `packing a source smaller than a packet takes all of it`() {
-        val crumbs = Resource(Form.IronIngot, Mixture.of(Species.Iron to cap / 4, energy = 0))
+        val crumbs = Mixture.of(Species.Iron to cap / 4, energy = 0)
         val (packet, left) = packSolid(crumbs)
         assertEquals(cap / 4, assertNotNull(packet).mass)
         assertTrue(left.isEmpty)
@@ -135,8 +130,8 @@ class PacketTest {
 
     @Test
     fun `merging same-form solids fills to capacity and rejects the overflow`() {
-        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap * 8 / 10, energy = 0)))
-        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap * 5 / 10, energy = 0)))
+        val a = SolidPacket(Mixture.of(Species.Iron to cap * 8 / 10, energy = 0))
+        val b = SolidPacket(Mixture.of(Species.Iron to cap * 5 / 10, energy = 0))
         val r = assertNotNull(mergeInto(a, b))
         assertEquals(cap, r.merged.mass)
         assertEquals(cap * 3 / 10, assertNotNull(r.rejected).mass)
@@ -145,18 +140,11 @@ class PacketTest {
 
     @Test
     fun `merging leaves no rejection when everything fits`() {
-        val a = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap * 3 / 10, energy = 0)))
-        val b = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap * 4 / 10, energy = 0)))
+        val a = SolidPacket(Mixture.of(Species.Iron to cap * 3 / 10, energy = 0))
+        val b = SolidPacket(Mixture.of(Species.Iron to cap * 4 / 10, energy = 0))
         val r = assertNotNull(mergeInto(a, b))
         assertEquals(cap * 7 / 10, r.merged.mass)
         assertNull(r.rejected)
-    }
-
-    @Test
-    fun `different solid forms do not merge`() {
-        val ingot = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100_000L, energy = 0)))
-        val frame = SolidPacket(Resource(Form.SiliconCrystal, Mixture.of(Species.Iron to 100_000L, energy = 0)))
-        assertNull(mergeInto(ingot, frame), "an ingot cannot be poured into a structural frame")
     }
 
     @Test
@@ -171,7 +159,7 @@ class PacketTest {
 
     @Test
     fun `a solid and a fluid never merge`() {
-        val solid = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to 100_000L, energy = 0)))
+        val solid = SolidPacket(Mixture.of(Species.Iron to 100_000L, energy = 0))
         val fluid = FluidPacket(Mixture.of(Species.Oxygen to 100_000L, energy = 0))
         assertNull(mergeInto(solid, fluid))
         assertNull(mergeInto(fluid, solid))
@@ -179,8 +167,8 @@ class PacketTest {
 
     @Test
     fun `merging into a full packet rejects everything`() {
-        val full = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap, energy = 0)))
-        val more = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap / 4, energy = 0)))
+        val full = SolidPacket(Mixture.of(Species.Iron to cap, energy = 0))
+        val more = SolidPacket(Mixture.of(Species.Iron to cap / 4, energy = 0))
         val r = assertNotNull(mergeInto(full, more))
         assertEquals(cap, r.merged.mass)
         assertEquals(cap / 4, assertNotNull(r.rejected).mass)
@@ -257,9 +245,9 @@ class PacketTest {
 
     @Test
     fun `capacity is measured through quantityOf so the volume switch has one home`() {
-        val packet = SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap / 4, energy = 0)))
+        val packet = SolidPacket(Mixture.of(Species.Iron to cap / 4, energy = 0))
         assertEquals(cap / 4, Capacity.quantityOf(packet))
         assertEquals(cap * 3 / 4, Capacity.headroom(packet))
-        assertEquals(0L, Capacity.headroom(SolidPacket(Resource(Form.IronIngot, Mixture.of(Species.Iron to cap * 12 / 10, energy = 0)))))
+        assertEquals(0L, Capacity.headroom(SolidPacket(Mixture.of(Species.Iron to cap * 12 / 10, energy = 0))))
     }
 }

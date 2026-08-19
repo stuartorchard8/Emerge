@@ -627,7 +627,7 @@ class OutofspaceRenderer {
             rect(
                 cx + b.facing.dx * at * tilePx,
                 cy + b.facing.dy * at * tilePx,
-                size, size, packet.mixture.color.toLong(),
+                size, size, packet.color.toLong(),
             )
         }
     }
@@ -713,7 +713,7 @@ class OutofspaceRenderer {
                 // and the rock pass draws over it — see [drawRock].
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Extractor))
                 bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
-                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.mass ?: 0L)
+                fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.total ?: 0L)
                     .toFloat() / Extractor.BUFFER_CAP)
             }
 
@@ -768,14 +768,14 @@ class OutofspaceRenderer {
             is Storage -> {
                 bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Storage))
                 val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
-                val level = (stored?.mass ?: 0L).toFloat() / Storage.CAP
+                val level = (stored?.total ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
                     val h = level.coerceIn(0f, 1f) * (n - Visual.TANK_SPAN_INSET)
                     val bottom = y + n * 0.5f - Visual.TANK_BOTTOM_MARGIN
                     rect(
                         (x + 0.5f) * tilePx, (bottom - h * 0.5f) * tilePx,
                         (n - Visual.TANK_SPAN_INSET) * tilePx, h * tilePx,
-                        stored?.mixture?.color?.toLong() ?: 0x000000FF,
+                        stored?.color?.toLong() ?: 0x000000FF,
                     )
                 }
             }

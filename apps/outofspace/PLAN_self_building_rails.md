@@ -42,7 +42,8 @@ Consequences:
    stores arbitrary species per tile, so this costs nothing. No downside modelled today.
 2. **Form is ignored for construction.** Powdered iron builds a rail exactly as an ingot does. (Stu's
    attachment to the smelter is wearing off in favour of the thermal decomposer; forcing a form here
-   would be propping up a machine that may not survive.)
+   would be propping up a machine that may not survive.) — ✅ *Settled the hard way on 2026-08-19:
+   the machine did not survive, and neither did `Form`. See "Where the mixing happens" below.*
 3. **Bricking is a known limitation.** A network saturated with non-iron packets and no source of
    iron has no way out, and a player who deconstructs their last rail is stuck. Accepted, not solved.
    Stu will stress-test once built and come back with suggestions. **Do not invent a rescue
@@ -392,6 +393,23 @@ belt merging, the mechanism this section describes, only ever worked *because* e
 Keeping `Form` would have kept a rule whose only effect was to break blending. It also removed a
 hazard nobody chose: deconstruction handed casing back through the smelt table, so a dismantled hull
 came off the rail as `IronIngot` — the non-merging form that only a storage would accept.
+
+What went with it, stated because the demand work has to know what is *not* filtering any more:
+
+- `Resource` is gone. A pile of matter is a `Mixture` and nothing else, so `SolidPacket`,
+  `RailLayer`, `BufferLayer` and `Stockpile` each lost a parallel array or field they kept purely to
+  carry a label. `Stockpile` is now **one heap** rather than a heap per form.
+- `squashOnto` refused anything that was not a powder. Gone — every two heaps on a belt combine,
+  which is the mechanism this section is about.
+- `acceptInto` refused a non-`Ore` lump at any machine but a storage, and refused a lump whose form
+  differed from what a store already held. Both gone. ⚠️ **Nothing on the delivery path filters by
+  kind at all now** — the only refusals left are "full" and "not a solid". Restoring a notion of
+  *what a sink will take* is the whitelist step, and it arrives as something a sink **asks for**
+  rather than something it happens to reject at the door.
+- `Merge`'s nullable return is kept deliberately though it can no longer answer null: refusal is
+  about to mean something new and re-threading those callers twice is worse than leaving the seam.
+- Save files: a `FORM/` prefix on a stored pile is read and discarded, so old saves load unchanged.
+  Form never affected a gram or a joule, so the world that comes back is the same world.
 
 **5d. Deconstruction ✅** `54a232a3`, `bf452436`, `2d81b726`, `6d022e41`. The mark, the five-step ordering above, ceasing to be.
 

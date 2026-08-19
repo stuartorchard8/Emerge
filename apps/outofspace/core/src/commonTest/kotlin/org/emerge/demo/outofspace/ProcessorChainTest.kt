@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
@@ -8,8 +9,6 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
-import org.emerge.demo.outofspace.chem.Form
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
@@ -55,16 +54,16 @@ class ProcessorChainTest {
     }
 
     /** Purity of the dominant species, as a percentage. */
-    private fun purity(r: Resource?): Int {
+    private fun purity(r: Mixture?): Int {
         if (r == null || r.isEmpty) return 0
-        val d = r.mixture.dominant!!
-        return (r.mixture[d] * 100 / r.mass).toInt()
+        val d = r.dominant!!
+        return (r[d] * 100 / r.total).toInt()
     }
 
     @Test
     fun `the concentrate leaves forward and the tailings leave downward`() {
         val grid = Grid(12, 10)
-        val ore = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS))
+        val ore = OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(40 * Capacity.PACKET_MASS)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Processor(grid.tile(3, 3), Direction.Right)                // covers x 2..4
@@ -82,7 +81,7 @@ class ProcessorChainTest {
         val forward = s.buffers.resourceAt(grid.tile(7, 3))
         val below = s.buffers.resourceAt(grid.tile(3, 8))
 
-        assertEquals(Species.Iron, forward!!.mixture.dominant, "the concentrate keeps the ore's own metal")
+        assertEquals(Species.Iron, forward!!.dominant, "the concentrate keeps the ore's own metal")
         // Against the *feed*, which is the claim: 41% ore in, appreciably richer out.
         //
         // Stated as a margin over the feed rather than a fixed figure, because the claim really is
@@ -91,13 +90,13 @@ class ProcessorChainTest {
         // with the tick rate (65% at 1Hz, 79% at 120Hz) because `process` floors its impurity split
         // once per chunk and the chunk was a chunk-per-second-divided-by-the-rate. Rates are per
         // tick now, so the chunk is a constant and so is the result.
-        val fed = purity(Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS)))
+        val fed = purity(OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
         assertTrue(
             purity(forward) > fed + 20,
             "forward should be well above the ${fed}% it was fed, was ${purity(forward)}%",
         )
         assertTrue(
-            forward.mixture[Species.Iron] * 100 / forward.mass > below!!.mixture[Species.Iron] * 100 / below.mass,
+            forward[Species.Iron] * 100 / forward.total > below!![Species.Iron] * 100 / below.total,
             "forward must be richer in iron than the tailings",
         )
     }
@@ -108,7 +107,7 @@ class ProcessorChainTest {
      * change to [process] or to the ore moves the expectation with it instead of breaking the test.
      */
     private fun threeStagePurity(): Int {
-        var r = Resource(Form.Ore, OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS))
+        var r = OutofspaceReducer.DEFAULT_ORE_BODY.scaledTo(Capacity.PACKET_MASS)
         repeat(3) { r = process(r, Processor(TileIndex(0), Direction.Right).efficiencyPermille).product }
         return purity(r)
     }
@@ -137,7 +136,7 @@ class ProcessorChainTest {
         s = run(s, 1800)
 
         for (x in stages) {
-            val held = s.inStore(grid.tile(x, 3), BufferRole.Waste)?.mass ?: 0L
+            val held = s.inStore(grid.tile(x, 3), BufferRole.Waste)?.total ?: 0L
             assertTrue(
                 held <= MACHINE_OUTPUT_CAP + Capacity.PACKET_MASS,
                 "stage at $x is hoarding ${held}g of tailings; the cap is $MACHINE_OUTPUT_CAP",

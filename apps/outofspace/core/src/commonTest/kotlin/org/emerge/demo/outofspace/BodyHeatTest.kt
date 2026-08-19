@@ -5,8 +5,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
-import org.emerge.demo.outofspace.chem.Form
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
@@ -275,7 +273,7 @@ class BodyHeatTest {
         // miniature — heat the machine, and the charge inside comes up with it.
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 400L * Budget.KILOGRAM, energy = 0L))
+        val ore = Mixture.of(Species.Iron to 400L * Budget.KILOGRAM, energy = 0L)
 
         var s = room(10, 10, deckFill = { x, y, tile ->
             if (x == 5 && y == 5) Storage(tile, Direction.Right) else null

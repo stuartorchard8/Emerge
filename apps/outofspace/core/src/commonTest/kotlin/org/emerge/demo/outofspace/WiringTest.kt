@@ -10,9 +10,7 @@ import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Conduit
@@ -150,7 +148,7 @@ class WiringTest {
         val grid = Grid(7, 5)
         val tank = grid.tile(2, 2)
         val eye = grid.tile(4, 2)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to fill, energy = 0))
+        val stored = Mixture.of(Species.Iron to fill, energy = 0)
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) wires[eye.index] = Segment(Conduit.Signal)
         val deck = DeckArray(grid)
@@ -217,7 +215,7 @@ class WiringTest {
             val deck = DeckArray(grid)
             val feed = feedExtractor(grid, deck, 2, 2, wiring = w)
             val s = run(VesselState(grid, deck, bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)), 4)
-            return s.inStore(grid.tile(2, 2), BufferRole.Product)?.mass ?: 0L
+            return s.inStore(grid.tile(2, 2), BufferRole.Product)?.total ?: 0L
         }
         // Whatever four ticks of biting comes to — cells are whole and their mass is the rock's, so
         // the number is a property of the feed and not of the machine. What is pinned is that every
@@ -234,7 +232,7 @@ class WiringTest {
         // Track is inert -- it has no wiring and cannot be switched off, because it is plumbing. The
         // thing you switch off is the machine at the end of it, and a shut tank is a shut valve.
         val grid = Grid(12, 6)
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0))
+        val stored = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 3), Direction.Right).copy(wiring = wiring()) as Storage
         deck += Storage(grid.tile(8, 3), Direction.Right)
@@ -243,7 +241,7 @@ class WiringTest {
         var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 3), stored)
 
         s = run(s, RAIL_PERIOD * 8)
-        assertEquals(4 * Capacity.PACKET_MASS, s.buffers.resourceAt(grid.tile(3, 3))?.mass, "it let go of nothing")
+        assertEquals(4 * Capacity.PACKET_MASS, s.buffers.resourceAt(grid.tile(3, 3))?.total, "it let go of nothing")
         assertEquals(0L, (4..7).sumOf { s.rail.massAt(grid.tile(it, 3)) }, "so the track is bare")
     }
 
@@ -298,7 +296,7 @@ class WiringTest {
         // bite moves 3 kg in one tick and the throttle has no say in it, so both of them step in
         // lurches that say nothing about a rate.
         fun ground(w: VesselState): Long =
-            w.extractedMass - (w.inStore(grid.tile(2, 3), BufferRole.Inside)?.mass ?: 0L)
+            w.extractedMass - (w.inStore(grid.tile(2, 3), BufferRole.Inside)?.total ?: 0L)
         val firstTenSeconds = ground(run(s, 40))
         assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
 
@@ -314,7 +312,7 @@ class WiringTest {
             lateRate * 4 < firstTenSeconds,
             "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
         )
-        assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.mass <= Storage.CAP, "and it never overfills")
+        assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.total <= Storage.CAP, "and it never overfills")
     }
 
     @Test
@@ -334,7 +332,7 @@ class WiringTest {
         // holding half a tank of iron to build with — a bare "there is iron aboard" would pass on a
         // line that never turned a wheel.
         assertTrue(
-            s.stockpile[Form.Ore].total > start.stockpile[Form.Ore].total,
+            s.stockpile.totalMass > start.stockpile.totalMass,
             "the refinery line still banks what it digs: ${start.stockpile} then ${s.stockpile}",
         )
     }
@@ -392,7 +390,7 @@ class WiringTest {
      * The track has to be there: ports connect to whatever segment shares their tile, so two
      * buildings touching each other are not connected — nothing joins them but rail.
      */
-    private fun twoUp(upstream: DeckMachine, stocked: Resource? = null): VesselState {
+    private fun twoUp(upstream: DeckMachine, stocked: Mixture? = null): VesselState {
         val g = Grid(12, 6)
         val deck = DeckArray(g)
         val rails = arrayOfNulls<Segment>(g.size)
@@ -405,17 +403,17 @@ class WiringTest {
 
     @Test
     fun `a storage releases only while it is told to`() {
-        val stored = Resource(Form.IronIngot, Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS, energy = 0))
+        val stored = Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS, energy = 0)
         val shut = Storage(TileIndex(0), Direction.Right).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut, stored).grid
         var s = run(twoUp(shut, stored), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, s.buffers.resourceAt(g.tile(3, 3))!!.mass, "a closed valve holds everything")
+        assertEquals(5 * Capacity.PACKET_MASS, s.buffers.resourceAt(g.tile(3, 3))!!.total, "a closed valve holds everything")
         assertNull(s.buffers.resourceAt(g.tile(7, 3)), "so nothing arrives downstream")
 
         var s2 = run(twoUp(Storage(TileIndex(0), Direction.Right), stored), 20 * RAIL_PERIOD)
-        assertEquals(5 * Capacity.PACKET_MASS, s2.buffers.resourceAt(g.tile(7, 3))!!.mass, "an open one drains into the next tank")
+        assertEquals(5 * Capacity.PACKET_MASS, s2.buffers.resourceAt(g.tile(7, 3))!!.total, "an open one drains into the next tank")
         assertNull(s2.buffers.resourceAt(g.tile(3, 3)), "and empties itself doing it")
     }
 

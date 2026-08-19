@@ -1,13 +1,12 @@
 package org.emerge.demo.outofspace.logistics
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.num.Budget
 
 /**
- * Matter in transit: discrete lumps on belts/pipes. Solid=Resource (Form matters), fluid=Mixture (source-dependent).
- * Two categories: solid (belts) and fluid (pipes carry both).
+ * Matter in transit: discrete lumps on belts and pipes. Two categories: solid (belts) and fluid
+ * (pipes carry both). Both are simply a [Mixture] — what a thing has been *made into* is not
+ * modelled, so a lump of ore and a compacted casing plate are told apart by what they are made of.
  */
 sealed interface Packet {
     /** What is in it, species by species. */
@@ -19,12 +18,9 @@ sealed interface Packet {
     val isEmpty: Boolean get() = contents.isEmpty
 }
 
-/** A discrete item on a belt: an ingot, a lump of ore, a finished component. */
-data class SolidPacket(val resource: Resource) : Packet {
-    override val contents: Mixture get() = resource.mixture
-    val form: Form get() = resource.form
-
-    override fun toString(): String = "SolidPacket(${resource})"
+/** A discrete item on a belt: a lump of ore, a compacted plate, a finished component. */
+data class SolidPacket(override val contents: Mixture) : Packet {
+    override fun toString(): String = "SolidPacket(${mass}g $contents)"
 }
 
 /** A slug of liquid or gas in a pipe — an amalgam of whatever the source had. */
@@ -96,10 +92,10 @@ object Rate {
  * the pile rather than the good bits skimmed off the top. That is what stops a belt from acting as
  * an accidental free refinery.
  */
-fun packSolid(source: Resource, capacity: Long = Capacity.PACKET_MASS): Pair<SolidPacket?, Resource> {
+fun packSolid(source: Mixture, capacity: Long = Capacity.PACKET_MASS): Pair<SolidPacket?, Mixture> {
     if (source.isEmpty || capacity <= 0L) return null to source
-    val taken = source.mixture.take(capacity)
-    return SolidPacket(Resource(source.form, taken)) to Resource(source.form, source.mixture - taken)
+    val taken = source.take(capacity)
+    return SolidPacket(taken) to source - taken
 }
 
 /** As [packSolid], for a fluid reservoir. */
@@ -112,21 +108,19 @@ fun packFluid(source: Mixture, capacity: Long = Capacity.PACKET_MASS): Pair<Flui
 /**
  * Pours [incoming] into [existing] up to [capacity], returning the merged packet and any overflow.
  *
- * Solids only merge when they are the same [Form] — you cannot pour an ingot into a structural
- * frame. Fluids always merge, because that is what fluids do; the result is an amalgam of both.
- * Returns null when the two cannot combine at all, leaving the caller to decide (usually: the belt
- * backs up).
+ * Two solids always combine, and so do two fluids — a solid and a fluid never do, because they
+ * share no network and offering one to the other is a wiring mistake rather than a full pipe.
+ * Returns null in that case, leaving the caller to decide (usually: the belt backs up).
  */
 fun mergeInto(existing: Packet, incoming: Packet, capacity: Long = Capacity.PACKET_MASS): MergeResult? {
     val room = Capacity.headroom(existing, capacity)
     return when {
         existing is SolidPacket && incoming is SolidPacket -> {
-            if (existing.form != incoming.form) return null
             val accepted = incoming.contents.take(room)
             MergeResult(
-                merged = SolidPacket(Resource(existing.form, existing.contents + accepted)),
+                merged = SolidPacket(existing.contents + accepted),
                 rejected = if (accepted == incoming.contents) null
-                else SolidPacket(Resource(incoming.form, incoming.contents - accepted)),
+                else SolidPacket(incoming.contents - accepted),
             )
         }
         existing is FluidPacket && incoming is FluidPacket -> {

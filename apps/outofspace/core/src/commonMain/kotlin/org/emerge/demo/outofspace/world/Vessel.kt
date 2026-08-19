@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -868,7 +866,7 @@ data class VesselState(
  * separate. Defined in terms of [contentsBreakdown] so there is exactly one list of "where a machine
  * keeps things" — a second one would drift, and the drift would look like a conservation bug.
  */
-fun spoilsOf(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Resource> =
+fun spoilsOf(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Mixture> =
     contentsBreakdown(machine, centre, grid, buffers).map { it.second }.filter { !it.isEmpty }
 
 /**
@@ -959,7 +957,7 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
  * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
-fun contentsBreakdown(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Resource>> = when (machine) {
+fun contentsBreakdown(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Mixture>> = when (machine) {
     null -> emptyList()
     else -> BufferRole.entries.mapNotNull { role ->
         val tile = bufferTile(grid, machine, centre, role) ?: return@mapNotNull null
@@ -974,7 +972,7 @@ fun contentsOf(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Bu
         var out = Mixture.EMPTY
         for (role in BufferRole.entries) {
             val tile = bufferTile(grid, machine, centre, role) ?: continue
-            out += buffers.resourceAt(tile)?.mixture ?: Mixture.EMPTY
+            out += buffers.resourceAt(tile) ?: Mixture.EMPTY
         }
         out
     }

@@ -4,9 +4,7 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
@@ -87,7 +85,7 @@ class VaporizerTest {
         deck += Vaporizer(grid.tile(BAY_X, BAY_Y), facing = Direction.Right)
         return VesselState(grid = grid, deck = deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             // A volatile, so what comes out is a gas anybody would recognise as one.
-            .stocked(grid.tile(BAY_X, BAY_Y), Resource(Form.Ore, Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0)))
+            .stocked(grid.tile(BAY_X, BAY_Y), Mixture.of(Species.Water to 4L * Capacity.PACKET_MASS, energy = 0))
     }
 
     private companion object {

@@ -10,9 +10,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Stuff
@@ -392,14 +390,13 @@ class SaveTest {
         val grid = Grid(6, 4)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0))
+        val ore = Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0)
         rails[grid.tile(2, 2).index] = Segment(Conduit.Rail)
         deck += Gauge(grid.tile(2, 2)).reading(SolidPacket(ore))
 
         val state = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         val back = Save.read(Save.write(state)).deck[grid.tile(2, 2)] as? Gauge
         assertNotNull(back)
-        assertEquals(Form.Ore, back.lastForm)
         assertEquals(Species.Quartz, back.lastDominant)
         assertEquals(590, back.lastPurity)
         assertEquals(1000L, back.lastMass)
@@ -450,13 +447,13 @@ class SaveTest {
         deck += Storage(grid.tile(8, 4), Direction.Left)
 
         val state = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-            .stocked(grid.tile(8, 4), Resource(Form.IronIngot, Mixture.of(Species.Iron to 900L, energy = 0)))
-            .stocked(grid.tile(4, 4), Resource(Form.Ore, Mixture.of(Species.Iron to 123L, energy = 0)), BufferRole.Product)
+            .stocked(grid.tile(8, 4), Mixture.of(Species.Iron to 900L, energy = 0))
+            .stocked(grid.tile(4, 4), Mixture.of(Species.Iron to 123L, energy = 0), BufferRole.Product)
         val back = Save.read(Save.write(state))
 
         val extractor = assertNotNull(back.deck[grid.tile(4, 4)] as? Extractor)
         // One store now: the jaws are gone, and with them `carry`. See [Extractor].
-        assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.mass)
+        assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.total)
         // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
         assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
@@ -464,8 +461,7 @@ class SaveTest {
         // The contents survive in the buffer layer; the record still carries `stored`, so the file
         // format is unchanged and an older save loads into the new home unaltered.
         val tank = back.buffers.resourceAt(grid.tile(8, 4))
-        assertEquals(Form.IronIngot, tank?.form)
-        assertEquals(900L, tank?.mass)
+        assertEquals(900L, tank?.total)
     }
 
     @Test

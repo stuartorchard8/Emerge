@@ -8,9 +8,7 @@ import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
 
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.Direction
@@ -189,7 +187,7 @@ class HeatTest {
     fun `a processor warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0))
+        val ore = Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0)
         // A five-tile furnace centred at (5,5) covers 3..7. Its product port is at (7,5) and its
         // slag port at (5,7), so the vents go one tile beyond each.
         val g0 = Grid(12, 12)
@@ -268,7 +266,7 @@ class HeatTest {
         // Roomy enough that the machine does not fill it: with nothing but space around
         // it, every face of the thing is exposed.
         val grid = Grid(11, 11)
-        val ore = Resource(Form.Ore, Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0))
+        val ore = Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0)
         val deck = DeckArray(grid)
         deck += Processor(grid.tile(5, 5), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))

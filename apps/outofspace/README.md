@@ -16,8 +16,7 @@ the vessel runs itself.
 | --- | --- |
 | `chem/Species.kt` | `Species` (what matter is made of) and `Phase`. Solid vs fluid is the split logistics cares about. |
 | `chem/Mixture.kt` | `Mixture` — integer grams per species. Plus `apportion`, the exact proportional split every other operation rests on. |
-| `chem/Form.kt` | `Form` (what matter has been made into), the smelt table, and the binary crafting tree as data. |
-| `chem/Chemistry.kt` | `process`, `craft`, `merge`, `takeFrom`, `conservationOf`. |
+| `chem/Chemistry.kt` | `process`, `cook`, `takeFrom`, `conservationOf`. |
 | `logistics/Packet.kt` | 1 kg packets (`SolidPacket` / `FluidPacket`), `Capacity` (the one home for the eventual volume switch) and `Rate` (integer carry, so 1 kg/s at 60 Hz stays exact). |
 | `world/Grid.kt`, `world/Machine.kt` | The square lattice, `Direction`, and the machines: belt (four slots), extractor, processor, storage, sensor, node, vent. |
 | `world/Structure.kt` | `Structure` and `StructureMap` — hull, interior and vacuum, derived by flood fill from the grid edge. |
@@ -124,5 +123,6 @@ balance while iron quietly turns into copper.
 The blended resource model is carried over from the Godot game at `~/out-of-space` (which stands on
 its own and is not being replaced): ore is never "iron ore", it is a composition of minerals, and
 refining efficiency is capped by the input's own purity. See `docs/out-of-space-plan.md` §2 for what
-was taken, what was left behind, and the one deliberate divergence from its recipe table (the named
-`*_ore` forms are gone; smelting blended ore is the only route into tier one).
+was taken and what was left behind. Two deliberate divergences from its recipe table: the named
+`*_ore` forms are gone, and so is `Form` itself — matter is *what it is made of* and nothing else,
+which is what lets two piles on a belt blend into one.

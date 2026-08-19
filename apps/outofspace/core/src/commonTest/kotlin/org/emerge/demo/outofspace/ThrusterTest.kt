@@ -4,9 +4,7 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
-import org.emerge.demo.outofspace.chem.Form
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Stuff
@@ -271,7 +269,7 @@ class ThrusterTest {
                         deck = deck,
             air = Stuff.gas(MassArray(grid.size)),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        ).stocked(tile, Resource(Form.Ore, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0)))
+        ).stocked(tile, Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0))
     }
 
     private companion object {

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduit
@@ -17,7 +18,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.Segment
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
@@ -225,20 +225,20 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
  * [role] defaults to the store an arriving packet would land in, since that is what almost every
  * fixture means by "a machine with something in it".
  */
-fun VesselState.stocked(tile: TileIndex, resource: Resource?, role: BufferRole? = null): VesselState = also {
+fun VesselState.stocked(tile: TileIndex, resource: Mixture?, role: BufferRole? = null): VesselState = also {
     val m = deck[tile] ?: error("no machine at $tile to stock")
     val use = role ?: inputBufferRole(m) ?: error("$m takes no deliveries; name a role")
     it.buffers.put(bufferTile(grid, m, tile, use) ?: error("$m keeps no $use store"), resource)
 }
 
 /** What is riding on the track at [tile]. */
-fun VesselState.onRail(tile: TileIndex): Resource? = rail.resourceAt(tile)
+fun VesselState.onRail(tile: TileIndex): Mixture? = rail.resourceAt(tile)
 
 /** A world with [resource] already riding on the track at [tile]. */
-fun VesselState.riding(tile: TileIndex, resource: Resource?): VesselState = also { it.rail.put(tile, resource) }
+fun VesselState.riding(tile: TileIndex, resource: Mixture?): VesselState = also { it.rail.put(tile, resource) }
 
 /** What the machine at [tile] is holding in its [role] store. */
-fun VesselState.inStore(tile: TileIndex, role: BufferRole): Resource? {
+fun VesselState.inStore(tile: TileIndex, role: BufferRole): Mixture? {
     val m = deck[tile] ?: return null
     return buffers.resourceAt(bufferTile(grid, m, tile, role) ?: return null)
 }

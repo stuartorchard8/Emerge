@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.chem.Resource
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
