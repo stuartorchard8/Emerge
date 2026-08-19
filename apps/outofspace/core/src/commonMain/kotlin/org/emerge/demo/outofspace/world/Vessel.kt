@@ -612,6 +612,10 @@ data class VesselState(
      * Derived rather than stored, like everything else structural. A bridge is in here on the same
      * terms as everything else, which is the whole reason it needs no special case: to the network a
      * bridge is a thing with an input port and an output port, exactly like a smelter.
+     *
+     * ⚠️ Asks [standingPortsOf], not [portsOf]: a ghost has one construction port and a machine being
+     * taken apart has lost its inputs, and this is what the renderer draws. Drawing the ports a
+     * *kind* defines would put arrows on a half-built machine that nothing can deliver to.
      */
     fun portsByTile(conduit: Conduit): Map<TileIndex, List<Port>> {
         val out = HashMap<TileIndex, MutableList<Port>>()
@@ -622,7 +626,7 @@ data class VesselState(
         for (tile in grid.tiles) {
             val m = deck[tile] ?: continue
             if (m.center != tile) continue
-            for (port in portsOf(grid, m)) add(port)
+            for (port in standingPortsOf(grid, deck, buffers, scrapping, m)) add(port)
         }
         return out
     }
@@ -630,7 +634,7 @@ data class VesselState(
     /** Every connection point of whatever is stored at [tile]. */
     fun portsAt(tile: TileIndex): List<Port> {
         val d = deck[tile] ?: return emptyList()
-        return if (d.center == tile) portsOf(grid, d) else emptyList()
+        return if (d.center == tile) standingPortsOf(grid, deck, buffers, scrapping, d) else emptyList()
     }
 
     /** Thermal energy held by every solid thing aboard — the ledger quantity [baselineEnergy] anchors. */
@@ -1239,6 +1243,16 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         airVentedEnergy = airVentedEnergy + ventedEnergy,
         exhaustMomentumX = exhaustMomentumX + ventedMomX,
         exhaustMomentumY = exhaustMomentumY + ventedMomY,
+        // ⚠️ **Remapped, not carried.** It is a set of tile *indexes*, and a tile index means a
+        // different place the moment the lattice changes shape — so a world that grew came back with
+        // its condemned machines reprieved and some innocent tile marked instead. Silent both ways:
+        // the machine simply stands there at full casing looking finished. Found by the harness, and
+        // it is the same class of bug the grid remap has produced twice before.
+        scrapping = scrapping.mapNotNullTo(mutableSetOf()) { tile ->
+            val nx = grid.xOf(tile) + dx
+            val ny = grid.yOf(tile) + dy
+            if (newGrid.inBounds(nx, ny)) newGrid.tile(nx, ny) else null
+        },
         // baselines passed through explicitly to avoid recompute on copy
         baselineAirMass = baselineAirMass,
         baselineAirEnergy = baselineAirEnergy,

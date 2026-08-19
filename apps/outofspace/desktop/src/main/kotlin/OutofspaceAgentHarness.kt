@@ -635,9 +635,19 @@ object OutofspaceAgentHarness {
             val x = grid.xOf(tile); val y = grid.yOf(tile)
             val air = state.air.mixtureAt(tile)
             println("[agent] probe ($x,$y) tile $tile @ tick ${controller.tick}")
-            println("[agent]   machine   ${state.machineCovering(tile)?.let { it::class.simpleName } ?: "-"}" +
+            val standing = state.machineCovering(tile)
+            println("[agent]   machine   ${standing?.let { it::class.simpleName } ?: "-"}" +
                 "  rail ${state.railAt(tile)?.let { "yes held=${!state.rail.isEmpty(tile)}" } ?: "-"}" +
-                "  bridge ${if (state.machineCovering(tile) is Bridge) "yes" else "-"}")
+                "  bridge ${if (standing is Bridge) "yes" else "-"}")
+            // The same two facts for the machine that a conduit reports below: how built it is, and
+            // whether it has been told to go. A ghost machine and a marked one are the deck's halves
+            // of the self-building loop — see `apps/outofspace/PLAN_self_building_rails.md`.
+            if (standing != null) {
+                println("[agent]   casing    ${state.deck.builtPermille(standing) / 10}% built" +
+                    "  ${fmt(grams(standing.tiles(state.grid).sumOf { state.deck.stuff.massAt(it) }))}g" +
+                    (if (standing.center in state.scrapping) "  MARKED FOR DECONSTRUCTION" else "") +
+                    (if (state.deck.isGhost(standing.center)) "  GHOST" else ""))
+            }
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")

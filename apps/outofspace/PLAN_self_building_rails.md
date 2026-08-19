@@ -437,5 +437,34 @@ into a sink and drew its own metal straight back off the belt. Silent, stable, a
 from deconstruction doing nothing. **Being told to go overrides being short — in every place that
 asks.**
 
-**5e. Rendering, starter vessel, harness.** A ghost machine reads as one, a marked one reads as
-marked, and `agent-scripts/` watches a machine build itself.
+**5e. Rendering, harness, and one implementation of "what ports" ✅**
+
+- A **ghost machine** is drawn as a body in `Colors.GHOST` with an outline in a dim version of its own
+  colour, brightening as it fills (`DeckArray.builtPermille`, the same minimum-per-species ratio the
+  sim decides ghost-ness by, so the picture cannot say finished while the sim says ghost). Its innards
+  are not drawn: a fill bar on a store nothing can reach reports on nothing. A **marked** machine is
+  drawn as itself and framed in `Colors.SCRAPPING`, because its stores are still real and watching
+  them drain is the whole of the ordering the feature promises. A bridge does both in `drawBridge`,
+  since it is drawn over the track rather than on a tile.
+- ⚠️ **`standingPortsOf` is now the single answer** to "what ports does this machine actually have".
+  There were two `portsByTile` — the reducer's, which knew about ghosts and marks, and
+  `VesselState`'s, which the renderer draws from and did not. A picture that disagrees with the
+  routing is worse than no picture.
+- `probe` reports a machine's casing percentage, GHOST and MARKED, beside the conduit line it already
+  had. `agent-scripts/machines.txt`.
+
+**Found by the harness, fixed:** `remapped` rebuilt every tile-keyed structure except `scrapping`, so
+a world that grew came back with its condemned machines **reprieved** and an innocent tile marked
+instead. Silent both ways — the machine simply stands there at full casing looking finished. The
+third time the grid remap has produced this exact class of bug.
+
+⚠️ **Only a gauge and a bridge are buildable from a starter vessel today.** The purity rule is asked
+per species against its own share of the recipe, the starter tank holds iron, and of every deck
+machine only those two are made of iron — a hull and an airlock are steel, a smelter and a thermal
+decomposer firebrick, everything else titanium. Until something aboard can blend a storage to a
+recipe, that is the whole buildable set. Not a bug; worth knowing before the loop is playtested.
+
+⚠️ **The occupied-tile deadlock is much easier to hit for a machine than for a rail.** A machine sits
+in the middle of a working line, so the tile under it is occupied more or less always, and it can
+never hand its casing back. A rail has to be deliberately overfed. Recorded by `machines.txt`; same
+parked decision.

@@ -522,6 +522,30 @@ class OutofspaceRenderer {
         return if (built >= 1f) whole else lerpColor(Colors.GHOST, whole, built)
     }
 
+    /**
+     * What a half-built machine is drawn in: [Colors.GHOST] fading toward the colour of the thing it
+     * is going to be.
+     *
+     * ⚠️ The fraction is [org.emerge.demo.outofspace.world.machine.DeckArray.builtPermille], the same
+     * *minimum per-species* ratio the sim decides ghost-ness by, so the picture reaches full colour
+     * on exactly the tick the machine starts working. A total-mass ramp would show a finished
+     * smelter that was still refusing to run.
+     */
+    /**
+     * How much of its own colour a machine's outline carries before a gram has arrived.
+     *
+     * Not zero, because a plan the player cannot identify is not a plan: an empty ghost still has to
+     * say whether it is going to be a smelter or a tank. Low enough that it still reads as unbuilt.
+     */
+    private val GHOST_FLOOR = 0.3f
+
+    private fun ghostColor(state: VesselState, m: DeckMachine): Long {
+        val built = state.deck.builtPermille(m) / 1000f
+        // From a *dim version of its own colour* rather than from nothing, so an empty ghost still
+        // says which machine it is going to be. A plan the player cannot identify is not a plan.
+        return lerpColor(Colors.GHOST, kindColor(m.kind), GHOST_FLOOR + (1f - GHOST_FLOOR) * built)
+    }
+
     /** Track tile + packet (thin spine, gauge collar). */
     private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int) {
         val segment = state.railAt(tile) ?: return
@@ -582,7 +606,12 @@ class OutofspaceRenderer {
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
         drawPorts(state, b)
-        rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, kindColor(DeckMachineKind.Bridge))
+        // The span fades up from slate as it builds and is framed when it is on its way out, exactly
+        // as every other machine is — it just does it here, because a bridge is drawn over the track
+        // it crosses rather than on a tile. ⚠️ A marked bridge goes on carrying, so its slots are
+        // still drawn below: watching a condemned gantry walk its last load off is the point.
+        rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, ghostColor(state, b))
+        if (tile in state.scrapping) frame(x, y, Colors.SCRAPPING)
         // One slot per tile (entry fixed, middle+exit slide along span). Read off the buffer layer,
         // where a bridge's load lives now — the three role tiles are these three positions.
         val slots = listOf(
@@ -630,6 +659,28 @@ class OutofspaceRenderer {
         val x = state.grid.xOf(tile)
         val y = state.grid.yOf(tile)
         val n = m.kind.diameter
+        // A **ghost** is drawn as one body fading up from [Colors.GHOST] as it fills, the same ramp a
+        // drawn run of track uses and for the same reason: a machine the player has just placed
+        // should read at a glance as a plan rather than as a machine, and a half-fed one as half-fed.
+        //
+        // Its innards are deliberately not drawn. A fill bar on a ghost would be reporting on a store
+        // that exists but that nothing can reach — its real ports are not there yet — and an empty
+        // gauge on a thing that has never run is a lie about why it is not running.
+        //
+        // ⚠️ A **bridge** is exempt, as it is everywhere else: it is drawn over the track it crosses
+        // by [drawBridge] rather than on the tile, so a body rect here would put a box in the middle
+        // of the span. It fades in its own pass.
+        if (m !is Bridge && state.deck.isGhost(tile)) {
+            bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.GHOST)
+            // Outlined in the colour of the thing it is going to be, brightening as it fills. The
+            // fill alone is [Colors.GHOST] against a deck that is nearly the same slate, which is
+            // right for a rail arm — a thin bright line over dark — and all but invisible as a body
+            // the size of a machine. The outline is what says *which* machine, and the ramp is what
+            // says how far along it is.
+            bodyOutline(x, y, n, ghostColor(state, m))
+            drawPorts(state, m)
+            return
+        }
         // No activation = stopped (red tile). An airlock is exempt: unsignalled is not a fault for a
         // door, it is *shut*, and a wall of red panic lights along the hull would say the opposite.
         // A transmitter is never "stopped": a sensor or a button with no activation is doing its
@@ -642,6 +693,11 @@ class OutofspaceRenderer {
             drawPorts(state, m)
             return
         }
+        // Marked for deconstruction: drawn as itself, and then framed in [Colors.SCRAPPING]. As
+        // itself, because its stores are still real and the player wants to watch them drain — that
+        // is the whole of the ordering the feature promises. Framed, because "on its way out" and
+        // "not yet" are opposite mistakes and must never look alike.
+        if (tile in state.scrapping) frame(x, y, Colors.SCRAPPING)
         when (m) {
             // Drawn by [drawBridge] in its own pass, above the track it crosses — a bridge is the
             // one deck machine that is *over* the tile rather than on it.
@@ -745,6 +801,23 @@ class OutofspaceRenderer {
      * conveyor and a five-tile furnace differ only in [span]. Drawing from a corner would need the
      * offset to depend on facing as well, since rotation would move the anchor.
      */
+    /**
+     * A hollow [bodyRect]: four thin sides around a machine's footprint, whatever size it is.
+     *
+     * [frame] draws one tile and is sized for a fitting in a line; this is the same idea for a body
+     * that may be three or five tiles across.
+     */
+    private fun bodyOutline(x: Int, y: Int, span: Int, color: Long) {
+        val side = (span - (1f - Visual.MACHINE_INSET)) * tilePx
+        val t = Visual.FRAME_THICKNESS * tilePx
+        val cx = (x + 0.5f) * tilePx
+        val cy = (y + 0.5f) * tilePx
+        rect(cx, cy - (side - t) * 0.5f, side, t, color)
+        rect(cx, cy + (side - t) * 0.5f, side, t, color)
+        rect(cx - (side - t) * 0.5f, cy, t, side, color)
+        rect(cx + (side - t) * 0.5f, cy, t, side, color)
+    }
+
     private fun bodyRect(x: Int, y: Int, span: Int, inset: Float, color: Long) {
         val side = (span - (1f - inset)) * tilePx
         rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side, side, color)

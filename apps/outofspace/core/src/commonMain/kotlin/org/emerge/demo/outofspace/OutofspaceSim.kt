@@ -48,6 +48,7 @@ import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.portsOf
+import org.emerge.demo.outofspace.world.standingPortsOf
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Body
@@ -2214,35 +2215,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val tile = TileIndex(i)
                 val m = deck[tile] ?: continue
                 if (m.center != tile) continue
-                // A ghost's real ports are not there yet: there is nothing behind them to feed and
-                // nothing to collect. What it has instead is a construction port on its centre tile,
-                // and that is the only opening a half-built machine offers the network.
-                // ⚠️ **Being told to go overrides being short**, and this test has to come *first*.
-                // A machine handing its casing back is short of its bill from the first load, so
-                // asked in the other order it grows a *construction* port, turns into a sink, and
-                // draws its own metal straight back off the belt. That is the rails' collision at
-                // the deck layer (see [scrapDeconstructing]) and it is silent: the machine sits
-                // there at a stable weight looking exactly like deconstruction doing nothing.
-                //
-                // A machine being taken apart keeps its **outputs** — its product is still its
-                // product and leaves the way it always did — and loses its **inputs**: nothing new
-                // is fed to a thing that is being dismantled. Handing back what is already inside it
-                // is [scrapMachines]' job, not a port's.
-                if (tile in scrapping) {
-                    // ⛔ A **bridge goes on working while it is marked** — Stu, 2026-08-19. It is a
-                    // length of track held in the air, and a run does not stop carrying because the
-                    // player has condemned it. Its input stays open until it has nothing left inside
-                    // it; only then does it close and start giving its metal back. Closing it while
-                    // a lump was mid-span would strand that lump on the gantry.
-                    if (m is Bridge && holdsAnything(m, tile)) {
-                        for (port in portsOf(grid, m)) add(port)
-                        continue
-                    }
-                    for (port in portsOf(grid, m)) if (port.kind == PortKind.Output) add(port)
-                    continue
-                }
-                if (deck.isGhost(tile)) { add(constructionPortOf(grid, m)); continue }
-                for (port in portsOf(grid, m)) add(port)
+                // What it has *right now*, which is not always what its kind defines — see
+                // [standingPortsOf], which is also what the renderer asks so the picture and the
+                // routing cannot form two opinions.
+                for (port in standingPortsOf(grid, deck, buffers, scrapping, m)) add(port)
             }
             return out
         }

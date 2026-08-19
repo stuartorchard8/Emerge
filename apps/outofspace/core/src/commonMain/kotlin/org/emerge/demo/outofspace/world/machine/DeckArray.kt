@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.builtPermille
 import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
@@ -127,6 +128,20 @@ class DeckArray(
         val tiles = m.tiles(grid)
         val bill = machineBillOfMaterials(m.kind, tiles.size)
         return holdsFullBill(bill) { s -> tiles.sumOf { stuff[it, s] } }
+    }
+
+    /**
+     * How built the machine at [m] is, in parts per thousand — 0 for a bare ghost, 1000 for finished.
+     *
+     * For readouts and the renderer; the sim asks [holdsFullBill], which is the same question without
+     * the arithmetic. ⚠️ The **minimum** per-species ratio over the whole footprint, so it reaches
+     * 1000 exactly when [holdsFullBill] turns true and the picture cannot say finished while the sim
+     * says ghost.
+     */
+    fun builtPermille(m: DeckMachine): Int {
+        val tiles = m.tiles(grid)
+        val bill = machineBillOfMaterials(m.kind, tiles.size)
+        return builtPermille(bill) { s -> tiles.sumOf { stuff[it, s] } }
     }
 
     fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf())

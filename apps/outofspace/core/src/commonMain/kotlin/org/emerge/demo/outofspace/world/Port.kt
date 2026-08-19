@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
+import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -214,6 +215,48 @@ private fun constructionPortAtCentre(machine: DeckMachine): Port =
         owner = machine.center,
         fromDeck = true,
     )
+
+/**
+ * The ports a machine **actually has right now**, which is not always the ports its kind defines.
+ *
+ * The single answer to that question, because there are two callers — the reducer, which routes
+ * material by it, and [org.emerge.demo.outofspace.world.VesselState.portsByTile], which draws it —
+ * and a picture that disagrees with the routing is worse than no picture.
+ *
+ * Three states on top of the ordinary one:
+ *
+ *  - **Marked for deconstruction.** It keeps its outputs — its product is still its product and
+ *    leaves the way it always did — and loses its inputs, because nothing new is fed to a thing
+ *    being dismantled. Handing back what is *already* inside it is the deconstruction pass's job
+ *    rather than a port's.
+ *  - **A marked bridge that still holds something** keeps everything. A gantry is a length of track
+ *    held in the air, and a run does not stop carrying because the player condemned it; closing its
+ *    mouth mid-span would strand whatever was on it.
+ *  - **A ghost** has one opening, its construction port — see [constructionPortOf].
+ *
+ * ⚠️ **Being told to go overrides being short, and that order is load-bearing.** A machine handing
+ * its casing back is short of its bill from the first load it gives up, so asked the other way round
+ * it grows a *construction* port, turns into a sink and draws its own metal straight back off the
+ * belt. Stable, stationary, and indistinguishable from deconstruction doing nothing at all. The
+ * rails learned this first; the deck learned it again.
+ */
+fun standingPortsOf(
+    grid: Grid,
+    deck: DeckArray,
+    buffers: BufferLayer,
+    scrapping: Set<TileIndex>,
+    m: DeckMachine,
+): List<Port> {
+    if (m.center in scrapping) {
+        if (m is Bridge && bufferRolesOf(m).any { role ->
+                bufferTile(grid, m, m.center, role)?.let { buffers.massAt(it) > 0L } == true
+            }
+        ) return portsOf(grid, m)
+        return portsOf(grid, m).filter { it.kind == PortKind.Output }
+    }
+    if (deck.isGhost(m.center)) return listOf(constructionPortOf(grid, m))
+    return portsOf(grid, m)
+}
 
 /**
  * The ports of a deck machine, which knows where it stands — see the twin above for the rest.

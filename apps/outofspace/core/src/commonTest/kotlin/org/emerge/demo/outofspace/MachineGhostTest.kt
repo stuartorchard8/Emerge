@@ -26,6 +26,7 @@ import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
@@ -458,6 +459,29 @@ class MachineGhostTest {
 
         val s = run(remove(start, at), OutofspaceReducer.RAIL_PERIOD * 8)
         assertNull(s.deck[at], "an empty ghost had nothing to hand back and should have gone at once")
+    }
+
+    /**
+     * ⚠️ The mark is a set of tile **indexes**, and a tile index means a different place the moment
+     * the lattice changes shape. Carried across a resize rather than remapped, a world that grew came
+     * back with its condemned machines reprieved and some innocent tile marked instead — silent both
+     * ways, since the machine simply stands there at full casing looking finished.
+     *
+     * The grid remap has produced this class of bug twice before; see the plan's retrospective.
+     */
+    @Test
+    fun `the mark follows its machine when the grid is remapped`() {
+        val at = grid.tile(10, 4)
+        val marked = remove(builtMachine(Hull(at)), at)
+        assertTrue(at in marked.scrapping, "fixture")
+
+        val wider = Grid(grid.width + 6, grid.height + 4)
+        val moved = marked.remapped(wider, dx = 3, dy = 2)
+        val now = wider.tile(grid.xOf(at) + 3, grid.yOf(at) + 2)
+
+        assertNotNull(moved.deck[now], "the machine itself moved")
+        assertTrue(now in moved.scrapping, "but its mark was left behind, so it is reprieved")
+        assertTrue(moved.scrapping.size == 1, "and nothing else was condemned in its place")
     }
 
     /**
