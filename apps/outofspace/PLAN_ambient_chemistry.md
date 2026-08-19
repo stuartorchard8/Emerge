@@ -82,6 +82,58 @@ species in `CRITICAL`. `Stuff.pressureAt` states the missing invariant as a comm
 and `Work.vaporize` (`OutofspaceSim.kt:730`) will copy **any** species into the atmosphere, because
 it just loops `Species.ALL`.
 
+## Why not just make the atmosphere a `StuffLayer` too? (Stu, 2026-08-19)
+
+The obvious simplification: drop the whole fluid/solid distinction, store the air as another
+`StuffLayer`, and let the tried-and-tested presence bitmask do the work. It is a good question and
+the answer is *take half of it*.
+
+**Row allocation does not shrink the dimension.** A `StuffLayer` row is `Species.COUNT` wide —
+`masses[row * Species.COUNT + ordinal]`. Rows make a layer cost what it *occupies*, not what it
+could hold *per tile*. The air occupies nearly every non-vacuum tile, so air-as-`StuffLayer` is
+still 165 longs per tile, ~7.6 MB, plus the bitmask, plus `rowOf`/`tileOf`, copied every tick. The
+5× reduction comes only from narrowing the species axis, and that needs no unification. **The two
+ideas are orthogonal, and the memory number is the bigger and more certain one.**
+
+**The row indirection is actively wrong for a stencil.** `diffuseFluid` is the hottest loop in the
+game, runs `subSteps` times a tick, and its core is:
+
+```kotlin
+deltaMass[MassIndex(tile, s)] -= out
+deltaMass[MassIndex(neighbour, s)] += out
+```
+
+In a dense array a neighbour's block is pointer arithmetic. Through `rowOf` it is a dependent load
+into an array indexed by an unrelated row number — rows are allocated in first-touch order and
+`release()` reshuffles them, which is why nothing may hold a row number across a release. Worse,
+`deltaMass` is a **fresh zeroed array every call**: as a layer it would start empty, so every
+neighbour write hits `rowFor` → allocate → `clearRow`, zeroing 165 longs per newly-touched tile,
+to build a structure that ends up dense anyway. `StuffLayer`'s own doc warns about this shape —
+*"if asking allocated, one pass over the grid would make every layer dense"* — and diffusion
+*writing* to neighbours does it legitimately rather than by accident.
+
+That is the real distinction, and it is worth stating as a rule:
+
+> **Rails are a scatter; the air is a field. Sparse rows are right for a few hundred tiles of
+> track. A stencil computation over a mostly-filled grid wants dense addressing. The bitmask is
+> right for both.**
+
+**And unification would not merge the semantics anyway.** The air is a different *set of
+operations*, not just a different store: `pressureAt`/millimoles, `ApertureField`, `EdgeGrid`,
+venting to the rim, `airBalance`. You would still have an air-shaped API over a rail-shaped store.
+
+### What is taken from it
+
+The bitmask, which is separable from the row allocation — nothing stops a **dense** array having a
+presence bitmask. Today `diffuseFluid` does `for (s in Species.ALL) { if (count <= 0L) continue }`:
+165 contiguous loads, ~21 cache lines, to find the six species actually in the air. Three mask words
+plus a bit scan touches one line plus the six, and the win survives the `Fluid` subset (23 → 6).
+
+So: **dense arrays, plus a presence bitmask, plus one shared `forEachSpecies` interface** over both
+backing stores. Chemistry gets exactly the uniformity that motivated the question — one iteration
+API, no special-casing the air, no `Fluid?` bridging inside the reaction loop — without putting the
+diffusion stencil behind a dependent load.
+
 ---
 
 # Increment 0 — the `Fluid` subset
@@ -96,6 +148,12 @@ zinc, cadmium — plus sulfur vapour: **~23**. Size it at 32 for headroom.
 
 That is a **5× reduction** in the air and pipe arrays — 7.6 MB → ~1.5 MB per tick copy — and every
 `densityAt`, `millimolesOf`, `heatCapacityAt` and diffusion sweep over them gets 5× shorter.
+
+**Then give `MassArray` a presence bitmask**, the same three-words-per-tile scheme `StuffLayer`
+uses, and expose `forEachSpecies` on it with the same signature. Dense storage, sparse iteration —
+see "Why not just make the atmosphere a `StuffLayer` too?" above for why those are separable and
+why only the second half is wanted here. This is what lets increment 1 write one reaction loop
+against one interface instead of two.
 
 ## Shape
 
@@ -287,17 +345,21 @@ that way.
 
 # Perf, honestly
 
-An earlier version of this scope proposed a `REACTIVE_MASK` — three words of "is any species here a
-reactant" ANDed against `StuffLayer`'s presence bitmask — and called it foundational. **It is not,
-and it should not be built yet.**
+Two separate ideas got conflated in scoping, and separating them is most of the design:
 
-The presence bitmask already gives the win: `forEachSpecies` on a rail row costs 2–3 iterations,
-not 165. A reactive mask on top turns three lookups into three `and`s. Real, but a constant factor
-on an already-cheap loop.
+- **Narrowing the species axis** (`Fluid`) shrinks what is *stored and copied*. 7.6 MB → 1.5 MB per
+  tick, and it is the larger, more certain number.
+- **A presence bitmask** shrinks what is *iterated*. It does not need sparse rows, and it is what
+  gives the air and the solid layers one interface.
 
-The dense 165-wide fluid arrays were carrying the entire perf case, and increment 0 removes it.
-With ~23 species in the air, gating a 23-entry loop is not obviously worth the bookkeeping. Add the
-mask if and when a profile asks for it, not before.
+Increment 0 does both. Neither requires unifying the two storage types — see "Why not just make the
+atmosphere a `StuffLayer` too?".
+
+A third idea, `REACTIVE_MASK` — ANDing the presence words against a precomputed mask of "is any
+species here a reactant at all" — was proposed and **withdrawn**. Once the presence bitmask exists,
+iteration already costs what a tile holds: 2–3 species on a rail, ~6 in air. A reactive mask on top
+turns three lookups into three `and`s, which is a constant factor on an already-cheap loop. Do not
+build it without a profile that asks for it.
 
 # Not solved, deliberately
 
