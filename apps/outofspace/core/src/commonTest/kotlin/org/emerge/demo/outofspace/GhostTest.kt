@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.buildableFrom
+import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
@@ -202,6 +204,45 @@ class GhostTest {
             "the tank committed ${peak}g to a ${bill}g job: it is pouring past what the site can use",
         )
     }
+
+    /**
+     * ⛔ **Building with impure material does not precipitate the impurity.**
+     *
+     * From Stu's save: 181g of **pure carbon** parked on a rail at (12, 28), refusing to take any
+     * part in building the ghost at (12, 29). The track had been built out of hull salvage, and a
+     * hull is steel — 99 parts iron to 1 part carbon.
+     *
+     * A rail's bill is iron and nothing else, so the final top-up, which takes each species up to
+     * its own shortfall, took the iron and **left every gram of the carbon behind**. Each top-up
+     * therefore concentrated what it did not want, until what was standing there was too far off any
+     * bill for anything on the network to use — a lump that can never move again, on a tile that
+     * reads as ordinary track. Building with 99% pure material left a 0% pure residue.
+     *
+     * A top-up now takes the junk that came in with the metal at the same rate it takes the metal,
+     * so what rides on is the blend that arrived. The tile ends up with a little carbon in its
+     * fabric, which is exactly what the swallow-it-whole branch does for every delivery before the
+     * last one — the last one was the odd man out.
+     */
+    @Test
+    fun `building a rail out of steel does not leave the carbon behind`() {
+        val steel = Material.Steel.composition.scaledTo(8 * Capacity.PACKET_MASS)
+        val start = tankAndRun(ghostAt = 7, stored = steel)
+        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+
+        val s = run(start, RAIL_PERIOD * 30)
+
+        assertTrue(s.conduits.isComplete(Conduit.Rail, s.grid.tile(7, 3)), "the ghost never finished")
+        for (x in 4..7) {
+            val standing = s.rail.resourceAt(s.grid.tile(x, 3)) ?: continue
+            assertTrue(
+                buildableFrom(bill, standing),
+                "a residue nothing can use was left at ($x, 3): ${composition(standing)}",
+            )
+        }
+    }
+
+    private fun composition(m: Mixture): String =
+        Species.ALL.filter { m[it] > 0L }.joinToString(" ") { "${it.name} ${m[it] * 100 / m.total}%" }
 
     /**
      * ⛔ **A ghost refuses what it cannot be built from, including what is already standing on it.**

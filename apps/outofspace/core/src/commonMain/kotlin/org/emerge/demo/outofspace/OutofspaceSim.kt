@@ -2060,16 +2060,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // iron per pass, always a shade under what it asked for. It converges on the bill and
             // never reaches it — 999 permille for ever, with the run jammed solid behind it.
             //
-            // ⚠️ Junk is *not* skimmed here, and that is the other half of the same rule: while the
-            // tile is still properly hungry the branch above swallows the lump whole, junk and all.
-            // This is only the end of the job, and a top-up takes what is missing.
-            val lump = rail.resourceAt(tile) ?: return null
+            // ⚠️ **The junk goes with it, at the rate the metal goes.** Species the bill has no use
+            // for are not left standing: taking only what is billed *concentrates* whatever is not,
+            // so a run built out of hull salvage — steel, 99 parts iron to 1 of carbon — stripped
+            // the iron off every delivery and precipitated the carbon, until 181g of the pure stuff
+            // stood on a tile too far off any bill for anything on the vessel to use. Found in Stu's
+            // save. Building with 99% pure material must not leave a 0% pure residue: what rides on
+            // is the blend that arrived, and the tile keeps a little carbon in its fabric exactly as
+            // the swallow-it-whole branch above gives it for every delivery but the last.
+            val lump = standing
+            var billedHere = 0L
+            var billedTaken = 0L
+            for (sp in Species.ALL) {
+                if (bill[sp] <= 0L) continue
+                billedHere += lump[sp]
+                billedTaken += minOf(lump[sp], shortfall[sp.ordinal])
+            }
             var taken = 0L
             val rest = LongArray(Species.COUNT)
             for (sp in Species.ALL) {
                 val mass = lump[sp]
                 if (mass == 0L) continue
-                val part = minOf(mass, shortfall[sp.ordinal])
+                val part =
+                    if (bill[sp] > 0L) minOf(mass, shortfall[sp.ordinal])
+                    else scaledRatio(billedTaken, billedHere, mass)
                 if (part > 0L) {
                     stuff[tile, sp] = stuff[tile, sp] + part
                     taken += part
@@ -2201,11 +2215,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // is nearly all target species is swallowed whole by the branch above, junk and all,
             // while it is still hungry. This is the top-up at the end, and a top-up takes what is
             // missing.
+            // ⚠️ **And the junk goes with it, at the rate the metal goes** — see [absorbIntoGhost].
+            // Taking only what is billed concentrates whatever is not, until what rides on is too
+            // far off any bill for anything to use.
+            val bill = machineBillOfMaterials(m.kind, tiles.size)
+            var billedHere = 0L
+            var billedTaken = 0L
+            for (sp in Species.ALL) {
+                if (bill[sp] <= 0L) continue
+                billedHere += lump[sp]
+                billedTaken += minOf(lump[sp], shortfall[sp.ordinal])
+            }
             val rest = LongArray(Species.COUNT)
             for (sp in Species.ALL) {
                 val mass = lump[sp]
                 if (mass == 0L) continue
-                val part = minOf(mass, shortfall[sp.ordinal])
+                val part =
+                    if (bill[sp] > 0L) minOf(mass, shortfall[sp.ordinal])
+                    else scaledRatio(billedTaken, billedHere, mass)
                 spreadOverFootprint(tiles, sp, part)
                 taken += part
                 // Stated rather than subtracted, so the lump that rides on and the mass booked here

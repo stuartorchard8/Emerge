@@ -655,6 +655,12 @@ object OutofspaceAgentHarness {
                     (if (standing.center in state.scrapping) "  MARKED FOR DECONSTRUCTION" else "") +
                     (if (state.deck.isGhost(standing.center)) "  GHOST" else ""))
             }
+            // ⚠️ **What is standing on the track, which is not what the track is made of.** The two
+            // are separate layers and a residue problem is invisible in either one alone: a tile can
+            // read as perfectly ordinary rail with a lump of something nothing wants parked on it.
+            state.rail.resourceAt(tile)?.let {
+                println("[agent]   load      ${fmt(grams(it.total))}g  ${composition(it)}")
+            }
             println("[agent]   heat      ${state.kelvinAt(tile)}K  air ${state.airKelvinAt(tile)}K")
             println("[agent]   pressure  ${state.air.pressureAt(tile)} mmol")
             println("[agent]   density   ${state.air.densityAt(tile)}")
