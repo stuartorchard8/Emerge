@@ -441,3 +441,46 @@ fun builtPermille(bill: Mixture, heldMass: Long): Int {
     if (heldMass >= want) return 1000
     return scaledRatio(heldMass, want, 1000L).toInt()
 }
+
+/**
+ * A storage's intake filter: one species, and how pure a lump has to be in it to get in.
+ *
+ * ⛔ **Not a bill, and deliberately not run through [buildableFrom].** A bill states a *recipe* and
+ * measures every species in it proportionally; a filter states one species and one threshold, and
+ * says nothing at all about what the other 10% is. They coincide only for a single-species bill at
+ * exactly [BUILD_PURITY_PERCENT], which is why the temptation to reuse the bill machinery is worth
+ * naming and refusing: a 60% filter expressed as a one-species bill would be read by
+ * [buildableFrom] as 60% of 100% *scaled by* [BUILD_PURITY_PERCENT], which is 57%, and the panel
+ * would be lying about its own number.
+ *
+ * ⚠️ **[species] is captured, never derived.** The player locks a warehouse onto whatever it
+ * happens to hold, and from then on that is what it holds — a filter that re-read the dominant
+ * species each tick would drift with the contents and so would never exclude anything, which is the
+ * opposite of what locking means.
+ */
+data class SpeciesFilter(val species: Species, val minPercent: Int) {
+    /**
+     * Whether [mixture] is pure enough in [species] to be let in.
+     *
+     * Nothing is not a delivery — the same rule [buildableFrom] opens with, and for the same reason:
+     * an empty lump that passes idles at the door for ever.
+     */
+    fun admits(mixture: Mixture): Boolean {
+        val total = mixture.total
+        if (total <= 0L) return false
+        return mixture[species] * 100L >= total * minPercent
+    }
+
+    companion object {
+        /**
+         * What a warehouse locks to by default: **90%**, one step below the build threshold.
+         *
+         * Loose enough that ore straight off an extractor qualifies, tight enough that the lock
+         * means something. The player moves it; this is only where the stepper starts.
+         */
+        const val DEFAULT_PERCENT = 90
+
+        /** The steps the panel offers, coarse at the bottom and fine where purity starts to cost. */
+        val PERCENTS: List<Int> = listOf(50, 60, 70, 80, 90, 95, 99)
+    }
+}

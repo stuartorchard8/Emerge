@@ -56,6 +56,20 @@ sealed interface Edit {
     /** Binds a button to a different key — see [org.emerge.demo.outofspace.world.machine.WireButton]. */
     data class BindKey(val tile: TileIndex, val key: InputKey) : Edit
 
+    /**
+     * Locks a warehouse onto what it is holding most of, at [minPercent] purity — or unlocks it
+     * when [minPercent] is null.
+     *
+     * ⛔ **The species is not in the edit, and that is the whole design.** The player picks a
+     * threshold; *what* is locked in is whatever the tank is already full of, read here in the
+     * reducer where the contents live. A UI that named a species would be offering a list of every
+     * material in the game to a player who has seen three of them, and would let them lock a
+     * warehouse onto something that has never come aboard.
+     *
+     * Locking an empty warehouse does nothing: there is nothing to lock onto.
+     */
+    data class LockStorage(val tile: TileIndex, val minPercent: Int?) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

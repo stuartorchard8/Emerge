@@ -349,7 +349,14 @@ object Save {
             // An extractor is its facing and its one store, both written by the common code around
             // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
             is Extractor -> {}
-            is Storage -> {}
+            // A lock is the player's decision and so is state. Two fields rather than one, and
+            // written only when locked: an unlocked warehouse is the overwhelming majority and adds
+            // nothing to the line, and an older file with neither field loads unlocked, which is
+            // exactly what it was.
+            is Storage -> m.filter?.let {
+                put("filter", it.species.name)
+                put("filterpct", it.minPercent.toString())
+            }
             // A sensor is its facing and its wiring, both written by the common code around this.
             is Sensor -> {}
             // A button is its key and its wiring; the common code writes the second.
@@ -1098,7 +1105,18 @@ object Save {
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile, ventedMass = massNum("vented", 0L))
-            DeckMachineKind.Storage -> Storage(tile, facing())
+            DeckMachineKind.Storage -> Storage(
+                tile,
+                facing(),
+                filter = f["filter"]?.let { name ->
+                    val species = Species.ALL.firstOrNull { it.name == name }
+                        ?: fail("unknown filter species '$name'")
+                    // A file with a species and no percentage is not one this game ever wrote, but
+                    // the default is the honest reading of it: locked, at the threshold locking
+                    // starts from.
+                    SpeciesFilter(species, f["filterpct"]?.toIntOrNull() ?: SpeciesFilter.DEFAULT_PERCENT)
+                },
+            )
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
             // under it, and no colour can be turned back into a piece of geometry that was never laid.
             DeckMachineKind.Sensor -> Sensor(tile, facing())

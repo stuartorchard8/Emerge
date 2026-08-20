@@ -21,6 +21,13 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *  - [forBill] — takes only what it can be built from, and only until it is built. A construction
  *    site is the one sink in the game with a **final** total. That is what makes it the sink worth
  *    metering, and it is why this type exists at all.
+ *  - [filtered] — takes one species at a stated purity, for ever. A locked warehouse.
+ *
+ * ⛔ **Fussy and endless are two independent questions, and [filtered] is what proves it.** Until it
+ * existed the two always agreed — everything unlimited took anything, everything finite was picky —
+ * so [isUnlimited] was quietly doing duty as "unfussy" in the walk below, and a locked warehouse
+ * read as taking everything. Ask [takesAnything] for the fussiness question and [isUnlimited] for
+ * the quantity one; they are never the same question again.
  *
  * ⚠️ **Momentary fullness is deliberately not modelled here.** "The tank is full right now" is a
  * question for the delivery path, which already answers it and already backs the belt up correctly.
@@ -39,6 +46,14 @@ class Acceptance private constructor(
      * given tile and that site.
      */
     val bill: Mixture?,
+    /**
+     * One species at a stated purity, or null. A locked warehouse and nothing else.
+     *
+     * Held apart from [bill] rather than folded into it because a threshold is not a recipe — see
+     * [SpeciesFilter], which explains why reusing the bill machinery would misreport the player's
+     * own number back at them.
+     */
+    val filter: SpeciesFilter?,
     /**
      * Whether this sink stands **in the road** — refusing passage to what it cannot use, not merely
      * declining to take it.
@@ -61,8 +76,16 @@ class Acceptance private constructor(
      */
     val wanted: Long,
 ) {
-    /** True when this sink's appetite has no end — every machine, and nothing else. */
+    /** True when this sink's appetite has no end — every machine, and a locked warehouse. */
     val isUnlimited: Boolean get() = wanted == UNLIMITED
+
+    /**
+     * True when this sink refuses nothing — the fast path the whole network rests on.
+     *
+     * ⚠️ **Not the same as [isUnlimited]**, and the distinction is load-bearing: a locked warehouse
+     * is endless *and* picky, so a tile that can reach one may not be marked as taking anything.
+     */
+    val takesAnything: Boolean get() = bill == null && filter == null
 
     /** True when this sink is finite and will never take anything again. */
     val isSatisfied: Boolean get() = !isUnlimited && wanted <= 0L
@@ -77,19 +100,36 @@ class Acceptance private constructor(
      */
     fun admits(mixture: Mixture): Boolean {
         if (isSatisfied) return false
+        filter?.let { return it.admits(mixture) }
         val want = bill ?: return true
         return buildableFrom(want, mixture)
     }
 
     override fun toString(): String =
-        if (isUnlimited) "Acceptance(anything)" else "Acceptance(${wanted}g of $bill)"
+        when {
+            filter != null -> "Acceptance(>=${filter.minPercent}% ${filter.species.name})"
+            isUnlimited -> "Acceptance(anything)"
+            else -> "Acceptance(${wanted}g of $bill)"
+        }
 
     companion object {
         /** An appetite with no end. Not a large number — a different kind of number. */
         const val UNLIMITED: Long = Long.MAX_VALUE
 
         /** Takes any matter, for ever: every machine on the vessel. */
-        val ANYTHING: Acceptance = Acceptance(null, stopsTraffic = false, wanted = UNLIMITED)
+        val ANYTHING: Acceptance = Acceptance(null, null, stopsTraffic = false, wanted = UNLIMITED)
+
+        /**
+         * Takes [filter]'s species at [SpeciesFilter.minPercent] purity, for ever: a locked
+         * warehouse.
+         *
+         * ⛔ **Never a plug.** A warehouse is a building on finished, paid-for track; refusing what
+         * it cannot use at its own door is all it is entitled to do. Made to stand in the road it
+         * would be a wall the player can build across their own network with no ghost in sight —
+         * the exact exploit [stopsTraffic] exists to prevent, inverted.
+         */
+        fun filtered(filter: SpeciesFilter): Acceptance =
+            Acceptance(null, filter, stopsTraffic = false, wanted = UNLIMITED)
 
         /**
          * Takes what [bill] can be built from, and [shortBy] more grams of it.
@@ -101,7 +141,7 @@ class Acceptance private constructor(
          * site, and it lives in [Whitelist].
          */
         fun forBill(bill: Mixture, shortBy: Long, stopsTraffic: Boolean = true): Acceptance =
-            Acceptance(bill, stopsTraffic, shortBy)
+            Acceptance(bill, null, stopsTraffic, shortBy)
     }
 }
 
@@ -366,7 +406,12 @@ class Whitelist private constructor(
                 if (own == null && tile in flow.sinks) any = true
                 if (own != null) {
                     for (a in own) {
-                        if (a.isUnlimited) { any = true; continue }
+                        // ⛔ **[Acceptance.takesAnything], not [Acceptance.isUnlimited]** — the flag
+                        // means "everything beyond here is welcome anywhere", which is a statement
+                        // about fussiness and not about quantity. Reading the endless one instead
+                        // let a locked warehouse set it, and the tile then answered `permitsAnything`
+                        // to the very lumps the lock exists to keep out.
+                        if (a.takesAnything && a.isUnlimited) { any = true; continue }
                         // ⚠️ **Not `filter`** — the ones worth carrying upstream are the ones still
                         // WANTING something. A satisfied acceptance answers `false` to everything,
                         // so keeping those instead silently stops finite demand propagating at all

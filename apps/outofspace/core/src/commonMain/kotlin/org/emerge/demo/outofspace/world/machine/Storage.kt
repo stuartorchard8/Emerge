@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world.machine
 import org.emerge.demo.outofspace.num.Budget
 
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
@@ -18,6 +19,14 @@ import org.emerge.demo.outofspace.world.Wiring
  * activation is positive — so a storage wired to a sensor is a valve, and a storage wired to nothing
  * is a dead end that fills up.
  *
+ * **A locked warehouse is the network's only sorter.** [filter] is null until the player locks it,
+ * and locking captures whatever the warehouse is holding most of — see
+ * [org.emerge.demo.outofspace.world.SpeciesFilter]. From then on the rail network treats the tank
+ * as an endless appetite *for that one species*, so material it cannot use is never sent down the
+ * branch that leads to it. There is no species list to pick from, and that is the point: a
+ * warehouse can only be locked onto something it has actually got, so a filter always names
+ * material the player has seen arrive.
+ *
  * **Storage is also the vessel's inventory.** The global [org.emerge.demo.outofspace.world.Stockpile] construction draws on is the sum
  * of every storage aboard, computed fresh each tick — there is no separate act of "banking". That
  * keeps material in one place instead of two: what you can build with is exactly what you can walk
@@ -27,11 +36,16 @@ data class Storage(
     override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
+    /** What this warehouse is locked onto, or null while it takes anything. */
+    val filter: SpeciesFilter? = null,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Storage
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+
+    /** Locked onto [filter], or unlocked when it is null. */
+    fun withFilter(filter: SpeciesFilter?): Storage = copy(filter = filter)
 
     companion object {
         /**

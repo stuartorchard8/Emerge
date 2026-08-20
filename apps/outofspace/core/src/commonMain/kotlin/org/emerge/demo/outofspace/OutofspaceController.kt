@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
@@ -208,6 +210,23 @@ class OutofspaceController(
 
     /** Binds a button to [key]. */
     fun bindKey(tile: TileIndex, key: InputKey) = pending.add(Edit.BindKey(tile, key))
+
+    /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStorage]. */
+    fun lockStorage(tile: TileIndex, minPercent: Int?) = pending.add(Edit.LockStorage(tile, minPercent))
+
+    /**
+     * Steps a locked warehouse's threshold through [SpeciesFilter.PERCENTS], wrapping.
+     *
+     * Only meaningful once locked: an unlocked tank has no threshold to move, and the panel offers
+     * the lock button instead.
+     */
+    fun cycleStorageFilter(tile: TileIndex, delta: Int) {
+        val current = state.machineCovering(tile) as? Storage ?: return
+        val filter = current.filter ?: return
+        val all = SpeciesFilter.PERCENTS
+        val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.DEFAULT_PERCENT) else it }
+        lockStorage(tile, all[((at + delta) % all.size + all.size) % all.size])
+    }
 
     /** Cycles which key a button answers to. */
     fun cycleInputKey(tile: TileIndex, delta: Int) {

@@ -47,6 +47,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Occupancy
 import org.emerge.demo.outofspace.world.Port
 import org.emerge.demo.outofspace.world.PortKind
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.coveredTiles
 import org.emerge.demo.outofspace.world.tryDisplaceAir
@@ -1449,6 +1450,29 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val m = deck[tile]
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
+                is Edit.LockStorage -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Storage) {
+                        val percent = edit.minPercent
+                        deck[tile] = m.withFilter(
+                            if (percent == null) null
+                            else {
+                                // Whatever it is holding most of. A tank with nothing in it has no
+                                // dominant species and so cannot be locked — the panel says as much
+                                // rather than this failing quietly, but it must also be true here:
+                                // the edit queue is not the only way in.
+                                val store = bufferTile(grid, m, tile, BufferRole.Inside)
+                                val held = store?.let { buffers.resourceAt(it) }
+                                // ⚠️ **Re-locking keeps the species it already had** when the tank
+                                // has been drained: the player moving the threshold on an empty
+                                // locked warehouse means "tighter", not "forget what this is for".
+                                val species = held?.dominant ?: m.filter?.species
+                                species?.let { SpeciesFilter(it, percent) }
+                            },
+                        )
+                    }
+                }
                 // Accumulated (mass finalised after edit pass).
                 is Edit.Thrust -> { thrustDx += edit.dx; thrustDy += edit.dy }
                 is Edit.DropRock -> dropRock(edit.x, edit.y, edit.radius)
@@ -2625,6 +2649,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     .add(Acceptance.forBill(bill, machineShortfall(m), stopsTraffic = false))
             }
 
+            // ── Locked warehouses ────────────────────────────────────────────
+            //
+            // The one **permanent** fussy sink on the network, and the first appetite here that is
+            // endless and picky at once — see [Acceptance.takesAnything]. Stated at the input port
+            // rather than at the machine's centre because the port tile is where the track arrives,
+            // which is the tile every other acceptance here is keyed by.
+            //
+            // ⚠️ **The fast path goes with it.** A tile that can reach a locked warehouse can never
+            // answer [Whitelist.permitsAnything] again, so the per-route walk is no longer confined
+            // to vessels with construction going on. Deliberate, and measured rather than guessed at:
+            // see `PLAN` notes. Lock nothing and the cost is exactly what it was.
+            for ((tile, at) in ports) {
+                if (rails[tile.index] == null) continue
+                val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
+                val storage = deck[input.owner] as? Storage ?: continue
+                val filter = storage.filter ?: continue
+                accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
+            }
+
             // ── Which consumers can use what is standing on the track ────────
             //
             // ⛔ **The one thing the flow graph is told about matter, and for one question only** —
@@ -2830,6 +2873,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // the whole of what "storage" means here. Everything else about the delivery is the
                 // machine-list path's, so it is done by the same two calls.
                 is Storage -> {
+                    // ⛔ **The warehouse's own door, and not merely a second opinion.** The
+                    // whitelist keeps the wrong material from being *sent* here, which is the whole
+                    // value of the lock; but the whitelist is a statement about routes, and a lump
+                    // already standing on this tile when the player locks the tank never travelled a
+                    // route. Without this the act of locking swallows whatever happened to be at the
+                    // door. See [Acceptance.admits], which asks the same question from the network's
+                    // side.
+                    destination.filter?.let { if (!it.admits(packet.contents)) return false }
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false

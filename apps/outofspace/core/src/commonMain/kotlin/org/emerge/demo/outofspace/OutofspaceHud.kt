@@ -18,6 +18,10 @@ import org.emerge.demo.outofspace.world.RockDensityField
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.SpeciesFilter
+import org.emerge.demo.outofspace.world.BufferRole
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
@@ -230,6 +234,7 @@ class OutofspaceHud {
 
             inspectPanel(controller, if (hovered != TileIndex.NONE) hovered else controller.selected)
             wiringPanel(controller)
+            storagePanel(controller)
 
             panel(Anchor.BottomRight) {
                 if (canSave) {
@@ -492,6 +497,64 @@ class OutofspaceHud {
         val remainingPercent = 100L - pcts.sum()
         val listed = named.indices.joinToString("\n") { "${pcts[it].toString().padStart(3)}% ${named[it].name.uppercase()}" }
         return if (present.size <= maxEntries) listed else "$listed\n${remainingPercent.toString().padStart(3)}% other"
+    }
+
+    /**
+     * The lock on the selected warehouse: what it is holding, and the threshold to hold it to.
+     *
+     * ⛔ **No species list.** The button locks the tank onto whatever it is already full of — see
+     * [org.emerge.demo.outofspace.Edit.LockStorage]. Offering the player a menu of every material
+     * in the game would ask them to name things they have never seen, and would let them lock a
+     * warehouse onto something that has never come aboard.
+     *
+     * Shares the bottom-right corner with the wiring editor, so it stands down while the wire tool
+     * is out rather than drawing over it.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.storagePanel(controller: OutofspaceController) {
+        if (controller.tool == Tool.Wire) return
+        val tile = controller.selected
+        if (tile == TileIndex.NONE) return
+        val storage = controller.state.machineCovering(tile) as? Storage ?: return
+        val grid = controller.state.grid
+        val centre = storage.center
+        val store = bufferTile(grid, storage, centre, BufferRole.Inside)
+        val held = store?.let { controller.state.buffers.resourceAt(it) }
+        val filter = storage.filter
+
+        panel(Anchor.BottomRight, rowHeight = 20f) {
+            title("STORAGE  ·  (${grid.xOf(centre)}, ${grid.yOf(centre)})")
+            if (filter == null) {
+                val dominant = held?.dominant
+                if (dominant == null) {
+                    row("TAKES ANYTHING", 0x9ED0B0FFL)
+                    row("(empty — fill it before locking)", 0x9A9A9AFFL)
+                } else {
+                    keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
+                    button(
+                        "LOCK TO ${dominant.name.uppercase()}",
+                        0x2E5A6BFFL,
+                    ) { controller.lockStorage(tile, SpeciesFilter.DEFAULT_PERCENT) }
+                    row("nothing purer than the bar will be sent here", 0x7A7A7AFFL)
+                }
+            } else {
+                keyValue(
+                    "LOCKED TO",
+                    filter.species.name.uppercase(),
+                    0x9A9A9AFFL,
+                    speciesColor(filter.species),
+                )
+                clauseRow(
+                    lhs = "AT LEAST",
+                    cmp = "${filter.minPercent}%",
+                    rhs = "pure",
+                    onLhs = { controller.cycleStorageFilter(tile, 1) },
+                    onCmp = { controller.cycleStorageFilter(tile, 1) },
+                    onRhs = { controller.cycleStorageFilter(tile, 1) },
+                )
+                button("UNLOCK", 0x6B3A3AFFL) { controller.lockStorage(tile, null) }
+                row("tap the bar to raise the threshold", 0x7A7A7AFFL)
+            }
+        }
     }
 
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
