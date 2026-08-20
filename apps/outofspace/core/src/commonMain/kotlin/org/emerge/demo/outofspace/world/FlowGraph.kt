@@ -323,6 +323,29 @@ class FlowGraph internal constructor(
                     val next = grid.neighbour(at, dir)
                     if (next == TileIndex.NONE || next !in tileSet) continue
 
+                    // ⛔ **A walk never hands its own seed a road out.** Every other rule about
+                    // which way an edge should point is stated in terms of a producer, and on a
+                    // **loop** none of them has any teeth: no edge is a bridge, so a producer lies
+                    // beyond every direction and every revocation is permitted. A traversal that
+                    // goes right round a cycle comes back at its own seed from the far side and
+                    // takes back the feed edge it granted on its first step — trading the road that
+                    // feeds the consumer for a road out of it, and gaining nothing whatever, since
+                    // the consumer at both ends of the trade is the same one.
+                    //
+                    // Stu's save: a deconstructing rail below a ghost rail, a four-tile loop of
+                    // track above it and a storage output below. The storage is what let the guards
+                    // through — a real producer past the ghost makes `beyond` true looking *down*,
+                    // so the ghost's own walk was free to reverse its feed — and the loop is what
+                    // brought the walk back round to ask. The iron went up into the loop and died on
+                    // the dead end the reversal made.
+                    //
+                    // ⚠️ This can only ever fire on a cycle. Off one, a walk cannot reach its own
+                    // seed again: the first step leaves it, and the step back is refused as the
+                    // direction it came from. So it costs a through-route nothing — a sink partway
+                    // along a tapped line still gets its outgoing edge, granted by the walk of the
+                    // consumer *beyond* it, which is the one that has something to gain by it.
+                    if (next == seed) continue
+
                     // ⛔ **A consumer with no producer behind it has nothing to send.** Giving one an
                     // outgoing edge cannot move material that was never going to arrive, and the
                     // edge is not free: it is the same edge, pointing the other way, that the
