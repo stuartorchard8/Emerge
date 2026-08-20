@@ -1744,23 +1744,35 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val room = minOf(rail.headroom(tile), useful)
                     if (room > 0L) {
                         val take = minOf(held, room)
+                        // ⛔ **One proportional slice, not a slice per species.** [Mixture.take]
+                        // apportions off a *running* total, so the parts sum to exactly what was
+                        // asked for; scaling each species on its own truncates each one separately
+                        // and the sum comes up short by up to a microgram per species present.
+                        //
+                        // A microgram is not a rounding detail here, it is a deadlock. The site was
+                        // short of `take` and got `take − 2`, so it stops two micrograms below a
+                        // bill it can now never reach and reads 99% for ever. The next tick's
+                        // request is for those two micrograms alone — and two micrograms scaled
+                        // against thirty kilograms of remaining rail truncates to nought at every
+                        // species, so nothing is handed back at all, every tick, for good. Stu's
+                        // save: a ghost rail at 99% beside a marked rail frozen at 23%, and 94
+                        // consecutive ticks of asking for one microgram and being given none.
+                        //
+                        // It leaves a residue at the other end too, the same microgram wearing the
+                        // other sign: a site left one short asks for one less next time, so the
+                        // packet that arrives is one *more* than it needs and the difference is put
+                        // down as a lump — 1ug of iron standing on finished track, invisible to
+                        // every readout that prints grams, and a permanent blockage because packets
+                        // never merge.
+                        //
                         // Taking the lot takes the heat with it, so a finished tile is genuinely
-                        // empty and [dropConduit] has nothing to book. A part-load takes its share.
-                        val energy =
-                            if (take >= held) stuff.energyAt(tile)
-                            else scaledRatio(take, held, stuff.energyAt(tile))
-                        val masses = LongArray(Species.COUNT)
-                        var moved = 0L
-                        for (sp in Species.ALL) {
-                            val mass = stuff[tile, sp]
-                            if (mass == 0L) continue
-                            val part = if (take >= held) mass else scaledRatio(take, held, mass)
-                            if (part <= 0L) continue
-                            masses[sp.ordinal] = part
-                            moved += part
-                        }
+                        // empty and [dropConduit] has nothing to book. A part-load takes its share:
+                        // [Mixture.take] carries the energy in the same proportion, and returns the
+                        // mixture itself when the whole of it is asked for.
+                        val recovered = giving.take(take)
+                        val energy = recovered.energy
+                        val moved = recovered.total
                         if (moved > 0L) {
-                            val recovered = Mixture.of(masses, energy)
                             // ⚠️ **Nothing leaves the structure layer until the lump has taken it.**
                             // The tile having room is not the same question as the lump accepting
                             // it: an ingot never merges with the ore riding over it, whatever the
@@ -1778,7 +1790,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 else rail.loadOnto(tile, recovered)
                             if (landed) {
                                 for (sp in Species.ALL) {
-                                    val part = masses[sp.ordinal]
+                                    val part = recovered[sp]
                                     if (part != 0L) stuff[tile, sp] = stuff[tile, sp] - part
                                 }
                                 stuff.setEnergy(tile, stuff.energyAt(tile) - energy)
@@ -1962,22 +1974,21 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (room <= 0L) return false
 
             val take = minOf(held, room)
+            // ⛔ **One proportional slice over the whole footprint** — see [scrapDeconstructing],
+            // which had the identical hand-rolled draw and the identical microgram deadlock. Scaling
+            // each species on its own truncates each one separately, so the parts come up short of
+            // what was asked for and the site on the other end stops just below its bill, asking
+            // for a remainder too small to survive the next truncation.
             val masses = LongArray(Species.COUNT)
-            var moved = 0L
-            for (sp in Species.ALL) {
-                var mass = 0L
-                for (t in tiles) mass += deck.stuff[t, sp]
-                if (mass == 0L) continue
-                val part = if (take >= held) mass else scaledRatio(take, held, mass)
-                if (part <= 0L) continue
-                masses[sp.ordinal] = part
-                moved += part
-            }
-            if (moved <= 0L) return false
             var energy = 0L
-            for (t in tiles) energy += deck.stuff.energyAt(t)
-            val movedEnergy = if (take >= held) energy else scaledRatio(take, held, energy)
-            val recovered = Mixture.of(masses, movedEnergy)
+            for (t in tiles) {
+                for (sp in Species.ALL) masses[sp.ordinal] += deck.stuff[t, sp]
+                energy += deck.stuff.energyAt(t)
+            }
+            val recovered = Mixture.of(masses, energy).take(take)
+            val moved = recovered.total
+            if (moved <= 0L) return false
+            val movedEnergy = recovered.energy
 
             // The deposit first, the deduction only if it lands — see the note on this pass.
             val landed =
@@ -1986,7 +1997,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!landed) return false
 
             for (sp in Species.ALL) {
-                val part = masses[sp.ordinal]
+                val part = recovered[sp]
                 if (part == 0L) continue
                 takeEvenlyOffFootprint(tiles, sp, part)
             }

@@ -789,7 +789,10 @@ object OutofspaceAgentHarness {
             for (c in Conduit.entries) {
                 val seg = state.conduits.at(c, tile) ?: continue
                 println("[agent]   ${c.label.lowercase().padEnd(9)} ${state.conduits.tracks.builtPermille(c, tile) / 10}% built" +
-                    "  ${fmt(grams(state.conduits.massAt(c, tile)))}g" +
+                    // ⚠️ **Exact, in the sim's own units, beside the human figure.** A conduit a
+                    // microgram short of its bill prints as its full mass in grams and reads 99%
+                    // for ever; the gap is the whole story and no gram-scale readout can show it.
+                    "  ${fmt(grams(state.conduits.massAt(c, tile)))}g (${state.conduits.massAt(c, tile)}ug)" +
                     (if (seg.deconstructing) "  MARKED FOR DECONSTRUCTION" else "") +
                     (if (state.conduits.isGhost(c, tile)) "  GHOST" else ""))
                 // ⚠️ **What it is made of, not merely how much.** A ghost bakes in whatever junk
@@ -797,6 +800,16 @@ object OutofspaceAgentHarness {
                 // contaminated is refused by the next ghost down the line as something it cannot be
                 // built from — so it can never hand its metal back. Invisible in a mass figure.
                 println("[agent]   ${" ".repeat(9)} ${composition(state.conduits.tracks[c].mixtureAt(tile))}")
+                // ⚠️ **What is standing on the tile, exactly.** `held` above says only that there is
+                // something; the hunts that end here are about a residue too small to print as
+                // grams — a lump of a few micrograms left in front of the material that would
+                // finish a job is indistinguishable from an empty tile in every other readout, and
+                // it is a permanent blockage because packets never merge.
+                if (c == Conduit.Rail) {
+                    state.rail.resourceAt(tile)?.let { lump ->
+                        println("[agent]   ${" ".repeat(9)} load ${lump.total}ug  ${composition(lump)}")
+                    }
+                }
                 // ⚠️ **Which way it is joined**, which is the one thing about a run you cannot see.
                 // Conduit connects by being drawn, never by touching, so two tiles of track can sit
                 // side by side and be no more connected than two tiles a metre apart — and the only
