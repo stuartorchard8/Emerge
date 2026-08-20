@@ -14,8 +14,14 @@ class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)
  * Advances every solid body's temperature one tick: conduction between touching bodies, exchange with air,
  * and radiation from exposed surfaces.
  *
- * Contact rules: shared tiles always touch; impermeable bodies touch across tile faces; permeable fittings
- * touch only their own tile; fittings link to linked fittings (per [Segment.links]).
+ * Contact rules: shared tiles always touch; casings touch across tile faces whether or not they hold
+ * the air out; a body open to airflow meets the air of its own tile, one that is not meets the air
+ * across its faces; contents (cargo, buffer stores) touch only what shares their tile; fittings link
+ * to linked fittings (per [Segment.links]).
+ *
+ * Radiation: a casing sheds through each face that space reaches ([StructureMap.openToSpace]), so a
+ * tile buried inside a footprint sheds nothing; a fitting or a lump sheds only if the tile it stands
+ * on is itself open to space.
  *
  * Jacobi solve: all fluxes computed against a snapshot, then applied — avoids Gauss-Seidel leftward bias.
  * Each flux capped at equalisation amount; total outgoing energy scaled if requested exceeds available.
@@ -60,30 +66,39 @@ fun stepSolidHeat(
             contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
         }
 
-        // ⚠️ An `else` and not an early `continue`. This used to sit inside a `for (tile in
-        // body.tiles)` loop, where `continue` meant "this body has no more to do *on this tile*"
-        // and the track-to-track block below still ran. A body is one tile now, that loop is gone,
-        // and the same `continue` skips to the next *body* — which silently retired the block
-        // below for every fitting, since a fitting is always permeable. Heat stopped running along
-        // rails and pipes at all.
-        if (body.permeable) {
-            // A fitting reaches the air in its own tile and nothing further.
+        if (!body.preventAirflow) {
+            // Air shares this tile, so that is where the body meets it.
             contacts.join(b, bodyCount + body.tile.index, seriesConductance(k, Material.AIR_FILM))
-        } else {
-            // Impermeable: reaches across tile faces.
-            for (dir in Direction.ALL) {
-                val next = grid.neighbour(body.tile, dir)
-                if (next == TileIndex.NONE) continue
-                if (structure.isImpermeable(next)) {
-                    // Once per face, not per pair.
-                    for (i in tiles.startOf(next) until tiles.endOf(next)) {
-                        val other = tiles.id(i)
-                        if (other <= b || bodies[other].permeable) continue
-                        contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
-                    }
-                } else if (structure.isContained(next)) {
-                    contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
+        }
+        // Casings reach across their tile faces, whether or not they hold the air out — that is
+        // what the airflow/thoroughfare split bought. A smelter standing in a room is bolted to the
+        // deck plate beside it exactly as a wall is bolted to the next wall; being open to the air
+        // is a separate fact about it.
+        //
+        // ⚠️ **Casings only.** A face is a property of the thing that is *fixed at* the tile, and
+        // the two contents slots are not: a lump does not conduct into the tile in front of it, it
+        // conducts into what it is sitting on and what it is sitting in, and a buffer is inside a
+        // machine with no exposed surface of its own. Let a [BodySlot.BufferStore] take faces and a
+        // decomposer's charge is jacketed by nine tiles of firebrick that outweigh it fifty to one
+        // — it never reaches its setpoint and nothing ever calcines. See [HEATER_POWER], which is
+        // derived against a charge heated *in* the chamber. Fittings are out for their own reason:
+        // heat runs along a rail by its drawn links, below, not by adjacency.
+        for (dir in Direction.ALL) {
+            val next = grid.neighbour(body.tile, dir)
+            if (next == TileIndex.NONE) continue
+            if (body.slot == BodySlot.DeckStore) {
+                // Once per face, not per pair.
+                for (i in tiles.startOf(next) until tiles.endOf(next)) {
+                    val other = tiles.id(i)
+                    if (other <= b || bodies[other].slot != BodySlot.DeckStore) continue
+                    contacts.join(b, other, seriesConductance(k, bodies[other].conductance))
                 }
+            }
+            // ⚠️ A body that holds the air out has none in its own tile, so the face is its only
+            // way to the atmosphere. Drop this and a hot wall warms nothing but its neighbours and
+            // space — see `BodyHeatTest.a hot wall warms the air in the room`.
+            if (body.preventAirflow && structure.isContained(next)) {
+                contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
             }
         }
 
@@ -128,14 +143,27 @@ fun stepSolidHeat(
     for (b in bodies.indices) {
         val body = bodies[b]
         var exposure = 0
-        if (body.permeable) {
-            if (!structure.isContained(body.tile)) exposure++
-            continue
-        }
-        for (dir in Direction.ALL) {
-            val next = grid.neighbour(body.tile, dir)
-            // Off the grid counts: the rim opens onto space like any breach does.
-            if (next == TileIndex.NONE || !structure.isContained(next)) exposure++
+        if (body.slot == BodySlot.DeckStore) {
+            // A casing radiates from its faces, and **whether it lets the air through has nothing
+            // to do with it** — that was the old rule and it made a machine's cooling depend on a
+            // fact about gas. What decides a face is whether space reaches what is on the other
+            // side of it, which [StructureMap.openToSpace] answers with one perimeter for the whole
+            // ship: a tile buried in a footprint faces its own neighbours and sheds nothing.
+            for (dir in Direction.ALL) {
+                val next = grid.neighbour(body.tile, dir)
+                // Off the grid counts: the rim opens onto space like any breach does.
+                if (next == TileIndex.NONE || structure.openToSpace(next)) exposure++
+            }
+        } else {
+            // ⚠️ Fittings and contents have no faces, for the reason they take no face contacts
+            // above: a lump is a heap on a tile, not a surface bolted to one. It sheds if the tile
+            // it is standing on is open to the sky, and that is all.
+            //
+            // ⚠️ An `else` and not an early `continue`. The `continue` that used to be here counted
+            // the exposure and then skipped the transfer that spends it, so a body standing in
+            // vacuum shed nothing at all — invisible while only fittings were permeable, because a
+            // rail in space is a rare thing.
+            if (structure.openToSpace(body.tile)) exposure++
         }
         if (exposure == 0) continue
         val gap = kelvin[b] - Temperature.SPACE_KELVIN

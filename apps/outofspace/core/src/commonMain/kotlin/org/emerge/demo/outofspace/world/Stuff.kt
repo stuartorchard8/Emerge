@@ -157,7 +157,7 @@ class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
         fun ambientAir(grid: Grid, structure: StructureMap): Stuff {
             val mass = MassArray(grid.size)
             for (tile in grid.tiles) {
-                if (!structure.isContained(tile) || structure.isImpermeable(tile)) continue
+                if (!structure.isContained(tile) || structure.blocksAir(tile)) continue
                 for (f in Fluid.ALL) mass[MassIndex(tile, f)] = AMBIENT_AIR[f.species]
             }
             return gas(mass)

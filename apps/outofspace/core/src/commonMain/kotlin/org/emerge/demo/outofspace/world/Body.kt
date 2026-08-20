@@ -48,7 +48,9 @@ enum class BodySlot {
  * One solid object with one temperature (wall, furnace, track tile).
  * Energy stored on the object for machines ([Machine.energy]) and on the layer for fittings
  * ([Conduits.tracks]) — see [TrackLayers] for why a segment's heat moved off the segment.
- * [permeable] controls conduction contacts (impermeable = tile-face; permeable = tile-sharing + air).
+ * [preventAirflow] says whether air can be in this body's tile, and so where it meets the air: a
+ * body that holds air out meets it across its faces, one that does not meets the air it stands in.
+ * It no longer decides whether the body has faces at all — every casing conducts across them.
  */
 class Body(
     val slot: BodySlot,
@@ -82,8 +84,8 @@ class Body(
      */
     val part: Int = 0,
     val material: Material,
-    /** True for a fitting on a conduit layer: it shares its tile with the air rather than filling it. */
-    val permeable: Boolean,
+    /** False for a fitting on a conduit layer: it shares its tile with the air rather than filling it. */
+    val preventAirflow: Boolean,
     /** Thermal energy, in the millijoules [Material] documents. */
     val energy: Long,
     /** Millijoules/kelvin, per tile — so a footprint clipped by the grid edge cannot change it. */
@@ -157,7 +159,7 @@ fun bodiesOf(
                     tile = part,
                     anchor = tile,
                     material = m.kind.material,
-                    permeable = m.kind.isPermeable,
+                    preventAirflow = m.kind.preventAirflow,
                     energy = deck.stuff.energyAt(part),
                     // From the matter on the tile, not from the kind — so a casing that a reaction
                     // has altered conducts as what it has become. See [StuffLayer.heatCapacityAt].
@@ -179,9 +181,8 @@ fun bodiesOf(
                     tile = tile,
                     anchor = tile,
                     material = Material.Steel,
-                    // Permeable, so it touches the air of its own tile and nothing across a face. A
-                    // buffer is inside a machine; it has no exposed surface of its own.
-                    permeable = true,
+                    // Air shares its tile: a buffer is inside a machine, not a wall of it.
+                    preventAirflow = false,
                     energy = buffers.stuff.energyAt(tile),
                     capacity = capacity,
                     conductance = BUFFER_CONTACT_CONDUCTANCE,
@@ -205,10 +206,7 @@ fun bodiesOf(
                     // Nominal: [material] does not feed conduction — [conductance] does — and a heap
                     // of ore is not made of its container any more than a buffer's charge is.
                     material = Material.Steel,
-                    // Permeable, so it touches the air of its own tile and the track under it, and
-                    // nothing across a face. A lump does not conduct into the tile in front of it;
-                    // it conducts into what it is sitting on and what it is sitting in.
-                    permeable = true,
+                    preventAirflow = false,
                     energy = rail.stuff.energyAt(tile),
                     capacity = capacity,
                     conductance = CARGO_CONTACT_CONDUCTANCE,
@@ -224,7 +222,7 @@ fun bodiesOf(
                 tile = tile,
                 anchor = tile,
                 material = conduit.material,
-                permeable = true,
+                preventAirflow = false,
                 // Both read off the layer rather than off the segment and the kind: the metal in a
                 // tile of track is what holds the heat, so the two numbers come from one place and
                 // cannot drift apart. [conduitBillOfMaterials] apportions, so the capacity is the

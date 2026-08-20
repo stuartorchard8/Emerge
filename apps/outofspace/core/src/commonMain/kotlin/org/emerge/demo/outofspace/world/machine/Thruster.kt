@@ -35,7 +35,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * *nothing*, it is a wildly inefficient one. See [exhaustPath] for how "blocked" is decided.
  *
  * A motor bolted face-first against a wall is that case taken to its limit rather than a fourth
- * case needing a rule of its own: the machine is [DeckMachineKind.isPermeable], so its own tile holds
+ * case needing a rule of its own: the machine does not [DeckMachineKind.preventAirflow], so its own tile holds
  * gas, and with nowhere further to send the exhaust it sends it there. It runs, it produces no
  * thrust, and it cooks itself — which is a legible thing to build by mistake and to have to fix.
  */
@@ -157,7 +157,7 @@ fun exhaustPath(grid: Grid, structure: StructureMap, tile: TileIndex, facing: Di
         val next = grid.neighbour(at, facing)
         // Off the edge of the world: nothing ever stopped it.
         if (next == TileIndex.NONE) return ExhaustPath(crossed.toTypedArray(), blocker = TileIndex.NONE, destination = crossed.lastOrNull() ?: tile)
-        if (structure.isImpermeable(next)) {
+        if (structure.blocksAir(next)) {
             // Nothing crossed means the wall is against the nozzle, and the exhaust stays home.
             return ExhaustPath(crossed.toTypedArray(), blocker = next, destination = crossed.lastOrNull() ?: tile)
         }

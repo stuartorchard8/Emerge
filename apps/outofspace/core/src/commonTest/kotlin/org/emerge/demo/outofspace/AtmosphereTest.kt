@@ -21,6 +21,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.tryDisplaceAir
 import org.emerge.sim.core.PlayerId
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -138,7 +139,7 @@ class AtmosphereTest {
         var s = room.copy(air = field, baselineAirMass = field.totalMass)
 
         fun interior() = g.tiles.filter {
-            s.structure.isContained(it) && !s.structure.isImpermeable(it)
+            s.structure.isContained(it) && !s.structure.blocksAir(it)
         }
         val startSpread = interior().let { t ->
             t.maxOf { s.air.pressureAt(it) } - t.minOf { s.air.pressureAt(it) }
@@ -270,6 +271,7 @@ class AtmosphereTest {
         assertAirBalanced(s, "after the refusal")
     }
 
+    @Ignore // No more machines bigger than 1x1 block air. Bring this back if one is introduced
     @Test
     fun `a footprint displaces the air under all of it at once`() {
         // Creative, for the reason above: a ghost footprint displaces nothing.

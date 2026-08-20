@@ -14,9 +14,6 @@ import org.emerge.demo.outofspace.world.Wiring
  * layers of its own; a length of track that was *also* an instrument was the last thing keeping the
  * conduit layers from being nothing but conduit.
  *
- * [DeckMachineKind.isPermeable], so it claims the floor without walling anything off: a run of belt
- * with a gauge on it is still a corridor you can stand in.
- *
  * ⚠️ **It does not lay its own track.** Placing one used to lay rail under itself, because it *was*
  * the rail; now it stands on whatever is threaded beneath it and reads nothing until a run arrives —
  * which is how every other machine with a port already behaves.

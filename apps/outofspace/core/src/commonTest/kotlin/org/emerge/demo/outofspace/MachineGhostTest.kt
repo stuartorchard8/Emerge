@@ -876,7 +876,7 @@ class MachineGhostTest {
         assertTrue(s.deck[at] is Hull, "the hull went down")
         assertTrue(s.deck.isGhost(at), "and it is a ghost")
         assertFalse(
-            s.structure.isImpermeable(at),
+            s.structure.blocksAir(at),
             "a frame with no metal in it is holding air out",
         )
     }

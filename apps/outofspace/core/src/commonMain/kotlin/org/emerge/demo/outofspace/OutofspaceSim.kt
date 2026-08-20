@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Whitelist
-import org.emerge.demo.outofspace.world.Appetites
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
@@ -22,8 +21,6 @@ import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
-import org.emerge.demo.outofspace.world.constructionPortOf
-import org.emerge.demo.outofspace.world.constructionTileOf
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.buildableFrom
@@ -38,7 +35,6 @@ import org.emerge.demo.outofspace.world.railMachineGhosts
 import org.emerge.demo.outofspace.world.railGhosts
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
-import org.emerge.demo.outofspace.world.squashOnto
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
 import org.emerge.demo.outofspace.world.fitToFrame
@@ -49,13 +45,10 @@ import org.emerge.demo.outofspace.world.Port
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.Stream
-import org.emerge.demo.outofspace.world.coveredTiles
 import org.emerge.demo.outofspace.world.tryDisplaceAir
-import org.emerge.demo.outofspace.world.footprintFits
 import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.standingPortsOf
-import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Body
 import org.emerge.demo.outofspace.world.bodiesOf
@@ -107,7 +100,6 @@ import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
-import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.PumpDemand
 import org.emerge.demo.outofspace.world.TileArray
 import org.emerge.demo.outofspace.world.TileIndex
@@ -1674,7 +1666,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun inject(tile: TileIndex, mass: Long, water: Boolean = false) {
             if (tile.index !in 0 until grid.size || mass <= 0L) return
             val occupant = originOf[tile]
-            if (occupant != TileIndex.NONE && deck[occupant]?.kind?.isPermeable == false) return
+            if (occupant != TileIndex.NONE && deck[occupant]?.kind?.preventAirflow == true) return
             if (water) { injectWater(tile, mass); return }
             val shares = Stuff.AMBIENT_AIR.scaledTo(mass)
             // The parcel on its own, so its heat can be worked out from what actually arrived rather
@@ -1763,7 +1755,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // the restriction still governs where it may be put, or a player would draw a frame in a
             // sealed room and be told only at completion that it could never have been built there.
             // The displacement happens when the casing does.
-            if (!kind.isPermeable &&
+            if (kind.preventAirflow &&
                 !tryDisplaceAir(grid, masses, airEnergy, covered, commit = creative) { originOf[it] == TileIndex.NONE }
             ) return
 
@@ -2436,7 +2428,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val tiles = m.tiles(grid)
 
             // Close enough to finish? Then the air has to be able to leave before anything is taken.
-            if (have >= need && !m.kind.isPermeable &&
+            if (have >= need && m.kind.preventAirflow &&
                 !tryDisplaceAir(grid, masses, airEnergy, tiles.toList(), commit = false) {
                     originOf[it] == TileIndex.NONE
                 }
@@ -2477,7 +2469,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * [DeckArray.holdsFullBill] rather than a stored flag.
          */
         private fun finishMachine(m: DeckMachine, tiles: Array<TileIndex>) {
-            if (m.kind.isPermeable || !deck.holdsFullBill(m)) return
+            if (!m.kind.preventAirflow || !deck.holdsFullBill(m)) return
             // Guaranteed to succeed: the delivery that got here was refused unless the air could go.
             tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { originOf[it] == TileIndex.NONE }
         }

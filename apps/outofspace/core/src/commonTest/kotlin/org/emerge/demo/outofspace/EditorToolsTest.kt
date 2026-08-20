@@ -212,7 +212,9 @@ class EditorToolsTest {
     @Test
     fun `injecting into a solid machine does nothing at all`() {
         val c = layered()
-        val at = grid.tile(6, 5)   // the tank, which is impermeable
+        // A hull tile of the room's own wall. Not the tank: a storage no longer holds the air out
+        // — only hull and airlock do — so it is no longer the solid thing this test is about.
+        val at = grid.tile(4, 2)
         val before = c.state.atmosphereMass
 
         repeat(5) { c.injectTile = at; c.stepOnce() }
@@ -221,7 +223,7 @@ class EditorToolsTest {
 
         val s = c.state
         assertEquals(0L, s.injectedAirMass, "a refused breath was booked anyway")
-        assertEquals(before, s.atmosphereMass, "gas got into a solid tank")
+        assertEquals(before, s.atmosphereMass, "gas got into a solid wall")
         assertEquals(0L, s.airBalance)
     }
 

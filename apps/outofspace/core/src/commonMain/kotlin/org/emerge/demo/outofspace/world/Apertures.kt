@@ -2,7 +2,6 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.machine.DeckMachine
 
 /**
  * How much of each face is open to flow — an **area**, not a yes-or-no.
@@ -156,7 +155,7 @@ class ApertureField(
             if (tile == TileIndex.NONE) return OPEN
             val open = openness?.get(tile.index) ?: 0
             if (open > 0) return open
-            return if (structure.isImpermeable(tile)) CLOSED else OPEN
+            return if (structure.blocksAir(tile)) CLOSED else OPEN
         }
     }
 }

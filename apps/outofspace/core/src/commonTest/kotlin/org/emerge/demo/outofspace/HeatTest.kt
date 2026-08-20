@@ -29,6 +29,7 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -319,7 +320,6 @@ class HeatTest {
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing
         // encloses it: every tile around it is space.
         assertEquals(Structure.Vacuum, s.structure[grid.tile(1, 1).index], "nothing encloses it")
-        assertEquals(Structure.Machine, s.structure[grid.tile(5, 5).index], "and it is solid, not a room")
         // The old per-tile field zeroed anything not enclosed, so a bare machine stored nothing at
         // all. That was a property of the field rather than of the world: a furnace in vacuum is
         // still a furnace full of hot firebrick, and what vacuum actually does is make radiation the
@@ -328,6 +328,41 @@ class HeatTest {
         assertTrue(s.radiatedEnergy > 0L, "and the only way out is radiation")
         assertTrue(s.kelvinAt(grid.tile(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
         assertEnergyBalanced(s, "bare machine")
+    }
+
+    @Test
+    fun `a footprint is one perimeter and its buried tile faces nothing`() {
+        // Three tiles across, alone in space: nine tiles of casing, eight of them on the outside.
+        // The ninth is the whole of what this pins — it faces its own casing on every side, so it
+        // has no way to shed at all and stays hotter than the tiles that do.
+        //
+        // ⚠️ Under the rule this replaced, exposure was four faces for anything the air could get
+        // into and one tile for anything it could not, so all nine of these shed identically and
+        // every reading below was the same number. See [StructureMap.openToSpace].
+        val grid = Grid(11, 11)
+        val deck = DeckArray(grid)
+        deck += Processor(grid.tile(5, 5), Direction.Right)
+        deck[grid.tile(5, 5)]!!.setTemperature(2_000, grid, deck.stuff)
+        var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+        s = run(s, 20 * HEAT_PERIOD)
+
+        // Where the skin is. A processor stops a body, so space stops at it — and it is *not* the
+        // air map saying so: this machine lets the air straight through.
+        assertFalse(s.structure.openToSpace(grid.tile(5, 5)), "the middle of a machine is not sky")
+        assertFalse(s.structure.openToSpace(grid.tile(4, 4)), "and neither is its corner")
+        assertTrue(s.structure.openToSpace(grid.tile(3, 5)), "the tile beside it is")
+
+        val middle = s.kelvinAt(grid.tile(5, 5))
+        val edge = s.kelvinAt(grid.tile(5, 4))
+        val corner = s.kelvinAt(grid.tile(4, 4))
+        // A few kelvin apart and no more, and that is the honest size of it: conduction across the
+        // nine tiles re-levels them almost as fast as their faces shed, so this is a *steady*
+        // gradient rather than a transient one and running longer does not widen it — 200 periods
+        // gives 1956/1953/1950 where 20 gives 1998/1995/1993. The sim is deterministic, so a strict
+        // inequality on three kelvin is a fact and not a coin toss; what would erase it is exposure
+        // going back to a per-tile constant.
+        assertTrue(middle > edge, "the buried tile shed as though it were exposed: $middle vs $edge")
+        assertTrue(edge > corner, "a corner faces space twice over and an edge once: $edge vs $corner")
     }
 
     @Test

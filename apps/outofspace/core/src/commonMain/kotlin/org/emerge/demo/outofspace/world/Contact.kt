@@ -128,7 +128,9 @@ fun collectHullContacts(
                 for (tx in tx0..tx1) {
                     if (tx < 0 || tx >= grid.width) continue
                     val tile = grid.tile(tx.toInt(), ty.toInt())
-                    if (!structure.isImpermeable(tile)) continue
+                    // What a rock hits, not what holds the air: a thruster is open to the room and still
+                    // something an asteroid bounces off. See [StructureMap.blocksPassage].
+                    if (!structure.blocksPassage(tile)) continue
                     contactBetween(
                         a = shape, ax = centreX, ay = centreY,
                         b = CellShape.TILE,

@@ -22,9 +22,6 @@ import org.emerge.demo.outofspace.world.Wiring
  * over another deck machine or another bridge**, and crossing a run costs three tiles of deck. That
  * is a real constraint and it is meant to be: the game is about being out of space.
  *
- * It is [DeckMachineKind.isPermeable] — a gantry is mostly the air beneath it, so it divides no room
- * and displaces no gas, exactly as a pump or a thruster does not.
- *
  * ⚠️ Its footprint is a **line along [facing]**, the only non-square one in the game — see
  * `DeckMachineKind.span`. Turning a bridge therefore moves it onto two different tiles, so unlike
  * every other machine a rotation can be refused.

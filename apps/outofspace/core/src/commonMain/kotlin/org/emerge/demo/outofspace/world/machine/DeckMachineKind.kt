@@ -1,22 +1,36 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.world.Conduit
-
 /**
  * Machine kinds that take up deck space, storing their matter and energy in the deck layer.
+ *
+ * ### The two ways a machine can be in the way
+ *
+ * There used to be one flag, `isPermeable`, and it answered two questions that are not the same
+ * one. A smelter standing inside the hull is a solid object an asteroid bounces off, *and* every
+ * tile of it is open to the room's air — which is the whole reason it can rust, and the reason it
+ * can cook the room it stands in. With one flag it had to be either a wall the air could not reach
+ * or a plate a rock fell through, and neither is a smelter.
+ *
+ * - [preventAirflow] — gas can neither sit in this tile nor cross it. It is what
+ *   [org.emerge.demo.outofspace.world.StructureMap] fills against, so it is what decides where a
+ *   *room* is, and placing one displaces the air out of its own tiles. Almost nothing sets it: a
+ *   wall and a shut airlock, and that is the list.
+ * - [preventThoroughfare] — a rigid body can neither sit in this tile nor cross it. It defaults to
+ *   [preventAirflow], because a thing that holds the air out is certainly solid, and the interesting
+ *   kinds are the ones that set it on its own.
  */
-enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) {
-    Hull("HULL"),
-    Airlock("AIRLOCK"),
+enum class DeckMachineKind(val label: String, val preventAirflow: Boolean = false, val preventThoroughfare: Boolean = preventAirflow) {
+    Hull("HULL", preventAirflow = true),
+    Airlock("AIRLOCK", preventAirflow = true),
     Vent("VENT"),
-    Storage("STORAGE"),
+    Storage("STORAGE", preventThoroughfare = true),
     Sensor("SENSOR"),
-    KeyInput("BUTTON", isPermeable = true),
-    Pump("PUMP", isPermeable = true),
-    Thruster("THRUSTER", isPermeable = true),
-    Processor("PROCESSOR"),
-    ThermalDecomposer("THERMAL DECOMPOSER", isPermeable = true),
-    Extractor("EXTRACTOR", isPermeable = true),
+    KeyInput("BUTTON"),
+    Pump("PUMP"),
+    Thruster("THRUSTER", preventThoroughfare = true),
+    Processor("PROCESSOR", preventThoroughfare = true),
+    ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true),
+    Extractor("EXTRACTOR"),
 
     /**
      * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
@@ -27,20 +41,20 @@ enum class DeckMachineKind(val label: String, val isPermeable: Boolean = false) 
      * point of it being here — a bridge can no longer be stacked on another building or on another
      * bridge, so crossing a run costs three tiles of deck.
      */
-    Bridge("BRIDGE", isPermeable = true),
+    Bridge("BRIDGE"),
 
     /**
      * An instrument standing over a run, reading what goes past. Permeable: a belt with a gauge on
      * it is still a corridor.
      */
-    Gauge("GAUGE", isPermeable = true),
+    Gauge("GAUGE"),
 
     /**
      * An opening between the pipe under it and the room it stands in. Permeable, and that is not a
      * convenience — a valve that displaced the air out of its own tile would open onto the vacuum it
      * had just made. See [Valve].
      */
-    Valve("VALVE", isPermeable = true),
+    Valve("VALVE"),
     ;
 
     companion object {

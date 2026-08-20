@@ -414,7 +414,7 @@ to debris and the casing becomes a fragment.
    debris (their contents only — the metal of a bridge segment is currently its `carried` Resource,
    which is the right granularity for debris). This is a simplification that can be revisited.
 
-7. **What about the `isPermeable` property?** Extractors are permeable. If a fragment spawns
+7. **What about the `preventThoroughfare` property?** Extractors are permeable. If a fragment spawns
    inside an extractor's footprint (player removes the extractor itself), does the fragment fall
    through the extractor or rest on it? V1 answer: fragments obey the same permeability rules
    as rocks — they do not bounce off extractor plates. A fragment spawned on an extractor

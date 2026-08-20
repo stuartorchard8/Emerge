@@ -132,7 +132,8 @@ fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose)
                 if (ty < 0 || ty >= grid.height) continue
                 for (tx in tx0..tx1) {
                     if (tx < 0 || tx >= grid.width) continue
-                    if (!structure.isImpermeable(grid.tile(tx.toInt(), ty.toInt()))) continue
+                    // The same predicate the narrow phase uses — see the warning above.
+                    if (!structure.blocksPassage(grid.tile(tx.toInt(), ty.toInt()))) continue
                     val hit = overlapBetween(
                         shape, centreX, centreY,
                         CellShape.TILE,
