@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.chem.cook
+import org.emerge.demo.outofspace.world.machine.HEATER_POWER
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
@@ -301,16 +301,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // pressure and the fluid, so gas made this tick pushes and spreads in the tick it was made
         // rather than sitting still for one and appearing from nowhere in the next.
         //
-        // ⚠️ **The rail layer only, and that is a ledger statement rather than a physical one.**
-        // What rides a belt is cargo, so carbon leaving it is exactly what `solidBecameGas` books
-        // and the oxygen iron keeps is exactly what `gasBecameSolid` books. The deck's matter and
-        // the conduits' own metal are fabric — a different identity, with no term for changing
-        // phase — so a burning hull plate is not a thing this may do yet. See [oxidise] and
-        // `PLAN_ambient_chemistry.md`.
+        // ⚠️ **The cargo layers only, and that is a ledger statement rather than a physical one.**
+        // What rides a belt or sits in a machine's hopper is cargo, so carbon leaving it is exactly
+        // what `solidBecameGas` books and the oxygen iron keeps is exactly what `gasBecameSolid`
+        // books. The deck's matter and the conduits' own metal are fabric — a different identity,
+        // with no term for changing phase — so a burning hull plate is not a thing this may do yet.
+        // See [oxidise] and `PLAN_ambient_chemistry.md`.
+        //
+        // ⚠️ **The buffer layer is here from increment 3**, and it is what makes a thermal
+        // decomposer a machine at all: it holds a charge at a temperature the player chose, and the
+        // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
+        // the same matter on a belt. The machine controls the conditions and nothing else.
         if (shouldRun(state.tick, CHEM_PERIOD)) {
-            val chem = oxidise(w.rail.stuff, w.masses, w.airEnergy)
-            if (chem.toGasMass != 0L || chem.toGasEnergy != 0L) w.solidBecameGas(chem.toGasMass, chem.toGasEnergy)
-            if (chem.toSolidMass != 0L || chem.toSolidEnergy != 0L) w.gasBecameSolid(chem.toSolidMass, chem.toSolidEnergy)
+            val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
+            val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
+            val toGasMass = onRails.toGasMass + inHoppers.toGasMass
+            val toGasEnergy = onRails.toGasEnergy + inHoppers.toGasEnergy
+            val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
+            val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
+            if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)
+            if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
         }
 
         val edges = EdgeGrid(state.grid)
@@ -728,25 +738,72 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
     }
 
+    /**
+     * One tick of a [ThermalDecomposer], which since increment 3 of `PLAN_ambient_chemistry.md` is
+     * **a thermostat and nothing else**.
+     *
+     * It used to hold a charge for [128] ticks and then call `cook`, which returned its input
+     * unchanged — chemistry as a function a machine calls, gated by a tick counter, against a
+     * *setpoint* rather than against a temperature. Both halves of that are gone. What the machine
+     * does now is pull a charge in, run an element until the charge is at the temperature the player
+     * asked for, and hand on whatever the charge has become by then. Whether anything happened to it
+     * on the way is between the matter and its conditions, and is decided by the ambient chemistry
+     * pass over the buffer layer exactly as it would be for the same matter on a belt.
+     *
+     * ⚠️ **The element heats the tile, not the charge.** [heat] hands the energy to the solid-heat
+     * solver, which shares it between everything sharing the tile — the firebrick casing, the charge
+     * in the chamber, the air in the room. So the setpoint is *harder to reach in a draughty place*,
+     * the machine warms the room it stands in, and none of that needed a rule: it is the heat solver
+     * that was already there. Writing the energy straight into the buffer would have been simpler,
+     * one line shorter, and would have made the casing decoration.
+     *
+     * ⚠️ **The demand is what the charge is short by, so the thermostat regulates by construction.**
+     * At or above the setpoint the element does not run at all. That is also the cap on a single
+     * tick's energy, so a hot element cannot overshoot in one step even though it is heating a tile
+     * rather than the charge — it can only ever ask for the gap it can still see.
+     *
+     * ⛔ **"At the setpoint" is the dwell now, and `ticksPerAction` is gone.** How long a charge
+     * stays is how long it takes to heat, which is a real quantity that depends on the mass, the
+     * insulation and the room. The sharp edge, stated rather than hidden: a reaction slower than the
+     * ramp does not finish before the charge is handed on. Increment 4 may want "and has stopped
+     * reacting" as the release condition once there is a reaction table to ask.
+     */
     private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, tile: TileIndex): ThermalDecomposer {
-        val inProgress = store(m, tile, BufferRole.Inside) ?: run {
-            val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+        val chamber = bufferTile(grid, m, tile, BufferRole.Inside)!!
+
+        // An empty chamber takes the next charge. Nothing is charged for the loading itself — the
+        // energy this machine spends is the element's, below, and billing a handling cost as well
+        // would be a second, invisible answer to "what does this cost to run".
+        val charge = store(m, tile, BufferRole.Inside) ?: run {
+            val fresh = store(m, tile, BufferRole.Input) ?: return m
             putStore(m, tile, BufferRole.Input, null)
             putStore(m, tile, BufferRole.Inside, fresh)
-            heat(tile, heatOfWorking(fresh.total, m))
-            fresh
+            return m
+        }
+        if (activation <= 0) return m
+
+        // The thermostat, and it reads the **charge** — the thing the player set a temperature for.
+        //
+        // ⚠️ **The element runs at full power, and the box overshoots.** That is deliberate and it is
+        // what a furnace does: the walls run hotter than the charge, because the charge is heated
+        // *through* them. Throttling the element to the charge's own shortfall instead looks like
+        // prudence and is a bug — a chamberful of rock holds a fraction of what nine tiles of
+        // firebrick hold, so the cap binds far below the power needed to warm the box at all, and
+        // the machine crawls. Overshoot needs no guard beyond this line: the element stops the tick
+        // the charge arrives, and everything above the charge's temperature then bleeds into the
+        // room, which is exactly the waste-heat story the machine is supposed to have.
+        if (buffers.stuff.kelvinAt(chamber) < m.setTemperature) {
+            heat(tile, scaledRatio(activation.toLong(), SignalField.FULL.toLong(), HEATER_POWER))
+            return m
         }
 
-        val (actionProgress, carry) = throttled(1, activation, m.carry)
-        if (m.progress + actionProgress >= m.ticksPerAction) {
-            if (store(m, tile, BufferRole.Product) != null) {
-                return m.copy(progress = m.ticksPerAction, carry = carry)
-            }
-            putStore(m, tile, BufferRole.Inside, null)
-            putStore(m, tile, BufferRole.Product, cook(inProgress, m.setTemperature))
-            return m.copy(progress = 0, carry = carry)
-        }
-        return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
+        // At temperature: hand the charge on, if there is anywhere to put it. Re-read rather than
+        // reusing what was pulled in, because the whole point of the wait is that chemistry may have
+        // changed it — and a gaseous product will already have left through the room.
+        if (store(m, tile, BufferRole.Product) != null) return m
+        putStore(m, tile, BufferRole.Inside, null)
+        putStore(m, tile, BufferRole.Product, charge)
+        return m
     }
 
     /**

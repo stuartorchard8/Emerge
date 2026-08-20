@@ -1,11 +1,12 @@
 # Ambient chemistry
 
-Status: **increments 0, 1 and 2 built** (2026-08-20). Two reactions now compete for a tile's
-oxygen. Increment 3 — `cook` becomes a heater — is next.
+Status: **increments 0 to 3 built** (2026-08-20). Two reactions compete for a tile's oxygen, and
+the thermal decomposer is a thermostat with no chemistry in it. Increment 4 — the reaction table —
+is next, and it is the one that needs two new species.
 
-Chemistry today is something one machine does to one buffer, and it does not actually do it —
-`cook` in `chem/Chemistry.kt` is a stub that returns its input unchanged. This plan makes chemistry
-a property of matter and temperature rather than a property of a machine.
+Chemistry used to be something one machine did to one buffer, and it did not actually do it —
+`cook` in `chem/Chemistry.kt` was a stub that returned its input unchanged, and it is now deleted.
+This plan makes chemistry a property of matter and temperature rather than a property of a machine.
 
 > Heat an iron casing in the presence of oxygen and it oxidises. Heat carbon on a rail past its
 > ignition point in the presence of oxygen and you get a fire. The thermal decomposer is not where
@@ -385,20 +386,63 @@ the physics produces rather than a special case.
 
 ---
 
-# Increment 3 — `cook` becomes a heater
+# Increment 3 — `cook` becomes a heater ✅ BUILT
 
-Per decision 3. Push energy into the buffer's `setEnergy` toward `setTemperature`; delete the
-chemistry from `refine(ThermalDecomposer)` at `OutofspaceSim.kt:700`. `ticksPerAction` becomes
-redundant — the reaction is gated by temperature now, and the machine's job is to reach and hold it.
+Per decision 3. `cook` is deleted — it returned its input unchanged for its entire life — and with it
+the chemistry, the recipe, the tick counter and the throttle carry. `ThermalDecomposer` is now four
+fields: where it is, which way it faces, its setpoint and its wiring.
 
-The buffer is already a real `Body` in `BodySlot.BufferStore` that `stepSolidHeat` conducts into,
-so the thermal side of this is plumbed. The machine becomes the waste-heat sink its own kdoc says
-it should be: the reaction stalls when the player's heat budget stalls.
+What it does: pull a charge in, run an element until the charge is at [setTemperature], hand on
+whatever the charge has *become*. What happened to it on the way is the ambient chemistry pass, which
+now sweeps the **buffer layer** as well as the rail — the same pass, the same arithmetic, the same
+ledger. The machine contributes conditions and nothing else.
 
-`BufferRole.kt:116` gives `ThermalDecomposer` a `Waste` role of `NO_OFFSET` — one output port. With
-gaseous products venting to the tile's air (increment 1) that is correct and needs no second port:
-solids leave by the belt, gases leave by the room. Which is also the argument for putting the
-decomposer somewhere you have thought about the ventilation.
+`BufferRole.kt` gives `ThermalDecomposer` a `Waste` role of `NO_OFFSET` — one output port — and with
+gaseous products venting to the tile's air that is correct and needs no second port: solids leave by
+the belt, gases leave by the room. Which is also the argument for putting the decomposer somewhere
+you have thought about the ventilation.
+
+## What the build decided that the scope did not
+
+- ⚠️ **The element heats the tile, not the charge.** `heat()` hands the energy to the solid-heat
+  solver, which shares it between everything on the tile — the firebrick casing, the charge, the
+  room. So the setpoint is harder to reach in a draughty place and the machine warms what is around
+  it, and none of that needed a rule: it is the heat solver that was already there. Writing straight
+  into the buffer would have been one line shorter and would have made the casing decoration.
+- ⚠️ **The thermostat reads the charge; the box overshoots, and that is a furnace.** The walls run
+  hotter than the contents because the contents are heated *through* them — measured at about 1400 K
+  for a 1200 K setpoint. The element stops the tick the charge arrives, and everything above the
+  charge's temperature then bleeds into the room.
+- ⛔ **Do not throttle the element to the charge's own shortfall.** It looks like prudence and it is a
+  bug: nine tiles of firebrick outweigh a chamberful of rock by something like fifty to one, so the
+  cap binds far below the power needed to warm the box at all and the machine crawls — measured at
+  a sixth of the intended rate before it was found. It cost a full debugging pass.
+- ⚠️ **`HEATER_POWER` is a game dial and is written as one.** "A full chamber climbing N kelvin a
+  tick" would be a derivation twice over false: the energy does not go into the charge, and four
+  tonnes of rock to 900 K is 3.2 GJ, which a real element delivers over hours rather than over the
+  ten seconds of play this is sized for.
+- ⛔ **`heat()` throws away seven ticks in eight.** It accumulates into a per-tick array that the heat
+  step reads every `HEAT_PERIOD`, and nothing carries it forward in between. **This is pre-existing
+  and affects every machine's waste heat**, not just this one — a processor has always lost 7/8 of
+  its furnace losses. It is a factor of eight buried inside `HEATER_POWER`, so fixing it would make
+  every decomposer eight times as powerful overnight. Worth fixing; not fixed here.
+- ⚠️ **The dwell scales with the charge's mass**, because `BUFFER_CONTACT_CONDUCTANCE` is a *contact*
+  rather than a time. Ten kilograms takes some seven hundred ticks; a full four-tonne chamber takes
+  long enough that no test may wait for it. That is the physically right behaviour and it is also
+  the number to reach for if a decomposer feels slow in play — its own kdoc says so.
+- **A save's `carry` and `progress` are simply not read.** They belonged to a tick counter that no
+  longer decides anything; the setpoint is the whole of what a decomposer stores now. The same
+  disposal the extractor's second store got, and Stu's precedent.
+
+## Still open
+
+- **The release condition.** "At the setpoint" is the dwell. A reaction slower than the heating ramp
+  does not finish before the charge is handed on. Increment 4 may want "and has stopped reacting"
+  once there is a reaction table to ask — it needs the sweep to report per-tile activity, which it
+  does not today.
+- **A reaction can push a hopper over `MACHINE_BUFFER_CAP`**, since the cap is enforced where matter
+  is *inserted* and iron scaling makes a store heavier in place. It self-corrects — the machine code
+  then refuses to add to it and it drains — but it is a cap that is not quite a cap.
 
 ---
 

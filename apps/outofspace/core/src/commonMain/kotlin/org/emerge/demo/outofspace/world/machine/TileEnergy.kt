@@ -124,3 +124,25 @@ val MACHINE_BUFFER_CAP = 4L * Budget.TONNE
  * machine that can hoard more output than input would drain its feed before it stalled.
  */
 val MACHINE_OUTPUT_CAP = 4L * Budget.TONNE
+
+/**
+ * How much energy a [org.emerge.demo.outofspace.world.machine.ThermalDecomposer]'s element puts into
+ * its tile in one tick at full activation.
+ *
+ * ⚠️ **A game dial, stated as one.** It is tempting to write this as "a full chamber climbing N
+ * kelvin a tick" and call it derived, and that would be a fiction twice over. The energy does not
+ * go into the charge — it goes into the *tile*, where the machine's own nine tiles of firebrick
+ * outweigh a chamberful of rock by something like fifty to one — and the real world does not agree
+ * with the game about time anyway: four tonnes of rock to 900 K is 3.2 GJ, which a real industrial
+ * element delivers over hours, not over the ten seconds of play this is sized for.
+ *
+ * So: **tens of megajoules a tick**, chosen so a cold decomposer reaches a decomposition temperature
+ * in about ten seconds and a warm one turns a charge around in far less. It is expected to move.
+ *
+ * ⚠️ **Only an eighth of it is ever banked**, because `heat()` accumulates into a per-tick array that
+ * the heat step reads every `HEAT_PERIOD` ticks and nothing carries forward in between. That is not
+ * this machine's doing — every machine's waste heat has always been thrown away seven ticks in eight
+ * — but it is a factor of eight inside this number, and it would silently become a factor of one if
+ * that were ever fixed.
+ */
+val HEATER_POWER: Long = 48L * 1_000_000L * Budget.JOULE

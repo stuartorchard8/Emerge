@@ -5,19 +5,29 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * Thermal decomposition — carbonates and hydrates give up CO₂/H₂O on heating alone.
- * Calcite → lime + CO₂, serpentine → olivine + water.
- * No reagent, just heat, which makes it the natural tier-1 refinery and a good sink for waste heat from the reactor.
+ * A well-insulated box in which the player chooses the conditions.
+ *
+ * Thermal decomposition — carbonates and hydrates giving up CO₂/H₂O on heating alone, calcite →
+ * lime + CO₂, serpentine → olivine + water — is not something this machine *does*. It is something
+ * that happens to matter at a temperature, anywhere in the vessel, and this is simply the one place
+ * where a temperature can be asked for rather than merely suffered. See
+ * `PLAN_ambient_chemistry.md`, decision 3.
+ *
+ * ⚠️ **It has no recipe, no progress and no rate.** Those went with the chemistry when the chemistry
+ * left. What is left is a thermostat: it pulls a charge in, runs an element until the charge reaches
+ * [setTemperature], and hands on whatever the charge has *become* by then. If nothing decomposes at
+ * the temperature the player set, nothing decomposes — which is the machine finally telling the
+ * truth about what it is for.
+ *
+ * Its [org.emerge.demo.outofspace.world.Material.Firebrick] casing stops being decoration at the
+ * same moment: the element heats the *tile*, the solid-heat solver shares that between the casing,
+ * the charge and the room, and a decomposer in a draughty corridor takes longer to reach its
+ * setpoint than one in a sealed cell. That is also the argument for putting it somewhere the
+ * ventilation has been thought about — its gaseous products leave by the room, not by a belt.
  */
 data class ThermalDecomposer(
     override val center: TileIndex,
     override val facing: Direction,
-    val carry: Long = 0L,
-    /**
-     * Minimum number of machine ticks it takes to convert inProgress resources to product and tailings.
-     */
-    val ticksPerAction: Int = 128,
-    val progress: Int = 0,
     val setTemperature: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
