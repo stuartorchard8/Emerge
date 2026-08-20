@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.world.Appetites
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.FlowGraph
 import org.emerge.demo.outofspace.world.Grid
@@ -127,7 +128,7 @@ class FlowStandingLoadTest {
         val tank = row[7]
         val lump = row[4]
 
-        val f = FlowGraph.build(n.tiles, emptySet(), setOf(tap, tank), n::linked, wide) { it == lump }
+        val f = FlowGraph.build(n.tiles, emptySet(), setOf(tap, tank), n::linked, wide, carrying = { it == lump })
 
         assertEquals(listOf(row[5]), f.successorTiles(lump), "the lump has one road, and it is onward")
         for (i in 0..6) {
@@ -157,5 +158,78 @@ class FlowStandingLoadTest {
         }
 
         assertEquals(edges { false }, edges { true }, "a loaded run points the same way as an empty one")
+    }
+
+    /**
+     * ⛔ **A lump justifies nobody who cannot eat it.** Stu's corridor, traced out of his save:
+     *
+     * ```
+     * K--A--B--C          K is the tank, and takes anything
+     *          |
+     *          D          a lump of titanium stands here
+     *          |
+     *    G--F--E          G is an iron rail ghost, and refuses titanium
+     * ```
+     *
+     * `K` sorts first and claims the whole corridor, `D → C → B → A → K`, which is the only road
+     * the titanium has. `G` walks second, and at every edge it asks the same question: *is there a
+     * producer beyond this, so that taking it gains me something?* Blind, the answer is yes — the
+     * lump at `A` is up there — so `G` reverses the corridor one edge at a time, and the titanium
+     * points at a ghost that will never accept a gram of it.
+     *
+     * ⚠️ **What made this so hard to see in play is that it clears itself.** Once the lump at `A`
+     * is absorbed there is nothing beyond, `G` can justify nothing, the corridor points at the tank
+     * again and the next lump goes. So a queue delivers **one lump at a time**, each waiting for the
+     * one ahead to be eaten — the behaviour Stu reported as "pauses and waits until the line is
+     * clear". Traced on the save at tiles 915/953/989, 2026-08-20: the single value that changed
+     * between stuck and moving was `beyond(989, Up)`.
+     */
+    @Test
+    fun `a consumer cannot be justified by material it will not accept`() {
+        val wide = Grid(10, 8)
+        val k = wide.tile(1, 2); val a = wide.tile(2, 2); val b = wide.tile(3, 2); val c = wide.tile(4, 2)
+        val d = wide.tile(4, 3); val e = wide.tile(4, 4); val f = wide.tile(3, 4); val g = wide.tile(2, 4)
+        val n = Net(wide)
+            .join(k, Direction.Right).join(a, Direction.Right).join(b, Direction.Right)
+            .join(c, Direction.Down).join(d, Direction.Down)
+            .join(e, Direction.Left).join(f, Direction.Left)
+
+        // Two lumps of the same stuff: one up the corridor, one on the branch tile. Only the tank
+        // will take it; the ghost is class 1 and admits nothing standing anywhere.
+        val carrying = { t: TileIndex -> t == a || t == d }
+        val appetites = object : Appetites {
+            override val classes: Int get() = 2
+            override fun classOf(sink: TileIndex): Int = if (sink == g) 1 else 0
+            override fun admits(cls: Int, lump: TileIndex): Boolean = cls == 0
+        }
+
+        val f2 = FlowGraph.build(n.tiles, emptySet(), setOf(k, g), n::linked, wide, carrying, appetites)
+
+        assertEquals(listOf(c), f2.successorTiles(d), "the lump heads up the corridor, not at the ghost")
+        assertEquals(listOf(b), f2.successorTiles(c), "and the corridor is not reversed behind it")
+        assertEquals(listOf(a), f2.successorTiles(b))
+        assertEquals(listOf(k), f2.successorTiles(a), "right through to the tank")
+    }
+
+    /**
+     * ⚠️ **The same corridor, blind, is the bug** — kept so that the case above is measuring the
+     * appetite and not the shape. [Appetites.BLIND] is what every caller that does not care gets,
+     * and it must still reproduce exactly what the graph did before appetites existed.
+     */
+    @Test
+    fun `blind, the ghost takes the corridor it cannot use`() {
+        val wide = Grid(10, 8)
+        val k = wide.tile(1, 2); val a = wide.tile(2, 2); val b = wide.tile(3, 2); val c = wide.tile(4, 2)
+        val d = wide.tile(4, 3); val e = wide.tile(4, 4); val f = wide.tile(3, 4); val g = wide.tile(2, 4)
+        val n = Net(wide)
+            .join(k, Direction.Right).join(a, Direction.Right).join(b, Direction.Right)
+            .join(c, Direction.Down).join(d, Direction.Down)
+            .join(e, Direction.Left).join(f, Direction.Left)
+
+        val blind = FlowGraph.build(
+            n.tiles, emptySet(), setOf(k, g), n::linked, wide, carrying = { it == a || it == d },
+        )
+
+        assertEquals(listOf(e), blind.successorTiles(d), "blind, the lump is pointed at the ghost")
     }
 }

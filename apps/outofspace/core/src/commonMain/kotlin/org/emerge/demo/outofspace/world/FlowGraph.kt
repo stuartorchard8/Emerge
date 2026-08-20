@@ -1,6 +1,50 @@
 package org.emerge.demo.outofspace.world
 
 /**
+ * Which consumers can use which standing material — the one thing [FlowGraph] asks about *matter*.
+ *
+ * ⛔ **This is a deliberate, and deliberately narrow, hole in the graph's material-blindness.** The
+ * graph says nothing about whether the machine at the far end has room or takes what is offered;
+ * those are questions about *now*, answered when a packet is offered, and keeping them out is the
+ * whole point. This is not one of them. It is needed for exactly one question — whether a lump
+ * standing on producer-less track justifies a consumer in taking an edge — and a lump justifies
+ * nobody who cannot eat it.
+ *
+ * Without it the justification is blind and reads absurdly: 100kg of **titanium** standing in a
+ * corridor told a run of **iron** rail ghosts that they had something to gain by reversing that
+ * corridor, so they took it, and the lump behind them could not follow. Each lump had to be absorbed
+ * before the next was released — a queue delivering one at a time, for no reason a player could see.
+ * Traced in Stu's save, 2026-08-20.
+ *
+ * Consumers are grouped into **classes** rather than asked one at a time, because the answer is
+ * folded into a count per subtree of the bridge forest and one count per class is the whole cost.
+ * A vessel has a handful of distinct bills, so it is a handful of [IntArray]s over a decomposition
+ * that is computed once either way.
+ *
+ * [BLIND] restores the old behaviour exactly and is the default: with one class that admits
+ * everything, every per-class count equals the union and nothing can tell the difference.
+ */
+interface Appetites {
+    /** How many classes there are; [classOf] returns an index below this. */
+    val classes: Int
+
+    /** Which class the consumer seeded at [sink] belongs to. */
+    fun classOf(sink: TileIndex): Int
+
+    /** Whether class [cls] can use the material standing on [lump]. */
+    fun admits(cls: Int, lump: TileIndex): Boolean
+
+    companion object {
+        /** One class, admitting everything: the graph as it was before any of this. */
+        val BLIND: Appetites = object : Appetites {
+            override val classes: Int get() = 1
+            override fun classOf(sink: TileIndex): Int = 0
+            override fun admits(cls: Int, lump: TileIndex): Boolean = true
+        }
+    }
+}
+
+/**
  * Where material is allowed to travel, tile by tile.
  *
  * The graph is a set of **permitted moves**: for each tile, the directions a packet sitting on it
@@ -151,6 +195,7 @@ class FlowGraph internal constructor(
             linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
             carrying: (TileIndex) -> Boolean = { false },
+            appetites: Appetites = Appetites.BLIND,
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
 
@@ -186,8 +231,13 @@ class FlowGraph internal constructor(
             // set goes in as [SourceSide.weak] as well, and [SourceSide.anyOther] is what the guards
             // below read. See the note there; without it a tapped belt splits at the lump.
             val standing = tileSet.filterTo(mutableSetOf()) { carrying(it) && !sourceSide.anyAtAll(it) }
+            // ⛔ **One object decides both the rows and the row a walk reads**, or a walk asks for
+            // a class the counts were never built with. Where nothing is standing there is nothing
+            // to weigh against an appetite — a real producer counts for every class — so the
+            // distinction collapses, and it has to collapse in *both* places at once.
+            val appetite = if (standing.isEmpty()) Appetites.BLIND else appetites
             if (standing.isNotEmpty()) {
-                sourceSide = SourceSide.of(tileSet, standing + sources, linked, grid, weak = standing)
+                sourceSide = SourceSide.of(tileSet, sources, linked, grid, standing, appetite)
             }
 
             // On a route out of a producer. Survives across traversals — that is the whole point.
@@ -198,7 +248,11 @@ class FlowGraph internal constructor(
             // something a replay can rely on.
             for (sink in sinks.sortedBy { it.index }) {
                 if (sink in tileSet) {
-                    traverse(sink, allowed, leading, tileSet, sources, sinks, sourceSide, linked, grid)
+                    // ⛔ **The class the walk is seeded with, carried the whole way.** What may be
+                    // taken back is a question about what *this* consumer has to gain, and the
+                    // consumer is the sink the walk started at — not the tile it has reached.
+                    val cls = appetite.classOf(sink)
+                    traverse(sink, cls, allowed, leading, tileSet, sources, sinks, sourceSide, linked, grid)
                 }
             }
 
@@ -221,6 +275,7 @@ class FlowGraph internal constructor(
          */
         private fun traverse(
             seed: TileIndex,
+            cls: Int,
             allowed: ByteArray,
             leading: BooleanArray,
             tileSet: Set<TileIndex>,
@@ -273,7 +328,7 @@ class FlowGraph internal constructor(
                     // edge is not free: it is the same edge, pointing the other way, that the
                     // consumer needs to be fed by. A ghost rail hanging off a loaded belt, told it
                     // may send its iron back down the spur it was waiting for. Found in Stu's save.
-                    if (next in sinks && sourceSide.anyOther(at) && !sourceSide.beyond(at, dir)) continue
+                    if (next in sinks && sourceSide.anyOther(at) && !sourceSide.beyond(at, dir, cls)) continue
 
                     // Already pointing at us: nothing to claim, and nothing new to say to it.
                     if (bit(allowed, next, dir.opposite)) continue
@@ -312,7 +367,7 @@ class FlowGraph internal constructor(
                         // line. That is the better answer there, and the one the belt tests reason
                         // about — a line that commits is a through-route, where one that splits down
                         // the middle sends half its traffic back at a machine that already said no.
-                        if (sourceSide.anyOther(at) && !sourceSide.beyond(at, dir)) continue
+                        if (sourceSide.anyOther(at) && !sourceSide.beyond(at, dir, cls)) continue
                         revoke(allowed, at, dir)
                     }
                     grant(allowed, next, dir.opposite)
@@ -433,16 +488,26 @@ class FlowGraph internal constructor(
         private class SourceSide(
             private val comp: IntArray,
             private val parent: IntArray,
-            private val subtree: IntArray,
-            private val treeTotal: IntArray,
+            /**
+             * Producers per subtree and per whole tree, **one row per class** — see [Appetites].
+             *
+             * ⚠️ The last row is the **union**: every real producer plus every standing lump,
+             * whatever anyone thinks of it. The topology underneath is one decomposition shared by
+             * all the rows, which is what makes a class nearly free.
+             */
+            private val subtree: Array<IntArray>,
+            private val treeTotal: Array<IntArray>,
             private val root: IntArray,
             private val weak: BooleanArray,
             private val grid: Grid,
         ) {
+            /** The union row: everything that could be a producer to somebody. */
+            private val all: Int get() = subtree.size - 1
+
             /** Does the network [at] sits on have any producer at all? */
             fun anyAtAll(at: TileIndex): Boolean {
                 val a = comp[at.index]
-                return a >= 0 && treeTotal[root[a]] > 0
+                return a >= 0 && treeTotal[all][root[a]] > 0
             }
 
             /**
@@ -468,20 +533,30 @@ class FlowGraph internal constructor(
             fun anyOther(at: TileIndex): Boolean {
                 val a = comp[at.index]
                 if (a < 0) return false
-                return treeTotal[root[a]] - (if (weak[at.index]) 1 else 0) > 0
+                return treeTotal[all][root[a]] - (if (weak[at.index]) 1 else 0) > 0
             }
 
-            /** Is a producer reachable from [at]'s neighbour in [dir], other than back through [at]? */
-            fun beyond(at: TileIndex, dir: Direction): Boolean {
+            /**
+             * Is a producer **class [cls] can use** reachable from [at]'s neighbour in [dir], other
+             * than back through [at]?
+             *
+             * ⛔ **Per class, because this is what a walk has to gain by taking an edge**, and a
+             * consumer gains nothing from material it will not accept. Real producers count for
+             * every class — a source is a source, and what comes off it is not this question. Only
+             * standing lumps are weighed against an appetite. See [Appetites].
+             */
+            fun beyond(at: TileIndex, dir: Direction, cls: Int): Boolean {
                 val next = grid.neighbour(at, dir)
                 if (next == TileIndex.NONE) return false
                 val a = comp[at.index]
                 val b = comp[next.index]
                 if (a < 0 || b < 0) return false
+                val sub = subtree[cls]
+                val total = treeTotal[cls]
                 // Not a bridge: cutting it leaves both ends able to reach everything they could
                 // before, so the only question left is whether this network has a producer at all.
-                if (a == b) return treeTotal[root[a]] > 0
-                return if (parent[b] == a) subtree[b] > 0 else treeTotal[root[a]] - subtree[a] > 0
+                if (a == b) return total[root[a]] > 0
+                return if (parent[b] == a) sub[b] > 0 else total[root[a]] - sub[a] > 0
             }
 
             companion object {
@@ -491,6 +566,7 @@ class FlowGraph internal constructor(
                     linked: (TileIndex, Direction) -> Boolean,
                     grid: Grid,
                     weak: Set<TileIndex> = emptySet(),
+                    appetites: Appetites = Appetites.BLIND,
                 ): SourceSide {
                     val n = grid.size
                     fun neighbours(t: TileIndex): List<Direction> =
@@ -573,13 +649,28 @@ class FlowGraph internal constructor(
                             adjacency[comp[at.index]].add(comp[next.index])
                         }
                     }
-                    val own = IntArray(comps)
-                    for (source in sources) if (source in tileSet) own[comp[source.index]]++
+                    // One row per class, plus the union on the end. A real producer is counted in
+                    // every row: it is a source whatever anyone wants, and what comes off it is not
+                    // the question here. A standing lump is counted only where it can be used.
+                    val rows = appetites.classes + 1
+                    val union = rows - 1
+                    val own = Array(rows) { IntArray(comps) }
+                    for (source in sources) {
+                        if (source !in tileSet) continue
+                        val c = comp[source.index]
+                        for (r in 0 until rows) own[r][c]++
+                    }
+                    for (lump in weak) {
+                        if (lump !in tileSet) continue
+                        val c = comp[lump.index]
+                        own[union][c]++
+                        for (r in 0 until union) if (appetites.admits(r, lump)) own[r][c]++
+                    }
 
                     val parent = IntArray(comps) { -1 }
                     val root = IntArray(comps) { -1 }
-                    val subtree = IntArray(comps)
-                    val treeTotal = IntArray(comps)
+                    val subtree = Array(rows) { IntArray(comps) }
+                    val treeTotal = Array(rows) { IntArray(comps) }
                     for (seed in 0 until comps) {
                         if (root[seed] >= 0) continue
                         // Down first, then back up the same list in reverse: a child is always
@@ -596,14 +687,17 @@ class FlowGraph internal constructor(
                                 order.add(next)
                             }
                         }
-                        for (at in order) subtree[at] = own[at]
-                        for (i in order.indices.reversed()) {
-                            val at = order[i]
-                            val up = parent[at]
-                            if (up >= 0) subtree[up] += subtree[at]
+                        for (r in 0 until rows) {
+                            val sub = subtree[r]
+                            for (at in order) sub[at] = own[r][at]
+                            for (i in order.indices.reversed()) {
+                                val at = order[i]
+                                val up = parent[at]
+                                if (up >= 0) sub[up] += sub[at]
+                            }
+                            val total = sub[seed]
+                            for (at in order) treeTotal[r][at] = total
                         }
-                        val total = subtree[seed]
-                        for (at in order) treeTotal[at] = total
                     }
 
                     val standing = BooleanArray(n)

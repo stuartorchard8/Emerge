@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 
@@ -116,6 +117,62 @@ fun railEnds(
     return RailEnds(sources, sinks)
 }
 
+/**
+ * Which consumers can use which standing material — the flow graph's one question about matter.
+ *
+ * ⛔ **Bills only, never shortfalls.** How much a site still wants is the whitelist's business and
+ * changes every tick; *what it is made of* is a fact about its kind, and that is all this needs. So
+ * this can be derived from the ghosts alone, which is what keeps it here — shared with anything
+ * looking in from outside — rather than tangled up in the reducer's acceptance bookkeeping.
+ *
+ * One class per distinct set of bills, since a tile carries two appetites where a ghost machine
+ * stands on ghost track. **Class 0 takes anything**, and is what every sink not listed here gets:
+ * an input port is a machine, and a machine takes anything for ever.
+ *
+ * See [Appetites] for what the graph does with it, and why it is told this and nothing else.
+ */
+fun railAppetites(
+    grid: Grid,
+    ghosts: Set<TileIndex>,
+    machineGhosts: Map<TileIndex, DeckMachine>,
+    lumpAt: (TileIndex) -> Mixture?,
+): Appetites {
+    if (ghosts.isEmpty() && machineGhosts.isEmpty()) return Appetites.BLIND
+
+    val billsAt = HashMap<TileIndex, MutableList<Mixture>>()
+    if (ghosts.isNotEmpty()) {
+        val rail = conduitBillOfMaterials(Conduit.Rail)
+        for (tile in ghosts) billsAt.getOrPut(tile) { mutableListOf() }.add(rail)
+    }
+    for ((tile, m) in machineGhosts) {
+        billsAt.getOrPut(tile) { mutableListOf() }.add(machineBillOfMaterials(m.kind, m.tiles(grid).size))
+    }
+
+    // Class 0 is the boundless appetite and owns no bills.
+    val classBills = ArrayList<List<Mixture>>()
+    classBills.add(emptyList())
+    val classOfTile = HashMap<TileIndex, Int>()
+    for ((tile, bills) in billsAt) {
+        // ⚠️ **Identity, not equality.** Bills are interned per kind and footprint, so the same site
+        // kind always yields the same instance and a class is found without comparing 165 longs —
+        // see [machineBillOfMaterials]. The lists are one or two long.
+        var found = classBills.indexOfFirst { it.size == bills.size && it.indices.all { i -> it[i] === bills[i] } }
+        if (found < 0) { classBills.add(bills); found = classBills.size - 1 }
+        classOfTile[tile] = found
+    }
+
+    return object : Appetites {
+        override val classes: Int get() = classBills.size
+        override fun classOf(sink: TileIndex): Int = classOfTile[sink] ?: 0
+        override fun admits(cls: Int, lump: TileIndex): Boolean {
+            val bills = classBills[cls]
+            if (bills.isEmpty()) return true
+            val standing = lumpAt(lump) ?: return false
+            return bills.any { buildableFrom(it, standing) }
+        }
+    }
+}
+
 /** Every tile carrying track — the graph's vertex set. */
 fun railTiles(rails: List<Segment?>): Set<TileIndex> =
     rails.mapIndexedNotNullTo(mutableSetOf()) { i, seg -> if (seg != null) TileIndex(i) else null }
@@ -131,6 +188,7 @@ fun VesselState.railFlow(): FlowGraph {
     val rails = conduits[Conduit.Rail]
     val ghosts = railGhosts(rails, conduits.tracks)
     val ends = railEnds(grid, rails, portsByTile(Conduit.Rail), deck, buffers, scrapping, ghosts)
+    val machineGhosts = railMachineGhosts(grid, rails, deck, scrapping)
     return FlowGraph.build(
         railTiles(rails),
         ends.sources,
@@ -138,5 +196,6 @@ fun VesselState.railFlow(): FlowGraph {
         { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
         grid,
         { tile -> !rail.isEmpty(tile) },
+        railAppetites(grid, ghosts, machineGhosts) { rail.resourceAt(it) },
     )
 }

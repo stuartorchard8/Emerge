@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Whitelist
+import org.emerge.demo.outofspace.world.Appetites
 import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
@@ -30,6 +31,7 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.FlowCursors
 import org.emerge.demo.outofspace.world.FlowGraph
+import org.emerge.demo.outofspace.world.railAppetites
 import org.emerge.demo.outofspace.world.railTiles
 import org.emerge.demo.outofspace.world.railEnds
 import org.emerge.demo.outofspace.world.railMachineGhosts
@@ -2420,18 +2422,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val sinks = ends.sinks
             val sources = ends.sources
             val tilesWithTrack = railTiles(rails)
-            var flow = FlowGraph.build(
-                tilesWithTrack,
-                sources,
-                sinks,
-                { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
-                grid,
-                // ⛔ **What is standing on the track, for producer-less track only** — see
-                // [FlowGraph.build]. A stub no output port reaches is fed by its own lumps or by
-                // nothing, and until this was passed in the graph could not tell the difference.
-                { tile -> !rail.isEmpty(tile) },
-            )
-
             // ── What each sink will take, and how much is already on its way ──
             //
             // One statement per sink, gathered here rather than asked at the door, because the door
@@ -2458,6 +2448,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 accepts.getOrPut(tile) { mutableListOf() }
                     .add(Acceptance.forBill(bill, machineShortfall(m), stopsTraffic = false))
             }
+
+            // ── Which consumers can use what is standing on the track ────────
+            //
+            // ⛔ **The one thing the flow graph is told about matter, and for one question only** —
+            // whether a lump standing on producer-less track justifies a consumer in taking an edge.
+            // A consumer gains nothing from material it will not accept: 100kg of titanium in a
+            // corridor told a run of iron rail ghosts they had something to gain by reversing that
+            // corridor, so they took it and the titanium behind them could not follow. Each lump had
+            // to be eaten before the next was released. Found in Stu's save, 2026-08-20.
+            //
+            // Derived in `RailNetwork` beside every other end of the network, so that the harness
+            // and the reducer cannot form two opinions about it. See [Appetites].
+            val appetites = railAppetites(grid, ghosts, machineGhosts) { rail.resourceAt(it) }
+
+            var flow = FlowGraph.build(
+                tilesWithTrack,
+                sources,
+                sinks,
+                { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
+                grid,
+                // ⛔ **What is standing on the track, for producer-less track only** — see
+                // [FlowGraph.build]. A stub no output port reaches is fed by its own lumps or by
+                // nothing, and until this was passed in the graph could not tell the difference.
+                { tile -> !rail.isEmpty(tile) },
+                appetites,
+            )
 
             // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is
             // standing on a tile once per route through it and `resourceAt` allocates, so answering
@@ -2496,6 +2512,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                     grid,
                     { tile -> !rail.isEmpty(tile) },
+                    appetites,
                 )
                 whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             }
