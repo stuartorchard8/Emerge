@@ -176,30 +176,55 @@ class AmbientChemistryTest {
     }
 
     @Test
-    fun `a lump that cools below its ignition point goes out`() {
-        // The two halves meeting, and the reason the conduction mattered to the chemistry: a lump
-        // that starts just over its ignition point does not burn to nothing. It sheds heat into the
-        // track and the room, drops below the onset and stops — so fire is something that has to be
-        // sustained rather than something that runs to completion once lit.
+    fun `a fire that has caught keeps itself alight`() {
+        // ⚠️ **This test used to assert the opposite, and the change is the point of increment 4.**
+        //
+        // While the reaction was athermal a lump lit just over its ignition point shed heat into the
+        // track and the room, dropped under the onset and went out — so fire had to be *sustained*.
+        // Burning carbon is exothermic and now says so: about 33 MJ/kg against the half-megajoule it
+        // takes to hold a kilogram at its ignition point. A fire that went out while releasing
+        // seventy times what it needed to stay lit would not be a fire.
+        //
+        // So the loop runs the other way. A lump that catches heats itself, burns faster for being
+        // hotter, and keeps going until something runs out.
         val start = withLump(carbonAt(CARBON_IGNITION_KELVIN + 60))
         val here = grid.tile(5, ROW)
 
         val lit = run(start, TICKS)
         assertTrue(railMass(lit, Species.Carbon) < railMass(start, Species.Carbon), "it never caught")
 
-        val cold = run(lit, COOLING_TICKS)
+        val later = run(lit, TICKS)
         assertTrue(
-            cold.rail.stuff.kelvinAt(here) < CARBON_IGNITION_KELVIN,
-            "the lump never cooled below its ignition point: ${cold.rail.stuff.kelvinAt(here)}K",
+            later.rail.stuff.kelvinAt(here) > start.rail.stuff.kelvinAt(here),
+            "a lump that caught did not warm itself: ${start.rail.stuff.kelvinAt(here)}K then " +
+                "${later.rail.stuff.kelvinAt(here)}K",
         )
-        // Out, and staying out: another run of the same length takes nothing more.
-        val settled = run(cold, COOLING_TICKS)
+        assertTrue(
+            railMass(later, Species.Carbon) < railMass(lit, Species.Carbon),
+            "the fire stalled once it was properly alight",
+        )
+    }
+
+    @Test
+    fun `a fire in a sealed room goes out when the room runs out of air`() {
+        // What stops it, now that cooling does not. The oxygen is the bound — decision 2, and the
+        // reason a sealed room is a different place to put something flammable than an open one.
+        // A trace of air burns a trace of carbon and then nothing, however hot the lump is.
+        val trace = 20L * Budget.GRAM
+        val start = starved(carbonAt(burningKelvin), oxygen = trace)
+        val after = run(start, TICKS * 4)
+
+        assertTrue(railMass(after, Species.Carbon) > 0L, "the whole lump went, so nothing was starved")
+        assertTrue(airMass(after, Fluid.Oxygen) < trace / 2L, "the fire did not use the air it had")
+
+        // Out, and staying out: another run of the same length takes no more carbon, because there
+        // is no more oxygen to take it with.
+        val settled = run(after, TICKS * 4)
         assertEquals(
-            railMass(cold, Species.Carbon),
+            railMass(after, Species.Carbon),
             railMass(settled, Species.Carbon),
-            "carbon kept burning after the lump had gone out",
+            "carbon kept burning in a room with no oxygen left in it",
         )
-        assertTrue(railMass(settled, Species.Carbon) > 0L, "the whole lump went, so nothing was left to go out")
     }
 
     // ── The ledgers ──────────────────────────────────────────────────────────
@@ -267,8 +292,23 @@ class AmbientChemistryTest {
             after.air.totalEnergy > start.air.totalEnergy,
             "the air took a hot gas and did not get any warmer",
         )
+
+        // ⚠️ **The lump does not end up cooler, and since increment 4 it must not.** It hands over a
+        // share of its heat with every gram that leaves — that part is unchanged — but burning is
+        // exothermic and puts back some thirty times more than the departing carbon took with it. So
+        // the carried-heat rule cannot be observed as "the lump got colder" any more; it has to be
+        // asked of a reaction that releases nothing.
+        //
+        // Serpentine giving up its water is that reaction, near enough: it is endothermic, so both
+        // effects point the same way and neither can hide the other.
+        val wet = withLump(lumpAt(1200, Species.Serpentine to 20L * Budget.KILOGRAM))
+        val dried = run(wet, TICKS)
         assertTrue(
-            after.rail.stuff.energyAt(grid.tile(5, ROW)) < start.rail.stuff.energyAt(grid.tile(5, ROW)),
+            railMass(dried, Species.Serpentine) < railMass(wet, Species.Serpentine),
+            "the serpentine did not give up its water",
+        )
+        assertTrue(
+            dried.rail.stuff.energyAt(grid.tile(5, ROW)) < wet.rail.stuff.energyAt(grid.tile(5, ROW)),
             "the lump gave up mass but kept all of its heat",
         )
     }

@@ -1,8 +1,8 @@
 # Ambient chemistry
 
-Status: **increments 0 to 3 built** (2026-08-20). Two reactions compete for a tile's oxygen, and
-the thermal decomposer is a thermostat with no chemistry in it. Increment 4 — the reaction table —
-is next, and it is the one that needs two new species.
+Status: **increments 0 to 4 built** (2026-08-20). Chemistry is a table of nine reactions run as a
+pass over the cargo layers, gated by temperature and by what the air can supply. Fire sustains
+itself; calcining does not. Increment 5 — roasting — is next, and is optional.
 
 Chemistry used to be something one machine did to one buffer, and it did not actually do it —
 `cook` in `chem/Chemistry.kt` was a stub that returned its input unchanged, and it is now deleted.
@@ -455,53 +455,75 @@ you have thought about the ventilation.
 
 ---
 
-# Increment 4 — the thermal-only table
+# Increment 4 — the thermal-only table ✅ BUILT
 
-Now the table earns its place, and **two species are missing** to make it work:
+`chem/Decomposition.kt`: seven reactions that need nothing but heat, plus the two species that were
+missing to make them possible — **Lime (CaO)** and **Periclase (MgO)**, both named in `Minerals.kt`
+and in `ThermalDecomposer`'s own kdoc and both impossible until now.
 
-- **Lime, CaO** — `Calcite → CaO + CO₂`. Named in `Minerals.kt` and in `ThermalDecomposer`'s own
-  kdoc, and impossible today.
-- **Periclase, MgO** — `Magnesite → MgO + CO₂`; dolomite needs both.
+| | | onset |
+|---|---|---|
+| `Calcite → Lime + CO₂` | the marquee one | 1170 K |
+| `Magnesite → Periclase + CO₂` | | 810 K |
+| `Serpentine → Forsterite + Enstatite + 2 H₂O` | a wet rock giving up its water | 900 K |
+| `Pyrite → Troilite + S` | sulfur leaves as vapour | 1000 K |
+| `6 Fe₂O₃ → 4 Fe₃O₄ + O₂` | ore that makes its own air | 1730 K |
+| `2 NH₃ → N₂ + 3 H₂` | | 1100 K |
+| `CH₄ → C + 2 H₂` | carbon comes out solid | 1300 K |
 
-Everything else in tier 1 is **free**, needing no new species:
+## What the build decided that the scope did not
 
-- `Serpentine → Forsterite + Enstatite + Water` — the marquee one, and the reason a dry inner-system
-  rock is different from a wet one.
-- `Pyrite → Troilite + Sulfur`
-- `Hematite → Magnetite + Oxygen`
-- `Ammonia → Nitrogen + Hydrogen`, `Methane → Carbon + Hydrogen`
-- Carbothermic iron: `Hematite/Wustite + Carbon → Iron + CarbonMonoxide` — the reaction decision 2
-  is really about.
+- **A row states formula units and nothing else.** Every mass is derived from those counts and the
+  molar masses `Species` already holds, and `split` hands the products shares of the reactant's own
+  mass through `apportion` — so conservation is structural and a row that does not balance cannot
+  silently rescale itself to fit. `DecompositionTest` closes every row **atom by atom** against
+  `MINERALS`, which is the only oracle a reaction table can have.
+- ⚠️ **An enthalpy is written the way it is looked up**: `178L * kJPerMolAt(100)` is still
+  recognisably "178 kJ/mol of something weighing 100 g/mol". Reducing it by hand to 1.78 MJ/kg first
+  would throw away the only thing that makes it checkable. A test recovers each row's divisor and
+  insists it is that row's own `reactantUnits * molarMass`, because using a neighbour's divisor is
+  wrong by a plausible-looking ratio.
+- ⛔ **`scaledRatio` returns zero for a negative scale**, by an explicit guard — it is built for
+  fractions of quantities. An enthalpy's sign is the whole of what it means, so passing one straight
+  in made **every exothermic reaction release exactly nothing**, silently, in the direction where the
+  game still looks like it works. `perKilogram` puts the sign back, in one place, for both tables.
+  Caught by a test asserting burning carbon is exothermic; nothing else would have noticed.
+- **The enthalpies are real, so `Oxidation` got one too.** Increment 1 deliberately left the reaction
+  athermal, on the grounds that inventing where the heat goes for one reaction and then deciding it
+  again for the table is two answers to one question. The table exists, so this is the answer, and it
+  applies to both.
+- **A decomposition needs no contention pass.** "No reagent, just heat" is exactly the statement that
+  these cannot compete for anything, so a tile holding two decomposing minerals runs both in full.
+  Only the oxidations go through the demand-and-apportion machinery.
+- ⚠️ **`everyMineralOccursInRock` became `everyMineralIsMinedOrMade`.** Lime and periclase occur in no
+  rock that has ever met water or CO₂, so their abundance is zero and **must stay zero** — an
+  abundance invented to satisfy the old test would put quicklime in asteroids. Stated against the
+  reaction tables rather than an exception list, so a product whose reaction is later removed goes
+  back to being reported as dead weight.
 
-## Table shape
+## ⚠️ Two behaviours changed, on purpose
 
-Keyed by reactant, ordinal-indexed — `arrayOfNulls<Decomposition>(Species.COUNT)` built once from a
-declarative list. Not a `Map`: `CRITICAL` and `MINERALS` get away with hashing because they are
-queried per-species-present at setup, and this is read in a tick loop.
+Both were pinned by tests written when the reactions were athermal. The tests were restated, and the
+change is the point of the increment rather than a regression:
 
-```kotlin
-class Decomposition(
-    val reactant: Species,
-    val onsetKelvin: Int,
-    val reagent: Fluid? = null,        // null = heat alone; else drawn from the tile's air
-    val products: List<Pair<Species, Int>>,  // formula units, NOT mass fractions
-    val enthalpyPerKg: Long,           // + endothermic
-)
-```
+- **A fire now sustains itself.** Burning carbon releases ~33 MJ/kg against the ~0.5 MJ/kg it takes
+  to hold a kilogram at its ignition point. A lump lit just over the onset used to shed heat, drop
+  under it and go out; it now heats itself, burns faster for being hotter, and runs to **2327 K** in
+  a test that previously watched it cool. What stops it is the **oxygen**, which is decision 2 doing
+  its job — a sealed room is now a genuinely different place to keep something flammable.
+- **A charge cannot calcine itself.** The mirror image, and the reason the decomposer is a heat sink
+  rather than a timer: calcining costs 1.78 MJ/kg and limestone at its own calcining temperature
+  holds about 1.05 MJ/kg. So a charge cools, drops under its onset and waits for the element. That
+  loop is what makes increment 3's thermostat load-bearing.
 
-Plus a derived `onsetKelvin: IntArray` by ordinal and a global `LOWEST_ONSET`, so cold matter is
-rejected with one compare.
+## Still open
 
-**Derive the mass split, do not restate it.** State products as *formula units* and derive mass
-through the existing `massPartsPerThousand` / `derivedMolarMass` / `apportion`. Then write the test
-that matters: **every reaction closes atom by atom against `MINERALS`**. That is the `MineralTest`
-precedent — molar masses are *derived* from the formulae rather than asserted alongside them, so a
-typo is a test failure rather than a mineral that quietly weighs the wrong amount. Hand-written mass
-fractions give you two sources of truth and no oracle, and "calcite yields lime" would silently
-yield the wrong amount of lime.
-
-Conservation stays structural, as everywhere else in `chem`: compute all products but one, and let
-the last be the remainder.
+- **Carbothermic reduction is not here.** `Hematite + C → Iron + CO` wants a **solid** co-reactant,
+  which neither table's shape expresses: `Oxidation` takes its reagent from the air and
+  `Decomposition` takes no reagent at all. It is a third shape, not a row, and it is the reaction
+  decision 2 is really about — worth its own increment rather than a field bolted onto either.
+- The release condition is still "at the setpoint" (increment 3's note). With a table to ask, "and
+  has stopped reacting" is now expressible — the sweep would have to report per-tile activity.
 
 ---
 

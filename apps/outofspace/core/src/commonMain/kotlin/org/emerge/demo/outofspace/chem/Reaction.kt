@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -154,6 +155,8 @@ class Oxidation(
     val productUnits: Int,
     val onsetKelvin: Int,
     val baseRate: Long,
+    /** Positive is **endothermic**. Both of these are combustions, so both are negative. */
+    val enthalpyPerKg: Long,
 ) {
     /** Mass of O₂ per mass of reactant, as the exact ratio of formula-unit masses. */
     internal val oxygenNumerator: Long = oxygenUnits.toLong() * Species.Oxygen.molarMass
@@ -161,6 +164,17 @@ class Oxidation(
 
     /** Whether the product joins the atmosphere rather than staying where the reactant was. */
     val productIsGas: Boolean get() = product.fluid != null
+
+    /**
+     * The energy [mass] of this reactant releases as it burns — negative, because burning is
+     * exothermic, and the sign convention is [Decomposition.enthalpy]'s.
+     *
+     * ⚠️ **This is what increment 1 said it was not inventing yet.** A fire that did not warm the
+     * room was always a half-truth; it was left out until the *table* existed, so that where the
+     * heat goes would be answered once rather than once per reaction. Per kilogram of the reactant,
+     * not of the product, because the reactant is what the rate is a fraction of.
+     */
+    fun enthalpy(mass: Long): Long = perKilogram(mass, enthalpyPerKg)
 
     /**
      * How much oxygen this reaction **wants** at [kelvin] with [reactantMass] present — what it
@@ -233,6 +247,9 @@ val CARBON_BURN = Oxidation(
     product = Species.CarbonDioxide, productUnits = 1,
     onsetKelvin = CARBON_IGNITION_KELVIN,
     baseRate = BASE_RATE,
+    // −393.5 kJ/mol of carbon. The number that makes a fire something that sustains itself: a lump
+    // burning puts back about thirty times the energy it takes to hold it at its ignition point.
+    enthalpyPerKg = -394L * kJPerMolAt(12),
 )
 
 /**
@@ -254,6 +271,9 @@ val IRON_RUST = Oxidation(
     product = Species.Hematite, productUnits = 2,
     onsetKelvin = IRON_OXIDATION_KELVIN,
     baseRate = IRON_BASE_RATE,
+    // −1648 kJ per 4 mol of iron, which is 224 g of it. Scaling iron is exothermic too, and
+    // vigorously so — hot iron in air is a thing that gets hotter.
+    enthalpyPerKg = -1648L * kJPerMolAt(224),
 )
 
 /**
@@ -370,3 +390,32 @@ private val ARRHENIUS = longArrayOf(
  * transcription of it.
  */
 const val ACTIVATION: Int = 6
+
+/**
+ * One kJ/mol of a species whose formula mass is [grams], in [Budget]'s energy unit **per kilogram**
+ * of that species.
+ *
+ * ⚠️ **So that an enthalpy can be written the way it is looked up.** `178L * kJPerMolAt(100)` is
+ * still recognisably "178 kJ/mol of something that weighs 100 g/mol", which is a claim a person can
+ * check against a table; `178_000_000L` is not, and neither is 1.78 MJ/kg once the division has been
+ * done by hand. The tests check each row's divisor against `reactantUnits * molarMass` rather than
+ * trusting the call site to have used the right one.
+ */
+fun kJPerMolAt(grams: Long): Long = 1_000L * Budget.JOULE * 1_000L / grams
+
+/**
+ * [perKg] scaled to [mass], **keeping its sign**.
+ *
+ * ⚠️ **[scaledRatio] returns zero for a negative scale**, by an explicit guard — it is built for
+ * fractions of quantities, where a negative scale means a caller has got its arguments the wrong way
+ * round. An enthalpy is not one of those: its sign is the whole of what it means, and passing one
+ * straight in makes every exothermic reaction release exactly nothing. Silently, and in the
+ * direction where the game still looks like it works — a fire that simply never warms the room.
+ *
+ * So the magnitude goes through the fixed-point path and the sign is put back here, in one place,
+ * for both tables.
+ */
+fun perKilogram(mass: Long, perKg: Long): Long {
+    val magnitude = scaledRatio(mass, Budget.KILOGRAM, if (perKg < 0L) -perKg else perKg)
+    return if (perKg < 0L) -magnitude else magnitude
+}

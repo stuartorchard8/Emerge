@@ -109,6 +109,11 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     Species.Rutile to mapOf(Species.Titanium to 1, Species.Oxygen to 2),
     Species.Spinel to mapOf(Species.Magnesium to 1, Species.Aluminum to 2, Species.Oxygen to 4),
     Species.Corundum to mapOf(Species.Aluminum to 2, Species.Oxygen to 3),
+    // The two calcination products. Simple oxides, and here for the same reason every other entry
+    // is: their molar masses in [Species] are derived from these formulae rather than stated beside
+    // them, so `Calcite -> Lime + CO2` closing atom by atom is something a test can check.
+    Species.Lime to mapOf(Species.Calcium to 1, Species.Oxygen to 1),
+    Species.Periclase to mapOf(Species.Magnesium to 1, Species.Oxygen to 1),
     Species.Pyrolusite to mapOf(Species.Manganese to 1, Species.Oxygen to 2),
     Species.Cassiterite to mapOf(Species.Tin to 1, Species.Oxygen to 2),
     Species.Baddeleyite to mapOf(Species.Zirconium to 1, Species.Oxygen to 2),

@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.CARBON_IGNITION_KELVIN
+import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -118,6 +119,20 @@ class ThermalDecomposerTest {
     private fun chamber(): TileIndex = centre
 
     private fun store(s: VesselState, role: BufferRole): Mixture? = s.inStore(centre, role)
+
+    /** Everything in every buffer store on the grid, by species. */
+    private fun bufferMass(s: VesselState, species: Species): Long {
+        var sum = 0L
+        for (tile in grid.tiles) sum += s.buffers.stuff[tile, species]
+        return sum
+    }
+
+    /** A charge of several things at once, carrying enough heat to be at [kelvin]. */
+    private fun lumpAt(kelvin: Int, vararg parts: Pair<Species, Long>): Mixture {
+        var capacity = 0L
+        for ((species, mass) in parts) capacity += mass * species.specificHeat / Budget.CAPACITY_DIVISOR
+        return Mixture.of(*parts, energy = capacity * kelvin)
+    }
 
     private fun airMass(s: VesselState, fluid: Fluid): Long {
         var sum = 0L
@@ -275,6 +290,99 @@ class ThermalDecomposerTest {
         assertEquals(1150, machine.setTemperature, "the setpoint did not survive the round trip")
     }
 
+
+    // ── Increment 4: the table, in the machine it was built for ──────────────
+
+    @Test
+    fun `limestone calcines into quicklime and the room gets the carbon dioxide`() {
+        // The reaction this machine's documentation has promised since before it could happen.
+        // CaCO3 -> CaO + CO2: the lime stays in the chamber and leaves by the belt, the gas leaves
+        // by the room, and the machine's one output port is correct precisely because of that.
+        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val start = withCharge(cold(Species.Calcite, CALCINING_CHARGE), setTemperature = calcite.onsetKelvin + 250)
+        val after = run(start, SETTLING_TICKS)
+
+        val limeMade = bufferMass(after, Species.Lime)
+        assertTrue(limeMade > 0L, "no lime was made")
+        assertTrue(
+            bufferMass(after, Species.Calcite) < CALCINING_CHARGE,
+            "the limestone came through untouched",
+        )
+        assertTrue(
+            airMass(after, Fluid.CarbonDioxide) > airMass(start, Fluid.CarbonDioxide),
+            "lime appeared and no carbon dioxide went into the room",
+        )
+
+        // And in the proportion the formula says, not merely in the right direction: CaCO3 is 100,
+        // CaO is 56. A reaction that ran at all but split wrong would pass every assertion above.
+        val calcined = CALCINING_CHARGE - bufferMass(after, Species.Calcite)
+        val expectedLime = calcined * Species.Lime.molarMass / Species.Calcite.molarMass
+        assertTrue(
+            limeMade in (expectedLime - TICKS)..(expectedLime + TICKS),
+            "$calcined of limestone yielded $limeMade of lime, not about $expectedLime",
+        )
+    }
+
+    @Test
+    fun `a setpoint between the two carbonates cracks one and leaves the other`() {
+        // Heat as a separator, which is what makes the dial a decision. The same mixed charge at one
+        // temperature is a magnesite process and at another is a magnesite-and-calcite process, and
+        // nothing anywhere is filtering by species.
+        val magnesite = DECOMPOSITIONS.first { it.reactant == Species.Magnesite }
+        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val between = (magnesite.onsetKelvin + calcite.onsetKelvin) / 2
+
+        val mixed = lumpAt(
+            Temperature.AMBIENT_KELVIN,
+            Species.Magnesite to CALCINING_CHARGE / 2,
+            Species.Calcite to CALCINING_CHARGE / 2,
+        )
+        val after = run(withCharge(mixed, setTemperature = between), SETTLING_TICKS)
+
+        assertTrue(bufferMass(after, Species.Periclase) > 0L, "the magnesite did not crack")
+        assertEquals(
+            CALCINING_CHARGE / 2,
+            bufferMass(after, Species.Calcite),
+            "the calcite cracked too, at a temperature it should have ignored",
+        )
+        assertEquals(0L, bufferMass(after, Species.Lime), "lime appeared below calcite's onset")
+    }
+
+    @Test
+    fun `calcining cools the charge it happens to`() {
+        // The enthalpy, which increment 1 deliberately left out and the table is the answer to.
+        // Calcining takes more energy per kilogram than limestone holds at its own calcining
+        // temperature, so a charge cannot run away with it: it cools, drops under its onset and
+        // waits for the element. That is the loop the decomposer exists to fight, and the reason the
+        // machine is a heat sink rather than a timer.
+        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val setpoint = calcite.onsetKelvin + 250
+
+        val hot = lumpAt(setpoint, Species.Calcite to CALCINING_CHARGE)
+        // A setpoint of zero, so the element never runs: the charge arrives already hot and the
+        // only things that can change its heat are the reaction and the room it stands in.
+        val after = run(withCharge(hot, setTemperature = 0), TICKS)
+
+        assertTrue(bufferMass(after, Species.Lime) > 0L, "nothing calcined, so nothing was paid for")
+        assertTrue(
+            after.buffers.stuff.kelvinAt(chamber()) < setpoint,
+            "calcining a charge did not cool it: still ${after.buffers.stuff.kelvinAt(chamber())}K",
+        )
+    }
+
+    @Test
+    fun `calcining closes both ledgers`() {
+        val calcite = DECOMPOSITIONS.first { it.reactant == Species.Calcite }
+        val after = run(
+            withCharge(cold(Species.Calcite, CALCINING_CHARGE), setTemperature = calcite.onsetKelvin + 250),
+            SETTLING_TICKS,
+        )
+
+        assertTrue(bufferMass(after, Species.Lime) > 0L, "nothing calcined, so this proves nothing")
+        assertEquals(0L, after.airBalance, "the air ledger is out by ${after.airBalance}")
+        assertEquals(0L, cargoLedger(after), "the cargo ledger is out by ${cargoLedger(after)}")
+    }
+
     private companion object {
         /** Long enough for the element to have visibly moved the charge, and no longer. */
         const val HEATING_TICKS = 60
@@ -287,6 +395,9 @@ class ThermalDecomposerTest {
          * with the box around it. Comfortably inside the five-second rule — this is a twelve-by-eight
          * grid with one machine on it.
          */
+        /** A handful of chemistry passes — `CHEM_PERIOD` is 8. */
+        const val TICKS = 32
+
         const val SETTLING_TICKS = 900
 
         /**
@@ -307,5 +418,15 @@ class ThermalDecomposerTest {
          * charge that would show an uncapped element up.
          */
         val LIGHT_CHARGE = 10L * Budget.KILOGRAM
+
+        /**
+         * The charge for the calcining tests, and small for a reason.
+         *
+         * Calcining is strongly endothermic — more per kilogram than the rock holds at its own
+         * onset — so a big charge spends the whole test being reheated a fraction at a time. A light
+         * one reaches temperature at once and gets on with the reaction, which is what these are
+         * about.
+         */
+        val CALCINING_CHARGE = 10L * Budget.KILOGRAM
     }
 }

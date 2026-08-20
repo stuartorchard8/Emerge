@@ -341,6 +341,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
             if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)
             if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
+            // The enthalpies, which since increment 4 are real: a fire is an energy source and
+            // calcining is an energy sink, and the world holds more or less because of it.
+            val made = onRails.releasedEnergy + inHoppers.releasedEnergy
+            if (made != 0L) w.reactionEnergy(made)
         }
 
         val edges = EdgeGrid(state.grid)
@@ -1137,6 +1141,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * reaction that ran both ways in one tick nets out to nothing without either identity ever
          * having been told a half-truth.
          */
+        /**
+         * Books energy a **reaction** made out of chemical bonds, or unmade back into them.
+         *
+         * The third kind, after [heat]'s waste and [absorb]'s hand-over, and the one with no tile:
+         * the matter it happened to has already been given the energy by the chemistry pass, and all
+         * that is left is to say that the world now holds more of it than it did. Negative for an
+         * endothermic reaction, which is a fire running backwards as far as this term is concerned.
+         *
+         * ⚠️ **Not [heat].** That one lands in a machine and conducts outward; this has already
+         * landed, in whatever the reaction happened to, which may be a lump on a belt with no machine
+         * anywhere near it.
+         */
+        fun reactionEnergy(energy: Long) {
+            generatedEnergy += energy
+        }
+
         fun gasBecameSolid(mass: Long, energy: Long) {
             ventedMass -= mass
             injectedAirMass -= mass

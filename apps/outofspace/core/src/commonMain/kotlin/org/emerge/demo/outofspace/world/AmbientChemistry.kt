@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.LOWEST_DECOMPOSITION_ONSET
 import org.emerge.demo.outofspace.chem.OXIDATIONS
 import org.emerge.demo.outofspace.chem.Oxidation
 import org.emerge.demo.outofspace.chem.apportionInto
@@ -26,12 +28,23 @@ class ChemistryStep(
     val toGasEnergy: Long,
     val toSolidMass: Long,
     val toSolidEnergy: Long,
+    /**
+     * Energy the reactions **made**, net — negative when they took more than they gave.
+     *
+     * A fifth number and a different kind from the other four: those are mass changing medium and
+     * the heat that rode along with it, which is energy *moving*. This is energy appearing out of
+     * chemical bonds or disappearing into them, so it belongs to neither medium's ledger and needs
+     * telling on its own. Burning carbon is strongly negative — a fire is a source; calcining is
+     * strongly positive the other way, and is why a decomposer's element has to keep working.
+     */
+    val releasedEnergy: Long,
 ) {
     val isNothing: Boolean
-        get() = toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L && toSolidEnergy == 0L
+        get() = toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L &&
+            toSolidEnergy == 0L && releasedEnergy == 0L
 
     companion object {
-        val NOTHING = ChemistryStep(0L, 0L, 0L, 0L)
+        val NOTHING = ChemistryStep(0L, 0L, 0L, 0L, 0L)
     }
 }
 
@@ -95,8 +108,9 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
     var toGasEnergy = 0L
     var toSolidMass = 0L
     var toSolidEnergy = 0L
+    var released = 0L
 
-    // Allocated once for the whole sweep, not once per tile. Two longs is nothing; two longs at
+    // Allocated once for the whole sweep, not once per tile. A few longs is nothing; a few longs at
     // every occupied tile of every layer every pass is a shape of cost that only ever shows up as
     // "the chemistry is slow".
     val demands = LongArray(OXIDATIONS.size)
@@ -107,70 +121,130 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
         // Where nearly every tile in the game stops, for one compare.
         if (kelvin < LOWEST_ONSET) return@forEachOccupiedTile
 
-        val oxygenHere = air[tile, Fluid.Oxygen]
-        if (oxygenHere <= 0L) return@forEachOccupiedTile
-
-        // ── Demand, against a snapshot ────────────────────────────────────────────
-        var wanted = 0L
-        for (i in OXIDATIONS.indices) {
-            val want = OXIDATIONS[i].demand(layer[tile, OXIDATIONS[i].reactant], kelvin)
-            demands[i] = want
-            wanted += want
-        }
-        if (wanted <= 0L) return@forEachOccupiedTile
-
-        if (wanted <= oxygenHere) {
-            demands.copyInto(allowed)
-        } else {
-            apportionInto(demands, oxygenHere, allowed)
-        }
-
-        // The tile as it was before anything reacted — every energy share below is a share of these,
-        // so no reaction's heat depends on which reaction ran before it.
+        // The tile as it was before anything reacted. **Every energy share below is a share of
+        // these**, so no reaction's heat depends on which reaction ran before it — the same reason
+        // the oxygen is apportioned against a snapshot rather than taken in turn.
         val heldMass = layer.massAt(tile)
         val heldEnergy = layer.energyAt(tile)
         val airMass = airMassAt(air, tile)
         val airHeat = airEnergy?.get(tile) ?: 0L
 
-        // ── Reaction, against the allowance ───────────────────────────────────────
-        for (i in OXIDATIONS.indices) {
-            if (allowed[i] <= 0L) continue
-            val reaction = OXIDATIONS[i]
-            val reacted = reaction.react(layer[tile, reaction.reactant], allowed[i], kelvin)
-            if (reacted.isNothing) continue
-
-            layer.add(tile, reaction.reactant, -reacted.reactant)
-            air.add(tile, Fluid.Oxygen, -reacted.oxygen)
-
-            val productFluid = reaction.product.fluid
-            if (productFluid != null) {
-                // Solid → air. The reactant's mass and its share of the lump's heat both leave.
-                val carried = scaledRatio(reacted.reactant, heldMass, heldEnergy)
+        /**
+         * [intoAir] of [fluid] joins the tile's gas, of which [fromLayer] came out of the solid.
+         *
+         * The two are the same for a decomposition and differ for a combustion: burning carbon puts
+         * a whole CO2 into the air but only the carbon *crossed* — the oxygen was already air and
+         * still is. The ledger hears [fromLayer]; the tile's gas gets [intoAir]; and the heat that
+         * travels is the share belonging to the mass that actually changed medium.
+         */
+        fun ventGas(fluid: Fluid, intoAir: Long, fromLayer: Long) {
+            val carried = scaledRatio(fromLayer, heldMass, heldEnergy)
+            air.add(tile, fluid, intoAir)
+            if (carried != 0L) {
                 layer.addEnergy(tile, -carried)
-                air.add(tile, productFluid, reacted.product)
                 airEnergy?.let { it[tile] += carried }
-
-                toGasMass += reacted.reactant
-                toGasEnergy += carried
-            } else {
-                // Air → solid. The oxygen's mass and its share of the room's heat both arrive; the
-                // reactant never left the layer, so only the oxygen crosses a ledger.
-                val carried = scaledRatio(reacted.oxygen, airMass, airHeat)
-                layer.add(tile, reaction.product, reacted.product)
-                layer.addEnergy(tile, carried)
-                airEnergy?.let { it[tile] -= carried }
-
-                toSolidMass += reacted.oxygen
-                toSolidEnergy += carried
             }
+            toGasMass += fromLayer
+            toGasEnergy += carried
+        }
+
+        // ── Oxidation: several consumers, one tile's oxygen ───────────────────────
+        val oxygenHere = air[tile, Fluid.Oxygen]
+        if (oxygenHere > 0L) {
+            var wanted = 0L
+            for (i in OXIDATIONS.indices) {
+                val want = OXIDATIONS[i].demand(layer[tile, OXIDATIONS[i].reactant], kelvin)
+                demands[i] = want
+                wanted += want
+            }
+            if (wanted > 0L) {
+                if (wanted <= oxygenHere) demands.copyInto(allowed) else apportionInto(demands, oxygenHere, allowed)
+
+                for (i in OXIDATIONS.indices) {
+                    if (allowed[i] <= 0L) continue
+                    val reaction = OXIDATIONS[i]
+                    val reacted = reaction.react(layer[tile, reaction.reactant], allowed[i], kelvin)
+                    if (reacted.isNothing) continue
+
+                    layer.add(tile, reaction.reactant, -reacted.reactant)
+                    air.add(tile, Fluid.Oxygen, -reacted.oxygen)
+
+                    val productFluid = reaction.product.fluid
+                    if (productFluid != null) {
+                        // Solid -> air. The whole product joins the gas; only the reactant crossed.
+                        ventGas(productFluid, intoAir = reacted.product, fromLayer = reacted.reactant)
+                    } else {
+                        // Air → solid. The oxygen's mass and its share of the room's heat arrive;
+                        // the reactant never left the layer, so only the oxygen crosses.
+                        val carried = scaledRatio(reacted.oxygen, airMass, airHeat)
+                        layer.add(tile, reaction.product, reacted.product)
+                        layer.addEnergy(tile, carried)
+                        airEnergy?.let { it[tile] -= carried }
+                        toSolidMass += reacted.oxygen
+                        toSolidEnergy += carried
+                    }
+
+                    released += applyEnthalpy(layer, tile, -reaction.enthalpy(reacted.reactant))
+                }
+            }
+        }
+
+        // ── Decomposition: heat alone, so nothing to allocate ─────────────────────
+        //
+        // No demand pass and no apportionment, because there is no shared reagent to run out of:
+        // "no reagent, just heat" is exactly the statement that these cannot compete. A tile holding
+        // two decomposing minerals runs both, in full.
+        for (i in DECOMPOSITIONS.indices) {
+            val reaction = DECOMPOSITIONS[i]
+            val consumed = reaction.decomposed(layer[tile, reaction.reactant], kelvin)
+            if (consumed <= 0L) continue
+
+            val parts = reaction.split(consumed)
+            layer.add(tile, reaction.reactant, -consumed)
+            for (p in reaction.products.indices) {
+                val species = reaction.products[p].first
+                val mass = parts[p]
+                if (mass <= 0L) continue
+                val fluid = species.fluid
+                if (fluid != null) ventGas(fluid, intoAir = mass, fromLayer = mass) else layer.add(tile, species, mass)
+            }
+
+            released += applyEnthalpy(layer, tile, -reaction.enthalpy(consumed))
         }
     }
 
-    return if (toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L && toSolidEnergy == 0L) {
+    return if (toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L && toSolidEnergy == 0L && released == 0L) {
         ChemistryStep.NOTHING
     } else {
-        ChemistryStep(toGasMass, toGasEnergy, toSolidMass, toSolidEnergy)
+        ChemistryStep(toGasMass, toGasEnergy, toSolidMass, toSolidEnergy, released)
     }
+}
+
+/**
+ * Puts [delta] of reaction energy into the matter at [tile] and reports what was actually put.
+ *
+ * Positive is a reaction warming what it happened to; negative is one cooling it. The two are the
+ * same arithmetic and it is written once, because a sign convention with two implementations is a
+ * sign convention with one bug.
+ *
+ * ⚠️ **An endothermic reaction may not drive a tile below zero energy**, which is below absolute
+ * zero and would read back as a nonsensical temperature for as long as the matter sat there. It is
+ * clamped, and the clamp is why this returns a value rather than being a statement: what the ledger
+ * must hear is what was *taken*, not what was asked for.
+ *
+ * In practice the clamp is nearly unreachable and is a guard rather than a mechanism — a pass
+ * converts a fraction of a per cent of the matter, so the energy it draws is a fraction of a per
+ * cent of what the matter holds, and a reaction that cools its own feed simply drops below its onset
+ * and stops. That is the whole loop a thermal decomposer exists to fight: calcining takes more
+ * energy per kilogram than the rock holds at its own calcining temperature, so the element has to
+ * keep supplying it or the reaction stalls.
+ */
+private fun applyEnthalpy(layer: StuffLayer, tile: TileIndex, delta: Long): Long {
+    if (delta == 0L) return 0L
+    val applied = if (delta < 0L) maxOf(delta, -layer.energyAt(tile)) else delta
+    if (applied == 0L) return 0L
+    layer.addEnergy(tile, applied)
+    return applied
 }
 
 /**
@@ -187,9 +261,10 @@ private fun airMassAt(air: MassArray, tile: TileIndex): Long {
 }
 
 /**
- * The coldest any reaction starts at, so a cold tile is rejected without asking each one.
+ * The coldest any reaction of any kind starts at, so a cold tile is rejected without asking each one.
  *
- * Derived from [OXIDATIONS] rather than written down, because a reaction added below this and a
- * constant left above it would be a reaction that silently never runs.
+ * Derived from **both** tables rather than written down, because a reaction added below a
+ * hand-written constant would be a reaction that silently never ran — and with two tables that is
+ * twice as easy to do and no easier to notice.
  */
-private val LOWEST_ONSET: Int = OXIDATIONS.minOf { it.onsetKelvin }
+private val LOWEST_ONSET: Int = minOf(OXIDATIONS.minOf { it.onsetKelvin }, LOWEST_DECOMPOSITION_ONSET)
