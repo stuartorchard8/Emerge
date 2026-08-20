@@ -67,3 +67,4 @@ agent-out/
 
 # Cyto campaign progress (local player state)
 campaign-progress
+/.claude/worktrees/
