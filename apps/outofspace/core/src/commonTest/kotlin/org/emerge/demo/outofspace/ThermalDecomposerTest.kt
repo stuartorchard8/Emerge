@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +55,24 @@ class ThermalDecomposerTest {
     }
 
     /**
+     * The world at the moment the chamber hands its charge on, or a failure saying it never did.
+     *
+     * Waits on the **event** rather than on a tick count, because the dwell is a measured quantity
+     * now — it depends on the charge's mass, the element's power and the room — and a test that
+     * pinned it to a number would be re-pinned by every tuning pass. It also lets the assertions
+     * about a hot charge run while it is still hot: left sitting in the output store the charge
+     * cools into the room, exactly as it should, and a fixed run length would be measuring that.
+     */
+    private fun runUntilHandedOn(state: VesselState): VesselState {
+        var s = state
+        repeat(SETTLING_TICKS) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            if (s.inStore(centre, BufferRole.Product) != null) return s
+        }
+        throw AssertionError("the charge was never handed on within $SETTLING_TICKS ticks")
+    }
+
+    /**
      * A sealed box with one decomposer in it and [charge] already in its input hopper.
      *
      * ⚠️ **The charge goes in before the state is constructed**, so `baselineCargoMass` counts it.
@@ -61,8 +80,8 @@ class ThermalDecomposerTest {
      * assertions below would be measuring the fixture rather than the machine.
      *
      * Sealed because the room's air is a reagent and a breach is a second reason for it to change —
-     * and because the element heats the *tile*, so how well the box holds heat is part of what is
-     * under test.
+     * and because the charge bleeds its heat into the box and the box into the room, so how well
+     * the vessel holds heat is part of what is under test.
      */
     private fun withCharge(charge: Mixture, setTemperature: Int = 1200): VesselState {
         val deck = DeckArray(grid)
@@ -120,6 +139,9 @@ class ThermalDecomposerTest {
         assertNotNull(store(loaded, BufferRole.Inside), "the charge did not arrive in the chamber")
 
         val warmed = run(loaded, HEATING_TICKS)
+        // Still in the chamber and warmer than it went in. The charge is a full hopper on purpose:
+        // a light one is at temperature within a tick or two and there is no ramp left to watch.
+        assertNotNull(warmed.inStore(centre, BufferRole.Inside), "the charge was handed on before it could be watched")
         assertTrue(
             warmed.buffers.stuff.kelvinAt(chamber()) > loaded.buffers.stuff.kelvinAt(chamber()),
             "the element did not warm the charge",
@@ -127,21 +149,33 @@ class ThermalDecomposerTest {
     }
 
     @Test
-    fun `the element stops when the charge arrives, and the box then cools`() {
-        // The regulation. It reads the *charge*, so the box it heats through overshoots — which is
-        // what a furnace does, and is why the machine is a waste-heat source. What must be true is
-        // that the element stops: once there is nothing in the chamber below the setpoint, the box
-        // has no more energy coming in and starts bleeding into the room.
+    fun `the element never drives the charge past the setpoint`() {
+        // The regulation, and it is by construction: the element may put in at most the gap the
+        // charge still has. Without that cap a light charge would be blown hundreds of kelvin past
+        // its setpoint by one tick of an element sized for a full hopper — and it would react on
+        // the way, so the overshoot would not merely be untidy, it would change what came out.
         val setpoint = 1200
-        val settled = run(withCharge(cold(Species.Calcite), setTemperature = setpoint), SETTLING_TICKS)
-        assertNotNull(store(settled, BufferRole.Product), "the charge never finished, so nothing was regulated")
+        val done = runUntilHandedOn(withCharge(cold(Species.Calcite, LIGHT_CHARGE), setTemperature = setpoint))
 
-        val hot = settled.deck.stuff.kelvinAt(chamber())
-        val later = run(settled, HEATING_TICKS * 4).deck.stuff.kelvinAt(chamber())
-        assertTrue(later < hot, "the element kept running with an empty chamber: ${hot}K then ${later}K")
+        val productTile = bufferTile(grid, done.deck[centre]!!, centre, BufferRole.Product)!!
         assertTrue(
-            hot < setpoint * 2,
-            "the box ran away rather than overshooting: ${hot}K against a ${setpoint}K setpoint",
+            done.buffers.stuff.kelvinAt(productTile) <= setpoint,
+            "the charge overshot: ${done.buffers.stuff.kelvinAt(productTile)}K against a ${setpoint}K setpoint",
+        )
+    }
+
+    @Test
+    fun `the heat leaks into the machine rather than staying in the charge for ever`() {
+        // The element is *in* the chamber, so the charge is what gets hot and the firebrick is what
+        // the heat then bleeds into — slowly, at the buffer's own contact conductance. A machine
+        // that stayed at ambient while its contents glowed would mean the casing was not thermally
+        // connected to what it holds, which is the bug this arrangement could plausibly have.
+        val done = runUntilHandedOn(withCharge(cold(Species.Calcite)))
+        val warmed = run(done, HEATING_TICKS * 4)
+
+        assertTrue(
+            warmed.deck.stuff.kelvinAt(chamber()) > Temperature.AMBIENT_KELVIN,
+            "the machine never felt the charge it was holding",
         )
     }
 
@@ -149,7 +183,7 @@ class ThermalDecomposerTest {
     fun `a charge that reaches the setpoint is handed on`() {
         // "At temperature" is the dwell now. `ticksPerAction` is gone, and how long a charge stays
         // is how long it takes to heat — a real quantity that depends on its mass and its room.
-        val done = run(withCharge(cold(Species.Calcite)), SETTLING_TICKS)
+        val done = runUntilHandedOn(withCharge(cold(Species.Calcite)))
 
         val product = store(done, BufferRole.Product)
         assertNotNull(product, "the charge never came out of the chamber")
@@ -161,8 +195,7 @@ class ThermalDecomposerTest {
     fun `a charge comes out as hot as the chamber left it`() {
         // The heat goes with the matter, here as everywhere. A machine that handed on a charge at
         // ambient would be destroying the energy it just spent several hundred ticks putting in.
-        val done = run(withCharge(cold(Species.Calcite)), SETTLING_TICKS)
-        assertNotNull(store(done, BufferRole.Product), "nothing was handed on")
+        val done = runUntilHandedOn(withCharge(cold(Species.Calcite)))
 
         val productTile = bufferTile(grid, done.deck[centre]!!, centre, BufferRole.Product)!!
         assertTrue(
@@ -257,15 +290,22 @@ class ThermalDecomposerTest {
         const val SETTLING_TICKS = 900
 
         /**
-         * The charge, deliberately small.
+         * The charge: a full hopper, so that heating it is something with a duration.
          *
-         * ⚠️ **The dwell scales with the mass**, because [org.emerge.demo.outofspace.world.BUFFER_CONTACT_CONDUCTANCE]
-         * is a contact rather than a time — a heavier charge has more to warm through the same
-         * contact. Ten kilograms is a fraction of a belt-load and takes some seven hundred ticks;
-         * a full four-tonne chamber takes long enough that no test may wait for it. That is a real
-         * property of the machine and not a fixture convenience, and it is the number to look at
-         * first if a decomposer ever feels slow in play.
+         * ⚠️ **The dwell scales with the mass**, because the element's power is fixed and a heavier
+         * charge has more to warm. `HEATER_POWER` is sized against exactly this — a full chamber
+         * climbing a couple of kelvin a tick — so the ramp here is a few hundred ticks and can be
+         * watched. That is a real property of the machine rather than a fixture convenience.
          */
-        val CHARGE = 10L * Budget.KILOGRAM
+        val CHARGE = MACHINE_BUFFER_CAP
+
+        /**
+         * A light charge, which reaches its setpoint almost at once.
+         *
+         * The interesting case for the regulation: one tick of an element sized for [CHARGE] carries
+         * enough energy to take this far past the temperature the player asked for, so it is the
+         * charge that would show an uncapped element up.
+         */
+        val LIGHT_CHARGE = 10L * Budget.KILOGRAM
     }
 }

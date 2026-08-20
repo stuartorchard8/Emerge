@@ -404,32 +404,35 @@ you have thought about the ventilation.
 
 ## What the build decided that the scope did not
 
-- ⚠️ **The element heats the tile, not the charge.** `heat()` hands the energy to the solid-heat
-  solver, which shares it between everything on the tile — the firebrick casing, the charge, the
-  room. So the setpoint is harder to reach in a draughty place and the machine warms what is around
-  it, and none of that needed a rule: it is the heat solver that was already there. Writing straight
-  into the buffer would have been one line shorter and would have made the casing decoration.
-- ⚠️ **The thermostat reads the charge; the box overshoots, and that is a furnace.** The walls run
-  hotter than the contents because the contents are heated *through* them — measured at about 1400 K
-  for a 1200 K setpoint. The element stops the tick the charge arrives, and everything above the
-  charge's temperature then bleeds into the room.
-- ⛔ **Do not throttle the element to the charge's own shortfall.** It looks like prudence and it is a
-  bug: nine tiles of firebrick outweigh a chamberful of rock by something like fifty to one, so the
-  cap binds far below the power needed to warm the box at all and the machine crawls — measured at
-  a sixth of the intended rate before it was found. It cost a full debugging pass.
-- ⚠️ **`HEATER_POWER` is a game dial and is written as one.** "A full chamber climbing N kelvin a
-  tick" would be a derivation twice over false: the energy does not go into the charge, and four
-  tonnes of rock to 900 K is 3.2 GJ, which a real element delivers over hours rather than over the
-  ten seconds of play this is sized for.
+- ⚠️ **The element is *in* the chamber: it heats the charge, and the charge heats everything else.**
+  `Work.heatBuffer` puts the energy straight into the buffer's stuff, so most of it stays in the
+  material and the casing gets what bleeds out through `BUFFER_CONTACT_CONDUCTANCE` — slowly — and
+  the room gets what bleeds out of the casing. Stu's call, and the right one: modelled properly the
+  element would be a third thermal body warming both the charge and the casing, and this gives the
+  behaviour that was actually wanted for none of the machinery.
+
+  It was built the other way round first — `heat()` into the tile, letting the solid-heat solver
+  share it out — which is more nearly correct and feels worse. A charge warmed *through* nine tiles
+  of firebrick lags its box by hundreds of kelvin and takes thousands of ticks to catch up, and the
+  box has to overshoot to ~1400 K to drive a 1200 K charge at all.
+- ⚠️ **The shortfall is the cap, and it only became correct when the element moved inside.** Never
+  more than the gap the charge still has, so a light charge cannot be blown past its setpoint by one
+  tick of an element sized for a full hopper. Pointed at the *tile* that same cap is a bug — it
+  binds against a firebrick box that outweighs a chamberful of rock about fifty to one, and the
+  machine crawls at a sixth of the intended rate. That cost a full debugging pass, and it is worth
+  knowing that the two decisions are coupled: the cap and the target have to agree.
+- **`HEATER_POWER` is derived, and honestly so**: a full chamber climbing a couple of kelvin a tick.
+  The derivation is only true because the energy reaches the charge. ⚠️ Four tonnes of rock to 900 K
+  is 3.2 GJ, which a real element delivers over hours rather than the seconds this is sized for —
+  the game does not agree with the world about time, and `HEATER_KELVIN_PER_TICK` is the dial.
+- ⚠️ **The dwell scales with the charge's mass**, because the element's power is fixed and a heavier
+  charge has more to warm. A full hopper is a few hundred ticks; a light one is at temperature almost
+  at once. Physically right, and free.
 - ⛔ **`heat()` throws away seven ticks in eight.** It accumulates into a per-tick array that the heat
   step reads every `HEAT_PERIOD`, and nothing carries it forward in between. **This is pre-existing
-  and affects every machine's waste heat**, not just this one — a processor has always lost 7/8 of
-  its furnace losses. It is a factor of eight buried inside `HEATER_POWER`, so fixing it would make
-  every decomposer eight times as powerful overnight. Worth fixing; not fixed here.
-- ⚠️ **The dwell scales with the charge's mass**, because `BUFFER_CONTACT_CONDUCTANCE` is a *contact*
-  rather than a time. Ten kilograms takes some seven hundred ticks; a full four-tonne chamber takes
-  long enough that no test may wait for it. That is the physically right behaviour and it is also
-  the number to reach for if a decomposer feels slow in play — its own kdoc says so.
+  and affects every machine's waste heat** — a processor has always lost 7/8 of its furnace losses.
+  The decomposer no longer goes through it, so this is now purely a finding about everything else.
+  Worth fixing; not fixed here.
 - **A save's `carry` and `progress` are simply not read.** They belonged to a tick counter that no
   longer decides anything; the setpoint is the whole of what a decomposer stores now. The same
   disposal the extractor's second store got, and Stu's precedent.

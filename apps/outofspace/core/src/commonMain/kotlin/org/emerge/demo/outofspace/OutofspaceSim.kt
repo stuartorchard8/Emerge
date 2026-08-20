@@ -750,17 +750,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * on the way is between the matter and its conditions, and is decided by the ambient chemistry
      * pass over the buffer layer exactly as it would be for the same matter on a belt.
      *
-     * ⚠️ **The element heats the tile, not the charge.** [heat] hands the energy to the solid-heat
-     * solver, which shares it between everything sharing the tile — the firebrick casing, the charge
-     * in the chamber, the air in the room. So the setpoint is *harder to reach in a draughty place*,
-     * the machine warms the room it stands in, and none of that needed a rule: it is the heat solver
-     * that was already there. Writing the energy straight into the buffer would have been simpler,
-     * one line shorter, and would have made the casing decoration.
+     * ⚠️ **The element heats the charge**, through [Work.heatBuffer] — it is *in* the chamber rather
+     * than a jacket around it. So most of the energy stays in the material, and the casing and then
+     * the room get what bleeds out of it through the buffer's own contact conductance. Modelled
+     * properly the element would be a third thermal body warming both; this is the simplification
+     * that gives the same behaviour for none of the machinery.
      *
      * ⚠️ **The demand is what the charge is short by, so the thermostat regulates by construction.**
-     * At or above the setpoint the element does not run at all. That is also the cap on a single
-     * tick's energy, so a hot element cannot overshoot in one step even though it is heating a tile
-     * rather than the charge — it can only ever ask for the gap it can still see.
+     * At or above the setpoint the element does not run at all, and below it the shortfall is also
+     * the cap on a single tick's energy — so a light charge cannot be blown past its setpoint by an
+     * element sized for a full hopper. That cap is only *correct* because the energy lands in the
+     * charge: pointed at the tile instead it would bind against nine tiles of firebrick that outweigh
+     * a chamberful of rock fifty to one, and the machine would crawl.
      *
      * ⛔ **"At the setpoint" is the dwell now, and `ticksPerAction` is gone.** How long a charge
      * stays is how long it takes to heat, which is a real quantity that depends on the mass, the
@@ -782,18 +783,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         if (activation <= 0) return m
 
-        // The thermostat, and it reads the **charge** — the thing the player set a temperature for.
+        // The thermostat. It reads the charge and it heats the charge, which is the one arrangement
+        // in which the two are the same question — see [Work.heatBuffer] for why the element is
+        // modelled as being *in* the chamber rather than around it.
         //
-        // ⚠️ **The element runs at full power, and the box overshoots.** That is deliberate and it is
-        // what a furnace does: the walls run hotter than the charge, because the charge is heated
-        // *through* them. Throttling the element to the charge's own shortfall instead looks like
-        // prudence and is a bug — a chamberful of rock holds a fraction of what nine tiles of
-        // firebrick hold, so the cap binds far below the power needed to warm the box at all, and
-        // the machine crawls. Overshoot needs no guard beyond this line: the element stops the tick
-        // the charge arrives, and everything above the charge's temperature then bleeds into the
-        // room, which is exactly the waste-heat story the machine is supposed to have.
-        if (buffers.stuff.kelvinAt(chamber) < m.setTemperature) {
-            heat(tile, scaledRatio(activation.toLong(), SignalField.FULL.toLong(), HEATER_POWER))
+        // ⚠️ **The shortfall is the cap, and that is what makes this regulate.** Never more than the
+        // gap the charge still has, so a small charge cannot be blown past its setpoint by a full
+        // tick of an element sized for a chamberful. The heat that then leaks into the firebrick and
+        // out into the room is conduction doing it, at the buffer's own contact conductance, which
+        // is the slow bleed the machine is supposed to have rather than a rule written here.
+        val shortfall = buffers.stuff.heatCapacityAt(chamber) * (m.setTemperature - buffers.stuff.kelvinAt(chamber))
+        if (shortfall > 0L) {
+            heatBuffer(chamber, minOf(shortfall, scaledRatio(activation.toLong(), SignalField.FULL.toLong(), HEATER_POWER)))
             return m
         }
 
@@ -1207,6 +1208,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun heat(tile: TileIndex, energy: Long) {
             if (energy <= 0L || tile.index !in heatAdded.indices) return
             heatAdded[tile.index] += energy
+            generatedEnergy += energy
+        }
+
+        /**
+         * Charges [energy] straight into what the buffer at [tile] is holding — an element inside
+         * the chamber rather than a jacket around it.
+         *
+         * The counterpart to [heat], and the difference is *where the energy lands first*. A
+         * machine's waste heat is made in its structure and has to conduct out through the casing;
+         * a heating element is in among the charge, so the charge is what gets warm and the casing
+         * is what the heat then leaks *into*, slowly, through
+         * [org.emerge.demo.outofspace.world.BUFFER_CONTACT_CONDUCTANCE].
+         *
+         * ⚠️ **A simplification, and a deliberate one.** Modelled properly the element would be its
+         * own thermal body warming both the charge and the casing; this makes it part of the charge.
+         * What it buys is the behaviour actually wanted — most of the heat stays in the material,
+         * a slow bleed warms the machine and then the room — for none of the machinery.
+         *
+         * ⚠️ **Guarded on occupancy**, because `addEnergy` allocates a row for a non-zero energy and
+         * an unguarded write would leave heat sitting on an empty store. The same trap
+         * `BodySlot.RailCargo`'s write-back documents.
+         *
+         * ⚠️ **This does not go through [heatAdded]**, so unlike [heat] none of it is lost between
+         * heat steps — see the note on `HEATER_POWER`.
+         */
+        fun heatBuffer(tile: TileIndex, energy: Long) {
+            if (energy <= 0L || !buffers.stuff.occupies(tile)) return
+            buffers.stuff.addEnergy(tile, energy)
             generatedEnergy += energy
         }
 

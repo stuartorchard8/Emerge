@@ -20,10 +20,11 @@ import org.emerge.demo.outofspace.world.Wiring
  * truth about what it is for.
  *
  * Its [org.emerge.demo.outofspace.world.Material.Firebrick] casing stops being decoration at the
- * same moment: the element heats the *tile*, the solid-heat solver shares that between the casing,
- * the charge and the room, and a decomposer in a draughty corridor takes longer to reach its
- * setpoint than one in a sealed cell. That is also the argument for putting it somewhere the
- * ventilation has been thought about — its gaseous products leave by the room, not by a belt.
+ * same moment. The element is modelled as being *in* the chamber, so the charge is what gets hot and
+ * the casing is what the heat then bleeds into — slowly, at the buffer's own contact conductance —
+ * and from there into the room. A decomposer working steadily is a heat source you have to plan
+ * around, and that is also the argument for putting it somewhere the ventilation has been thought
+ * about: its gaseous products leave by the room, not by a belt.
  */
 data class ThermalDecomposer(
     override val center: TileIndex,
