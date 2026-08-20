@@ -2473,6 +2473,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // nothing, and until this was passed in the graph could not tell the difference.
                 { tile -> !rail.isEmpty(tile) },
                 appetites,
+                // ⛔ **Unpaid track is a wall to the graph as well as to a lump.** The same set the
+                // acceptance rows above make `stopsTraffic`, said once more where the edges are
+                // decided — a route drawn through a ghost rail is not a route. See [FlowGraph.build].
+                walls = ghosts,
             )
 
             // Every lump in the flow, read off the layer **once**. The whitelist walk asks what is
@@ -2513,6 +2517,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     grid,
                     { tile -> !rail.isEmpty(tile) },
                     appetites,
+                    walls = ghosts,
                 )
                 whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             }

@@ -184,6 +184,22 @@ class FlowGraph internal constructor(
          * has to be able to take that edge back or it would starve on a network that plainly ought
          * to feed it. Only leading protects, and only a producer confers it.
          *
+         * [walls] are tiles material never comes out the **far side** of — unpaid track, and
+         * nothing else. See [Acceptance.stopsTraffic]: a ghost *rail* is a free length of track
+         * until it is paid for, so a network must not be routable over one. A wall may still feed
+         * another wall, which is a drawn run building itself; what it may not do is deliver into
+         * finished track beyond. A ghost *machine* stands on track that is paid for and is not a
+         * wall at all.
+         *
+         * The graph could not say that, and a route through four of them was claimed as an ordinary
+         * through-route. Stu's save: a titanium storage on the left, four rail ghosts, and a storage
+         * construction site away to the right. The site's walk ran up the corridor, straight across
+         * every ghost, and reached the storage — which, being a real producer, then conferred
+         * [leading] on the whole run and made it unrevocable. So each ghost's only edge pointed
+         * *away* from itself toward a site the titanium could never reach, and the iron arriving at
+         * the junction beside them could not turn back. Cutting one rail four tiles away, at the
+         * site's own door, freed them.
+         *
          * Sinks are traversed one at a time, each draining the queue completely before the next
          * starts. That is not an optimisation detail — the marks laid down by one traversal are what
          * the next one is forbidden to disturb.
@@ -196,6 +212,7 @@ class FlowGraph internal constructor(
             grid: Grid,
             carrying: (TileIndex) -> Boolean = { false },
             appetites: Appetites = Appetites.BLIND,
+            walls: Set<TileIndex> = emptySet(),
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
 
@@ -252,7 +269,7 @@ class FlowGraph internal constructor(
                     // taken back is a question about what *this* consumer has to gain, and the
                     // consumer is the sink the walk started at — not the tile it has reached.
                     val cls = appetite.classOf(sink)
-                    traverse(sink, cls, allowed, leading, tileSet, sources, sinks, sourceSide, linked, grid)
+                    traverse(sink, cls, allowed, leading, tileSet, sources, sinks, walls, sourceSide, linked, grid)
                 }
             }
 
@@ -281,6 +298,7 @@ class FlowGraph internal constructor(
             tileSet: Set<TileIndex>,
             sources: Set<TileIndex>,
             sinks: Set<TileIndex>,
+            walls: Set<TileIndex>,
             sourceSide: SourceSide,
             linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
@@ -322,6 +340,32 @@ class FlowGraph internal constructor(
                     if (!linked(at, dir)) continue
                     val next = grid.neighbour(at, dir)
                     if (next == TileIndex.NONE || next !in tileSet) continue
+
+                    // ⛔ **Material does not come out the far side of unpaid track.** That is the
+                    // anti-exploit stated as a shape instead of one lump at a time: a ghost rail is
+                    // a free length of track until it is paid for, so a player must not be able to
+                    // route a network over one — see [Acceptance.stopsTraffic]. The sim has always
+                    // refused each lump at the door; the *graph* went on claiming routes straight
+                    // across, and a claim it cannot honour is not free.
+                    //
+                    // Stu's save: a titanium storage, four rail ghosts, and a storage construction
+                    // site away to the right. The site's walk ran up the corridor, across every
+                    // ghost, and reached the storage — a real producer, which then conferred
+                    // [leading] on the whole run and made it unrevocable. So each ghost's only edge
+                    // pointed *away* from itself, toward a site the titanium could never reach, and
+                    // the iron arriving at the junction beside them could not turn back. Cutting one
+                    // rail four tiles away, at the site's own door, freed them.
+                    //
+                    // ⚠️ **A wall may still feed another wall, and must.** What crosses a ghost is
+                    // what the ghost is made of — that is the only thing it admits — so the tile
+                    // beyond has a claim on it exactly when it is unpaid track too. That is a run of
+                    // ghosts building itself, several lumps deep, and forbidding it outright drops
+                    // the run to single file. Measured: `GhostTest` idles four rail periods.
+                    //
+                    // ⚠️ **Unpaid track and nothing else.** A ghost *machine* stands on track that is
+                    // finished and paid for; it declines what it cannot use without standing in the
+                    // road, and is deliberately not in [walls].
+                    if (next in walls && at !in walls) continue
 
                     // ⛔ **A walk never hands its own seed a road out.** Every other rule about
                     // which way an edge should point is stated in terms of a producer, and on a

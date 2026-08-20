@@ -197,5 +197,8 @@ fun VesselState.railFlow(): FlowGraph {
         grid,
         { tile -> !rail.isEmpty(tile) },
         railAppetites(grid, ghosts, machineGhosts) { rail.resourceAt(it) },
+        // ⛔ Unpaid track, and nothing else: a ghost rail is a wall to the graph — see
+        // [FlowGraph.build]. Ghost *machines* stand on finished track and are deliberately absent.
+        walls = ghosts,
     )
 }
