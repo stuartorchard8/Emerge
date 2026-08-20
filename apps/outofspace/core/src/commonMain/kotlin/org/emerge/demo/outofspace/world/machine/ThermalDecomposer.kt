@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.chem.BASE_RATE
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
@@ -67,4 +68,38 @@ data class ThermalDecomposer(
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+
+    companion object {
+        /**
+         * The setpoints the panel offers, coldest first.
+         *
+         * ⚠️ **A ladder of round numbers, not the reaction onsets themselves.** Offering the onsets
+         * would look tidier and would be a trap: a reaction *at* its onset runs at [BASE_RATE] and
+         * essentially nothing happens, so every setpoint on the dial would be the slowest possible
+         * one for the thing it names. What the player needs is headroom above an onset, which is what
+         * the gaps here are.
+         *
+         * ⚠️ **`ThermalDecomposerUiTest` insists every reaction in every table has a rung strictly
+         * above its onset**, so a row added hotter than 2400 K is a test failure rather than a
+         * reaction the dial silently cannot reach.
+         *
+         * The bottom rung is off, near enough: nothing in either table happens at 300 K, so it is how
+         * a decomposer is told to stop without unwiring it.
+         */
+        val SETPOINTS: List<Int> = listOf(300, 900, 1100, 1250, 1400, 1600, 1900, 2200, 2400)
+
+        /**
+         * The residence times the panel offers, in **ticks**.
+         *
+         * ⚠️ **Ticks, deliberately and temporarily.** This is the first thing in the game to name a
+         * duration, and what a tick should be called in front of a player — seconds, cycles, anything
+         * — is not decided (Stu, 2026-08-20). Naming it wrong now would put the wrong word in a save
+         * file and in every screenshot; naming it `ticks` is obviously provisional, which is the
+         * honest state of it.
+         *
+         * Zero first because zero is the default and the old behaviour: hand the charge on the moment
+         * it is at temperature.
+         */
+        val DWELLS: List<Int> = listOf(0, 100, 250, 500, 1_000, 2_500, 5_000)
+    }
 }

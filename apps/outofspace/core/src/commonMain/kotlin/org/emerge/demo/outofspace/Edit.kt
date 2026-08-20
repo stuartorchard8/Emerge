@@ -70,6 +70,17 @@ sealed interface Edit {
      */
     data class LockStorage(val tile: TileIndex, val minPercent: Int?) : Edit
 
+    /**
+     * Retunes a thermal decomposer: how hot to hold a charge, and how long to hold it there.
+     *
+     * Both dials in one edit because they are one decision — the pair is the recipe, and a player
+     * moving one while the other is mid-flight would be applying half a setting. It carries absolute
+     * values rather than a delta for the reason every other edit does: the queue may be applied a
+     * tick after it was raised, and a delta against a machine that has since changed is a different
+     * setting than the one the player saw.
+     */
+    data class TuneDecomposer(val tile: TileIndex, val setTemperature: Int, val dwellTicks: Int) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

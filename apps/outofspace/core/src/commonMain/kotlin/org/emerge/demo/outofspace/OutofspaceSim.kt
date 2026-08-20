@@ -1461,6 +1461,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val m = deck[tile]
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
+                is Edit.TuneDecomposer -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is ThermalDecomposer) {
+                        // ⚠️ **Retuning restarts the dwell.** A charge part-way through a hold that
+                        // the player has just changed has not served the new time, and carrying its
+                        // progress across would make the first charge after every adjustment come out
+                        // to a setting nobody chose. Cheap to reason about, and the alternative is a
+                        // rule about which changes count.
+                        deck[tile] = m.copy(
+                            setTemperature = edit.setTemperature,
+                            dwellTicks = edit.dwellTicks,
+                            heldTicks = 0,
+                        )
+                    }
+                }
+
                 is Edit.LockStorage -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]

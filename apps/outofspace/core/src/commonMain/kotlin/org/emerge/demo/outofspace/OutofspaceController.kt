@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
@@ -112,7 +113,15 @@ class OutofspaceController(
             field = value
         }
 
-    /** The machine the wiring panel is editing, or -1. Cleared whenever it stops being a machine. */
+    /**
+     * The machine the machine panels are looking at, or -1. Cleared whenever it stops being a machine.
+     *
+     * ⚠️ **Not the wiring panel's private business, though it used to be.** Selection was set only
+     * under [Tool.Wire], which was fine while wiring was the only thing a selected machine was *for*.
+     * It stopped being fine the moment a second panel wanted one: the storage lock stands down while
+     * the wire tool is out — as it must, or two panels fight over the same corner — so it could never
+     * appear at all. Built, saved, tested, and unreachable. See [select].
+     */
     var selected: TileIndex = TileIndex.NONE
         private set
 
@@ -129,16 +138,33 @@ class OutofspaceController(
      */
     private var dragFrom: TileIndex = TileIndex.NONE
 
-    /** Left-click behaviour, which depends on the tool. */
+    /**
+     * Points the machine panels at whatever is under [tile], or at nothing if that is bare deck.
+     *
+     * Resolves through [VesselState.occupancy] so that clicking any part of a five-tile furnace
+     * selects the furnace rather than nothing — a machine is selected by touching it anywhere, which
+     * is the only rule a player would guess.
+     */
+    fun select(tile: TileIndex) {
+        selected = state.occupancy[tile]
+    }
+
+    /**
+     * Left-click behaviour, which depends on the tool.
+     *
+     * ⚠️ **Selection happens whatever the tool is**, and then the tool does its own work. Every panel
+     * that shows the settings of one machine needs a way to say *which* machine, and hanging that off
+     * a single tool meant a panel could only exist for that tool — which is precisely how the storage
+     * lock came to be unreachable. Clicking bare deck selects nothing, so a click away dismisses.
+     */
     fun apply(tile: TileIndex) {
+        select(tile)
         when (tool) {
             Tool.Build -> {
                 place(tile)
                 if (brush is Brush.Run) dragFrom = tile
             }
-            // Resolve to the machine's own tile, so clicking any part of a five-tile furnace
-            // selects the furnace rather than nothing.
-            Tool.Wire -> selected = state.occupancy[tile]
+            Tool.Wire -> {}
             Tool.Delete -> removeAt(tile)
             Tool.Cancel -> cancelAt(tile)
             // A drag, like building, and the exact inverse of it: what the stroke severs is the
@@ -227,6 +253,33 @@ class OutofspaceController(
         val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.DEFAULT_PERCENT) else it }
         lockStorage(tile, all[((at + delta) % all.size + all.size) % all.size])
     }
+
+    /**
+     * Steps a decomposer's setpoint through [ThermalDecomposer.SETPOINTS], wrapping.
+     *
+     * Wrapping, and one direction per tap, because that is what the storage threshold does and a
+     * second interaction idiom for the same shape of choice would be one to learn for no reason.
+     */
+    fun cycleDecomposerTemperature(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? ThermalDecomposer ?: return
+        val all = ThermalDecomposer.SETPOINTS
+        // `indexOf` misses a setpoint that came from a save written before this ladder existed, or
+        // by hand. Falling to the nearest rung at or below it keeps the tap meaningful instead of
+        // silently jumping to the coldest.
+        val at = all.indexOf(m.setTemperature).let { if (it >= 0) it else all.indexOfLast { rung -> rung <= m.setTemperature }.coerceAtLeast(0) }
+        pending.add(Edit.TuneDecomposer(tile, all[wrap(at + delta, all.size)], m.dwellTicks))
+    }
+
+    /** Steps a decomposer's residence time through [ThermalDecomposer.DWELLS], wrapping. */
+    fun cycleDecomposerDwell(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? ThermalDecomposer ?: return
+        val all = ThermalDecomposer.DWELLS
+        val at = all.indexOf(m.dwellTicks).let { if (it >= 0) it else all.indexOfLast { rung -> rung <= m.dwellTicks }.coerceAtLeast(0) }
+        pending.add(Edit.TuneDecomposer(tile, m.setTemperature, all[wrap(at + delta, all.size)]))
+    }
+
+    /** Index [i] brought into `0 until size`, for negative deltas as well as positive ones. */
+    private fun wrap(i: Int, size: Int): Int = ((i % size) + size) % size
 
     /** Cycles which key a button answers to. */
     fun cycleInputKey(tile: TileIndex, delta: Int) {

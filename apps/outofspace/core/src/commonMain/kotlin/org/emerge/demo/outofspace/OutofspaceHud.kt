@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -235,6 +236,7 @@ class OutofspaceHud {
             inspectPanel(controller, if (hovered != TileIndex.NONE) hovered else controller.selected)
             wiringPanel(controller)
             storagePanel(controller)
+            decomposerPanel(controller)
 
             panel(Anchor.BottomRight) {
                 if (canSave) {
@@ -554,6 +556,90 @@ class OutofspaceHud {
                 button("UNLOCK", 0x6B3A3AFFL) { controller.lockStorage(tile, null) }
                 row("tap the bar to raise the threshold", 0x7A7A7AFFL)
             }
+        }
+    }
+
+    /**
+     * The two dials on the selected thermal decomposer: how hot, and how long.
+     *
+     * ⚠️ **Two dials because conversion is asymptotic.** There is no moment at which a charge is
+     * finished — a reaction approaches completion and never arrives — so the machine cannot decide
+     * when to let go and the player says instead. Hotter converts faster but spends more element and
+     * leaks more heat into the room; longer converts more of each charge but throttles throughput.
+     *
+     * ⚠️ **"TICKS" is provisional.** This is the first duration the game shows anybody, and what a
+     * tick should be called in front of a player is not decided — see [ThermalDecomposer.DWELLS].
+     *
+     * Shares the bottom-right corner with the storage lock and the wiring editor, and stands down for
+     * the wire tool exactly as they do. A tile cannot be both a warehouse and a furnace, so the two
+     * machine panels cannot collide.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.decomposerPanel(controller: OutofspaceController) {
+        if (controller.tool == Tool.Wire) return
+        val tile = controller.selected
+        if (tile == TileIndex.NONE) return
+        val machine = controller.state.machineCovering(tile) as? ThermalDecomposer ?: return
+        val grid = controller.state.grid
+        val centre = machine.center
+
+        val chamber = bufferTile(grid, machine, centre, BufferRole.Inside)
+        val charge = chamber?.let { controller.state.buffers.resourceAt(it) }
+        val chargeKelvin = chamber?.let { controller.state.buffers.stuff.kelvinAt(it) } ?: 0
+
+        panel(Anchor.BottomRight, rowHeight = 20f) {
+            title("THERMAL DECOMPOSER  ·  (${grid.xOf(centre)}, ${grid.yOf(centre)})")
+
+            // ⛔ **Not `clauseRow`**, though the storage lock next door uses one. That control is a
+            // *clause* editor — "AT LEAST | 70% | pure" — and its middle cell is a fixed three
+            // characters wide, sized for a comparison operator. "2400 K" and "5000 TICKS" do not fit
+            // in it, and the way they do not fit is to be silently clipped: the panel renders, reads
+            // almost right, and shows the player "NO HOLI".
+            button(
+                listOf("HOLD AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
+                0x2E5A6BFFL,
+            ) { controller.cycleDecomposerTemperature(tile, 1) }
+            button(
+                listOf(
+                    "FOR  " to 0x9A9A9AFFL,
+                    // ⚠️ "TICKS" is provisional — see [ThermalDecomposer.DWELLS].
+                    (if (machine.dwellTicks == 0) "NO HOLD" else "${machine.dwellTicks} TICKS") to 0xFFFFFFFFL,
+                ),
+                0x2E5A6BFFL,
+            ) { controller.cycleDecomposerDwell(tile, 1) }
+
+            gap()
+
+            if (charge == null) {
+                row("(no charge in the chamber)", 0x9A9A9AFFL)
+            } else {
+                // What it is *now*, not what went in — the whole point of the wait is that the
+                // chemistry may have changed it, and a readout naming the input would be describing
+                // something that is no longer there.
+                // Coloured by whether it is *there yet* rather than by how hot it is, because that
+                // is the question the panel is for: below the setpoint the element is still working
+                // and the dwell has not started counting.
+                keyValue(
+                    "CHARGE",
+                    "$chargeKelvin K  (${chargeKelvin - 273}C)",
+                    0x9A9A9AFFL,
+                    if (chargeKelvin >= machine.setTemperature) 0xE0864AFFL else 0x9AC0E0FFL,
+                )
+                // One row per line, like every other caller: `composition` returns a newline-joined
+                // block and a `row` draws a single line, so handing it the whole string renders the
+                // first species and silently swallows the rest.
+                for (line in composition(charge, maxEntries = 3).split('\n')) row(line, 0xC8C8C8FFL)
+                if (machine.dwellTicks > 0) {
+                    keyValue(
+                        "HELD",
+                        "${machine.heldTicks} of ${machine.dwellTicks}",
+                        0x9A9A9AFFL,
+                        if (machine.heldTicks >= machine.dwellTicks) 0x6EE08AFFL else 0xE0A93AFFL,
+                    )
+                }
+            }
+            // ⚠️ No semicolon: the bitmap font has no glyph for one and draws "?" instead. The
+            // interpunct is already used in every panel title, so it is known to exist.
+            row("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
         }
     }
 

@@ -266,6 +266,15 @@ object OutofspaceAgentHarness {
                     println("[agent] watered ${ticks} tick(s) at (${t[1]},${t[2]}) — " +
                         "${fmt(grams(state.injectedAirMass))}g admitted, airBalance ${fmt(grams(state.airBalance))}")
                 }
+                // Selection is a *view* state, not an edit — but several panels only exist for the
+                // selected tile (the storage lock, the decomposer's dials), so without this the
+                // harness can drive those machines and never photograph their controls.
+                "select" -> {
+                    controller.select(if (t.size < 3) TileIndex.NONE else index(t[1], t[2]))
+                    settle()
+                    println("[agent] selected -> ${controller.selected}")
+                }
+
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
                 // `wire <x> <y> <ALWAYS|WIRE> <permille>` — appends one RUN term, which is the whole
                 // of the wiring grammar a script has ever needed. Without it an airlock cannot be
