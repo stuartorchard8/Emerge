@@ -70,8 +70,24 @@ enum class Material(
     /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
     Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 5_200L, roughness = 400L),
 
-    /** Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot. */
-    Firebrick("FIREBRICK", Mixture.of(Species.Quartz to 550L, Species.Aluminum to 450L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
+    /**
+     * Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot.
+     *
+     * ⚠️ **Magnesia and silica, because aluminium cannot be made.** This was quartz and aluminium,
+     * which made the one machine that refines things the one machine that could not be built: Al₂O₃
+     * yields to neither heat nor any reductant in `REDUCTIONS`, and winning aluminium for real means
+     * electrolysis, which means a power network that does not exist yet. Magnesia-silica is what a
+     * basic refractory brick actually is, and both halves are reachable today — quartz is native, and
+     * periclase is the *cheapest* reaction in the game, `Magnesite -> Periclase + CO₂` at 810 K.
+     *
+     * That is the nicer bootstrap as well as the honest one: the first thing a vessel calcines is the
+     * thing that lets it build the calciner.
+     *
+     * ⛔ **Lime would have been the wrong pick** even though calcite is commoner. CaO slakes in any
+     * moisture and CaO–SiO₂ forms low-melting eutectics — a quartz-lime lining is a furnace wall that
+     * dissolves itself. Periclase costs the same to reach and is a real brick.
+     */
+    Firebrick("FIREBRICK", Mixture.of(Species.Periclase to 550L, Species.Quartz to 450L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
     /**

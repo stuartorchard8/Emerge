@@ -66,11 +66,27 @@ class ThermalDecomposerTest {
      */
     private fun runUntilHandedOn(state: VesselState): VesselState {
         var s = state
-        repeat(SETTLING_TICKS) {
+        repeat(DWELL_TICKS) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
             if (s.inStore(centre, BufferRole.Product) != null) return s
         }
-        throw AssertionError("the charge was never handed on within $SETTLING_TICKS ticks")
+        throw AssertionError("the charge was never handed on within $DWELL_TICKS ticks")
+    }
+
+    /**
+     * The same wait, reporting **how long** it took — what the dwell tests compare.
+     *
+     * Separate from [runUntilHandedOn] rather than folded into it, because the two want different
+     * things out of the same loop and a function returning a pair of them would be read wrong by
+     * whichever caller cared about the other half.
+     */
+    private fun ticksUntilHandedOn(state: VesselState): Int {
+        var s = state
+        repeat(DWELL_TICKS) { tick ->
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            if (s.inStore(centre, BufferRole.Product) != null) return tick + 1
+        }
+        return 0
     }
 
     /**
@@ -84,7 +100,7 @@ class ThermalDecomposerTest {
      * and because the charge bleeds its heat into the box and the box into the room, so how well
      * the vessel holds heat is part of what is under test.
      */
-    private fun withCharge(charge: Mixture, setTemperature: Int = 1200): VesselState {
+    private fun withCharge(charge: Mixture, setTemperature: Int = 1200, dwellTicks: Int = 0): VesselState {
         val deck = DeckArray(grid)
         for (x in 0 until grid.width) {
             deck += Hull(grid.tile(x, 0))
@@ -94,7 +110,7 @@ class ThermalDecomposerTest {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }
-        val machine = ThermalDecomposer(centre, Direction.Right, setTemperature = setTemperature)
+        val machine = ThermalDecomposer(centre, Direction.Right, setTemperature = setTemperature, dwellTicks = dwellTicks)
         deck += machine
 
         val buffers = BufferLayer.forDeck(grid, deck)
@@ -323,6 +339,110 @@ class ThermalDecomposerTest {
         )
     }
 
+    // ── The second dial: how long, not just how hot ──────────────────────────
+
+    @Test
+    fun `with no dwell set a charge is handed on the moment it is at temperature`() {
+        // The default is the old behaviour exactly, and that is the point of it being zero: a
+        // decomposer nobody has tuned behaves as it always did, and the dial is opt-in.
+        val done = runUntilHandedOn(withCharge(cold(Species.Calcite, LIGHT_CHARGE), setTemperature = 1200))
+        assertNotNull(store(done, BufferRole.Product), "a charge with no dwell was not handed on")
+    }
+
+    @Test
+    fun `a dwell holds the charge after it is at temperature`() {
+        // Two dials, and this is the second one doing something the first cannot. The charge reaches
+        // the setpoint at the same tick either way; what differs is how long it then sits there.
+        val dwell = 200
+        val plain = withCharge(cold(Species.Calcite, LIGHT_CHARGE), setTemperature = 1200)
+        val patient = withCharge(
+            cold(Species.Calcite, LIGHT_CHARGE),
+            setTemperature = 1200,
+            dwellTicks = dwell,
+        )
+
+        val quick = ticksUntilHandedOn(plain)
+        val slow = ticksUntilHandedOn(patient)
+
+        assertTrue(quick > 0, "the plain charge was never handed on at all")
+        assertTrue(slow > 0, "the held charge was never handed on — is the dwell counting down?")
+
+        // ⚠️ **At least, not exactly, and the gap is the interesting part.** A 200-tick dwell takes
+        // rather longer than 200 ticks of wall clock, because calcining is endothermic: the reaction
+        // keeps knocking the charge back below its setpoint, and the ticks the element spends
+        // climbing back do not count. The dwell is a residence time *at temperature*, so a reaction
+        // that fights the element makes the charge sit there longer than the dial says. That is the
+        // machine being honest, and pinning it to an exact number would be pinning the enthalpy of
+        // calcite to a tick count.
+        assertTrue(
+            slow - quick >= dwell,
+            "a dwell of $dwell ticks held the charge only ${slow - quick} ticks longer",
+        )
+    }
+
+    @Test
+    fun `a longer dwell converts more of the charge`() {
+        // Why anybody would set it. The reaction is asymptotic, so there is no moment at which a
+        // charge is finished — residence time is what buys conversion, and this is the assertion that
+        // the two dials are not redundant.
+        fun limeFrom(dwell: Int): Long {
+            val start = withCharge(cold(Species.Calcite, CALCINING_CHARGE), setTemperature = 1400, dwellTicks = dwell)
+            return bufferMass(run(start, 1200), Species.Lime)
+        }
+
+        val brief = limeFrom(0)
+        val patient = limeFrom(600)
+        assertTrue(brief > 0L, "nothing calcined even before the dwell mattered")
+        assertTrue(
+            patient > brief,
+            "holding the charge 600 ticks longer yielded $patient of lime against $brief — the dwell is not " +
+                "buying any conversion",
+        )
+    }
+
+    @Test
+    fun `the dwell does not run while the charge is still heating`() {
+        // What makes it a *residence* time rather than a delay. A charge below its setpoint is not
+        // being held at anything, so the clock must not be running — otherwise a cold charge in a
+        // slow machine would serve its whole dwell on the way up and leave the instant it arrived.
+        val ticks = 400
+        val cool = run(withCharge(cold(Species.Calcite, CHARGE), setTemperature = 3000, dwellTicks = 50), ticks)
+        val machine = cool.deck[centre] as ThermalDecomposer
+
+        assertTrue(
+            cool.buffers.stuff.kelvinAt(chamber()) < 3000,
+            "the fixture is wrong: the charge reached 3000 K, so there was no ramp to test",
+        )
+        assertEquals(0, machine.heldTicks, "the dwell ran while the charge was still climbing")
+    }
+
+    @Test
+    fun `both dials survive a save`() {
+        val saved = Save.read(
+            Save.write(withCharge(cold(Species.Calcite), setTemperature = 1150, dwellTicks = 250)),
+        )
+        val machine = saved.deck[centre] as ThermalDecomposer
+        assertEquals(1150, machine.setTemperature, "the setpoint did not survive the round trip")
+        assertEquals(250, machine.dwellTicks, "the dwell did not survive the round trip")
+    }
+
+    @Test
+    fun `a charge part way through its dwell survives a save`() {
+        // The half of the state that is easy to forget. Dropping `held` would silently restart every
+        // hold on every load, which is invisible except as a machine that is mysteriously slower in a
+        // reloaded game than it was in a fresh one.
+        var s = withCharge(cold(Species.Calcite, LIGHT_CHARGE), setTemperature = 1200, dwellTicks = 5_000)
+        var held = 0
+        repeat(2_000) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            held = (s.deck[centre] as ThermalDecomposer).heldTicks
+        }
+        assertTrue(held > 0, "the charge never started its dwell, so there is nothing to round trip")
+
+        val saved = Save.read(Save.write(s))
+        assertEquals(held, (saved.deck[centre] as ThermalDecomposer).heldTicks, "the dwell restarted on load")
+    }
+
     @Test
     fun `a setpoint between the two carbonates cracks one and leaves the other`() {
         // Heat as a separator, which is what makes the dial a decision. The same mixed charge at one
@@ -397,6 +517,15 @@ class ThermalDecomposerTest {
          */
         /** A handful of chemistry passes — `CHEM_PERIOD` is 8. */
         const val TICKS = 32
+
+        /**
+         * How long the dwell tests are willing to wait for a hand-off.
+         *
+         * Longer than [SETTLING_TICKS] because a dwell is *meant* to hold a charge past the point the
+         * other tests care about, and a wait sized for a machine with no dwell would fail every one
+         * of them for the reason they exist.
+         */
+        const val DWELL_TICKS = 4_000
 
         const val SETTLING_TICKS = 900
 

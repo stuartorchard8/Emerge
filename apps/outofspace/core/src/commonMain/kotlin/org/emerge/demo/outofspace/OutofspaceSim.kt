@@ -823,13 +823,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             return m
         }
 
-        // At temperature: hand the charge on, if there is anywhere to put it. Re-read rather than
+        // At temperature. Whether it is *finished* is a question with no answer — a reaction
+        // approaches completion asymptotically, so any rule claiming to find the moment a charge is
+        // done is either an invented threshold or a wait that never ends. So the player says how
+        // long instead, and this is where that dial is spent.
+        //
+        // ⚠️ **The dwell only runs here**, below the ramp and below the activation check, which is
+        // what makes it a residence time: a charge still heating is not being held at anything, and
+        // neither is one in a machine with no signal.
+        if (m.heldTicks < m.dwellTicks) return m.copy(heldTicks = m.heldTicks + 1)
+
+        // Held long enough: hand the charge on, if there is anywhere to put it. Re-read rather than
         // reusing what was pulled in, because the whole point of the wait is that chemistry may have
         // changed it — and a gaseous product will already have left through the room.
         if (store(m, tile, BufferRole.Product) != null) return m
         putStore(m, tile, BufferRole.Inside, null)
         putStore(m, tile, BufferRole.Product, charge)
-        return m
+        // The next charge serves its own dwell, not the remainder of this one's.
+        return m.copy(heldTicks = 0)
     }
 
     /**

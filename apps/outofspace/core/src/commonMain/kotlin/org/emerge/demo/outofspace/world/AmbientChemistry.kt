@@ -3,8 +3,11 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.LOWEST_DECOMPOSITION_ONSET
+import org.emerge.demo.outofspace.chem.LOWEST_REDUCTION_ONSET
 import org.emerge.demo.outofspace.chem.OXIDATIONS
 import org.emerge.demo.outofspace.chem.Oxidation
+import org.emerge.demo.outofspace.chem.REDUCTION_GROUPS
+import org.emerge.demo.outofspace.chem.WIDEST_REDUCTION_GROUP
 import org.emerge.demo.outofspace.chem.apportionInto
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -115,6 +118,10 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
     // "the chemistry is slow".
     val demands = LongArray(OXIDATIONS.size)
     val allowed = LongArray(OXIDATIONS.size)
+    // Sized by the widest group rather than per group, so one pair of arrays serves the whole
+    // reduction table — see [WIDEST_REDUCTION_GROUP] for why they are hoisted at all.
+    val reductantDemands = LongArray(WIDEST_REDUCTION_GROUP)
+    val reductantAllowed = LongArray(WIDEST_REDUCTION_GROUP)
 
     layer.forEachOccupiedTile { tile ->
         val kelvin = layer.kelvinAt(tile)
@@ -211,6 +218,68 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
 
             released += applyEnthalpy(layer, tile, -reaction.enthalpy(consumed))
         }
+
+        // ── Reduction: a solid reagent, and contention that is per species ────────
+        //
+        // The shape [oxidise] could not simply grow a row for. An oxidation's reagent is the tile's
+        // oxygen and every row drinks from it, so that contention is one apportionment. A reduction's
+        // reagent is a solid **in this layer**, and a tile may hold three different ones — so the
+        // rows after the carbon have no claim whatever on the silicon, and pooling them would starve
+        // reactions that were never in competition. Hence a demand-then-apportion per group rather
+        // than per tile; the Jacobi rule is the same, the well is not.
+        //
+        // ⚠️ **A group reads the layer as it stands, so one pass can cascade.** Magnesium made by an
+        // earlier group is available to a later one in the same pass, because `REDUCTIONS` is a chain
+        // and its groups happen to fall in chain order. That is deterministic and it cannot break
+        // conservation — every step is still a small fraction of its own oxide, so what cascades is a
+        // second-order crumb — but it does mean the chain runs marginally faster than four separate
+        // passes would. Stated because it is the kind of thing that reads as a bug later.
+        for (g in REDUCTION_GROUPS.indices) {
+            val group = REDUCTION_GROUPS[g]
+            val reagentHere = layer[tile, group.reductant]
+            if (reagentHere <= 0L) continue
+
+            val rows = group.rows
+            reductantDemands.fill(0L)
+            var wanted = 0L
+            for (i in rows.indices) {
+                val want = rows[i].demand(layer[tile, rows[i].oxide], kelvin)
+                reductantDemands[i] = want
+                wanted += want
+            }
+            if (wanted <= 0L) continue
+            if (wanted <= reagentHere) {
+                reductantDemands.copyInto(reductantAllowed)
+            } else {
+                apportionInto(reductantDemands, reagentHere, reductantAllowed)
+            }
+
+            for (i in rows.indices) {
+                if (reductantAllowed[i] <= 0L) continue
+                val reaction = rows[i]
+                val done = reaction.react(layer[tile, reaction.oxide], reductantAllowed[i], kelvin)
+                if (done.isNothing) continue
+
+                // Both reagents leave the layer, and the products account for the whole of both —
+                // see [Reduction.split], which is the one place this differs from a decomposition in
+                // more than naming.
+                layer.add(tile, reaction.oxide, -done.oxide)
+                layer.add(tile, reaction.reductant, -done.reductant)
+
+                val parts = reaction.split(done.total)
+                for (p in reaction.products.indices) {
+                    val species = reaction.products[p].first
+                    val mass = parts[p]
+                    if (mass <= 0L) continue
+                    val fluid = species.fluid
+                    if (fluid != null) ventGas(fluid, intoAir = mass, fromLayer = mass) else layer.add(tile, species, mass)
+                }
+
+                // Per kilogram of **oxide**, which is what the rate was a fraction of and what the
+                // row's enthalpy is quoted against.
+                released += applyEnthalpy(layer, tile, -reaction.enthalpy(done.oxide))
+            }
+        }
     }
 
     return if (toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L && toSolidEnergy == 0L && released == 0L) {
@@ -267,4 +336,5 @@ private fun airMassAt(air: MassArray, tile: TileIndex): Long {
  * hand-written constant would be a reaction that silently never ran — and with two tables that is
  * twice as easy to do and no easier to notice.
  */
-private val LOWEST_ONSET: Int = minOf(OXIDATIONS.minOf { it.onsetKelvin }, LOWEST_DECOMPOSITION_ONSET)
+private val LOWEST_ONSET: Int =
+    minOf(OXIDATIONS.minOf { it.onsetKelvin }, LOWEST_DECOMPOSITION_ONSET, LOWEST_REDUCTION_ONSET)

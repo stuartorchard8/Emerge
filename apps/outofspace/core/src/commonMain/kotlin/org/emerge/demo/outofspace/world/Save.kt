@@ -345,7 +345,13 @@ object Save {
             // A thermostat and nothing else: the setpoint is its whole state. An older file's
             // `carry` and `progress` are simply not read — they belonged to a tick counter that no
             // longer decides anything, the same disposal the `Extractor` note below describes.
-            is ThermalDecomposer -> put("temp", m.setTemperature.toString())
+            is ThermalDecomposer -> {
+                put("temp", m.setTemperature.toString())
+                // Both halves of the dwell, because a charge part-way through its residence time is
+                // a real state: dropping `held` would silently restart every hold on every load.
+                put("dwell", m.dwellTicks.toString())
+                put("held", m.heldTicks.toString())
+            }
             // An extractor is its facing and its one store, both written by the common code around
             // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
             is Extractor -> {}
@@ -1138,6 +1144,8 @@ object Save {
                 tile,
                 facing = facing(),
                 setTemperature = num("temp", 900L).toInt(),
+                dwellTicks = num("dwell", 0L).toInt(),
+                heldTicks = num("held", 0L).toInt(),
             )
             // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.
             // The first two no longer exist, and the third is a hopper's worth of ore that a loaded

@@ -1,8 +1,9 @@
 # Ambient chemistry
 
-Status: **increments 0 to 4 built** (2026-08-20). Chemistry is a table of nine reactions run as a
-pass over the cargo layers, gated by temperature and by what the air can supply. Fire sustains
-itself; calcining does not. Increment 5 — roasting — is next, and is optional.
+Status: **increments 0 to 5 built** (2026-08-20). Chemistry is three tables — thirteen reactions —
+run as a pass over the cargo layers, gated by temperature and by what the air and the charge can
+supply. Fire sustains itself; calcining does not; **titanium is reachable**. Roasting is what is
+left, and is optional.
 
 Chemistry used to be something one machine did to one buffer, and it did not actually do it —
 `cook` in `chem/Chemistry.kt` was a stub that returned its input unchanged, and it is now deleted.
@@ -527,7 +528,131 @@ change is the point of the increment rather than a regression:
 
 ---
 
-# Increment 5 — roasting (later, if the tier earns it)
+# Increment 5 — reduction, and the road to titanium (BUILT 2026-08-20)
+
+The increment that answers "is there a pathway to produce every species the machines need?" — which
+before this was **no**. Titanium is in eight machine kinds including the extractor and the storage,
+and it has `relativeAbundance = 0`: it does not occur native, no decomposition yields it, and the
+processor only concentrates a dominant species rather than changing what it is. A vessel could not
+replace its own miners.
+
+## The third shape
+
+Reduction could not be a row of either existing table, and the reason is where the design is:
+
+|                  | reagent            | contention                    |
+|------------------|--------------------|-------------------------------|
+| `Decomposition`  | none — heat only   | none possible                 |
+| `Oxidation`      | the tile's air     | one pool, every row competes  |
+| **`Reduction`**  | **a solid in the same layer** | **one pool per reagent species** |
+
+That last cell is the whole increment. A tile may hold carbon *and* silicon *and* magnesium; quartz
+and ilmenite are both after the carbon, and neither has any claim on the magnesium. Pooling all four
+against one number would starve rows that were never in competition — and would change the answer
+whenever an unrelated row was added. So `REDUCTION_GROUPS` groups the table by reagent and the sweep
+does a demand-then-`apportionInto` per group. Same Jacobi rule as the oxygen; different well.
+
+## The chain, and why it is four rows and not one
+
+```
+Quartz    + carbon    ─→ Silicon              (+ CO)      2000 K
+Periclase + silicon   ─→ Magnesium            (+ quartz)  1500 K   vacuum, really
+Ilmenite  + carbon    ─→ iron + rutile        (+ CO)      1200 K
+Rutile    + magnesium ─→ TITANIUM             (+ periclase) 1100 K  EXOTHERMIC
+```
+
+⛔ **Carbon will not reduce titania.** `TiO₂ + C` gives titanium *carbide* — that is why the Kroll
+process exists. A one-row `Rutile + C → Titanium` would have been exactly the hand-written fiction
+the tables refuse to contain: plausible, unfalsifiable, and wrong for ever. The chain has to go and
+*make* a reductant stronger than carbon first, which is what the middle two rows are for.
+
+⚠️ **The loop is the point.** Periclase reduced to magnesium comes back as periclase when that
+magnesium spends itself on the titania; the quartz does the same one row up. Neither is consumed on
+balance — they circulate, and what the chain eats is carbon and heat.
+
+⚠️ **One row is exothermic**, and it is the titanium one. That is not a typo and not a balance dial —
+it is the property that makes magnesium a viable reductant where carbon is not, and `ReductionTest`
+asserts it as a specific claim rather than weakening the table-wide sign check to let it through.
+
+## Vacuum is not a rule anybody wrote
+
+Nothing in `Reduction.kt` mentions oxygen. Carbon, silicon and magnesium all burn, `OXIDATIONS`
+already says so, and the ambient pass runs every table over the same tile — so a reduction attempted
+in an airy room loses its reductant to the air before it can spend it on the oxide. `Reaction.kt`
+predicted this by name ("what will make a carbothermic reduction want a vacuum") before there was
+anything here to predict.
+
+## ⚠️ Two things changed outside the tables
+
+**The decomposer has a second dial: a dwell.** `refine` handed its charge on the tick it reached
+setpoint. That was fine for heat-only decomposition — the ramp takes far longer than the calcining —
+and is wrong for a reduction, which is rate-limited by the reagent mixed into the charge rather than
+by the element and is still going long after the ramp is over.
+
+⛔ **"Hold until converted" was built first and it does not work.** A reaction approaches completion
+asymptotically, so there is no moment at which a charge is finished. Measured: at setpoint 1200 with
+calcite (onset 1170) the rate is **0.29% of the charge per chemistry pass**, and `CHEM_PERIOD = 8`,
+so 900 ticks is 112 passes and converts about 28%. No threshold rescues that — "release at half
+converted" still needs ~240 passes. Any rule claiming to find the moment a charge is done is either
+an invented threshold or a wait that never ends.
+
+So the player says how long instead (Stu, 2026-08-20). **Temperature and duration are two dials**, and
+neither dominates: hotter converts faster but costs element and leaks more heat into the room; longer
+converts more of each charge but throttles throughput.
+
+⚠️ **`dwellTicks` is not the `ticksPerAction` increment 3 deleted.** That was a hidden constant
+standing in for a rate nobody had modelled. This is a *control*, and it exists because of something
+the chemistry turned out to be. **Default zero is the old behaviour exactly**, so the dial is opt-in
+and every existing test still asserts what it always did.
+
+⚠️ **The dwell counts only at temperature**, which makes it a residence time rather than a delay —
+and produces a nice emergent thing: a 200-tick dwell on calcite takes ~228 wall ticks, because the
+endothermic reaction keeps knocking the charge below setpoint and the ticks spent climbing back do
+not count. A reaction that fights the element makes its own charge sit there longer.
+
+**Firebrick is magnesia-silica now**, not quartz-alumina. Aluminium is genuinely unreachable — Al₂O₃
+yields to neither heat nor any reductant here, and winning it for real means electrolysis, which
+means a power network that does not exist (`Conduit.Power` carries nothing today). So the one machine
+that refines things was the one machine that could not be built. Periclase is what a basic refractory
+brick actually *is*, and it is the cheapest reaction in the game — the first thing a vessel calcines
+is the thing that lets it build the calciner.
+
+⛔ **Lime was considered and rejected** even though calcite is commoner: CaO slakes in any moisture
+and CaO–SiO₂ forms low-melting eutectics. A quartz-lime lining is a furnace wall that dissolves
+itself. Periclase costs the same to reach and is a real brick.
+
+## Still open
+
+- **Material selection.** This cuts straight to one recipe per machine. Choosing a material per
+  building — the ONI-shaped feature this was a step toward — is deliberately not built.
+- **Aluminium**, and with it electrolysis and a power network that carries something.
+- **Fabric must stay inert.** The deck layer is not swept, and `oxidise`'s own doc says why: its
+  matter is `builtMass`, a different identity from `cargoMass`, and nothing books a crossing between
+  them. If a future increment ever sweeps the deck, note that a magnesia lining running the Pidgeon
+  process at 1500 K would be genuinely attacked by the silicon in its own chamber — physically
+  correct, and a furnace that eats its own lining while doing its job. The rule that has to survive:
+  **a wall has conditions but not reactions.** (The exposure is not new — steel hulls are 99% iron
+  and `IRON_RUST` is already in the table.)
+- **One pass can cascade.** A group reads the layer as it stands, and the groups happen to fall in
+  chain order, so magnesium made early in a pass is available late in the same one. Deterministic,
+  conservation-safe, second-order — but stated, because it is the kind of thing that reads as a bug
+  later. It is already a live confound in tests: the ilmenite row *produces* rutile, so a carbon
+  shortage changes how much titania is standing there for the magnesium row to reduce.
+- ⛔ **Carbon is contended across two tables, and iteration order decides it.** `CARBON_BURN` and the
+  two carbon reductions all draw from the same carbon in the same tile. The sweep runs oxidation
+  first, so burning takes its share off the top and the reductions get what is left. That is exactly
+  the leftward bias the ⛔ *inside* each table forbids, and it is not safe by luck alone — it happens
+  not to over-draw only because the layer is mutated between the two passes.
+  **Found while building increment 5; not fixed, because fixing it means one demand pass spanning
+  every table rather than a demand pass per table, which is a re-shaping of `oxidise` rather than an
+  addition to it.** Visible today as: a reduction in an airy room is taxed rather than contended.
+  Stu's call.
+- **`RigidBody.MATERIAL` is dead** — declared, documented at length, referenced nowhere. Found while
+  checking whether the Firebrick change touched rocks. It does not. Left alone.
+
+---
+
+# Increment 6 — roasting (later, if the tier earns it)
 
 `sulfide + O₂ → oxide + SO₂`. Needs one oxide per metal: Zincite ZnO, Litharge PbO, Tenorite CuO,
 Bunsenite NiO, MoO₃, Manganosite MnO, and Anhydrite CaSO₄ if gypsum should dehydrate in two stages.
