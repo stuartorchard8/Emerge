@@ -262,6 +262,49 @@ class HeatTest {
     }
 
     @Test
+    fun `when a machine does its work does not change how much heat it made`() {
+        // Waste heat is banked into the deck layer by the **machine** pass, which runs every tick.
+        // It used to be banked by the *heat* pass instead, and `heatAdded` is built fresh with each
+        // tick's `Work` — so a machine that happened to do its work on one of the seven ticks in
+        // eight between heat steps had its whole output silently thrown away. Measured: 284 K
+        // against 313 K for the same machine and the same charge, differing only in *when* it was
+        // fed, and the vanished energy was still counted in `generatedEnergy` — which is how a term
+        // goes missing and stays missing, and part of why the heat identity is parked.
+        //
+        // Stated as a comparison rather than as a temperature so that no tuning pass re-pins it.
+        fun fedAfter(idle: Int): VesselState {
+            val grid = Grid(11, 11)
+            val ore = Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0)
+            val deck = DeckArray(grid)
+            deck += Processor(grid.tile(5, 5), Direction.Right)
+            var s: VesselState =
+                VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            s = run(s, idle)
+            return run(s.stocked(grid.tile(5, 5), ore), 40 * HEAT_PERIOD)
+        }
+
+        // On the beat, where every schedule fires and the bug is invisible, against deliberately
+        // off it. HEAT_PERIOD is 8, so three ticks in is as off-phase as it gets.
+        val onBeat = fedAfter(0)
+        val offBeat = fedAfter(3)
+
+        assertTrue(onBeat.storedEnergy > 0L, "the machine made no heat at all, so this proves nothing")
+
+        // ⚠️ **Close, not equal, and the difference is real.** Feeding the machine three ticks later
+        // also moves it three ticks relative to the conduction and radiation schedule, so the two
+        // runs are not the same experiment and a few thousandths of a percent between them is that
+        // and nothing else. What is being ruled out is a whole batch going missing, which was a
+        // tenth of the total — two orders of magnitude larger than the phase difference, which is
+        // why a loose bound here still catches the thing it is for.
+        val gap = kotlin.math.abs(onBeat.storedEnergy - offBeat.storedEnergy)
+        assertTrue(
+            gap * 100L < onBeat.storedEnergy,
+            "a machine fed off the heat beat kept less of its own waste heat: " +
+                "${onBeat.storedEnergy} on the beat against ${offBeat.storedEnergy} off it",
+        )
+    }
+
+    @Test
     fun `a machine outside the hull keeps its own heat and radiates it`() {
         // Roomy enough that the machine does not fill it: with nothing but space around
         // it, every face of the thing is exposed.

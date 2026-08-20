@@ -428,11 +428,17 @@ you have thought about the ventilation.
 - ⚠️ **The dwell scales with the charge's mass**, because the element's power is fixed and a heavier
   charge has more to warm. A full hopper is a few hundred ticks; a light one is at temperature almost
   at once. Physically right, and free.
-- ⛔ **`heat()` throws away seven ticks in eight.** It accumulates into a per-tick array that the heat
-  step reads every `HEAT_PERIOD`, and nothing carries it forward in between. **This is pre-existing
-  and affects every machine's waste heat** — a processor has always lost 7/8 of its furnace losses.
-  The decomposer no longer goes through it, so this is now purely a finding about everything else.
-  Worth fixing; not fixed here.
+- ✅ **`heat()` used to throw away seven ticks in eight — fixed.** It accumulates into a per-tick
+  array that the *heat* pass banked, and `heatAdded` is rebuilt with each tick's `Work`, so a machine
+  that did its work on any of the seven ticks between heat steps had its whole output discarded —
+  while still counting it in `generatedEnergy`, which is how a term goes missing and stays missing.
+  Banking now happens in the **machine** block, with the machines that made the heat: it is a write
+  into a layer and needs no solver, and a machine that did not run made nothing to bank.
+
+  Measured on a processor fed off the beat: **284 K against 313 K**, the recovered energy matching
+  the booked `generatedEnergy` to a fraction of a percent. ⚠️ **Every machine in the game now sheds
+  about eight times the waste heat it used to** — `heatPerGram` is the per-machine dial if that
+  proves too intense. `HeatTest` pins the invariant as a comparison so no tuning pass re-pins it.
 - **A save's `carry` and `progress` are simply not read.** They belonged to a tick counter that no
   longer decides anything; the setpoint is the whole of what a decomposer stores now. The same
   disposal the extractor's second store got, and Stu's precedent.

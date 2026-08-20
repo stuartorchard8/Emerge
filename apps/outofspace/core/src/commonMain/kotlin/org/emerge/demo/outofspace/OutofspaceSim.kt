@@ -252,6 +252,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Extractor -> w.leech(m, activation, tile)
                 }
             }
+
+            // Waste heat lands in the machine that did the work — see [heatPerGram] — so it has to
+            // conduct out through the casing before the room feels it.
+            //
+            // ⚠️ **Banked here, with the machines that made it, and that is a fix rather than a
+            // tidy-up.** This loop used to sit inside `shouldRun(HEAT_PERIOD)` while `heatAdded` is
+            // built fresh with each tick's [Work] — so seven ticks in eight a machine's waste heat
+            // was accumulated and then **thrown away**, for every machine in the game since
+            // machines had waste heat at all. Banking is a write into a layer: it needs no solver
+            // and no schedule of its own, and only the conduction further down has a reason to run
+            // on a period.
+            //
+            // It belongs to *this* block rather than merely to "every tick" because a machine that
+            // did not run made no waste heat to bank. The two are the same schedule today —
+            // [MACHINE_PERIOD] is one — and if that ever stops being true this follows the machines
+            // rather than quietly drifting out of step with them.
+            //
+            // ⚠️ **Expect roughly eight times the waste heat**, because roughly seven eighths of it
+            // used to vanish. Nothing here invents any: a source that fires every tick now lands all
+            // of what it always claimed to make, and a source that fires once per charge lands it
+            // once instead of one time in eight. If that is too intense the dial is `heatPerGram`,
+            // which is per-machine and exists for exactly this.
+            for (tile in w.grid.tiles) {
+                val added = w.heatAdded[tile.index]
+                if (added == 0L) continue
+                w[tile]?.addEnergySpread(added, w.grid, w.deck)
+            }
         }
 
         val motion: Motion
@@ -275,13 +302,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var conductedRadiated = 0L
         var conductedToAir = 0L
         if (shouldRun(state.tick, HEAT_PERIOD)) {
-            // Waste heat lands in the machine that did the work — see [heatPerGram] — so it
-            // has to conduct out through the casing before the room feels it.
-            for (tile in w.grid.tiles) {
-                val added = w.heatAdded[tile.index]
-                if (added == 0L) continue
-                w[tile]?.addEnergySpread(added, w.grid, w.deck)
-            }
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
                 grid = state.grid,
