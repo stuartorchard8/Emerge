@@ -2099,7 +2099,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * in [VesselState.storedEnergy]** — that is a gap older than this and the energy ledger is
          * parked, so nothing here books it. Written down rather than papered over.
          */
-        fun absorbIntoGhost(tile: TileIndex, onwardWants: (Mixture) -> Boolean): Packet? {
+        fun absorbIntoGhost(tile: TileIndex): Packet? {
             val bill = conduitBillOfMaterials(Conduit.Rail)
             val stuff = tracks[Conduit.Rail]
             // ⛔ **The door, asked of what is standing here rather than of what is coming in.**
@@ -2153,40 +2153,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // pure material must not leave a 0% pure residue. What used to arrange that by hand,
             // species by species, a proportional slice arranges by construction.
             val lump = standing
-            var taking = lump.take(need)
-            var remainder = lump - taking
-
-            // ⛔ **A site never puts down a crumb that nothing else can use.** What is left after a
-            // top-up is only worth leaving on the track if something further along will have it;
-            // otherwise the site has turned a lump it could have finished with into a permanent
-            // blockage. Packets never merge, so a speck resting on a tile is not a small problem —
-            // that tile can never take a delivery again, and it comes to rest in the middle of a
-            // corridor because that is where the last site that skimmed it happened to be.
-            //
-            // Stu's save, traced tile by tile: five marked rails hand back to four rail ghosts in a
-            // line, each ghost skims what it is short of and passes the rest on, and the remainders
-            // are whatever the arithmetic leaves — 88411724570, then 19053724573, then 30642000003,
-            // and finally **3 micrograms**, minted at (14,24) and stranded at (13,24) with every
-            // sink on the network already satisfied. Invisible in grams, and it blocked the corridor
-            // the titanium needed for good.
-            //
-            // ⚠️ **The question is asked of the tiles ahead, never of this one.** A site is never in
-            // its own way — its own appetite is in its own routes and would answer yes to anything
-            // it is still short of, which is every crumb it has just made.
-            // ⚠️ **This is not a size threshold and must not become one.** A machine takes anything
-            // for ever, so wherever one is reachable the answer is yes and nothing is ever
-            // swallowed. It fires only where the remainder would otherwise sit for good — and
-            // finishing a hair over the bill is the deal [holdsFullBill] already offers.
-            if (!remainder.isEmpty && !onwardWants(remainder)) {
-                taking = lump
-                remainder = Mixture.EMPTY
-            }
-
+            val taking = lump.take(need)
             for (sp in Species.ALL) {
                 val mass = taking[sp]
                 if (mass != 0L) stuff[tile, sp] = stuff[tile, sp] + mass
             }
             stuff.setEnergy(tile, stuff.energyAt(tile) + taking.energy)
+            val remainder = lump - taking
             if (remainder.isEmpty) rail.put(tile, null) else rail.put(tile, remainder)
             builtMass += taking.total
             return null
@@ -2622,12 +2595,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // takes what it needs and the remainder rides on into the casing. The rail has to
                 // win, because a machine standing on track that cannot carry anything is a machine
                 // nothing can ever reach.
-                if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile) { left ->
-                    // Somewhere ahead of this tile that will take it — asked unrationed, because
-                    // "will anything ever have this" is not "is it worth committing more of it",
-                    // and an in-flight count is a deliberate over-estimate to strand a crumb on.
-                    flow.successorTiles(tile).any { whitelist.permits(it, left, rationed = false) }
-                }
+                if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile)
                 machineGhosts[tile]?.let { return@advanceSegments absorbIntoMachineGhost(tile, it) }
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
