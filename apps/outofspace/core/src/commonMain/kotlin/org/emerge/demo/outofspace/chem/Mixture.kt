@@ -205,13 +205,28 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
  * `f` is monotonic non-decreasing (so no entry can come out negative, since the running total only
  * grows), and `f(sum) == target` exactly.
  */
-internal fun apportion(weights: LongArray, target: Long): LongArray {
-    val out = LongArray(weights.size)
-    if (target <= 0L) return out
+internal fun apportion(weights: LongArray, target: Long): LongArray =
+    LongArray(weights.size).also { apportionInto(weights, target, it) }
+
+/**
+ * [apportion] writing into a caller's array instead of allocating one.
+ *
+ * Same arithmetic, same rounding rule, same guarantees — it is the *same code*, and [apportion] is
+ * one line over it, because two copies of a telescoping sum would eventually be one copy plus a
+ * copy that rounds differently.
+ *
+ * It exists for the ambient chemistry sweep, which apportions a tile's oxygen across the reactions
+ * that want it and does that at every occupied tile of every layer, every pass. Allocating a
+ * two-element array per tile per tick to divide a number in two is the kind of cost that does not
+ * show up in a profile as anything but "the chemistry is slow".
+ */
+internal fun apportionInto(weights: LongArray, target: Long, out: LongArray) {
+    out.fill(0L, 0, weights.size)
+    if (target <= 0L) return
 
     var sum = 0L
     for (w in weights) sum += w
-    if (sum == 0L) return out
+    if (sum == 0L) return
 
     var cumulative = 0L
     var placed = 0L
@@ -223,5 +238,4 @@ internal fun apportion(weights: LongArray, target: Long): LongArray {
         out[i] = upto - placed
         placed = upto
     }
-    return out
 }

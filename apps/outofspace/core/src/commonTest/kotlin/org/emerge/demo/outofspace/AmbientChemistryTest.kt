@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Stuff
@@ -41,6 +42,9 @@ class AmbientChemistryTest {
 
     /** Hot enough to be well up the rate curve, so a few ticks move a measurable amount. */
     private val burningKelvin = 1400
+
+    /** The same, for iron — well above its onset and below carbon's, where only one runs. */
+    private val scalingKelvin = 1400
 
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
@@ -280,6 +284,173 @@ class AmbientChemistryTest {
         assertEquals(railMass(after, Species.Carbon), railMass(loaded, Species.Carbon), "the lump changed")
         assertEquals(airMass(after, Fluid.CarbonDioxide), airMass(loaded, Fluid.CarbonDioxide), "the smoke changed")
         assertEquals(0L, loaded.airBalance, "the air ledger did not survive the round trip")
+    }
+
+
+    // ── Increment 2: the other direction, and contention ─────────────────────
+
+    /** A lump of whatever, carrying enough heat to be at [kelvin]. */
+    private fun lumpAt(kelvin: Int, vararg parts: Pair<Species, Long>): Mixture {
+        var capacity = 0L
+        for ((species, mass) in parts) capacity += mass * species.specificHeat / Budget.CAPACITY_DIVISOR
+        return Mixture.of(*parts, energy = capacity * kelvin)
+    }
+
+    /**
+     * The same sealed box with almost no air in it — a trace of oxygen over the whole run of track.
+     *
+     * This is what makes contention *happen* rather than merely be implemented: with a room full of
+     * air both reactions get everything they ask for and the apportionment is never consulted, so a
+     * test against ambient air would pass just as well with the demand pass deleted.
+     */
+    private fun starved(lump: Mixture, oxygen: Long): VesselState {
+        val base = withLump(lump)
+        val mass = MassArray(grid.size)
+        mass[grid.tile(5, ROW), Fluid.Oxygen] = oxygen
+        val air = Stuff.gas(mass)
+        return base.copy(air = air, baselineAirMass = air.totalMass, baselineAirEnergy = air.totalEnergy)
+    }
+
+    @Test
+    fun `hot iron on a belt takes oxygen out of the room and keeps it`() {
+        // The crossing increment 1 never ran: mass leaves the atmosphere and stays in the solid. A
+        // reaction whose product is not a fluid makes the *cargo* heavier, which is the direction
+        // `gasBecameSolid` exists for.
+        val start = withLump(lumpAt(scalingKelvin, Species.Iron to 20L * Budget.KILOGRAM))
+        val after = run(start, TICKS)
+
+        val ironLost = railMass(start, Species.Iron) - railMass(after, Species.Iron)
+        assertTrue(ironLost > 0L, "the iron did not scale")
+
+        val scaleMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
+        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
+
+        assertTrue(oxygenUsed > 0L, "scale appeared without the room losing any oxygen")
+        assertEquals(ironLost + oxygenUsed, scaleMade, "the scale does not weigh its own parts")
+        // ⚠️ **To within one unit per pass, not exactly**, and that is the honest statement. Each
+        // pass floors its own oxygen from its own iron, and a sum of floors is not the floor of a
+        // sum — carbon happens to divide evenly at these masses and iron does not. The direction is
+        // what matters: flooring can only ever take *less* oxygen than the ratio calls for, never
+        // more, so the drift is a microgram of iron that did not quite finish scaling rather than
+        // oxygen conjured out of the room.
+        val expected = ironLost * (3L * Species.Oxygen.molarMass) / (4L * Species.Iron.molarMass)
+        assertTrue(
+            oxygenUsed <= expected && expected - oxygenUsed <= TICKS / 8,
+            "the world ran off the stoichiometric line for 4Fe + 3O₂ → 2Fe₂O₃: $oxygenUsed against $expected",
+        )
+    }
+
+    @Test
+    fun `cold iron does not rust`() {
+        // A vessel is made of iron. If ambient temperature were enough, every belt in the game
+        // would quietly turn into ore while the player watched something else.
+        val start = withLump(lumpAt(Temperature.AMBIENT_KELVIN, Species.Iron to 20L * Budget.KILOGRAM))
+        val after = run(start, TICKS)
+
+        assertEquals(railMass(start, Species.Iron), railMass(after, Species.Iron), "iron rusted at room temperature")
+        assertEquals(0L, railMass(after, Species.Hematite), "scale formed on cold iron")
+    }
+
+    @Test
+    fun `iron scaling closes both ledgers`() {
+        // The half of the conservation story that increment 1 could not tell, because nothing ran
+        // this way. The air ledger has to hear that the atmosphere shrank on purpose and the cargo
+        // ledger has to hear that it grew — book one and both are wrong in opposite directions,
+        // which reads as two unrelated leaks.
+        val start = withLump(lumpAt(scalingKelvin, Species.Iron to 20L * Budget.KILOGRAM))
+        val after = run(start, TICKS)
+
+        assertTrue(railMass(after, Species.Hematite) > 0L, "nothing scaled, so this proves nothing")
+
+        assertEquals(0L, after.airBalance, "the air ledger is out by ${after.airBalance}")
+        assertEquals(
+            0L,
+            after.inTransitMass + after.ventedMass + after.builtMass -
+                after.extractedMass - after.baselineCargoMass,
+            "the cargo ledger is out",
+        )
+    }
+
+    @Test
+    fun `two reactions in one tile never take more oxygen than is there`() {
+        // The property the demand pass exists for. Both reactants on one tile, both well above
+        // their onsets, and between them they want far more oxygen than the room holds. Resolved by
+        // iteration order this would hand the lot to carbon and then let iron take oxygen that no
+        // longer existed — which the air ledger reports not as a reaction but as a leak.
+        val trace = 5L * Budget.GRAM
+        val start = starved(
+            lumpAt(burningKelvin, Species.Carbon to 20L * Budget.KILOGRAM, Species.Iron to 20L * Budget.KILOGRAM),
+            oxygen = trace,
+        )
+        val after = run(start, TICKS)
+
+        for (tile in grid.tiles) {
+            assertTrue(after.air.massOf(tile, Fluid.Oxygen) >= 0L, "a tile went oxygen-negative")
+        }
+        assertTrue(airMass(after, Fluid.Oxygen) < trace, "a starved tile with two reactions in it used nothing")
+        assertEquals(0L, after.airBalance, "the air ledger is out by ${after.airBalance}")
+        assertEquals(
+            0L,
+            after.inTransitMass + after.ventedMass + after.builtMass -
+                after.extractedMass - after.baselineCargoMass,
+            "the cargo ledger is out",
+        )
+    }
+
+    @Test
+    fun `a scarce tile feeds the faster reaction first`() {
+        // Decision 2's flavour, in the world rather than in the arithmetic: with barely any oxygen
+        // to go round, carbon gets most of it because carbon wants most of it. There is no priority
+        // list anywhere for this to be reading — see `OxidationContentionTest`.
+        val start = starved(
+            lumpAt(burningKelvin, Species.Carbon to 20L * Budget.KILOGRAM, Species.Iron to 20L * Budget.KILOGRAM),
+            oxygen = 5L * Budget.GRAM,
+        )
+        val after = run(start, TICKS)
+
+        val carbonBurned = railMass(start, Species.Carbon) - railMass(after, Species.Carbon)
+        val ironScaled = railMass(start, Species.Iron) - railMass(after, Species.Iron)
+
+        assertTrue(carbonBurned > 0L, "the carbon got none of the oxygen at all")
+        assertTrue(
+            carbonBurned > ironScaled,
+            "iron outbid carbon for a scarce tile: $ironScaled of iron against $carbonBurned of carbon",
+        )
+    }
+
+    @Test
+    fun `both reactions at once still account for every atom`() {
+        // The per-species statement with two reactions running, which is where a mis-indexed write
+        // would show up: one reaction's product landing in the other's ordinal balances in total and
+        // is nonsense in detail.
+        val start = withLump(
+            lumpAt(burningKelvin, Species.Carbon to 20L * Budget.KILOGRAM, Species.Iron to 20L * Budget.KILOGRAM),
+        )
+        val after = run(start, TICKS)
+
+        val carbonBurned = railMass(start, Species.Carbon) - railMass(after, Species.Carbon)
+        val ironScaled = railMass(start, Species.Iron) - railMass(after, Species.Iron)
+        assertTrue(carbonBurned > 0L && ironScaled > 0L, "only one of the two reactions ran")
+
+        val scaleMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
+        val dioxideMade = airMass(after, Fluid.CarbonDioxide) - airMass(start, Fluid.CarbonDioxide)
+        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
+
+        // Every gram of oxygen the room lost is in one of the two products, and nowhere else.
+        assertEquals(
+            oxygenUsed,
+            (dioxideMade - carbonBurned) + (scaleMade - ironScaled),
+            "the oxygen the room lost is not in the two products",
+        )
+
+        for (s in Species.ALL) {
+            if (s == Species.Carbon || s == Species.Iron || s == Species.Hematite) continue
+            assertEquals(railMass(start, s), railMass(after, s), "$s changed on the belt")
+        }
+        for (f in Fluid.ALL) {
+            if (f == Fluid.Oxygen || f == Fluid.CarbonDioxide) continue
+            assertEquals(airMass(start, f), airMass(after, f), "$f changed in the air")
+        }
     }
 
     private companion object {

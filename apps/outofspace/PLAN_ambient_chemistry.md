@@ -1,7 +1,7 @@
 # Ambient chemistry
 
-Status: **increments 0 and 1 built** (2026-08-20). Increment 2 — reagent contention — is next, and
-is required before a *second* reaction may want the same tile's oxygen.
+Status: **increments 0, 1 and 2 built** (2026-08-20). Two reactions now compete for a tile's
+oxygen. Increment 3 — `cook` becomes a heater — is next.
 
 Chemistry today is something one machine does to one buffer, and it does not actually do it —
 `cook` in `chem/Chemistry.kt` is a stub that returns its input unchanged. This plan makes chemistry
@@ -321,9 +321,10 @@ balance while iron quietly turns into copper, which is what `conservationOf` is 
 
 ---
 
-# Increment 2 — reagent contention
+# Increment 2 — reagent contention ✅ BUILT
 
-Needs two competing reactions in one tile, so it arrives with iron oxidation.
+Landed with iron oxidation as the second consumer: `4 Fe + 3 O₂ → 2 Fe₂O₃` in `chem/Reaction.kt`,
+and the demand-then-apportion sweep in `world/AmbientChemistry.kt`.
 
 Decision 2 says the oxygen comes from the tile's atmosphere, and "the oxygen attacks the carbon
 first and burns it off" is a statement about **allocation order**. Several consumers, one tile's
@@ -331,13 +332,56 @@ oxygen. Resolving it by iteration order gives a rule nobody can predict and a Ga
 leftward bias — the exact thing `stepSolidHeat` documents itself as avoiding, and the thing the
 rigid-body solver is required to stay clear of.
 
-**Jacobi, like everything else here.** Compute every reaction's oxygen *demand* against a snapshot,
-then `apportion` the available oxygen across them if oversubscribed. `apportion` (`chem/Mixture.kt`)
-already distributes a scarce total across weights with an exact sum and no float.
+**Jacobi, like everything else here.** `Oxidation.demand` is asked of every reaction against one
+snapshot of the tile; only then is the supply handed out, in full if it covers the demands and by
+`apportionInto` if it does not, and `Oxidation.react` takes an *allowance* rather than finding one.
+The split into two calls is the whole mechanism.
 
-Then "carbon burns preferentially" falls out of carbon's rate being higher at that temperature,
-rather than from a priority list somebody wrote. Order-independent, deterministic, and it means the
-no-atmosphere room in decision 2 is a strategy the physics produces rather than a special case.
+Then "carbon burns preferentially" falls out of carbon's rate being higher at that temperature —
+`BASE_RATE` is ten times `IRON_BASE_RATE` — rather than from a priority list somebody wrote.
+Order-independent, deterministic, and it means the no-atmosphere room in decision 2 is a strategy
+the physics produces rather than a special case.
+
+## What the build decided that the scope did not
+
+- ⚠️ **The second reaction runs the crossing backwards, and the ledger had no term for it.** Carbon
+  leaving a belt is `solidBecameGas`; the oxygen iron *keeps* is the mirror image — the atmosphere
+  shrinks on purpose and the cargo gets heavier. `gasBecameSolid` is that mirror, written as its own
+  call rather than as the old one with negative arguments, because a caller passing a negative mass
+  to a function whose name says it went the other way is a line nobody reads correctly twice.
+  `ChemistryStep` grew to four numbers for the same reason: **never net the two directions**, or the
+  first reaction whose halves happened to cancel would look like no chemistry at all.
+- ⚠️ **Phase is not a field on a reaction.** Whether a product joins the air is `Species.fluid` —
+  the same fact that made the air array narrow in increment 0 — so CO₂ leaves and Fe₂O₃ does not,
+  and neither reaction had to say so. A flag would have been a third place for the phase of a
+  species to be recorded and a third place for it to disagree.
+- ⚠️ **`Oxidation` states formula units, never mass fractions.** `4 Fe + 3 O₂ → 2 Fe₂O₃` is three
+  integers; every mass ratio is derived from them and the molar masses `Species` already holds.
+  `OxidationContentionTest` closes every reaction atom by atom, which is `MineralTest`'s argument.
+- ⚠️ **`IRON_OXIDATION_KELVIN` is 500 K, which is dry scaling and not rust in a puddle.** Iron in
+  damp air corrodes at room temperature by an electrochemical mechanism this model has nothing to
+  say about. Making rust appear at ambient by lowering the onset would be a rate dial pretending to
+  be a mechanism, and it would quietly turn every belt in the game into ore.
+- ⚠️ **A sum of floors is not the floor of a sum.** Each pass floors its own oxygen from its own
+  reactant, so over several passes the world sits up to one unit per pass *under* the stoichiometric
+  line. The direction is the safe one — flooring can only ever take less oxygen than the ratio calls
+  for — but a test asserting exact equality across a multi-pass run is asserting a coincidence.
+- **Contention has to be *provoked* to be tested.** In a room full of air both reactions get
+  everything they ask for and the apportionment is never consulted, so a test against ambient air
+  passes just as well with the demand pass deleted. The starved-tile fixture is the one that means
+  anything.
+- `apportionInto` is `apportion` writing into a caller's array; `apportion` is now one line over it.
+  The sweep divides a tile's oxygen at every occupied tile of every layer every pass, and allocating
+  a two-element array to do it is the kind of cost that only ever shows up as "the chemistry is
+  slow".
+
+## Still open
+
+- Iron scaling is on the **rail layer only**, for the same ledger reason increment 1 was: a corroding
+  hull plate is *fabric*, and the fabric side of the ledger has no term for changing phase in either
+  direction. That is the next thing rust wants, and it is what feeds the damage system.
+- Surface area is still not solved — see "Not solved, deliberately". `IRON_BASE_RATE` stands in for
+  it and is expected to move once there is a real save to tune against.
 
 ---
 

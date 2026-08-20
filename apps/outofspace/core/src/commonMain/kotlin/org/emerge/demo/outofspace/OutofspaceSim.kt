@@ -122,7 +122,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
-import org.emerge.demo.outofspace.world.burnCarbon
+import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
@@ -302,13 +302,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // rather than sitting still for one and appearing from nowhere in the next.
         //
         // ⚠️ **The rail layer only, and that is a ledger statement rather than a physical one.**
-        // What rides a belt is cargo, so carbon leaving it is exactly what `solidBecameGas` books.
-        // The deck's matter and the conduits' own metal are fabric — a different identity, with no
-        // term for becoming gas — so a burning hull plate is not a thing this may do yet. See
-        // [burnCarbon] and `PLAN_ambient_chemistry.md`.
+        // What rides a belt is cargo, so carbon leaving it is exactly what `solidBecameGas` books
+        // and the oxygen iron keeps is exactly what `gasBecameSolid` books. The deck's matter and
+        // the conduits' own metal are fabric — a different identity, with no term for changing
+        // phase — so a burning hull plate is not a thing this may do yet. See [oxidise] and
+        // `PLAN_ambient_chemistry.md`.
         if (shouldRun(state.tick, CHEM_PERIOD)) {
-            val burnt = burnCarbon(w.rail.stuff, w.masses, w.airEnergy)
-            if (burnt.mass != 0L || burnt.energy != 0L) w.solidBecameGas(burnt.mass, burnt.energy)
+            val chem = oxidise(w.rail.stuff, w.masses, w.airEnergy)
+            if (chem.toGasMass != 0L || chem.toGasEnergy != 0L) w.solidBecameGas(chem.toGasMass, chem.toGasEnergy)
+            if (chem.toSolidMass != 0L || chem.toSolidEnergy != 0L) w.gasBecameSolid(chem.toSolidMass, chem.toSolidEnergy)
         }
 
         val edges = EdgeGrid(state.grid)
@@ -1044,6 +1046,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventedMass += mass
             injectedAirMass += mass
             injectedAirEnergy += energy
+        }
+
+        /**
+         * The same crossing in the other direction: [mass] of gas **becoming** solid, carrying
+         * [energy] with it. Iron scaling takes oxygen out of the room and keeps it.
+         *
+         * Exactly the inverse of [solidBecameGas], and written as its own call rather than as that
+         * one with negative arguments because a caller passing a negative mass to a function whose
+         * name says the mass went the other way is a line nobody reads correctly twice. The
+         * arithmetic being the same is the point: the two ledgers stay each other's mirror, and a
+         * reaction that ran both ways in one tick nets out to nothing without either identity ever
+         * having been told a half-truth.
+         */
+        fun gasBecameSolid(mass: Long, energy: Long) {
+            ventedMass -= mass
+            injectedAirMass -= mass
+            injectedAirEnergy -= energy
         }
 
         var fitRequested: Boolean = false
