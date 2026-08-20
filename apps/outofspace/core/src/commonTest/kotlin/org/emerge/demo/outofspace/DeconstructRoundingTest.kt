@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
@@ -33,7 +34,7 @@ class DeconstructRoundingTest {
      * full marked rail beside a ghost already 23% built. Give it less and the draw takes the lot by
      * the `take >= held` path, which is exact, and the rounding never shows.
      */
-    private fun world(): VesselState {
+    private fun world(shortBy: Long = Capacity.PACKET_MASS): VesselState {
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, 3, 3)
         rails[marked.index] = rails[marked.index]!!.copy(deconstructing = true)
@@ -69,7 +70,7 @@ class DeconstructRoundingTest {
         // rail beside a ghost 23% built. That makes the first draw headroom-capped rather than
         // demand-capped, so it goes down the proportional path and the source is left holding more
         // than the site still wants — which is what turns a rounding error into a deadlock.
-        blend(ghost, total - Capacity.PACKET_MASS)
+        blend(ghost, total - shortBy)
         return s
     }
 
@@ -116,6 +117,33 @@ class DeconstructRoundingTest {
         val s = run(world(), RAIL_PERIOD * 40)
         for (t in grid.tiles) {
             assertEquals(0L, s.rail.massAt(t), "a residue is standing at $t: ${s.rail.resourceAt(t)}")
+        }
+    }
+
+    /**
+     * ⛔ **A thing coming apart never hands over a packet the thing being built cannot accept.**
+     *
+     * The gate on this pass asks whether what the rail *holds* is wanted. That is not the same
+     * question as whether what it is about to hand *over* can be accepted, and the two part company
+     * at small draws: a proportional slice is only representative while it is big enough to carry
+     * every species. Take one microgram off track that is 98% iron, 1% titanium and a trace of
+     * carbon and the apportionment puts that microgram on whichever species the running total lands
+     * on — so the rail mints a speck of pure carbon, which no iron ghost will admit.
+     *
+     * Worse than handing back nothing: packets never merge, so the speck owns the tile it lands on
+     * for good and the corridor behind it is dead. Stu's save, first rail tick, `(20,31)`.
+     */
+    @Test
+    fun `a rail hands back nothing rather than a speck nothing can use`() {
+        val bill = conduitBillOfMaterials(Conduit.Rail)
+        val s = run(world(shortBy = 1L), RAIL_PERIOD * 20)
+
+        for (t in grid.tiles) {
+            val lump = s.rail.resourceAt(t) ?: continue
+            assertTrue(
+                buildableFrom(bill, lump),
+                "a lump nothing on the network can use is standing at $t: $lump",
+            )
         }
     }
 }
