@@ -2426,6 +2426,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 sinks,
                 { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                 grid,
+                // ⛔ **What is standing on the track, for producer-less track only** — see
+                // [FlowGraph.build]. A stub no output port reaches is fed by its own lumps or by
+                // nothing, and until this was passed in the graph could not tell the difference.
+                { tile -> !rail.isEmpty(tile) },
             )
 
             // ── What each sink will take, and how much is already on its way ──
@@ -2491,6 +2495,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     sinks.filterTo(mutableSetOf()) { rails[it.index] != null },
                     { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
                     grid,
+                    { tile -> !rail.isEmpty(tile) },
                 )
                 whitelist = Whitelist.of(flow, rails.size, { accepts[it] }, loadOn)
             }

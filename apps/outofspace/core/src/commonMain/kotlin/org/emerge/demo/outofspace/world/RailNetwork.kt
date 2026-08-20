@@ -137,5 +137,6 @@ fun VesselState.railFlow(): FlowGraph {
         ends.sinks,
         { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
         grid,
+        { tile -> !rail.isEmpty(tile) },
     )
 }

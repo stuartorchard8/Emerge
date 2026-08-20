@@ -128,6 +128,13 @@ class FlowGraph internal constructor(
          *    claim is exactly what wants overriding — but a leading tile is never looked at that
          *    way, so a justified edge cannot be taken.
          *
+         * [carrying] reports what is standing on a tile, and it matters on **producer-less track and
+         * only there**: with no source in a component nothing can be justified, so the rules above
+         * fall silent and the last consumer traversed takes the line. A lump on such track is the
+         * only material that will ever be on it, so it is what a revocation is measured against —
+         * see the note at the head of the body. It is not a source: it justifies nothing else, and
+         * confers no [leading].
+         *
          * Note what is deliberately *not* protected. A walk stepping **past** a source can claim the
          * edge beyond it pointing back into the source, which is backwards; the consumer out there
          * has to be able to take that edge back or it would starve on a network that plainly ought
@@ -143,6 +150,7 @@ class FlowGraph internal constructor(
             sinks: Set<TileIndex>,
             linked: (TileIndex, Direction) -> Boolean,
             grid: Grid,
+            carrying: (TileIndex) -> Boolean = { false },
         ): FlowGraph {
             if (tileSet.isEmpty()) return empty()
 
@@ -150,7 +158,37 @@ class FlowGraph internal constructor(
 
             // Which side of each edge a producer lies on. Computed once: it is a fact about the
             // shape of the track, and every traversal asks it the same way.
-            val sourceSide = SourceSide.of(tileSet, sources, linked, grid)
+            var sourceSide = SourceSide.of(tileSet, sources, linked, grid)
+
+            // ── Matter already standing on track no producer reaches ─────────
+            //
+            // ⛔ **On such track, a lump IS where material enters** — it is the only thing that can
+            // be. With no producer anywhere in the component, nothing justifies anything, every
+            // revocation below is permitted, and the last consumer traversed simply takes the line.
+            // A player who lays a stub, drops titanium on it and draws a run of iron rail beside it
+            // watches the rails claim the corridor and the titanium sit still for ever, three tiles
+            // from the extractor site that wants it. Found in Stu's save.
+            //
+            // ⚠️ **[carrying] answers the justification question and nothing else.** A loaded tile
+            // is deliberately NOT added to [sources]: a producer's outgoing edges are unrevocable
+            // and confer [leading], and granting a packet either would make the shape of a run a
+            // function of where its lumps happen to be standing this tick — the one thing this class
+            // promises it is not. All a lump does is let a walk say "there is something that way",
+            // which is exactly what a revocation has to be able to say.
+            //
+            // ⚠️ **Only where no producer reaches.** Feeding load into [SourceSide] can only ever
+            // make [SourceSide.beyond] answer true more often, which *permits* revocations rather
+            // than refusing them — and the two guards below exist to refuse exactly the ones a
+            // loaded belt would otherwise justify. On fed track the answer is unchanged, bit for
+            // bit.
+            //
+            // ⚠️ **A lump justifies roads past it, never the road out from under it** — the standing
+            // set goes in as [SourceSide.weak] as well, and [SourceSide.anyOther] is what the guards
+            // below read. See the note there; without it a tapped belt splits at the lump.
+            val standing = tileSet.filterTo(mutableSetOf()) { carrying(it) && !sourceSide.anyAtAll(it) }
+            if (standing.isNotEmpty()) {
+                sourceSide = SourceSide.of(tileSet, standing + sources, linked, grid, weak = standing)
+            }
 
             // On a route out of a producer. Survives across traversals — that is the whole point.
             val leading = BooleanArray(grid.size)
@@ -235,7 +273,7 @@ class FlowGraph internal constructor(
                     // edge is not free: it is the same edge, pointing the other way, that the
                     // consumer needs to be fed by. A ghost rail hanging off a loaded belt, told it
                     // may send its iron back down the spur it was waiting for. Found in Stu's save.
-                    if (next in sinks && sourceSide.anyAtAll(at) && !sourceSide.beyond(at, dir)) continue
+                    if (next in sinks && sourceSide.anyOther(at) && !sourceSide.beyond(at, dir)) continue
 
                     // Already pointing at us: nothing to claim, and nothing new to say to it.
                     if (bit(allowed, next, dir.opposite)) continue
@@ -274,7 +312,7 @@ class FlowGraph internal constructor(
                         // line. That is the better answer there, and the one the belt tests reason
                         // about — a line that commits is a through-route, where one that splits down
                         // the middle sends half its traffic back at a machine that already said no.
-                        if (sourceSide.anyAtAll(at) && !sourceSide.beyond(at, dir)) continue
+                        if (sourceSide.anyOther(at) && !sourceSide.beyond(at, dir)) continue
                         revoke(allowed, at, dir)
                     }
                     grant(allowed, next, dir.opposite)
@@ -398,12 +436,39 @@ class FlowGraph internal constructor(
             private val subtree: IntArray,
             private val treeTotal: IntArray,
             private val root: IntArray,
+            private val weak: BooleanArray,
             private val grid: Grid,
         ) {
             /** Does the network [at] sits on have any producer at all? */
             fun anyAtAll(at: TileIndex): Boolean {
                 val a = comp[at.index]
                 return a >= 0 && treeTotal[root[a]] > 0
+            }
+
+            /**
+             * The same question, discounting a lump standing on [at] itself.
+             *
+             * ⛔ **A lump cannot justify a road out of the tile it is standing on.** [anyAtAll] is a
+             * precondition rather than an answer: it says justification is a meaningful question on
+             * this network at all, and every guard that reads it goes on to ask [beyond], which is
+             * about what lies past the edge. Material under one's feet lies past no edge in any
+             * direction, so where it is the *only* producer there is nothing to weigh and the honest
+             * answer is the free-for-all — which is what bare track has always done.
+             *
+             * ⛔ **Only a standing lump is discounted, never a real producer.** A source is a source
+             * whichever tile the walk is standing on, and a dead-end sink next to one must still be
+             * refused an outgoing edge pointing back into it — see [FlowGraph.build]'s note on what
+             * a walk may claim past a producer, and the cul-de-sac it used to rob.
+             *
+             * Without this a tapped belt splits: the walk from the tank could no longer take back
+             * the claim the full processor behind the lump had made, the lump found itself at a fork
+             * with a road back to a machine that had already said no, took it, and stopped there for
+             * good. The same failure that retired the nearest-consumer tie-break.
+             */
+            fun anyOther(at: TileIndex): Boolean {
+                val a = comp[at.index]
+                if (a < 0) return false
+                return treeTotal[root[a]] - (if (weak[at.index]) 1 else 0) > 0
             }
 
             /** Is a producer reachable from [at]'s neighbour in [dir], other than back through [at]? */
@@ -425,6 +490,7 @@ class FlowGraph internal constructor(
                     sources: Set<TileIndex>,
                     linked: (TileIndex, Direction) -> Boolean,
                     grid: Grid,
+                    weak: Set<TileIndex> = emptySet(),
                 ): SourceSide {
                     val n = grid.size
                     fun neighbours(t: TileIndex): List<Direction> =
@@ -540,7 +606,9 @@ class FlowGraph internal constructor(
                         for (at in order) treeTotal[at] = total
                     }
 
-                    return SourceSide(comp, parent, subtree, treeTotal, root, grid)
+                    val standing = BooleanArray(n)
+                    for (tile in weak) if (tile in tileSet) standing[tile.index] = true
+                    return SourceSide(comp, parent, subtree, treeTotal, root, standing, grid)
                 }
             }
         }
