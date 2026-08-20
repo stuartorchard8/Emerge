@@ -222,6 +222,34 @@ class FlowGraph internal constructor(
             // shape of the track, and every traversal asks it the same way.
             var sourceSide = SourceSide.of(tileSet, sources, linked, grid)
 
+            // ⛔ **Track no producer grounds is oriented by distance, not by the walk.** Every rule
+            // below is stated in terms of a producer — leading is conferred by one, a revocation is
+            // justified by one — so on a component with none they all fall silent and the answer is
+            // whatever the last consumer traversed happened to claim. That answer is not merely
+            // arbitrary, it is *unstable*: [carrying] is an input, so a lump moving one tile rebuilds
+            // the graph differently and the edge it just crossed reverses behind it. The lump then
+            // walks back down, and the fork cursor carries it one tile further each round trip. Stu's
+            // save, the column at (24,30): up, back, up-and-left, back, out — reaching a storage four
+            // tiles away in some forty ticks.
+            //
+            // With nothing to be grounded in, the honest ground is the shape of the track: material
+            // goes to the nearest consumer that can be reached from it. That is a fact about the
+            // topology and the sinks, so it does not move when a packet does — which is the property
+            // the instability was costing us, and it is why this is an orientation computed in one
+            // pass rather than a tie-break inside [traverse].
+            //
+            // ⚠️ **This is a strict DAG.** Every edge points down a distance gradient, so the
+            // orientation cannot contain a cycle and a packet cannot revisit a tile. That is the
+            // invariant [FlowNoSourceTest] pins.
+            //
+            // ⚠️ **A mid-line consumer is not passed by any more.** Under the old fallback a tapped
+            // line committed end to end and a full machine was offered material in passing; now the
+            // stretch between two consumers splits at its midpoint and the nearer one is where that
+            // material goes. Stu's call, 2026-08-20: with no source on the rail, the closest sink is
+            // where a packet should be heading, and a direction of travel defined by a producer is
+            // the *only* thing that should override that.
+            val grounded = tileSet.filterTo(mutableSetOf()) { sourceSide.anyAtAll(it) }
+
             // ── Matter already standing on track no producer reaches ─────────
             //
             // ⛔ **On such track, a lump IS where material enters** — it is the only thing that can
@@ -257,6 +285,11 @@ class FlowGraph internal constructor(
                 sourceSide = SourceSide.of(tileSet, sources, linked, grid, standing, appetite)
             }
 
+            // Orientation by distance needs [appetite] and [standing], so it comes after them.
+            if (grounded.size < tileSet.size) {
+                orientByDistance(tileSet, grounded, sinks, walls, standing, appetite, allowed, linked, grid)
+            }
+
             // On a route out of a producer. Survives across traversals — that is the whole point.
             val leading = BooleanArray(grid.size)
 
@@ -264,7 +297,8 @@ class FlowGraph internal constructor(
             // the same stretch of track the order is part of the result, and a [Set]'s order is not
             // something a replay can rely on.
             for (sink in sinks.sortedBy { it.index }) {
-                if (sink in tileSet) {
+                // Producer-less track was oriented by distance above and has no walk to run.
+                if (sink in tileSet && sink in grounded) {
                     // ⛔ **The class the walk is seeded with, carried the whole way.** What may be
                     // taken back is a question about what *this* consumer has to gain, and the
                     // consumer is the sink the walk started at — not the tile it has reached.
@@ -452,6 +486,109 @@ class FlowGraph internal constructor(
                         leading[next.index] = true
                         queue.addLast(encode(next, dir.opposite))
                     }
+                }
+            }
+        }
+
+        /**
+         * Orient every producer-less tile down a gradient of hops-to-the-nearest-sink.
+         *
+         * A breadth-first sweep outward from the sinks, then one pass granting each tile every edge
+         * that leaves it for a strictly nearer neighbour. Two properties fall out of that and both
+         * are the point:
+         *
+         *  - **it is acyclic**, because every edge strictly decreases the distance, so a packet can
+         *    never come back to a tile it has left;
+         *  - **it does not mention matter**, so moving a packet cannot change it. The greedy
+         *    fallback this replaces did mention matter — [carrying] fed [SourceSide] — and that is
+         *    what made a lump reverse the edge behind itself and walk back down it.
+         *
+         * Equidistant neighbours both get an edge, which is a genuine fork and is round-robined by
+         * [FlowCursors] like any other. It cannot make a cycle: a fork's branches are strictly
+         * nearer than the tile forking, not than each other.
+         *
+         * ⚠️ **Distance is measured along routes material may actually take.** The sweep expands to a
+         * neighbour only if that neighbour would be allowed to send *into* the tile it was reached
+         * from, so unpaid track cannot shorten a route it may not deliver over. A tile no sink can
+         * be reached from is left with no edges at all, which is what a branch with nothing on the
+         * end of it has always got.
+         */
+        private fun orientByDistance(
+            tileSet: Set<TileIndex>,
+            grounded: Set<TileIndex>,
+            sinks: Set<TileIndex>,
+            walls: Set<TileIndex>,
+            standing: Set<TileIndex>,
+            appetite: Appetites,
+            allowed: ByteArray,
+            linked: (TileIndex, Direction) -> Boolean,
+            grid: Grid,
+        ) {
+            // ⛔ **Material does not come out the far side of unpaid track** — the same rule
+            // [traverse] states, said once more here because this orientation never runs it. A ghost
+            // rail may feed another ghost, and may not deliver into finished track beyond it.
+            fun mayCarry(from: TileIndex, to: TileIndex): Boolean = !(from in walls && to !in walls)
+
+            // ⛔ **A consumer that cannot take what is here is not a destination.** Distance's whole
+            // job is to choose *among* sinks, and choosing one that will structurally never accept a
+            // gram of what is standing there is simply a wrong answer to that question — not a
+            // demand question sneaking into the graph. Demand still refuses at the door; what it
+            // cannot do is route material down an edge the graph never granted, and until this was
+            // here the graph gave a lump of titanium one road, three hops to an iron rail ghost,
+            // with the tank that wanted it four hops the other way. Demand duly refused, and the
+            // titanium stood still for ever — the same standstill by a different route.
+            //
+            // ⚠️ **This depends on WHAT is standing, never on WHERE.** Walking a lump one tile along
+            // the track cannot change which sinks admit it, so the orientation still does not move
+            // when a packet does — the property the whole change exists for. It moves when material
+            // is absorbed or its composition changes, which is rare and is a real change of answer.
+            //
+            // ⚠️ **Mixed material on one producer-less component is still served nearest-first**, and
+            // a lump can still find its nearest admitting sink is not the one another lump wants. A
+            // single [allowed] bitmask per tile cannot express "titanium left, iron right", and
+            // producer-less track is not worth a second representation. See the class note below.
+            val seeds = sinks.filterTo(mutableSetOf()) { sink ->
+                sink in tileSet && sink !in grounded &&
+                    (standing.isEmpty() || standing.any { appetite.admits(appetite.classOf(sink), it) })
+            }
+            // Nothing standing can be used by anybody: fall back to every consumer, which is the
+            // blind answer and the right one, since there is no material to have an opinion about.
+            val from = seeds.ifEmpty { sinks.filterTo(mutableSetOf()) { it in tileSet && it !in grounded } }
+
+            val dist = IntArray(grid.size) { -1 }
+            val queue = ArrayDeque<TileIndex>()
+            // Seeded in tile order so the sweep is a replayable fact rather than a set's whim.
+            for (sink in from.sortedBy { it.index }) {
+                dist[sink.index] = 0
+                queue.addLast(sink)
+            }
+
+            while (queue.isNotEmpty()) {
+                val at = queue.removeFirst()
+                for (dir in Direction.ALL) {
+                    if (!linked(at, dir)) continue
+                    val next = grid.neighbour(at, dir)
+                    if (next == TileIndex.NONE || next !in tileSet || next in grounded) continue
+                    if (dist[next.index] >= 0) continue
+                    // Expanding outward, so the edge under test runs the other way: `next` is where
+                    // material would come from and `at` is where it would go.
+                    if (!mayCarry(next, at)) continue
+                    dist[next.index] = dist[at.index] + 1
+                    queue.addLast(next)
+                }
+            }
+
+            for (at in tileSet) {
+                if (at in grounded) continue
+                val here = dist[at.index]
+                if (here <= 0) continue
+                for (dir in Direction.ALL) {
+                    if (!linked(at, dir)) continue
+                    val next = grid.neighbour(at, dir)
+                    if (next == TileIndex.NONE || next !in tileSet || next in grounded) continue
+                    if (dist[next.index] != here - 1) continue
+                    if (!mayCarry(at, next)) continue
+                    grant(allowed, at, dir)
                 }
             }
         }

@@ -478,20 +478,26 @@ class VesselSimTest {
     }
 
     /**
-     * A lump a machine will not take carries on to whatever will.
+     * ⛔ **On a belt nothing feeds, a lump stops at the first consumer it reaches.** This fixture has
+     * no producer at all — no extractor, no output port, just a lump set down on the track — so the
+     * flow graph orients it by distance to the nearest consumer, and the processor tapping the line
+     * at `(4,2)` is nearer than the tank at the end. The processor is full and refuses it, so there
+     * it stays.
      *
-     * ⚠️ The **reason** for the refusal changed and the claim did not. This used to offer a processor
-     * an ingot, which it refused for being the wrong form; form is gone and nothing on the delivery
-     * path filters by kind any more, so the refusal is now a full input buffer — the only kind of
-     * refusal left. The property under test is the belt's, not the machine's: a tapped line is a
-     * through-route, and a machine that says no does not thereby become a wall.
+     * ⚠️ **This used to assert the opposite**, that the lump rode past the full machine to the tank,
+     * as the sim-level statement of "a tapped line is a through-route". That property is real and
+     * still holds — but it is a property of track a *producer* grounds, where `leading` commits the
+     * whole run end to end, and it is pinned at the graph level by
+     * [FlowStandingLoadTest.a source defines the direction of travel, not the nearest sink]. On
+     * producer-less track a consumer is now a terminus. Stu's call, 2026-08-20: a rail with nothing
+     * feeding it is a degenerate case, and the consistent, intuitive answer there is the closest
+     * sink, even when the closest sink happens to be full.
      *
-     * ⚠️ **Wired shut, or the refusal does not last.** A running processor grinds its own buffer
-     * down and makes room, so "full" is a moment rather than a state and the lump gets taken after
-     * all — which is what the first version of this test measured.
+     * ⚠️ **Its sibling below is unaffected** and is the one that still shows a machine taking
+     * material off the line, since an *empty* processor at `(4,2)` absorbs the lump either way.
      */
     @Test
-    fun `a lump a full processor will not take rides the belt on to the tank`() {
+    fun `a lump a full processor will not take waits on a belt nothing feeds`() {
         val lump = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
         val s = tappedBelt(
             { tile -> Processor(tile, Direction.Down).withWiring(Wiring(mapOf(Action.Run to emptyList()))) },
@@ -504,10 +510,14 @@ class VesselSimTest {
             s.inStore(grid43(s), BufferRole.Input)?.total,
             "the processor was full and took nothing more",
         )
+        assertNull(
+            s.buffers.resourceAt(s.grid.tile(9, 2))?.total,
+            "and with the line pointed at the nearer consumer the tank never saw it",
+        )
         assertEquals(
             1_000L,
-            s.buffers.resourceAt(s.grid.tile(9, 2))?.total,
-            "and the tank at the end of the belt should have caught it",
+            s.rail.resourceAt(s.grid.tile(4, 2))?.total,
+            "the lump is standing at the machine that refused it",
         )
     }
 

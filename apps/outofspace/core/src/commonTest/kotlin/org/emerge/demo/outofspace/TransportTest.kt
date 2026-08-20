@@ -220,25 +220,39 @@ class TransportTest {
     }
 
     @Test
-    fun `a line between two consumers with nothing feeding it drains to one end`() {
-        // This used to claim the midpoint could go either way, on the reasoning that two consumers
-        // are equally good and the diverter should alternate between them. It cannot any more, and
-        // the reason is worth keeping: an edge carries material one way only, and a direction is
-        // only justified by leading to a *producer*. Here there is no producer at all, so nothing
-        // justifies anything and the last consumer traversed claims the whole line.
+    fun `a line between two consumers with nothing feeding it splits at its midpoint`() {
+        // This has now claimed three different things, and the history is the point.
         //
-        // A belt whose extractor was just torn out is exactly this, and draining wholly to one end
-        // is the better answer — a midpoint free to go either way dithers, committing to neither.
+        // It began by claiming the midpoint could go either way, on the reasoning that two consumers
+        // are equally good. Then it claimed the whole line drains to one end, because an edge
+        // carries material one way only and a direction is only justified by leading to a producer —
+        // with none, nothing justified anything and the last consumer traversed took the lot.
+        //
+        // ⛔ **That answer was not merely arbitrary, it was unstable.** `carrying` was an input to
+        // it, so a lump moving one tile rebuilt the graph differently and reversed the edge behind
+        // itself; the lump walked back down and inched along one tile per round trip. Stu's save,
+        // the ore column at (24,30). So producer-less track is now oriented by distance, and a belt
+        // whose extractor was just torn out empties from both ends toward whichever consumer each
+        // tile is nearer. Stu's call, 2026-08-20.
         val n = net().row(2, 10, 3)
         val f = n.toward(grid.tile(2, 3).index, grid.tile(10, 3).index)
-        for (x in 2..9) {
-            assertEquals(
-                listOf(grid.tile(x + 1, 3)),
-                f.successorTiles(grid.tile(x, 3)),
-                "($x, 3) should have joined the drain",
-            )
+
+        for (x in 3..5) {
+            assertEquals(listOf(grid.tile(x - 1, 3)), f.successorTiles(grid.tile(x, 3)), "($x, 3) drains left")
         }
-        assertEquals(emptyList(), f.successorTiles(grid.tile(10, 3)), "which ends at the far consumer")
+        for (x in 7..9) {
+            assertEquals(listOf(grid.tile(x + 1, 3)), f.successorTiles(grid.tile(x, 3)), "($x, 3) drains right")
+        }
+        // Four hops either way, so it is a genuine fork and the diverter alternates. It cannot
+        // dither: every edge steps strictly nearer a consumer, so whichever way a packet goes it
+        // cannot come back.
+        assertEquals(
+            listOf(grid.tile(5, 3), grid.tile(7, 3)),
+            f.successorTiles(grid.tile(6, 3)),
+            "and the midpoint forks",
+        )
+        assertEquals(emptyList(), f.successorTiles(grid.tile(2, 3)), "neither consumer has a road out")
+        assertEquals(emptyList(), f.successorTiles(grid.tile(10, 3)))
     }
 
     // ── Explicit connection ───────────────────────────────────────────────────

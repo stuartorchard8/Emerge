@@ -70,65 +70,88 @@ class FlowStandingLoadTest {
     }
 
     /**
-     * ⛔ **The case itself.** With the lump on `C`, `G`'s walk reaching `B` and looking left finds
-     * nothing standing that way and may not take `B`'s road to `E`. Both consumers end up fed, from
-     * a fork at `B` — which is what the corridor plainly ought to do, and what it could not say
-     * before because a fork here is two claims and only one of them could ever be justified.
+     * ⛔ **The case itself, restated for the distance rule.** `E` is four hops from the lump at `C`
+     * and `G` is two, so `C` heads for `G` — and `G`, in this fixture, admits everything.
+     *
+     * ⚠️ **What this used to assert was a fork at `B`, both consumers reachable.** That was the
+     * greedy fallback's answer, arrived at by refusing `G`'s walk the right to take `B`'s road to
+     * `E`. There is no walk on producer-less track any more and nothing to refuse: the track points
+     * at the nearer consumer and the further one is simply not where this material is going. Stu's
+     * call, 2026-08-20 — a producer-less rail is a degenerate case and the intuitive answer is the
+     * closest sink.
+     *
+     * What survives, and is the reason this fixture still earns its place, is that the lump is not
+     * stranded: it has a road, it is a road to a consumer, and it is the same road every tick.
      */
     @Test
-    fun `a consumer is not robbed of its road by one with no material behind it`() {
+    fun `the lump heads for whichever consumer is closest`() {
         val f = flow { it == c }
 
-        assertEquals(listOf(e), f.successorTiles(a), "A still feeds the site at the end")
+        assertEquals(listOf(b), f.successorTiles(c), "the lump moves off toward the junction")
+        assertEquals(listOf(g), f.successorTiles(b), "and B sends it to the nearer of the two")
+        assertEquals(emptyList(), f.successorTiles(g), "which is where it stops")
+        // A is next door to the site, so it is one hop from `E` and two from `G`. The arm points at
+        // its own consumer rather than draining to the junction — every tile picks for itself.
+        assertEquals(listOf(e), f.successorTiles(a), "and the far arm feeds the site beside it")
+        assertEquals(emptyList(), f.successorTiles(e))
+    }
+
+    /**
+     * ⚠️ **The orientation does not switch on matter being there**, which is here so that nobody
+     * reads the case above as something the lump causes. What is standing decides only which
+     * consumers are *candidates* — a sink that could never accept it is not a destination — and in
+     * this fixture both of them take anything. So the empty corridor points exactly where the loaded
+     * one does, edge for edge.
+     *
+     * ⛔ **That is the whole property the change exists for**, stated on this fixture as well as on
+     * [FlowNoSourceTest]'s corridor: the greedy fallback this replaced read `carrying` directly, so
+     * a lump moving one tile reversed the edge behind it and walked back down.
+     */
+    @Test
+    fun `bare track points exactly where loaded track does`() {
+        fun edges(carrying: (TileIndex) -> Boolean): List<Pair<TileIndex, List<TileIndex>>> {
+            val f = flow(carrying)
+            return listOf(e, a, b, c, g).map { it to f.successorTiles(it) }
+        }
+
+        assertEquals(edges { false }, edges { it == c }, "the lump moved no edge at all")
         assertEquals(
-            listOf(a, g).sortedBy { it.index },
-            f.successorTiles(b).sortedBy { it.index },
-            "B forks: both consumers are reachable from the lump",
+            listOf(e to emptyList(), a to listOf(e), b to listOf(g), c to listOf(b), g to emptyList()),
+            edges { false },
+            "and each tile heads for whichever consumer is nearer it",
         )
-        assertEquals(listOf(b), f.successorTiles(c), "and the lump still heads up the corridor")
     }
 
     /**
-     * ⚠️ **Bare track keeps the old answer**, and this is here so that nobody reads the case above
-     * as a change to what an empty network does. With nothing standing anywhere there is nothing to
-     * justify anything by, so the fallback stands exactly as it did: the last consumer traversed
-     * takes the line, and `E` is left pointing away from itself.
+     * ⛔ **A direction of travel is defined by the source, not by the nearest sink.** `1..8` with a
+     * producer at `1`, a machine tapping the line at `4` and a tank at `8` — [VesselSimTest]'s
+     * tapped belt, at the graph level.
+     *
+     * `5` is one hop from the tap and three from the tank, so distance alone would turn it round and
+     * split the line at its midpoint. It must not: the producer at `1` grounds the whole run, every
+     * tile of it is [FlowGraph] *leading*, and a leading edge is never re-litigated by a walk that
+     * arrives later. So the line commits end to end and the machine is offered material in passing —
+     * a tapped line is a through-route, and a machine that says no does not thereby become a wall.
+     *
+     * ⚠️ **This test used to assert the same shape with no producer at all**, as the guarantee that
+     * retired the nearest-consumer tie-break. That is no longer the rule: on track nothing grounds,
+     * a packet goes to the closest sink that can be reached from it, and the midpoint split is the
+     * intended answer rather than the failure — see [FlowNoSourceTest]. Stu's call, 2026-08-20. What
+     * survives, and is what this now pins, is that a source *overrides* distance wherever there is
+     * one.
      */
     @Test
-    fun `with nothing standing on it the greedy answer is unchanged`() {
-        val f = flow { false }
-
-        assertEquals(listOf(g), f.successorTiles(b), "the whole corridor points at the ghost")
-        assertEquals(listOf(b), f.successorTiles(a), "A carries material away from the site")
-        assertEquals(listOf(a), f.successorTiles(e), "and the site itself was told to feed the corridor")
-    }
-
-    /**
-     * ⛔ **A lump does not fork the belt it is standing on.** `1..8` with a machine tapping the line
-     * at `4` and a tank at `8`, one lump at `5` and no producer anywhere — [VesselSimTest]'s tapped
-     * belt, at the graph level.
-     *
-     * The machine traverses first and claims `5 → 4`, back the way the lump came. The tank's walk
-     * then has to be able to take that claim back, and cannot justify it by anything *beyond* `5`
-     * going left, because the only material there is is standing on `5` itself. Left in place the
-     * claim makes a fork: the lump is offered a road back to a machine that has already said no,
-     * takes it — left sorts before right — and stops there for good.
-     *
-     * That is precisely the failure that retired the nearest-consumer tie-break, which is why
-     * [FlowGraph] discounts the lump under the walk's own feet. A line that commits is a
-     * through-route.
-     */
-    @Test
-    fun `a lump does not justify the road out from under itself`() {
+    fun `a source defines the direction of travel, not the nearest sink`() {
         val wide = Grid(12, 6)
         val row = (1..8).map { wide.tile(it, 2) }
         val n = Net(wide)
         for (x in 1 until 8) n.join(wide.tile(x, 2), Direction.Right)
+        val head = row[0]
         val tap = row[3]
         val tank = row[7]
         val lump = row[4]
 
-        val f = FlowGraph.build(n.tiles, emptySet(), setOf(tap, tank), n::linked, wide, carrying = { it == lump })
+        val f = FlowGraph.build(n.tiles, setOf(head), setOf(tap, tank), n::linked, wide, carrying = { it == lump })
 
         assertEquals(listOf(row[5]), f.successorTiles(lump), "the lump has one road, and it is onward")
         for (i in 0..6) {
