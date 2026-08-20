@@ -46,8 +46,13 @@ class OutofspaceController(
     var brush: Brush = Brush.Run(Conduit.Rail)
     var brushFacing: Direction = Direction.Right
 
-    /** What a left-click does — see [Tool]. */
-    var tool: Tool = Tool.Build
+    /**
+     * What a left-click does — see [Tool].
+     *
+     * Defaults to [Tool.Inspect]: the tool that changes nothing is the one a player should be
+     * holding when they have not chosen, and it is the only one that answers "what is this?".
+     */
+    var tool: Tool = Tool.Inspect
 
     /** Which layer the delete tool takes off. Only read while [tool] is [Tool.Delete]. */
     var deleteLayer: DeleteLayer = DeleteLayer.Top
@@ -150,6 +155,50 @@ class OutofspaceController(
     }
 
     /**
+     * The exact tile the inspector was pointed at, or -1.
+     *
+     * ⚠️ **Not [selected], and the difference is the whole of the cycling rule.** Selection resolves
+     * through occupancy, so every tile of a nine-tile furnace answers with the furnace's centre —
+     * which is right for the machine panels and useless here, because two clicks on two *different*
+     * squares of that furnace would then look like two clicks on the same place and step the layer.
+     * This is where the finger actually went.
+     */
+    var inspectTile: TileIndex = TileIndex.NONE
+        private set
+
+    /** Which layer of [inspectTile] the inspector is reading. Meaningless while [inspectTile] is -1. */
+    var inspectLayer: InspectLayer = InspectLayer.Atmosphere
+        private set
+
+    /**
+     * Points the inspector at [tile], or steps to its next readable layer if it is already there.
+     *
+     * A first click reads the topmost layer that has anything to say — the building if there is one,
+     * failing that the track, and in the end the air, which is always readable. Clicking again
+     * peels down through the rest and wraps. A tile with only one layer is therefore stable under
+     * repeated clicks, which is what a player clicking twice by accident expects.
+     */
+    fun inspect(tile: TileIndex) {
+        val layers = inspectableLayers(state, tile)
+        if (layers.isEmpty()) {
+            inspectTile = TileIndex.NONE
+            return
+        }
+        val at = if (tile == inspectTile) layers.indexOf(inspectLayer) else -1
+        inspectTile = tile
+        // -1 covers both a new tile and a layer that has since stopped existing under the old one
+        // (the belt was deleted, the room was sealed): either way, start at the top again.
+        inspectLayer = if (at < 0) layers[0] else layers[wrap(at + 1, layers.size)]
+    }
+
+    /** Points the inspector straight at one layer, for a panel's own layer buttons and for scripts. */
+    fun inspect(tile: TileIndex, layer: InspectLayer) {
+        if (tile == TileIndex.NONE) { inspectTile = TileIndex.NONE; return }
+        inspectTile = tile
+        inspectLayer = layer
+    }
+
+    /**
      * Left-click behaviour, which depends on the tool.
      *
      * ⚠️ **Selection happens whatever the tool is**, and then the tool does its own work. Every panel
@@ -164,7 +213,7 @@ class OutofspaceController(
                 place(tile)
                 if (brush is Brush.Run) dragFrom = tile
             }
-            Tool.Wire -> {}
+            Tool.Inspect -> inspect(tile)
             Tool.Delete -> removeAt(tile)
             Tool.Cancel -> cancelAt(tile)
             // A drag, like building, and the exact inverse of it: what the stroke severs is the
@@ -411,6 +460,10 @@ class OutofspaceController(
         val move = frame.advance(stepper.state)
         if (!move.moved) return
         selected = move.reindex(selected)
+        // The inspector is pinned to a *tile*, so a grid that grows under it moves it exactly as it
+        // moves the selection — otherwise the panel would carry on describing the same index, which
+        // after a width change is a different place entirely.
+        inspectTile = move.reindex(inspectTile)
         injectTile = move.reindex(injectTile)
         dragFrom = move.reindex(dragFrom)
     }
@@ -438,6 +491,7 @@ class OutofspaceController(
     /** Replaces the world — what "new game" and "load" will call. */
     fun reset(newState: VesselState = starterVessel(cfg.initialGrid)) {
         selected = TileIndex.NONE
+        inspectTile = TileIndex.NONE
         pending.clear()
         thrustX = 0
         thrustY = 0

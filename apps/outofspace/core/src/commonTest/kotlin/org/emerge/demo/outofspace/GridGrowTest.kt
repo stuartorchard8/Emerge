@@ -342,7 +342,7 @@ class GridGrowTest {
         controller.stepOnce()
         val before = controller.state
         val extractor = before.grid.tiles.first { before.deck[it]?.kind == DeckMachineKind.Extractor }
-        controller.tool = Tool.Wire
+        controller.tool = Tool.Inspect
         controller.apply(extractor)
         assertEquals(extractor, controller.selected, "the fixture did not select the extractor")
         controller.tool = Tool.Build

@@ -14,6 +14,8 @@ import org.emerge.demo.outofspace.OutofspaceHud
 import org.emerge.demo.outofspace.OutofspaceRenderer
 import org.emerge.demo.outofspace.Overlay
 import org.emerge.demo.outofspace.Tool
+import org.emerge.demo.outofspace.InspectLayer
+import org.emerge.demo.outofspace.inspectableLayers
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
@@ -273,6 +275,23 @@ object OutofspaceAgentHarness {
                     controller.select(if (t.size < 3) TileIndex.NONE else index(t[1], t[2]))
                     settle()
                     println("[agent] selected -> ${controller.selected}")
+                }
+
+                // `inspect <x> <y> [layer]` — the player's own gesture, which is the only way to
+                // photograph a machine's settings now that they live on one layer of one panel.
+                // With no layer named it clicks: first the topmost readable layer, then the next.
+                "inspect" -> {
+                    val at = index(t[1], t[2])
+                    if (t.size > 3) {
+                        val want = InspectLayer.entries.firstOrNull { it.name.equals(t[3], true) || it.label.equals(t[3], true) }
+                            ?: error("unknown layer '${t[3]}' (have ${InspectLayer.entries.map { it.label }})")
+                        controller.inspect(at, want)
+                    } else {
+                        controller.inspect(at)
+                    }
+                    settle()
+                    println("[agent] inspecting (${t[1]},${t[2]}) ${controller.inspectLayer.label} " +
+                        "of ${inspectableLayers(state, at).map { it.label }}")
                 }
 
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }

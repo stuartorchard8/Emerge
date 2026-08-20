@@ -11,8 +11,21 @@ import org.emerge.demo.outofspace.world.Conduit
  * button every other game pans with was spent on a gesture that now has a tool of its own.
  */
 enum class Tool(val label: String) {
+    /**
+     * Reads the world and changes nothing — the default, and the one tool that is always safe.
+     *
+     * ⛔ **It replaced WIRE, it is not a rename of it.** Wiring was a tool because a wiring editor
+     * needed a selected machine to edit, and selection was the wire tool's private business. Once
+     * every machine panel wanted a selection that reasoning collapsed: wiring is one of the several
+     * things a *building* has, alongside its thermostat, its lock and everything in its buffers, and
+     * all of them belong in one place. That place is the DECK layer of the inspector — see
+     * [InspectLayer].
+     *
+     * A click picks a tile and its first readable layer; clicking the same tile again steps to the
+     * next layer that has anything to say. See [OutofspaceController.inspect].
+     */
+    Inspect("INSPECT"),
     Build("BUILD"),
-    Wire("WIRE"),
     Delete("DELETE"),
 
     /**

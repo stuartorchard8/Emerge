@@ -29,8 +29,13 @@ import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Segment
 import org.emerge.render.torus.ui.Anchor
+import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
+import org.emerge.render.torus.ui.UiBuilder
 
 /** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
@@ -46,6 +51,18 @@ class OutofspaceHud {
 
     /** What the last save or load did, shown next to the buttons. Blank until something happens. */
     var saveStatus: String = ""
+
+    /**
+     * Which inspector sections the player has folded shut, and which they have opened.
+     *
+     * Two sets rather than one, because a section states its own default — see [section]. A single
+     * "open" set would make every section that starts open read as shut on the first frame, and a
+     * single "shut" set would do the same to the ones that start closed. What is stored either way
+     * is only the *disagreements* with the default, so a section whose default later changes moves
+     * with it for every player who never touched it.
+     */
+    private val collapsed = mutableSetOf<String>()
+    private val expanded = mutableSetOf<String>()
 
     /**
      * @param hovered the tile under the pointer, or -1. Desktop and web have a pointer; on touch
@@ -105,7 +122,7 @@ class OutofspaceHud {
                 // on is one nobody looks at again. The readouts above stay: they are still the
                 // numbers, it is only the verdict on them that is suspended. Mass balance, which
                 // survives the rescale, keeps its lamp and is the tripwire that matters.
-                row("(energy ledgers parked — unit rescale §3)", 0x8A8A8AFFL)
+                row("(energy ledgers parked  ·  unit rescale step 3)", 0x8A8A8AFFL)
                 gap()
                 // One row per circuit the player has actually laid, rather than six fixed colours
                 // most of which read zero. An empty list here means no wire aboard, which is the
@@ -220,10 +237,11 @@ class OutofspaceHud {
                     row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
                     // Said on the tool itself rather than left in a plan file, because the number is
                     // surprising enough that anyone pouring water will otherwise assume a bug.
-                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K — this model boils water at -33C", 0xC8A44AFFL)
+                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  this model boils water at -33C", 0xC8A44AFFL)
                 } else {
-                    row("click a machine to wire it", 0x9A9A9AFFL)
-                    row("a sensor reads the tile it faces", 0x9A9A9AFFL)
+                    title("INSPECT  ·  ${controller.inspectLayer.label}")
+                    row("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
+                    row("machine settings live on the DECK layer", 0x9A9A9AFFL)
                 }
                 row("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
                 row("space pause", 0x9A9A9AFFL)
@@ -233,10 +251,13 @@ class OutofspaceHud {
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
-            inspectPanel(controller, if (hovered != TileIndex.NONE) hovered else controller.selected)
-            wiringPanel(controller)
-            storagePanel(controller)
-            decomposerPanel(controller)
+            // ⚠️ **The click wins over the pointer, which is the reverse of what it used to do.**
+            // The inspector is now something you *aim*: a click pins a tile and a repeat click steps
+            // its layer. Letting hover override that would unpin the panel the instant the mouse
+            // moved off the tile — which it must, to reach the panel — so the pinned reading would
+            // be unreadable. Hover is what is left: a preview for a player who has not clicked
+            // anything yet.
+            inspectPanel(controller, hovered)
 
             panel(Anchor.BottomRight) {
                 if (canSave) {
@@ -343,68 +364,66 @@ class OutofspaceHud {
         }
     }
 
-    /** Contents of tile under pointer (mixture breakdown per buffer). */
-    private fun org.emerge.render.torus.ui.UiBuilder.inspectPanel(controller: OutofspaceController, tile: TileIndex) {
-        if (tile.index < 0) return
+    /**
+     * The inspector: one tile, one layer, and everything that layer has to say.
+     *
+     * ⛔ **One layer at a time.** A tile can be a building, the track threaded under it, and a room
+     * of air all at once, and the old panel printed whichever of those it could reach in one column
+     * — track, then buffers, then gas — so the number the player was looking for was always in the
+     * middle of numbers they were not. Now the layer is *chosen*: the tabs name every layer with
+     * something in it, a click on the tile picks the topmost, and clicking again steps down. See
+     * [InspectLayer].
+     *
+     * ⚠️ **The DECK layer is where a machine's settings live**, all of them — wiring, thermostat,
+     * storage lock — beside what the machine is made of and everything it is holding. They used to
+     * be three panels in one corner, each standing down for the others, which is how the storage
+     * lock came to ship unreachable. A setting is a fact about a building, so it is in the place
+     * that describes buildings.
+     *
+     * @param hovered the tile under the pointer, used only when nothing has been clicked.
+     */
+    private fun UiBuilder.inspectPanel(controller: OutofspaceController, hovered: TileIndex) {
         val s = controller.state
-        val machine = s.machineCovering(tile)
+        val pinned = controller.inspectTile
+        val tile = if (pinned != TileIndex.NONE) pinned else hovered
+        if (tile == TileIndex.NONE || tile.index < 0 || tile.index >= s.grid.size) return
+        val layers = inspectableLayers(s, tile)
+        if (layers.isEmpty()) return
+        // A pinned layer that has since stopped existing — the belt was deleted, the room was
+        // sealed — falls back to the top of the list rather than showing an empty panel.
+        val layer = if (pinned != TileIndex.NONE && controller.inspectLayer in layers) controller.inspectLayer else layers[0]
         val grid = s.grid
 
-        panel(Anchor.TopRight) {
-            val what = machine?.kind?.label ?: "DECK"
-            title("INSPECT  ·  $what (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-            tileConditions(controller, tile)
-
-            // Rail on this tile (listed before machine — on top).
-            val segment = s.railAt(tile)
-            if (segment != null) {
-                // The gauge is a building standing over the track now, so it is titled by whatever
-                // is on the deck and the track under it is just track.
-                val gauge = s.deck[tile] as? Gauge
-                title(if (gauge != null) "GAUGE" else "RAIL")
-                if (gauge != null) {
-                    if (gauge.lastDominant == null) {
-                        row("nothing has passed through yet", 0x9A9A9AFFL)
-                    } else {
-                        keyValue(
-                            gauge.lastDominant.name.uppercase(),
-                            "${gauge.lastPurity / 10}%",
-                            0x9A9A9AFFL,
-                            speciesColor(gauge.lastDominant),
-                        )
-                        keyValue("of", mass(gauge.lastMass))
-                    }
-                    keyValue("reporting on", "the wire beneath it", 0x9A9A9AFFL, 0x6EE08AFFL)
-                }
-                val riding = controller.state.rail.massAt(tile)
-                if (riding == 0L) row("(nothing on it)", 0x9A9A9AFFL)
-                else keyValue("carrying", mass(riding))
-                gap()
+        panel(Anchor.TopRight, rowHeight = 20f) {
+            title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+            placeRow(s, tile)
+            // The tabs are the cycle made visible. A player who never notices that clicking again
+            // steps the layer can still reach every one of them by name, and a player who does can
+            // see how many are left.
+            actionRow(
+                layers.map { option ->
+                    Triple(
+                        if (option == layer) "> ${option.label}" else option.label,
+                        if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
+                    ) { controller.inspect(tile, option) }
+                },
+            )
+            when (layer) {
+                InspectLayer.Deck -> deckLayer(controller, tile, pinned != TileIndex.NONE)
+                InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
+                InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
+                InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
+                InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
+                InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
             }
-
-            if (machine == null) return@panel
-
-            val buffers = contentsBreakdown(machine, tile, controller.state.grid, controller.state.buffers)
-            if (buffers.isEmpty()) {
-                row("(empty)", 0x9A9A9AFFL)
-            } else {
-                for ((label, resource) in buffers) {
-                    keyValue(label, mass(resource.total))
-                    val rows = composition(resource).split('\n')
-                    for (r in rows) {
-                        row(" $r", 0x9AA4B4FFL)
-                    }
-                }
+            if (pinned == TileIndex.NONE) {
+                row("(hovering)  click to pin  ·  click again for the next layer", 0x7A7A7AFFL)
             }
         }
     }
 
-    /** Tile conditions: location + temperature. */
-    private fun org.emerge.render.torus.ui.PanelBuilder.tileConditions(
-        controller: OutofspaceController,
-        tile: TileIndex,
-    ) {
-        val s = controller.state
+    /** Where this tile is, in the one sense every layer shares: inside, outside, hull or machine. */
+    private fun PanelBuilder.placeRow(s: VesselState, tile: TileIndex) {
         val structure = s.structure[tile.index]
         keyValue(
             "PLACE",
@@ -417,63 +436,240 @@ class OutofspaceHud {
             0x9A9A9AFFL,
             if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
         )
-        // Each solid body's temp (not averaged — cold line under furnace is interesting).
-        for (body in s.solids) {
-            if (tile != body.tile) continue
-            val k = body.kelvin
+    }
+
+    /**
+     * The building on this tile: what it is made of, what it is holding, and every dial it has.
+     *
+     * ⚠️ **The composition is the whole machine's, not this tile's.** A furnace is nine tiles of one
+     * object and a ninth of its casing is a fact about the grid rather than about the furnace. Its
+     * temperature is likewise the whole casing's — energy over capacity across the footprint — which
+     * is the number that decides what it can do, whereas one tile of it is the number that decides
+     * nothing.
+     *
+     * @param pinned false while the panel is merely following the pointer, in which case the
+     *   controls stand down: a settings button that moved away as the mouse reached for it would be
+     *   worse than no button, and a hover reading wants to be short.
+     */
+    private fun PanelBuilder.deckLayer(controller: OutofspaceController, tile: TileIndex, pinned: Boolean) {
+        val s = controller.state
+        val grid = s.grid
+        val machine = s.machineCovering(tile) ?: run { row("(bare deck)", 0x9A9A9AFFL); return }
+        val anchor = s.occupancy[tile]
+        val parts = machine.tiles(grid)
+
+        title("${machine.kind.label}  ·  (${grid.xOf(anchor)}, ${grid.yOf(anchor)})")
+
+        // Built-ness first, because an unfinished machine explains every other number below it: a
+        // ghost is short of its bill, holds the wrong things, and does nothing at all.
+        val built = s.deck.builtPermille(machine)
+        if (built < 1000) {
+            keyValue("BUILT", "${built / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
+        }
+        if (anchor in s.scrapping) row("marked for deconstruction", 0xE05A4AFFL)
+
+        var casing = Mixture.EMPTY
+        var energy = 0L
+        var capacity = 0L
+        for (part in parts) {
+            casing += s.deck.stuff.mixtureAt(part)
+            energy += s.deck.stuff.energyAt(part)
+            capacity += s.deck.stuff.heatCapacityAt(part)
+        }
+        keyValue("CASING", mass(casing.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
+        compositionRows(casing)
+        if (capacity > 0L) {
+            val k = (energy / capacity).toInt()
             keyValue(
-                body.material.label,
+                "TEMP",
                 "${k}K  (${k - 273}C)",
                 0x9A9A9AFFL,
                 if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        // Gas (interior + vented plumes). A trace is not a plume — see [Negligible] — but an interior
-        // tile is still worth a pressure reading when it has been emptied, since "0% atm" inside the
-        // vessel is the single most useful thing this panel says.
-        val density = s.air.densityAt(tile)
-        val trace = Negligible.gas(density)
-        if (structure == Structure.Interior || !trace) {
-            val percent = s.pressurePercentAt(tile)
-            keyValue(
-                "PRESSURE",
-                "$percent% atm",
-                0x9A9A9AFFL,
-                when {
-                    percent < 40 -> 0xE05A4AFFL
-                    percent < 85 -> 0xE0A93AFFL
-                    else -> 0x9ED0B0FFL
-                },
-            )
-            // Below the floor there is nothing to describe: no density worth a percentage, no
-            // temperature of a gas that isn't there, no flow (its speed is a ratio, so a trace tile
-            // can report any speed), and no composition of five mass.
-            if (trace) {
-                row("   (no gas to speak of)", 0x7A8A9AFFL)
-                return
-            }
-            // Density beside pressure (gap = weight sorting).
-            keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
-            // Air temperature (fluid acts on this — sets pressure).
-            val airK = s.airKelvinAt(tile)
-            keyValue(
-                "AIR TEMP",
-                "${airK}K  (${airK - 273}C)",
-                0x9A9A9AFFL,
-                if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
-            )
-            val speed = s.flow.speedAt(tile)
-            if (speed > 0f && !Negligible.flow(s.flow.xAt(tile), s.flow.yAt(tile), density)) {
-                keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, tile)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
-            }
-            val mix = s.air.mixtureAt(tile)
-            if (!mix.isEmpty) {
-                val rows = composition(mix, 5).split('\n')
-                for (r in rows) {
-                    row(" $r", 0x9AA4B4FFL)
+        keyValue("TILES", "${parts.size}", 0x9A9A9AFFL, 0x9AA4B4FFL)
+
+        val buffers = contentsBreakdown(machine, anchor, grid, s.buffers)
+        section("contents", "CONTENTS", open = true) {
+            if (buffers.isEmpty()) {
+                row("(holding nothing)", 0x9A9A9AFFL)
+            } else {
+                for ((label, resource) in buffers) {
+                    keyValue(label, mass(resource.total))
+                    compositionRows(resource)
                 }
             }
         }
+
+        if (!pinned) {
+            row("click to open this machine's settings", 0x7A7A7AFFL)
+            return
+        }
+
+        val storage = machine as? Storage
+        if (storage != null) {
+            section("storage", "FILTER", open = true) { storageControls(controller, tile, storage) }
+        }
+        val decomposer = machine as? ThermalDecomposer
+        if (decomposer != null) {
+            section("furnace", "FURNACE", open = true) { decomposerControls(controller, tile, decomposer) }
+        }
+        // Wiring is the one section that starts shut. Every machine has some, most machines never
+        // need theirs touched, and it is the longest of the three — so it is the section that would
+        // otherwise push the numbers people came for off the bottom of the panel.
+        section("wiring", "WIRING", open = false) { wiringControls(controller, anchor, machine) }
+    }
+
+    /**
+     * A collapsible block of rows: a header button that toggles, and the body when it is open.
+     *
+     * The whole of the progressive disclosure in this panel. The DECK layer of a furnace is a
+     * composition, a chamber, two dials and a wiring editor — everything true about it at once —
+     * and the answer to that is not to show less but to let the player shut the parts they are not
+     * working on. Which sections are open is a *view* preference of this HUD and lives here rather
+     * than in the controller: nothing in the world changes when a section is folded, and a saved
+     * game that remembered which headings you had open would be remembering the wrong thing.
+     */
+    private fun PanelBuilder.section(id: String, label: String, open: Boolean, body: PanelBuilder.() -> Unit) {
+        val shut = if (open) id in collapsed else id !in expanded
+        gap()
+        // ⚠️ No arrow glyph — the bitmap font draws "?" for anything it does not have, and this
+        // header would then read "? WIRING". Square brackets and a sign are all known to exist.
+        button(if (shut) "[+]  $label" else "[-]  $label", 0x1E2634FFL) {
+            if (open) { if (shut) collapsed.remove(id) else collapsed.add(id) }
+            else { if (shut) expanded.add(id) else expanded.remove(id) }
+        }
+        if (!shut) body()
+    }
+
+    /** One fitting of one conduit layer: the metal, and whatever it is carrying. */
+    private fun PanelBuilder.conduitLayer(controller: OutofspaceController, tile: TileIndex, conduit: Conduit) {
+        val s = controller.state
+        val segment = s.conduits.at(conduit, tile) ?: run { row("(nothing here)", 0x9A9A9AFFL); return }
+
+        title(conduit.label)
+        if (s.conduits.isGhost(conduit, tile)) {
+            keyValue("BUILT", "${s.conduits.tracks.builtPermille(conduit, tile) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
+        }
+        if (segment.deconstructing) row("marked for deconstruction", 0xE05A4AFFL)
+
+        val metal = s.conduits.tracks[conduit].mixtureAt(tile)
+        keyValue("FITTING", mass(metal.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
+        compositionRows(metal)
+        val capacity = s.conduits.heatCapacityAt(conduit, tile)
+        if (capacity > 0L) {
+            val k = (s.conduits.energyAt(conduit, tile) / capacity).toInt()
+            keyValue(
+                "TEMP",
+                "${k}K  (${k - 273}C)",
+                0x9A9A9AFFL,
+                if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+            )
+        }
+        keyValue("JOINED", joins(segment), 0x9A9A9AFFL, 0x9AA4B4FFL)
+
+        // What the layer is *for*. Each conduit carries a different kind of thing, and only rail and
+        // pipe carry anything at all yet — a wire carries a number and power carries nothing, and
+        // saying so is better than a blank space where a cargo readout would be.
+        gap()
+        when (conduit) {
+            Conduit.Rail -> {
+                val riding = s.rail.resourceAt(tile)
+                if (riding == null) {
+                    row("(nothing riding it)", 0x9A9A9AFFL)
+                } else {
+                    keyValue("CARRYING", mass(riding.total))
+                    compositionRows(riding)
+                    val k = s.rail.stuff.kelvinAt(tile)
+                    keyValue(
+                        "LUMP TEMP",
+                        "${k}K  (${k - 273}C)",
+                        0x9A9A9AFFL,
+                        if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+                    )
+                }
+            }
+            Conduit.Pipe -> {
+                val inside = s.pipeAir.mixtureAt(tile)
+                if (inside.isEmpty) {
+                    row("(empty)", 0x9A9A9AFFL)
+                } else {
+                    keyValue("INSIDE", mass(inside.total))
+                    compositionRows(inside, maxEntries = 5)
+                    val k = s.pipeAir.kelvinAt(tile)
+                    keyValue("FLUID TEMP", "${k}K  (${k - 273}C)", 0x9A9A9AFFL, 0x9AC0E0FFL)
+                }
+            }
+            Conduit.Signal -> {
+                val network = s.networks[tile]
+                if (network < 0) {
+                    row("(not part of a circuit)", 0x9A9A9AFFL)
+                } else {
+                    val value = s.signals.ofNetwork(network)
+                    keyValue("CIRCUIT $network", "${value / 10}%", 0x9A9A9AFFL, if (value > 0) 0x6EE08AFFL else 0x5A5A5AFFL)
+                }
+            }
+            Conduit.Power -> row("carries nothing yet", 0x9A9A9AFFL)
+        }
+    }
+
+    /** Which way a fitting is joined, as the compass letters the links bitmask means. */
+    private fun joins(segment: Segment): String {
+        val out = Direction.entries.filter { segment.linkedTo(it) }
+        return if (out.isEmpty()) "nothing" else out.joinToString(" ") { it.name.take(1).uppercase() }
+    }
+
+    /**
+     * The room: pressure, temperature, flow and what the gas is made of.
+     *
+     * ⚠️ **Offered wherever air *could* be, empty or not.** "0% atm" inside the vessel is the single
+     * most useful thing this panel says — a breach reads as a room that has stopped having an
+     * atmosphere — so a layer that only appeared once there was gas would vanish exactly when it
+     * mattered. Below the trace floor there is genuinely nothing to describe (see [Negligible]): no
+     * density worth a percentage, no temperature of a gas that is not there, and no flow, whose
+     * speed is a ratio and so can read anything at all on five mass.
+     */
+    private fun PanelBuilder.atmosphereLayer(controller: OutofspaceController, tile: TileIndex) {
+        val s = controller.state
+        val density = s.air.densityAt(tile)
+        val percent = s.pressurePercentAt(tile)
+        keyValue(
+            "PRESSURE",
+            "$percent% atm",
+            0x9A9A9AFFL,
+            when {
+                percent < 40 -> 0xE05A4AFFL
+                percent < 85 -> 0xE0A93AFFL
+                else -> 0x9ED0B0FFL
+            },
+        )
+        if (Negligible.gas(density)) {
+            row("   VACUUM  (no gas to speak of)", 0x7A8A9AFFL)
+            return
+        }
+        keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
+        val airK = s.airKelvinAt(tile)
+        keyValue(
+            "AIR TEMP",
+            "${airK}K  (${airK - 273}C)",
+            0x9A9A9AFFL,
+            if (airK > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
+        )
+        val speed = s.flow.speedAt(tile)
+        if (speed > 0f && !Negligible.flow(s.flow.xAt(tile), s.flow.yAt(tile), density)) {
+            keyValue("FLOW", "${(speed * 1000f).toInt()} mtiles/tick ${bearing(s, tile)}", 0x9A9A9AFFL, 0x9AA4B4FFL)
+        }
+        val mix = s.air.mixtureAt(tile)
+        if (!mix.isEmpty) {
+            keyValue("MASS", mass(mix.total), 0x9A9A9AFFL, 0x9AA4B4FFL)
+            compositionRows(mix, maxEntries = 5)
+        }
+    }
+
+    /** A mixture's percentages, one species per row — [composition] returns a block, a row draws a line. */
+    private fun PanelBuilder.compositionRows(mixture: Mixture, maxEntries: Int = 3) {
+        if (mixture.isEmpty) return
+        for (line in composition(mixture, maxEntries).split('\n')) row(" $line", 0x9AA4B4FFL)
     }
 
     /** Air direction as 8-point compass (+y is down). */
@@ -502,65 +698,48 @@ class OutofspaceHud {
     }
 
     /**
-     * The lock on the selected warehouse: what it is holding, and the threshold to hold it to.
+     * The lock on a warehouse: what it is holding, and the threshold to hold it to.
      *
      * ⛔ **No species list.** The button locks the tank onto whatever it is already full of — see
      * [org.emerge.demo.outofspace.Edit.LockStorage]. Offering the player a menu of every material
      * in the game would ask them to name things they have never seen, and would let them lock a
      * warehouse onto something that has never come aboard.
-     *
-     * Shares the bottom-right corner with the wiring editor, so it stands down while the wire tool
-     * is out rather than drawing over it.
      */
-    private fun org.emerge.render.torus.ui.UiBuilder.storagePanel(controller: OutofspaceController) {
-        if (controller.tool == Tool.Wire) return
-        val tile = controller.selected
-        if (tile == TileIndex.NONE) return
-        val storage = controller.state.machineCovering(tile) as? Storage ?: return
+    private fun PanelBuilder.storageControls(controller: OutofspaceController, tile: TileIndex, storage: Storage) {
         val grid = controller.state.grid
-        val centre = storage.center
-        val store = bufferTile(grid, storage, centre, BufferRole.Inside)
+        val store = bufferTile(grid, storage, storage.center, BufferRole.Inside)
         val held = store?.let { controller.state.buffers.resourceAt(it) }
         val filter = storage.filter
 
-        panel(Anchor.BottomRight, rowHeight = 20f) {
-            title("STORAGE  ·  (${grid.xOf(centre)}, ${grid.yOf(centre)})")
-            if (filter == null) {
-                val dominant = held?.dominant
-                if (dominant == null) {
-                    row("TAKES ANYTHING", 0x9ED0B0FFL)
-                    row("(empty — fill it before locking)", 0x9A9A9AFFL)
-                } else {
-                    keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
-                    button(
-                        "LOCK TO ${dominant.name.uppercase()}",
-                        0x2E5A6BFFL,
-                    ) { controller.lockStorage(tile, SpeciesFilter.DEFAULT_PERCENT) }
-                    row("nothing purer than the bar will be sent here", 0x7A7A7AFFL)
-                }
+        if (filter == null) {
+            val dominant = held?.dominant
+            if (dominant == null) {
+                row("TAKES ANYTHING", 0x9ED0B0FFL)
+                row("(empty  ·  fill it before locking)", 0x9A9A9AFFL)
             } else {
-                keyValue(
-                    "LOCKED TO",
-                    filter.species.name.uppercase(),
-                    0x9A9A9AFFL,
-                    speciesColor(filter.species),
-                )
-                clauseRow(
-                    lhs = "AT LEAST",
-                    cmp = "${filter.minPercent}%",
-                    rhs = "pure",
-                    onLhs = { controller.cycleStorageFilter(tile, 1) },
-                    onCmp = { controller.cycleStorageFilter(tile, 1) },
-                    onRhs = { controller.cycleStorageFilter(tile, 1) },
-                )
-                button("UNLOCK", 0x6B3A3AFFL) { controller.lockStorage(tile, null) }
-                row("tap the bar to raise the threshold", 0x7A7A7AFFL)
+                keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
+                button("LOCK TO ${dominant.name.uppercase()}", 0x2E5A6BFFL) {
+                    controller.lockStorage(tile, SpeciesFilter.DEFAULT_PERCENT)
+                }
+                row("nothing purer than the bar will be sent here", 0x7A7A7AFFL)
             }
+        } else {
+            keyValue("LOCKED TO", filter.species.name.uppercase(), 0x9A9A9AFFL, speciesColor(filter.species))
+            clauseRow(
+                lhs = "AT LEAST",
+                cmp = "${filter.minPercent}%",
+                rhs = "pure",
+                onLhs = { controller.cycleStorageFilter(tile, 1) },
+                onCmp = { controller.cycleStorageFilter(tile, 1) },
+                onRhs = { controller.cycleStorageFilter(tile, 1) },
+            )
+            button("UNLOCK", 0x6B3A3AFFL) { controller.lockStorage(tile, null) }
+            row("tap the bar to raise the threshold", 0x7A7A7AFFL)
         }
     }
 
     /**
-     * The two dials on the selected thermal decomposer: how hot, and how long.
+     * The two dials on a thermal decomposer: how hot, and how long.
      *
      * ⚠️ **Two dials because conversion is asymptotic.** There is no moment at which a charge is
      * finished — a reaction approaches completion and never arrives — so the machine cannot decide
@@ -569,169 +748,133 @@ class OutofspaceHud {
      *
      * ⚠️ **"TICKS" is provisional.** This is the first duration the game shows anybody, and what a
      * tick should be called in front of a player is not decided — see [ThermalDecomposer.DWELLS].
-     *
-     * Shares the bottom-right corner with the storage lock and the wiring editor, and stands down for
-     * the wire tool exactly as they do. A tile cannot be both a warehouse and a furnace, so the two
-     * machine panels cannot collide.
      */
-    private fun org.emerge.render.torus.ui.UiBuilder.decomposerPanel(controller: OutofspaceController) {
-        if (controller.tool == Tool.Wire) return
-        val tile = controller.selected
-        if (tile == TileIndex.NONE) return
-        val machine = controller.state.machineCovering(tile) as? ThermalDecomposer ?: return
+    private fun PanelBuilder.decomposerControls(
+        controller: OutofspaceController,
+        tile: TileIndex,
+        machine: ThermalDecomposer,
+    ) {
         val grid = controller.state.grid
-        val centre = machine.center
-
-        val chamber = bufferTile(grid, machine, centre, BufferRole.Inside)
-        val charge = chamber?.let { controller.state.buffers.resourceAt(it) }
+        val chamber = bufferTile(grid, machine, machine.center, BufferRole.Inside)
         val chargeKelvin = chamber?.let { controller.state.buffers.stuff.kelvinAt(it) } ?: 0
 
-        panel(Anchor.BottomRight, rowHeight = 20f) {
-            title("THERMAL DECOMPOSER  ·  (${grid.xOf(centre)}, ${grid.yOf(centre)})")
+        // ⛔ **Not `clauseRow`**, though the storage lock next door uses one. That control is a
+        // *clause* editor — "AT LEAST | 70% | pure" — and its middle cell is a fixed three
+        // characters wide, sized for a comparison operator. "2400 K" and "5000 TICKS" do not fit in
+        // it, and the way they do not fit is to be silently clipped: the panel renders, reads almost
+        // right, and shows the player "NO HOLI".
+        button(
+            listOf("HOLD AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
+            0x2E5A6BFFL,
+        ) { controller.cycleDecomposerTemperature(tile, 1) }
+        button(
+            listOf(
+                "FOR  " to 0x9A9A9AFFL,
+                (if (machine.dwellTicks == 0) "NO HOLD" else "${machine.dwellTicks} TICKS") to 0xFFFFFFFFL,
+            ),
+            0x2E5A6BFFL,
+        ) { controller.cycleDecomposerDwell(tile, 1) }
 
-            // ⛔ **Not `clauseRow`**, though the storage lock next door uses one. That control is a
-            // *clause* editor — "AT LEAST | 70% | pure" — and its middle cell is a fixed three
-            // characters wide, sized for a comparison operator. "2400 K" and "5000 TICKS" do not fit
-            // in it, and the way they do not fit is to be silently clipped: the panel renders, reads
-            // almost right, and shows the player "NO HOLI".
-            button(
-                listOf("HOLD AT  " to 0x9A9A9AFFL, "${machine.setTemperature} K" to 0xFFFFFFFFL),
-                0x2E5A6BFFL,
-            ) { controller.cycleDecomposerTemperature(tile, 1) }
-            button(
-                listOf(
-                    "FOR  " to 0x9A9A9AFFL,
-                    // ⚠️ "TICKS" is provisional — see [ThermalDecomposer.DWELLS].
-                    (if (machine.dwellTicks == 0) "NO HOLD" else "${machine.dwellTicks} TICKS") to 0xFFFFFFFFL,
-                ),
-                0x2E5A6BFFL,
-            ) { controller.cycleDecomposerDwell(tile, 1) }
-
-            gap()
-
-            if (charge == null) {
-                row("(no charge in the chamber)", 0x9A9A9AFFL)
-            } else {
-                // What it is *now*, not what went in — the whole point of the wait is that the
-                // chemistry may have changed it, and a readout naming the input would be describing
-                // something that is no longer there.
-                // Coloured by whether it is *there yet* rather than by how hot it is, because that
-                // is the question the panel is for: below the setpoint the element is still working
-                // and the dwell has not started counting.
+        if (chamber != null && controller.state.buffers.resourceAt(chamber) != null) {
+            // Coloured by whether the charge is *there yet* rather than by how hot it is: below the
+            // setpoint the element is still working and the dwell has not started counting.
+            keyValue(
+                "CHARGE",
+                "$chargeKelvin K  (${chargeKelvin - 273}C)",
+                0x9A9A9AFFL,
+                if (chargeKelvin >= machine.setTemperature) 0xE0864AFFL else 0x9AC0E0FFL,
+            )
+            if (machine.dwellTicks > 0) {
                 keyValue(
-                    "CHARGE",
-                    "$chargeKelvin K  (${chargeKelvin - 273}C)",
+                    "HELD",
+                    "${machine.heldTicks} of ${machine.dwellTicks}",
                     0x9A9A9AFFL,
-                    if (chargeKelvin >= machine.setTemperature) 0xE0864AFFL else 0x9AC0E0FFL,
+                    if (machine.heldTicks >= machine.dwellTicks) 0x6EE08AFFL else 0xE0A93AFFL,
                 )
-                // One row per line, like every other caller: `composition` returns a newline-joined
-                // block and a `row` draws a single line, so handing it the whole string renders the
-                // first species and silently swallows the rest.
-                for (line in composition(charge, maxEntries = 3).split('\n')) row(line, 0xC8C8C8FFL)
-                if (machine.dwellTicks > 0) {
-                    keyValue(
-                        "HELD",
-                        "${machine.heldTicks} of ${machine.dwellTicks}",
-                        0x9A9A9AFFL,
-                        if (machine.heldTicks >= machine.dwellTicks) 0x6EE08AFFL else 0xE0A93AFFL,
-                    )
-                }
             }
-            // ⚠️ No semicolon: the bitmap font has no glyph for one and draws "?" instead. The
-            // interpunct is already used in every panel title, so it is known to exist.
-            row("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
         }
+        // ⚠️ No semicolon: the bitmap font has no glyph for one and draws "?" instead. The
+        // interpunct is already used in every panel title, so it is known to exist.
+        row("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
     }
 
-    /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, × to delete). */
-    private fun org.emerge.render.torus.ui.UiBuilder.wiringPanel(controller: OutofspaceController) {
-        if (controller.tool != Tool.Wire) return
-        val tile = controller.selected
-        if (tile == TileIndex.NONE) return
-        val machine = controller.state.deck[tile] ?: return
-        machineWiringPanel(controller, tile, machine)
-    }
-
-    private fun org.emerge.render.torus.ui.UiBuilder.machineWiringPanel(controller: OutofspaceController, tile: TileIndex, machine: DeckMachine) {
+    /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, x to delete). */
+    private fun PanelBuilder.wiringControls(controller: OutofspaceController, tile: TileIndex, machine: DeckMachine) {
         val grid = controller.state.grid
 
-        // Bottom-right (not centred — build palette owns bottom-left).
-        panel(Anchor.BottomRight, rowHeight = 20f) {
-            title("WIRING  ·  ${machine.kind.label} (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+        // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
+        // under it, and the readout's job is to say whether there is one.
+        val wired = controller.state.networks[tile] >= 0
 
-            // A transmitter no longer picks anything, so there is nothing to tap: it drives the wire
-            // under it, and the readout's job is to say whether there is one.
-            val wired = controller.state.networks[tile] >= 0
-
-            if (machine is WireButton) {
-                clauseRow(
-                    lhs = "WHEN KEY",
-                    cmp = machine.key.label,
-                    rhs = if (wired) "${controller.state.signals.at(tile) / 10}%" else "(no wire)",
-                    onLhs = { controller.cycleInputKey(tile, 1) },
-                    onCmp = { controller.cycleInputKey(tile, 1) },
-                    onRhs = { controller.cycleInputKey(tile, 1) },
-                )
-                row("held in FLIGHT mode — press F to switch", 0x9A9A9AFFL)
-                gap()
-            }
-
-            if (machine is Sensor) {
-                val watched = grid.neighbour(tile, machine.facing)
-                keyValue(
-                    "EMITS",
-                    if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
-                    else "(no wire under it)",
-                    0x9A9A9AFFL,
-                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
-                )
-                val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
-                if (target != null) {
-                    row("watching: ${target.kind.label}", 0x9A9A9AFFL)
-                } else {
-                    val targetDeck = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
-                    row("watching: ${targetDeck?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
-                }
-                gap()
-            }
-
-            val gauge = controller.state.deck[tile] as? Gauge
-            if (gauge != null) {
-                keyValue(
-                    "REPORTS",
-                    if (wired) "${gauge.lastPurity / 10}% on circuit ${controller.state.networks[tile]}"
-                    else "(no wire under it)",
-                    0x9A9A9AFFL,
-                    if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
-                )
-                gap()
-            }
-
-            val action = Action.Run
-            val triggers = machine.wiring.triggers(action)
-            val activation = machine.wiring.activation(action, controller.state.signals.at(tile))
-            keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
-
-            if (triggers.isEmpty()) {
-                row("(never runs — no terms)", 0xE05A4AFFL)
-            } else {
-                for ((slot, trigger) in triggers.withIndex()) {
-                    clauseRow(
-                        lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
-                        cmp = "x",
-                        rhs = signed(trigger.percent),
-                        onLhs = { controller.cycleTriggerSource(tile, action, slot, 1) },
-                        onCmp = { controller.wire(tile, action, slot, null) },
-                        onRhs = { controller.cycleTriggerWeight(tile, action, slot, 1) },
-                    )
-                }
-            }
-            button("+ ADD TERM", 0x2E5A6BFFL) {
-                controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
-            }
-            row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
-            row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0 — no wire under this tile", 0x7A7A7AFFL)
+        if (machine is WireButton) {
+            clauseRow(
+                lhs = "WHEN KEY",
+                cmp = machine.key.label,
+                rhs = if (wired) "${controller.state.signals.at(tile) / 10}%" else "(no wire)",
+                onLhs = { controller.cycleInputKey(tile, 1) },
+                onCmp = { controller.cycleInputKey(tile, 1) },
+                onRhs = { controller.cycleInputKey(tile, 1) },
+            )
+            row("held in FLIGHT mode  ·  press F to switch", 0x9A9A9AFFL)
         }
+
+        if (machine is Sensor) {
+            val watched = grid.neighbour(tile, machine.facing)
+            keyValue(
+                "EMITS",
+                if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
+                else "(no wire under it)",
+                0x9A9A9AFFL,
+                if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
+            )
+            val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
+            row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
+        }
+
+        if (machine is Gauge) {
+            keyValue(
+                "REPORTS",
+                if (wired) "${machine.lastPurity / 10}% on circuit ${controller.state.networks[tile]}"
+                else "(no wire under it)",
+                0x9A9A9AFFL,
+                if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
+            )
+            if (machine.lastDominant == null) {
+                row("nothing has passed through yet", 0x9A9A9AFFL)
+            } else {
+                keyValue(
+                    "LAST SAW",
+                    "${machine.lastPurity / 10}% ${machine.lastDominant.name.uppercase()} of ${mass(machine.lastMass)}",
+                    0x9A9A9AFFL,
+                    speciesColor(machine.lastDominant),
+                )
+            }
+        }
+
+        val action = Action.Run
+        val triggers = machine.wiring.triggers(action)
+        val activation = machine.wiring.activation(action, controller.state.signals.at(tile))
+        keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
+
+        if (triggers.isEmpty()) {
+            row("(never runs  ·  no terms)", 0xE05A4AFFL)
+        } else {
+            for ((slot, trigger) in triggers.withIndex()) {
+                clauseRow(
+                    lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
+                    cmp = "x",
+                    rhs = signed(trigger.percent),
+                    onLhs = { controller.cycleTriggerSource(tile, action, slot, 1) },
+                    onCmp = { controller.wire(tile, action, slot, null) },
+                    onRhs = { controller.cycleTriggerWeight(tile, action, slot, 1) },
+                )
+            }
+        }
+        button("+ ADD TERM", 0x2E5A6BFFL) {
+            controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
+        }
+        row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
+        row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0  ·  no wire under this tile", 0x7A7A7AFFL)
     }
 
     private fun org.emerge.render.torus.ui.PanelBuilder.controlRowOfTools(controller: OutofspaceController) {

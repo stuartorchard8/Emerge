@@ -276,7 +276,7 @@ class GridFitTriggerTest {
         // On the deck: with the migration done, every building is a deck machine and the machine
         // list holds nothing but bridges.
         val target = controller.state.grid.tiles.first { controller.state.deck[it] != null }
-        controller.tool = Tool.Wire
+        controller.tool = Tool.Inspect
         controller.apply(target)
         assertEquals(target, controller.selected, "the fixture did not select anything")
 
