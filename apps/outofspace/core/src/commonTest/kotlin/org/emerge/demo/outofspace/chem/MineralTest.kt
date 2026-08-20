@@ -66,11 +66,42 @@ class MineralTest {
         assertTrue(orphans.isEmpty(), "elements with no source: ${orphans.joinToString()}")
     }
 
-    /** A mineral no rock contains is a mineral the player can never mine — dead weight in the table. */
+    /**
+     * A mineral the player can neither **mine** nor **make** is dead weight in the table.
+     *
+     * ⚠️ **Two ways to reach a species, not one.** This used to demand a non-zero
+     * [Species.relativeAbundance] of every mineral, which was the whole truth for as long as nothing
+     * could be manufactured. Lime and periclase are what calcining leaves behind and occur in no
+     * rock that has ever met water or carbon dioxide, so their abundance is zero and must stay zero
+     * — an abundance invented to satisfy this test would put quicklime in asteroids.
+     *
+     * Stated against the reaction tables rather than against a list of exceptions, so a product
+     * whose reaction is later removed goes back to being dead weight and is reported as such.
+     */
     @Test
-    fun everyMineralOccursInRock() {
-        val unreachable = MINERALS.keys.filter { it.relativeAbundance == 0 }.map { it.name }
-        assertTrue(unreachable.isEmpty(), "minerals with no abundance: ${unreachable.joinToString()}")
+    fun everyMineralIsMinedOrMade() {
+        val made = DECOMPOSITIONS.flatMap { d -> d.products.map { it.first } }.toSet() +
+            OXIDATIONS.map { it.product }
+        val unreachable = MINERALS.keys
+            .filter { it.relativeAbundance == 0 && it !in made }
+            .map { it.name }
+        assertTrue(
+            unreachable.isEmpty(),
+            "minerals that cannot be mined and cannot be made: ${unreachable.joinToString()}",
+        )
+    }
+
+    /** And the converse: something made by a reaction has to be a thing the table describes. */
+    @Test
+    fun everyReactionProductIsAKnownSubstance() {
+        for (d in DECOMPOSITIONS) {
+            for ((product, _) in d.products) {
+                assertTrue(
+                    product.isElement || product in MINERALS,
+                    "${d.reactant} yields $product, which is neither an element nor in MINERALS",
+                )
+            }
+        }
     }
 
     /** Only compounds, ices and genuinely native elements belong in a rock. */

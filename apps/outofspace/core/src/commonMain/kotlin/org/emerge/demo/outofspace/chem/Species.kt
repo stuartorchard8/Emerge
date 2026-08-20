@@ -247,6 +247,14 @@ enum class Species(
     Ilmenite(152, 620, solidKgPerCubicMetre = 4720, relativeAbundance = 120000),      // FeTiO3
     Rutile(80, 690, solidKgPerCubicMetre = 4230, relativeAbundance = 20000),          // TiO2
     Spinel(142, 820, solidKgPerCubicMetre = 3580, relativeAbundance = 250000),        // MgAl2O4
+
+    // ⚠️ **Made, never found.** Both are what a carbonate leaves behind when it is calcined, and
+    // neither survives in a rock that has ever met water or carbon dioxide — so both take the
+    // default [relativeAbundance] of zero and no asteroid will ever contain either. They exist
+    // because `Calcite -> lime + CO2` was named in this table's own documentation and in the
+    // thermal decomposer's, and was impossible until now.
+    Lime(56, 750, solidKgPerCubicMetre = 3340),                                     // CaO, quicklime
+    Periclase(40, 925, solidKgPerCubicMetre = 3580),                                // MgO
     Corundum(102, 775, solidKgPerCubicMetre = 3980, relativeAbundance = 50000),       // Al2O3
     Pyrolusite(87, 620, solidKgPerCubicMetre = 5060, relativeAbundance = 30000),      // MnO2
     Cassiterite(151, 350, solidKgPerCubicMetre = 6990, relativeAbundance = 215),    // SnO2

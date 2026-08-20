@@ -124,3 +124,32 @@ val MACHINE_BUFFER_CAP = 4L * Budget.TONNE
  * machine that can hoard more output than input would drain its feed before it stalled.
  */
 val MACHINE_OUTPUT_CAP = 4L * Budget.TONNE
+
+/**
+ * How much energy a [org.emerge.demo.outofspace.world.machine.ThermalDecomposer]'s element puts into
+ * its tile in one tick at full activation.
+ *
+ * **Derived from what it is for**: a *full* chamber — [MACHINE_BUFFER_CAP] of rock at a
+ * representative specific heat — climbing [HEATER_KELVIN_PER_TICK] kelvin a tick. So four tonnes go
+ * from ambient to a decomposition temperature in something under ten seconds of play, and a lighter
+ * charge is capped by its own shortfall long before it gets there and simply arrives sooner. A
+ * heavier charge taking longer is behaviour the old fixed `ticksPerAction` could not express at all.
+ *
+ * The derivation is only honest because the element heats **the charge** — see [Work.heatBuffer].
+ * An element modelled as a jacket around the chamber would put its energy into nine tiles of
+ * firebrick that outweigh a chamberful of rock by something like fifty to one, and a number derived
+ * against the charge would be a sixth of what such a machine needed.
+ *
+ * ⚠️ **The game does not agree with the world about time**, and this is where that shows: four
+ * tonnes of rock to 900 K is 3.2 GJ, which a real industrial element delivers over hours rather than
+ * over the seconds this is sized for. [HEATER_KELVIN_PER_TICK] is the dial, and it is expected to
+ * move.
+ */
+val HEATER_POWER: Long =
+    (MACHINE_BUFFER_CAP * HEATER_REFERENCE_SPECIFIC_HEAT / Budget.CAPACITY_DIVISOR) * HEATER_KELVIN_PER_TICK
+
+/** J/kg/K of ordinary rock — calcite is 900, serpentine 1100, iron 450. The middle of the range. */
+private const val HEATER_REFERENCE_SPECIFIC_HEAT = 900L
+
+/** How fast a *full* chamber climbs. See [HEATER_POWER] — this is the number that is chosen. */
+private const val HEATER_KELVIN_PER_TICK = 2L

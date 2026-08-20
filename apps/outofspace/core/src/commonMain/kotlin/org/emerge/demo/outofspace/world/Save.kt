@@ -342,11 +342,10 @@ object Save {
                 put("progress", m.progress.toString())
                 put("eff", m.efficiencyPermille.toString())
             }
-            is ThermalDecomposer -> {
-                put("carry", m.carry.toString())
-                put("progress", m.progress.toString())
-                put("temp", m.setTemperature.toString())
-            }
+            // A thermostat and nothing else: the setpoint is its whole state. An older file's
+            // `carry` and `progress` are simply not read — they belonged to a tick counter that no
+            // longer decides anything, the same disposal the `Extractor` note below describes.
+            is ThermalDecomposer -> put("temp", m.setTemperature.toString())
             // An extractor is its facing and its one store, both written by the common code around
             // this. Its `carry` and `rate` went with the second store: the rail sets the throughput.
             is Extractor -> {}
@@ -1120,8 +1119,6 @@ object Save {
             DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(
                 tile,
                 facing = facing(),
-                carry = massNum("carry", 0L),
-                progress = num("actionProgress", 0L).toInt(),
                 setTemperature = num("temp", 900L).toInt(),
             )
             // ⚠️ An older file's `carry`, `rate` and `in` (the cell in its jaws) are simply not read.

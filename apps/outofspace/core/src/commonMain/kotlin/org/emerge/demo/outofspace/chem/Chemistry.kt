@@ -76,14 +76,6 @@ fun process(input: Mixture, efficiencyPermille: Int = 1000): ProcessResult {
 }
 
 /**
- * Heats [input] up to [setTemperature].
- */
-fun cook(input: Mixture, setTemperature: Int): Mixture {
-    // TODO: add temperature to mixtures
-    return input
-}
-
-/**
  * Splits [amount] mass off [input], proportionally across its species — what a belt, a grabber or
  * a machine input buffer does. Returns `(taken, left)`, which always sum back to [input].
  */

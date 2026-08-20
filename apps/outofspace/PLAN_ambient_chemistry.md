@@ -1,11 +1,12 @@
 # Ambient chemistry
 
-Status: **increments 0 and 1 built** (2026-08-20). Increment 2 — reagent contention — is next, and
-is required before a *second* reaction may want the same tile's oxygen.
+Status: **increments 0 to 4 built** (2026-08-20). Chemistry is a table of nine reactions run as a
+pass over the cargo layers, gated by temperature and by what the air can supply. Fire sustains
+itself; calcining does not. Increment 5 — roasting — is next, and is optional.
 
-Chemistry today is something one machine does to one buffer, and it does not actually do it —
-`cook` in `chem/Chemistry.kt` is a stub that returns its input unchanged. This plan makes chemistry
-a property of matter and temperature rather than a property of a machine.
+Chemistry used to be something one machine did to one buffer, and it did not actually do it —
+`cook` in `chem/Chemistry.kt` was a stub that returned its input unchanged, and it is now deleted.
+This plan makes chemistry a property of matter and temperature rather than a property of a machine.
 
 > Heat an iron casing in the presence of oxygen and it oxidises. Heat carbon on a rail past its
 > ignition point in the presence of oxygen and you get a fire. The thermal decomposer is not where
@@ -321,9 +322,10 @@ balance while iron quietly turns into copper, which is what `conservationOf` is 
 
 ---
 
-# Increment 2 — reagent contention
+# Increment 2 — reagent contention ✅ BUILT
 
-Needs two competing reactions in one tile, so it arrives with iron oxidation.
+Landed with iron oxidation as the second consumer: `4 Fe + 3 O₂ → 2 Fe₂O₃` in `chem/Reaction.kt`,
+and the demand-then-apportion sweep in `world/AmbientChemistry.kt`.
 
 Decision 2 says the oxygen comes from the tile's atmosphere, and "the oxygen attacks the carbon
 first and burns it off" is a statement about **allocation order**. Several consumers, one tile's
@@ -331,80 +333,197 @@ oxygen. Resolving it by iteration order gives a rule nobody can predict and a Ga
 leftward bias — the exact thing `stepSolidHeat` documents itself as avoiding, and the thing the
 rigid-body solver is required to stay clear of.
 
-**Jacobi, like everything else here.** Compute every reaction's oxygen *demand* against a snapshot,
-then `apportion` the available oxygen across them if oversubscribed. `apportion` (`chem/Mixture.kt`)
-already distributes a scarce total across weights with an exact sum and no float.
+**Jacobi, like everything else here.** `Oxidation.demand` is asked of every reaction against one
+snapshot of the tile; only then is the supply handed out, in full if it covers the demands and by
+`apportionInto` if it does not, and `Oxidation.react` takes an *allowance* rather than finding one.
+The split into two calls is the whole mechanism.
 
-Then "carbon burns preferentially" falls out of carbon's rate being higher at that temperature,
-rather than from a priority list somebody wrote. Order-independent, deterministic, and it means the
-no-atmosphere room in decision 2 is a strategy the physics produces rather than a special case.
+Then "carbon burns preferentially" falls out of carbon's rate being higher at that temperature —
+`BASE_RATE` is ten times `IRON_BASE_RATE` — rather than from a priority list somebody wrote.
+Order-independent, deterministic, and it means the no-atmosphere room in decision 2 is a strategy
+the physics produces rather than a special case.
+
+## What the build decided that the scope did not
+
+- ⚠️ **The second reaction runs the crossing backwards, and the ledger had no term for it.** Carbon
+  leaving a belt is `solidBecameGas`; the oxygen iron *keeps* is the mirror image — the atmosphere
+  shrinks on purpose and the cargo gets heavier. `gasBecameSolid` is that mirror, written as its own
+  call rather than as the old one with negative arguments, because a caller passing a negative mass
+  to a function whose name says it went the other way is a line nobody reads correctly twice.
+  `ChemistryStep` grew to four numbers for the same reason: **never net the two directions**, or the
+  first reaction whose halves happened to cancel would look like no chemistry at all.
+- ⚠️ **Phase is not a field on a reaction.** Whether a product joins the air is `Species.fluid` —
+  the same fact that made the air array narrow in increment 0 — so CO₂ leaves and Fe₂O₃ does not,
+  and neither reaction had to say so. A flag would have been a third place for the phase of a
+  species to be recorded and a third place for it to disagree.
+- ⚠️ **`Oxidation` states formula units, never mass fractions.** `4 Fe + 3 O₂ → 2 Fe₂O₃` is three
+  integers; every mass ratio is derived from them and the molar masses `Species` already holds.
+  `OxidationContentionTest` closes every reaction atom by atom, which is `MineralTest`'s argument.
+- ⚠️ **`IRON_OXIDATION_KELVIN` is 500 K, which is dry scaling and not rust in a puddle.** Iron in
+  damp air corrodes at room temperature by an electrochemical mechanism this model has nothing to
+  say about. Making rust appear at ambient by lowering the onset would be a rate dial pretending to
+  be a mechanism, and it would quietly turn every belt in the game into ore.
+- ⚠️ **A sum of floors is not the floor of a sum.** Each pass floors its own oxygen from its own
+  reactant, so over several passes the world sits up to one unit per pass *under* the stoichiometric
+  line. The direction is the safe one — flooring can only ever take less oxygen than the ratio calls
+  for — but a test asserting exact equality across a multi-pass run is asserting a coincidence.
+- **Contention has to be *provoked* to be tested.** In a room full of air both reactions get
+  everything they ask for and the apportionment is never consulted, so a test against ambient air
+  passes just as well with the demand pass deleted. The starved-tile fixture is the one that means
+  anything.
+- `apportionInto` is `apportion` writing into a caller's array; `apportion` is now one line over it.
+  The sweep divides a tile's oxygen at every occupied tile of every layer every pass, and allocating
+  a two-element array to do it is the kind of cost that only ever shows up as "the chemistry is
+  slow".
+
+## Still open
+
+- Iron scaling is on the **rail layer only**, for the same ledger reason increment 1 was: a corroding
+  hull plate is *fabric*, and the fabric side of the ledger has no term for changing phase in either
+  direction. That is the next thing rust wants, and it is what feeds the damage system.
+- Surface area is still not solved — see "Not solved, deliberately". `IRON_BASE_RATE` stands in for
+  it and is expected to move once there is a real save to tune against.
 
 ---
 
-# Increment 3 — `cook` becomes a heater
+# Increment 3 — `cook` becomes a heater ✅ BUILT
 
-Per decision 3. Push energy into the buffer's `setEnergy` toward `setTemperature`; delete the
-chemistry from `refine(ThermalDecomposer)` at `OutofspaceSim.kt:700`. `ticksPerAction` becomes
-redundant — the reaction is gated by temperature now, and the machine's job is to reach and hold it.
+Per decision 3. `cook` is deleted — it returned its input unchanged for its entire life — and with it
+the chemistry, the recipe, the tick counter and the throttle carry. `ThermalDecomposer` is now four
+fields: where it is, which way it faces, its setpoint and its wiring.
 
-The buffer is already a real `Body` in `BodySlot.BufferStore` that `stepSolidHeat` conducts into,
-so the thermal side of this is plumbed. The machine becomes the waste-heat sink its own kdoc says
-it should be: the reaction stalls when the player's heat budget stalls.
+What it does: pull a charge in, run an element until the charge is at [setTemperature], hand on
+whatever the charge has *become*. What happened to it on the way is the ambient chemistry pass, which
+now sweeps the **buffer layer** as well as the rail — the same pass, the same arithmetic, the same
+ledger. The machine contributes conditions and nothing else.
 
-`BufferRole.kt:116` gives `ThermalDecomposer` a `Waste` role of `NO_OFFSET` — one output port. With
-gaseous products venting to the tile's air (increment 1) that is correct and needs no second port:
-solids leave by the belt, gases leave by the room. Which is also the argument for putting the
-decomposer somewhere you have thought about the ventilation.
+`BufferRole.kt` gives `ThermalDecomposer` a `Waste` role of `NO_OFFSET` — one output port — and with
+gaseous products venting to the tile's air that is correct and needs no second port: solids leave by
+the belt, gases leave by the room. Which is also the argument for putting the decomposer somewhere
+you have thought about the ventilation.
+
+## What the build decided that the scope did not
+
+- ⚠️ **The element is *in* the chamber: it heats the charge, and the charge heats everything else.**
+  `Work.heatBuffer` puts the energy straight into the buffer's stuff, so most of it stays in the
+  material and the casing gets what bleeds out through `BUFFER_CONTACT_CONDUCTANCE` — slowly — and
+  the room gets what bleeds out of the casing. Stu's call, and the right one: modelled properly the
+  element would be a third thermal body warming both the charge and the casing, and this gives the
+  behaviour that was actually wanted for none of the machinery.
+
+  It was built the other way round first — `heat()` into the tile, letting the solid-heat solver
+  share it out — which is more nearly correct and feels worse. A charge warmed *through* nine tiles
+  of firebrick lags its box by hundreds of kelvin and takes thousands of ticks to catch up, and the
+  box has to overshoot to ~1400 K to drive a 1200 K charge at all.
+- ⚠️ **The shortfall is the cap, and it only became correct when the element moved inside.** Never
+  more than the gap the charge still has, so a light charge cannot be blown past its setpoint by one
+  tick of an element sized for a full hopper. Pointed at the *tile* that same cap is a bug — it
+  binds against a firebrick box that outweighs a chamberful of rock about fifty to one, and the
+  machine crawls at a sixth of the intended rate. That cost a full debugging pass, and it is worth
+  knowing that the two decisions are coupled: the cap and the target have to agree.
+- **`HEATER_POWER` is derived, and honestly so**: a full chamber climbing a couple of kelvin a tick.
+  The derivation is only true because the energy reaches the charge. ⚠️ Four tonnes of rock to 900 K
+  is 3.2 GJ, which a real element delivers over hours rather than the seconds this is sized for —
+  the game does not agree with the world about time, and `HEATER_KELVIN_PER_TICK` is the dial.
+- ⚠️ **The dwell scales with the charge's mass**, because the element's power is fixed and a heavier
+  charge has more to warm. A full hopper is a few hundred ticks; a light one is at temperature almost
+  at once. Physically right, and free.
+- ✅ **`heat()` used to throw away seven ticks in eight — fixed.** It accumulates into a per-tick
+  array that the *heat* pass banked, and `heatAdded` is rebuilt with each tick's `Work`, so a machine
+  that did its work on any of the seven ticks between heat steps had its whole output discarded —
+  while still counting it in `generatedEnergy`, which is how a term goes missing and stays missing.
+  Banking now happens in the **machine** block, with the machines that made the heat: it is a write
+  into a layer and needs no solver, and a machine that did not run made nothing to bank.
+
+  Measured on a processor fed off the beat: **284 K against 313 K**, the recovered energy matching
+  the booked `generatedEnergy` to a fraction of a percent. ⚠️ **Every machine in the game now sheds
+  about eight times the waste heat it used to** — `heatPerGram` is the per-machine dial if that
+  proves too intense. `HeatTest` pins the invariant as a comparison so no tuning pass re-pins it.
+- **A save's `carry` and `progress` are simply not read.** They belonged to a tick counter that no
+  longer decides anything; the setpoint is the whole of what a decomposer stores now. The same
+  disposal the extractor's second store got, and Stu's precedent.
+
+## Still open
+
+- **The release condition.** "At the setpoint" is the dwell. A reaction slower than the heating ramp
+  does not finish before the charge is handed on. Increment 4 may want "and has stopped reacting"
+  once there is a reaction table to ask — it needs the sweep to report per-tile activity, which it
+  does not today.
+- **A reaction can push a hopper over `MACHINE_BUFFER_CAP`**, since the cap is enforced where matter
+  is *inserted* and iron scaling makes a store heavier in place. It self-corrects — the machine code
+  then refuses to add to it and it drains — but it is a cap that is not quite a cap.
 
 ---
 
-# Increment 4 — the thermal-only table
+# Increment 4 — the thermal-only table ✅ BUILT
 
-Now the table earns its place, and **two species are missing** to make it work:
+`chem/Decomposition.kt`: seven reactions that need nothing but heat, plus the two species that were
+missing to make them possible — **Lime (CaO)** and **Periclase (MgO)**, both named in `Minerals.kt`
+and in `ThermalDecomposer`'s own kdoc and both impossible until now.
 
-- **Lime, CaO** — `Calcite → CaO + CO₂`. Named in `Minerals.kt` and in `ThermalDecomposer`'s own
-  kdoc, and impossible today.
-- **Periclase, MgO** — `Magnesite → MgO + CO₂`; dolomite needs both.
+| | | onset |
+|---|---|---|
+| `Calcite → Lime + CO₂` | the marquee one | 1170 K |
+| `Magnesite → Periclase + CO₂` | | 810 K |
+| `Serpentine → Forsterite + Enstatite + 2 H₂O` | a wet rock giving up its water | 900 K |
+| `Pyrite → Troilite + S` | sulfur leaves as vapour | 1000 K |
+| `6 Fe₂O₃ → 4 Fe₃O₄ + O₂` | ore that makes its own air | 1730 K |
+| `2 NH₃ → N₂ + 3 H₂` | | 1100 K |
+| `CH₄ → C + 2 H₂` | carbon comes out solid | 1300 K |
 
-Everything else in tier 1 is **free**, needing no new species:
+## What the build decided that the scope did not
 
-- `Serpentine → Forsterite + Enstatite + Water` — the marquee one, and the reason a dry inner-system
-  rock is different from a wet one.
-- `Pyrite → Troilite + Sulfur`
-- `Hematite → Magnetite + Oxygen`
-- `Ammonia → Nitrogen + Hydrogen`, `Methane → Carbon + Hydrogen`
-- Carbothermic iron: `Hematite/Wustite + Carbon → Iron + CarbonMonoxide` — the reaction decision 2
-  is really about.
+- **A row states formula units and nothing else.** Every mass is derived from those counts and the
+  molar masses `Species` already holds, and `split` hands the products shares of the reactant's own
+  mass through `apportion` — so conservation is structural and a row that does not balance cannot
+  silently rescale itself to fit. `DecompositionTest` closes every row **atom by atom** against
+  `MINERALS`, which is the only oracle a reaction table can have.
+- ⚠️ **An enthalpy is written the way it is looked up**: `178L * kJPerMolAt(100)` is still
+  recognisably "178 kJ/mol of something weighing 100 g/mol". Reducing it by hand to 1.78 MJ/kg first
+  would throw away the only thing that makes it checkable. A test recovers each row's divisor and
+  insists it is that row's own `reactantUnits * molarMass`, because using a neighbour's divisor is
+  wrong by a plausible-looking ratio.
+- ⛔ **`scaledRatio` returns zero for a negative scale**, by an explicit guard — it is built for
+  fractions of quantities. An enthalpy's sign is the whole of what it means, so passing one straight
+  in made **every exothermic reaction release exactly nothing**, silently, in the direction where the
+  game still looks like it works. `perKilogram` puts the sign back, in one place, for both tables.
+  Caught by a test asserting burning carbon is exothermic; nothing else would have noticed.
+- **The enthalpies are real, so `Oxidation` got one too.** Increment 1 deliberately left the reaction
+  athermal, on the grounds that inventing where the heat goes for one reaction and then deciding it
+  again for the table is two answers to one question. The table exists, so this is the answer, and it
+  applies to both.
+- **A decomposition needs no contention pass.** "No reagent, just heat" is exactly the statement that
+  these cannot compete for anything, so a tile holding two decomposing minerals runs both in full.
+  Only the oxidations go through the demand-and-apportion machinery.
+- ⚠️ **`everyMineralOccursInRock` became `everyMineralIsMinedOrMade`.** Lime and periclase occur in no
+  rock that has ever met water or CO₂, so their abundance is zero and **must stay zero** — an
+  abundance invented to satisfy the old test would put quicklime in asteroids. Stated against the
+  reaction tables rather than an exception list, so a product whose reaction is later removed goes
+  back to being reported as dead weight.
 
-## Table shape
+## ⚠️ Two behaviours changed, on purpose
 
-Keyed by reactant, ordinal-indexed — `arrayOfNulls<Decomposition>(Species.COUNT)` built once from a
-declarative list. Not a `Map`: `CRITICAL` and `MINERALS` get away with hashing because they are
-queried per-species-present at setup, and this is read in a tick loop.
+Both were pinned by tests written when the reactions were athermal. The tests were restated, and the
+change is the point of the increment rather than a regression:
 
-```kotlin
-class Decomposition(
-    val reactant: Species,
-    val onsetKelvin: Int,
-    val reagent: Fluid? = null,        // null = heat alone; else drawn from the tile's air
-    val products: List<Pair<Species, Int>>,  // formula units, NOT mass fractions
-    val enthalpyPerKg: Long,           // + endothermic
-)
-```
+- **A fire now sustains itself.** Burning carbon releases ~33 MJ/kg against the ~0.5 MJ/kg it takes
+  to hold a kilogram at its ignition point. A lump lit just over the onset used to shed heat, drop
+  under it and go out; it now heats itself, burns faster for being hotter, and runs to **2327 K** in
+  a test that previously watched it cool. What stops it is the **oxygen**, which is decision 2 doing
+  its job — a sealed room is now a genuinely different place to keep something flammable.
+- **A charge cannot calcine itself.** The mirror image, and the reason the decomposer is a heat sink
+  rather than a timer: calcining costs 1.78 MJ/kg and limestone at its own calcining temperature
+  holds about 1.05 MJ/kg. So a charge cools, drops under its onset and waits for the element. That
+  loop is what makes increment 3's thermostat load-bearing.
 
-Plus a derived `onsetKelvin: IntArray` by ordinal and a global `LOWEST_ONSET`, so cold matter is
-rejected with one compare.
+## Still open
 
-**Derive the mass split, do not restate it.** State products as *formula units* and derive mass
-through the existing `massPartsPerThousand` / `derivedMolarMass` / `apportion`. Then write the test
-that matters: **every reaction closes atom by atom against `MINERALS`**. That is the `MineralTest`
-precedent — molar masses are *derived* from the formulae rather than asserted alongside them, so a
-typo is a test failure rather than a mineral that quietly weighs the wrong amount. Hand-written mass
-fractions give you two sources of truth and no oracle, and "calcite yields lime" would silently
-yield the wrong amount of lime.
-
-Conservation stays structural, as everywhere else in `chem`: compute all products but one, and let
-the last be the remainder.
+- **Carbothermic reduction is not here.** `Hematite + C → Iron + CO` wants a **solid** co-reactant,
+  which neither table's shape expresses: `Oxidation` takes its reagent from the air and
+  `Decomposition` takes no reagent at all. It is a third shape, not a row, and it is the reaction
+  decision 2 is really about — worth its own increment rather than a field bolted onto either.
+- The release condition is still "at the setpoint" (increment 3's note). With a table to ask, "and
+  has stopped reacting" is now expressible — the sweep would have to report per-tile activity.
 
 ---
 

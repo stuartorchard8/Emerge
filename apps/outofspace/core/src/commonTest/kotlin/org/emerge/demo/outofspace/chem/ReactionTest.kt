@@ -86,15 +86,15 @@ class ReactionTest {
         )
 
         val burned = burn(carbonMass = 100L * Budget.KILOGRAM, oxygenMass = 100L * Budget.KILOGRAM, kelvin = 900)
-        assertTrue(burned.carbon > 0L, "nothing burned at 900K with both reagents present")
+        assertTrue(burned.reactant > 0L, "nothing burned at 900K with both reagents present")
         assertEquals(
-            burned.carbon + burned.oxygen,
-            burned.carbonDioxide,
+            burned.reactant + burned.oxygen,
+            burned.product,
             "the products do not weigh what the reactants did",
         )
         // The ratio, to the unit the flooring allows: mass of O₂ per mass of C is 32/12.
         assertEquals(
-            burned.carbon * Species.Oxygen.molarMass / Species.Carbon.molarMass,
+            burned.reactant * Species.Oxygen.molarMass / Species.Carbon.molarMass,
             burned.oxygen,
             "the reaction ran off the stoichiometric line",
         )
@@ -121,9 +121,9 @@ class ReactionTest {
         val burned = burn(carbonMass = 1000L * Budget.KILOGRAM, oxygenMass = oxygen, kelvin = 2000)
 
         assertTrue(burned.oxygen <= oxygen, "the reaction consumed oxygen the tile did not have")
-        assertTrue(burned.carbon > 0L, "a little oxygen should still burn a little carbon")
+        assertTrue(burned.reactant > 0L, "a little oxygen should still burn a little carbon")
         assertEquals(
-            burned.carbon * Species.Oxygen.molarMass / Species.Carbon.molarMass,
+            burned.reactant * Species.Oxygen.molarMass / Species.Carbon.molarMass,
             burned.oxygen,
             "starved of air, the reaction ran rich instead of slowing down",
         )
@@ -135,7 +135,7 @@ class ReactionTest {
         // it: a reactant mass larger than the tile's is a negative mass one line later.
         val carbon = 5L * Budget.KILOGRAM
         val burned = burn(carbon, oxygenMass = 1000L * Budget.KILOGRAM, kelvin = 100_000)
-        assertTrue(burned.carbon <= carbon, "burned ${burned.carbon} of a ${carbon} lump")
+        assertTrue(burned.reactant <= carbon, "burned ${burned.reactant} of a ${carbon} lump")
     }
 
     @Test

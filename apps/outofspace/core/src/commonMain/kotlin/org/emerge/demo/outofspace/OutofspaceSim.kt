@@ -6,7 +6,7 @@ import org.emerge.demo.outofspace.world.Acceptance
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.Species
-import org.emerge.demo.outofspace.chem.cook
+import org.emerge.demo.outofspace.world.machine.HEATER_POWER
 import org.emerge.demo.outofspace.chem.process
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.logistics.Packet
@@ -122,7 +122,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
-import org.emerge.demo.outofspace.world.burnCarbon
+import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
@@ -252,6 +252,33 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     is Extractor -> w.leech(m, activation, tile)
                 }
             }
+
+            // Waste heat lands in the machine that did the work — see [heatPerGram] — so it has to
+            // conduct out through the casing before the room feels it.
+            //
+            // ⚠️ **Banked here, with the machines that made it, and that is a fix rather than a
+            // tidy-up.** This loop used to sit inside `shouldRun(HEAT_PERIOD)` while `heatAdded` is
+            // built fresh with each tick's [Work] — so seven ticks in eight a machine's waste heat
+            // was accumulated and then **thrown away**, for every machine in the game since
+            // machines had waste heat at all. Banking is a write into a layer: it needs no solver
+            // and no schedule of its own, and only the conduction further down has a reason to run
+            // on a period.
+            //
+            // It belongs to *this* block rather than merely to "every tick" because a machine that
+            // did not run made no waste heat to bank. The two are the same schedule today —
+            // [MACHINE_PERIOD] is one — and if that ever stops being true this follows the machines
+            // rather than quietly drifting out of step with them.
+            //
+            // ⚠️ **Expect roughly eight times the waste heat**, because roughly seven eighths of it
+            // used to vanish. Nothing here invents any: a source that fires every tick now lands all
+            // of what it always claimed to make, and a source that fires once per charge lands it
+            // once instead of one time in eight. If that is too intense the dial is `heatPerGram`,
+            // which is per-machine and exists for exactly this.
+            for (tile in w.grid.tiles) {
+                val added = w.heatAdded[tile.index]
+                if (added == 0L) continue
+                w[tile]?.addEnergySpread(added, w.grid, w.deck)
+            }
         }
 
         val motion: Motion
@@ -275,13 +302,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var conductedRadiated = 0L
         var conductedToAir = 0L
         if (shouldRun(state.tick, HEAT_PERIOD)) {
-            // Waste heat lands in the machine that did the work — see [heatPerGram] — so it
-            // has to conduct out through the casing before the room feels it.
-            for (tile in w.grid.tiles) {
-                val added = w.heatAdded[tile.index]
-                if (added == 0L) continue
-                w[tile]?.addEnergySpread(added, w.grid, w.deck)
-            }
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
                 grid = state.grid,
@@ -301,14 +321,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // pressure and the fluid, so gas made this tick pushes and spreads in the tick it was made
         // rather than sitting still for one and appearing from nowhere in the next.
         //
-        // ⚠️ **The rail layer only, and that is a ledger statement rather than a physical one.**
-        // What rides a belt is cargo, so carbon leaving it is exactly what `solidBecameGas` books.
-        // The deck's matter and the conduits' own metal are fabric — a different identity, with no
-        // term for becoming gas — so a burning hull plate is not a thing this may do yet. See
-        // [burnCarbon] and `PLAN_ambient_chemistry.md`.
+        // ⚠️ **The cargo layers only, and that is a ledger statement rather than a physical one.**
+        // What rides a belt or sits in a machine's hopper is cargo, so carbon leaving it is exactly
+        // what `solidBecameGas` books and the oxygen iron keeps is exactly what `gasBecameSolid`
+        // books. The deck's matter and the conduits' own metal are fabric — a different identity,
+        // with no term for changing phase — so a burning hull plate is not a thing this may do yet.
+        // See [oxidise] and `PLAN_ambient_chemistry.md`.
+        //
+        // ⚠️ **The buffer layer is here from increment 3**, and it is what makes a thermal
+        // decomposer a machine at all: it holds a charge at a temperature the player chose, and the
+        // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
+        // the same matter on a belt. The machine controls the conditions and nothing else.
         if (shouldRun(state.tick, CHEM_PERIOD)) {
-            val burnt = burnCarbon(w.rail.stuff, w.masses, w.airEnergy)
-            if (burnt.mass != 0L || burnt.energy != 0L) w.solidBecameGas(burnt.mass, burnt.energy)
+            val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
+            val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
+            val toGasMass = onRails.toGasMass + inHoppers.toGasMass
+            val toGasEnergy = onRails.toGasEnergy + inHoppers.toGasEnergy
+            val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
+            val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
+            if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)
+            if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
+            // The enthalpies, which since increment 4 are real: a fire is an energy source and
+            // calcining is an energy sink, and the world holds more or less because of it.
+            val made = onRails.releasedEnergy + inHoppers.releasedEnergy
+            if (made != 0L) w.reactionEnergy(made)
         }
 
         val edges = EdgeGrid(state.grid)
@@ -726,25 +762,73 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
     }
 
+    /**
+     * One tick of a [ThermalDecomposer], which since increment 3 of `PLAN_ambient_chemistry.md` is
+     * **a thermostat and nothing else**.
+     *
+     * It used to hold a charge for [128] ticks and then call `cook`, which returned its input
+     * unchanged — chemistry as a function a machine calls, gated by a tick counter, against a
+     * *setpoint* rather than against a temperature. Both halves of that are gone. What the machine
+     * does now is pull a charge in, run an element until the charge is at the temperature the player
+     * asked for, and hand on whatever the charge has become by then. Whether anything happened to it
+     * on the way is between the matter and its conditions, and is decided by the ambient chemistry
+     * pass over the buffer layer exactly as it would be for the same matter on a belt.
+     *
+     * ⚠️ **The element heats the charge**, through [Work.heatBuffer] — it is *in* the chamber rather
+     * than a jacket around it. So most of the energy stays in the material, and the casing and then
+     * the room get what bleeds out of it through the buffer's own contact conductance. Modelled
+     * properly the element would be a third thermal body warming both; this is the simplification
+     * that gives the same behaviour for none of the machinery.
+     *
+     * ⚠️ **The demand is what the charge is short by, so the thermostat regulates by construction.**
+     * At or above the setpoint the element does not run at all, and below it the shortfall is also
+     * the cap on a single tick's energy — so a light charge cannot be blown past its setpoint by an
+     * element sized for a full hopper. That cap is only *correct* because the energy lands in the
+     * charge: pointed at the tile instead it would bind against nine tiles of firebrick that outweigh
+     * a chamberful of rock fifty to one, and the machine would crawl.
+     *
+     * ⛔ **"At the setpoint" is the dwell now, and `ticksPerAction` is gone.** How long a charge
+     * stays is how long it takes to heat, which is a real quantity that depends on the mass, the
+     * insulation and the room. The sharp edge, stated rather than hidden: a reaction slower than the
+     * ramp does not finish before the charge is handed on. Increment 4 may want "and has stopped
+     * reacting" as the release condition once there is a reaction table to ask.
+     */
     private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, tile: TileIndex): ThermalDecomposer {
-        val inProgress = store(m, tile, BufferRole.Inside) ?: run {
-            val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+        val chamber = bufferTile(grid, m, tile, BufferRole.Inside)!!
+
+        // An empty chamber takes the next charge. Nothing is charged for the loading itself — the
+        // energy this machine spends is the element's, below, and billing a handling cost as well
+        // would be a second, invisible answer to "what does this cost to run".
+        val charge = store(m, tile, BufferRole.Inside) ?: run {
+            val fresh = store(m, tile, BufferRole.Input) ?: return m
             putStore(m, tile, BufferRole.Input, null)
             putStore(m, tile, BufferRole.Inside, fresh)
-            heat(tile, heatOfWorking(fresh.total, m))
-            fresh
+            return m
+        }
+        if (activation <= 0) return m
+
+        // The thermostat. It reads the charge and it heats the charge, which is the one arrangement
+        // in which the two are the same question — see [Work.heatBuffer] for why the element is
+        // modelled as being *in* the chamber rather than around it.
+        //
+        // ⚠️ **The shortfall is the cap, and that is what makes this regulate.** Never more than the
+        // gap the charge still has, so a small charge cannot be blown past its setpoint by a full
+        // tick of an element sized for a chamberful. The heat that then leaks into the firebrick and
+        // out into the room is conduction doing it, at the buffer's own contact conductance, which
+        // is the slow bleed the machine is supposed to have rather than a rule written here.
+        val shortfall = buffers.stuff.heatCapacityAt(chamber) * (m.setTemperature - buffers.stuff.kelvinAt(chamber))
+        if (shortfall > 0L) {
+            heatBuffer(chamber, minOf(shortfall, scaledRatio(activation.toLong(), SignalField.FULL.toLong(), HEATER_POWER)))
+            return m
         }
 
-        val (actionProgress, carry) = throttled(1, activation, m.carry)
-        if (m.progress + actionProgress >= m.ticksPerAction) {
-            if (store(m, tile, BufferRole.Product) != null) {
-                return m.copy(progress = m.ticksPerAction, carry = carry)
-            }
-            putStore(m, tile, BufferRole.Inside, null)
-            putStore(m, tile, BufferRole.Product, cook(inProgress, m.setTemperature))
-            return m.copy(progress = 0, carry = carry)
-        }
-        return m.copy(progress = m.progress + actionProgress.toInt(), carry = carry)
+        // At temperature: hand the charge on, if there is anywhere to put it. Re-read rather than
+        // reusing what was pulled in, because the whole point of the wait is that chemistry may have
+        // changed it — and a gaseous product will already have left through the room.
+        if (store(m, tile, BufferRole.Product) != null) return m
+        putStore(m, tile, BufferRole.Inside, null)
+        putStore(m, tile, BufferRole.Product, charge)
+        return m
     }
 
     /**
@@ -1046,6 +1130,39 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             injectedAirEnergy += energy
         }
 
+        /**
+         * The same crossing in the other direction: [mass] of gas **becoming** solid, carrying
+         * [energy] with it. Iron scaling takes oxygen out of the room and keeps it.
+         *
+         * Exactly the inverse of [solidBecameGas], and written as its own call rather than as that
+         * one with negative arguments because a caller passing a negative mass to a function whose
+         * name says the mass went the other way is a line nobody reads correctly twice. The
+         * arithmetic being the same is the point: the two ledgers stay each other's mirror, and a
+         * reaction that ran both ways in one tick nets out to nothing without either identity ever
+         * having been told a half-truth.
+         */
+        /**
+         * Books energy a **reaction** made out of chemical bonds, or unmade back into them.
+         *
+         * The third kind, after [heat]'s waste and [absorb]'s hand-over, and the one with no tile:
+         * the matter it happened to has already been given the energy by the chemistry pass, and all
+         * that is left is to say that the world now holds more of it than it did. Negative for an
+         * endothermic reaction, which is a fire running backwards as far as this term is concerned.
+         *
+         * ⚠️ **Not [heat].** That one lands in a machine and conducts outward; this has already
+         * landed, in whatever the reaction happened to, which may be a lump on a belt with no machine
+         * anywhere near it.
+         */
+        fun reactionEnergy(energy: Long) {
+            generatedEnergy += energy
+        }
+
+        fun gasBecameSolid(mass: Long, energy: Long) {
+            ventedMass -= mass
+            injectedAirMass -= mass
+            injectedAirEnergy -= energy
+        }
+
         var fitRequested: Boolean = false
 
         /** Free-floating bodies. No conservation ledger — bodies spawn/despawn freely. */
@@ -1131,6 +1248,34 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun heat(tile: TileIndex, energy: Long) {
             if (energy <= 0L || tile.index !in heatAdded.indices) return
             heatAdded[tile.index] += energy
+            generatedEnergy += energy
+        }
+
+        /**
+         * Charges [energy] straight into what the buffer at [tile] is holding — an element inside
+         * the chamber rather than a jacket around it.
+         *
+         * The counterpart to [heat], and the difference is *where the energy lands first*. A
+         * machine's waste heat is made in its structure and has to conduct out through the casing;
+         * a heating element is in among the charge, so the charge is what gets warm and the casing
+         * is what the heat then leaks *into*, slowly, through
+         * [org.emerge.demo.outofspace.world.BUFFER_CONTACT_CONDUCTANCE].
+         *
+         * ⚠️ **A simplification, and a deliberate one.** Modelled properly the element would be its
+         * own thermal body warming both the charge and the casing; this makes it part of the charge.
+         * What it buys is the behaviour actually wanted — most of the heat stays in the material,
+         * a slow bleed warms the machine and then the room — for none of the machinery.
+         *
+         * ⚠️ **Guarded on occupancy**, because `addEnergy` allocates a row for a non-zero energy and
+         * an unguarded write would leave heat sitting on an empty store. The same trap
+         * `BodySlot.RailCargo`'s write-back documents.
+         *
+         * ⚠️ **This does not go through [heatAdded]**, so unlike [heat] none of it is lost between
+         * heat steps — see the note on `HEATER_POWER`.
+         */
+        fun heatBuffer(tile: TileIndex, energy: Long) {
+            if (energy <= 0L || !buffers.stuff.occupies(tile)) return
+            buffers.stuff.addEnergy(tile, energy)
             generatedEnergy += energy
         }
 
