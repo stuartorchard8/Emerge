@@ -110,14 +110,20 @@ class FlowWallTest {
     }
 
     /**
-     * What the save did before the rule existed, kept as the statement of the bug: told nothing
-     * about walls, the site's walk takes the whole corridor and the junction points away from the
-     * ghosts entirely.
+     * ⚠️ **This case no longer reproduces (2026-08-22), and is kept saying so.** It recorded what
+     * the save did before the wall rule existed: told nothing about walls, the site's walk took the
+     * whole corridor and the junction pointed away from the ghosts entirely. A producer no longer
+     * confers `leading` on a consumer standing next to it, so `s` cannot freeze `g1` and through it
+     * the run, and this fixture now comes out the same with walls and without.
+     *
+     * That does **not** retire the wall rule: what the rule is for is the ghosts' own feed, asserted
+     * in the two cases above with the walls declared. It does mean this fixture is no longer a
+     * demonstration of the bug, and a smaller one that still is has not been found.
      */
     @Test
-    fun `told nothing about walls it claims the corridor and starves the run`() {
+    fun `the corridor is no longer seized when the graph is told nothing about walls`() {
         val f = flow(emptySet())
-        assertEquals(listOf(Direction.Right), f.successorDirections(j), "the junction points wholly away")
-        assertEquals(listOf(Direction.Right), f.successorDirections(g4), "and every ghost with it")
+        assertEquals(listOf(Direction.Left, Direction.Right), f.successorDirections(j))
+        for (g in listOf(g2, g3, g4)) assertEquals(listOf(Direction.Left), f.successorDirections(g))
     }
 }

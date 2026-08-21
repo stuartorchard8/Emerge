@@ -483,6 +483,28 @@ class FlowGraph internal constructor(
                         if (!bit(allowed, at, dir)) continue
                         val next = grid.neighbour(at, dir)
                         if (next == TileIndex.NONE || next !in tileSet || leading[next.index]) continue
+                        // ⛔ **A producer does not justify its own consumer's claims.** Leading marks
+                        // a route *out of* a producer so that a later walk cannot re-litigate it; a
+                        // consumer standing next door to one is not a route, it is the end of one,
+                        // and the edges it holds are its own business — including the ones it has
+                        // to be able to take back in order to be fed from the other side.
+                        //
+                        // Stu's save, 2026-08-22: a storage input at (18,28) with the processor
+                        // tailings output at (17,28) beside it. An earlier walk — a construction
+                        // site away to the east, hunting upstream — had granted the storage an
+                        // outgoing edge *down* into its own feed tile, and the tailings then made
+                        // the storage leading. From that moment the storage never looked at its own
+                        // door again: its traversal popped a leading tile and did the propagation
+                        // step instead, pushing the mark on down the corridor and freezing it
+                        // pointing away. The empty storage starved with packets a tile from it and
+                        // a producer far upstream that should have been driving them in, while
+                        // every storage the corridor did point at was full.
+                        //
+                        // ⚠️ Only what a **source** confers. A mark travelling down a route may
+                        // still pass *through* a consumer, which is what a run of ghost rail
+                        // building itself is — see [FlowWallTest], where the ghosts are consumers to
+                        // a tile and track to each other.
+                        if (next in sinks) continue
                         leading[next.index] = true
                         queue.addLast(encode(next, dir.opposite))
                     }
