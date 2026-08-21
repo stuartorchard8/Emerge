@@ -1080,7 +1080,7 @@ object OutofspaceAgentHarness {
             glViewport(0, 0, RES_W, RES_H)
             // tickAlpha 1: the tick has landed. A capture must show where things ARE, not an
             // interpolated position that corresponds to no state the sim was ever in.
-            r.draw(state, TileIndex.NONE, overlay, 1f, 1f, controller.mode.camera)
+            r.draw(state, TileIndex.NONE, InspectLayer.Deck, TileIndex.NONE, overlay, 1f, 1f, controller.mode.camera)
             h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
             u.draw()
             glFinish()

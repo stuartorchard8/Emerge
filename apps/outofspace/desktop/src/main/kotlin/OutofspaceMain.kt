@@ -10,6 +10,7 @@ import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.Brush
+import org.emerge.demo.outofspace.InspectLayer
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.render.torus.ui.Ui
@@ -313,7 +314,7 @@ fun main() {
         // falloff is measured from where the player is actually looking.
         impactAudio.onFrame(state, renderer.camX, renderer.camY)
 
-        renderer.draw(state, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
+        renderer.draw(state, controller.inspectTile, controller.inspectLayer, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
 

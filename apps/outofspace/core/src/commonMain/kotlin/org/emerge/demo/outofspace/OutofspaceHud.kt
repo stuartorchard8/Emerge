@@ -645,7 +645,7 @@ class OutofspaceHud {
             },
         )
         if (Negligible.gas(density)) {
-            row("   VACUUM  (no gas to speak of)", 0x7A8A9AFFL)
+            row("   VACUUM", 0x7A8A9AFFL)
             return
         }
         keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)

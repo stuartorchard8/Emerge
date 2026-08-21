@@ -8,8 +8,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
-import org.emerge.demo.outofspace.world.inputBufferRole
-import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
@@ -252,7 +250,9 @@ class OutofspaceRenderer {
 
     fun draw(
         state: VesselState,
-        hoveredTile: TileIndex = TileIndex.NONE,
+        inspectTile: TileIndex,
+        inspectLayer: InspectLayer,
+        hoveredTile: TileIndex,
         overlay: Overlay = Overlay.None,
         tickAlpha: Float = 1f,
         ticksPerSecond: Float = 1f,
@@ -418,6 +418,12 @@ class OutofspaceRenderer {
 
         if (hoveredTile != TileIndex.NONE) {
             tileRect(grid.xOf(hoveredTile), grid.yOf(hoveredTile), 1f, Colors.HOVER)
+        }
+
+        if (inspectTile != TileIndex.NONE) {
+            val origin = if (inspectLayer == InspectLayer.Deck) state.occupancy[inspectTile] else inspectTile
+            val diameter = if (inspectLayer == InspectLayer.Deck) state[origin]?.kind?.diameter ?: 1 else 1
+            tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
         }
 
         rects.drawInstanced(count, matrices, colors)
