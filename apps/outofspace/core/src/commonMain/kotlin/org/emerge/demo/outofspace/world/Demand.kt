@@ -402,29 +402,54 @@ class Whitelist private constructor(
                 // A construction site standing here is in the way of everything beyond it. The
                 // **hungriest** speaks for the tile: where a ghost machine stands on ghost track
                 // there are two, and what is owed has to cover the larger.
+                //
+                // ⛔ **Found before anything is added, because a plug is in the way of its
+                // neighbours on its OWN tile.** A ghost machine stands at the tile it is fed at, and
+                // that tile may be unpaid track — Stu's save, 2026-08-22: a Processor site at
+                // (16,28) over a ghost rail, with a Processor deconstructing at (19,28) three tiles
+                // to the right. The site's titanium appetite propagated up the corridor with a clear
+                // road, because "a site is never in its own way" was read as a fact about the
+                // *tile*; the door then refused the titanium at the ghost rail (which admits iron
+                // and nothing else) and 300kg of casing came apart into a corridor it could never
+                // leave. Being on the same tile as the plug is being **behind** it: the material has
+                // still got to cross that door.
                 var plug: Acceptance? = null
+                if (own != null) {
+                    for (a in own) {
+                        if (a.isSatisfied || !a.stopsTraffic) continue
+                        if (plug == null || a.wanted > plug.wanted) plug = a
+                    }
+                }
+                // What the plug is owed, once, for every appetite here that is not the plug itself.
+                val plugged = if (plug == null) null else carried(null, plug, tile, loadOn)
+
                 if (own == null && tile in flow.sinks) any = true
                 if (own != null) {
                     for (a in own) {
+                        // A site is never in its own way — no blocks for the plug's *own* demand,
+                        // which is what keeps material flowing to the site that dissolves the
+                        // obstruction. What *stands* here is charged below, along with every other
+                        // appetite this tile can see: a lump on a ghost feeds that ghost first, but
+                        // it is the same lump the ghosts beyond are waiting for and it cannot be
+                        // promised to them all.
+                        val blocks = if (a === plug) null else plugged
                         // ⛔ **[Acceptance.takesAnything], not [Acceptance.isUnlimited]** — the flag
                         // means "everything beyond here is welcome anywhere", which is a statement
                         // about fussiness and not about quantity. Reading the endless one instead
                         // let a locked warehouse set it, and the tile then answered `permitsAnything`
                         // to the very lumps the lock exists to keep out.
-                        if (a.takesAnything && a.isUnlimited) { any = true; continue }
+                        if (a.takesAnything && a.isUnlimited) {
+                            // … and "welcome anywhere" is exactly what a plug on this tile denies.
+                            if (blocks == null) any = true
+                            else here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
+                            continue
+                        }
                         // ⚠️ **Not `filter`** — the ones worth carrying upstream are the ones still
                         // WANTING something. A satisfied acceptance answers `false` to everything,
                         // so keeping those instead silently stops finite demand propagating at all
                         // and no source ever feeds a construction site again. Eighteen tests say so.
                         if (a.isSatisfied) continue
-                        // A site is never in its own way — no blocks on its own tile, which is what
-                        // keeps material flowing to the site that dissolves an obstruction. What
-                        // *stands* here is charged below, along with every other appetite this tile
-                        // can see: a lump on a ghost feeds that ghost first, but it is the same lump
-                        // the ghosts beyond are waiting for and it cannot be promised to them all.
-                        here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, null)) }
-                        // Only a site that stands in the road is one — see [Acceptance.stopsTraffic].
-                        if (a.stopsTraffic && (plug == null || a.wanted > plug.wanted)) plug = a
+                        here = (here ?: mutableListOf()).also { it.add(Demand(a, 0L, blocks)) }
                     }
                 }
 

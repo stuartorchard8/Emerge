@@ -20,7 +20,9 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Whitelist
 import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.sim.core.PlayerId
@@ -383,5 +385,83 @@ class DemandTest {
             whitelist.room(source, shared),
             "a packet in the shared corridor was charged to both sites at once",
         )
+    }
+
+    /**
+     * ⛔ **A site is never in its OWN way — but it is in the way of its neighbour on the same tile.**
+     *
+     * A ghost *machine* is a sink at the tile it is **fed** at, and nothing says that tile is paid
+     * for: draw a run and a machine over the end of it and the site's input port stands on unpaid
+     * track. The two appetites then share one tile, and "no blocks on a site's own tile" — which
+     * exists so that material can reach the obstruction that is blocking it — was reading that as a
+     * fact about the *tile* rather than about the one appetite it is true of.
+     *
+     * Stu's save, 2026-08-22: a Processor construction site at (16,28) over a ghost rail, and a
+     * Processor at (19,28) three tiles to the right marked for deconstruction. The site's
+     * **titanium** appetite propagated up the corridor with a clear road, so the marked machine was
+     * allowed to come apart; the door then refused the titanium at the ghost rail, which admits iron
+     * and nothing else, and 300kg of casing sat in a corridor it could never leave — in front of the
+     * very iron that would have paid for the rail and dissolved the plug. The exact deadlock the
+     * whole demand layer exists to prevent, arrived at from the one direction it could not see.
+     *
+     * Being on the plug's tile is being **behind** it: the material has still got to cross that door.
+     *
+     * ```
+     *  [S] - . - . - g      g is a ghost RAIL with a Processor site standing on it
+     *   ^ titanium          the site wants titanium; the rail admits iron and nothing else
+     * ```
+     */
+    @Test
+    fun `a machine site on unpaid track does not draw what the track will not admit`() {
+        val grid = cfg.initialGrid
+        val railBill = conduitBillOfMaterials(Conduit.Rail)
+        val siteBill = machineBillOfMaterials(DeckMachineKind.Processor, 2)
+
+        val source = grid.tile(2, 3)
+        val ghost = grid.tile(5, 3)
+        val tiles = mutableSetOf(source, grid.tile(3, 3), grid.tile(4, 3), ghost)
+
+        val titanium = Mixture.of(Species.Titanium to 100_000_000_000L, energy = 0)
+        val ironLump = iron(100_000_000_000L)
+
+        fun permits(lump: Mixture, siteOnGhost: Boolean): Boolean {
+            val flow = FlowGraph.build(
+                tiles,
+                sources = setOf(source),
+                sinks = setOf(ghost),
+                linked = { tile, dir -> tile in tiles && grid.neighbour(tile, dir) in tiles },
+                grid = grid,
+                walls = setOf(ghost),
+            )
+            val whitelist = Whitelist.of(
+                flow,
+                grid.size,
+                acceptanceAt = { tile ->
+                    if (tile != ghost) null
+                    else buildList {
+                        add(Acceptance.forBill(railBill, railBill.total))
+                        // The machine site: fed here, and it does not stand in the road itself —
+                        // the track it wants to be built over is what does. See `stopsTraffic`.
+                        if (siteOnGhost) {
+                            add(Acceptance.forBill(siteBill, siteBill.total, stopsTraffic = false))
+                        }
+                    }
+                },
+                loadOn = { _, _ -> 0L },
+            )
+            return whitelist.permits(source, lump, rationed = true)
+        }
+
+        assertFalse(
+            permits(titanium, siteOnGhost = true),
+            "titanium was released toward a site behind a rail ghost that admits only iron",
+        )
+        assertTrue(
+            permits(ironLump, siteOnGhost = true),
+            "the ghost rail still has to be able to draw the iron that dissolves it",
+        )
+        // The control: with no site over it the ghost behaves exactly as it always has.
+        assertFalse(permits(titanium, siteOnGhost = false), "a bare ghost rail took titanium")
+        assertTrue(permits(ironLump, siteOnGhost = false), "a bare ghost rail refused its own iron")
     }
 }
