@@ -1,0 +1,17 @@
+# The in-game reference: a species named in the inspector is a way into an article about it, and
+# every species named in the article is a way into the next one.
+#
+# What to read: the two shots. `wiki-rutile` is reached by clicking TITANIUM in the storage casing
+# and then RUTILE in titanium's own reactions — which is the whole navigation, and it can only pass
+# if those rows are real buttons in the real panel. `wiki-carbon` is the tallest article there is
+# (four reactions), and it is here as the height check: if it runs off the bottom edge, the panel
+# has grown a section that needs folding by default.
+new 0
+rock 2 9
+run 400
+inspect storage storage DECK
+tap TITANIUM
+tap RUTILE
+shot wiki-rutile
+tap CARBON
+shot wiki-carbon

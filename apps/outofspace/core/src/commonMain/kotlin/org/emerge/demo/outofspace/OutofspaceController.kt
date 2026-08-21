@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -189,6 +190,67 @@ class OutofspaceController(
         // -1 covers both a new tile and a layer that has since stopped existing under the old one
         // (the belt was deleted, the room was sealed): either way, start at the top again.
         inspectLayer = if (at < 0) layers[0] else layers[wrap(at + 1, layers.size)]
+    }
+
+    /**
+     * The species the reference panel is open on, or null when it is shut.
+     *
+     * ⛔ **Not a fact about the world, and deliberately not saved.** Which article the player is
+     * reading is the same kind of thing as which inspector section they have folded — see
+     * `OutofspaceHud.section`. It lives on the controller rather than in the HUD only because the
+     * *history* below has rules worth testing without a renderer.
+     */
+    var wikiSpecies: Species? = null
+        private set
+
+    /**
+     * Where the reader has been, oldest first, and where in it they are standing.
+     *
+     * A plain stack with a cursor, which is what a browser's back and forward are: [back] and
+     * [forward] move the cursor, and opening something new from anywhere but the end **truncates**
+     * the tail. Anything else and forward would walk into a branch the player never took.
+     */
+    private val wikiHistory = ArrayList<Species>()
+    private var wikiCursor = -1
+
+    /** Opens the reference panel on [species], pushing it onto the history. */
+    fun openWiki(species: Species) {
+        // A repeat of what is already showing is not a navigation. Clicking IRON in the article's
+        // own composition rows twice would otherwise fill the history with the same page, and back
+        // would then appear to do nothing several times over.
+        if (wikiSpecies == species) return
+        while (wikiHistory.size > wikiCursor + 1) wikiHistory.removeAt(wikiHistory.size - 1)
+        wikiHistory.add(species)
+        wikiCursor = wikiHistory.size - 1
+        wikiSpecies = species
+    }
+
+    /**
+     * Shuts the reference panel, **and forgets where it has been**.
+     *
+     * The history is a trail through one sitting's reading, not a record of everything the player
+     * has ever looked up. Keeping it across a close would mean a panel that opens with a live back
+     * button pointing at something read half an hour ago.
+     */
+    fun closeWiki() {
+        wikiSpecies = null
+        wikiHistory.clear()
+        wikiCursor = -1
+    }
+
+    val canWikiBack: Boolean get() = wikiCursor > 0
+    val canWikiForward: Boolean get() = wikiCursor in 0 until wikiHistory.size - 1
+
+    fun wikiBack() {
+        if (!canWikiBack) return
+        wikiCursor--
+        wikiSpecies = wikiHistory[wikiCursor]
+    }
+
+    fun wikiForward() {
+        if (!canWikiForward) return
+        wikiCursor++
+        wikiSpecies = wikiHistory[wikiCursor]
     }
 
     /** Points the inspector straight at one layer, for a panel's own layer buttons and for scripts. */
@@ -492,6 +554,7 @@ class OutofspaceController(
     fun reset(newState: VesselState = starterVessel(cfg.initialGrid)) {
         selected = TileIndex.NONE
         inspectTile = TileIndex.NONE
+        closeWiki()
         pending.clear()
         thrustX = 0
         thrustY = 0

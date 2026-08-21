@@ -2,7 +2,13 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.ReactionInfo
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.fluid
+import org.emerge.demo.outofspace.chem.isElement
+import org.emerge.demo.outofspace.chem.reactionsConsuming
+import org.emerge.demo.outofspace.chem.reactionsProducing
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
@@ -258,6 +264,7 @@ class OutofspaceHud {
             // be unreadable. Hover is what is left: a preview for a player who has not clicked
             // anything yet.
             inspectPanel(controller, hovered)
+            wikiPanel(controller)
 
             panel(Anchor.BottomRight) {
                 if (canSave) {
@@ -478,7 +485,7 @@ class OutofspaceHud {
             capacity += s.deck.stuff.heatCapacityAt(part)
         }
         keyValue("CASING", mass(casing.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
-        compositionRows(casing)
+        compositionRows(controller, casing)
         if (capacity > 0L) {
             val k = (energy / capacity).toInt()
             keyValue(
@@ -497,7 +504,7 @@ class OutofspaceHud {
             } else {
                 for ((label, resource) in buffers) {
                     keyValue(label, mass(resource.total))
-                    compositionRows(resource)
+                    compositionRows(controller, resource)
                 }
             }
         }
@@ -556,7 +563,7 @@ class OutofspaceHud {
 
         val metal = s.conduits.tracks[conduit].mixtureAt(tile)
         keyValue("FITTING", mass(metal.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
-        compositionRows(metal)
+        compositionRows(controller, metal)
         val capacity = s.conduits.heatCapacityAt(conduit, tile)
         if (capacity > 0L) {
             val k = (s.conduits.energyAt(conduit, tile) / capacity).toInt()
@@ -580,7 +587,7 @@ class OutofspaceHud {
                     row("(nothing riding it)", 0x9A9A9AFFL)
                 } else {
                     keyValue("CARRYING", mass(riding.total))
-                    compositionRows(riding)
+                    compositionRows(controller, riding)
                     val k = s.rail.stuff.kelvinAt(tile)
                     keyValue(
                         "LUMP TEMP",
@@ -596,7 +603,7 @@ class OutofspaceHud {
                     row("(empty)", 0x9A9A9AFFL)
                 } else {
                     keyValue("INSIDE", mass(inside.total))
-                    compositionRows(inside, maxEntries = 5)
+                    compositionRows(controller, inside, maxEntries = 5)
                     val k = s.pipeAir.kelvinAt(tile)
                     keyValue("FLUID TEMP", "${k}K  (${k - 273}C)", 0x9A9A9AFFL, 0x9AC0E0FFL)
                 }
@@ -663,14 +670,37 @@ class OutofspaceHud {
         val mix = s.air.mixtureAt(tile)
         if (!mix.isEmpty) {
             keyValue("MASS", mass(mix.total), 0x9A9A9AFFL, 0x9AA4B4FFL)
-            compositionRows(mix, maxEntries = 5)
+            compositionRows(controller, mix, maxEntries = 5)
         }
     }
 
-    /** A mixture's percentages, one species per row — [composition] returns a block, a row draws a line. */
-    private fun PanelBuilder.compositionRows(mixture: Mixture, maxEntries: Int = 3) {
+    /**
+     * A mixture's percentages, one species per row — and **every row is a way into the reference**.
+     *
+     * The species names in this panel are the only place the game ever says "periclase" to anybody,
+     * so they are where a player who does not know what periclase is will look for the answer. A
+     * button rather than a row: the affordance is the whole point, and a clickable line that looked
+     * exactly like the twenty unclickable ones around it would be a feature nobody found.
+     *
+     * The "other" line stays a plain row. It is not a species and there is nothing to open.
+     */
+    private fun PanelBuilder.compositionRows(
+        controller: OutofspaceController,
+        mixture: Mixture,
+        maxEntries: Int = 3,
+    ) {
         if (mixture.isEmpty) return
-        for (line in composition(mixture, maxEntries).split('\n')) row(" $line", 0x9AA4B4FFL)
+        val total = mixture.total
+        val present = Species.ALL.filter { mixture[it] > 0L }.sortedByDescending { mixture[it] }
+        // Only the top two are named once the list would overflow, with the rest summed as "other".
+        val named = if (present.size > maxEntries) present.take(2) else present
+        var listed = 0L
+        for (species in named) {
+            val percent = mixture[species] * 100 / total
+            listed += percent
+            speciesRow(controller, "${percent.toString().padStart(3)}% ${species.name.uppercase()}", species)
+        }
+        if (present.size > maxEntries) row(" ${(100L - listed).toString().padStart(3)}% other", 0x9AA4B4FFL)
     }
 
     /** Air direction as 8-point compass (+y is down). */
@@ -685,18 +715,111 @@ class OutofspaceHud {
         return horizontal + vertical
     }
 
-    /** Mixture as percentages, richest first. */
-    private fun composition(mixture: Mixture, maxEntries: Int = 3): String {
-        if (mixture.isEmpty) return "empty"
-        val total = mixture.total
-        val present = Species.ALL.filter { mixture[it] > 0L }.sortedByDescending { mixture[it] }
-        // Only top 2 minerals are shown, with remaining composition represented as "other"
-        val named = if (present.size > maxEntries) present.take(2) else present
-        val pcts = named.map { mixture[it] * 100 / total }
-        val remainingPercent = 100L - pcts.sum()
-        val listed = named.indices.joinToString("\n") { "${pcts[it].toString().padStart(3)}% ${named[it].name.uppercase()}" }
-        return if (present.size <= maxEntries) listed else "$listed\n${remainingPercent.toString().padStart(3)}% other"
+    /** One species, drawn as the thing you click to read about it. */
+    private fun PanelBuilder.speciesRow(controller: OutofspaceController, label: String, species: Species) =
+        button(label, 0x1E2634FFL) { controller.openWiki(species) }
+
+    /**
+     * The reference: one species, what it is made of, and every reaction it is either end of.
+     *
+     * ⚠️ **It is a panel, not a mode.** It sits under the inspector in the same column and the
+     * inspector keeps working while it is open, because the two are read together: a player looking
+     * at a hopper of ilmenite wants to know what ilmenite *is* without losing sight of the hopper.
+     * Anything modal here would make the game a thing you stop playing in order to read about.
+     *
+     * ⚠️ **Every species named anywhere in it is itself a way in.** That is the whole of the
+     * navigation — an article on ilmenite reaches rutile because rutile is named in it, so there is
+     * no index to write and no species that can become unreachable by being forgotten. The history
+     * behind [OutofspaceController.wikiBack] exists precisely because that kind of reading wanders.
+     */
+    private fun UiBuilder.wikiPanel(controller: OutofspaceController) {
+        val species = controller.wikiSpecies ?: return
+        panel(Anchor.TopRight, rowHeight = 20f) {
+            title(species.name.uppercase())
+            actionRow(
+                listOf(
+                    Triple("<", if (controller.canWikiBack) 0x2E5A6BFFL else 0x1A1F28FFL) { controller.wikiBack() },
+                    Triple(">", if (controller.canWikiForward) 0x2E5A6BFFL else 0x1A1F28FFL) { controller.wikiForward() },
+                    Triple("CLOSE", 0x6B3A3AFFL) { controller.closeWiki() },
+                ),
+            )
+            keyValue("KIND", if (species.isElement) "ELEMENT" else "COMPOUND", 0x9A9A9AFFL, speciesColor(species))
+            keyValue("MOLAR MASS", "${species.molarMass} g/mol", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            keyValue("DENSITY", "${species.solidKgPerCubicMetre} kg/m3", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            // Said only where it is true. "Solid only" on a hundred and forty-five rocks is a line
+            // that teaches nobody anything; "can be a gas" on the twenty that can is the fact.
+            if (species.fluid != null) row("can be a gas", 0x9AC0E0FFL)
+
+            val parts = compositionOf(species)
+            if (parts.isNotEmpty()) {
+                section("wiki-made-of", "MADE OF", open = true) {
+                    for (part in parts) {
+                        val percent = part.partsPerThousand / 10
+                        speciesRow(
+                            controller,
+                            "${percent.toString().padStart(3)}% ${part.element.name.uppercase()}  x${part.atoms}",
+                            part.element,
+                        )
+                    }
+                }
+            }
+
+            reactionSection(controller, "wiki-uses", "TAKES PART IN", reactionsConsuming(species))
+            reactionSection(controller, "wiki-from", "MADE BY", reactionsProducing(species))
+            if (parts.isEmpty() && reactionsConsuming(species).isEmpty() && reactionsProducing(species).isEmpty()) {
+                row("nothing known but the substance itself", 0x7A7A7AFFL)
+            }
+        }
     }
+
+    /**
+     * One list of reactions, each as three lines: what it takes, what it takes it at, what it gives.
+     *
+     * ⛔ **Three lines and not one equation.** `1 ILMENITE + 1 CARBON > 1 IRON + 1 RUTILE +
+     * 1 CARBONMONOXIDE` is sixty characters on one row, and a panel auto-sizes to its widest row —
+     * so the equation form would set the width of the whole right-hand column and push the
+     * inspector's numbers off the screen.
+     *
+     * ⛔ **And not one line per species either**, which is what this was first: six rows a reaction
+     * runs the panel off the bottom edge for anything as busy as carbon, where the reactions the
+     * player most wants are the ones that overflow. The chips carry their formula units, so nothing
+     * was lost by putting each side on a single line.
+     */
+    private fun PanelBuilder.reactionSection(
+        controller: OutofspaceController,
+        id: String,
+        label: String,
+        reactions: List<ReactionInfo>,
+    ) {
+        if (reactions.isEmpty()) return
+        section(id, "$label (${reactions.size})", open = true) {
+            for (reaction in reactions) {
+                // What the player has to arrange, how hot, and which way the heat goes: the facts
+                // that decide whether this reaction is a plan or a curiosity.
+                keyValue(
+                    reaction.kind.label,
+                    "${reaction.onsetKelvin}K · " + if (reaction.isEndothermic) "TAKES HEAT" else "GIVES HEAT",
+                    0x9A9A9AFFL,
+                    0xE0864AFFL,
+                )
+                speciesChips(controller, "IN", reaction.inputs)
+                speciesChips(controller, "OUT", reaction.products)
+                gap()
+            }
+        }
+    }
+
+    /** One side of a reaction: an inert label, then a chip per species that opens its article. */
+    private fun PanelBuilder.speciesChips(
+        controller: OutofspaceController,
+        side: String,
+        entries: List<Pair<Species, Int>>,
+    ) = actionRow(
+        listOf(Triple(side, 0x00000000L) { }) +
+            entries.map { (species, units) ->
+                Triple("$units ${species.name.uppercase()}", 0x1E2634FFL) { controller.openWiki(species) }
+            },
+    )
 
     /**
      * The lock on a warehouse: what it is holding, and the threshold to hold it to.

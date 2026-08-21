@@ -406,6 +406,12 @@ object OutofspaceAgentHarness {
                 "trend" -> trend(t[1].toInt(), t[2].toInt())
                 "state" -> dumpState(t.getOrElse(1) { "state" })
                 "shot" -> shot(t.getOrElse(1) { "shot" })
+                // `tap <label>` — presses a HUD button by the text on it, which is the only way to
+                // drive a control that exists purely in the panel layer (the reference panel's
+                // species rows, its back button). It builds the HUD exactly as `shot` does and then
+                // clicks what it finds, so a script that taps something can only pass if the button
+                // is really reachable — the failure the storage lock shipped with.
+                "tap" -> tapUi(line.removePrefix("tap").trim())
                 "expect" -> expect(t[1], t[2], t.getOrElse(3) { "" })
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")
@@ -1072,6 +1078,19 @@ object OutofspaceAgentHarness {
             r.centreOn(state)
             renderer = r; hud = h; ui = u
             return Triple(r, h, u)
+        }
+
+        /** Presses a HUD button by its label, against a freshly built panel tree. */
+        private fun tapUi(label: String) {
+            val (_, h, u) = ensureGl()
+            h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
+            val hit = u.tapLabel(label)
+            if (hit) println("[agent] tapped '$label'")
+            else {
+                println("[agent] TAP FAIL no button labelled '$label'")
+                failures.add("no button labelled '$label'")
+            }
+            settle()
         }
 
         private fun shot(name: String) {
