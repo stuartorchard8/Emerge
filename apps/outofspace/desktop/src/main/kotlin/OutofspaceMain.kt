@@ -262,7 +262,14 @@ fun main() {
             GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
-            GLFW_KEY_ESCAPE -> glfwSetWindowShouldClose(window, true)
+            GLFW_KEY_ESCAPE -> {
+                if (controller.mode == Mode.Flight) {
+                    controller.mode = Mode.Build
+                } else {
+                    controller.select(TileIndex.NONE)
+                    controller.inspect(TileIndex.NONE)
+                }
+            }
             in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
             GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let { controller.brush = it }
         }

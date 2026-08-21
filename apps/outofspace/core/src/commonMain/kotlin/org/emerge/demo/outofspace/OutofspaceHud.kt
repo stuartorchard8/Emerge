@@ -395,29 +395,30 @@ class OutofspaceHud {
         val grid = s.grid
 
         panel(Anchor.TopRight, rowHeight = 20f) {
-            title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-            placeRow(s, tile)
-            // The tabs are the cycle made visible. A player who never notices that clicking again
-            // steps the layer can still reach every one of them by name, and a player who does can
-            // see how many are left.
-            actionRow(
-                layers.map { option ->
-                    Triple(
-                        if (option == layer) "> ${option.label}" else option.label,
-                        if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
-                    ) { controller.inspect(tile, option) }
-                },
-            )
-            when (layer) {
-                InspectLayer.Deck -> deckLayer(controller, tile, pinned != TileIndex.NONE)
-                InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
-                InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
-                InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
-                InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
-                InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
-            }
             if (pinned == TileIndex.NONE) {
-                row("(hovering)  click to pin  ·  click again for the next layer", 0x7A7A7AFFL)
+                title("click to inspect · (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+            } else {
+                title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+                placeRow(s, tile)
+                // The tabs are the cycle made visible. A player who never notices that clicking again
+                // steps the layer can still reach every one of them by name, and a player who does can
+                // see how many are left.
+                actionRow(
+                    layers.map { option ->
+                        Triple(
+                            if (option == layer) "> ${option.label}" else option.label,
+                            if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
+                        ) { controller.inspect(tile, option) }
+                    },
+                )
+                when (layer) {
+                    InspectLayer.Deck -> deckLayer(controller, tile, pinned != TileIndex.NONE)
+                    InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
+                    InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
+                    InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
+                    InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
+                    InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
+                }
             }
         }
     }
