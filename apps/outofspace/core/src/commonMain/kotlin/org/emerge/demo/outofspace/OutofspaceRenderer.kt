@@ -39,6 +39,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.massIn
 import org.emerge.demo.outofspace.world.AMBIENT_PRESSURE
 import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.diameter
@@ -294,6 +295,7 @@ class OutofspaceRenderer {
                 for (x in minX..maxX) {
                     val index = grid.tile(x, y)
                     val tint = mixtureColor(state, index)
+                    if (tint == Colors.TRANSPARENT) continue
                     tileRect(x, y, 1f, tint)
                 }
             }
@@ -302,8 +304,10 @@ class OutofspaceRenderer {
         // Floor (buildable area).
         for (y in minY..maxY) {
             for (x in minX..maxX) {
-                val shade = if ((x + y) and 1 == 0) Colors.TILE_LIGHT else Colors.TILE_DARK
-                tileRect(x, y, 1f, shade)
+                if (state.structure[grid.tile(x,y).index] != Structure.Vacuum) {
+                    val shade = if ((x + y) and 1 == 0) Colors.TILE_LIGHT else Colors.TILE_DARK
+                    tileRect(x, y, 1f, shade)
+                }
             }
         }
 
@@ -313,26 +317,34 @@ class OutofspaceRenderer {
                 drawDeckMachine(state, state.deck[tile] ?: continue)
             }
         }
+        if (inspectLayer == InspectLayer.Deck && inspectTile != TileIndex.NONE) {
+            val origin = state.occupancy[inspectTile]
+            val diameter = state[origin]?.kind?.diameter ?: 1
+            tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
+        }
 
         // Signal wire under everything: it is the thinnest run and the one most often threaded
         // beneath a machine to reach it, so anything it passes under should still read clearly.
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawWire(state, grid.tile(x, y), x, y)
+                val tile = grid.tile(x, y)
+                drawWire(state, tile, x, y, highlight = inspectLayer==InspectLayer.Rail && tile==inspectTile)
             }
         }
 
         // Pipes under track (thinner, different depth).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawPipe(state, grid.tile(x, y), x, y)
+                val tile = grid.tile(x, y)
+                drawPipe(state, tile, x, y) // TODO highlight when I care
             }
         }
 
         // Track over buildings (on deck).
         for (y in mMinY..mMaxY) {
             for (x in mMinX..mMaxX) {
-                drawRail(state, grid.tile(x, y), x, y)
+                val tile = grid.tile(x, y)
+                drawRail(state, tile, x, y, highlight = inspectLayer==InspectLayer.Rail && tile==inspectTile)
             }
         }
         for (y in mMinY..mMaxY) {
@@ -349,7 +361,7 @@ class OutofspaceRenderer {
                 // Once per bridge, at its middle — it is stored at its centre and drawn across all
                 // three of its tiles, so visiting it per covered tile would draw it three times.
                 if (b.center != tile) continue
-                drawBridge(state, tile, b, x, y)
+                drawBridge(state, tile, b, x, y, highlight = inspectLayer== InspectLayer.Deck && tile==inspectTile)
             }
         }
 
@@ -373,11 +385,13 @@ class OutofspaceRenderer {
             for (y in minY..maxY) {
                 for (x in minX..maxX) {
                     val tile = grid.tile(x, y)
+                    val pressure = state.air.pressureAt(tile)
+                    if (state[state.occupancy[tile]] == null && Negligible.pressure(pressure)) continue
                     val tint = when (overlay) {
                         Overlay.Heat -> temperatureColor(state.kelvinAt(tile))
                         Overlay.Air -> mixtureColor(state, tile)
                         // A trace reads as vacuum rather than as "very thin air": see [Negligible].
-                        Overlay.Pressure -> state.air.pressureAt(tile).let {
+                        Overlay.Pressure -> pressure.let {
                             if (Negligible.pressure(it)) Colors.OVERLAY_VACUUM
                             else divergingColor(it.toFloat() / AMBIENT_PRESSURE)
                         }
@@ -420,10 +434,8 @@ class OutofspaceRenderer {
             tileRect(grid.xOf(hoveredTile), grid.yOf(hoveredTile), 1f, Colors.HOVER)
         }
 
-        if (inspectTile != TileIndex.NONE) {
-            val origin = if (inspectLayer == InspectLayer.Deck) state.occupancy[inspectTile] else inspectTile
-            val diameter = if (inspectLayer == InspectLayer.Deck) state[origin]?.kind?.diameter ?: 1 else 1
-            tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
+        if (inspectLayer == InspectLayer.Atmosphere && inspectTile != TileIndex.NONE) {
+            tileRect(grid.xOf(inspectTile), grid.yOf(inspectTile), 1f, Colors.HOVER)
         }
 
         rects.drawInstanced(count, matrices, colors)
@@ -485,7 +497,7 @@ class OutofspaceRenderer {
      * mass. Its colour is the value on it (Increment C); until something transmits, that is the dull
      * end of the ramp, which is the honest picture of a wire nobody is driving.
      */
-    private fun drawWire(state: VesselState, tile: TileIndex, x: Int, y: Int) {
+    private fun drawWire(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
         val segment = state.conduits.at(Conduit.Signal, tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
@@ -500,6 +512,18 @@ class OutofspaceRenderer {
             )
         }
         rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, color)
+        if (highlight) {
+            for (dir in Direction.ALL) {
+                if (!segment.linkedTo(dir)) continue
+                rect(
+                    cx + dir.dx * Visual.WIRE_ARM_OFFSET * tilePx, cy + dir.dy * Visual.WIRE_ARM_OFFSET * tilePx,
+                    (if (dir.dx != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
+                    (if (dir.dy != 0) Visual.WIRE_ARM_LENGTH else Visual.WIRE_DIAMETER) * tilePx,
+                    Colors.HOVER,
+                )
+            }
+            rect(cx, cy, Visual.WIRE_DIAMETER * tilePx, Visual.WIRE_DIAMETER * tilePx, Colors.HOVER)
+        }
     }
 
     private fun drawPipe(state: VesselState, tile: TileIndex, x: Int, y: Int) {
@@ -573,7 +597,7 @@ class OutofspaceRenderer {
     }
 
     /** Track tile + packet (thin spine, gauge collar). */
-    private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int) {
+    private fun drawRail(state: VesselState, tile: TileIndex, x: Int, y: Int, highlight: Boolean) {
         val segment = state.railAt(tile) ?: return
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
@@ -590,6 +614,18 @@ class OutofspaceRenderer {
         }
         // The hub, always drawn
         rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, railColor)
+        if (highlight) {
+            for (dir in Direction.ALL) {
+                if (!segment.linkedTo(dir)) continue
+                rect(
+                    cx + dir.dx * Visual.RAIL_ARM_OFFSET * tilePx, cy + dir.dy * Visual.RAIL_ARM_OFFSET * tilePx,
+                    (if (dir.dx != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                    (if (dir.dy != 0) Visual.RAIL_ARM_LENGTH else Visual.RAIL_DIAMETER) * tilePx,
+                    Colors.HOVER,
+                )
+            }
+            rect(cx, cy, Visual.RAIL_DIAMETER * tilePx, Visual.RAIL_DIAMETER * tilePx, Colors.HOVER)
+        }
     }
 
     private fun drawRailPacket(state: VesselState, tile: TileIndex, x: Int, y: Int) {
@@ -625,18 +661,18 @@ class OutofspaceRenderer {
     private fun lerp(from: Float, to: Float, t: Float): Float = from + (to - from) * t
 
     /** Bridge: elevated track (off-color, not part of lower track). */
-    private fun drawBridge(state: VesselState, tile: TileIndex, b: Bridge, x: Int, y: Int) {
+    private fun drawBridge(state: VesselState, tile: TileIndex, b: Bridge, x: Int, y: Int, highlight: Boolean) {
         val horizontal = b.facing.dx != 0
         val long = if (horizontal) Visual.BRIDGE_SPAN_X else Visual.BRIDGE_SPAN_Y
         val across = if (horizontal) Visual.BRIDGE_SPAN_Y else Visual.BRIDGE_SPAN_X
         val cx = (x + 0.5f) * tilePx
         val cy = (y + 0.5f) * tilePx
-        drawPorts(state, b)
         // The span fades up from slate as it builds and is framed when it is on its way out, exactly
         // as every other machine is — it just does it here, because a bridge is drawn over the track
         // it crosses rather than on a tile. ⚠️ A marked bridge goes on carrying, so its slots are
         // still drawn below: watching a condemned gantry walk its last load off is the point.
         rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, ghostColor(state, b))
+        if (highlight) rect(cx, cy, (long - Visual.BRIDGE_INSET) * tilePx, (across - Visual.BRIDGE_INSET) * tilePx, Colors.HOVER)
         if (tile in state.scrapping) {
             frame(x, y, Colors.SCRAPPING)
             markedForDeconstruction.add(tile)
@@ -989,7 +1025,7 @@ class OutofspaceRenderer {
      */
     private fun mixtureColor(state: VesselState, tile: TileIndex): Long {
         val pressure = state.air.pressureAt(tile)
-        if (Negligible.pressure(pressure)) return Colors.OVERLAY_EMPTY
+        if (Negligible.pressure(pressure)) return Colors.TRANSPARENT
         val f = (pressure.toFloat() / AMBIENT_PRESSURE).coerceIn(Visual.PRESSURE_MIN_F, Visual.PRESSURE_MAX_F)
         val base = state.air.mixtureAt(tile).color
         val scale = (f / Visual.PRESSURE_MAX_F).coerceIn(Visual.PRESSURE_MIN_SCALE, Visual.PRESSURE_MAX_SCALE)
@@ -1218,7 +1254,7 @@ class OutofspaceRenderer {
 
         // ── Overlay colours ─────────────────────────────────────────────
         const val OVERLAY_VACUUM  = 0x05070CD0L
-        const val OVERLAY_EMPTY   = 0x120A10D8L
+        const val TRANSPARENT   = 0x0L
 
         /** Thin → blue, dense → orange. */
         const val THIN_R_TARGET  = 0x40
