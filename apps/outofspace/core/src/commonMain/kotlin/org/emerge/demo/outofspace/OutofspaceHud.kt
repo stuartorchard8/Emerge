@@ -4,7 +4,10 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.ReactionInfo
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.abundanceOf
+import org.emerge.demo.outofspace.chem.abundanceRank
 import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.occursNaturally
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.isElement
 import org.emerge.demo.outofspace.chem.reactionsConsuming
@@ -45,6 +48,7 @@ import org.emerge.render.torus.ui.UiBuilder
 
 /** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
+
 
     var onTogglePause: () -> Unit = {}
     var onReset: () -> Unit = {}
@@ -731,10 +735,32 @@ class OutofspaceHud {
      * navigation — an article on ilmenite reaches rutile because rutile is named in it, so there is
      * no index to write and no species that can become unreachable by being forgotten. The history
      * behind [OutofspaceController.wikiBack] exists precisely because that kind of reading wanders.
+     *
+     * ⛔ **A scroll area rather than a panel, and it has to be.** A panel auto-sizes to its content
+     * and an article is as long as the chemistry makes it — carbon takes part in three reactions and
+     * comes out of a fourth, which is a column taller than the screen, so the reactions nearest the
+     * bottom (the ones a player is hunting for) were the ones that fell off it. Here the article
+     * takes the room left under the inspector and scrolls inside it, so length is never a reason for
+     * something to be unreachable.
+     *
+     * ⚠️ **Positioned off [lastPanelRect]**, which is the inspector when one is open and the
+     * stockpile when none is — either way, the bottom of the right-hand column as it actually came
+     * out this frame. A scroll area cannot join the anchored stacking that panels use (it is given
+     * a rectangle, not a corner), and a hand-written offset would be the height of the inspector
+     * copied into a second place and wrong the moment a row was added to it.
      */
     private fun UiBuilder.wikiPanel(controller: OutofspaceController) {
         val species = controller.wikiSpecies ?: return
-        panel(Anchor.TopRight, rowHeight = 20f) {
+
+        // ── The head: pinned, and everything in it is a reason to pin it ──────────────────────
+        //
+        // ⚠️ **The way out must not scroll away.** With the title and CLOSE inside the scroll area,
+        // reading to the bottom of carbon left a player looking at a list with no name on it and no
+        // button to shut it. What is up here is what stays true however far down the article you
+        // are: which species this is, how to leave, and the three numbers that are one line each.
+        // It is a normal panel, so it takes its place in the right-hand column like any other —
+        // held to the body's width, so the two read as one thing rather than a tab above a box.
+        panel(Anchor.TopRight, rowHeight = 20f, minWidth = MIN_REFERENCE_WIDTH_DP) {
             title(species.name.uppercase())
             actionRow(
                 listOf(
@@ -749,7 +775,21 @@ class OutofspaceHud {
             // Said only where it is true. "Solid only" on a hundred and forty-five rocks is a line
             // that teaches nobody anything; "can be a gas" on the twenty that can is the fact.
             if (species.fluid != null) row("can be a gas", 0x9AC0E0FFL)
+        }
 
+        // ── The body: as long as the chemistry makes it ───────────────────────────────────────
+        val head = lastPanelRect ?: return
+        val margin = 12f * density
+        // Aligned to the head, and never narrower than a reaction's chips: the head is five short
+        // rows and would otherwise set a width the sections cannot live in.
+        val width = maxOf(head.w, MIN_REFERENCE_WIDTH_DP * density)
+        val x = head.x + head.w - width
+        val top = head.y + head.h
+        val height = screenH - top - margin
+        // Nothing left to show it in — a very short window, or an inspector reading a busy machine.
+        // Better no body than a scroll area of negative height, which draws as a sliver of nothing.
+        if (height < MIN_REFERENCE_HEIGHT_DP * density) return
+        scrollArea("wiki", x, top, width, height, rowHeight = 20f, background = 0x000000C0L) {
             val parts = compositionOf(species)
             if (parts.isNotEmpty()) {
                 section("wiki-made-of", "MADE OF", open = true) {
@@ -764,11 +804,40 @@ class OutofspaceHud {
                 }
             }
 
+            abundanceSection(species)
+
             reactionSection(controller, "wiki-uses", "TAKES PART IN", reactionsConsuming(species))
             reactionSection(controller, "wiki-from", "MADE BY", reactionsProducing(species))
-            if (parts.isEmpty() && reactionsConsuming(species).isEmpty() && reactionsProducing(species).isEmpty()) {
-                row("nothing known but the substance itself", 0x7A7A7AFFL)
+        }
+    }
+
+    /**
+     * Whether a rock can simply contain this, and how much of one it is.
+     *
+     * ⚠️ **The "no" is a section too**, and it is the more useful one. Aluminium is commoner than
+     * gold and never occurs loose, so an empty abundance row on it would read as missing data when
+     * what it means is "you cannot mine this, you have to make it" — and the routes to making it are
+     * the section directly below. Ninety per cent of the table is in that position.
+     *
+     * ⚠️ **A rank as well as a figure.** "49 parts per hundred million" is unreadable without the
+     * rest of the table beside it, and the rest of the table is not something a panel can show; the
+     * rank is what says whether that number is ordinary or remarkable.
+     */
+    private fun PanelBuilder.abundanceSection(species: Species) {
+        section("wiki-abundance", "FOUND IN ROCK", open = true) {
+            if (!species.occursNaturally) {
+                row("never loose in rock", 0xE0A93AFFL)
+                row("it has to be made", 0x9A9A9AFFL)
+                return@section
             }
+            keyValue("SHARE", abundanceOf(species), 0x9A9A9AFFL, 0x9ED0B0FFL)
+            keyValue(
+                "RANK",
+                "${abundanceRank(species)} of ${Species.NATURAL.size}",
+                0x9A9A9AFFL,
+                0x9AA4B4FFL,
+            )
+            row("by mass, of a reference rock", 0x7A7A7AFFL)
         }
     }
 
@@ -1063,5 +1132,11 @@ class OutofspaceHud {
 
         /** The speed at which the needle is fully extended, in tiles per tick. Provisional likewise. */
         const val NAV_FULL_SCALE_SPEED: Float = 2f
+
+        /** The narrowest the reference is allowed to be, in dp — the widest reaction row, three chips. */
+        const val MIN_REFERENCE_WIDTH_DP: Float = 460f
+
+        /** Below this much room under the head, in dp, the article's body is not drawn at all. */
+        const val MIN_REFERENCE_HEIGHT_DP: Float = 80f
     }
 }

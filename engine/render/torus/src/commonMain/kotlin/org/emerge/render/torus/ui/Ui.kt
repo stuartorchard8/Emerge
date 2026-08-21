@@ -1103,6 +1103,10 @@ class UiBuilder internal constructor(private val ui: Ui) {
         textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
         newColumn: Boolean = false,
         fillWidth: Boolean = false,
+        /** Floor on the auto-sized width, in dp — for a panel that has to line up with something
+         *  beside it (a scroll area under it, a sibling column) rather than shrink to its own text.
+         *  Ignored under [fillWidth], and never widens past the screen. */
+        minWidth: Float = 0f,
         offsetX: Float = 0f,
         block: PanelBuilder.() -> Unit,
     ): Float {
@@ -1116,7 +1120,9 @@ class UiBuilder internal constructor(private val ui: Ui) {
         // to span the whole width. Content wider than that is clipped in [emitPanel].
         val maxW = (ui.resWidth - marginPx * 2f).coerceAtLeast(paddingPx * 2f)
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat()
-        val w = if (fillWidth) maxW else minOf(paddingPx * 2 + pb.items.maxOf { it.measureWidth(textH) }, maxW)
+        val w = if (fillWidth) maxW else {
+            minOf(maxOf(paddingPx * 2 + pb.items.maxOf { it.measureWidth(textH) }, minWidth * s), maxW)
+        }
         val contentW = w - paddingPx * 2
         val h = paddingPx * 2 + contentH
         if (anchor == Anchor.Center) {

@@ -158,6 +158,14 @@ fun main() {
 
     glfwSetScrollCallback(window) { _, _, yoffset ->
         val (px, py) = cursorPixel(window)
+        // The wheel scrolls a UI list when it is over one, and zooms the world when it is not. The
+        // reference panel is longer than the screen for anything interesting, so without this the
+        // one gesture a player would try over it would fly the camera instead.
+        val area = ui.scrollAreaAt(px, py)
+        if (area != null) {
+            ui.scrollBy(area, (-yoffset * WHEEL_SCROLL_PX).toFloat())
+            return@glfwSetScrollCallback
+        }
         renderer.zoomAtScreen(px, py, 1.12f.pow(yoffset.toFloat().coerceIn(-24f, 24f)))
     }
 
@@ -336,6 +344,9 @@ fun main() {
  * round on both counts.
  */
 private const val KEY_PAN_PIXELS_PER_SECOND = 900f
+
+/** How far one wheel notch moves a scrollable UI list. Cyto's number, for the same gesture. */
+private const val WHEEL_SCROLL_PX = 48f
 
 /**
  * Where a save goes: one well-known file beside wherever the game was started.

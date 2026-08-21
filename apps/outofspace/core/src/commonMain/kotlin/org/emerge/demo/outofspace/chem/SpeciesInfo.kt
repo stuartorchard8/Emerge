@@ -118,3 +118,49 @@ fun compositionOf(species: Species): List<ElementShare> {
 
 /** One element's place in a mineral's formula. */
 class ElementShare(val element: Species, val atoms: Int, val partsPerThousand: Int)
+
+/**
+ * How much of a reference rock is [species], written the way the size of the number deserves.
+ *
+ * [Species.relativeAbundance] is parts per hundred million by mass, which is the right unit to
+ * *store* — one scale across nine orders of magnitude, so forsterite and osmium are comparable
+ * integers — and the wrong one to read. "49" says nothing; "490 ppb" says osmium is a part per
+ * billion, which is the fact that decides whether it is worth chasing. So the unit is chosen per
+ * value: percent down to a hundredth of a per cent, then parts per million, then parts per billion.
+ *
+ * Empty for anything that does not occur loose — see [occursNaturally], which is the more useful
+ * statement about those and is made instead.
+ */
+fun abundanceOf(species: Species): String {
+    val parts = species.relativeAbundance
+    if (parts <= 0) return ""
+    // Percent, to a tenth, while there is a tenth of a percent to see.
+    if (parts >= 100_000) {
+        val tenths = parts / 100_000
+        return "${tenths / 10}.${tenths % 10}%"
+    }
+    if (parts >= 100) return "${parts / 100} ppm"
+    return "${parts * 10} ppb"
+}
+
+/**
+ * Whether [species] is something a rock can simply contain.
+ *
+ * ⚠️ **A "no" here is the interesting answer, not a missing one.** Almost every element in the game
+ * has abundance zero, and that is the whole two-tier model: aluminium is far commoner than gold and
+ * never occurs loose, so a player who wants it has to *make* it. Stating that is what turns an empty
+ * abundance row into a direction to look — at [reactionsProducing], which is on the same page.
+ */
+val Species.occursNaturally: Boolean get() = relativeAbundance > 0
+
+/**
+ * Where [species] stands among everything a rock can contain — 1 is the commonest.
+ *
+ * A rank because a lone number in parts per hundred million is unreadable without the rest of the
+ * table beside it, and the rest of the table is not something a panel can show. 0 for anything that
+ * does not occur naturally.
+ */
+fun abundanceRank(species: Species): Int {
+    if (!species.occursNaturally) return 0
+    return Species.NATURAL.count { it.relativeAbundance > species.relativeAbundance } + 1
+}

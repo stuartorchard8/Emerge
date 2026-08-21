@@ -2,7 +2,10 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.ReactionKind
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.abundanceOf
+import org.emerge.demo.outofspace.chem.abundanceRank
 import org.emerge.demo.outofspace.chem.compositionOf
+import org.emerge.demo.outofspace.chem.occursNaturally
 import org.emerge.demo.outofspace.chem.reactionsConsuming
 import org.emerge.demo.outofspace.chem.reactionsProducing
 import org.emerge.demo.outofspace.world.Grid
@@ -68,6 +71,36 @@ class SpeciesReferenceTest {
     fun `reactions are listed coldest first`() {
         val onsets = reactionsConsuming(Species.Carbon).map { it.onsetKelvin }
         assertEquals(onsets.sorted(), onsets)
+    }
+
+    @Test
+    fun `abundance is stated in the unit its own size deserves`() {
+        // Percent while there is a percent to see: forsterite is 28% of a reference rock.
+        assertEquals("28.0%", abundanceOf(Species.Forsterite))
+        // Carbon is half a percent, and the tenth is what stops it reading as zero.
+        assertEquals("0.5%", abundanceOf(Species.Carbon))
+        // Platinum is half a part per million, and gold a hundred and forty parts per billion —
+        // the whole reason one scale cannot serve: they are three orders of magnitude apart.
+        assertEquals("500 ppb", abundanceOf(Species.Platinum))
+        assertEquals("140 ppb", abundanceOf(Species.Gold))
+        assertEquals("1 ppm", abundanceOf(Species.Copper))
+    }
+
+    @Test
+    fun `an element that never occurs loose says so instead of reading as zero`() {
+        // The two-tier model's whole point: aluminium is commoner than gold and has to be made.
+        assertFalse(Species.Aluminum.occursNaturally)
+        assertEquals("", abundanceOf(Species.Aluminum))
+        assertEquals(0, abundanceRank(Species.Aluminum))
+        assertTrue(Species.Gold.occursNaturally)
+    }
+
+    @Test
+    fun `rank counts only what a rock can contain, commonest first`() {
+        val commonest = Species.NATURAL.maxByOrNull { it.relativeAbundance }!!
+        assertEquals(1, abundanceRank(commonest))
+        assertTrue(abundanceRank(Species.Gold) > abundanceRank(Species.Iron))
+        assertTrue(abundanceRank(Species.Gold) <= Species.NATURAL.size)
     }
 
     @Test

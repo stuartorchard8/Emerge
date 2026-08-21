@@ -412,6 +412,17 @@ object OutofspaceAgentHarness {
                 // clicks what it finds, so a script that taps something can only pass if the button
                 // is really reachable — the failure the storage lock shipped with.
                 "tap" -> tapUi(line.removePrefix("tap").trim())
+                // `scroll <area> <px>` — the wheel, over a scrollable list. The reference panel is
+                // taller than the screen for anything busy, and a scroll area emits no click region
+                // for a row it did not draw, so a row below the fold is unreachable to `tap` until
+                // this has moved it into view. Exactly what the player's wheel does.
+                "scroll" -> {
+                    val (_, h, u) = ensureGl()
+                    h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
+                    u.scrollBy(t[1], t[2].toFloat())
+                    settle()
+                    println("[agent] scrolled '${t[1]}' to ${u.scrollOffsetOf(t[1])}")
+                }
                 "expect" -> expect(t[1], t[2], t.getOrElse(3) { "" })
                 "echo" -> println("[agent] ${line.removePrefix("echo").trim()}")
                 else -> error("unknown command '${t[0]}'")

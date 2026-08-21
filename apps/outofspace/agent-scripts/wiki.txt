@@ -1,11 +1,14 @@
 # The in-game reference: a species named in the inspector is a way into an article about it, and
 # every species named in the article is a way into the next one.
 #
-# What to read: the two shots. `wiki-rutile` is reached by clicking TITANIUM in the storage casing
+# What to read: the three shots. `wiki-rutile` is reached by clicking TITANIUM in the storage casing
 # and then RUTILE in titanium's own reactions — which is the whole navigation, and it can only pass
-# if those rows are real buttons in the real panel. `wiki-carbon` is the tallest article there is
-# (four reactions), and it is here as the height check: if it runs off the bottom edge, the panel
-# has grown a section that needs folding by default.
+# if those rows are real buttons in the real panel. `wiki-carbon` is the busiest article there is
+# (four reactions); its head (name, back/forward, CLOSE) is pinned and its body scrolls, so
+# `wiki-carbon-scrolled` must still show the name and the way out while showing MADE BY.
+#
+# ⚠️ A scroll area emits no click region for a row it did not draw, so `tap` cannot reach anything
+# below the fold until `scroll` has brought it up. That is the player's position too.
 new 0
 rock 2 9
 run 400
@@ -15,3 +18,5 @@ tap RUTILE
 shot wiki-rutile
 tap CARBON
 shot wiki-carbon
+scroll wiki 300
+shot wiki-carbon-scrolled
