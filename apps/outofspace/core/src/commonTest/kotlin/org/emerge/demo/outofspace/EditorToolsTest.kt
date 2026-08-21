@@ -52,6 +52,7 @@ class EditorToolsTest {
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         deck += Storage(grid.tile(6, 5), Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size), creative=true))
+        c.tool = Tool.Build
         c.brush = Brush.Run(Conduit.Rail)
         c.dragTo(grid.tile(5, 5))
         c.apply(grid.tile(4, 5))
