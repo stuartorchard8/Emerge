@@ -201,7 +201,7 @@ val REDUCTIONS: List<Reduction> = listOf(
         enthalpyPerKg = 690L * kJPerMolAt(60),
     ),
 
-    // ── Magnesium out of magnesia: the Pidgeon process, and the reason the chain needs a vacuum ──
+    // ── Periclase out of magnesia: the Pidgeon process, and the reason the chain needs a vacuum ──
     //
     // 2 MgO + Si -> 2 Mg + SiO2. Real, and really done under vacuum — the magnesium comes off as a
     // vapour and is condensed. Here it stays a solid, because no metal in this game melts or boils
@@ -214,6 +214,61 @@ val REDUCTIONS: List<Reduction> = listOf(
         products = listOf(Species.Magnesium to 2, Species.Quartz to 1),
         onsetKelvin = 1500,
         enthalpyPerKg = 293L * kJPerMolAt(80),
+    ),
+
+    // ── Forsterite cracking: the high-temp loop that avoids shock-cooling ──
+    //
+    // Mg2SiO4 + 4 C -> [2 Mg + Si + 4 CO] -> 2 MgO + 2 C + Si + 2 CO. Driven at extreme heat to
+    // force carbothermic reduction, but then allowed to revert on slow cooling. The un-reverted
+    // carbon monoxide is vented as a gas, leaving behind an intimate solid mixture of magnesia,
+    // silicon metal, and carbon soot.
+    Reduction(
+        oxide = Species.Forsterite, oxideUnits = 1,
+        reductant = Species.Carbon, reductantUnits = 4,
+        products = listOf(Species.Periclase to 2, Species.Silicon to 1, Species.Carbon to 2, Species.CarbonMonoxide to 2),
+        onsetKelvin = 1800,
+        enthalpyPerKg = 750L * kJPerMolAt(141),
+    ),
+
+    // ── Enstatite cracking: the high-silicon alternative ──
+    //
+    // MgSiO3 + 3 C -> [Mg + Si + 3 CO] -> MgO + C + Si + CO. Pyroxene processing at high heat.
+    // Because enstatite contains far more silica than forsterite, its slow-cooled reversion yields a
+    // massive structural surplus of silicon metal.
+    //
+    // This feeds one unit of periclase into the loop, while venting a cleaner ratio of carbon monoxide.
+    Reduction(
+        oxide = Species.Enstatite, oxideUnits = 1,
+        reductant = Species.Carbon, reductantUnits = 3,
+        products = listOf(Species.Periclase to 1, Species.Silicon to 1, Species.Carbon to 1, Species.CarbonMonoxide to 1),
+        onsetKelvin = 1800,
+        enthalpyPerKg = 890L * kJPerMolAt(100),
+    ),
+
+    // ── Fayalite cracking: the iron-olivine low-temp shortcut ──
+    //
+    // Fe2SiO4 + 2 C -> 2 Fe + Si + 2 CO2. Because iron holds oxygen loosely compared to magnesium,
+    // this olivine variant cracks at drastically lower temperatures. Iron drops out safely as a solid
+    // metal without any gaseous reversion madness, while leaving behind a clean unit of silicon metal.
+    Reduction(
+        oxide = Species.Fayalite, oxideUnits = 1,
+        reductant = Species.Carbon, reductantUnits = 2,
+        products = listOf(Species.Iron to 2, Species.Silicon to 1, Species.CarbonDioxide to 2),
+        onsetKelvin = 1250,
+        enthalpyPerKg = 210L * kJPerMolAt(204),
+    ),
+
+    // ── Ferrosilite cracking: the heavy iron-silicon pyroxene ──
+    //
+    // FeSiO3 + C -> Fe + Si + CO2. The iron twin to enstatite. Just like its magnesium counterpart,
+    // its 1:1 mineral structure guarantees a massive structural surplus of silicon metal relative
+    // to the iron produced, but unlocks at mid-tier furnace temperatures.
+    Reduction(
+        oxide = Species.Ferrosilite, oxideUnits = 1,
+        reductant = Species.Carbon, reductantUnits = 1,
+        products = listOf(Species.Iron to 1, Species.Silicon to 1, Species.CarbonDioxide to 1),
+        onsetKelvin = 1200,
+        enthalpyPerKg = 240L * kJPerMolAt(132),
     ),
 
     // ── Synthetic rutile: the Becher process, and where the iron comes out ──
