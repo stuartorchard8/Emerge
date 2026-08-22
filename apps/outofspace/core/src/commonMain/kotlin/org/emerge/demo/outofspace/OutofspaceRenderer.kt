@@ -319,8 +319,10 @@ class OutofspaceRenderer {
         }
         if (inspectLayer == InspectLayer.Deck && inspectTile != TileIndex.NONE) {
             val origin = state.occupancy[inspectTile]
-            val diameter = state[origin]?.kind?.diameter ?: 1
-            tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
+            if (state[origin]?.kind != DeckMachineKind.Bridge) {
+                val diameter = state[origin]?.kind?.diameter ?: 1
+                tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
+            }
         }
 
         // Signal wire under everything: it is the thinnest run and the one most often threaded
