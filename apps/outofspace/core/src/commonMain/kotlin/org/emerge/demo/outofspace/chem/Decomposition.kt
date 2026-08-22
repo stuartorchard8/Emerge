@@ -163,6 +163,27 @@ val DECOMPOSITIONS: List<Decomposition> = listOf(
         onsetKelvin = 1300,
         enthalpyPerKg = 75L * kJPerMolAt(16),
     ),
+
+    // ── The bio-matter: pyrolysis and thermal death ──
+    //
+    // C₆H₁₂O₆ → CH₄ + CO₂ + 4 H₂O + 4 C. Cooking or pyrolyzing algae cracks it into
+    // volatile gases, water vapour, and a solid char residue. This allows players to use
+    // dead crops as a complex fuel/refining source, or accidentally ruin their life-support
+    // tanks by letting them overheat.
+    Decomposition(
+        reactant = Species.Algae, reactantUnits = 1,
+        products = listOf(
+            Species.Methane to 1,
+            Species.CarbonDioxide to 1,
+            Species.Water to 4,
+            Species.Carbon to 4
+        ),
+        // Algae dies and cooks well below mineral cracking points.
+        onsetKelvin = 353, // ~80°C.
+        // +65 kJ/mol of glucose. Mildly endothermic; baking or charring biomass draws
+        // a small amount of heat out of the tile. Molar mass is 180g/mol.
+        enthalpyPerKg = 65L * kJPerMolAt(180),
+    ),
 )
 
 /**

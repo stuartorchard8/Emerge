@@ -375,6 +375,11 @@ enum class Species(
     Neon(20, 1030, solidKgPerCubicMetre = 1440, relativeAbundance = 5),
     Krypton(84, 248, solidKgPerCubicMetre = 2900, relativeAbundance = 2),
     Xenon(131, 158, solidKgPerCubicMetre = 3100, relativeAbundance = 1),
+
+    /**
+     * Biologically active species
+     */
+    Algae(180, 1250, solidKgPerCubicMetre = 1540),
     ;
 
     companion object {

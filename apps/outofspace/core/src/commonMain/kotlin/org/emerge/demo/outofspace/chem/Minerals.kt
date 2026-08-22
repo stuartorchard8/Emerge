@@ -180,6 +180,9 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
     Species.Methane to mapOf(Species.Carbon to 1, Species.Hydrogen to 4),
     Species.HydrogenSulfide to mapOf(Species.Hydrogen to 2, Species.Sulfur to 1),
     Species.SulfurDioxide to mapOf(Species.Sulfur to 1, Species.Oxygen to 2),
+
+    // ── Biology ──
+    Species.Algae to mapOf(Species.Carbon to 6, Species.Hydrogen to 12, Species.Oxygen to 6),
 )
 
 /**

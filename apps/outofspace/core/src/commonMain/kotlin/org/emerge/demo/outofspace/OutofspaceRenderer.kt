@@ -1337,6 +1337,8 @@ class OutofspaceRenderer {
         const val METAL      = 0xA0A4ACFFL
         /** Ices, which read as cold before they read as anything else. */
         const val ICE        = 0xA8D8E8FFL
+        /** Algae green */
+        const val ALGAE      = 0x78F858FFL
     }
 
     /** Scales, thresholds, and offsets that drive the renderer's visual layout. */
@@ -1504,6 +1506,7 @@ fun speciesColor(dominant: Species?): Long = when (dominant) {
     Species.Water -> OutofspaceRenderer.Colors.WATER
     Species.Osmium -> OutofspaceRenderer.Colors.OSMIUM
     Species.Argon -> OutofspaceRenderer.Colors.ARGON
+    Species.Algae -> OutofspaceRenderer.Colors.ALGAE
 
     else -> speciesClassColor(dominant)
 }

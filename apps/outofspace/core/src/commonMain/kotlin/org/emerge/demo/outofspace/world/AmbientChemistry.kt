@@ -243,7 +243,8 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
             reductantDemands.fill(0L)
             var wanted = 0L
             for (i in rows.indices) {
-                val want = rows[i].demand(layer[tile, rows[i].oxide], kelvin)
+                val catalyst = rows[i].catalyst
+                val want = rows[i].demand(layer[tile, rows[i].oxide], if (catalyst == null) 0L else layer[tile, catalyst], kelvin)
                 reductantDemands[i] = want
                 wanted += want
             }

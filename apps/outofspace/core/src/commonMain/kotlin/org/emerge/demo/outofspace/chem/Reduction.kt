@@ -56,6 +56,8 @@ class Reduction(
     val reductantUnits: Int,
     val products: List<Pair<Species, Int>>,
     val onsetKelvin: Int,
+    val catalyst: Species? = null,
+    val catalystUnits: Int = 1,
     /** Positive is **endothermic**, as in both other tables. Most of these are; one is not. */
     val enthalpyPerKg: Long,
     val baseRate: Long = REDUCTION_BASE_RATE,
@@ -63,6 +65,7 @@ class Reduction(
     /** Mass of reductant per mass of oxide, as the exact ratio of formula-unit masses. */
     internal val reductantNumerator: Long = reductantUnits.toLong() * reductant.molarMass
     internal val reductantDenominator: Long = oxideUnits.toLong() * oxide.molarMass
+    internal val catalystCapacityDenominator: Long = catalystUnits.toLong() * (catalyst?.molarMass?.toLong() ?: 1L)
 
     /**
      * The mass of each of [products], in order, from [totalMass] of oxide **and reductant together**.
@@ -91,17 +94,27 @@ class Reduction(
     fun enthalpy(mass: Long): Long = perKilogram(mass, enthalpyPerKg)
 
     /**
-     * How much **reductant** this reaction wants at [kelvin] with [oxideMass] present — what it would
+     * How much **reductant** this reaction wants at [kelvin] with [oxideMass] and [catalystMass] present — what it would
      * take if nothing else in the tile were after the same species.
      *
      * Half of the Jacobi rule, and the same half [Oxidation.demand] is: asked of every row against
      * one snapshot, before anything has been taken, so no row's answer depends on when it was asked.
      */
-    fun demand(oxideMass: Long, kelvin: Int): Long {
+    fun demand(oxideMass: Long, catalystMass: Long, kelvin: Int): Long {
         if (oxideMass <= 0L || kelvin < onsetKelvin) return 0L
+        if (catalyst != null && catalystMass == 0L) return 0L
+
         val fraction = reactionFraction(kelvin, onsetKelvin, baseRate)
-        val consumed = scaledRatio(fraction, SCALE, oxideMass)
+        var consumed = scaledRatio(fraction, SCALE, oxideMass)
         if (consumed <= 0L) return 0L
+
+        if (catalyst != null) {
+            // Max oxide mass this much catalyst can process in one tick
+            val maxMassByCatalyst = scaledRatio(reductantDenominator, catalystCapacityDenominator, catalystMass)
+            consumed = minOf(consumed, maxMassByCatalyst)
+            if (consumed <= 0L) return 0L
+        }
+
         return scaledRatio(reductantNumerator, reductantDenominator, consumed)
     }
 
@@ -228,6 +241,39 @@ val REDUCTIONS: List<Reduction> = listOf(
         products = listOf(Species.Periclase to 2, Species.Silicon to 1, Species.Carbon to 2, Species.CarbonMonoxide to 2),
         onsetKelvin = 1800,
         enthalpyPerKg = 750L * kJPerMolAt(141),
+    ),
+
+    /**
+     * `C + CO₂ → 2 CO` — The Boudouard reaction.
+     * Solid carbon reduces carbon dioxide gas into flammable carbon monoxide.
+     * Strongly endothermic (+172.4 kJ/mol of carbon), acting as a natural thermal brake
+     * in high-temperature environments.
+     */
+    Reduction(
+        oxide = Species.CarbonDioxide, oxideUnits = 1,
+        reductant = Species.Carbon, reductantUnits = 1,
+        products = listOf(Species.CarbonMonoxide to 2),
+        // Becomes thermodynamically favorable around 973 Kelvin (700°C),
+        // and completely dominates above 1200 Kelvin.
+        onsetKelvin = 973,
+        enthalpyPerKg = 172L * kJPerMolAt(12),
+    ),
+
+    /**
+     * `100 C6H12O6 + 6 H₂O + 6 CO₂ → 101 C6H12O6 + 6 O₂` — Photosynthesis.
+     * Solid carbon reduces carbon dioxide gas into flammable carbon monoxide.
+     * Strongly endothermic (+172.4 kJ/mol of carbon), acting as a natural thermal brake
+     * in high-temperature environments.
+     */
+    Reduction(
+        oxide = Species.Water, oxideUnits = 6,
+        reductant = Species.Carbon, reductantUnits = 6,
+        catalyst = Species.Algae, catalystUnits = 100,
+        products = listOf(Species.Algae to 1, Species.Oxygen to 6),
+        // Becomes thermodynamically favorable around 973 Kelvin (700°C),
+        // and completely dominates above 1200 Kelvin.
+        onsetKelvin = 973,
+        enthalpyPerKg = 172L * kJPerMolAt(12),
     ),
 
     // ── Enstatite cracking: the high-silicon alternative ──
