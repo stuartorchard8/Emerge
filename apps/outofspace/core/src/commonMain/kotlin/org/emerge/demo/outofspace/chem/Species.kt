@@ -377,9 +377,9 @@ enum class Species(
     Xenon(131, 158, solidKgPerCubicMetre = 3100, relativeAbundance = 1),
 
     /**
-     * Biologically active species
+     * Biologically active species. Set to low abundance for now - will make accessible via economy in the future
      */
-    Algae(180, 1250, solidKgPerCubicMetre = 1540),
+    Algae(180, 1250, solidKgPerCubicMetre = 1540, relativeAbundance = 1),
     ;
 
     companion object {

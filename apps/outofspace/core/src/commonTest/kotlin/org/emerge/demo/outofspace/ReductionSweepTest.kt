@@ -57,7 +57,7 @@ class ReductionSweepTest {
         // its onset, every row must consume something. A row that balances and never fires is the
         // failure mode this whole file exists for — and it is invisible from the table's side.
         for (reaction in REDUCTIONS) {
-            val layer = layerWith(reaction.oxide to 100L * kg, reaction.reductant to 100L * kg)
+            val layer = layerWith(*listOfNotNull(reaction.oxide to 100L * kg, reaction.reductant to 100L * kg, reaction.catalyst?.to(100L * kg)).toTypedArray())
             layer.heatTo(reaction.onsetKelvin * 2)
             sweep(layer)
 

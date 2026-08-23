@@ -240,7 +240,7 @@ val REDUCTIONS: List<Reduction> = listOf(
         reductant = Species.Carbon, reductantUnits = 4,
         products = listOf(Species.Periclase to 2, Species.Silicon to 1, Species.Carbon to 2, Species.CarbonMonoxide to 2),
         onsetKelvin = 1800,
-        enthalpyPerKg = 750L * kJPerMolAt(141),
+        enthalpyPerKg = 750L * kJPerMolAt(140),
     ),
 
     /**
@@ -256,7 +256,7 @@ val REDUCTIONS: List<Reduction> = listOf(
         // Becomes thermodynamically favorable around 973 Kelvin (700°C),
         // and completely dominates above 1200 Kelvin.
         onsetKelvin = 973,
-        enthalpyPerKg = 172L * kJPerMolAt(12),
+        enthalpyPerKg = 172L * kJPerMolAt(44),
     ),
 
     /**
@@ -267,18 +267,16 @@ val REDUCTIONS: List<Reduction> = listOf(
      */
     Reduction(
         oxide = Species.Water, oxideUnits = 6,
-        reductant = Species.Carbon, reductantUnits = 6,
+        reductant = Species.CarbonDioxide, reductantUnits = 6,
         catalyst = Species.Algae, catalystUnits = 100,
         products = listOf(Species.Algae to 1, Species.Oxygen to 6),
-        // Becomes thermodynamically favorable around 973 Kelvin (700°C),
-        // and completely dominates above 1200 Kelvin.
-        onsetKelvin = 973,
-        enthalpyPerKg = 172L * kJPerMolAt(12),
+        onsetKelvin = 273, // ~0°C.
+        enthalpyPerKg = 2814L * kJPerMolAt(18),
     ),
 
     // ── Enstatite cracking: the high-silicon alternative ──
     //
-    // MgSiO3 + 3 C -> [Mg + Si + 3 CO] -> MgO + C + Si + CO. Pyroxene processing at high heat.
+    // MgSiO3 + 3 C -> [Mg + Si + 3 CO] -> MgO + C + Si + 2 CO. Pyroxene processing at high heat.
     // Because enstatite contains far more silica than forsterite, its slow-cooled reversion yields a
     // massive structural surplus of silicon metal.
     //
@@ -286,7 +284,7 @@ val REDUCTIONS: List<Reduction> = listOf(
     Reduction(
         oxide = Species.Enstatite, oxideUnits = 1,
         reductant = Species.Carbon, reductantUnits = 3,
-        products = listOf(Species.Periclase to 1, Species.Silicon to 1, Species.Carbon to 1, Species.CarbonMonoxide to 1),
+        products = listOf(Species.Periclase to 1, Species.Silicon to 1, Species.Carbon to 1, Species.CarbonMonoxide to 2),
         onsetKelvin = 1800,
         enthalpyPerKg = 890L * kJPerMolAt(100),
     ),
@@ -306,13 +304,13 @@ val REDUCTIONS: List<Reduction> = listOf(
 
     // ── Ferrosilite cracking: the heavy iron-silicon pyroxene ──
     //
-    // FeSiO3 + C -> Fe + Si + CO2. The iron twin to enstatite. Just like its magnesium counterpart,
+    // 2 FeSiO3 + 3 C -> 2 Fe + 2 Si + 3 CO2. The iron twin to enstatite. Just like its magnesium counterpart,
     // its 1:1 mineral structure guarantees a massive structural surplus of silicon metal relative
     // to the iron produced, but unlocks at mid-tier furnace temperatures.
     Reduction(
-        oxide = Species.Ferrosilite, oxideUnits = 1,
-        reductant = Species.Carbon, reductantUnits = 1,
-        products = listOf(Species.Iron to 1, Species.Silicon to 1, Species.CarbonDioxide to 1),
+        oxide = Species.Ferrosilite, oxideUnits = 2,
+        reductant = Species.Carbon, reductantUnits = 3,
+        products = listOf(Species.Iron to 2, Species.Silicon to 2, Species.CarbonDioxide to 3),
         onsetKelvin = 1200,
         enthalpyPerKg = 240L * kJPerMolAt(132),
     ),

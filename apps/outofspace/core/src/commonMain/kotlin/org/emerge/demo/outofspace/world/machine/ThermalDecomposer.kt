@@ -83,10 +83,10 @@ data class ThermalDecomposer(
          * above its onset**, so a row added hotter than 2400 K is a test failure rather than a
          * reaction the dial silently cannot reach.
          *
-         * The bottom rung is off, near enough: nothing in either table happens at 300 K, so it is how
+         * The bottom rung is off, near enough: nothing in either table happens at 200 K, so it is how
          * a decomposer is told to stop without unwiring it.
          */
-        val SETPOINTS: List<Int> = listOf(300, 900, 1100, 1250, 1400, 1600, 1900, 2200, 2400)
+        val SETPOINTS: List<Int> = listOf(200, 300, 900, 1100, 1250, 1400, 1600, 1900, 2200, 2400)
 
         /**
          * The residence times the panel offers, in **ticks**.

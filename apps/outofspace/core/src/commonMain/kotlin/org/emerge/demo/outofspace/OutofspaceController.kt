@@ -479,7 +479,7 @@ class OutofspaceController(
      * the next frame longer still. Dropping the surplus runs the sim slow under load, which is
      * recoverable; the alternative is a freeze.
      */
-    fun tick(deltaSeconds: Float, maxTicksPerFrame: Int = 6): VesselState {
+    fun tick(deltaSeconds: Float, maxTicksPerFrame: Int = 8): VesselState {
         if (!paused) {
             accumulator += deltaSeconds.coerceIn(0f, 0.25f) * speed
             var steps = 0
