@@ -216,7 +216,7 @@ class ReductionTest {
     fun nothingHappensBelowTheOnset() {
         for (reaction in REDUCTIONS) {
             val cold = reaction.onsetKelvin - 1
-            assertEquals(0L, reaction.demand(1_000L * Budget.KILOGRAM, cold), "${reaction.oxide} wanted reagent while cold")
+            assertEquals(0L, reaction.demand(1_000L * Budget.KILOGRAM, 0L, cold), "${reaction.oxide} wanted reagent while cold")
             assertTrue(
                 reaction.react(1_000L * Budget.KILOGRAM, 1_000L * Budget.KILOGRAM, cold).isNothing,
                 "${reaction.oxide} reacted while cold",
