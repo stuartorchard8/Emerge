@@ -62,6 +62,9 @@ class OutofspaceHud {
     /** What the last save or load did, shown next to the buttons. Blank until something happens. */
     var saveStatus: String = ""
 
+    /** What the last clipboard action did, shown next to save status. Cleared after being read. */
+    var clipboardStatus: String = ""
+
     /**
      * Which inspector sections the player has folded shut, and which they have opened.
      *
@@ -273,6 +276,7 @@ class OutofspaceHud {
             panel(Anchor.BottomRight) {
                 if (canSave) {
                     if (saveStatus.isNotEmpty()) row(saveStatus, 0x9AA4B4FFL)
+                    if (clipboardStatus.isNotEmpty()) row(clipboardStatus, 0x9AA4B4FFL)
                     actionRow(
                         listOf(
                             Triple("SAVE", 0x2E5A6BFFL) { onSave() },
@@ -285,6 +289,9 @@ class OutofspaceHud {
                 button("RESET", 0xCC3333FFL) { onReset() }
             }
         }
+        // Clear one-shot status messages after they've been displayed.
+        saveStatus = ""
+        clipboardStatus = ""
     }
 
     /** Ship nav: origin marker + velocity needle (two scales — distance vs velocity). */

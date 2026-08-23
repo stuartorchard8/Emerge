@@ -269,6 +269,14 @@ fun main() {
             GLFW_KEY_F8 -> controller.fit()
             GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
             GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
+            GLFW_KEY_C -> {
+                val (ix, iy) = renderer.screenToTile(lastX, lastY)
+                hud.clipboardStatus = controller.copySettings(TileIndex(ix + iy * controller.state.grid.width))
+            }
+            GLFW_KEY_V -> {
+                val (ix, iy) = renderer.screenToTile(lastX, lastY)
+                hud.clipboardStatus = controller.pasteSettings(TileIndex(ix + iy * controller.state.grid.width))
+            }
             GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
             GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
             GLFW_KEY_ESCAPE -> {

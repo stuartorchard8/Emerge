@@ -116,6 +116,17 @@ sealed interface Edit {
      */
     data object Fit : Edit
 
+    /**
+     * Replaces a deck machine in place: same tile, same position, but with different settings.
+     *
+     * Used by the settings clipboard: copy (C) captures settings from one machine, paste (V)
+     * applies them to another by replacing the machine object while keeping its position intact.
+     * The [machine] carries all the configuration — wiring, facing, tunables — while the reducer
+     * preserves the machine's energy state and buffer contents by applying the edit over the
+     * existing world state.
+     */
+    data class ReplaceDeckMachine(val tile: TileIndex, val machine: org.emerge.demo.outofspace.world.machine.DeckMachine) : Edit
+
     companion object {
         /** Thrust magnitude: 250 milli-g (quarter gravity). Settles rooms over tens of ticks. */
         const val DEBUG_THRUST_MILLI_G: Long = 25L

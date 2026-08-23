@@ -14,6 +14,8 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
+import org.emerge.demo.outofspace.world.toMachineSettings
+import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
@@ -129,6 +131,10 @@ class OutofspaceController(
      * appear at all. Built, saved, tested, and unreachable. See [select].
      */
     var selected: TileIndex = TileIndex.NONE
+        private set
+
+    /** Clipboard status: one-shot message shown in the HUD, cleared after being read. */
+    var clipboardStatus: String = ""
         private set
 
     val state: VesselState get() = stepper.state
@@ -350,6 +356,48 @@ class OutofspaceController(
 
     /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStorage]. */
     fun lockStorage(tile: TileIndex, minPercent: Int?) = pending.add(Edit.LockStorage(tile, minPercent))
+
+    /**
+     * Copies the settings from the machine at [tile] to the internal clipboard.
+     *
+     * Pressing **C** on a machine calls this. The clipboard holds one machine's settings at a time;
+     * pasting overwrites it. Returns a status message for the HUD.
+     */
+    fun copySettings(tile: TileIndex): String {
+        val machine = state.machineCovering(tile) ?: run {
+            clipboardStatus = "no machine there"
+            return clipboardStatus
+        }
+        SettingsClipboard.copy(machine.toMachineSettings())
+        clipboardStatus = "copied ${machine.kind.label}"
+        return clipboardStatus
+    }
+
+    /**
+     * Pastes the clipboard settings onto the machine at [tile].
+     *
+     * Pressing **V** on a machine calls this. Only settings that both machines share are applied.
+     * Returns a status message for the HUD.
+     */
+    fun pasteSettings(tile: TileIndex): String {
+        val settings = SettingsClipboard.contents ?: run {
+            clipboardStatus = "nothing copied"
+            return clipboardStatus
+        }
+        val target = state.machineCovering(tile) ?: run {
+            clipboardStatus = "no machine there"
+            return clipboardStatus
+        }
+        // Only paste if the target is the same kind of machine
+        if (target.kind != settings.kind) {
+            clipboardStatus = "wrong machine type"
+            return clipboardStatus
+        }
+        val replaced = target.withSettings(settings)
+        pending.add(Edit.ReplaceDeckMachine(tile, replaced))
+        clipboardStatus = "pasted ${settings.kind.label}"
+        return clipboardStatus
+    }
 
     /**
      * Steps a locked warehouse's threshold through [SpeciesFilter.PERCENTS], wrapping.

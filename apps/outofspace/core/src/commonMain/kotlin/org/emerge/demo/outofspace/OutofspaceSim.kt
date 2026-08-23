@@ -1387,6 +1387,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         if (canStandWhereItWouldTurn(turned, tile)) rebuildInPlace(tile, dm, turned)
                     }
                 }
+                is Edit.ReplaceDeckMachine -> {
+                    // Replace a machine in place with settings from the clipboard: same tile,
+                    // same position, but with new configuration. Preserves energy and buffers.
+                    val tile = originAt(edit.tile) ?: return
+                    val oldMachine = deck[tile] ?: return
+                    if (oldMachine.kind != edit.machine.kind) return
+                    rebuildInPlace(tile, oldMachine, edit.machine)
+                }
                 is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
                     // smelter should not also demolish the smelter, and there is no other way to
