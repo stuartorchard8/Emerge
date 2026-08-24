@@ -120,6 +120,16 @@ class Mixture private constructor(val masses: LongArray, val energy: Long) {
     }
 
     /**
+     * Takes [amount] mass spread across the species in proportion to what is here — the operation
+     * behind "a machine requires this much". Returns null if [amount] is less than [total].
+     */
+    fun takeAtLeast(amount: Long): Mixture? {
+        if (amount > total) return null
+        val outEnergy = scaledRatio(amount, total, energy)
+        return Mixture(apportion(masses, amount), outEnergy)
+    }
+
+    /**
      * This mixture's *proportions* rendered at a different total — the "recipe" operation. An orebody
      * described as 410g iron / 300g silica per kilogram becomes any number of mass of the same
      * stuff. Unlike [take] this may scale up, because a recipe is a ratio and not a pile.

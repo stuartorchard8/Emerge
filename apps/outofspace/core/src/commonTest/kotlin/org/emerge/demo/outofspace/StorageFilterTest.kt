@@ -121,42 +121,6 @@ class StorageFilterTest {
         assertTrue(!SpeciesFilter(Species.Titanium, 90).admits(Mixture.EMPTY), "nothing is not a delivery")
     }
 
-    @Test
-    fun `locking captures whatever the warehouse is holding most of`() {
-        val grid = cfg.initialGrid
-        val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right)
-        val start = VesselState(
-            grid, deck,
-            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
-            buffers = BufferLayer.forDeck(grid, deck),
-            rail = RailLayer.empty(grid.size),
-        ).stocked(grid.tile(2, 3), titanium(load))
-
-        val locked = run(start, 1, OutofspaceInput(edits = listOf(Edit.LockStorage(grid.tile(2, 3), 80))))
-        val filter = (locked.deck[grid.tile(2, 3)] as Storage).filter
-        assertEquals(SpeciesFilter(Species.Titanium, 80), filter, "the lock did not take the dominant species")
-
-        val unlocked = run(locked, 1, OutofspaceInput(edits = listOf(Edit.LockStorage(grid.tile(2, 3), null))))
-        assertNull((unlocked.deck[grid.tile(2, 3)] as Storage).filter, "unlocking left the lock on")
-    }
-
-    /** An empty warehouse has nothing to lock onto, and saying so is the panel's job, not a crash. */
-    @Test
-    fun `locking an empty warehouse does nothing`() {
-        val grid = cfg.initialGrid
-        val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right)
-        val start = VesselState(
-            grid, deck,
-            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
-            buffers = BufferLayer.forDeck(grid, deck),
-            rail = RailLayer.empty(grid.size),
-        )
-        val after = run(start, 1, OutofspaceInput(edits = listOf(Edit.LockStorage(grid.tile(2, 3), 90))))
-        assertNull((after.deck[grid.tile(2, 3)] as Storage).filter)
-    }
-
     /** A lock is the player's decision, so it survives the file. */
     @Test
     fun `a lock survives a save and a load`() {

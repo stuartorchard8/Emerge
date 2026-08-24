@@ -914,27 +914,46 @@ class OutofspaceHud {
         if (filter == null) {
             val dominant = held?.dominant
             if (dominant == null) {
-                row("TAKES ANYTHING", 0x9ED0B0FFL)
-                row("(empty  ·  fill it before locking)", 0x9A9A9AFFL)
+                keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
+                button("LOCK PURITY TO ${SpeciesFilter.MAX_PERCENT}%", 0x2E5A6BFFL) {
+                    controller.lockStoragePercent(tile, SpeciesFilter.MAX_PERCENT)
+                }
             } else {
                 keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
-                button("LOCK TO ${dominant.name.uppercase()}", 0x2E5A6BFFL) {
-                    controller.lockStorage(tile, SpeciesFilter.DEFAULT_PERCENT)
+                button(
+                    listOf(
+                        "LOCK TO " to null,
+                        dominant.name.uppercase() to speciesColor(dominant),
+                    ),
+                    0x2E5A6BFFL,
+                ) {
+                    val currentPercent = (held[dominant] * 100L) / held.total
+                    controller.lockStoragePercent(tile, SpeciesFilter.PERCENTS.firstOrNull { (it ?: 0) >= currentPercent } ?: SpeciesFilter.MAX_PERCENT)
+                    controller.lockStorageSpecies(tile, dominant)
                 }
-                row("nothing purer than the bar will be sent here", 0x7A7A7AFFL)
             }
         } else {
-            keyValue("LOCKED TO", filter.species.name.uppercase(), 0x9A9A9AFFL, speciesColor(filter.species))
-            clauseRow(
-                lhs = "AT LEAST",
-                cmp = "${filter.minPercent}%",
-                rhs = "pure",
-                onLhs = { controller.cycleStorageFilter(tile, 1) },
-                onCmp = { controller.cycleStorageFilter(tile, 1) },
-                onRhs = { controller.cycleStorageFilter(tile, 1) },
-            )
-            button("UNLOCK", 0x6B3A3AFFL) { controller.lockStorage(tile, null) }
-            row("tap the bar to raise the threshold", 0x7A7A7AFFL)
+            button(
+                listOf(
+                    "LOCKED TO " to null,
+                    (filter.species?.name?.uppercase() ?: "PURITY") to filter.species?.let { speciesColor(it) },
+                ),
+                0x2E5A6BFFL,
+            ) { controller.toggleStorageFilterSpecies(tile) }
+            if (filter.minPercent == null) {
+                button("ANY PURITY", 0x2E5A6BFFL) {
+                    controller.cycleStorageFilterPercent(tile, 1)
+                }
+            } else {
+                clauseRow(
+                    lhs = "AT LEAST",
+                    cmp = "${filter.minPercent}%",
+                    rhs = "pure",
+                    onLhs = { controller.cycleStorageFilterPercent(tile, -1) },
+                    onCmp = { controller.cycleStorageFilterPercent(tile, -1) },
+                    onRhs = { controller.cycleStorageFilterPercent(tile, 1) },
+                )
+            }
         }
     }
 

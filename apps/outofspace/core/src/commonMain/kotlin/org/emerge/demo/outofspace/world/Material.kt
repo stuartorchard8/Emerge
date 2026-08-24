@@ -474,7 +474,7 @@ fun builtPermille(bill: Mixture, heldMass: Long): Int {
  * species each tick would drift with the contents and so would never exclude anything, which is the
  * opposite of what locking means.
  */
-data class SpeciesFilter(val species: Species, val minPercent: Int) {
+data class SpeciesFilter(val species: Species?, val minPercent: Int?) {
     /**
      * Whether [mixture] is pure enough in [species] to be let in.
      *
@@ -484,19 +484,17 @@ data class SpeciesFilter(val species: Species, val minPercent: Int) {
     fun admits(mixture: Mixture): Boolean {
         val total = mixture.total
         if (total <= 0L) return false
-        return mixture[species] * 100L >= total * minPercent
+        val dominant = mixture.dominant ?: return false
+
+        val meetsPurityRequirement = minPercent == null || mixture[dominant] * 100L >= total * minPercent
+        if (species == null) return meetsPurityRequirement
+        return dominant == species && meetsPurityRequirement
     }
 
     companion object {
-        /**
-         * What a warehouse locks to by default: **90%**, one step below the build threshold.
-         *
-         * Loose enough that ore straight off an extractor qualifies, tight enough that the lock
-         * means something. The player moves it; this is only where the stepper starts.
-         */
-        const val DEFAULT_PERCENT = 90
+        const val MAX_PERCENT = 99
 
         /** The steps the panel offers, coarse at the bottom and fine where purity starts to cost. */
-        val PERCENTS: List<Int> = listOf(50, 60, 70, 80, 90, 95, 99)
+        val PERCENTS: List<Int?> = listOf(null, 25, 50, 75, 90, 95, MAX_PERCENT)
     }
 }

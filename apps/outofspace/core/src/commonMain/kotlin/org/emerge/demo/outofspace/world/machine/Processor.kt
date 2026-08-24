@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
+import org.emerge.demo.outofspace.logistics.Capacity
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
@@ -15,7 +16,7 @@ data class Processor(
     /**
      * Minimum number of machine ticks it takes to convert inProgress resources to product and tailings.
      */
-    val ticksPerAction: Int = 128,
+    val ticksPerAction: Int = 16,
     val progress: Int = 0,
     val efficiencyPermille: Int = 900,
     override val wiring: Wiring = Wiring.RUNNING,
@@ -24,4 +25,8 @@ data class Processor(
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
+
+    companion object {
+        const val CHARGE_MASS = Capacity.PACKET_MASS*2
+    }
 }

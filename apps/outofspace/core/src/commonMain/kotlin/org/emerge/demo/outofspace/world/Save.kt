@@ -360,7 +360,7 @@ object Save {
             // nothing to the line, and an older file with neither field loads unlocked, which is
             // exactly what it was.
             is Storage -> m.filter?.let {
-                put("filter", it.species.name)
+                put("filter", it.species?.name)
                 put("filterpct", it.minPercent.toString())
             }
             // A sensor is its facing and its wiring, both written by the common code around this.
@@ -1114,13 +1114,11 @@ object Save {
             DeckMachineKind.Storage -> Storage(
                 tile,
                 facing(),
-                filter = f["filter"]?.let { name ->
+                filter = f["filter"].let { name ->
                     val species = Species.ALL.firstOrNull { it.name == name }
-                        ?: fail("unknown filter species '$name'")
-                    // A file with a species and no percentage is not one this game ever wrote, but
-                    // the default is the honest reading of it: locked, at the threshold locking
-                    // starts from.
-                    SpeciesFilter(species, f["filterpct"]?.toIntOrNull() ?: SpeciesFilter.DEFAULT_PERCENT)
+                    val pct = f["filterpct"]?.toIntOrNull()
+                    if (species == null && pct == null) null
+                    else SpeciesFilter(species, pct)
                 },
             )
             // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire

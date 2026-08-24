@@ -733,11 +733,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
         val inProgress = store(m, tile, BufferRole.Inside) ?: run {
-            val fresh = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
-            putStore(m, tile, BufferRole.Input, null)
-            putStore(m, tile, BufferRole.Inside, fresh)
-            heat(tile, heatOfWorking(fresh.total, m))
-            fresh
+            val available = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
+            val charge = available.takeAtLeast(Processor.CHARGE_MASS) ?: return m
+
+            putStore(m, tile, BufferRole.Input, available-charge)
+            putStore(m, tile, BufferRole.Inside, charge)
+            heat(tile, heatOfWorking(charge.total, m))
+            charge
         }
 
         val (actionProgress, carry) = throttled(1, activation, m.carry)
@@ -1478,26 +1480,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
 
-                is Edit.LockStorage -> {
+                is Edit.LockStorageSpecies -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Storage) {
+                        val species = edit.species
+                        deck[tile] = m.withFilter(
+                            if (species == null && m.filter?.minPercent == null) null
+                            else SpeciesFilter(species, m.filter?.minPercent),
+                        )
+                    }
+                }
+                is Edit.LockStoragePercent -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
                     if (m is Storage) {
                         val percent = edit.minPercent
                         deck[tile] = m.withFilter(
-                            if (percent == null) null
-                            else {
-                                // Whatever it is holding most of. A tank with nothing in it has no
-                                // dominant species and so cannot be locked — the panel says as much
-                                // rather than this failing quietly, but it must also be true here:
-                                // the edit queue is not the only way in.
-                                val store = bufferTile(grid, m, tile, BufferRole.Inside)
-                                val held = store?.let { buffers.resourceAt(it) }
-                                // ⚠️ **Re-locking keeps the species it already had** when the tank
-                                // has been drained: the player moving the threshold on an empty
-                                // locked warehouse means "tighter", not "forget what this is for".
-                                val species = held?.dominant ?: m.filter?.species
-                                species?.let { SpeciesFilter(it, percent) }
-                            },
+                            if (percent == null && m.filter?.species == null) null
+                            else SpeciesFilter(m.filter?.species, percent),
                         )
                     }
                 }

@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -14,9 +15,9 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
+import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
-import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
@@ -354,8 +355,9 @@ class OutofspaceController(
     /** Binds a button to [key]. */
     fun bindKey(tile: TileIndex, key: InputKey) = pending.add(Edit.BindKey(tile, key))
 
-    /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStorage]. */
-    fun lockStorage(tile: TileIndex, minPercent: Int?) = pending.add(Edit.LockStorage(tile, minPercent))
+    /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStoragePercent]. */
+    fun lockStoragePercent(tile: TileIndex, minPercent: Int?) = pending.add(Edit.LockStoragePercent(tile, minPercent))
+    fun lockStorageSpecies(tile: TileIndex, species: Species?) = pending.add(Edit.LockStorageSpecies(tile, species))
 
     /**
      * Copies the settings from the machine at [tile] to the internal clipboard.
@@ -405,12 +407,24 @@ class OutofspaceController(
      * Only meaningful once locked: an unlocked tank has no threshold to move, and the panel offers
      * the lock button instead.
      */
-    fun cycleStorageFilter(tile: TileIndex, delta: Int) {
+    fun cycleStorageFilterPercent(tile: TileIndex, delta: Int) {
         val current = state.machineCovering(tile) as? Storage ?: return
         val filter = current.filter ?: return
         val all = SpeciesFilter.PERCENTS
-        val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.DEFAULT_PERCENT) else it }
-        lockStorage(tile, all[((at + delta) % all.size + all.size) % all.size])
+        val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.MAX_PERCENT) else it }
+        lockStoragePercent(tile, all[((at + delta) % all.size + all.size) % all.size])
+    }
+    fun toggleStorageFilterSpecies(tile: TileIndex) {
+        val current = state.machineCovering(tile) as? Storage ?: return
+        val filter = current.filter ?: return
+        // Whatever it is holding most of. A tank with nothing in it has no
+        // dominant species and so cannot be locked — the panel says as much
+        // rather than this failing quietly, but it must also be true here:
+        // the edit queue is not the only way in.
+        val store = bufferTile(state.grid, current, tile, BufferRole.Inside)
+        val held = store?.let { state.buffers.resourceAt(it) }
+        // ⚠️ **Re-locking clears the species requirement, leaving any purity requirement untouched.
+        lockStorageSpecies(tile, if (filter.species == null) held?.dominant else null )
     }
 
     /**

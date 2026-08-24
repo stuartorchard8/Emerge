@@ -107,7 +107,7 @@ class Acceptance private constructor(
 
     override fun toString(): String =
         when {
-            filter != null -> "Acceptance(>=${filter.minPercent}% ${filter.species.name})"
+            filter != null -> "Acceptance(>=${filter.minPercent}% ${filter.species?.name ?: "pure"})"
             isUnlimited -> "Acceptance(anything)"
             else -> "Acceptance(${wanted}g of $bill)"
         }
