@@ -189,6 +189,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // — every sensor and every button would simply have stopped emitting, with nothing
                 // to see but wiring that no longer does anything.
                 for (tile in w.grid.tiles) {
+                    if (w.deck.isGhost(tile)) continue
                     when (val m : DeckMachine? = w.deck[tile]) {
                         is Sensor -> {
                             val target = w.grid.neighbour(tile, m.facing)
@@ -209,6 +210,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 }
                 // Gauge persists after packet leaves.
                 for (tile in w.grid.tiles) {
+                    if (w.deck.isGhost(tile)) continue
                     val g = w.deck[tile] as? Gauge ?: continue
                     raise(tile, (g.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
                 }
