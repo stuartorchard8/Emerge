@@ -1395,7 +1395,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val tile = originAt(edit.tile) ?: return
                     val oldMachine = deck[tile] ?: return
                     if (oldMachine.kind != edit.machine.kind) return
-                    rebuildInPlace(tile, oldMachine, edit.machine)
+                    if (deck.isGhost(tile)) {
+                        // ⚠️ A ghost must stay a ghost: `rebuildInPlace` does `deck -=` + `deck +=`
+                        // which releases zero and adds the full bill — matter from nowhere.
+                        // In-place `deck.set` swaps the machine while leaving matter/energy untouched.
+                        deck.set(tile, edit.machine)
+                    } else {
+                        rebuildInPlace(tile, oldMachine, edit.machine)
+                    }
                 }
                 is Edit.Remove -> when (edit.layer) {
                     // Fittings come off first, then the building under them. Peeling the track off a
