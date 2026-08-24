@@ -198,11 +198,20 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             result
         }
-        DeckMachineKind.Hull,
-        DeckMachineKind.Vent,
-        DeckMachineKind.Airlock -> {
-            // These machines only have wiring, which is already handled above
+        DeckMachineKind.Hull -> {
+            // Hull has wiring but no way to configure it — it is the wall, not a control surface.
             base
+        }
+        DeckMachineKind.Vent -> {
+            // A vent only has wiring, which is the always-on throttle that controls what it discards.
+            var result = base as Vent
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            result
+        }
+        DeckMachineKind.Airlock -> {
+            var result = base as Airlock
+            if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
+            result
         }
     }
 }
