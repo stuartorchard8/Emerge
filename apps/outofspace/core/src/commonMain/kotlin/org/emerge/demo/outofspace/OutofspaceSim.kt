@@ -2520,9 +2520,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // A bridge is not ejected from here. It sets its load down as part of the conduit step
             // — see [depositFromBridge].
             if (m is Bridge) return
-            // A storage only lets go while its RUN activation is positive, which is what turns it
-            // from a bucket into a valve the moment you wire something to it.
-            if (m is Storage && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
+            // Machines that gate output hold their product when RUN activation is zero — a storage
+            // becomes a valve when wired; extractors/processors/thermal decomposers do the same.
+            // (Bridges are excluded above; thrusters/vents have no output port.)
+            if (m.kind.gatesOutput && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
 
             val buffer = bufferFor(m, port) ?: return
             // ⚠️ **A source holds on to what nothing wants, and lets go of no more than is wanted.**

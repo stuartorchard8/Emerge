@@ -19,18 +19,24 @@ package org.emerge.demo.outofspace.world.machine
  *   [preventAirflow], because a thing that holds the air out is certainly solid, and the interesting
  *   kinds are the ones that set it on its own.
  */
-enum class DeckMachineKind(val label: String, val preventAirflow: Boolean = false, val preventThoroughfare: Boolean = preventAirflow) {
+enum class DeckMachineKind(
+    val label: String,
+    val preventAirflow: Boolean = false,
+    val preventThoroughfare: Boolean = preventAirflow,
+    /** Whether this machine holds its product when its RUN activation is zero. */
+    val gatesOutput: Boolean = false,
+) {
     Hull("HULL", preventAirflow = true),
     Airlock("AIRLOCK", preventAirflow = true),
     Vent("VENT"),
-    Storage("STORAGE", preventThoroughfare = true),
+    Storage("STORAGE", preventThoroughfare = true, gatesOutput = true),
     Sensor("SENSOR"),
     KeyInput("BUTTON"),
     Pump("PUMP"),
     Thruster("THRUSTER", preventThoroughfare = true),
-    Processor("PROCESSOR", preventThoroughfare = true),
-    ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true),
-    Extractor("EXTRACTOR"),
+    Processor("PROCESSOR", preventThoroughfare = true, gatesOutput = true),
+    ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true, gatesOutput = true),
+    Extractor("EXTRACTOR", gatesOutput = true),
 
     /**
      * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
