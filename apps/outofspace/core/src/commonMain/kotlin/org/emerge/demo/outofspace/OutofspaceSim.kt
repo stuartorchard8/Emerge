@@ -2109,7 +2109,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 var casing = Mixture.EMPTY
                 for (t in tiles) casing += deck.stuff.mixtureAt(t)
                 if (casing.total > 0L && !whitelist.permits(out, casing)) continue
-                if (!handCasingBack(out, tiles)) continue
+                if (!handCasingBack(whitelist, out, tiles)) continue
 
                 // Step 5.
                 if (tiles.all { deck.stuff.massAt(it) == 0L }) dropMachine(centre)
@@ -2192,12 +2192,27 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Taken **evenly off the footprint**, which is how it went on. A machine whose casing came
          * off one tile at a time would drift through the heat solver as a half-thing.
          */
-        private fun handCasingBack(centre: TileIndex, tiles: Array<TileIndex>): Boolean {
+        private fun handCasingBack(
+            whitelist: Whitelist,
+            centre: TileIndex,
+            tiles: Array<TileIndex>,
+        ): Boolean {
             var held = 0L
             for (t in tiles) held += deck.stuff.massAt(t)
             if (held <= 0L) return true
             if (rails[centre.index] == null) return false
-            val room = rail.headroom(centre)
+            // ⚠️ **And no more of it than is wanted** — the same rule, and the same reason, as
+            // [scrapDeconstructing] one method back. The caller has already asked whether the casing
+            // may leave at all, but that is a *boolean*: it answers yes to a site short of a
+            // microgram just as readily as to one short of a tonne. Taking a whole packet against
+            // the headroom then put the difference on the belt for ever, in front of the material
+            // that would have finished the job — a rail marked for deconstruction had this bug
+            // fixed and its deck twin did not. Stu's save, 2026-08-25: a `Storage` at (14,10)
+            // shedding 100kg of titanium casing at a `Sensor` ghost at (13,12) that wanted 25kg and
+            // already had a packet on the way.
+            val useful = whitelist.room(centre, Mixture.of(massesOn(tiles), 0L))
+            if (useful <= 0L) return false
+            val room = minOf(rail.headroom(centre), useful)
             if (room <= 0L) return false
 
             val take = minOf(held, room)
@@ -2206,15 +2221,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // each species on its own truncates each one separately, so the parts come up short of
             // what was asked for and the site on the other end stops just below its bill, asking
             // for a remainder too small to survive the next truncation.
-            val masses = LongArray(Species.COUNT)
             var energy = 0L
-            for (t in tiles) {
-                for (sp in Species.ALL) masses[sp.ordinal] += deck.stuff[t, sp]
-                energy += deck.stuff.energyAt(t)
-            }
-            val recovered = Mixture.of(masses, energy).take(take)
+            for (t in tiles) energy += deck.stuff.energyAt(t)
+            val recovered = Mixture.of(massesOn(tiles), energy).take(take)
             val moved = recovered.total
             if (moved <= 0L) return false
+            // ⛔ **Asked again of the slice, not just of the pile** — see the long note in
+            // [scrapDeconstructing]. A proportional slice is only representative while it is big
+            // enough to carry every species, and now that the draw is demand-capped the small ones
+            // are ordinary. A firebrick machine shedding a microgram would otherwise mint a speck of
+            // pure quartz onto a belt nothing can clear it from.
+            if (!whitelist.permits(centre, recovered)) return false
             val movedEnergy = recovered.energy
 
             // The deposit first, the deduction only if it lands — see the note on this pass.
@@ -2233,6 +2250,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             var left = 0L
             for (t in tiles) left += deck.stuff.massAt(t)
             return left == 0L
+        }
+
+        /** The casing standing on [tiles], summed per species. */
+        private fun massesOn(tiles: Array<TileIndex>): LongArray {
+            val masses = LongArray(Species.COUNT)
+            for (t in tiles) for (sp in Species.ALL) masses[sp.ordinal] += deck.stuff[t, sp]
+            return masses
         }
 
         /** Whether any of a machine's stores has anything in it — a bridge's three slots, in practice. */

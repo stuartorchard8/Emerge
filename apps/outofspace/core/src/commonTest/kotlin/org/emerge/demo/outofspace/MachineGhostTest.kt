@@ -710,11 +710,18 @@ class MachineGhostTest {
         val before = builtMachine(bridge, sink = false).also {
             it.conduits.tracks[Conduit.Rail].release(grid.tile(11, 4))
         }
-        val casingBefore = before.deck.stuff.massAt(at)
+        // ⚠️ **Summed over the span, not read off its centre.** `takeEvenlyOffFootprint` is even
+        // over the *machine* and not over the tiles — it drains the first tile that has anything —
+        // so the centre only starts losing metal once the far end is empty. While a marked machine
+        // shed a whole packet whatever was wanted, it got there inside one rail period and reading
+        // the centre worked by accident; now that it sheds only what the network asks for, the
+        // centre is still full and the question has to be asked of the whole footprint.
+        fun casing(v: VesselState): Long = bridge.tiles(grid).sumOf { v.deck.stuff.massAt(it) }
+        val casingBefore = casing(before)
         assertTrue(casingBefore > 0L, "fixture: the bridge should start with its casing")
 
         val s = run(remove(before, at), OutofspaceReducer.RAIL_PERIOD)
-        assertTrue(s.deck.stuff.massAt(at) < casingBefore, "no casing came out of the bridge at all")
+        assertTrue(casing(s) < casingBefore, "no casing came out of the bridge at all")
         assertEquals(0L, s.rail.massAt(at), "casing came out of the middle of the span")
         assertEquals(0L, s.rail.massAt(entry), "casing came back out of the end it takes deliveries at")
         assertTrue(exit != entry, "fixture: a span's two ends are different tiles")
