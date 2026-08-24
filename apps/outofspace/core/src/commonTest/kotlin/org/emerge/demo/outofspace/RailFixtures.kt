@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.Temperature
+import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduit
@@ -230,6 +232,23 @@ fun VesselState.stocked(tile: TileIndex, resource: Mixture?, role: BufferRole? =
     val use = role ?: inputBufferRole(m) ?: error("$m takes no deliveries; name a role")
     it.buffers.put(bufferTile(grid, m, tile, use) ?: error("$m keeps no $use store"), resource)
 }
+
+/**
+ * [this] at room temperature.
+ *
+ * ⛔ **A fixture that states matter has to state its heat as well.** `Mixture.of(…, energy = 0)` is
+ * not "no opinion about temperature", it is *absolute zero* — so a machine stocked with two tonnes
+ * of ore that way holds two tonnes of 0 K iron, and its tile reads colder than the room it stands
+ * in whatever its element is doing.
+ *
+ * It hid a real stall for a while. A processor takes a fixed charge off its input now rather than
+ * swallowing the whole buffer, so the ballast is no longer immediately consumed by the one bite that
+ * used to carry a huge slug of working heat with it — and `HeatTest`'s mill read 291 K and falling.
+ * That looked like the machine having stopped, and the machine *had* stopped, but the cold was the
+ * fixture's and not the sim's, and the two had to be told apart before either could be fixed.
+ */
+fun Mixture.atAmbient(): Mixture =
+    Mixture.of(masses, heatCapacityOf(this) * Temperature.AMBIENT_KELVIN)
 
 /** What is riding on the track at [tile]. */
 fun VesselState.onRail(tile: TileIndex): Mixture? = rail.resourceAt(tile)

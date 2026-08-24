@@ -208,7 +208,7 @@ class HeatTest {
                     else -> null
                 }
             },
-        ).stocked(g0.tile(5, 5), ore)
+        ).stocked(g0.tile(5, 5), ore.atAmbient())
         val g = room.grid
         val s = run(room, 120*HEAT_PERIOD)
 
@@ -314,7 +314,7 @@ class HeatTest {
         val deck = DeckArray(grid)
         deck += Processor(grid.tile(5, 5), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-            .stocked(grid.tile(5, 5), ore)
+            .stocked(grid.tile(5, 5), ore.atAmbient())
         s = run(s, 40*HEAT_PERIOD)
 
         // The machine's own tile reads as Machine — it is solid. What matters is that nothing

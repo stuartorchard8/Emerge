@@ -131,15 +131,40 @@ class GaugeTest {
     @Test
     fun `the starter plant's two gauges show the concentration happening`() {
         // This is the starter world's demonstration, asserted: raw ore in, concentrate out.
-        val s = run(workingVessel(Grid(40, 28)), 600)
+        //
+        // ⚠️ **The highest reading each gauge ever showed, not the reading at the final tick.** A
+        // gauge reports the lump *currently* under it and reads nothing between packets, so a single
+        // sample is a coin toss on where the traffic happens to be — it passed for as long as it did
+        // by luck. What the test means is "concentrate came past here at some point", and that is a
+        // question about the whole run.
+        //
+        // ⚠️ **And long enough for the concentrate to arrive.** A processor takes two whole packets
+        // before it starts (`Processor.CHARGE_MASS`), so the mill has to be fed twice over before it
+        // ships anything at all and the first concentrate reaches the second gauge around t=1000.
+        // At 600 ticks the plant is working perfectly and the gauge has simply not seen it yet.
+        var s = workingVessel(Grid(40, 28))
+        val cfg = OutofspaceConfig(initialGrid = s.grid)
         // Found by scanning rather than by coordinates: the vessel is fitted to its own contents on
         // construction, so a tile index written down here would be a hostage to its layout. The two
         // gauges on the main line are the first two in tile order, and that order is left-to-right.
-        val readings = s.grid.tiles
-            .mapNotNull { t -> (s.deck[t] as? Gauge)?.let { t to it.lastPurity } }
-        assertTrue(readings.size >= 2, "the starter plant should ship two gauges, found ${readings.size}")
-        val raw = readings[0].second
-        val concentrated = readings[1].second
+        val gauges = s.grid.tiles.filter { s.deck[it] is Gauge }
+        assertTrue(gauges.size >= 2, "the starter plant should ship two gauges, found ${gauges.size}")
+
+        // ⚠️ **Stops as soon as it has its answer.** A tick of a 40x28 vessel is not cheap and the
+        // bound is generous; running it out in full would put a ten-second test at twenty for no
+        // extra evidence.
+        val best = IntArray(gauges.size)
+        var ticks = 0
+        while (ticks < 1200 && best[1] <= best[0] + 200) {
+            s = OutofspaceReducer.reduce(cfg, s, emptyMap())
+            ticks++
+            for (i in gauges.indices) {
+                val reading = (s.deck[gauges[i]] as? Gauge)?.lastPurity ?: 0
+                if (reading > best[i]) best[i] = reading
+            }
+        }
+        val raw = best[0]
+        val concentrated = best[1]
         assertTrue(raw in 380..440, "the raw ore should read about 41%, got $raw")
         assertTrue(concentrated > raw + 200, "the concentrate should read far higher, got $concentrated")
     }
