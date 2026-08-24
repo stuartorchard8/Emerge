@@ -260,10 +260,20 @@ val REDUCTIONS: List<Reduction> = listOf(
     ),
 
     /**
-     * `100 C6H12O6 + 6 H₂O + 6 CO₂ → 101 C6H12O6 + 6 O₂` — Photosynthesis.
-     * Solid carbon reduces carbon dioxide gas into flammable carbon monoxide.
-     * Strongly endothermic (+172.4 kJ/mol of carbon), acting as a natural thermal brake
-     * in high-temperature environments.
+     * `100 C6H12O6 + 6 H₂O + 6 CO₂ → 101 C6H12O6 + 6 O₂` — photosynthesis, written as a reduction
+     * with the algae as its own catalyst: a hundred units of it have to be present for one more to
+     * be made, which is what makes a bloom grow in proportion to itself rather than at a flat rate.
+     *
+     * Net of the catalyst it is the textbook reaction, `6 H₂O + 6 CO₂ → C6H12O6 + 6 O₂`, and its
+     * enthalpy is the textbook one: **+2803 kJ per mole of glucose formed**, which is per mole of
+     * *reaction* and so per the 6 units of water this row is quoted against.
+     *
+     * ⚠️ **Quoted against its own formula mass, 6 × 18 = 108 g/mol, not against one water.** Written
+     * as `kJPerMolAt(18)` the divisor was six times too small, so the row claimed six times the
+     * energy it should and `everyEnthalpyIsQuotedAgainstItsOwnOxideFormulaMass` could not divide it
+     * back into whole kJ/mol. Every other row in this table is quoted against `oxideUnits ×
+     * molarMass`, and the test exists precisely because the one number a reader cannot check by
+     * eye is which unit an enthalpy is per.
      */
     Reduction(
         oxide = Species.Water, oxideUnits = 6,
@@ -271,7 +281,7 @@ val REDUCTIONS: List<Reduction> = listOf(
         catalyst = Species.Algae, catalystUnits = 100,
         products = listOf(Species.Algae to 1, Species.Oxygen to 6),
         onsetKelvin = 273, // ~0°C.
-        enthalpyPerKg = 2814L * kJPerMolAt(18),
+        enthalpyPerKg = 2803L * kJPerMolAt(108),
     ),
 
     // ── Enstatite cracking: the high-silicon alternative ──
@@ -307,12 +317,17 @@ val REDUCTIONS: List<Reduction> = listOf(
     // 2 FeSiO3 + 3 C -> 2 Fe + 2 Si + 3 CO2. The iron twin to enstatite. Just like its magnesium counterpart,
     // its 1:1 mineral structure guarantees a massive structural surplus of silicon metal relative
     // to the iron produced, but unlocks at mid-tier furnace temperatures.
+    //
+    // ⚠️ **The only row that consumes two units of its oxide, so the only one where the formula mass
+    // and the molar mass are different numbers.** 240 kJ per FeSiO3 is 480 kJ per pass of this
+    // reaction, against 2 x 132 g/mol -- the same energy per kilogram either way, but quoted the way
+    // every other row is and the way `everyEnthalpyIsQuotedAgainstItsOwnOxideFormulaMass` reads it.
     Reduction(
         oxide = Species.Ferrosilite, oxideUnits = 2,
         reductant = Species.Carbon, reductantUnits = 3,
         products = listOf(Species.Iron to 2, Species.Silicon to 2, Species.CarbonDioxide to 3),
         onsetKelvin = 1200,
-        enthalpyPerKg = 240L * kJPerMolAt(132),
+        enthalpyPerKg = 480L * kJPerMolAt(264),
     ),
 
     // ── Synthetic rutile: the Becher process, and where the iron comes out ──
