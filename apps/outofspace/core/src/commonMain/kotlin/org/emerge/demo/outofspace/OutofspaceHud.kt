@@ -928,7 +928,9 @@ class OutofspaceHud {
                     0x2E5A6BFFL,
                 ) {
                     val currentPercent = (held[dominant] * 100L) / held.total
-                    controller.lockStoragePercent(tile, SpeciesFilter.PERCENTS.firstOrNull { (it ?: 0) >= currentPercent } ?: SpeciesFilter.MAX_PERCENT)
+                    controller.lockStoragePercent(tile, SpeciesFilter.PERCENTS.reversed().firstOrNull {
+                        (it ?: 0) <= currentPercent }
+                    )
                     controller.lockStorageSpecies(tile, dominant)
                 }
             }
