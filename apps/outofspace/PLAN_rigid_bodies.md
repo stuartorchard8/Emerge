@@ -6,7 +6,45 @@ unification requirement. Steps 1–3 of that plan (integer trig, vessel `ang`/to
 camera) stand and are prerequisites.*
 
 **Steps 1, 2, 3, 4 and 5 are built** (`72d943b5`, `cc417e8c`, `a6e66646`, `e49e20e1`, `8cfeeaf2`).
-Everything else is not.
+**Step 6 is two thirds built** (`e2173620`, `75cb06ba`, `fc6d0a0e`) — see the note below. Step 4b is
+not started.
+
+✅ **Step 6, the frame: the grid is an addressing scheme again and nothing else.** Half of this step
+turned out to have shipped with step 5 and never been marked — `Operand` is constructed for the ship
+exactly as for a rock and `solveContacts` reaches both through `otherOf`, so the solver already could
+not tell a hull from a rock. What was left was that **a `CellShape.Box` had no angle of its own**: it
+was axis-aligned in whatever frame it was handed, and the only way to guarantee that for the hull was
+to express every other operand relative to the hull. That is §5's *"you cannot unify vessels and
+rocks while one of them defines the coordinate system"* showing up as a function signature — two
+box-celled operands at different angles have no shared frame that is axis-aligned for both, so as
+long as a box could not be turned there could only ever be one of them, and it could only ever be the
+ship. `contactBetween`/`overlapBetween` now take the frame the box is square in; contacts, the solve
+and the position push are all in world axes; `gridPose` is gone; and the grid survives inside
+`collectHullContacts` as what §4 of `PLAN_grid_vs_continuous.md` always said it was.
+
+⚠️ **The resting pair had to be turned into the world before the threshold is taken.** `contactAt`
+blends `restingSpeedX/Y` by the normal's components, and left in the grid they answer the *sideways*
+question for the *upward* one aboard a rolled ship — a rock on the deck of a ship on its side held to
+the threshold for sliding rather than for settling, which reads as a rock that will not go to sleep.
+Turned as a **field** and then taken per component, because `restingSpeed` is not linear in what it
+is given. Plating keeps its grid pair on purpose: it is turned at the ledger boundary and its torque
+is booked against a grid-frame arm.
+
+⚠️ **One behavioural change, not merely bookkeeping.** Deepest-push-per-direction now files a push
+under a **world** axis rather than a grid one. Same rule about the same normals — a flat wall is
+still one wall — but a body wedged into the corner of a *turned* ship files the two walls it is
+touching against world x and y. The velocity solve is untouched; it answers every contact on its own
+normal either way.
+
+⚠️ **`collectHullContacts` bounds a cell by ±`reach` in grid space to pick candidate tiles, and that
+is exact only because a body's cells are discs** — a disc's bounding box is the same in every frame.
+The first `CellShape.Box` cell on a *body* needs that bound widened before the search can be trusted.
+
+⛔ **What is left of step 6: the vessel is still not a `RigidBody`.** It has no `cells`/`shapeAt`, its
+mass comes from `massDistribution()` walking machines, and `collectHullContacts` is still a separate
+function from `collectBodyContacts` — both now speak world and both feed the same pair table, but the
+*traversal* is not shared. Note that the hull's traversal is the **better** one (it rasterises into a
+tile index rather than going quadratic over cells), so unifying them is not simply deleting one.
 
 ✅ **Step 2 un-parked `a body cannot tunnel through a bulkhead`** one commit after step 1 parked it.
 Containment came back on its own once contacts were solved as a list — the failure was the old
@@ -410,7 +448,7 @@ Each lands green, with a failing test written first. Sizes are relative, not cal
 | **4** | ✅ **BUILT `8cfeeaf2`.** **`CellShape.Disc` + the pair table.** Disc-vs-Box (hull) and Disc-vs-Disc (rock-on-rock), with friction looked up per contacting cell pair. Bodies become discs; the hull stays boxes per §4. | The narrow phase, now that everything it feeds is in place. | M |
 | **4b** | **`fromMachine` + the tolerance rule** (§9.5). Dismantling spawns a `BodyKind.FRAGMENT` body, exposed edges shaved by `RigidBody.TOLERANCE`. | Makes a dead enum arm reachable and gives the anti-pinch constant its first reader. First rotating bodies in ordinary play rather than in a test. | S |
 | **5** | ✅ **BUILT.** **Body-vs-body broad phase + the global solve.** `sweepBodies` replaces the per-body sweep; `Contact` names both operands; bounding-circle broad phase per pair and per cell; friction looked up from both bodies' compositions. | Needs 2 and 4. | M |
-| **6** | **The vessel as an operand.** Vessel passed through the same narrow phase and solver as a body of box cells, colliders on every tile (Stu: optimise later). | The unification payoff. | L |
+| **6** | ⚠️ **TWO THIRDS BUILT** (`e2173620` a box carries its turn, `75cb06ba` the sweep works in the world, `fc6d0a0e` the invariance test). **The vessel as an operand.** The solver half shipped with step 5; the frame half is done. **Left: the vessel as a `RigidBody` — cells, `shapeAt`, one traversal instead of two.** | The unification payoff. | L |
 | — | *Later, unblocked by the above:* `CellShape.Box` per cell, `CellShape.Triangle`, OBB-vs-OBB SAT. | Each is one narrow-phase function. | — |
 
 ### ⚠️ What step 4 turned up, in the order it hurt
