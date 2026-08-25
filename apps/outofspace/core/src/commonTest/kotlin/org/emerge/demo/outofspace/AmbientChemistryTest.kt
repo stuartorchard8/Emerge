@@ -43,6 +43,7 @@ class AmbientChemistryTest {
     /** Hot enough to be well up the rate curve, so a few ticks move a measurable amount. */
     private val burningKelvin = 1400
 
+
     /** The same, for iron — well above its onset and below carbon's, where only one runs. */
     private val scalingKelvin = 1400
 
@@ -98,6 +99,29 @@ class AmbientChemistryTest {
         for (tile in grid.tiles) sum += s.rail.stuff[tile, species]
         return sum
     }
+
+    /**
+     * Both carbon oxides, in both media at once — everything the burnt carbon can now be inside.
+     *
+     * ⚠️ **Two things changed under these tests at once, and each on its own looks like a leak.**
+     *
+     * A reaction's products stay in the layer that made them and [org.emerge.demo.outofspace.world
+     * .offGas] releases them afterwards, so at any moment some of a product is still in the lump and
+     * the rest is in the room. Counting only the air measures how far the off-gassing has got, which
+     * is not what these tests are about.
+     *
+     * And because the CO2 now sits in the lump for a moment instead of leaving the instant it is
+     * made, **the carbon standing next to it reduces some of it to carbon monoxide** — `CO2 + C ->
+     * 2 CO`, the row that has been in `REDUCTIONS` all along and could never fire on a burning lump
+     * because the CO2 was gone before the carbon could reach it. A hot carbon bed making CO out of
+     * its own exhaust is right, and it is a *consequence* of the containment rather than anything
+     * anybody wrote. It is also why "the CO2 weighs its own parts" is no longer the identity to
+     * check: CO2 is an intermediate now, not a terminus. The oxides together still weigh exactly
+     * what went into them, to the microgram.
+     */
+    private fun carbonOxidesAnywhere(s: VesselState): Long =
+        airMass(s, Fluid.CarbonDioxide) + railMass(s, Species.CarbonDioxide) +
+            airMass(s, Fluid.CarbonMonoxide) + railMass(s, Species.CarbonMonoxide)
 
     private fun airMass(s: VesselState, fluid: Fluid): Long {
         var sum = 0L
@@ -259,22 +283,48 @@ class AmbientChemistryTest {
         assertTrue(carbonBurned > 0L, "nothing burned")
 
         val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
-        val dioxideMade = airMass(after, Fluid.CarbonDioxide) - airMass(start, Fluid.CarbonDioxide)
+        val oxidesMade = carbonOxidesAnywhere(after) - carbonOxidesAnywhere(start)
 
-        assertEquals(carbonBurned + oxygenUsed, dioxideMade, "the carbon dioxide does not weigh its own parts")
-        assertEquals(
-            carbonBurned * Species.Oxygen.molarMass / Species.Carbon.molarMass,
-            oxygenUsed,
-            "the world ran off the stoichiometric line even though the reaction did not",
+        assertEquals(carbonBurned + oxygenUsed, oxidesMade, "the carbon oxides do not weigh their own parts")
+
+        // ⚠️ **A bracket, where this used to be a line, and the reason is not slack.**
+        //
+        // `carbonBurned * 32 / 12` was the exact answer while every atom of carbon that left the
+        // belt had taken a whole O2 with it. It no longer does: some of it leaves by the Boudouard
+        // door instead, taking its oxygen from CO2 that is already in the lump rather than from the
+        // room, so the air gives up *less* than the combustion line asks for. Both reactions are
+        // running and the ratio is a blend of the two.
+        //
+        // ⛔ **Not fixable by picking a cooler lump.** Boudouard starts at 973 K and carbon ignites
+        // at 700, which looks like a 273 K window and is not one: combustion is exothermic, so a
+        // lump lit anywhere in that window heats itself out of the top of it. Measured — at 900 K
+        // the monoxide is smaller and it is still there.
+        //
+        // ⛔ **And not fixable by subtracting the monoxide off.** That arithmetic is correct and it
+        // is `Reduction.split` restated in the test, which is the one thing `massAtReducedDensity`'s
+        // documentation says not to do: a test that recomputes what it is testing against inherits
+        // its bugs. The exact statement is the closure above, which holds to the microgram; what is
+        // left for this to say is that the oxygen sits between the two lines the two reactions draw
+        // — every atom of carbon took at least a CO's worth of oxygen from somewhere and at most a
+        // CO2's worth from the room — and a mis-indexed write or a dropped factor leaves that band
+        // immediately.
+        val ifAllBurnedToDioxide = carbonBurned * Species.Oxygen.molarMass / Species.Carbon.molarMass
+        val ifAllWentToMonoxide = ifAllBurnedToDioxide / 2
+        assertTrue(
+            oxygenUsed in ifAllWentToMonoxide..ifAllBurnedToDioxide,
+            "the world ran off the stoichiometric band: $oxygenUsed is not between " +
+                "$ifAllWentToMonoxide and $ifAllBurnedToDioxide",
         )
         // No other species moved anywhere. This is the one that catches a reaction writing into the
-        // wrong ordinal, which arithmetic tests cannot see because they never index a field.
+        // wrong ordinal, which arithmetic tests cannot see because they never index a field. Both
+        // carbon oxides are on the exempt list: the belt is where a reaction puts them now, and the
+        // room is only where they end up. See [carbonOxidesAnywhere].
         for (s in Species.ALL) {
-            if (s == Species.Carbon) continue
+            if (s == Species.Carbon || s == Species.CarbonDioxide || s == Species.CarbonMonoxide) continue
             assertEquals(railMass(start, s), railMass(after, s), "$s changed on the belt")
         }
         for (f in Fluid.ALL) {
-            if (f == Fluid.Oxygen || f == Fluid.CarbonDioxide) continue
+            if (f == Fluid.Oxygen || f == Fluid.CarbonDioxide || f == Fluid.CarbonMonoxide) continue
             assertEquals(airMass(start, f), airMass(after, f), "$f changed in the air")
         }
     }
@@ -473,22 +523,27 @@ class AmbientChemistryTest {
         assertTrue(carbonBurned > 0L && ironScaled > 0L, "only one of the two reactions ran")
 
         val scaleMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
-        val dioxideMade = airMass(after, Fluid.CarbonDioxide) - airMass(start, Fluid.CarbonDioxide)
+        val oxidesMade = carbonOxidesAnywhere(after) - carbonOxidesAnywhere(start)
         val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
 
-        // Every gram of oxygen the room lost is in one of the two products, and nowhere else.
+        // Every gram of oxygen the room lost is in one of the two products, and nowhere else. The
+        // carbon's share is spread across both of its oxides now — see [carbonOxidesAnywhere].
         assertEquals(
             oxygenUsed,
-            (dioxideMade - carbonBurned) + (scaleMade - ironScaled),
+            (oxidesMade - carbonBurned) + (scaleMade - ironScaled),
             "the oxygen the room lost is not in the two products",
         )
 
         for (s in Species.ALL) {
-            if (s == Species.Carbon || s == Species.Iron || s == Species.Hematite) continue
+            // CO2 is on this list now: the belt is where a reaction puts it, and the room is only
+            // where it ends up. Same reason [carbonOxidesAnywhere] exists.
+            if (s == Species.Carbon || s == Species.Iron || s == Species.Hematite ||
+                s == Species.CarbonDioxide || s == Species.CarbonMonoxide
+            ) continue
             assertEquals(railMass(start, s), railMass(after, s), "$s changed on the belt")
         }
         for (f in Fluid.ALL) {
-            if (f == Fluid.Oxygen || f == Fluid.CarbonDioxide) continue
+            if (f == Fluid.Oxygen || f == Fluid.CarbonDioxide || f == Fluid.CarbonMonoxide) continue
             assertEquals(airMass(start, f), airMass(after, f), "$f changed in the air")
         }
     }

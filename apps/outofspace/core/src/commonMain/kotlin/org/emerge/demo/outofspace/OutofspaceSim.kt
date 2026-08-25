@@ -122,6 +122,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
+import org.emerge.demo.outofspace.world.offGas
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -351,8 +352,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (shouldRun(state.tick, CHEM_PERIOD)) {
             val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
             val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
-            val toGasMass = onRails.toGasMass + inHoppers.toGasMass
-            val toGasEnergy = onRails.toGasEnergy + inHoppers.toGasEnergy
+            // Then what the matter will no longer hold on to, which is the only pass of the two
+            // that can put anything into the air — and the only one that is told where the walls
+            // are. Reactions first, so a volatile made this tick can leave in the tick it was made
+            // rather than waiting a pass, which is the reason the chemistry sits ahead of the
+            // pressure sweep in the first place.
+            val offRails = offGas(w.rail.stuff, w.masses, w.airEnergy, structure::blocksAir)
+            val offHoppers = offGas(w.buffers.stuff, w.masses, w.airEnergy, structure::blocksAir)
+            val toGasMass = offRails.toGasMass + offHoppers.toGasMass
+            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy
             val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
             val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
             if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)

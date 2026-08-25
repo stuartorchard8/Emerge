@@ -8,8 +8,12 @@ import org.emerge.demo.outofspace.chem.OXIDATIONS
 import org.emerge.demo.outofspace.chem.Oxidation
 import org.emerge.demo.outofspace.chem.REDUCTION_GROUPS
 import org.emerge.demo.outofspace.chem.WIDEST_REDUCTION_GROUP
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportionInto
 import org.emerge.demo.outofspace.chem.fluid
+import org.emerge.demo.outofspace.chem.massAtReducedDensity
+import org.emerge.demo.outofspace.chem.reducedTemperature
+import org.emerge.demo.outofspace.chem.saturatedVapourDensity
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -25,6 +29,11 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * `gasBecameSolid` books. Each pair travels together for the reason that function exists: the solid
  * ledger and the air ledger are separate identities, and telling one without the other reads as two
  * unrelated leaks in opposite directions.
+ *
+ * ⚠️ **One pass fills each pair and neither fills both.** [oxidise] can only ever move matter *into*
+ * the layer, so its gas pair is always zero; [offGas] can only ever move matter out of it, so its
+ * solid pair is. They share this class because they close the same two identities and the caller
+ * adds them up, not because either is capable of the other's direction.
  */
 class ChemistryStep(
     val toGasMass: Long,
@@ -84,21 +93,39 @@ class ChemistryStep(
  * priority list, which is what lets the plan's no-atmosphere room be a strategy the physics produces
  * rather than a special case somebody wrote.
  *
+ * ### ⛔ A reaction may not put gas anywhere. Its products stay in the layer.
+ *
+ * Every product joins [layer] as its own species, whatever phase that species would be standing on
+ * its own: a calcining rock keeps its CO2, a burning lump keeps the CO2 it just made. Releasing it
+ * is [offGas]'s job, and [offGas] asks the two questions this function is in no position to answer —
+ * **is there anywhere for it to go, and do the conditions there want it as a gas.**
+ *
+ * That is not a guard bolted on; it is the removal of the only path. This used to vent a gaseous
+ * product straight into `air` at whatever tile the matter was sitting on, and it took no
+ * [StructureMap], so a lump reacting inside a bulkhead put its gas **inside the hull plate** — where
+ * every face reads `CLOSED` and `diffuseFluid` can never reach it again. 18.45 kg of a live save was
+ * sealed in six plates that way. See `SealedTileGasTest`.
+ *
+ * ⚠️ **Chemistry still runs in there, and must.** The whole argument of this file is that a reaction
+ * is a property of matter and conditions and never asks what the matter is standing on. Refusing to
+ * react inside a wall would be the cheap fix and a different game — ore would stop refining the
+ * moment it crossed a doorway. What changed is where the products go, not whether they are made.
+ *
  * ### What crosses, and what has to be told
  *
- * Carbon **leaves the cargo ledger and joins the air ledger**; the oxygen iron takes does the
- * reverse. Those are two different identities — `inTransit + vented + built == extracted +
- * baselineCargo` on one side, `atmosphere + airVented == injected + baselineAir` on the other —
- * and neither knows about the other, so the caller has to book both crossings. See [ChemistryStep].
+ * The oxygen iron takes **leaves the air ledger and joins the cargo ledger**, and after the above
+ * that is the only crossing left here. Those are two different identities — `inTransit + vented +
+ * built == extracted + baselineCargo` on one side, `atmosphere + airVented == injected +
+ * baselineAir` on the other — and neither knows about the other, so the caller has to book it. See
+ * [ChemistryStep].
  *
- * The heat goes with the matter, in whichever direction it went: a share of the tile's thermal
- * energy proportional to the mass leaving, which is the same construction [handOver] uses between a
- * room and a pipe. It is not optional — a hot lump that turned into cold gas would have lost its
- * joules somewhere no gauge could see.
+ * The heat goes with the matter: a share of the air's thermal energy proportional to the mass
+ * arriving, the same construction [handOver] uses between a room and a pipe. It is not optional — a
+ * lump that took in warm oxygen and gained no joules would have lost them where no gauge could see.
  *
- * ⚠️ **Both shares are taken against a snapshot of the tile**, read before any reaction has touched
- * it. Each reaction taking its share of what the previous one left would be arithmetically fine and
- * order-dependent, which is the one thing the demand pass above exists to prevent.
+ * ⚠️ **That share is taken against a snapshot of the tile's air**, read before any reaction has
+ * touched it. Each reaction taking its share of what the previous one left would be arithmetically
+ * fine and order-dependent, which is the one thing the demand pass above exists to prevent.
  *
  * ⚠️ **Give it the layer whose contents are cargo.** Rail and buffer contents are counted by
  * `cargoMass`; the deck's matter and the conduits' own metal are *fabric*, counted by `builtMass`,
@@ -107,8 +134,6 @@ class ChemistryStep(
  * knowledge, not this function's.
  */
 fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): ChemistryStep {
-    var toGasMass = 0L
-    var toGasEnergy = 0L
     var toSolidMass = 0L
     var toSolidEnergy = 0L
     var released = 0L
@@ -128,32 +153,14 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
         // Where nearly every tile in the game stops, for one compare.
         if (kelvin < LOWEST_ONSET) return@forEachOccupiedTile
 
-        // The tile as it was before anything reacted. **Every energy share below is a share of
-        // these**, so no reaction's heat depends on which reaction ran before it — the same reason
-        // the oxygen is apportioned against a snapshot rather than taken in turn.
-        val heldMass = layer.massAt(tile)
-        val heldEnergy = layer.energyAt(tile)
+        // The tile's **air** as it was before anything reacted. Every energy share below is a
+        // share of these, so no reaction's heat depends on which reaction ran before it — the same
+        // reason the oxygen is apportioned against a snapshot rather than taken in turn.
+        //
+        // The layer needs no such snapshot any more: nothing leaves it, so there is no share of its
+        // heat to take. See [oxidise] on why a reaction may no longer put gas anywhere.
         val airMass = airMassAt(air, tile)
         val airHeat = airEnergy?.get(tile) ?: 0L
-
-        /**
-         * [intoAir] of [fluid] joins the tile's gas, of which [fromLayer] came out of the solid.
-         *
-         * The two are the same for a decomposition and differ for a combustion: burning carbon puts
-         * a whole CO2 into the air but only the carbon *crossed* — the oxygen was already air and
-         * still is. The ledger hears [fromLayer]; the tile's gas gets [intoAir]; and the heat that
-         * travels is the share belonging to the mass that actually changed medium.
-         */
-        fun ventGas(fluid: Fluid, intoAir: Long, fromLayer: Long) {
-            val carried = scaledRatio(fromLayer, heldMass, heldEnergy)
-            air.add(tile, fluid, intoAir)
-            if (carried != 0L) {
-                layer.addEnergy(tile, -carried)
-                airEnergy?.let { it[tile] += carried }
-            }
-            toGasMass += fromLayer
-            toGasEnergy += carried
-        }
 
         // ── Oxidation: several consumers, one tile's oxygen ───────────────────────
         val oxygenHere = air[tile, Fluid.Oxygen]
@@ -176,20 +183,18 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
                     layer.add(tile, reaction.reactant, -reacted.reactant)
                     air.add(tile, Fluid.Oxygen, -reacted.oxygen)
 
-                    val productFluid = reaction.product.fluid
-                    if (productFluid != null) {
-                        // Solid -> air. The whole product joins the gas; only the reactant crossed.
-                        ventGas(productFluid, intoAir = reacted.product, fromLayer = reacted.reactant)
-                    } else {
-                        // Air → solid. The oxygen's mass and its share of the room's heat arrive;
-                        // the reactant never left the layer, so only the oxygen crosses.
-                        val carried = scaledRatio(reacted.oxygen, airMass, airHeat)
-                        layer.add(tile, reaction.product, reacted.product)
-                        layer.addEnergy(tile, carried)
-                        airEnergy?.let { it[tile] -= carried }
-                        toSolidMass += reacted.oxygen
-                        toSolidEnergy += carried
-                    }
+                    // **Air → solid, and that is now the only direction an oxidation crosses in.**
+                    // The product joins the layer whatever phase it would be free-standing — a
+                    // burnt lump keeps its own CO2 — so the oxygen's mass and its share of the
+                    // room's heat arrive and nothing goes back the other way. What used to be a
+                    // second branch venting the product is [offGas]'s job now, at a tile that has
+                    // air in it to receive it.
+                    val carried = scaledRatio(reacted.oxygen, airMass, airHeat)
+                    layer.add(tile, reaction.product, reacted.product)
+                    layer.addEnergy(tile, carried)
+                    airEnergy?.let { it[tile] -= carried }
+                    toSolidMass += reacted.oxygen
+                    toSolidEnergy += carried
 
                     released += applyEnthalpy(layer, tile, -reaction.enthalpy(reacted.reactant))
                 }
@@ -212,8 +217,7 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
                 val species = reaction.products[p].first
                 val mass = parts[p]
                 if (mass <= 0L) continue
-                val fluid = species.fluid
-                if (fluid != null) ventGas(fluid, intoAir = mass, fromLayer = mass) else layer.add(tile, species, mass)
+                layer.add(tile, species, mass)
             }
 
             released += applyEnthalpy(layer, tile, -reaction.enthalpy(consumed))
@@ -272,8 +276,7 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
                     val species = reaction.products[p].first
                     val mass = parts[p]
                     if (mass <= 0L) continue
-                    val fluid = species.fluid
-                    if (fluid != null) ventGas(fluid, intoAir = mass, fromLayer = mass) else layer.add(tile, species, mass)
+                    layer.add(tile, species, mass)
                 }
 
                 // Per kilogram of **oxide**, which is what the rate was a fraction of and what the
@@ -283,10 +286,12 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
         }
     }
 
-    return if (toGasMass == 0L && toGasEnergy == 0L && toSolidMass == 0L && toSolidEnergy == 0L && released == 0L) {
+    // Zero to gas, structurally and for ever: this function no longer has a path that puts matter
+    // into [air]. Only [offGas] does, and only where there is air to put it in.
+    return if (toSolidMass == 0L && toSolidEnergy == 0L && released == 0L) {
         ChemistryStep.NOTHING
     } else {
-        ChemistryStep(toGasMass, toGasEnergy, toSolidMass, toSolidEnergy, released)
+        ChemistryStep(toGasMass = 0L, toGasEnergy = 0L, toSolidMass, toSolidEnergy, released)
     }
 }
 
@@ -339,3 +344,139 @@ private fun airMassAt(air: MassArray, tile: TileIndex): Long {
  */
 private val LOWEST_ONSET: Int =
     minOf(OXIDATIONS.minOf { it.onsetKelvin }, LOWEST_DECOMPOSITION_ONSET, LOWEST_REDUCTION_ONSET)
+
+
+/**
+ * Volatiles leaving the matter that is carrying them, wherever the tile they are standing in will
+ * have them — the other half of "[oxidise] may not put gas anywhere".
+ *
+ * A lump of comet ore is 8% water, 3% ammonia and 1% methane by mass, and for the whole life of the
+ * game it carried them as though they were rock. Nothing asked whether a species that is a gas at
+ * room temperature ought to still be riding a belt. This asks, once a pass, everywhere at once.
+ *
+ * ### The rule, and why it needs no rate
+ *
+ * A species leaves until the tile's gas is **saturated with it at the temperature of the matter it
+ * is leaving** — [saturatedVapourDensity] is exactly the density at which a cell can hold no more
+ * of a species as vapour, and [massAtReducedDensity] turns that into the mass a full tile will
+ * take. What is already in the air counts against that ceiling, so a lump in a room that is already
+ * thick with water vapour sheds nothing, and the same lump in a dry room sheds until it is not.
+ *
+ * That is a relaxation to equilibrium rather than a rate, which is [exchangeLayers]'s construction
+ * and is here for the same reason: **a rate is a knob and equilibrium is not.** There is no number
+ * in this function that anybody chose. A puddle in a sealed room evaporates until the room is
+ * saturated and then stops, because that is what the dome says, not because a constant was tuned
+ * until it looked right.
+ *
+ * ⚠️ **The temperature is the matter's, the pressure is the room's**, and the split is deliberate:
+ * a wet rock in a vacuum chamber boils according to how hot *it* is against how hard the *room*
+ * pushes back. Reading both off the air would make a hot lump in a cold room inert, which is the
+ * one case where off-gassing is most obviously supposed to happen.
+ *
+ * ⚠️ **A species with no critical point on file has no liquid phase in this model and leaves in
+ * full** — see [org.emerge.demo.outofspace.chem.CRITICAL], which holds five entries. Methane and
+ * ammonia are gases here, unconditionally, so ore carrying them is ore carrying gas in a sack, and
+ * this empties the sack. That is the honest reading of the equation of state and it is also, by
+ * some distance, the largest thing this function does.
+ *
+ * ⛔ **No latent heat yet.** What leaves takes its share of the matter's warmth with it, the same
+ * share [handOver] takes between a room and a pipe, but the *cost of the phase change itself* is
+ * not charged — so evaporation here does not cool the thing evaporating. [
+ * org.emerge.demo.outofspace.chem.cohesionEnergy] is the term that would, and wiring it in is a
+ * separate piece of work with a ledger of its own. Until then a lump cannot chill itself back below
+ * its own boiling point, and the saturation ceiling is the only thing stopping it.
+ *
+ * ### Where it may not happen
+ *
+ * [holdsAirOut] is asked first and answers for the tile, not for the matter: a bulkhead has no gas
+ * cell, so there is nowhere for a volatile to go and it stays in the lump until the lump is
+ * somewhere with a room around it. This is the guard `SealedTileGasTest` pins, and it is deliberately
+ * the *only* place in the chemistry that consults the structure — one gate, on the one pass that
+ * can put matter into the air.
+ *
+ * ⚠️ **Give it the layer whose contents are cargo**, exactly as [oxidise] requires and for the same
+ * reason: what leaves here is booked by `solidBecameGas`, which closes the cargo identity against
+ * the air one. The deck's own metal is fabric and is counted somewhere else.
+ */
+fun offGas(
+    layer: StuffLayer,
+    air: MassArray,
+    airEnergy: EnergyArray?,
+    holdsAirOut: (TileIndex) -> Boolean,
+): ChemistryStep {
+    var toGasMass = 0L
+    var toGasEnergy = 0L
+
+    // One buffer for the whole sweep rather than one per tile — [oxidise]'s reason exactly. Indexed
+    // by [Fluid] ordinal because that is the space the answers live in, and it is a seventh of
+    // [Species.COUNT].
+    val leaving = LongArray(Fluid.COUNT)
+
+    layer.forEachOccupiedTile { tile ->
+        // The one structural question, asked before any arithmetic: is there a room here at all.
+        if (holdsAirOut(tile)) return@forEachOccupiedTile
+
+        val heldMass = layer.massAt(tile)
+        if (heldMass <= 0L) return@forEachOccupiedTile
+        val kelvin = layer.kelvinAt(tile)
+
+        // ── What wants to leave, decided against the tile as it stands ────────────
+        //
+        // The presence-bitmask walk, so this costs the handful of species the matter actually
+        // holds rather than the width of [Species]. **Decided here and applied below rather than
+        // as it goes**, because taking mass out of the row that is being walked is exactly the
+        // kind of thing that works until a species reaches zero.
+        leaving.fill(0L)
+        var total = 0L
+        layer.forEachSpecies(tile) { species, held ->
+            if (held <= 0L) return@forEachSpecies
+            val fluid = species.fluid ?: return@forEachSpecies
+            val room = vapourHeadroom(species, kelvin, air[tile, fluid])
+            val release = if (held < room) held else room
+            if (release <= 0L) return@forEachSpecies
+            leaving[fluid.ordinal] = release
+            total += release
+        }
+        if (total <= 0L) return@forEachOccupiedTile
+
+        // ── And now it goes ───────────────────────────────────────────────────────
+        for (fluid in Fluid.ALL) {
+            val release = leaving[fluid.ordinal]
+            if (release <= 0L) continue
+            layer.add(tile, fluid.species, -release)
+            air.add(tile, fluid, release)
+        }
+
+        // The heat rides along with it, as a share of what the matter held before any of it left —
+        // read before the loop above for the reason every share in [oxidise] is read against a
+        // snapshot. A hot lump that shed cold vapour would have mislaid its joules.
+        val carried = scaledRatio(total, heldMass, layer.energyAt(tile))
+        if (carried != 0L) {
+            layer.addEnergy(tile, -carried)
+            airEnergy?.let { it[tile] += carried }
+        }
+        toGasMass += total
+        toGasEnergy += carried
+    }
+
+    return if (toGasMass == 0L && toGasEnergy == 0L) {
+        ChemistryStep.NOTHING
+    } else {
+        ChemistryStep(toGasMass, toGasEnergy, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = 0L)
+    }
+}
+
+/**
+ * How much more of [species] a full tile at [kelvin] will hold as vapour, given [inAir] of it there.
+ *
+ * [Long.MAX_VALUE] means "as much as you have": either the species has no critical point on file
+ * and so no liquid phase in this model, or the matter is hotter than its critical temperature,
+ * where liquid and vapour stop being different things and there is nothing to saturate.
+ */
+private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
+    val temperatureR = reducedTemperature(kelvin, species) ?: return Long.MAX_VALUE
+    val vapourR = saturatedVapourDensity(temperatureR) ?: return Long.MAX_VALUE
+    val ceiling = massAtReducedDensity(vapourR, species, VolumeField.FULL, VolumeField.FULL)
+        ?: return Long.MAX_VALUE
+    return if (ceiling > inAir) ceiling - inAir else 0L
+}

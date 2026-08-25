@@ -56,21 +56,45 @@ class ReductionSweepTest {
         // The sweep-level counterpart to the table tests: fed both reagents, in a vacuum, well above
         // its onset, every row must consume something. A row that balances and never fires is the
         // failure mode this whole file exists for — and it is invisible from the table's side.
+        //
+        // ⚠️ **Against a control that withholds the reductant, rather than against the 100 kg it
+        // started with.** A reaction's products stay in the layer now, so the tile is no longer a
+        // one-way street: at this temperature the algae the photosynthesis row needs as a catalyst
+        // is *also* pyrolysing, and the four waters that puts back hid the water the row consumed.
+        // The row was firing perfectly well and the measurement could not see it.
+        //
+        // Withholding the one reagent the row cannot run without isolates its contribution from
+        // every other reaction in the tile, whatever they happen to be — the same two-runs-differing
+        // -in-one-thing construction as `in air the reagent burns instead of reducing`, and it does
+        // not need to know what the interference was.
         for (reaction in REDUCTIONS) {
-            val layer = layerWith(*listOfNotNull(reaction.oxide to 100L * kg, reaction.reductant to 100L * kg, reaction.catalyst?.to(100L * kg)).toTypedArray())
-            layer.heatTo(reaction.onsetKelvin * 2)
-            sweep(layer)
+            fun swept(withReductant: Boolean): StuffLayer {
+                val layer = layerWith(
+                    *listOfNotNull(
+                        reaction.oxide to 100L * kg,
+                        if (withReductant) reaction.reductant to 100L * kg else null,
+                        reaction.catalyst?.to(100L * kg),
+                    ).toTypedArray(),
+                )
+                layer.heatTo(reaction.onsetKelvin * 2)
+                sweep(layer)
+                return layer
+            }
 
+            val layer = swept(withReductant = true)
             assertTrue(
-                layer[tile, reaction.oxide] < 100L * kg,
+                layer[tile, reaction.oxide] < swept(withReductant = false)[tile, reaction.oxide],
                 "${reaction.oxide} + ${reaction.reductant} never fired in the sweep",
             )
             assertTrue(
                 layer[tile, reaction.reductant] < 100L * kg,
                 "${reaction.oxide} + ${reaction.reductant} consumed oxide but no reagent",
             )
+            // ⚠️ **Every product, including the gaseous ones.** They used to be vented into the air
+            // as they were made and so were invisible here; they stay in the layer now until
+            // [org.emerge.demo.outofspace.world.offGas] finds them a room, and this sweep is the
+            // layer on its own with no room anywhere near it.
             for ((product, _) in reaction.products) {
-                if (product.fluid != null) continue
                 assertTrue(
                     layer[tile, product] > 0L,
                     "${reaction.oxide} + ${reaction.reductant} produced no $product",
