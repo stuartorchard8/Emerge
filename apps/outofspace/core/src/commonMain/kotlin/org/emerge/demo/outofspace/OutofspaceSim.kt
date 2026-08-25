@@ -91,7 +91,10 @@ import org.emerge.demo.outofspace.world.heatOfWorking
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TrackLayers
+import org.emerge.demo.outofspace.world.FlightIntent
+import org.emerge.demo.outofspace.world.thrusterActivation
 import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.heatCapacityAt
@@ -218,6 +221,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
+            val intent = FlightIntent.of(heldKeys)
+
             openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
             structure = StructureMap.derive(w.grid, w.deck, openness)
 
@@ -240,7 +245,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // step (see [readGauges]) and a valve is a hole, not a mechanism.
                     is Hull, is Airlock, is Vent, is Storage, is Bridge, is Gauge, is Valve,
                     is Sensor, is WireButton, is Pump -> m
-                    is Thruster -> w.fire(cfg, m, activation, tile, structure)
+                    // A thruster on flight control answers the pilot's stick, not the wire — see
+                    // [ThrusterControl]. Worked out per motor from where it sits and which way it
+                    // points, so the ship needs no allocation of engines to axes anywhere.
+                    is Thruster -> w.fire(cfg, m, w.thrustCommand(m, tile, intent, activation), tile, structure)
                     is Processor -> w.refine(cfg, m, activation, tile)
                     is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
                     is Extractor -> w.leech(m, activation, tile)
@@ -838,6 +846,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // The next charge serves its own dwell, not the remainder of this one's.
         return m.copy(heldTicks = 0)
     }
+
+    /**
+     * How hard one motor runs this tick: the pilot's stick, or the wire, depending on the machine.
+     *
+     * The whole of the difference between the two modes lives here, in one expression, and the rest
+     * of [fire] cannot tell them apart — an activation in permille is an activation in permille.
+     * That is deliberate: the thing a player switches is *where the number comes from*, and if the
+     * two modes reached any further into the machine than this they would drift apart.
+     *
+     * [wired] is computed by the caller for every machine anyway, so nothing is spent working it out
+     * for a motor that will not use it.
+     */
+    private fun Work.thrustCommand(m: Thruster, tile: TileIndex, intent: FlightIntent, wired: Int): Int =
+        when (m.control) {
+            ThrusterControl.Wire -> wired
+            ThrusterControl.Flight -> thrusterActivation(
+                intent,
+                m.thrust,
+                tileCentre(grid.xOf(tile)),
+                tileCentre(grid.yOf(tile)),
+                about.comX,
+                about.comY,
+            )
+        }
 
     /**
      * One tick of a [Thruster]: throw propellant out of the nozzle and take whatever was in the way
@@ -1471,6 +1503,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
+                }
+                is Edit.SetThrusterControl -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Thruster) deck[tile] = m.withControl(edit.control)
                 }
                 is Edit.TuneDecomposer -> {
                     val tile = originAt(edit.tile) ?: return

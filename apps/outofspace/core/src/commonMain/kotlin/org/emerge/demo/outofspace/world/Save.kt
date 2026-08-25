@@ -28,6 +28,7 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -375,6 +376,11 @@ object Save {
             is Thruster -> {
                 put("carry", m.carry.toString())
                 put("rate", m.massPerTick.toString())
+                // Omitted at the default, like the wiring below it: the file shows the choices
+                // somebody actually made. ⚠️ A file written before the flight controls existed has
+                // no key here and so loads FLIGHT, which is the intended migration — see
+                // [ThrusterControl].
+                if (m.control != ThrusterControl.Flight) put("control", m.control.name)
             }
         }
         // The same store loop the machine record has, and it is not optional: a deck machine's
@@ -1154,6 +1160,9 @@ object Save {
                 facing = facing(),
                 carry = massNum("carry", 0L),
                 massPerTick = rate(Thruster(tile, Direction.Right).massPerTick),
+                control = f["control"]?.let { name ->
+                    ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
+                } ?: ThrusterControl.Flight,
             )
             // Both are fittings that stand over a run and hold nothing. A gauge's reading is state
             // and comes back with it; a valve is only a position.

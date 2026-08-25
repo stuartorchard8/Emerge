@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Mixture
@@ -166,7 +167,9 @@ class SignalWiringTest {
         val deck = DeckArray(grid)
         val stored = Mixture.of(Species.Iron to fill, energy = 0)
         val at = grid.tile(extractorAt.first, extractorAt.second)
-        deck += Thruster(at, Direction.Right).withWiring(stopWhenFull)
+        // A thruster used as a generic wired burner, so it has to be *on the wire*: by default a
+        // motor answers the pilot and ignores its wiring entirely — see [ThrusterControl].
+        deck += Thruster(at, Direction.Right, control = ThrusterControl.Wire).withWiring(stopWhenFull)
         deck += Storage(grid.tile(13, 5), Direction.Right)
         deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
 

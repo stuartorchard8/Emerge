@@ -1,0 +1,38 @@
+# Flight controls: a thruster answers the pilot's keys, and says so in its own panel.
+#
+# What to read in the shots:
+#   `thruster-idle`     -- CONTROL section, LISTENS TO FLIGHT, PUSHES LEFT, FIRING 0%.
+#                          Nobody is holding anything, so the motor is shut. This is the behaviour
+#                          that replaced "always on".
+#   `thruster-firing`   -- the same panel with LEFT held: FIRING 100%. Nothing was wired, nothing
+#                          was bound to a key, and the motor worked out for itself that a push to
+#                          port is what was asked for.
+#   `thruster-wired`    -- switched over to WIRE, where it is a machine again and its WIRING drives
+#                          it. The stick no longer reaches it.
+new
+creative 1
+camera centre 34 9 64
+
+# In the starboard wall, exhausting outboard: it pushes the ship to port.
+brush THRUSTER RIGHT
+place 34 9
+
+tool INSPECT
+inspect 34 9 DECK
+shot thruster-idle
+
+hold LEFT
+inspect 34 9 DECK
+shot thruster-firing
+
+# Asking for the opposite: a motor that would fight the request stays shut.
+hold RIGHT
+inspect 34 9 DECK
+shot thruster-opposed
+
+# And the switch back to the wire, where it is a machine again: the stick no longer reaches it and
+# its own WIRING drives it.
+release
+tap LISTENS TO
+inspect 34 9 DECK
+shot thruster-wired

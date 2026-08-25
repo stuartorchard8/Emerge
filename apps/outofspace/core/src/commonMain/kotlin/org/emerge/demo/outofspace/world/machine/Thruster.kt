@@ -53,11 +53,19 @@ data class Thruster(
      * engines, which is the arrangement the machine is for.
      */
     val massPerTick: Long = Capacity.PACKET_MASS / 30L,
+    /**
+     * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
+     */
+    val control: ThrusterControl = ThrusterControl.Flight,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Thruster
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
+    fun withControl(control: ThrusterControl): Thruster = copy(control = control)
+
+    /** The way the ship is pushed: the other way from the way the exhaust goes. */
+    val thrust: Direction get() = facing.opposite
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
@@ -163,5 +171,37 @@ fun exhaustPath(grid: Grid, structure: StructureMap, tile: TileIndex, facing: Di
         }
         crossed.add(next)
         at = next
+    }
+}
+
+/**
+ * What a motor listens to: the pilot, or the wire.
+ *
+ * [Flight] is the default and is what a thruster is *for*. A newly built engine flies the ship the
+ * moment it is fed, without a wire, a button or a single decision from the player about which key
+ * ought to mean what — it works out from where it sits and which way it points whether firing would
+ * help ([org.emerge.demo.outofspace.world.thrusterActivation]). Bolt four on in four directions and
+ * WSAD/QE fly the vessel; bolt one on crooked and it still contributes whatever component of the
+ * push and the turn it honestly can.
+ *
+ * [Wire] hands the same motor back to the signal network, where its [Wiring] drives it like any
+ * other machine's. That is not a lesser mode — a thruster held open by a pressure sensor is a
+ * perfectly good machine — it is simply no longer a *control surface*, and nothing about the
+ * pilot's stick reaches it.
+ *
+ * ⚠️ **The default changed.** Thrusters were [Wire]-driven (`ALWAYS`, i.e. permanently on) for the
+ * whole of the machine's life before this. Every saved vessel's engines become [Flight] on load,
+ * which is the intended migration and not an oversight: an always-on engine is a design nobody was
+ * choosing, they were accepting it.
+ */
+enum class ThrusterControl(val label: String) {
+    Flight("FLIGHT"),
+    Wire("WIRE"),
+    ;
+
+    val next: ThrusterControl get() = if (this == Flight) Wire else Flight
+
+    companion object {
+        val ALL: List<ThrusterControl> = entries.toList()
     }
 }

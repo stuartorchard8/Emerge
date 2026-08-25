@@ -188,8 +188,11 @@ fun main() {
                 GLFW_KEY_DOWN, GLFW_KEY_S -> InputKey.Down
                 GLFW_KEY_LEFT, GLFW_KEY_A -> InputKey.Left
                 GLFW_KEY_RIGHT, GLFW_KEY_D -> InputKey.Right
-                GLFW_KEY_Z -> InputKey.A
-                GLFW_KEY_X -> InputKey.B
+                // Q/E are the roll keys the flight controls read as counter-clockwise and
+                // clockwise; Z/X stay bound to the same two inputs, since a [WireButton] may well
+                // have been wired to them before the stick existed.
+                GLFW_KEY_Q, GLFW_KEY_Z -> InputKey.A
+                GLFW_KEY_E, GLFW_KEY_X -> InputKey.B
                 else -> null
             }
             if (bound != null) {

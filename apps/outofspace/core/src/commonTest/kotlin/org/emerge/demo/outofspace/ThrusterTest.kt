@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -45,7 +46,7 @@ class ThrusterTest {
     @Test
     fun `a clear thruster pushes the ship the other way`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
+        val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
 
         repeat(TICKS) { controller.stepOnce() }
 
@@ -72,10 +73,7 @@ class ThrusterTest {
     @Test
     fun `a turned ship is pushed the way it is pointing`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(
-            cfg,
-            hullWithThruster(cfg.initialGrid, Direction.Right).copy(ang = QUARTER_TURN),
-        )
+        val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right).copy(ang = QUARTER_TURN))
 
         repeat(TICKS) { controller.stepOnce() }
 
@@ -98,7 +96,7 @@ class ThrusterTest {
     @Test
     fun `firing spends propellant and the mass ledger stays closed`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
+        val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
         val before = controller.state.inTransitMass
         // The fixture hands the ship a full tank rather than mining it, so the balance starts at
         // whatever was handed over rather than at zero. What must be true is that it does not
@@ -130,7 +128,7 @@ class ThrusterTest {
     @Test
     fun `the momentum ledger balances through a burn`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
+        val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
 
         repeat(TICKS) {
             controller.stepOnce()
@@ -158,7 +156,7 @@ class ThrusterTest {
         val grid = cfg.initialGrid
         // Inside the box, facing the port wall a few tiles away.
         val tile = grid.tile(HULL_LEFT + 4, BAY_Y)
-        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, tile))
+        val controller = flying(cfg, hullWithThruster(grid, Direction.Left, tile))
 
         val destination = grid.tile(HULL_LEFT + 1, BAY_Y)
         val coldEnough = controller.state.air.kelvinAt(destination)
@@ -191,7 +189,7 @@ class ThrusterTest {
         val grid = cfg.initialGrid
         // Immediately inboard of the port wall, facing it: the exit face *is* the wall.
         val at = grid.tile(HULL_LEFT + 1, BAY_Y)
-        val controller = OutofspaceController(cfg, hullWithThruster(grid, Direction.Left, tile = at))
+        val controller = flying(cfg, hullWithThruster(grid, Direction.Left, tile = at))
         val coldEnough = controller.state.air.kelvinAt(at)
 
         repeat(TICKS) { controller.stepOnce() }
@@ -233,7 +231,7 @@ class ThrusterTest {
     @Test
     fun `a save remembers the propellant`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
+        val controller = flying(cfg, hullWithThruster(cfg.initialGrid, Direction.Right))
         repeat(4) { controller.stepOnce() }
 
         val played = controller.state
@@ -244,6 +242,31 @@ class ThrusterTest {
         assertEquals(before, after, "the thruster did not survive the round trip")
         assertEquals(played.ventedMass, loaded.ventedMass)
         assertEquals(played.exhaustMomentumX, loaded.exhaustMomentumX)
+    }
+
+    /**
+     * A controller with a hand on the stick, holding the key that asks for the push this motor
+     * makes.
+     *
+     * ⚠️ **Every test here needs one now.** A thruster answers the pilot by default
+     * ([org.emerge.demo.outofspace.world.machine.ThrusterControl]), so a fixture that only builds
+     * one and steps the world builds an engine nobody is asking anything of — which would leave
+     * every claim in this file trivially true against a motor that never fired.
+     *
+     * The key is derived from the machine rather than passed in, so a test that turns the nozzle
+     * round does not also have to remember to turn the hand.
+     */
+    private fun flying(cfg: OutofspaceConfig, state: VesselState): OutofspaceController {
+        val thruster = state.grid.tiles.firstNotNullOf { state.deck[it] as? Thruster }
+        val controller = OutofspaceController(cfg, state)
+        controller.mode = Mode.Flight
+        controller.heldKeys = when (thruster.thrust) {
+            Direction.Up -> InputKey.Up
+            Direction.Down -> InputKey.Down
+            Direction.Left -> InputKey.Left
+            Direction.Right -> InputKey.Right
+        }.bit
+        return controller
     }
 
     /**

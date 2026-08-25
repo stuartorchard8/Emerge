@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
@@ -441,6 +443,17 @@ class OutofspaceController(
         // silently jumping to the coldest.
         val at = all.indexOf(m.setTemperature).let { if (it >= 0) it else all.indexOfLast { rung -> rung <= m.setTemperature }.coerceAtLeast(0) }
         pending.add(Edit.TuneDecomposer(tile, all[wrap(at + delta, all.size)], m.dwellTicks))
+    }
+
+    /**
+     * Switches a thruster between flying the ship and answering its wire — see [ThrusterControl].
+     *
+     * Reads the current mode off the machine and sends the *other* one as an absolute value, so the
+     * edit says what the player asked for rather than "whatever the opposite turns out to be".
+     */
+    fun toggleThrusterControl(tile: TileIndex) {
+        val m = state.machineCovering(tile) as? Thruster ?: return
+        pending.add(Edit.SetThrusterControl(tile, m.control.next))
     }
 
     /** Steps a decomposer's residence time through [ThermalDecomposer.DWELLS], wrapping. */

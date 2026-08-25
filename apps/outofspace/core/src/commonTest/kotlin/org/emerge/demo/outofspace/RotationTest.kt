@@ -19,6 +19,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -237,7 +238,11 @@ class RotationTest {
         for (y in bays) {
             // The bay replaces the plate that was there — see `ThrusterTest`'s fixture.
             deck -= grid.tile(HULL_RIGHT, y)
-            deck += Thruster(grid.tile(HULL_RIGHT, y), facing = Direction.Right)
+            // ⚠️ **On the wire, not the stick.** What is measured here is the torque a burn books,
+            // so the motors have to burn unconditionally — a flight-controlled engine would first
+            // ask whether firing serves the pilot, and these tests have no pilot. See
+            // [ThrusterControl].
+            deck += Thruster(grid.tile(HULL_RIGHT, y), facing = Direction.Right, control = ThrusterControl.Wire)
         }
         return VesselState(
             grid = grid,

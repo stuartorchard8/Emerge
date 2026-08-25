@@ -29,6 +29,11 @@ import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
+import org.emerge.demo.outofspace.world.FlightIntent
+import org.emerge.demo.outofspace.world.thrusterActivation
+import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -179,7 +184,7 @@ class OutofspaceHud {
                 if (flying) {
                     val held = InputKey.ALL.filter { InputKey.heldIn(controller.heldKeys, it) }
                     row(
-                        if (held.isEmpty()) "arrows / WASD / Z / X drive your buttons"
+                        if (held.isEmpty()) "WASD moves  ·  QE turns  ·  arrows / Z / X also drive buttons"
                         else "holding: ${held.joinToString(" ") { it.label }}",
                         if (held.isEmpty()) 0x9A9A9AFFL else 0x6EE08AFFL,
                     )
@@ -532,6 +537,10 @@ class OutofspaceHud {
         val decomposer = machine as? ThermalDecomposer
         if (decomposer != null) {
             section("furnace", "FURNACE", open = true) { decomposerControls(controller, tile, decomposer) }
+        }
+        val thruster = machine as? Thruster
+        if (thruster != null) {
+            section("thruster", "CONTROL", open = true) { thrusterControls(controller, tile, thruster) }
         }
         // Wiring is the one section that starts shut. Every machine has some, most machines never
         // need theirs touched, and it is the longest of the three — so it is the section that would
@@ -1017,6 +1026,50 @@ class OutofspaceHud {
         // ⚠️ No semicolon: the bitmap font has no glyph for one and draws "?" instead. The
         // interpunct is already used in every panel title, so it is known to exist.
         row("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
+    }
+
+    /**
+     * The one control on a motor: who it takes orders from.
+     *
+     * ⚠️ **This panel is the only place the mode is visible.** A thruster looks identical in either,
+     * and the difference — whether the pilot's stick reaches it — is not something the tile can
+     * show. So the section opens by default, unlike wiring, and it names the keys: a player who has
+     * just built their first engine should not have to be told elsewhere that W flies it.
+     */
+    private fun PanelBuilder.thrusterControls(
+        controller: OutofspaceController,
+        tile: TileIndex,
+        machine: Thruster,
+    ) {
+        button(
+            listOf("LISTENS TO  " to 0x9A9A9AFFL, machine.control.label to 0xFFFFFFFFL),
+            0x2E5A6BFFL,
+        ) { controller.toggleThrusterControl(tile) }
+        when (machine.control) {
+            ThrusterControl.Flight -> {
+                keyValue("PUSHES", machine.thrust.name.uppercase(), 0x9A9A9AFFL, 0x9ED0B0FFL)
+                row("WSAD moves  ·  QE turns  ·  press F to fly", 0x9A9A9AFFL)
+                // What the motor makes of the stick right now, which is the readout that turns a
+                // badly placed engine from a mystery into something a player can see is idle.
+                // ⚠️ One mass walk per frame, and only while this panel is pinned open — the
+                // reducer's own answer is a tick's private business and not reachable from here.
+                val about = controller.state.distribution
+                keyValue(
+                    "FIRING",
+                    "${thrusterActivation(
+                        FlightIntent.of(controller.heldKeys),
+                        machine.thrust,
+                        tileCentre(controller.state.grid.xOf(machine.center)),
+                        tileCentre(controller.state.grid.yOf(machine.center)),
+                        about.comX,
+                        about.comY,
+                    ).coerceAtLeast(0) / 10}%",
+                    0x9A9A9AFFL,
+                    0xE0A93AFFL,
+                )
+            }
+            ThrusterControl.Wire -> row("driven by its WIRING, below", 0x9A9A9AFFL)
+        }
     }
 
     /** Wiring editor: WHEN/PLUS terms (tap channel/weight to cycle, x to delete). */

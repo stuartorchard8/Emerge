@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.InputKey
+import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VolumeField
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -72,6 +73,15 @@ sealed interface Edit {
      * setting than the one the player saw.
      */
     data class TuneDecomposer(val tile: TileIndex, val setTemperature: Int, val dwellTicks: Int) : Edit
+
+    /**
+     * Which orders a thruster takes: the pilot's stick, or the wire under it.
+     *
+     * An absolute value and not a toggle, for [TuneDecomposer]'s reason exactly — a toggle applied a
+     * tick late against a machine somebody else has since switched sets the opposite of what the
+     * player was looking at when they pressed it.
+     */
+    data class SetThrusterControl(val tile: TileIndex, val control: ThrusterControl) : Edit
 
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
