@@ -64,6 +64,7 @@ class ContactTest {
         collectHullContacts(
             world.grid, world.structure, body, 0,
             at = Pose(WALL * Flight.PER_TILE - Flight.PER_TILE + overlap, ROW * Flight.PER_TILE, Coord(0)),
+            shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
 
@@ -104,6 +105,7 @@ class ContactTest {
         collectHullContacts(
             world.grid, world.structure, body, 0,
             at = Pose(WALL * Flight.PER_TILE, ROW * Flight.PER_TILE - Flight.PER_TILE + shallow, Coord(0)),
+            shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
 
@@ -121,6 +123,7 @@ class ContactTest {
         collectHullContacts(
             world.grid, world.structure, oneCell(), 0,
             at = Pose(2L * Flight.PER_TILE, 2L * Flight.PER_TILE, Coord(0)),
+            shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
         assertTrue(contacts.isEmpty(), "a body in open space touched ${contacts.size} things")
@@ -488,6 +491,64 @@ class ContactTest {
         // And the point is on that face — reach minus the radius back along the local +x axis.
         assertNear(c.pointX, frame.toWorldX(half, 0L), "the touch is on the face, not at the centre")
         assertNear(c.pointY, frame.toWorldY(half, 0L), "the touch is on the face, not at the centre")
+    }
+
+    /**
+     * A hull contact comes back in **world** axes, and the ship's angle is what makes that a claim
+     * rather than a restatement.
+     *
+     * The second half of step 6. With a box able to carry a turn, the sweep no longer has to express
+     * everything in the grid's axes to ask a question of the hull — so it stops doing so, and the
+     * ship becomes an operand whose cells happen to be boxes rather than the thing everybody else is
+     * measured against.
+     *
+     * Stated at 45° because that is the angle where the two components of the answer are equal and a
+     * frame that had not actually changed would give itself away as a clean `(0, −1)`. A body resting
+     * on the deck's upper face is pushed **out of the deck**, which is straight up in the *grid* and
+     * up-and-to-starboard in the world once the ship is rolled.
+     */
+    @Test
+    fun `a hull contact comes back in world axes`() {
+        val world = wall()
+        val body = oneCell()
+        val turn = Coord(1, 4)
+        // The ship's origin is left at zero: what is under test is the turn, and a translation would
+        // only add the same offset to both sides of every assertion below.
+        val ship = Pose(0L, 0L, turn)
+        val contacts = ArrayList<Contact>()
+
+        // A quarter tile into the wall tile's **upper** face, expressed in the grid and then put
+        // into the world by the ship's own pose — the body stores world coordinates, so this is the
+        // ordinary way a caller states "resting on top of that tile".
+        val overlap = Flight.PER_TILE / 4L
+        val localX = WALL * Flight.PER_TILE
+        val localY = ROW * Flight.PER_TILE - Flight.PER_TILE + overlap
+        collectHullContacts(
+            world.grid, world.structure, body, 0,
+            at = Pose(ship.toWorldX(localX, localY), ship.toWorldY(localX, localY), turn),
+            shipPose = ship,
+            restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
+        )
+
+        assertEquals(1, contacts.size, "one cell on top of one tile is one contact")
+        val c = contacts.single()
+        // Out of the deck is grid −y; rolled a quarter turn that is world (+sin, −cos), so the
+        // components are equal in size, and the signs are what say it is a *roll* and not a flip.
+        assertTrue(c.normalX > 0L, "a ship rolled clockwise pushes a rock off its deck to starboard: $c")
+        assertTrue(c.normalY < 0L, "and still upward, or the deck is sucking the rock in: $c")
+        assertNear(c.normalX, -c.normalY, "at a quarter turn the two components are equal in size")
+        assertNear(
+            isqrt(c.normalX * c.normalX + c.normalY * c.normalY), Flight.FRAC_ONE,
+            "a contact normal is a unit, whatever frame it came back in",
+        )
+        assertNear(c.depth, overlap, "the depth is a length, and a turn does not change one")
+        // The touch is at the middle of the tile's upper face, in the same place the grid would have
+        // put it — a cell's centre is half a tile in from the body's origin, so a one-cell body posed
+        // at the tile's own x sits centred over it rather than over its corner.
+        val faceX = WALL * Flight.PER_TILE + Flight.PER_TILE / 2L
+        val faceY = ROW * Flight.PER_TILE
+        assertNear(c.pointX, ship.toWorldX(faceX, faceY), "the touch is on the face")
+        assertNear(c.pointY, ship.toWorldY(faceX, faceY), "the touch is on the face")
     }
 
     /**

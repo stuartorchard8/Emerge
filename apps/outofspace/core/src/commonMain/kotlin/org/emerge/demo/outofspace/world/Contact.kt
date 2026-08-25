@@ -73,7 +73,7 @@ class Contact(
 }
 
 /**
- * Every place [body] — placed in the grid by [at] — is inside the hull.
+ * Every place [body] — placed in the **world** by [at] — is inside the hull.
  *
  * One contact per cell-and-tile pair that overlaps, with the normal along the **axis of least
  * penetration** and the point at the centre of the overlap. That is the honest reading of a
@@ -99,7 +99,21 @@ fun collectHullContacts(
     structure: StructureMap,
     body: RigidBody,
     index: Int,
+    /** The body's pose **in the world**, which is where a body stores itself. */
     at: Pose,
+    /**
+     * Where the grid is in the world — the ship's pose for this substep.
+     *
+     * ### ⚠️ This is the parameter that stops the grid being the frame
+     *
+     * [at] used to be a *grid*-frame pose, and every contact came back in grid axes, because a
+     * [CellShape.Box] could not be asked at an angle: the only way to make the hull square was to
+     * express the body relative to it. The grid is still where the *search* happens — it is an
+     * addressing scheme, and a tile lookup needs tile indices — but it is no longer the axes the
+     * answer is stated in. See `PLAN_grid_vs_continuous.md` §4: the grid as an addressing scheme and
+     * the grid as a shape constraint are independent, and this is the line where they separate.
+     */
+    shipPose: Pose,
     restingSpeedX: Long,
     restingSpeedY: Long,
     into: MutableList<Contact>,
@@ -117,12 +131,22 @@ fun collectHullContacts(
             val shape = body.shapeAt(cell)
             val centreX = at.toWorldX(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
             val centreY = at.toWorldY(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            // ── The search, and only the search, happens in the grid ──────────────
+            //
+            // Which tiles could this cell be touching is a question about tile indices, so the
+            // cell's centre is read back into the grid to ask it. ⚠️ The ±[reach] box around that
+            // centre is exact **because the cell is a disc**: a disc's bounding box is the same in
+            // every frame. A turned box cell would need its bound widened here before the search
+            // could be trusted, and that is the one thing to remember when `CellShape.Box` cells
+            // arrive on a body.
+            val localX = shipPose.toLocalX(centreX, centreY)
+            val localY = shipPose.toLocalY(centreX, centreY)
             // The shape's own bounding box, which for a disc of half a tile is the cell it came from.
             val reach = shapeReach(shape)
-            val tx0 = floorTileOf(centreX - reach)
-            val ty0 = floorTileOf(centreY - reach)
-            val tx1 = floorTileOf(centreX + reach - 1L)
-            val ty1 = floorTileOf(centreY + reach - 1L)
+            val tx0 = floorTileOf(localX - reach)
+            val ty0 = floorTileOf(localY - reach)
+            val tx1 = floorTileOf(localX + reach - 1L)
+            val ty1 = floorTileOf(localY + reach - 1L)
             for (ty in ty0..ty1) {
                 if (ty < 0 || ty >= grid.height) continue
                 for (tx in tx0..tx1) {
@@ -131,14 +155,20 @@ fun collectHullContacts(
                     // What a rock hits, not what holds the air: a thruster is open to the room and still
                     // something an asteroid bounces off. See [StructureMap.blocksPassage].
                     if (!structure.blocksPassage(tile)) continue
+                    // The tile goes out into the world to be answered, and it takes the ship's
+                    // pose with it as the frame it is square in — which is the whole of what the
+                    // grid frame used to buy, bought per query instead of imposed on everybody.
+                    val tileX = tx * Flight.PER_TILE + half
+                    val tileY = ty * Flight.PER_TILE + half
                     contactBetween(
                         a = shape, ax = centreX, ay = centreY,
                         b = CellShape.TILE,
-                        bx = tx * Flight.PER_TILE + half, by = ty * Flight.PER_TILE + half,
+                        bx = shipPose.toWorldX(tileX, tileY), by = shipPose.toWorldY(tileX, tileY),
                         body = index,
                         restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
                         friction = frictionBetween(body, cell, deck?.get(tile)),
                         into = into,
+                        bFrame = shipPose,
                     )
                 }
             }

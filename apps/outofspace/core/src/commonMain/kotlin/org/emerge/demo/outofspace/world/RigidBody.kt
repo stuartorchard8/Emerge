@@ -445,8 +445,22 @@ fun driftBodies(
         // landed": a wrapped impulse reads as an *absence*, which is the rescale's standing lesson.
         platingX[i] = scaledRatio(felt.x.raw, Flight.FRAC_ONE, mass)
         platingY[i] = scaledRatio(felt.y.raw, Flight.FRAC_ONE, mass)
-        restingX[i] = restingSpeed(felt.x.raw, mass)
-        restingY[i] = restingSpeed(felt.y.raw, mass)
+        // ⚠️ **The resting pair is turned into the world before the threshold is taken**, and step 6
+        // is what made that necessary. A contact's normal used to arrive in the grid's axes, so a
+        // threshold quoted per grid axis met it in its own frame; contacts come back in the world
+        // now, and [contactAt] blends these two by the normal's components. Left in the grid they
+        // would have answered the sideways question for the upward one aboard a rolled ship — a rock
+        // on the deck of a ship on its side would be held to the threshold for sliding rather than
+        // the one for settling, which reads as a rock that will not go to sleep.
+        //
+        // Turned as a *vector* and then taken per component, rather than the two magnitudes being
+        // turned: [restingSpeed] is not linear in what it is given, so the turn has to happen to the
+        // field while it is still a field. Plating above keeps the grid pair on purpose — it is
+        // turned at the ledger boundary, and its torque is booked against a grid-frame arm.
+        val worldFeltX = ship.pose.turnedX(felt.x.raw, felt.y.raw)
+        val worldFeltY = ship.pose.turnedY(felt.x.raw, felt.y.raw)
+        restingX[i] = restingSpeed(worldFeltX, mass)
+        restingY[i] = restingSpeed(worldFeltY, mass)
     }
 
     val swept = sweepBodies(

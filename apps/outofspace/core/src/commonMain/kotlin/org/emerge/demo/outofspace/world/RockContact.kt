@@ -102,9 +102,9 @@ internal fun floorTile(v: Long): Long =
 /**
  * Does [body], placed in the grid by [at], overlap anything solid?
  *
- * ⚠️ [at] is a **grid-frame** pose — a body stores world coordinates, so a caller composes it
- * through [VesselState.pose] first, which is what [RigidBody.poseIn] is for. This function is the
- * boundary: everything below it is tile indices.
+ * ⚠️ [at] is a **world** pose, the way a body stores itself, and [shipPose] is where the grid is in
+ * the world. The grid is the addressing scheme — the tile search below is in tile indices — and it
+ * is no longer the frame: see [collectHullContacts]'s note on `shipPose`.
  *
  * ⚠️ **This asks [overlapBetween], which is the same geometry [collectHullContacts] emits contacts
  * from, and the two agreeing is load-bearing.** A body this says is inside the hull is left alone for
@@ -114,7 +114,7 @@ internal fun floorTile(v: Long): Long =
  * bulkhead at sixteen tiles a tick: the corner of a tile is outside its own disc, so every grazing
  * touch left the body "wedged" in a wall it was not in.
  */
-fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose): Boolean {
+fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose, shipPose: Pose): Boolean {
     val half = Flight.PER_TILE / 2L
     for (cy in 0 until body.height) {
         for (cx in 0 until body.width) {
@@ -123,21 +123,27 @@ fun overlapsHull(grid: Grid, structure: StructureMap, body: RigidBody, at: Pose)
             val shape = body.shapeAt(cell)
             val centreX = at.toWorldX(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
             val centreY = at.toWorldY(cx * Flight.PER_TILE + half, cy * Flight.PER_TILE + half)
+            // The search is in the grid and the answer is in the world — see [collectHullContacts].
+            val localX = shipPose.toLocalX(centreX, centreY)
+            val localY = shipPose.toLocalY(centreX, centreY)
             val reach = shapeReach(shape)
-            val tx0 = floorTile(centreX - reach)
-            val ty0 = floorTile(centreY - reach)
-            val tx1 = floorTile(centreX + reach - 1L)
-            val ty1 = floorTile(centreY + reach - 1L)
+            val tx0 = floorTile(localX - reach)
+            val ty0 = floorTile(localY - reach)
+            val tx1 = floorTile(localX + reach - 1L)
+            val ty1 = floorTile(localY + reach - 1L)
             for (ty in ty0..ty1) {
                 if (ty < 0 || ty >= grid.height) continue
                 for (tx in tx0..tx1) {
                     if (tx < 0 || tx >= grid.width) continue
                     // The same predicate the narrow phase uses — see the warning above.
                     if (!structure.blocksPassage(grid.tile(tx.toInt(), ty.toInt()))) continue
+                    val tileX = tx * Flight.PER_TILE + half
+                    val tileY = ty * Flight.PER_TILE + half
                     val hit = overlapBetween(
                         shape, centreX, centreY,
                         CellShape.TILE,
-                        tx * Flight.PER_TILE + half, ty * Flight.PER_TILE + half,
+                        shipPose.toWorldX(tileX, tileY), shipPose.toWorldY(tileX, tileY),
+                        bFrame = shipPose,
                     )
                     if (hit) return true
                 }
@@ -329,18 +335,14 @@ fun sweepBodies(
     )
 
     /**
-     * A body's own pose, in the grid — composed from where it is in the world and where the ship is.
+     * ⚠️ **There is no `gridPose` any more, and its absence is step 6.**
      *
-     * The angles subtract because rotations commute in two dimensions, so a ship turning under a
-     * body it is not touching turns the body's *grid* orientation and leaves its world orientation
-     * alone. That is the same thing the linear side already does, where astern drift is the grid
-     * leaving rather than the body moving, and it arrives here for free rather than as a term.
+     * Every body used to be composed into the grid's frame before a single question could be asked
+     * of it, because a [CellShape.Box] could not be asked at an angle and so the hull had to be the
+     * thing everybody else was expressed relative to. A box carries its own turn now, so contacts,
+     * the solve and the position push all happen in the **world**, and the grid appears only inside
+     * [collectHullContacts] as what it actually is: the addressing scheme the tile search needs.
      */
-    fun gridPose(worldX: Long, worldY: Long, a: Long, shipPose: Pose): Pose = Pose(
-        shipPose.toLocalX(worldX, worldY),
-        shipPose.toLocalY(worldX, worldY),
-        Coord((a - shipPose.ang.raw).toInt()),
-    )
 
     // ── A body that begins the tick already inside something ──────────────────────
     //
@@ -370,13 +372,13 @@ fun sweepBodies(
     // is the entire fix, and a tenth of a tile a tick is faster than an editor drop can be noticed
     // settling and far too slow to jump a wall.
     val startPose = poseAt(0)
-    val startGrid = Array(n) { gridPose(px[it], py[it], ang[it], startPose) }
+    val startWorld = Array(n) { Pose(px[it], py[it], Coord(ang[it].toInt())) }
     val depenetration = LongArray(n) { i ->
-        var stuck = overlapsHull(grid, structure, bodies[i], startGrid[i])
+        var stuck = overlapsHull(grid, structure, bodies[i], startWorld[i], startPose)
         if (!stuck) {
             for (j in 0 until n) {
                 if (j == i) continue
-                if (bodiesOverlap(bodies[i], startGrid[i], bodies[j], startGrid[j])) { stuck = true; break }
+                if (bodiesOverlap(bodies[i], startWorld[i], bodies[j], startWorld[j])) { stuck = true; break }
             }
         }
         if (stuck) RockContact.MAX_DEPENETRATION else Long.MAX_VALUE
@@ -388,7 +390,6 @@ fun sweepBodies(
 
     val contacts = ArrayList<Contact>(8)
     val turned = arrayOfNulls<Pose>(n)
-    val inGrid = arrayOfNulls<Pose>(n)
     val pushLeft = LongArray(n)
     val pushRight = LongArray(n)
     val pushUp = LongArray(n)
@@ -419,7 +420,6 @@ fun sweepBodies(
                     vy * (k + 1) / steps - vy * k / steps,
                 )
             turned[i] = moved
-            inGrid[i] = gridPose(moved.x, moved.y, moved.ang.raw.toLong(), next)
         }
 
         // ── Every touch in the world, in a stable order ───────────────────────────
@@ -431,7 +431,7 @@ fun sweepBodies(
         for (i in 0 until n) {
             if (mass[i] <= 0L) continue
             collectHullContacts(
-                grid, structure, bodies[i], i, inGrid[i]!!,
+                grid, structure, bodies[i], i, turned[i]!!, next,
                 restingSpeedX[i], restingSpeedY[i], contacts, deck,
             )
         }
@@ -440,8 +440,8 @@ fun sweepBodies(
             for (j in i + 1 until n) {
                 if (mass[j] <= 0L) continue
                 collectBodyContacts(
-                    bodies[i], i, inGrid[i]!!,
-                    bodies[j], j, inGrid[j]!!,
+                    bodies[i], i, turned[i]!!,
+                    bodies[j], j, turned[j]!!,
                     // ⚠️ The **larger** of the two thresholds, so that the pair agrees with itself.
                     // A resting rule is about when a bounce is small enough to stop being a bounce,
                     // and taking one body's answer would make the same contact bouncy or asleep
@@ -462,22 +462,25 @@ fun sweepBodies(
 
         // ── Velocity: every contact in the world, solved together ─────────────────
         //
-        // Grid axes, because that is where a normal is; every operand comes in the same way. A
-        // scalar spin needs no turning — it is the same number in any set of axes — which is why
-        // only the velocities are conjugated here and the angular velocities are passed straight
-        // through.
+        // ⚠️ **World axes, and the conjugation either side of this block is gone.** A normal used to
+        // arrive in the grid's axes, so every operand's velocity had to be turned into them and its
+        // impulse turned back out again — two rotations per body per substep whose only purpose was
+        // to meet the hull on the hull's terms. Contacts come back in the world now, so the ship's
+        // pose appears nowhere in this block and the ship's own operand is built exactly like a
+        // rock's: a mass, a mass distribution, a centre of mass in the world, and a velocity.
+        //
+        // A scalar spin still needs no turning — it is the same number in any set of axes — which is
+        // now true of everything here rather than of the angular half alone.
         val ops = ArrayList<Operand>(n)
         for (i in 0 until n) {
-            val worldVx = worldVel(ix[i], mass[i])
-            val worldVy = worldVel(iy[i], mass[i])
             ops.add(
                 Operand(
                     mass = mass[i],
                     about = bodies[i].about,
-                    comX = inGrid[i]!!.toWorldX(comLocalX[i], comLocalY[i]),
-                    comY = inGrid[i]!!.toWorldY(comLocalX[i], comLocalY[i]),
-                    velocityX = rotScale(worldVx, next.cos) + rotScale(worldVy, next.sin),
-                    velocityY = -rotScale(worldVx, next.sin) + rotScale(worldVy, next.cos),
+                    comX = turned[i]!!.toWorldX(comLocalX[i], comLocalY[i]),
+                    comY = turned[i]!!.toWorldY(comLocalX[i], comLocalY[i]),
+                    velocityX = worldVel(ix[i], mass[i]),
+                    velocityY = worldVel(iy[i], mass[i]),
                     angVel = angularVelocity(angImpulse[i], bodies[i].about),
                 ),
             )
@@ -485,10 +488,13 @@ fun sweepBodies(
         val shipOp = if (shipMass <= 0L) null else Operand(
             mass = shipMass,
             about = shipAbout,
-            comX = shipAbout.comX * RigidBody.COM_SCALE,
-            comY = shipAbout.comY * RigidBody.COM_SCALE,
-            velocityX = rotScale(svx, next.cos) + rotScale(svy, next.sin),
-            velocityY = -rotScale(svx, next.sin) + rotScale(svy, next.cos),
+            // ⚠️ The ship's centre of mass is a point **in its own grid**, so it goes out through
+            // the ship's pose exactly as a body's goes out through the body's. It was a bare grid
+            // coordinate before only because the grid was the frame.
+            comX = next.toWorldX(shipAbout.comX * RigidBody.COM_SCALE, shipAbout.comY * RigidBody.COM_SCALE),
+            comY = next.toWorldY(shipAbout.comX * RigidBody.COM_SCALE, shipAbout.comY * RigidBody.COM_SCALE),
+            velocityX = svx,
+            velocityY = svy,
             angVel = sav,
         )
         if (contactImpulses.size < contacts.size) contactImpulses = LongArray(contacts.size)
@@ -511,16 +517,18 @@ fun sweepBodies(
                 if (b < 0 || b >= n) continue
                 if (spent <= loudest[b]) continue
                 loudest[b] = spent
-                loudestX[b] = next.toWorldX(c.pointX, c.pointY)
-                loudestY[b] = next.toWorldY(c.pointX, c.pointY)
+                // Already a place in the world — the sweep does not leave it any more.
+                loudestX[b] = c.pointX
+                loudestY[b] = c.pointY
                 loudestHull[b] = hull
             }
         }
 
-        // ⚠️ The impulse comes back in grid axes and a body's momentum is in the world, so it is
-        // turned before it is booked — on both halves of the exchange, or the ledger leaks the
-        // moment the ship is turned. The **torque does not turn**, for the same reason the spin did
-        // not on the way in.
+        // ⚠️ The impulse comes back in **world** axes now and a body's momentum is in the world, so
+        // there is nothing to turn — the pair of `rotScale`s that used to stand here, undoing the
+        // conjugation on the way in, went with the grid frame. The frame boundary they guarded has
+        // not moved, it has shrunk to one place: [collectHullContacts], which is the only thing left
+        // that needs to know the grid exists.
         //
         // ⚠️ The ledger is summed from **the bodies'** impulses and not from the ship's, even though
         // the two are the same quantity with opposite signs and the ship's is one number rather than
@@ -538,13 +546,11 @@ fun sweepBodies(
         var stepY = 0L
         for (i in 0 until n) {
             val op = ops[i]
-            val jx = rotScale(op.gaveX, next.cos) - rotScale(op.gaveY, next.sin)
-            val jy = rotScale(op.gaveX, next.sin) + rotScale(op.gaveY, next.cos)
-            ix[i] += jx
-            iy[i] += jy
+            ix[i] += op.gaveX
+            iy[i] += op.gaveY
             angImpulse[i] += op.spun
-            stepX += jx
-            stepY += jy
+            stepX += op.gaveX
+            stepY += op.gaveY
         }
         handedX += stepX
         handedY += stepY
@@ -650,9 +656,14 @@ fun sweepBodies(
             if (outY < 0L) { pushUp[a] = maxOf(pushUp[a], -outY); pushDown[b] = maxOf(pushDown[b], -outY) }
         }
 
-        // ⚠️ Pushed out along the **grid's** axes, which is where the depths were measured, so the
-        // correction is applied to the grid pose and read back into the world rather than added to
-        // the world position directly.
+        // ⚠️ Pushed out along the **world's** axes, which is where the depths are measured now, so
+        // the correction is added to the world position rather than applied to a grid pose and read
+        // back. ⚠️ This is the one place the change is not merely a change of bookkeeping: the
+        // deepest-push-per-direction rule files a push under an axis, and the axes are the world's
+        // rather than the deck's. It is the same rule about the same normals — a flat wall is still
+        // one wall and not several — but a body wedged into a corner of a *turned* ship now files
+        // the two walls it is touching against world x and y instead of grid x and y. The velocity
+        // solve is untouched by this: it answers every contact on its own normal either way.
         //
         // Held to what is left of this tick's [depenetration] allowance, which is unlimited for a
         // body that is merely being stopped by a wall and a tenth of a tile for one that began the
@@ -668,9 +679,8 @@ fun sweepBodies(
             } else if (depenetration[i] != Long.MAX_VALUE) {
                 depenetration[i] -= asked
             }
-            val out = inGrid[i]!!.movedBy(moveX, moveY)
-            px[i] = next.toWorldX(out.x, out.y)
-            py[i] = next.toWorldY(out.x, out.y)
+            px[i] = turned[i]!!.x + moveX
+            py[i] = turned[i]!!.y + moveY
             ang[i] = turned[i]!!.ang.raw.toLong()
         }
     }
