@@ -277,13 +277,7 @@ class OutofspaceHud {
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
-            // ⚠️ **The click wins over the pointer, which is the reverse of what it used to do.**
-            // The inspector is now something you *aim*: a click pins a tile and a repeat click steps
-            // its layer. Letting hover override that would unpin the panel the instant the mouse
-            // moved off the tile — which it must, to reach the panel — so the pinned reading would
-            // be unreadable. Hover is what is left: a preview for a player who has not clicked
-            // anything yet.
-            inspectPanel(controller, hovered)
+            inspectPanel(controller)
             wikiPanel(controller)
 
             panel(Anchor.BottomRight) {
@@ -410,46 +404,39 @@ class OutofspaceHud {
      * be three panels in one corner, each standing down for the others, which is how the storage
      * lock came to ship unreachable. A setting is a fact about a building, so it is in the place
      * that describes buildings.
-     *
-     * @param hovered the tile under the pointer, used only when nothing has been clicked.
      */
-    private fun UiBuilder.inspectPanel(controller: OutofspaceController, hovered: TileIndex) {
+    private fun UiBuilder.inspectPanel(controller: OutofspaceController) {
         val s = controller.state
-        val pinned = controller.inspectTile
-        val tile = if (pinned != TileIndex.NONE) pinned else hovered
+        val tile = controller.inspectTile
         if (tile == TileIndex.NONE || tile.index < 0 || tile.index >= s.grid.size) return
         val layers = inspectableLayers(s, tile)
         if (layers.isEmpty()) return
         // A pinned layer that has since stopped existing — the belt was deleted, the room was
         // sealed — falls back to the top of the list rather than showing an empty panel.
-        val layer = if (pinned != TileIndex.NONE && controller.inspectLayer in layers) controller.inspectLayer else layers[0]
+        val layer = controller.inspectLayer
         val grid = s.grid
 
         panel(Anchor.TopRight, rowHeight = 20f) {
-            if (pinned == TileIndex.NONE) {
-                title("click to inspect · (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-            } else {
-                title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-                placeRow(s, tile)
-                // The tabs are the cycle made visible. A player who never notices that clicking again
-                // steps the layer can still reach every one of them by name, and a player who does can
-                // see how many are left.
-                actionRow(
-                    layers.map { option ->
-                        Triple(
-                            if (option == layer) "> ${option.label}" else option.label,
-                            if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
-                        ) { controller.inspect(tile, option) }
-                    },
-                )
-                when (layer) {
-                    InspectLayer.Deck -> deckLayer(controller, tile, pinned != TileIndex.NONE)
-                    InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
-                    InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
-                    InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
-                    InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
-                    InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
-                }
+            title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
+            placeRow(s, tile)
+            // The tabs are the cycle made visible. A player who never notices that clicking again
+            // steps the layer can still reach every one of them by name, and a player who does can
+            // see how many are left.
+            actionRow(
+                layers.map { option ->
+                    Triple(
+                        if (option == layer) "> ${option.label}" else option.label,
+                        if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
+                    ) { controller.inspect(tile, option) }
+                },
+            )
+            when (layer) {
+                InspectLayer.Deck -> deckLayer(controller, tile)
+                InspectLayer.Rail -> conduitLayer(controller, tile, Conduit.Rail)
+                InspectLayer.Pipe -> conduitLayer(controller, tile, Conduit.Pipe)
+                InspectLayer.Wire -> conduitLayer(controller, tile, Conduit.Signal)
+                InspectLayer.Power -> conduitLayer(controller, tile, Conduit.Power)
+                InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
             }
         }
     }
@@ -478,12 +465,8 @@ class OutofspaceHud {
      * temperature is likewise the whole casing's — energy over capacity across the footprint — which
      * is the number that decides what it can do, whereas one tile of it is the number that decides
      * nothing.
-     *
-     * @param pinned false while the panel is merely following the pointer, in which case the
-     *   controls stand down: a settings button that moved away as the mouse reached for it would be
-     *   worse than no button, and a hover reading wants to be short.
      */
-    private fun PanelBuilder.deckLayer(controller: OutofspaceController, tile: TileIndex, pinned: Boolean) {
+    private fun PanelBuilder.deckLayer(controller: OutofspaceController, tile: TileIndex) {
         val s = controller.state
         val grid = s.grid
         val machine = s.machineCovering(tile) ?: run { row("(bare deck)", 0x9A9A9AFFL); return }
@@ -531,11 +514,6 @@ class OutofspaceHud {
                     compositionRows(controller, resource)
                 }
             }
-        }
-
-        if (!pinned) {
-            row("click to open this machine's settings", 0x7A7A7AFFL)
-            return
         }
 
         val storage = machine as? Storage
