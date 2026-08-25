@@ -347,20 +347,25 @@ class SaveTest {
     }
 
     /**
-     * A save that puts a belt and a pipe on one tile is refused, not loaded into a world the game
-     * cannot represent. Hand-editable means hand-breakable, and the exclusion rule is exactly the
-     * kind of thing a typed file gets wrong.
+     * ⛔ **This used to assert the refusal.** A belt and a pipe on one tile was an unrepresentable
+     * world, rejected at load so a hand-edited file could not express it; the rule is gone, because
+     * a pipe is built by running temporary track over it. See the note in `Conduits.swept`.
+     *
+     * Kept, pointing the other way, because the loader is where the old invariant was enforced: this
+     * is what proves the crossing survives a file rather than merely being legal in memory.
      */
     @Test
-    fun `a save that crosses a rail with a pipe is refused`() {
+    fun `a save may cross a rail with a pipe`() {
         val text = """
             outofspace 1
             grid 6 4
             conduit 9 Rail links=1
             conduit 9 Pipe links=1
         """.trimIndent()
-        val e = assertFailsWith<SaveError> { Save.read(text) }
-        assertTrue(e.message!!.contains("rail and a pipe"), "unhelpful message: ${e.message}")
+        val back = Save.read(text)
+        val crossing = TileIndex(9)
+        assertEquals(Conduit.Rail, back.conduits.at(Conduit.Rail, crossing)?.conduit, "rail lost at the crossing")
+        assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, crossing)?.conduit, "pipe lost at the crossing")
     }
 
     /**

@@ -344,9 +344,16 @@ private val machineBills: Array<Array<Mixture?>> =
  * **The bill of materials for one tile of bare conduit** — the twin of [tileBillOfMaterials], and
  * the same apportioning, so a run of track weighs exactly [Conduit.massPerTile] a tile however its
  * material is composed.
+ *
+ * Interned per conduit, for the same two reasons [machineBills] is: the question is asked of every
+ * ghost tile on every step and a [Mixture] is a hundred and sixty-five longs, and — less obviously —
+ * [railAppetites] groups sites into classes by **bill identity**, so a fresh instance per call would
+ * silently put every tile in a class of its own.
  */
-fun conduitBillOfMaterials(conduit: Conduit): Mixture =
-    conduit.material.composition.scaledTo(conduit.massPerTile)
+fun conduitBillOfMaterials(conduit: Conduit): Mixture = conduitBills[conduit.ordinal]
+
+private val conduitBills: Array<Mixture> =
+    Array(Conduit.entries.size) { Conduit.entries[it].let { c -> c.material.composition.scaledTo(c.massPerTile) } }
 
 /**
  * How close to the recipe a delivery has to be, as a percentage — **asked of every species in the

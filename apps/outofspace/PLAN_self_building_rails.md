@@ -181,7 +181,62 @@ Deck machines followed as increment 5 — see the second half of this document. 
 read as a ghost and absorbed its own metal straight off the belt. Stable, stationary, and
 indistinguishable from deconstruction doing nothing. Being told to go now overrides being short.
 
+## Increment 6 — the other conduits, BUILT 2026-08-25
+
+Pipes and wires now build and deconstruct by the mechanism rails use. The machinery was already
+generic in every part that had been written to be — `conduitBillOfMaterials`, `holdsFullBill`,
+`builtPermille`, `buildableFrom`, the purity rule, the probe readout — and rail-only in exactly the
+three places that name a layer: `railGhosts`, `absorbIntoGhost`, `scrapDeconstructing`.
+
+**The half-state this was in was worse than "not done yet."** Laying stopped conjuring for *every*
+conduit at increment 1, and `removeConduit` marked every conduit from the start, but only rail was
+ever swept for ghosts or scrapped. So outside creative a pipe was laid **massless and free**, nothing
+ever filled it, nothing in the fluid or signal path asks `holdsFullBill` — so it worked — and
+deleting one marked it `deconstructing` for ever. The delete silently did nothing, irreversibly.
+Measured before the fix: `0% built 0g GHOST` after 300 ticks, `MARKED FOR DECONSTRUCTION` after 500
+more.
+
+- **`conduitGhosts` is deliberately not `railGhosts`,** and the difference is `stopsTraffic`. Unpaid
+  *track* is a wall — the anti-exploit that stops a run building itself out of what merely passes
+  over it. A ghost pipe is not track: the rail beneath it is finished and paid for, so traffic
+  crosses it as it crosses a ghost machine. Folding the two together either bricks every pipe site or
+  holes the exploit.
+- **No rail on the tile, no delivery, and no deconstruction either.** Copper travels on the rail
+  network in both directions, so a pipe with no track on its tile waits — the same reversible refusal
+  a marked rail gives when nothing downstream draws.
+- **One conduit per tile per step**, lowest ordinal first. A tile carrying a pipe ghost and a wire
+  ghost is one address with two appetites; the loser is not starved, because the winner stops being a
+  ghost when it finishes.
+- Absorb order is rail → machine → pipe/wire. The first two win on *reachability* (unbuilt track
+  carries nothing, and a machine over it is cut off); a pipe gates neither, so it goes last.
+- `conduitBillOfMaterials` is now **interned**, which it had to be: `railAppetites` groups sites into
+  classes by bill *identity*, so a freshly computed Mixture per call put every tile in its own class.
+
+**⛔ Rail/pipe exclusion is gone** — decision 7, finally paid for. It was still enforced as an
+invariant in `Conduits.checkExclusion`, so the crossing state was unconstructible from a fixture or a
+save as well as from the edit path. It cannot survive self-building plumbing: a pipe ghost is fed by
+a rail port on its own tile, the temporary track cannot be lifted mid-build, so the two necessarily
+share a tile. The two tests that pinned the rule now pin its inverse — a pipe crosses a rail, and a
+save may express the crossing.
+
+⚠️ **That constraint was the game's namesake and nothing replaced it.** Matter transport no longer
+competes for floor space at all. Recorded in `Conduits` where the check used to be, because it is now
+absent rather than relocated and nothing else will mention it.
+
+⚠️ Power comes along free and stays unreachable: nothing lays it, deliberately — it is absent from
+both `Brush.ALL` and `DeleteLayer`, and electrical energy is a section of the game not yet started.
+Untested, and not claimed to work.
+
+Tests: `ConduitGhostTest` — builds off the rail above it, refuses iron for a copper bill, hands its
+copper back and goes, and waits when there is no road out. ⚠️ `joinRow` lays `Segment(Conduit.Rail)`
+whatever array it is handed, so a pipe row has to be built by hand; a layer full of rail-typed
+segments looks right to everything indexing by layer and wrong to everything reading
+`Segment.conduit`.
+
 ## ⛔ Open — for Stu
+
+**Nothing replaces rail/pipe exclusion.** See increment 6. A cost to crossing, or a floor-space rule
+that is about something other than the layer — worth a decision, and the game is named after it.
 
 **Deconstruction deadlocks on an occupied tile.** A marked rail cannot hand its metal back while a
 lump is standing on it, and if nothing downstream is drawing, the lump never leaves. Draw a run, let

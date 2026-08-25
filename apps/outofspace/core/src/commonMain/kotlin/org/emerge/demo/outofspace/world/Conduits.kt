@@ -61,9 +61,27 @@ class Conduits private constructor(
                 if (layer[i] == null && tracks.occupies(conduit, tile)) tracks.clear(conduit, tile)
             }
         }
-        checkExclusion()
         return this
     }
+
+    /*
+     * ⛔ **Rail/pipe exclusion used to be enforced here, and is deliberately gone.**
+     *
+     * The rule — a tile carries track or plumbing, never both — was the one the game is named after:
+     * matter transport competing for floor space, so a player wanting a belt and a pipe through the
+     * same gap had to solve that rather than stack them. It was an invariant rather than a check at
+     * placement, so the crossing state was unconstructible from a fixture or a save too.
+     *
+     * It cannot survive self-building plumbing. A pipe ghost cannot be fed by pipes, so it is fed by
+     * a rail port on its own tile; the temporary track cannot be taken up mid-build, so the finished
+     * pipe and the rail that built it necessarily share a tile for at least a tick. Forcing that rail
+     * into deconstruction on completion would be coercive. See `PLAN_self_building_rails.md`.
+     *
+     * ⚠️ **This is a real loss of design intent, not a tidy-up**, and it is worth deciding later what
+     * replaces it — a cost to crossing, or a floor-space rule that is about something other than the
+     * layer. Recorded here because the constraint is now absent rather than relocated, and nothing
+     * else in the codebase will mention it.
+     */
 
     /**
      * This, with every laid tile holding a full segment's worth of metal at ambient.
@@ -103,29 +121,6 @@ class Conduits private constructor(
         return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile)
     }
 
-    /**
-     * ⛔ **A tile carries track or plumbing, never both.**
-     *
-     * The rule the game is named after: matter transport competes for floor space, and a player who
-     * wants a belt and a pipe through the same gap has to solve that instead of stacking them. Wires
-     * are deliberately not in it — [Conduit.Power] and [Conduit.Signal] ride under anything, because
-     * what fights for space is stuff, not information, and a gauge sharing its tile with a wire is a
-     * convenience nobody has to read a second overlay to understand.
-     *
-     * Checked here rather than only at placement so that the state is *unconstructible*: [with] is
-     * the one door into a changed layer, [swept] already walks every tile, and a fixture or a
-     * save that expresses a crossing is refused the same way the player's drag tool is. A rule
-     * enforced only in the edit path is a rule the rest of the codebase gets to break by accident.
-     */
-    private fun checkExclusion() {
-        val rail = layers[Conduit.Rail.ordinal]
-        val pipe = layers[Conduit.Pipe.ordinal]
-        for (i in rail.indices) {
-            require(rail[i] == null || pipe[i] == null) {
-                "tile $i carries both a rail and a pipe; the two compete for the floor"
-            }
-        }
-    }
 
     /** What one tile of one network is holding — its heat, and the metal holding it. */
     fun energyAt(conduit: Conduit, tile: TileIndex): Long = tracks.energyAt(conduit, tile)

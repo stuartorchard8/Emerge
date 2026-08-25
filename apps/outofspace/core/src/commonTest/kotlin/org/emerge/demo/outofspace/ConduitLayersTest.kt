@@ -24,10 +24,9 @@ import kotlin.test.assertTrue
 /**
  * Four networks on one tile grid, which is what [Conduit] always claimed and the storage never was.
  *
- * The crossing case is a **wire under a rail** rather than a pipe under a rail, because track and
- * plumbing now compete for the floor and cannot share a tile — see `Conduits.checkExclusion`. Wires
- * are the layers that still ride under anything, so they are what these tests use to say "two
- * networks, one tile, one grid".
+ * **Every layer rides under every other one.** Rail and pipe used to exclude each other, so the
+ * crossing case here was a wire under a rail; that rule is gone — see the note in `Conduits.swept` —
+ * and a pipe crossing a rail is now an ordinary thing to draw, tested just below the wire.
  *
  * The bug this pins is quiet and was documented as working: `layConduit` carried the comment "drawn
  * across a rail is a crossing, not a junction" while sharing one segment list with the track, so it
@@ -84,22 +83,30 @@ class ConduitLayersTest {
      * gap that is still joined across — the join is what a network walk would follow.
      */
     @Test
-    fun `a pipe drawn across a rail stops at it`() {
+    /**
+     * ⛔ **This used to assert the opposite**, and the rule it pinned is gone rather than moved.
+     *
+     * Track and plumbing excluded each other — the constraint the game is named after — until
+     * self-building plumbing made it unworkable: a pipe ghost cannot be fed by pipes, so it is fed by
+     * a rail port on its own tile and the two must coexist. See the note in `Conduits.swept`.
+     *
+     * So a pipe now crosses a rail exactly as a wire does, and this asserts that it crosses
+     * *unbroken* — the failure that would matter is a drag that lays the ends and quietly skips the
+     * middle, which is the original bug this file was written for.
+     */
+    fun `a pipe drawn across a rail crosses it`() {
         var s = VesselState.empty(grid)
         s = drag(s, Conduit.Rail, y = 3, fromX = 2, toX = 8)
         s = dragDown(s, Conduit.Pipe, x = 5, fromY = 1, toY = 5)
 
         val crossing = grid.tile(5, 3)
         assertNotNull(s.conduits.at(Conduit.Rail, crossing), "the rail was evicted by the pipe")
-        assertNull(s.conduits.at(Conduit.Pipe, crossing), "a pipe was laid on top of a rail")
+        val pipe = s.conduits.at(Conduit.Pipe, crossing)
+        assertNotNull(pipe, "the pipe stopped at the rail instead of crossing it")
 
-        // Above and below survive: the obstacle costs the tile it is on, not the whole drag.
-        val above = s.conduits.at(Conduit.Pipe, grid.tile(5, 2))
-        val below = s.conduits.at(Conduit.Pipe, grid.tile(5, 4))
-        assertNotNull(above, "the pipe above the rail was lost too")
-        assertNotNull(below, "the drag gave up at the obstacle instead of resuming past it")
-        assertTrue(!above.linkedTo(Direction.Down), "the pipe joined itself across the rail")
-        assertTrue(!below.linkedTo(Direction.Up), "the pipe joined itself across the rail")
+        // Joined through, so the run is one pipe rather than two that happen to line up.
+        assertTrue(pipe.linkedTo(Direction.Up) && pipe.linkedTo(Direction.Down), "the pipe broke at the crossing")
+        assertTrue(!pipe.linkedTo(Direction.Left) && !pipe.linkedTo(Direction.Right), "the pipe took the rail's links")
     }
 
     @Test

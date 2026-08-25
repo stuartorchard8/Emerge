@@ -33,6 +33,8 @@ import org.emerge.demo.outofspace.world.railTiles
 import org.emerge.demo.outofspace.world.railEnds
 import org.emerge.demo.outofspace.world.railMachineGhosts
 import org.emerge.demo.outofspace.world.railGhosts
+import org.emerge.demo.outofspace.world.conduitGhosts
+import org.emerge.demo.outofspace.world.conduitScrapping
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.advanceSegments
 import org.emerge.demo.outofspace.world.Direction
@@ -1094,20 +1096,17 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         fun layer(conduit: Conduit): MutableList<Segment?> = layers[conduit.ordinal]
 
         /**
-         * Whether [tile] is already spoken for by the *other* matter network — see
-         * [Conduits.checkExclusion], which is the same rule stated where the state lives.
+         * Whether [tile] is already spoken for by another network — **nothing is, any more.**
          *
-         * The edit path enforces it as well as the invariant, and the difference is what the player
-         * gets: a `require` in [Conduits] would take the game down when somebody drags a pipe over a
-         * belt, whereas refusing here means the drag simply does not lay there. The invariant is for
-         * the code, this is for the hand on the mouse.
+         * Rail and pipe used to exclude each other here and as an invariant in [Conduits]; the
+         * invariant is gone and so is this, because a pipe is now built by running temporary track
+         * over it, which requires the two to coexist. The comment there has the reasoning and the
+         * note that the constraint is worth replacing with something.
+         *
+         * Kept as a function rather than deleted at its call sites: laying one thing over another is
+         * exactly the sort of rule that comes back, and one place already asks the question.
          */
-        fun spokenFor(conduit: Conduit, tile: TileIndex): Boolean = when (conduit) {
-            Conduit.Rail -> layer(Conduit.Pipe)[tile.index] != null
-            Conduit.Pipe -> layer(Conduit.Rail)[tile.index] != null
-            // Wires ride under anything: information does not compete for the floor.
-            Conduit.Power, Conduit.Signal -> false
-        }
+        fun spokenFor(conduit: Conduit, tile: TileIndex): Boolean = false
 
         /** The rail layer, which packets, gauges, bridges and motion all mean by "the track". */
         val rails: MutableList<Segment?> get() = layers[Conduit.Rail.ordinal]
@@ -1988,16 +1987,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * is what lets a player walk a rail across the grid: draw ghosts ahead, mark the old tiles
          * behind, and the same atoms travel down the line to the new ones.
          *
+         * Every conduit layer comes apart this way, not just rail. Only the road out is special:
+         * copper leaves on the rail network because that is the network that carries solids, so a
+         * pipe or a wire needs track on its own tile before it can begin — see [conduitGhosts] for
+         * the building half of the same asymmetry.
+         *
          * Ceasing to be needs *both* halves empty — the structure and the lump standing on it — or a
          * tile would vanish under a packet and take it with it.
          */
         fun scrapDeconstructing(whitelist: Whitelist) {
-            val line = layer(Conduit.Rail)
+            for (conduit in Conduit.entries) scrapDeconstructing(whitelist, conduit)
+        }
+
+        private fun scrapDeconstructing(whitelist: Whitelist, conduit: Conduit) {
+            val line = layer(conduit)
+            val rails = layer(Conduit.Rail)
             for (i in line.indices) {
                 val tile = TileIndex(i)
                 val segment = line[i] ?: continue
                 if (!segment.deconstructing) continue
-                val stuff = tracks[Conduit.Rail]
+                // ⛔ **Copper leaves on the rail network, like everything else.** A marked pipe with
+                // no track on its tile has nowhere to put what it is made of, so it waits — the same
+                // reversible refusal as a rail with no consumer downstream, and the same fix: give it
+                // somewhere to go. Rail itself is its own road and needs no such gate.
+                if (conduit != Conduit.Rail && rails[i] == null) continue
+                val stuff = tracks[conduit]
                 val held = stuff.massAt(tile)
                 if (held > 0L) {
                     // ⚠️ **Nothing comes apart with nowhere to put it.** A rail that dumped its metal
@@ -2092,7 +2106,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                         }
                     }
                 }
-                if (stuff.massAt(tile) == 0L && rail.isEmpty(tile)) dropConduit(tile, Conduit.Rail)
+                if (stuff.massAt(tile) == 0L && rail.isEmpty(tile)) dropConduit(tile, conduit)
             }
         }
 
@@ -2391,14 +2405,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * the slack and it still terminates, because every delivery adds iron and the shortfall only
          * ever shrinks.
          *
+         * [conduit] is the layer being *built*, which is not always the one delivering: plumbing
+         * cannot carry ingots, so a pipe or a wire is fed by the rail on its own tile and only the
+         * bill and the destination change. Delivery is the rail network's job in every case.
+         *
          * ⚠️ The heat comes with the mass, so a rail built out of cold iron is a cold rail. It moves
          * from the transport layer to the structure layer, and **the transport layer's energy is not
          * in [VesselState.storedEnergy]** — that is a gap older than this and the energy ledger is
          * parked, so nothing here books it. Written down rather than papered over.
          */
-        fun absorbIntoGhost(tile: TileIndex): Packet? {
-            val bill = conduitBillOfMaterials(Conduit.Rail)
-            val stuff = tracks[Conduit.Rail]
+        fun absorbIntoGhost(tile: TileIndex, conduit: Conduit = Conduit.Rail): Packet? {
+            val bill = conduitBillOfMaterials(conduit)
+            val stuff = tracks[conduit]
             // ⛔ **The door, asked of what is standing here rather than of what is coming in.**
             //
             // Every lump *entering* a tile is weighed against the site's bill, and that was taken to
@@ -2747,7 +2765,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Gathered here rather than asked per tile because the absorb callback runs for every
             // loaded tile of every run on every step.
             val machineGhosts = railMachineGhosts(grid, rails, deck, scrapping)
-            val ends = railEnds(grid, rails, ports, deck, buffers, scrapping, ghosts)
+            // Pipes and wires build themselves by exactly the same mechanism, fed by the rail on
+            // their own tile — see [conduitGhosts] for why they are a separate set from [ghosts]
+            // rather than folded into it.
+            val otherGhosts = conduitGhosts(rails, ::layer, tracks)
+            val otherScrapping = conduitScrapping(rails, ::layer)
+            val ends = railEnds(grid, rails, ports, deck, buffers, scrapping, ghosts, otherGhosts, otherScrapping)
             val sinks = ends.sinks
             val sources = ends.sources
             val tilesWithTrack = railTiles(rails)
@@ -2769,6 +2792,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     accepts.getOrPut(tile) { mutableListOf() }
                         .add(Acceptance.forBill(bill, bill.total - stuff.massAt(tile)))
                 }
+            }
+            for ((tile, conduit) in otherGhosts) {
+                val bill = conduitBillOfMaterials(conduit)
+                // ⛔ **Not in the road either, and for the same reason as a machine site**: the rail
+                // under a pipe ghost is finished and paid for. Only unpaid *track* stops traffic.
+                accepts.getOrPut(tile) { mutableListOf() }.add(
+                    Acceptance.forBill(bill, bill.total - tracks[conduit].massAt(tile), stopsTraffic = false),
+                )
             }
             for ((tile, m) in machineGhosts) {
                 val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
@@ -2808,7 +2839,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // Derived in `RailNetwork` beside every other end of the network, so that the harness
             // and the reducer cannot form two opinions about it. See [Appetites].
-            val appetites = railAppetites(grid, ghosts, machineGhosts) { rail.resourceAt(it) }
+            val appetites = railAppetites(grid, ghosts, machineGhosts, otherGhosts) { rail.resourceAt(it) }
 
             var flow = FlowGraph.build(
                 tilesWithTrack,
@@ -2914,6 +2945,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // nothing can ever reach.
                 if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile)
                 machineGhosts[tile]?.let { return@advanceSegments absorbIntoMachineGhost(tile, it) }
+                // Then plumbing and cable, which come last for want of a reason to come sooner: the
+                // two above win on reachability — unbuilt track carries nothing, and a machine
+                // standing over it is cut off — and a pipe gates neither. One address still serves
+                // one appetite a step, so a pipe under a ghost machine waits for it and is then fed
+                // normally. See [conduitGhosts].
+                otherGhosts[tile]?.let { return@advanceSegments absorbIntoGhost(tile, it) }
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
                 val at = ports[tile]

@@ -39,6 +39,71 @@ fun railGhosts(rails: List<Segment?>, tracks: TrackLayers): Set<TileIndex> {
 }
 
 /**
+ * Ghosts on the *other* conduit layers, keyed by the tile they are fed at — which is their own.
+ *
+ * **Plumbing cannot carry ingots**, so a pipe ghost cannot be fed by pipes. It is fed by a rail port
+ * on its own tile: the player runs temporary track over the line, lets it build, and takes the track
+ * up again — the walking-rail trick applied to a different layer. That is the whole reason rail and
+ * pipe stopped excluding each other; see `apps/outofspace/PLAN_self_building_rails.md`.
+ *
+ * ⚠️ **Deliberately not [railGhosts], and the difference is `stopsTraffic`.** Unpaid *track* is a
+ * wall: material may not cross a rail the player has not paid for, which is the anti-exploit that
+ * stops a run building itself out of what merely passes over it. A ghost pipe is not track — the
+ * rail beneath it is finished and paid for — so traffic crosses it exactly as it crosses a ghost
+ * machine. Folding the two together would either brick every pipe site or hole the exploit.
+ *
+ * ⚠️ **No rail on the tile, no delivery.** A pipe drawn where no track runs is a legal thing to
+ * want; it simply has no way to be fed until the player gives it one, the same answer
+ * [railMachineGhosts] gives a machine whose construction tile is bare.
+ *
+ * At most one conduit per tile, lowest ordinal first, because a tile carrying a pipe ghost *and* a
+ * wire ghost is one address with two appetites and the acceptance bookkeeping is keyed by tile. The
+ * loser is not starved: the winner stops being a ghost the moment it is finished, and the next pass
+ * picks the other up.
+ */
+fun conduitGhosts(
+    rails: List<Segment?>,
+    layers: (Conduit) -> List<Segment?>,
+    tracks: TrackLayers,
+): Map<TileIndex, Conduit> {
+    val out = HashMap<TileIndex, Conduit>()
+    for (conduit in Conduit.entries) {
+        if (conduit == Conduit.Rail) continue
+        val line = layers(conduit)
+        for (i in line.indices) {
+            val segment = line[i] ?: continue
+            if (segment.deconstructing) continue
+            if (rails[i] == null) continue
+            val tile = TileIndex(i)
+            if (tile in out) continue
+            if (!tracks.holdsFullBill(conduit, tile)) out[tile] = conduit
+        }
+    }
+    return out
+}
+
+/**
+ * Tiles where a pipe or a wire is coming apart and has somewhere to put what it is made of.
+ *
+ * The mirror of [conduitGhosts] and gated the same way: a marked segment with no rail on its tile
+ * has no route back onto the network, so it is not a source and simply waits. Rail is excluded for
+ * the reason it always is — [railEnds] reads the rail layer's own `deconstructing` bit directly.
+ */
+fun conduitScrapping(rails: List<Segment?>, layers: (Conduit) -> List<Segment?>): Set<TileIndex> {
+    val out = mutableSetOf<TileIndex>()
+    for (conduit in Conduit.entries) {
+        if (conduit == Conduit.Rail) continue
+        val line = layers(conduit)
+        for (i in line.indices) {
+            if (line[i]?.deconstructing != true) continue
+            if (rails[i] == null) continue
+            out.add(TileIndex(i))
+        }
+    }
+    return out
+}
+
+/**
  * Ghost machines, keyed by **the tile they are fed at** — their centre for everything but a bridge.
  *
  * ⚠️ **A machine being taken apart is never a ghost**, for the reason [railGhosts] gives at the
@@ -92,18 +157,25 @@ fun railEnds(
     buffers: BufferLayer,
     scrapping: Set<TileIndex>,
     ghosts: Set<TileIndex>,
+    conduitGhosts: Map<TileIndex, Conduit> = emptyMap(),
+    conduitScrapping: Set<TileIndex> = emptySet(),
 ): RailEnds {
     val sinks = ports.entries
         .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Input } }
         .map { it.key }
         .toMutableSet()
     sinks.addAll(ghosts)
+    sinks.addAll(conduitGhosts.keys)
 
     val sources = ports.entries
         .filter { (tile, at) -> rails[tile.index] != null && at.any { it.kind == PortKind.Output } }
         .map { it.key }
         .toMutableSet()
     for (i in rails.indices) if (rails[i]?.deconstructing == true) sources.add(TileIndex(i))
+    // A pipe or a wire coming apart hands its copper back the only way anything does: onto the rail
+    // network, at its own tile. No track there and it waits, exactly as a marked rail waits for
+    // somewhere to put its iron — see [scrapDeconstructing].
+    sources.addAll(conduitScrapping)
     for (centre in scrapping) {
         val m = deck[centre] ?: continue
         val out = constructionTileOf(grid, m)
@@ -135,14 +207,18 @@ fun railAppetites(
     grid: Grid,
     ghosts: Set<TileIndex>,
     machineGhosts: Map<TileIndex, DeckMachine>,
+    conduitGhosts: Map<TileIndex, Conduit> = emptyMap(),
     lumpAt: (TileIndex) -> Mixture?,
 ): Appetites {
-    if (ghosts.isEmpty() && machineGhosts.isEmpty()) return Appetites.BLIND
+    if (ghosts.isEmpty() && machineGhosts.isEmpty() && conduitGhosts.isEmpty()) return Appetites.BLIND
 
     val billsAt = HashMap<TileIndex, MutableList<Mixture>>()
     if (ghosts.isNotEmpty()) {
         val rail = conduitBillOfMaterials(Conduit.Rail)
         for (tile in ghosts) billsAt.getOrPut(tile) { mutableListOf() }.add(rail)
+    }
+    for ((tile, conduit) in conduitGhosts) {
+        billsAt.getOrPut(tile) { mutableListOf() }.add(conduitBillOfMaterials(conduit))
     }
     for ((tile, m) in machineGhosts) {
         billsAt.getOrPut(tile) { mutableListOf() }.add(machineBillOfMaterials(m.kind, m.tiles(grid).size))
@@ -187,7 +263,11 @@ fun railTiles(rails: List<Segment?>): Set<TileIndex> =
 fun VesselState.railFlow(): FlowGraph {
     val rails = conduits[Conduit.Rail]
     val ghosts = railGhosts(rails, conduits.tracks)
-    val ends = railEnds(grid, rails, portsByTile(Conduit.Rail), deck, buffers, scrapping, ghosts)
+    val otherGhosts = conduitGhosts(rails, { conduits[it] }, conduits.tracks)
+    val otherScrapping = conduitScrapping(rails) { conduits[it] }
+    val ends = railEnds(
+        grid, rails, portsByTile(Conduit.Rail), deck, buffers, scrapping, ghosts, otherGhosts, otherScrapping,
+    )
     val machineGhosts = railMachineGhosts(grid, rails, deck, scrapping)
     return FlowGraph.build(
         railTiles(rails),
@@ -196,7 +276,7 @@ fun VesselState.railFlow(): FlowGraph {
         { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
         grid,
         { tile -> !rail.isEmpty(tile) },
-        railAppetites(grid, ghosts, machineGhosts) { rail.resourceAt(it) },
+        railAppetites(grid, ghosts, machineGhosts, otherGhosts) { rail.resourceAt(it) },
         // ⛔ Unpaid track, and nothing else: a ghost rail is a wall to the graph — see
         // [FlowGraph.build]. Ghost *machines* stand on finished track and are deliberately absent.
         walls = ghosts,
