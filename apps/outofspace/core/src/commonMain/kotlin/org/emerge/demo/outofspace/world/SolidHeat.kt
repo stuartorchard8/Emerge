@@ -24,7 +24,9 @@ class SolidHeatStep(val energy: LongArray, val radiated: Long, val toAir: Long)
  * on is itself open to space.
  *
  * Jacobi solve: all fluxes computed against a snapshot, then applied — avoids Gauss-Seidel leftward bias.
- * Each flux capped at equalisation amount; total outgoing energy scaled if requested exceeds available.
+ * Each flux capped at equalisation amount; every node's conductances held to its own capacity, so
+ * that several contacts cannot equalise a node past all of them at once (see [withinBudget]); total
+ * outgoing energy scaled if requested exceeds available.
  */
 fun stepSolidHeat(
     grid: Grid,
@@ -116,12 +118,26 @@ fun stepSolidHeat(
         }
     }
 
+    // ── What each node has been asked to conduct, all contacts together ──
+    //
+    // The cap below is computed against one pair at a time, and that is the exact limit for a pair
+    // that is alone in the world. A node with several contacts gets one such licence *per contact*,
+    // each of them ignorant of the others, and the sum of them carries it past every neighbour it
+    // has — see [withinBudget], which is the correction.
+    val asked = LongArray(nodeCount)
+    for (c in 0 until contacts.count) {
+        asked[contacts.a[c]] += contacts.k[c]
+        asked[contacts.b[c]] += contacts.k[c]
+    }
+
     // ── Request every flux against the snapshot ──
     val transfers = Transfers(contacts.count + bodyCount, nodeCount)
     for (c in 0 until contacts.count) {
         val a = contacts.a[c]
         val b = contacts.b[c]
-        val conductance = contacts.k[c]
+        // Scaled by the tighter of the two ends, so neither can be asked for more than it holds.
+        val conductance =
+            withinBudget(withinBudget(contacts.k[c], capacity[a], asked[a]), capacity[b], asked[b])
         if (conductance <= 0L) continue
         if (capacity[a] <= 0L || capacity[b] <= 0L) continue
         val gap = kelvin[a] - kelvin[b]
@@ -132,7 +148,9 @@ fun stepSolidHeat(
 
         val wanted = conductance * dT
         // The most that can cross without overshooting equilibrium — the harmonic mean of the two
-        // capacities. Same shape as [seriesConductance] and the same defect: a product of two
+        // capacities. ⚠️ It is the limit for *this pair*, and says nothing about the others meeting
+        // at either end; [withinBudget] above is what makes the two statements add up.
+        // Same shape as [seriesConductance] and the same defect: a product of two
         // capacities is quadratic in the mass unit, and capacities are the *larger* of the two
         // quantities here, so this wrapped first. Reduced to a fraction before scaling.
         val harmonic = scaledRatio(capacity[hot], capacity[hot] + capacity[cold], capacity[cold])
@@ -194,6 +212,59 @@ fun stepSolidHeat(
 
 /** The acceptor id meaning "out of the world" — see the radiation block. */
 private const val SPACE = -1
+
+/**
+ * [conductance], reduced so that everything asked of a node fits inside what the node can hold.
+ *
+ * ### The stability condition is about a node, not a pair
+ *
+ * An explicit step moves `k·ΔT` across a contact, and the pair-wise cap beside the call site holds
+ * that to the energy that brings *those two* to a common temperature — which is exactly right, and
+ * is right only while the pair is the whole world. Give a node three contacts and it collects three
+ * separate licences to equalise, each computed in ignorance of the other two, and it lands past
+ * every neighbour it has. The sign of every gap flips, the next step overshoots further, and the
+ * node ends up swapping temperatures with the tile beside it for ever.
+ *
+ * That is not a hypothetical. A copper cable in the starter vessel shares its tile with a machine
+ * casing and links to two more lengths of itself, and those three caps come to about twice its own
+ * capacity. It settled into a permanent **3 K ↔ 790 K** swap with its neighbour — floor and ceiling
+ * being [Temperature.SPACE_KELVIN] and whatever the neighbour had — while the air it ran through
+ * sat at 340 K.
+ *
+ * What an explicit diffusion step actually has to satisfy is `Σk ≤ C` at each node: the conductances
+ * meeting there, summed, may not exceed the capacity, or the node can be asked to shed more than it
+ * has in one go. So each node is given a budget of its own capacity, and a contact is scaled by the
+ * tighter of its two ends. Applied to the conductance and not to the settled flux, so it is
+ * symmetric in the pair — the two ends still agree on one number, and the energy ledger cannot tell
+ * that anything happened.
+ *
+ * ### Where it binds, and where it is a no-op
+ *
+ * A material's conductance-to-capacity ratio is `100 / conductanceCentiTicks`: 0.001 for firebrick,
+ * 0.02 for titanium, 0.04 for steel, 0.25 for iron and **1.72** for copper. Only copper is stiffer
+ * than the step that integrates it, which is why the fluctuation was a copper phenomenon and
+ * nothing else in the vessel ever showed it.
+ *
+ * ⚠️ **A node's contacts are not only its own layer's**, and the count matters more than any single
+ * ratio does. Everything standing on a tile touches everything else standing on it — that is the
+ * first rule in [stepSolidHeat] and it is deliberately blind to which layer a body came off. So a
+ * crossing where rail, pipe, power and signal all run over one machine casing is six cross-layer
+ * contacts and four to the casing, on top of each run's own links and the air. Measured against
+ * `Σk / C` at such a tile: **rail 1.45, pipe 5.07, power and signal 11.53**. In the starter vessel,
+ * where the layers do not stack, rail sits at 0.29–0.83 and is left entirely alone, while the
+ * signal run reaches 4.70.
+ *
+ * So the budget is a no-op for every rail network that does not cross another layer, and takes
+ * about a third off one that does — which is the thing to look at first if track conduction ever
+ * reads slow.
+ *
+ * ⚠️ **Radiation is deliberately outside the budget.** It is capped against the gap to space and
+ * scaled again against the energy the body has above space, and [Material.RADIANCE] is one part in
+ * six and a half thousand of a hull plate's capacity — far too small to destabilise anything, and
+ * folding it in would change how fast every ship in every save cools.
+ */
+private fun withinBudget(conductance: Long, capacity: Long, asked: Long): Long =
+    if (asked <= capacity) conductance else scaledRatio(capacity, asked, conductance)
 
 /** Bodies-per-tile, compressed row format: counts, prefix sum, ids. */
 private class TileBodies(tileCount: Int, bodies: List<Body>) {

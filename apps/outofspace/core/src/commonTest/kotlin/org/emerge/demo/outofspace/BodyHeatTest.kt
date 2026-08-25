@@ -20,6 +20,7 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Processor
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
@@ -383,5 +384,97 @@ class BodyHeatTest {
             s.insertedEnergy < heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull)) * Temperature.AMBIENT_KELVIN / 1_000L,
             "and scrapping it takes that heat back out: ${s.insertedEnergy}",
         )
+    }
+
+    /**
+     * **A conduction step may not invent a new extreme**, which is the one thing an explicit solver
+     * has to promise and the thing a per-pair cap alone does not.
+     *
+     * Copper is the material that exposes it: its conductance is 1.72 times its own capacity per
+     * heat step, so a copper contact never runs at its conductance — it runs at the cap, every time.
+     * One cap is the pair's equalisation energy and is exactly right. Two or three of them, each
+     * computed in ignorance of the others, add up to about twice what the node can take, and the
+     * cable lands past every neighbour it has. In the starter vessel that showed up as a signal run
+     * swapping between **3 K and 790 K** with the tile beside it, once per heat step, for ever,
+     * through air that was sitting at 340 K. See [org.emerge.demo.outofspace.world.stepSolidHeat]'s
+     * `withinBudget`.
+     *
+     * ⚠️ **Both configurations matter and they fail differently.** A bare run has two contacts per
+     * tile and merely rings; laid over deck bodies it has three and diverges. The bug needed the
+     * casing underneath, so a test of the run alone would have passed against the defect.
+     */
+    @Test
+    fun `a copper run cools without ever passing its own extremes`() {
+        for (overDeck in listOf(false, true)) {
+            val row = 5
+            val xs = 3..8
+            // A one-tile instrument under each wire tile, or bare deck: the casing sharing the tile
+            // is the third contact, and three is where a per-pair cap stops adding up.
+            val world = room(12, 10, deckFill = { x, y, at ->
+                if (overDeck && y == row && x in xs) Sensor(at, Direction.Up) else null
+            })
+            val grid = world.grid
+
+            val wires = MutableList<Segment?>(grid.size) { null }
+            for (x in xs) wires[grid.tile(x, row).index] = Segment(Conduit.Signal)
+            for (x in xs.first until xs.last) {
+                val a = grid.tile(x, row)
+                val b = grid.tile(x + 1, row)
+                wires[a.index] = wires[a.index]!!.joinedTo(Direction.Right)
+                wires[b.index] = wires[b.index]!!.joinedTo(Direction.Left)
+            }
+
+            val hot = grid.tile(xs.first, row)
+            var state = world.copy(conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()))
+            state = state.copy(
+                // ⚠️ [Conduits.heated] *sets* the tile's energy rather than adding to it.
+                conduits = state.conduits.heated(
+                    Conduit.Signal, hot, state.conduits.heatCapacityAt(Conduit.Signal, hot) * 900L,
+                ),
+            ).let { it.copy(baselineEnergy = it.storedEnergy) }
+
+            fun kelvin(s: VesselState, tile: TileIndex): Int =
+                (s.conduits.energyAt(Conduit.Signal, tile) / s.conduits.heatCapacityAt(Conduit.Signal, tile)).toInt()
+
+            val started = xs.map { kelvin(state, grid.tile(it, row)) }
+            val hottest = started.max()
+            val coldest = started.min()
+
+            // Every step, not merely the last: the failure was a swing, and a swing sampled only at
+            // the end can be caught mid-flight looking perfectly reasonable.
+            repeat(30) { step ->
+                state = run(state, HEAT_PERIOD)
+                // ⚠️ The floor is measured, not assumed to be where the run started. The box
+                // radiates, so everything in it sags a kelvin or two over thirty steps and the hull
+                // leads the way down — a fixed floor at [Temperature.AMBIENT_KELVIN] would be
+                // asserting that the ship does not cool. Taken over the tiles the run is *not* on,
+                // so the wire cannot vouch for itself.
+                val floor = grid.tiles
+                    .filter { state.conduits.at(Conduit.Signal, it) == null }
+                    .minOf { state.kelvinAt(it) }
+                for (x in xs) {
+                    val k = kelvin(state, grid.tile(x, row))
+                    assertTrue(
+                        k in floor..hottest,
+                        "overDeck=$overDeck step $step: wire at x=$x reached ${k}K, outside the " +
+                            "$floor..${hottest}K spanned by everything it is in contact with",
+                    )
+                }
+            }
+
+            // And it conducted rather than merely staying in range: the hot end gave up most of its
+            // excess, and what is left of the run is nearly level.
+            val ended = xs.map { kelvin(state, grid.tile(it, row)) }
+            assertTrue(
+                ended.first() < coldest + (hottest - coldest) / 2,
+                "overDeck=$overDeck: the heated end should have shed most of its excess, " +
+                    "${started.first()}K -> ${ended.first()}K over a $coldest..${hottest}K start",
+            )
+            assertTrue(
+                ended.max() - ended.min() < (hottest - coldest) / 4,
+                "overDeck=$overDeck: the run should be evening out, " +
+                    "was ${hottest - coldest}K across and is ${ended.max() - ended.min()}K",
+            )
+        }
     }
 }
