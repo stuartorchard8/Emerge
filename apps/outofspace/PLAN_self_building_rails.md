@@ -256,6 +256,12 @@ Same family as the accepted bricking limitation, but reachable by ordinary play 
 saturating a network with the wrong material. Not fixed, and deliberately so — the plan says not to
 invent a rescue mechanism. Worth a decision.
 
+⛔ **A ghost wire under a ghost *rail* is the same family and is closed — do not chase it.** The
+turn-order fix above stops a ghost *machine* starving the conduit under it; unpaid track still wins
+outright, so a wire drawn under a rail that is itself unbuilt waits. Reaching that state needs the
+tile to become a ghost beneath a lump already standing on it, which is a cancelled deconstruction
+and not something ordinary play does — **a non-issue in normal play, Stu, 2026-08-25**.
+
 **`massBalance` cannot see conjured fabric.** It counts cargo, and conduit structure is not cargo, so
 a bug that minted metal directly onto the structure layer would not move it. `builtMass` is the only
 witness. Worth knowing when reading a green ledger.

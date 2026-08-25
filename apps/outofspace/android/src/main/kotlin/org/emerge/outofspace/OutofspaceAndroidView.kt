@@ -106,6 +106,12 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
         impactAudio?.onFrame(state, renderer.camX, renderer.camY)
         renderer.draw(
             state,
+            controller.inspectTile,
+            controller.inspectLayer,
+            // ⚠️ **Nothing is hovered on a touch screen.** A finger is either down on a tile or not
+            // there at all, so the highlight the mouse hosts draw under the pointer has no state to
+            // read here. The inspector above is the controller's own, so wiring a touch to it later
+            // needs no change to this call.
             TileIndex.NONE,
             controller.overlay,
             controller.tickAlpha,
