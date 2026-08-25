@@ -378,10 +378,10 @@ fun heatOfWorking(mass: Long, machine: DeckMachine?): Long =
 /** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
 fun heatPerGram(machine: DeckMachine?): Long = when (machine) {
     // 400 kJ/g. Smelting costs ~1 MJ/kg.
-    is Processor -> 40_000L    // crushing and grinding
-    is Extractor -> 20_000L
+    is Processor -> 2_000L    // crushing and grinding
+    is Extractor -> 2_000L
     // A rocket's waste heat is what the bell does not throw away. The exhaust's own energy is not
     // this: it leaves with the exhaust, or lands where the exhaust lands. See [Thruster].
-    is Thruster -> 50_000L
+    is Thruster -> 10_000L
     else -> 0L
 }
