@@ -216,7 +216,13 @@ class HeatTest {
         val twoAway = s.kelvinAt(g.tile(2, 5))
         val farCorner = s.kelvinAt(g.tile(2, 9))
 
-        assertTrue(atMill > Temperature.AMBIENT_KELVIN + 15, "the machine tile should be hot: ${atMill}K")
+        // ⚠️ **The shape, not the size.** This asked for `AMBIENT + 15` until 2026-08-26, which was
+        // calibrated against a processor shedding 40,000 mJ/g; `4c6d76f9` took that to 2,000 and the
+        // mill has read 296 K ever since. The magnitude was never what the test is called after —
+        // "warms its own tile first and its neighbours after" is a statement about *order*, and an
+        // absolute threshold beside it is a second, unstated claim about the heat constant that goes
+        // stale silently every time that constant moves. Left out on purpose rather than rescaled.
+        assertTrue(atMill > Temperature.AMBIENT_KELVIN, "the machine tile should be warmer than the room: ${atMill}K")
         assertTrue(atMill > twoAway, "hottest at the source: $atMill vs $twoAway")
         assertTrue(twoAway >= farCorner, "and cooler with distance: $twoAway vs $farCorner")
     }
@@ -321,12 +327,18 @@ class HeatTest {
         // encloses it: every tile around it is space.
         assertEquals(Structure.Vacuum, s.structure[grid.tile(1, 1).index], "nothing encloses it")
         // The old per-tile field zeroed anything not enclosed, so a bare machine stored nothing at
-        // all. That was a property of the field rather than of the world: a furnace in vacuum is
-        // still a furnace full of hot firebrick, and what vacuum actually does is make radiation the
-        // only way out. So it stores its heat, and sheds it slowly.
-        assertTrue(s.storedEnergy > 0L, "a furnace in vacuum is still a hot furnace")
+        // all. That was a property of the field rather than of the world — a machine outside the
+        // hull is still a machine full of hot metal, and what vacuum actually does is make radiation
+        // the only way out. That it *participates* is the whole of what this pins.
+        //
+        // ⛔ **It does not have to get hotter, and it does not.** This asked for that until
+        // 2026-08-26, on the strength of a comment calling the thing a furnace full of firebrick.
+        // A [Processor] is a mill: it crushes and grinds, at 2,000 mJ/g since `4c6d76f9`, and there
+        // is no reason grinding heat should outrun radiation to space. It reads 292 K against a
+        // 293 K room and that is a mill doing what a mill does. The furnace this was written for was
+        // the smelter, and the smelter was deleted in `0d9a9c2d`.
+        assertTrue(s.storedEnergy > 0L, "a machine outside the hull still holds its heat")
         assertTrue(s.radiatedEnergy > 0L, "and the only way out is radiation")
-        assertTrue(s.kelvinAt(grid.tile(5, 5)) > Temperature.AMBIENT_KELVIN, "so it warms up")
         assertEnergyBalanced(s, "bare machine")
     }
 
