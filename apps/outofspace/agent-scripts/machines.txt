@@ -39,8 +39,10 @@ brush GAUGE
 place 34 9
 probe 34 9
 expect massBalance = 0
-# The build menu covers half the view, so the shots are taken with it put away.
-tool WIRE
+# The build menu covers half the view, so the shots are taken with it put away. INSPECT is what puts
+# it away: it is the default tool and the one that changes nothing, so it cannot disturb what is
+# being photographed. (It replaced WIRE, which is what this line used to say.)
+tool INSPECT
 shot placed
 
 # ...and pays for itself out of the same tank the track did.
@@ -53,7 +55,7 @@ shot grown
 # must never look alike.
 tool BUILD
 remove 34 9 DECK
-tool WIRE
+tool INSPECT
 run 400
 probe 34 9
 shot marked
