@@ -56,7 +56,6 @@ import org.emerge.demo.outofspace.world.BodySlot
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
-import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
 import org.emerge.demo.outofspace.world.machine.Extractor
@@ -701,10 +700,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     // ── Machine behaviour ─────────────────────────────────────────────────────
 
-    /** True when any output buffer is full, which stops the machine until something drains it. */
-    private fun blocked(vararg outputs: Mixture?): Boolean =
-        outputs.any { (it?.total ?: 0L) >= MACHINE_OUTPUT_CAP }
-
     /**
     * Activity per machine-tick: rate × activation, with carry-over via [Rate].
     *
@@ -746,7 +741,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         val (actionProgress, carry) = throttled(1, activation, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
-            // Full output blocks the machine (catches tailings too). The lump stays where it is.
+            // ⛔ **Any packet in either output blocks the machine — not a *full* output.** A
+            // processor works in whole packets: two in, one packet of concentrate and one of
+            // tailings out. Finishing a charge on top of an output that has not been collected yet
+            // would blend two packets inside the buffer, and a buffer is not a hopper. So the lump
+            // stays where it is until both mouths are clear, which also sizes the outputs at one
+            // packet apiece without a cap having to say so.
             if (store(m, tile, BufferRole.Product) != null || store(m, tile, BufferRole.Waste) != null) {
                 return m.copy(progress = m.ticksPerAction, carry = carry)
             }

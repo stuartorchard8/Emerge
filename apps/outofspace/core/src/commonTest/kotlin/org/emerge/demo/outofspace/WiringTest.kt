@@ -33,6 +33,7 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -315,25 +316,62 @@ class WiringTest {
         assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.total <= Storage.CAP, "and it never overfills")
     }
 
+    /**
+     * The sibling above proves the *throttle* on a rig built for it. This proves the starter vessel
+     * ships the same loop wired up and live: a sensor watching the demonstration tank, a run of
+     * signal reaching the extractor that reads it, and a main line that carries on regardless.
+     *
+     * ⚠️ **The tank is stocked, not filled.** Filling one by simulation is 200 packets at one packet
+     * per `RAIL_PERIOD`, which is twelve thousand ticks of a 40x28 vessel — a hundred and fifty
+     * seconds to re-derive a rate the sibling test already measures on a grid a tenth the size. What
+     * is particular to the starter vessel is the *wiring*, and wiring can be read the moment the
+     * tank has something in it. So the tank is stated as nearly full and the run is long enough for
+     * the signal to cross the vessel and the line to bank a packet.
+     */
     @Test
     fun `the starter vessel ships that same loop, working`() {
         val start = workingVessel(Grid(40, 28))
-        val s = run(start, ticksToMove(Storage.CAP) * 3 / 2)
+        val g = start.grid
         // Found by its wiring rather than by coordinates — the vessel is fitted to its contents on
         // construction, so a written-down tile index would be a hostage to its layout. There is
         // exactly one machine aboard that reads a wire, and it is the demonstration extractor.
-        val throttled = s.grid.tiles.filter { t ->
-            s.deck[t]?.wiring?.triggers(Action.Run)?.any { it.source == SignalSource.Wire } == true
+        val throttled = g.tiles.filter { t ->
+            start.deck[t]?.wiring?.triggers(Action.Run)?.any { it.source == SignalSource.Wire } == true
         }
         assertEquals(1, throttled.size, "expected one wire-driven machine aboard, found ${throttled.size}")
+
+        // The tank that machine is throttled by, found the same way: whatever the vessel's sensor is
+        // pointed at. That it is a `Storage` at all is part of what is being asserted — a sensor
+        // aimed at nothing would leave the extractor reading a flat zero and looking unthrottled.
+        val sensors = g.tiles.filter { start.deck[it] is Sensor }
+        assertEquals(1, sensors.size, "expected one sensor aboard, found ${sensors.size}")
+        val facing = g.neighbour(sensors.single(), (start.deck[sensors.single()] as Sensor).facing)
+        val watched = start.occupancy[facing]
+        val tank = assertNotNull(
+            start.deck[watched] as? Storage,
+            "the sensor should be watching a tank, found ${start.deck[watched]}",
+        )
+
+        // Nine tenths full, which is where the throttle is doing something visible.
+        start.buffers.put(
+            bufferTile(g, tank, watched, BufferRole.Inside)!!,
+            Mixture.of(Species.Iron to Storage.CAP * 9 / 10, energy = 0).atAmbient(),
+        )
+        val banked = start.stockpile.totalMass
+
+        val s = run(start, 200)
         val onTheWire = s.signals.at(throttled.single())
-        assertTrue(onTheWire > 800, "the demonstration storage should have nearly filled, wire reads $onTheWire")
-        // And the main line is unaffected by it. Stated as *growth*, because the vessel is built
+        assertTrue(onTheWire > 800, "the demonstration storage is nearly full, wire reads $onTheWire")
+        // And the reading is *live* rather than a constant the fixture put there: the tank goes on
+        // filling, and the wire follows it up.
+        val later = run(s, 150).signals.at(throttled.single())
+        assertTrue(later > onTheWire, "the wire should track the tank as it fills: $onTheWire then $later")
+        // The main line is unaffected by any of it. Stated as *growth*, because the vessel is built
         // holding half a tank of iron to build with — a bare "there is iron aboard" would pass on a
         // line that never turned a wheel.
         assertTrue(
-            s.stockpile.totalMass > start.stockpile.totalMass,
-            "the refinery line still banks what it digs: ${start.stockpile} then ${s.stockpile}",
+            s.stockpile.totalMass > banked,
+            "the refinery line still banks what it digs: $banked then ${s.stockpile.totalMass}",
         )
     }
 
