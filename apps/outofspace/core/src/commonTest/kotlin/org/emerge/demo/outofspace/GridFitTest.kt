@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.starterVessel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -67,7 +66,12 @@ class GridFitTest {
 
         for (tile in s.grid.tiles) {
             val m = s.deck[tile] ?: continue
-            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
+            // ⚠️ Every tile the machine stands on, not a square of `reach` around its anchor. Two
+            // shapes are not squares centred there — a bridge is a line, and a thruster's second
+            // tile is entirely in front of its anchor — so the square form both over- and
+            // under-states the box. The *shape* is a definition and comes from the machine; the
+            // box is this oracle's own arithmetic, which is the part that must stay independent.
+            for (part in m.tiles(s.grid)) cover(s.grid.xOf(part), s.grid.yOf(part), 0)
         }
         for (c in org.emerge.demo.outofspace.world.Conduit.entries) {
             val layer = s.conduits[c]

@@ -228,14 +228,32 @@ class SignalWiringTest {
     }
 
     // ── Old worlds ────────────────────────────────────────────────────────────
+    /**
+     * ⚠️ **The reloaded world is on a different lattice, and the reading has to be looked up there.**
+     *
+     * `Save.read` sets [org.emerge.demo.outofspace.world.GRID_PAD], which this hand-built fixture
+     * never had — the extractor sits three tiles from the left edge, so the first tick after a load
+     * grows that edge and moves the origin. A tile index written down against `grid` therefore means
+     * a different place afterwards, which is exactly what [VesselState.frameShiftX] exists to
+     * correct and what this now applies.
+     *
+     * ⛔ It used to read the raw index and pass — **because of a bug**. `remapped` carried the old
+     * `SignalField` through the resize with its old-grid indexing intact, so the stale lookup agreed
+     * with the stale map. Re-deriving the map on the new grid is what exposed the test.
+     */
     @Test
     fun `a wired vessel survives a save and load`() {
         val played = run(rig(Storage.CAP), 20)
         val reloaded = Save.read(Save.write(played))
 
+        val after = run(reloaded, 1)
+        val moved = after.grid.tile(
+            extractorAt.first + after.frameShiftX,
+            extractorAt.second + after.frameShiftY,
+        )
         assertEquals(
             played.signals.at(grid.tile(extractorAt.first, extractorAt.second)),
-            run(reloaded, 1).signals.at(grid.tile(extractorAt.first, extractorAt.second)),
+            after.signals.at(moved),
             "the circuit should come back carrying what it carried",
         )
     }

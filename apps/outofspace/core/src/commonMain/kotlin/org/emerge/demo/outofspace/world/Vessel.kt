@@ -1202,6 +1202,26 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     }
     val newPipeMomentum = MomentumField.of(newPipeEdges, newPipeMomentumX, newPipeMomentumY)
 
+    // ── 5b. The signal maps, and the structure that depends on them ──────
+    // Re-derived on the new lattice rather than carried; see the block in the `copy` below for why
+    // carrying is not an option. The **readings** are carried, though, and that is the fiddly part:
+    // a [SignalField] is values keyed by *network id*, and ids belong to the derivation that made
+    // them, so there is no transplanting an old `values` array onto a fresh numbering. What travels
+    // is the reading at each tile, put back through [SignalField.build] on the new networks — which
+    // takes the max over a network and so reproduces the old value exactly, every tile of one
+    // network having carried the same one.
+    val newNetworks = SignalNetworks.derive(newGrid, newConduits)
+    val newSignals = SignalField.build(newNetworks) { raise ->
+        for (ox in 0 until oldW) for (oy in 0 until oldH) {
+            val ni = remapTile(ox, oy) ?: continue
+            val reading = signals.at(grid.tile(ox, oy))
+            if (reading != 0) raise(ni, reading)
+        }
+    }
+    // With the openness the reducer would have passed, so an airlock the player is holding open does
+    // not read as a wall for the frame between the resize and the next tick.
+    val newStructure = StructureMap.derive(newGrid, newDeck, airlockOpenness(newDeck, newSignals))
+
     // ── 6. Bodies: nothing to do ─────────────────────────────────────────
     // They used to be shifted by the same offset the tile indices moved by, because they were
     // stored in the grid's frame. They are stored in the **world** now, and a rock does not move
@@ -1232,10 +1252,23 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         // the old grid, which the renderer then reads at new-grid tile indices.
         motion = Motion.NONE,
         deck = newDeck,
-        // ⚠️ Re-derived, not carried. `occupancy` has a default, so `copy()` keeps the **old** one —
-        // an array sized to the old grid, indexed by new-grid tiles. It went unnoticed for as long
-        // as it did because the only reader resolved it against a list that was empty anyway.
+        // ── ⚠️ The derived maps: re-derived, never carried ────────────────
+        //
+        // A defaulted field is **not** recomputed by `copy()` — the default expression only runs
+        // when the argument is omitted, and `copy` omits nothing. So every one of these rides
+        // through a resize as an array sized to the *old* grid, and is then read at new-grid tile
+        // indices: a wrong answer where the index still lands inside, and an
+        // `ArrayIndexOutOfBoundsException` where it does not.
+        //
+        // This has now been the same bug four times — `occupancy`, `motion`, and then `structure`
+        // and the two signal maps together, which crashed the renderer on the very frame the player
+        // placed a building near an edge. **Anything derived from the grid must be named here.** If
+        // a new field is added to `VesselState` with a default that mentions `grid`, it belongs in
+        // this block or it is already broken.
         occupancy = Occupancy.derive(newGrid, newDeck),
+        structure = newStructure,
+        networks = newNetworks,
+        signals = newSignals,
         buffers = newBuffers,
         rail = newRail,
         conduits = newConduits,

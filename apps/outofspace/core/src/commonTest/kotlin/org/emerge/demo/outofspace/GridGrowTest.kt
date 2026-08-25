@@ -5,7 +5,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.Motion
-import org.emerge.demo.outofspace.world.reach
+import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.fitGrid
 import org.emerge.demo.outofspace.world.growToFit
@@ -80,7 +80,12 @@ class GridGrowTest {
 
         for (tile in s.grid.tiles) {
             val m = s.deck[tile] ?: continue
-            cover(s.grid.xOf(tile), s.grid.yOf(tile), m.kind.reach)
+            // ⚠️ Every tile the machine stands on, not a square of `reach` around its anchor. Two
+            // shapes are not squares centred there — a bridge is a line, and a thruster's second
+            // tile is entirely in front of its anchor — so the square form both over- and
+            // under-states the box. The *shape* is a definition and comes from the machine; the
+            // box is this oracle's own arithmetic, which is the part that must stay independent.
+            for (part in m.tiles(s.grid)) cover(s.grid.xOf(part), s.grid.yOf(part), 0)
         }
         for (c in Conduit.entries) {
             val layer = s.conduits[c]
@@ -274,6 +279,43 @@ class GridGrowTest {
         for (tile in after.grid.tiles) {
             assertEquals(null, after.motion.arrivedFrom(tile), "stale arrival at $tile")
             assertEquals(0L, after.motion.previousMassAt(tile), "stale mass at $tile")
+        }
+    }
+
+    /**
+     * The **derived maps** do not survive a growth either — they are re-derived on the new grid.
+     *
+     * The twin of the [motion] case above and the third time this exact bug has been found: a
+     * defaulted field on `VesselState` is *not* recomputed by `copy()`, so a map derived from the
+     * old grid rides through the resize sized to the old grid and is then read at new-grid indices.
+     * `occupancy` had it; `motion` had it; `structure` had it, and that one is read by the renderer
+     * on the very frame the grid changes — an `ArrayIndexOutOfBoundsException` in `draw`, one frame
+     * after the player placed a building near an edge.
+     *
+     * ⚠️ Asserted by **reading the far corner**, which is the tile a far-side growth adds. A length
+     * check alone would pass against a map that was merely the right size and wrong throughout.
+     */
+    @Test
+    fun `the derived maps do not survive a growth`() {
+        for ((name, at, _) in edgeCases(fitted())) {
+            val result = withHullAt(fitted(), at.first, at.second).growToFit(pad)
+            val grown = result.state
+            assertTrue(result.grew, "$name: the fixture did not grow the grid")
+
+            // Every tile of the new grid must be answerable. A far-side growth adds indexes past
+            // the end of any map still sized to the old grid, which is the crash.
+            for (tile in grown.grid.tiles) {
+                grown.structure[tile.index]
+                grown.occupancy[tile]
+                grown.signals.at(tile)
+                grown.networks[tile]
+            }
+            // And the answers must be about *this* grid: the hull is where the growth left it.
+            val hull = grown.grid.tile(at.first + result.dx, at.second + result.dy)
+            assertEquals(
+                Structure.Hull, grown.structure[hull.index],
+                "$name: the structure map is not about the grid it came back on",
+            )
         }
     }
 
