@@ -308,6 +308,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             motion = state.motion
         }
 
+        // A ghost that finished above is a wall now — see [Work.solidityChanged]. Everything below
+        // reads `structure`, and the fluid step in particular would otherwise pour air back into the
+        // tile the new casing has just emptied.
+        if (w.solidityChanged) structure = StructureMap.derive(w.grid, w.deck, openness)
+
         // ── Heat ──────────────────────────────────────────────────────────────────
         // When skipped, heat state is carried forward from the previous tick.
         var conductedRadiated = 0L
@@ -1125,6 +1130,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
         var builtMass: Long = state.builtMass
+
+        /**
+         * A machine finished this tick and turned solid, so the [StructureMap] the tick derived is
+         * out of date.
+         *
+         * ⚠️ **Completion happens in the rail step, which runs after the map is derived.** The map
+         * is not just a cache of geometry here — the fluid step is handed apertures made from it,
+         * so a stale one describes the finished plate as the ghost it was a moment ago, and air
+         * diffuses straight into the tile the casing just displaced. The next tick's map then buries
+         * exactly that much air. Whoever finishes a machine says so here, and the tick re-derives.
+         */
+        var solidityChanged = false
 
         /** Running admission of gas conjured by the debug bellows — see [Edit.Inject]. */
         var injectedAirMass: Long = state.injectedAirMass
@@ -2623,6 +2640,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (!m.kind.preventAirflow || !deck.holdsFullBill(m)) return
             // Guaranteed to succeed: the delivery that got here was refused unless the air could go.
             tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { originOf[it] == TileIndex.NONE }
+            // The tile is a wall from this instant, and the tick's map still says otherwise.
+            solidityChanged = true
         }
 
         /** Ports by tile (bridges folded in — indistinguishable from buildings with ports). */
