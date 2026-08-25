@@ -261,9 +261,7 @@ class OutofspaceHud {
                     title("WATER  ·  ${Edit.WATER_INJECT_MASS}G / TICK")
                     row("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
                     row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
-                    // Said on the tool itself rather than left in a plan file, because the number is
-                    // surprising enough that anyone pouring water will otherwise assume a bug.
-                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  this model boils water at -33C", 0xC8A44AFFL)
+                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  room temperature", 0x9A9A9AFFL)
                 } else {
                     title("INSPECT  ·  ${controller.inspectLayer.label}")
                     row("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)

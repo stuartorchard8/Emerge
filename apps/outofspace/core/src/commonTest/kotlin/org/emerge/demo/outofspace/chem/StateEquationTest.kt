@@ -31,18 +31,40 @@ class StateEquationTest {
 
     @Test
     fun `the critical point is where the equation says it is`() {
-        // Pr = 8·1·1/(3−1) − 3·1² = 4 − 3 = 1, by construction of the reduced form. If this is not
-        // exactly SCALE then the fixed point is losing the units, not just precision.
-        assertEquals(SCALE, reducedPressure(densityR = SCALE, temperatureR = critical))
+        // `Pr(1, 1) = 1` by construction of the reduced form: at Tr = 1 the α term is exactly 1, and
+        // the coefficients are built so that repulsion minus attraction is unity there.
+        //
+        // ⚠️ **A few parts in a hundred million, not exact, and the difference is the point.** Under
+        // van der Waals this was exact — the coefficients were the integers 8 and 3 — and the
+        // comment here said that anything else meant the fixed point was losing the units.
+        // Peng-Robinson's are `1/Zc`, `Ωb/Zc` and `Ωa/Zc²`, which are not rationals with small
+        // denominators and are carried as rounded decimals in [SCALE]. The residue below is that
+        // rounding and nothing else; a unit error would show up as a factor, not as 3 parts in 1e8.
+        val atCritical = reducedPressure(densityR = SCALE, temperatureR = critical, Species.Water)
+        assertTrue(
+            kotlin.math.abs(atCritical - SCALE) < 100L,
+            "the critical point should land on SCALE; got $atCritical",
+        )
     }
 
     @Test
-    fun `stiffness at critical density is six times the distance from critical temperature`() {
-        // dPr/dρr at ρr = 1 is 24·Tr/4 − 6 = 6·(Tr − 1). Zero at the critical point is the
-        // inflection that defines it; the sign either side is the presence or absence of a phase
+    fun `stiffness at critical density is the repulsion and the attraction cancelling`() {
+        // dPr/dρr at ρr = 1 works out as `C·(Tr − α(Tr))` with `C = (1/Zc)/(1 − b)²`, the two
+        // coefficients being equal by construction — that equality *is* the inflection that defines
+        // the critical point. Zero there; the sign either side is the presence or absence of a phase
         // transition, so it is the single most load-bearing number in the model.
+        //
+        // ⚠️ It was `6·(Tr − 1)` under van der Waals, and the shape of the change is worth seeing:
+        // the distance is measured from `α(Tr)` now rather than from a bare 1, and α is where the
+        // acentric factor lives. A law with no third constant had nothing to put there, so it
+        // measured from 1 and handed every fluid in the game the same answer.
+        val c = (INV_ZC.toDouble() / SCALE) / (1.0 - COVOLUME.toDouble() / SCALE).let { it * it }
+        val kappa = CRITICAL[Species.Water]!!.kappa.toDouble() / SCALE
         for (tr in listOf(cold, critical, hot)) {
-            val expected = 6 * (tr - SCALE)
+            val trd = tr.toDouble() / SCALE
+            val root = 1.0 + kappa * (1.0 - kotlin.math.sqrt(trd))
+            val alpha = if (root <= 0.0) 0.0 else root * root
+            val expected = (c * (trd - alpha) * SCALE).toLong()
             val actual = rawStiffness(SCALE, tr)
             assertTrue(
                 (actual - expected) in -tolerance..tolerance,
@@ -144,17 +166,38 @@ class StateEquationTest {
         // density is still well short of MAX_REDUCED_DENSITY — measured, at Tr=4 and ρr=2.95. That
         // is the clamp doing its job rather than a discrepancy, so the oracle is only consulted
         // where it has an answer worth having.
+        // ⚠️ **The oracle is floating point now, and deliberately.** Under van der Waals it was the
+        // integer expression rearranged, which made this an exactness check on one rewrite. The
+        // Peng-Robinson expression is long enough that restating it in Longs here would be copying
+        // the implementation rather than checking it, so the curve is evaluated independently in
+        // doubles and the two must agree to a part in a million. That is the stronger statement: it
+        // says the fixed-point curve tracks the real one, not that two spellings of the same integer
+        // arithmetic agree with each other.
+        val zc = 0.3074013
+        val bb = 0.07779607390 / zc
+        val aa = 0.45723552894 / (zc * zc)
+        val kappa = CRITICAL[Species.Water]!!.kappa.toDouble() / SCALE
         var compared = 0
         for (tr in listOf(cold, critical, hot, SCALE * 4)) {
+            val trd = tr.toDouble() / SCALE
+            val root = 1.0 + kappa * (1.0 - kotlin.math.sqrt(trd))
+            val alpha = if (root <= 0.0) 0.0 else root * root
             var density = 0L
             while (density < MAX_REDUCED_DENSITY) {
-                val gap = CLOSE_PACKED - density
-                val expected = 8L * tr * density / gap - 3L * density * density / SCALE
-                if (expected <= MAX_REDUCED_PRESSURE) {
-                    assertEquals(
-                        expected,
-                        vanDerWaalsPressure(density, tr),
-                        "Tr=$tr, rho=$density must be unchanged by the packing clamp",
+                val rho = density.toDouble() / SCALE
+                val expected =
+                    (trd / zc) * rho / (1 - bb * rho) -
+                        aa * alpha * rho * rho / (1 + 2 * bb * rho - bb * bb * rho * rho)
+                if (expected * SCALE <= MAX_REDUCED_PRESSURE) {
+                    val actual = pengRobinsonPressure(density, tr, Species.Water)
+                    // A part in a hundred thousand. The integer curve divides four times on its way
+                    // to an answer and each division floors, so the residue accumulates with the
+                    // size of the terms rather than staying at one unit — measured at 1.1 parts per
+                    // million against the double curve at the densest end of the sweep.
+                    val slack = maxOf(200.0, kotlin.math.abs(expected) * SCALE / 100_000.0)
+                    assertTrue(
+                        kotlin.math.abs(actual - expected * SCALE) <= slack,
+                        "Tr=$tr, rho=$density: $actual against ${expected * SCALE}",
                     )
                     compared++
                 }
@@ -170,9 +213,9 @@ class StateEquationTest {
     fun `packing the cell solid is refused rather than answered`() {
         // Past close packing there is no pressure to report, only a division by a collapsing gap.
         // The solver has to be held off it, so the boundary is a thrown error and not a clamp.
-        val threw = runCatching { reducedPressure(CLOSE_PACKED, critical) }.isFailure
+        val threw = runCatching { reducedPressure(CLOSE_PACKED, critical, Species.Water) }.isFailure
         assertTrue(threw, "close packing must be refused")
-        assertTrue(runCatching { reducedPressure(CLOSE_PACKED - 1, critical) }.isSuccess)
+        assertTrue(runCatching { reducedPressure(CLOSE_PACKED - 1, critical, Species.Water) }.isSuccess)
     }
 
     // ── helpers ──
@@ -196,7 +239,7 @@ class StateEquationTest {
     private fun rawStiffness(densityR: Long, temperatureR: Long, step: Long = SCALE / 1000L): Long {
         val low = (densityR - step).coerceAtLeast(0L)
         val high = (densityR + step).coerceAtMost(CLOSE_PACKED - 1)
-        return (vanDerWaalsPressure(high, temperatureR) - vanDerWaalsPressure(low, temperatureR)) *
+        return (pengRobinsonPressure(high, temperatureR, Species.Water) - pengRobinsonPressure(low, temperatureR, Species.Water)) *
             SCALE / (high - low)
     }
 

@@ -58,7 +58,7 @@ class PhaseRealityTest {
     /** The model's saturation pressure at [kelvin], in bar, using [criticalBar] to leave reduced units. */
     private fun modelBar(species: Species, kelvin: Int, criticalBar: Double): Double? {
         val tr = reducedTemperature(kelvin, species) ?: return null
-        val pr = saturationPressure(tr) ?: return null
+        val pr = saturationPressure(tr, species) ?: return null
         return pr.toDouble() / SCALE.toDouble() * criticalBar
     }
 

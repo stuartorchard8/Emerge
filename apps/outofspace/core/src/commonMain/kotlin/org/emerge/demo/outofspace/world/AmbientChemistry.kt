@@ -475,7 +475,7 @@ fun offGas(
  */
 private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
     val temperatureR = reducedTemperature(kelvin, species) ?: return Long.MAX_VALUE
-    val vapourR = saturatedVapourDensity(temperatureR) ?: return Long.MAX_VALUE
+    val vapourR = saturatedVapourDensity(temperatureR, species) ?: return Long.MAX_VALUE
     val ceiling = massAtReducedDensity(vapourR, species, VolumeField.FULL, VolumeField.FULL)
         ?: return Long.MAX_VALUE
     return if (ceiling > inAir) ceiling - inAir else 0L

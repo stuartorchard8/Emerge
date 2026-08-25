@@ -97,16 +97,35 @@ class BudgetParityTest {
         // A tile at critical density holds `kg/m³ × TILE_LITRES` grams, because a cubic metre is a
         // thousand litres. Stated for every species on file rather than for one, since the miss
         // being guarded against was in the shared constructor and would take the whole table with it.
+        //
+        // ⚠️ **These are no longer the measured densities, and the gap is the price of the equation
+        // of state.** They used to be — 322 kg/m³ for water and so on, typed in from a table — and
+        // the critical *pressure* fell out of them. Peng-Robinson takes the measured temperature and
+        // **pressure** as its inputs instead, because pressure is what boiling and off-gassing
+        // actually ask about, and the density is what falls out. Peng-Robinson's critical
+        // compressibility is 0.307 where these fluids measure near 0.27, so every derived density
+        // lands low by about that ratio:
+        //
+        //     water   240 against a measured 322      carbon dioxide  417 against 468
+        //     nitrogen 295 against 313                argon           504 against 536
+        //     oxygen   407 against 436
+        //
+        // Liquid densities downstream are low by the same proportion — liquid water comes out near
+        // 850 kg/m³ rather than 998. A Péneloux volume shift is the standard fix and moves densities
+        // without touching the pressure curve at all; it is not built.
+        //
+        // Exact integers rather than `kg/m³ × TILE_LITRES`, because a derived density is not a whole
+        // number of kg/m³ and the truncation lands inside the product rather than after it.
         for ((species, c) in CRITICAL) {
-            val kgPerCubicMetre = when (species) {
-                Species.Water -> 322
-                Species.Nitrogen -> 313
-                Species.Oxygen -> 436
-                Species.CarbonDioxide -> 468
-                Species.Argon -> 536
+            val expected = when (species) {
+                Species.Water -> 199_338L
+                Species.Nitrogen -> 245_057L
+                Species.Oxygen -> 338_100L
+                Species.CarbonDioxide -> 346_748L
+                Species.Argon -> 418_336L
                 else -> error("no critical density stated for $species")
             }
-            assertEquals(kgPerCubicMetre * TILE_LITRES, c.massPerTile.grams, "critical $species")
+            assertEquals(expected, c.massPerTile.grams, "critical $species")
         }
     }
 

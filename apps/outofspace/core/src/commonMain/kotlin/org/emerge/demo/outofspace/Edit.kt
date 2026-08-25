@@ -163,26 +163,27 @@ sealed interface Edit {
          * [WATER_INJECT_KELVIN], divided by 64.
          */
         val WATER_INJECT_MASS: Long = massAtReducedDensity(
-            saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!)!!,
+            saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!, Species.Water)!!,
             Species.Water,
             VolumeField.FULL,
             VolumeField.FULL,
         )!! / 64
 
         /**
-         * The temperature water arrives at: **−43 °C**, and it is cold on purpose.
+         * The temperature water arrives at: **room temperature**, as it always should have been.
          *
-         * Van der Waals carries no acentric factor, so this model puts water's saturation pressure
-         * at 4.9 atm at room temperature and its boiling point at one atmosphere near −33 °C — see
-         * `PLAN_phase_transitions.md` §5c. Water injected at 293 K would therefore flash straight to
-         * vapour and there would be no puddle to look at, which would look like a broken tool rather
-         * than an honest equation. At 230 K its vapour pressure is 0.65 atm, comfortably under the
-         * room, so it arrives as a liquid and stays one until something heats it.
+         * ✅ This was 230 K — −43 °C — and the comment here said why: van der Waals carries no
+         * acentric factor, so it put water's saturation pressure at nearly 5 atm at room temperature
+         * and its boiling point near −33 °C. Water injected at 293 K flashed straight to vapour and
+         * there was no puddle to look at, which read as a broken tool rather than as an honest
+         * equation. The workaround said "when the equation of state gains a third constant
+         * (Peng-Robinson), this should go back to ambient". It has, so it does.
          *
-         * ⚠️ When the equation of state gains a third constant (Peng-Robinson), this should go back
-         * to ambient — it exists only to work around a known quantitative error, not a design choice.
+         * Peng-Robinson puts water at **0.019 atm at 293 K** against a measured 0.023, so poured
+         * water is now comfortably a liquid at the temperature of the room it is poured into and
+         * stays one until something heats it. `PhaseRealityTest` is what holds that.
          */
-        const val WATER_INJECT_KELVIN: Int = 230
+        const val WATER_INJECT_KELVIN: Int = 293
 
         /** Rock radius: 2 cells (5 tiles across, 21 cells). Fits through doorways. */
         const val DEFAULT_ROCK_RADIUS: Int = 2

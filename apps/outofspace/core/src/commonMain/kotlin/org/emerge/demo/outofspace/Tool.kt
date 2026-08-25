@@ -72,8 +72,8 @@ enum class Tool(val label: String) {
      * the equation of state was built to answer. Without it the phase machinery can only be exercised
      * from tests.
      *
-     * ⚠️ The water arrives at [Edit.WATER_INJECT_KELVIN], well below room temperature, because this
-     * model boils water near −33 °C. See that constant.
+     * The water arrives at [Edit.WATER_INJECT_KELVIN], which is room temperature — it used to be
+     * 43 degrees colder to work around an equation of state that boiled water at −33 °C.
      */
     InjectWater("WATER"),
     ;

@@ -61,7 +61,7 @@ class PhaseEmergenceTest {
             val dr = reducedDensity(mass, Species.Nitrogen, full, full)!!
             assertEquals(
                 FluidPhase.Supercritical,
-                phaseAt(dr, tr),
+                phaseAt(dr, tr, Species.Nitrogen),
                 "nitrogen at ${mass}g should have no liquid branch at room temperature",
             )
         }
@@ -75,10 +75,18 @@ class PhaseEmergenceTest {
         assertTrue(tr < SCALE, "water at room temperature should be subcritical; Tr=$tr")
 
         val dense = reducedDensity(liquidWater, Species.Water, full, full)!!
-        assertEquals(FluidPhase.Liquid, phaseAt(dense, tr), "dense water in a warm room should be liquid")
+        assertEquals(FluidPhase.Liquid, phaseAt(dense, tr, Species.Water), "dense water in a warm room should be liquid")
 
-        val sparse = reducedDensity(critical(Species.Water) / 100, Species.Water, full, full)!!
-        assertEquals(FluidPhase.Vapour, phaseAt(sparse, tr), "a trace of water in a warm room should be vapour")
+        // ⚠️ **A hundredth of critical density is not a trace of water — it is fog.** This used to
+        // be exactly that, and it passed because van der Waals put the saturated vapour branch at
+        // room temperature some two hundred times higher than it belongs. Peng-Robinson puts it at
+        // ρr = 6.0e-5, which is the measured 0.017 kg/m³ of saturated water vapour at 20 °C, so a
+        // hundredth of critical is now well *inside* the dome and the honest answer for it is
+        // [FluidPhase.Separating]. Asked of the branch itself rather than of a round number, for
+        // the same reason [saturatedLiquid] is.
+        val branch = saturatedVapourDensity(tr, Species.Water)!!
+        val sparse = branch / 2
+        assertEquals(FluidPhase.Vapour, phaseAt(sparse, tr, Species.Water), "a trace of water in a warm room should be vapour")
     }
 
     @Test
@@ -91,11 +99,11 @@ class PhaseEmergenceTest {
         assertTrue(cold < SCALE, "80 K should be below nitrogen's critical temperature")
 
         val dense = reducedDensity(saturatedLiquid(Species.Nitrogen, 80), Species.Nitrogen, full, full)!!
-        assertEquals(FluidPhase.Liquid, phaseAt(dense, cold), "nitrogen at 80 K and saturated-liquid density is liquid")
+        assertEquals(FluidPhase.Liquid, phaseAt(dense, cold, Species.Nitrogen), "nitrogen at 80 K and saturated-liquid density is liquid")
 
         // And the same nitrogen, same density, back in a warm room, is not.
         val warm = reducedTemperature(room, Species.Nitrogen)!!
-        assertEquals(FluidPhase.Supercritical, phaseAt(dense, warm))
+        assertEquals(FluidPhase.Supercritical, phaseAt(dense, warm, Species.Nitrogen))
     }
 
     @Test
@@ -103,8 +111,8 @@ class PhaseEmergenceTest {
         // The mirror of the above, and the reason a boiler cannot simply be made hotter forever:
         // past 647 K there is no liquid water, at any pressure, and the model knows it.
         val dense = reducedDensity(liquidWater, Species.Water, full, full)!!
-        assertEquals(FluidPhase.Liquid, phaseAt(dense, reducedTemperature(400, Species.Water)!!))
-        assertEquals(FluidPhase.Supercritical, phaseAt(dense, reducedTemperature(700, Species.Water)!!))
+        assertEquals(FluidPhase.Liquid, phaseAt(dense, reducedTemperature(400, Species.Water)!!, Species.Water))
+        assertEquals(FluidPhase.Supercritical, phaseAt(dense, reducedTemperature(700, Species.Water)!!, Species.Water))
     }
 
     @Test
@@ -114,8 +122,10 @@ class PhaseEmergenceTest {
         val liquid = reducedDensity(liquidWater, Species.Water, full, full)!!
         val vapour = reducedDensity(critical(Species.Water) / 10, Species.Water, full, full)!!
 
-        val bound = cohesionEnergy(liquid, Species.Water, full, full)
-        val free = cohesionEnergy(vapour, Species.Water, full, full)
+        // At room temperature, which the attraction term needs now that it carries α(Tr).
+        val warm = reducedTemperature(293, Species.Water)!!
+        val bound = cohesionEnergy(liquid, warm, Species.Water, full, full)
+        val free = cohesionEnergy(vapour, warm, Species.Water, full, full)
 
         assertTrue(bound < 0, "a liquid must be bound; got $bound")
         assertTrue(free > bound, "pulling it apart must cost energy; bound=$bound free=$free")
@@ -167,7 +177,7 @@ class PhaseEmergenceTest {
      */
     private fun saturatedLiquid(species: Species, kelvin: Int): Long {
         val tr = reducedTemperature(kelvin, species)!!
-        val branch = saturatedLiquidDensity(tr) ?: error("$species is supercritical at $kelvin K")
+        val branch = saturatedLiquidDensity(tr, species) ?: error("$species is supercritical at $kelvin K")
         // A tenth of a percent past the branch, so that integer rounding on the way back through
         // reducedDensity cannot land it on the boundary and read as Separating again. Applied to the
         // reduced density rather than to the mass, so the whole conversion is the simulation's own.

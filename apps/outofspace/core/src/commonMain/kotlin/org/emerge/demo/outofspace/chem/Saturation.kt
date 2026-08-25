@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -7,13 +8,11 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *
  * [reducedPressure] on its own has a defect that is fatal to an explicit solver, and it is not a
  * rounding problem or a tuning problem — it is the equation being honest about something the grid
- * cannot represent. Over a wide band of densities the van der Waals isotherm *falls* as the fluid
- * is compressed, so `dP/dρ` is negative and the speed of sound `√(dP/dρ)` is imaginary. A
- * disturbance there does not oscillate, it grows exponentially, and it grows *faster* the finer
- * the grid. No timestep stabilises it. That band runs from about `ρr = 0.24` to `ρr = 2.06` for
- * water at room temperature, which is very nearly the whole distance between vapour and liquid —
- * and every cell straddling the surface of a pool sits in it, because a cell holding half a pool
- * holds a density halfway between the two phases.
+ * cannot represent. Over a wide band of densities the isotherm *falls* as the fluid is compressed,
+ * so `dP/dρ` is negative and the speed of sound `√(dP/dρ)` is imaginary. A disturbance there does
+ * not oscillate, it grows exponentially, and it grows *faster* the finer the grid. No timestep
+ * stabilises it. Every cell straddling the surface of a pool sits in that band, because a cell
+ * holding half a pool holds a density halfway between the two phases.
  *
  * The resolution is the one real fluids use: **the cell does not sit at that mean density, it
  * separates.** A tile holding "half a pool" is not a uniform fluid of intermediate density; it is
@@ -23,131 +22,443 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * one, `dP/dρ` becomes **zero rather than negative**, and the cell is neutrally stable instead of
  * explosively unstable.
  *
- * That flat line is not an approximation of the equation, it *is* what the equation predicts once
- * a cell is allowed to hold two phases at once. It is the Maxwell construction, and it is fixed by
- * a condition with no freedom in it: the two phases must have equal Gibbs free energy, which comes
- * to `∫v dP = 0` along the isotherm between them — the equal-area rule that [SATURATION_PRESSURE]
- * is built from and `SaturationTest` re-derives rather than trusts.
+ * That flat line is not an approximation of the equation, it *is* what the equation predicts once a
+ * cell is allowed to hold two phases at once. It is the Maxwell construction, fixed by a condition
+ * with no freedom in it: the two phases must have equal fugacity, which is the same statement as
+ * the equal-area rule, and `SaturationTest` re-derives these tables rather than trusting them.
  *
- * ### Why one table serves every fluid
+ * ### ⛔ There is a table per fluid now, and that is a property this file lost on purpose
  *
- * Because [reducedPressure] is in reduced units, the saturation curve is a function of reduced
- * temperature **and nothing else**. Water, nitrogen and carbon dioxide do not get a table each;
- * they read the same one at different places, exactly as they share the same isotherm. This is the
- * law of corresponding states again, and it is the reason a phase transition still cannot be
- * authored per species.
+ * This used to say: "Because [reducedPressure] is in reduced units, the saturation curve is a
+ * function of reduced temperature **and nothing else**. Water, nitrogen and carbon dioxide do not
+ * get a table each; they read the same one at different places." That was true of van der Waals and
+ * it is why van der Waals had to go — a law with no third constant cannot tell water from argon, and
+ * `PhaseRealityTest` measures what that cost: **every fluid the vessel carries boiled between 13 K
+ * and 118 K too cold**, and water's vapour pressure at room temperature read 129x the real one.
+ * Argon has an acentric factor of exactly zero and was still 14 K out, so this was never only about
+ * the missing constant: van der Waals puts critical compressibility at 3/8 where real fluids sit
+ * near 0.27, and that displaces every species at once.
+ *
+ * Peng-Robinson's third constant is the **acentric factor**, a measured property of a substance in
+ * exactly the way a critical temperature is. It enters through [Critical.kappa] and nothing else, so
+ * two fluids with the same acentric factor still share a curve exactly — the dome is a one-parameter
+ * family in κ rather than a single curve. **A phase transition still cannot be authored per
+ * species**: what a species states is a number that was measured in a laboratory, and the shared law
+ * does the rest. That is the property that mattered; universality of the *table* was its shape, not
+ * its substance.
+ *
+ * ⚠️ **The cost is real and it scales with the fluids that gain a critical point.** Five today, so
+ * five sets of three tables. If that count grows past a dozen, the escape hatch is to tabulate in
+ * (Tr, κ) and interpolate the second axis — the family is smooth in κ — rather than to keep pasting
+ * columns.
  */
 
 /** Samples across `Tr = 0 .. 1`. Even spacing; index 0 is absolute zero, [N] − 1 the critical point. */
 private const val N = 65
 
 /**
- * Reduced saturation pressure at each sample, in [SCALE].
+ * The three branches of one fluid's saturation dome, all in [SCALE] and all sampled at the same [N]
+ * reduced temperatures.
  *
- * Generated by solving the equal-area condition to convergence at each sample and rounding to
- * [SCALE], not fitted or hand-tuned. `SaturationTest` re-solves the condition and checks these
- * values against it, so a corrupted entry is caught rather than believed.
- *
- * The leading zeros are real rather than missing data: below about `Tr = 0.16` the true saturation
- * pressure is smaller than [SCALE] can represent — under `1e-8` of critical — and zero is the
- * correct rendering of it. A liquid that cold has no measurable vapour pressure and does not
- * evaporate, which is what the zero goes on to make happen.
+ * Generated by solving the equal-fugacity condition to convergence at each sample — successive
+ * substitution from Wilson's correlation, which is the standard method and, unlike an equal-area
+ * quadrature in density, does not lose the vapour branch when it falls to `1e-8` of critical.
+ * `SaturationTest` re-solves the condition and checks these values against it, so a corrupted entry
+ * is caught rather than believed; `PhaseRealityTest` checks the result against measured boiling
+ * points, which is the question re-solving the condition cannot ask.
  */
-private val SATURATION_PRESSURE = longArrayOf(
-    0L, 0L, 0L, 0L,
-    0L, 0L, 0L, 0L,
-    0L, 0L, 1L, 8L,
-    39L, 154L, 502L, 1396L,
-    3417L, 7519L, 15152L, 28350L,
-    49805L, 82907L, 131745L, 201079L,
-    296292L, 423319L, 588562L, 798807L,
-    1061136L, 1382846L, 1771370L, 2234208L,
-    2778870L, 3412820L, 4143437L, 4977975L,
-    5923538L, 6987054L, 8175261L, 9494693L,
-    10951672L, 12552302L, 14302468L, 16207834L,
-    18273848L, 20505739L, 22908528L, 25487029L,
-    28245855L, 31189425L, 34321970L, 37647541L,
-    41170014L, 44893097L, 48820339L, 52955133L,
-    57300725L, 61860222L, 66636593L, 71632681L,
-    76851202L, 82294760L, 87965841L, 93866828L,
-    100000000L,
+private class Dome(
+    /**
+     * Reduced saturation pressure at each sample.
+     *
+     * The leading zeros are real rather than missing data: at the cold end the true saturation
+     * pressure is smaller than [SCALE] can represent — under `1e-8` of critical — and zero is the
+     * correct rendering of it. A liquid that cold has no measurable vapour pressure and does not
+     * evaporate, which is what the zero goes on to make happen.
+     */
+    val saturationPressure: LongArray,
+    /**
+     * Reduced density of the liquid that coexists at [saturationPressure] — the dense branch.
+     *
+     * Runs from [CLOSE_PACKED] at absolute zero down to critical density at the critical point,
+     * where it meets [vapourDensity] and the two phases stop being distinguishable. That meeting is
+     * why the dome closes and why there is no liquid above `Tc`.
+     */
+    val liquidDensity: LongArray,
+    /**
+     * Reduced density of the vapour that coexists at [saturationPressure] — the sparse branch, and
+     * the density at which a gas becomes unable to hold any more of itself and starts to condense.
+     *
+     * The zeros at the cold end carry the same meaning as in [saturationPressure], and one further
+     * consequence: where this reads zero, any amount of the species at all is at or above
+     * saturation, so a trace of it in a cold cell condenses completely rather than lingering as a
+     * vapour. That is the right behaviour, and it is what makes a cold surface collect frost rather
+     * than ignore it.
+     */
+    val vapourDensity: LongArray,
 )
 
 /**
- * Reduced density of the liquid that coexists at [SATURATION_PRESSURE], in [SCALE] — the dense
- * branch of the saturation dome.
+ * Every fluid that has a saturation dome, which is every fluid with an entry in [CRITICAL].
  *
- * Runs from [CLOSE_PACKED] at absolute zero down to critical density at the critical point, where
- * it meets [SATURATED_VAPOUR_DENSITY] and the two phases stop being distinguishable. That meeting
- * is why the dome closes and why there is no liquid above `Tc`.
+ * ⚠️ A fluid absent from here has no phase behaviour at all and is an ideal gas at every
+ * temperature — see [CRITICAL], which is the single place that decides it.
  */
-private val SATURATED_LIQUID_DENSITY = longArrayOf(
-    300000000L, 300000000L, 300000000L, 300000000L,
-    294337567L, 292886902L, 291421356L, 289940464L,
-    288443731L, 286930639L, 285400640L, 283853153L,
-    282287566L, 280703228L, 279099450L, 277475503L,
-    275830614L, 274163965L, 272474695L, 270761895L,
-    269024610L, 267261837L, 265472527L, 263655579L,
-    261809842L, 259934109L, 258027117L, 256087539L,
-    254113978L, 252104965L, 250058945L, 247974273L,
-    245849200L, 243681864L, 241470273L, 239212291L,
-    236905619L, 234547775L, 232136066L, 229667562L,
-    227139061L, 224547046L, 221887639L, 219156542L,
-    216348966L, 213459543L, 210482219L, 207410120L,
-    204235380L, 200948925L, 197540181L, 193996703L,
-    190303658L, 186443121L, 182393067L, 178125910L,
-    173606275L, 168787482L, 163605661L, 157969209L,
-    151738075L, 144677415L, 136331151L, 125526788L,
-    100000000L,
+private val DOMES: Map<Species, Dome> = mapOf(
+    Species.Water to Dome(
+        saturationPressure = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            1L, 5L, 17L, 55L,
+            157L, 408L, 975L, 2169L,
+            4523L, 8900L, 16633L, 29678L,
+            50788L, 83697L, 133301L, 205825L,
+            308979L, 452078L, 646141L, 903956L,
+            1240113L, 1671010L, 2214845L, 2891574L,
+            3722875L, 4732088L, 5944164L, 7385614L,
+            9084460L, 11070197L, 13373766L, 16027547L,
+            19065353L, 22522458L, 26435631L, 30843197L,
+            35785115L, 41303085L, 47440672L, 54243470L,
+            61759284L, 70038358L, 79133637L, 89101075L,
+            100000000L,
+        ),
+        liquidDensity = longArrayOf(
+            373553221L, 373553221L, 373553221L, 373553221L,
+            373553221L, 373553221L, 373553221L, 373553221L,
+            373553221L, 373553221L, 373553221L, 373553221L,
+            373553221L, 373553221L, 373553221L, 373553221L,
+            373553221L, 373553221L, 373553221L, 373553221L,
+            371913260L, 370214507L, 368454968L, 366632498L,
+            364744791L, 362789370L, 360763572L, 358664530L,
+            356489161L, 354234143L, 351895895L, 349470551L,
+            346953934L, 344341529L, 341628444L, 338809378L,
+            335878577L, 332829783L, 329656184L, 326350345L,
+            322904136L, 319308644L, 315554068L, 311629600L,
+            307523270L, 303221772L, 298710241L, 293971983L,
+            288988132L, 283737219L, 278194616L, 272331808L,
+            266115417L, 259505874L, 252455551L, 244906062L,
+            236784212L, 227995640L, 218414283L, 207863633L,
+            196080167L, 182632039L, 166698487L, 146210657L,
+            100000000L,
+        ),
+        vapourDensity = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            1L, 5L, 15L, 47L,
+            129L, 321L, 738L, 1581L,
+            3178L, 6040L, 10914L, 18851L,
+            31268L, 50004L, 77374L, 116214L,
+            169913L, 242439L, 338362L, 462870L,
+            621796L, 821644L, 1069638L, 1373778L,
+            1742934L, 2186963L, 2716873L, 3345035L,
+            4085472L, 4954227L, 5969866L, 7154144L,
+            8532908L, 10137362L, 12005848L, 14186461L,
+            16740995L, 19751190L, 23329132L, 27635848L,
+            32917698L, 39587477L, 48444777L, 61534870L,
+            100000000L,
+        ),
+    ),
+    Species.Nitrogen to Dome(
+        saturationPressure = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            2L, 9L, 34L, 107L,
+            303L, 770L, 1788L, 3842L,
+            7709L, 14569L, 26119L, 44689L,
+            73352L, 116023L, 177534L, 263687L,
+            381288L, 538152L, 743088L, 1005867L,
+            1337174L, 1748552L, 2252337L, 2861593L,
+            3590044L, 4452013L, 5462356L, 6636411L,
+            7989951L, 9539138L, 11300490L, 13290854L,
+            15527386L, 18027534L, 20809032L, 23889900L,
+            27288448L, 31023284L, 35113335L, 39577865L,
+            44436502L, 49709272L, 55416635L, 61579531L,
+            68219424L, 75358363L, 83019038L, 91224852L,
+            100000000L,
+        ),
+        liquidDensity = longArrayOf(
+            372830846L, 372830846L, 372830846L, 372830846L,
+            372830846L, 372830846L, 372830846L, 372830846L,
+            372830846L, 372830846L, 372830846L, 372830846L,
+            372830846L, 372830846L, 372830846L, 372830846L,
+            370960164L, 369038990L, 367066153L, 365040367L,
+            362960226L, 360824201L, 358630634L, 356377733L,
+            354063560L, 351686030L, 349242896L, 346731740L,
+            344149964L, 341494778L, 338763182L, 335951956L,
+            333057640L, 330076514L, 327004580L, 323837527L,
+            320570710L, 317199108L, 313717287L, 310119349L,
+            306398877L, 302548867L, 298561646L, 294428779L,
+            290140950L, 285687818L, 281057850L, 276238095L,
+            271213916L, 265968636L, 260483092L, 254735031L,
+            248698311L, 242341799L, 235627808L, 228509833L,
+            220929128L, 212809307L, 204047348L, 194497534L,
+            183939965L, 172010338L, 158008811L, 140153394L,
+            100000000L,
+        ),
+        vapourDensity = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            3L, 10L, 37L, 111L,
+            298L, 721L, 1599L, 3287L,
+            6321L, 11472L, 19782L, 32610L,
+            51652L, 78961L, 116950L, 168386L,
+            236382L, 324378L, 436127L, 575686L,
+            747401L, 955912L, 1206161L, 1503413L,
+            1853288L, 2261806L, 2735455L, 3281265L,
+            3906920L, 4620883L, 5432565L, 6352530L,
+            7392758L, 8566990L, 9891166L, 11384009L,
+            13067819L, 14969561L, 17122402L, 19567966L,
+            22359731L, 25568406L, 29290894L, 33666327L,
+            38907511L, 45371114L, 53748750L, 65813537L,
+            100000000L,
+        ),
+    ),
+    Species.Oxygen to Dome(
+        saturationPressure = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 1L,
+            3L, 13L, 46L, 143L,
+            393L, 978L, 2226L, 4697L,
+            9272L, 17266L, 30541L, 51620L,
+            83790L, 131188L, 198873L, 292862L,
+            420156L, 588732L, 807521L, 1086368L,
+            1435981L, 1867871L, 2394282L, 3028132L,
+            3782938L, 4672761L, 5712143L, 6916056L,
+            8299858L, 9879248L, 11670242L, 13689140L,
+            15952511L, 18477179L, 21280218L, 24378952L,
+            27790955L, 31534070L, 35626416L, 40086414L,
+            44932812L, 50184711L, 55861605L, 61983419L,
+            68570554L, 75643938L, 83225082L, 91336145L,
+            100000000L,
+        ),
+        liquidDensity = longArrayOf(
+            374216896L, 374216896L, 374216896L, 374216896L,
+            374216896L, 374216896L, 374216896L, 374216896L,
+            374216896L, 374216896L, 374216896L, 374216896L,
+            374216896L, 374216896L, 374216896L, 372366774L,
+            370467550L, 368518180L, 366517508L, 364464260L,
+            362357046L, 360194351L, 357974535L, 355695822L,
+            353356294L, 350953887L, 348486376L, 345951370L,
+            343346299L, 340668404L, 337914722L, 335082073L,
+            332167040L, 329165955L, 326074872L, 322889544L,
+            319605391L, 316217468L, 312720423L, 309108447L,
+            305375224L, 301513857L, 297516795L, 293375734L,
+            289081505L, 284623930L, 279991655L, 275171928L,
+            270150338L, 264910459L, 259433412L, 253697268L,
+            247676258L, 241339679L, 234650349L, 227562367L,
+            220017720L, 211940933L, 203230161L, 193741264L,
+            183256604L, 171415424L, 157524325L, 139816882L,
+            100000000L,
+        ),
+        vapourDensity = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 1L,
+            4L, 15L, 50L, 148L,
+            387L, 916L, 1991L, 4019L,
+            7604L, 13597L, 23135L, 37675L,
+            59018L, 89315L, 131069L, 187130L,
+            260672L, 355184L, 474450L, 622535L,
+            803782L, 1022812L, 1284532L, 1594161L,
+            1957261L, 2379787L, 2868152L, 3429308L,
+            4070847L, 4801138L, 5629489L, 6566350L,
+            7623579L, 8814782L, 10155742L, 11665008L,
+            13364676L, 15281463L, 17448243L, 19906269L,
+            22708544L, 25925152L, 29652141L, 34027416L,
+            39261916L, 45709196L, 54054904L, 66057132L,
+            100000000L,
+        ),
+    ),
+    Species.CarbonDioxide to Dome(
+        saturationPressure = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 1L, 3L,
+            10L, 34L, 104L, 282L,
+            703L, 1613L, 3451L, 6932L,
+            13171L, 23813L, 41182L, 68434L,
+            109705L, 170249L, 256555L, 376443L,
+            539127L, 755259L, 1036939L, 1397704L,
+            1852501L, 2417640L, 3110739L, 3950666L,
+            4957470L, 6152328L, 7557480L, 9196184L,
+            11092670L, 13272111L, 15760597L, 18585130L,
+            21773619L, 25354903L, 29358767L, 33815994L,
+            38758411L, 44218963L, 50231795L, 56832358L,
+            64057524L, 71945730L, 80537139L, 89873827L,
+            100000000L,
+        ),
+        liquidDensity = longArrayOf(
+            374321470L, 374321470L, 374321470L, 374321470L,
+            374321470L, 374321470L, 374321470L, 374321470L,
+            374321470L, 374321470L, 374321470L, 374321470L,
+            374321470L, 374321470L, 374321470L, 374321470L,
+            374321470L, 374321470L, 372649019L, 370921318L,
+            369136760L, 367293609L, 365389989L, 363423880L,
+            361393108L, 359295330L, 357128026L, 354888484L,
+            352573782L, 350180775L, 347706072L, 345146016L,
+            342496664L, 339753755L, 336912687L, 333968482L,
+            330915744L, 327748625L, 324460768L, 321045252L,
+            317494524L, 313800319L, 309953569L, 305944283L,
+            301761417L, 297392707L, 292824465L, 288041329L,
+            283025948L, 277758580L, 272216578L, 266373708L,
+            260199239L, 253656702L, 246702133L, 239281537L,
+            231327066L, 222751014L, 213435837L, 203216382L,
+            191845131L, 178914853L, 163648453L, 144079587L,
+            100000000L,
+        ),
+        vapourDensity = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 1L, 3L,
+            10L, 32L, 93L, 242L,
+            576L, 1270L, 2611L, 5052L,
+            9258L, 16167L, 27040L, 43512L,
+            67634L, 101903L, 149283L, 213221L,
+            297649L, 406995L, 546182L, 720642L,
+            936332L, 1199770L, 1518076L, 1899048L,
+            2351252L, 2884149L, 3508264L, 4235395L,
+            5078900L, 6054058L, 7178550L, 8473104L,
+            9962357L, 11676064L, 13650790L, 15932402L,
+            18579826L, 21670976L, 25312659L, 29658253L,
+            34942349L, 41557991L, 50266671L, 63017565L,
+            100000000L,
+        ),
+    ),
+    Species.Argon to Dome(
+        saturationPressure = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 1L,
+            5L, 21L, 73L, 218L,
+            578L, 1391L, 3074L, 6316L,
+            12171L, 22175L, 38458L, 63843L,
+            101945L, 157241L, 235121L, 341912L,
+            484887L, 672241L, 913058L, 1217267L,
+            1595575L, 2059411L, 2620853L, 3292565L,
+            4087732L, 5019999L, 6103418L, 7352398L,
+            8781664L, 10406222L, 12241326L, 14302465L,
+            16605335L, 19165839L, 22000076L, 25124345L,
+            28555148L, 32309204L, 36403459L, 40855107L,
+            45681618L, 50900755L, 56530616L, 62589663L,
+            69096767L, 76071248L, 83532926L, 91502180L,
+            100000000L,
+        ),
+        liquidDensity = longArrayOf(
+            375388594L, 375388594L, 375388594L, 375388594L,
+            375388594L, 375388594L, 375388594L, 375388594L,
+            375388594L, 375388594L, 375388594L, 375388594L,
+            375388594L, 375388594L, 373541845L, 371647475L,
+            369704570L, 367712106L, 365668944L, 363573829L,
+            361425391L, 359222138L, 356962453L, 354644584L,
+            352266644L, 349826597L, 347322254L, 344751263L,
+            342111096L, 339399042L, 336612192L, 333747427L,
+            330801400L, 327770515L, 324650911L, 321438433L,
+            318128604L, 314716591L, 311197164L, 307564652L,
+            303812887L, 299935136L, 295924028L, 291771458L,
+            287468475L, 283005145L, 278370379L, 273551727L,
+            268535107L, 263304473L, 257841364L, 252124336L,
+            246128169L, 239822800L, 233171799L, 226130161L,
+            218640957L, 210630071L, 201997403L, 192601165L,
+            182227088L, 170519710L, 156795281L, 139310717L,
+            100000000L,
+        ),
+        vapourDensity = longArrayOf(
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 0L,
+            0L, 0L, 0L, 1L,
+            7L, 25L, 80L, 226L,
+            569L, 1303L, 2750L, 5404L,
+            9982L, 17465L, 29138L, 46612L,
+            71839L, 107118L, 155082L, 218689L,
+            301199L, 406158L, 537383L, 698944L,
+            895166L, 1130626L, 1410173L, 1738949L,
+            2122424L, 2566449L, 3077321L, 3661866L,
+            4327542L, 5082572L, 5936106L, 6898426L,
+            7981204L, 9197837L, 10563879L, 12097613L,
+            13820824L, 15759863L, 17947153L, 20423390L,
+            23240864L, 26468716L, 30201705L, 34575893L,
+            39799406L, 46221124L, 54517730L, 66424729L,
+            100000000L,
+        ),
+    ),
 )
 
-/**
- * Reduced density of the vapour that coexists at [SATURATION_PRESSURE], in [SCALE] — the sparse
- * branch of the dome, and the density at which a gas becomes unable to hold any more of itself and
- * starts to condense.
- *
- * The zeros at the cold end carry the same meaning as in [SATURATION_PRESSURE], and one further
- * consequence: where this reads zero, any amount of the species at all is at or above saturation,
- * so a trace of it in a cold cell condenses completely rather than lingering as a vapour. That is
- * the right behaviour, and it is what makes a cold surface collect frost rather than ignore it.
- */
-private val SATURATED_VAPOUR_DENSITY = longArrayOf(
-    0L, 0L, 0L, 0L,
-    0L, 0L, 0L, 0L,
-    0L, 0L, 3L, 17L,
-    78L, 284L, 860L, 2235L,
-    5126L, 10620L, 20217L, 35854L,
-    59883L, 95031L, 144334L, 211067L,
-    298671L, 410681L, 550673L, 722217L,
-    928846L, 1174033L, 1461185L, 1793642L,
-    2174681L, 2607535L, 3095411L, 3641514L,
-    4249071L, 4921370L, 5661789L, 6473839L,
-    7361208L, 8327810L, 9377843L, 10515859L,
-    11746837L, 13076281L, 14510333L, 16055915L,
-    17720901L, 19514343L, 21446762L, 23530529L,
-    25780379L, 28214121L, 30853649L, 33726405L,
-    36867607L, 40323768L, 44158587L, 48463484L,
-    53378325L, 59137764L, 66197686L, 75730388L,
-    100000000L,
-)
+/** [DOMES] by ordinal, because this is read inside the pressure sweep. */
+private val DOME_OF: Array<Dome?> = arrayOfNulls<Dome>(Species.COUNT).also {
+    for ((species, dome) in DOMES) it[species.ordinal] = dome
+}
 
 /**
- * Linear interpolation into one of the saturation tables at reduced temperature [temperatureR].
+ * Peng-Robinson's `α(Tr)` for [species], in [SCALE] — the temperature dependence of the attraction
+ * term, and the only place the acentric factor enters the equation of state.
  *
- * Linear is enough, but the error is not uniform and it is worth knowing where it lives — all of
- * it is measured by `SaturationTest`, which re-solves the curve rather than trusting these numbers.
+ * `α = [1 + κ(1 − √Tr)]²`, with κ a per-species constant derived once from the acentric factor.
  *
- * - **Saturation pressure: within 1%** over the range any of these fluids is not a solid, worst
- *   around `Tr = 0.4` where the curve is most nearly exponential and a chord fits it least well.
- *   This is the one the solver's stability rests on.
- * - **The two densities: within 8%**, concentrated entirely in the last few knots. The dome closes
+ * ⛔ **Clamped at zero where the bracket would go negative.** Past `√Tr = 1 + 1/κ` the bracket
+ * changes sign and squaring sends α *back up*, which is the well-known defect of this α function at
+ * high temperature: attraction is supposed to vanish as a fluid gets hot, not return. For water that
+ * turn is at about 2,980 K — reachable in a thruster bell and nowhere else — and letting it happen
+ * would make a very hot gas start behaving as though it were sticky.
+ *
+ * ⚠️ **One integer square root per call**, which is why this is a function and not a table. A table
+ * would have to span every reduced temperature the game reaches, and most of the vessel's gas is
+ * *supercritical* — nitrogen at room temperature is at `Tr = 2.3` — so the interesting range is not
+ * the `0..1` the dome tables cover. About 1,800 calls a tick on a 34×43 grid, which is well under a
+ * percent of a core. If that ever matters, √Tr factors as `√T / √Tc` and √Tc is a per-species
+ * constant that could be computed once.
+ */
+internal fun alphaAt(temperatureR: Long, species: Species): Long {
+    val kappa = CRITICAL[species]?.kappa ?: return SCALE
+    if (temperatureR <= 0L) {
+        val cold = SCALE + kappa
+        return cold * cold / SCALE
+    }
+    val rootTr = isqrt(temperatureR * SCALE)
+    val bracket = SCALE + kappa * (SCALE - rootTr) / SCALE
+    if (bracket <= 0L) return 0L
+    return bracket * bracket / SCALE
+}
+
+/**
+ * Linear interpolation into one of the dome's branches at reduced temperature [temperatureR].
+ *
+ * Linear is enough, but the error is not uniform and it is worth knowing where it lives — all of it
+ * is measured by `SaturationTest`, which re-solves the curve rather than trusting these numbers.
+ *
+ * - **Saturation pressure: within 1%** wherever it exceeds about 2 bar, and within 6% below that.
+ *   The error is a chord fitted to an exponential and it is worst where the curve is steepest, which
+ *   is the cold end — where the quantity itself is a hundredth of an atmosphere and the absolute
+ *   error is a fortieth of one. A logarithmic table would remove it outright; a finer linear one
+ *   only buys a factor of four per doubling.
+ * - **The two densities: within 11%**, and essentially all of it in the one knot interval below
+ *   the critical point — 10.1% for the vapour branch at `Tr = 0.99` against 1.2% at `Tr = 0.98`,
+ *   and better than that everywhere colder. The dome closes
  *   as `√(1 − Tr)`, so both branches reach the critical point with infinite slope, and no table
  *   sampled evenly in `Tr` can follow a cusp. Sampling evenly in `√(1 − Tr)` instead would remove
  *   it, at the cost of a square root on this path; not done, because nothing in the vessel runs
  *   near a critical point.
- * - **Below `Tr ≈ 0.35** the values are exponentially small and the table overestimates them by
- *   tens of percent. Immaterial: every fluid here is frozen solid by then, and there is no solid
- *   phase in this model, so that stretch describes a substance that does not exist.
+ * - **At the cold end** the values are exponentially small and a chord overestimates them. That is
+ *   where a solid phase belongs and there is not one yet — see [Critical.triplePointKelvin], which
+ *   is on file for exactly that and which nothing reads.
  *
  * Refining [N] moves the first two with a known exchange rate — the error is second order, so it
  * falls fourfold per doubling — if a use ever needs it to.
@@ -162,27 +473,33 @@ private fun sample(table: LongArray, temperatureR: Long): Long {
 }
 
 /**
- * The pressure at which liquid and vapour of a fluid at reduced temperature [temperatureR] sit in
+ * The pressure at which liquid and vapour of [species] at reduced temperature [temperatureR] sit in
  * equilibrium — its **vapour pressure**, in [SCALE].
  *
- * This is the boiling curve, and it is the answer to the question the equation of state
- * deliberately refuses to answer directly: a fluid boils where this exceeds the pressure pressing
- * on it. A pot of water on a mountain and the same pot at sea level read the same curve here and
- * boil at different temperatures, because what changed was the other side of the comparison.
+ * This is the boiling curve, and it is the answer to the question the equation of state deliberately
+ * refuses to answer directly: a fluid boils where this exceeds the pressure pressing on it. A pot of
+ * water on a mountain and the same pot at sea level read the same curve here and boil at different
+ * temperatures, because what changed was the other side of the comparison.
  *
- * Null above the critical temperature, where liquid and vapour are not different things and there
- * is nothing to be in equilibrium *between*.
+ * Null above the critical temperature, where liquid and vapour are not different things and there is
+ * nothing to be in equilibrium *between* — and null for a fluid with no dome at all.
  */
-fun saturationPressure(temperatureR: Long): Long? =
-    if (temperatureR >= SCALE) null else sample(SATURATION_PRESSURE, temperatureR)
+fun saturationPressure(temperatureR: Long, species: Species): Long? {
+    val dome = DOME_OF[species.ordinal] ?: return null
+    return if (temperatureR >= SCALE) null else sample(dome.saturationPressure, temperatureR)
+}
 
 /** Reduced density of saturated liquid at [temperatureR], or null above the critical point. */
-fun saturatedLiquidDensity(temperatureR: Long): Long? =
-    if (temperatureR >= SCALE) null else sample(SATURATED_LIQUID_DENSITY, temperatureR)
+fun saturatedLiquidDensity(temperatureR: Long, species: Species): Long? {
+    val dome = DOME_OF[species.ordinal] ?: return null
+    return if (temperatureR >= SCALE) null else sample(dome.liquidDensity, temperatureR)
+}
 
 /** Reduced density of saturated vapour at [temperatureR], or null above the critical point. */
-fun saturatedVapourDensity(temperatureR: Long): Long? =
-    if (temperatureR >= SCALE) null else sample(SATURATED_VAPOUR_DENSITY, temperatureR)
+fun saturatedVapourDensity(temperatureR: Long, species: Species): Long? {
+    val dome = DOME_OF[species.ordinal] ?: return null
+    return if (temperatureR >= SCALE) null else sample(dome.vapourDensity, temperatureR)
+}
 
 /**
  * What fraction of a cell's volume is liquid, in [SCALE], for a cell inside the saturation dome —
@@ -190,12 +507,20 @@ fun saturatedVapourDensity(temperatureR: Long): Long? =
  *
  * A cell at mean density `ρ` between the two branches holds liquid at `ρl` and vapour at `ρv` in
  * whatever proportion averages to `ρ`, which fixes the split with no freedom left over:
- * `f = (ρ − ρv) / (ρl − ρv)`. Zero at the vapour branch, one at the liquid branch, and sweeping
- * from one to the other *is* boiling — a cell does not jump between phases, it crosses the dome,
- * and how far across it has got is this number.
+ * `f = (ρ − ρv) / (ρl − ρv)`. Zero at the vapour branch, one at the liquid branch, and sweeping from
+ * one to the other *is* boiling — a cell does not jump between phases, it crosses the dome, and how
+ * far across it has got is this number.
  *
- * Returns 0 below the dome, `SCALE` above it, and null above the critical temperature.
+ * Returns 0 below the dome, [SCALE] above it, and null above the critical temperature.
  */
+fun liquidFraction(densityR: Long, temperatureR: Long, species: Species): Long? {
+    val vapour = saturatedVapourDensity(temperatureR, species) ?: return null
+    val liquid = saturatedLiquidDensity(temperatureR, species) ?: return null
+    if (densityR <= vapour) return 0L
+    if (densityR >= liquid) return SCALE
+    return (densityR - vapour) * SCALE / (liquid - vapour)
+}
+
 /**
  * How much of a cell [species] fills as *liquid*, in [SCALE] — the share of the room that is taken
  * and is no longer available to anything else.
@@ -207,20 +532,20 @@ fun saturatedVapourDensity(temperatureR: Long): Long? =
  * simply pushed itself across the room. That looked like the stiffness problem returning and is
  * something else entirely: a pool cannot sit still until the nitrogen has somewhere to not be.
  *
- * Returns 0 for a species that is not condensing, which is every species in the vessel today.
+ * Returns 0 for a species that is not condensing.
  */
 fun liquidVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
     val densityR = reducedDensity(mass, species, volume, full) ?: return 0L
     val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
-    return liquidFraction(densityR, temperatureR) ?: 0L
+    return liquidFraction(densityR, temperatureR, species) ?: 0L
 }
 
 /**
  * How many of a cell's [mass] of [species] are present as **vapour** — the rest being liquid.
  *
  * The lever rule again, read as a mass rather than as a volume: the cell holds `1 − f` of its room
- * at [saturatedVapourDensity], and that volume times that density is this. Returns all of [mass]
- * for a species that is not condensing, which is every species in the vessel today.
+ * at [saturatedVapourDensity], and that volume times that density is this. Returns all of [mass] for
+ * a species that is not condensing.
  *
  * This exists because **the two phases are not the same substance as far as transport is
  * concerned.** Fick's law describes a mixture spreading through itself, and a pool sitting under an
@@ -228,30 +553,22 @@ fun liquidVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, k
  * across that interface makes the pool read as an infinitely steep gradient and drift dissolves it,
  * which is measurably what was happening: a saturated pool shed 76% of itself in twenty ticks, and
  * excluding its liquid from drift leaves it holding 87%.
+ *
+ * ⚠️ **Nothing calls this yet**, and the clamp on the last line is why that is worth saying: it read
+ * `minOf(mass, mass)` against a `val mass` that shadowed the parameter, so the vapour it reported
+ * was never limited by the mass actually present and could exceed it. Harmless while dead;
+ * corrected here rather than left for whoever wires up the phase-aware transport it was written for.
  */
 fun vapourMass(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
     if (mass <= 0L) return mass
     val temperatureR = reducedTemperature(kelvin, species) ?: return mass
-    val vapourR = saturatedVapourDensity(temperatureR) ?: return mass
+    val vapourR = saturatedVapourDensity(temperatureR, species) ?: return mass
     val liquidShare = liquidVolumeFraction(mass, species, volume, full, kelvin)
     if (liquidShare <= 0L) return mass
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
     // its way to nothing before the density has been divided down — hence the full tile asked for
     // here and the `volume / full` at the end rather than letting the helper do it.
-    //
-    // The multiply itself lives in [massAtReducedDensity] now; it was one of four independent
-    // copies of it, all carrying the same overflow. The remaining fraction goes through
-    // [scaledRatio] for the same reason: a ratio of two [SCALE] quantities must not be multiplied
-    // into a mass.
     val fullTile = massAtReducedDensity(vapourR, species, full, full) ?: return mass
-    val mass = scaledRatio(SCALE - liquidShare, SCALE, fullTile) * volume / full
-    return minOf(mass, mass)
-}
-
-fun liquidFraction(densityR: Long, temperatureR: Long): Long? {
-    val vapour = saturatedVapourDensity(temperatureR) ?: return null
-    val liquid = saturatedLiquidDensity(temperatureR) ?: return null
-    if (densityR <= vapour) return 0L
-    if (densityR >= liquid) return SCALE
-    return (densityR - vapour) * SCALE / (liquid - vapour)
+    val asVapour = scaledRatio(SCALE - liquidShare, SCALE, fullTile) * volume / full
+    return minOf(asVapour, mass)
 }

@@ -62,8 +62,8 @@ const val SCALE: Long = 100_000_000L
 
 /**
  * The reduced density at which the fluid is packed shoulder to shoulder and pressure runs away to
- * infinity — `ρr = 3`, three times critical density, the point where the cell is all molecule and
- * no gap. Van der Waals is undefined at and beyond it, so callers are held below it.
+ * infinity — `ρr = Zc/Ωb = 3.9514`, the point where the cell is all molecule and no gap.
+ * Peng-Robinson is undefined at and beyond it, so callers are held below it.
  *
  * This is not a fudge factor: it is the excluded-volume term saying that matter cannot be
  * compressed past the size of its own molecules.
@@ -82,7 +82,30 @@ const val SCALE: Long = 100_000_000L
  * liquid density out of this model quantitatively. Qualitatively — that a liquid holds together,
  * resists spreading, and boils when it is heated — it is sound.
  */
-const val CLOSE_PACKED: Long = 3 * SCALE
+const val CLOSE_PACKED: Long = 395_137_292L
+
+/**
+ * `1/Zc`, in [SCALE] — the coefficient on Peng-Robinson's repulsive term once it is written in
+ * reduced density.
+ *
+ * The reduced isotherm is
+ *
+ *     Pr = (Tr·ρr)/Zc·(1 − b·ρr)  −  A·α(Tr)·ρr² / (1 + 2b·ρr − b²ρr²)
+ *
+ * with `b = Ωb/Zc` ([COVOLUME]) and `A = Ωa/Zc²` ([ATTRACTION]). All three fall out of the two
+ * universal Peng-Robinson constants `Ωa = 0.45724`, `Ωb = 0.07780` and its critical compressibility
+ * `Zc = 0.30740`; none of them is a choice.
+ *
+ * ⚠️ Worth one check by eye: `INV_ZC − COVOLUME` is exactly 3, because `(1 − Ωb)/Zc = 3`. If either
+ * constant is ever retyped, that identity is the cheapest way to catch it.
+ */
+const val INV_ZC: Long = 325_307_668L
+
+/** Peng-Robinson's covolume as a fraction of critical volume, `Ωb/Zc`, in [SCALE]. See [INV_ZC]. */
+const val COVOLUME: Long = 25_307_659L
+
+/** The attraction coefficient `Ωa/Zc²`, in [SCALE]. See [INV_ZC]. */
+const val ATTRACTION: Long = 483_869_859L
 
 /**
  * The margin [MAX_REDUCED_DENSITY] holds back from the wall, as a fraction of one reduced unit.
@@ -124,43 +147,96 @@ const val MAX_REDUCED_DENSITY: Long = CLOSE_PACKED - PACKING_MARGIN
  * at any pressure at all — the distinction genuinely ceases to exist — and that fact arrives as a
  * consequence of the reduced equation rather than as a branch anybody wrote.
  *
- * ### Why the critical *pressure* is derived and not given
+ * ### Why the critical *density* is derived and not given
  *
- * It is tempting to supply all three, since all three are tabulated. They cannot all be honoured.
- * Van der Waals fixes the ratio `Pc·vc/(R·Tc)` at exactly `3/8` — that is forced by the shape of
- * the equation, not chosen — whereas real fluids measure around `0.29`. The three constants are
- * therefore over-determined: pick any two and the third follows.
+ * All three constants are tabulated and they cannot all be honoured. A cubic equation of state
+ * fixes the ratio `Pc·vc/(R·Tc)` — that is forced by the shape of the equation, not chosen — at
+ * `3/8` for van der Waals and at **0.30740** for Peng-Robinson, whereas real fluids measure around
+ * 0.27. Pick any two of the three and the third follows.
  *
- * Taking [kelvin] and [massPerTile] as the inputs is the choice that matters, because those two
- * are what place the phase transition in the state space the solver actually moves through — how
- * hot a cell has to get, and how dense it has to be. [pressure] is then whatever the equation says
- * it is. Supplying a measured critical pressure alongside them would not make the model more
- * accurate; it would make it inconsistent, and the inconsistency would surface as a fluid whose
- * boiling curve quietly disagrees with its own density.
+ * ⚠️ **This file used to pick the other two, and the swap is deliberate.** It took [kelvin] and a
+ * *measured* critical density and let the pressure fall out, on the reasoning that temperature and
+ * density are what place the transition in the state space the solver moves through. That is true
+ * and it is not what the vessel actually asks. What the vessel asks is "is this cell above its
+ * saturation pressure" — boiling, off-gassing, and every comparison [reducedPressure] feeds — and
+ * getting that right means getting *pressure* right. So the measured pair is now the critical
+ * temperature and the critical **pressure**, and the density is whatever the equation says.
  *
- * The cost is that critical pressures come out roughly 30% high. That is the well-known error of
- * van der Waals and the honest price of a two-constant equation of state.
+ * The cost is stated rather than hidden: Peng-Robinson's critical compressibility is 0.307 against
+ * a real ~0.27 for these fluids, so a derived critical density lands around 25% low, and every
+ * liquid density downstream is low by about as much. Liquid water at room temperature comes out
+ * near 850 kg/m³ against a real 998. That is the well-known density weakness of Peng-Robinson, the
+ * price of getting its excellent vapour pressures, and it is fixable later by a Péneloux volume
+ * shift — a fourth constant that moves densities without touching the pressure curve at all.
  *
  * @param kelvin critical temperature, K.
- * @param massPerTile critical density, expressed as the mass of this species that a full tile
- *   holds when it is exactly at critical density. Tile-relative for the same reason
- *   [org.emerge.demo.outofspace.world.VolumeField] is: the solver never asks how big a metre
- *   is, and this keeps it from having to start.
+ * @param bar critical pressure, bar.
+ * @param acentric the acentric factor, which is the third constant and the only thing in the whole
+ *   equation of state that tells one substance from another. See [kappa].
+ * @param triplePointKelvin the temperature below which this species has no liquid phase at any
+ *   pressure. **Nothing reads it yet** — it is here so the shape of the table is settled before a
+ *   solid phase arrives, rather than being retrofitted through five call sites afterwards.
  */
-class Critical(val kelvin: Int, val massPerTile: Long, private val species: Species) {
+class Critical(
+    val kelvin: Int,
+    private val bar: Double,
+    private val acentric: Double,
+    val triplePointKelvin: Int,
+    private val species: Species,
+) {
+
+    /**
+     * Peng-Robinson's `κ`, in [SCALE] — the acentric factor as the equation actually consumes it.
+     *
+     * `κ = 0.37464 + 1.54226ω − 0.26992ω²`, derived once here so that [alphaAt] is two multiplies
+     * and a square root rather than a polynomial per call. It is the *entire* footprint of ω in the
+     * model: two fluids with equal κ have identical reduced behaviour, which is why the saturation
+     * dome is a one-parameter family and not a curve per substance.
+     */
+    val kappa: Long = ((0.37464 + 1.54226 * acentric - 0.26992 * acentric * acentric) * SCALE).toLong()
+
+    /**
+     * Critical density, expressed as the mass of this species a full tile holds at exactly that
+     * density. Tile-relative for the same reason
+     * [org.emerge.demo.outofspace.world.VolumeField] is: the solver never asks how big a metre is,
+     * and this keeps it from having to start.
+     *
+     * Derived from [kelvin] and [bar] through Peng-Robinson's own `Zc`, not measured — see the note
+     * above on which two constants are the inputs. Computed in floating point because it happens
+     * once per species at class-init and never again; only `*` and `/` are involved, which are
+     * exactly specified by IEEE-754, so it is as deterministic across machines as the integers are.
+     */
+    val massPerTile: Long = run {
+        val molesPerCubicMetre = bar * 1e5 / (PENG_ROBINSON_ZC * GAS_CONSTANT * kelvin)
+        val kgPerCubicMetre = molesPerCubicMetre * species.molarMass / 1000.0
+        (kgPerCubicMetre * TILE_LITRES).toLong() * Budget.GRAM
+    }
 
     /**
      * Critical pressure, in the units [org.emerge.demo.outofspace.world.tilePressure]
      * reports — the conversion that carries a reduced pressure back into the solver's scale.
      *
-     * `Pc = (3/8)·n_c·Tc / T_ambient`, which is the `3/8` ratio above rearranged, with the
+     * `Pc = Zc·n_c·Tc / T_ambient`, which is the compressibility ratio above rearranged, with the
      * millimoles-scaled-by-temperature units the existing pressure field already speaks. The
      * consequence worth knowing: at ordinary atmospheric density this reproduces the ideal gas law
-     * the solver used before to within a fraction of a percent, because that is what van der Waals
-     * *does* when the molecules are far apart. The old behaviour is the sparse limit of the new one.
+     * the solver used before to within a fraction of a percent, because that is what a cubic
+     * equation of state *does* when the molecules are far apart. The old behaviour is the sparse
+     * limit of the new one.
      */
-    val pressure: Long = 3 * millimolesIn(massPerTile, species) * kelvin / (8 * REFERENCE_KELVIN)
+    val pressure: Long =
+        millimolesIn(massPerTile, species) * kelvin * PENG_ROBINSON_ZC_NUMERATOR /
+            (PENG_ROBINSON_ZC_DENOMINATOR * REFERENCE_KELVIN)
 }
+
+/** Peng-Robinson's critical compressibility — a property of the equation, not of any substance. */
+private const val PENG_ROBINSON_ZC = 0.3074013
+
+/** The same as an exact rational, for [Critical.pressure], which may not touch floating point. */
+private const val PENG_ROBINSON_ZC_NUMERATOR = 3_074_013L
+private const val PENG_ROBINSON_ZC_DENOMINATOR = 10_000_000L
+
+/** The molar gas constant, J/(mol·K). */
+private const val GAS_CONSTANT = 8.314462618
 
 /**
  * Millimoles of [species] in [mass] of it — the same conversion
@@ -206,7 +282,7 @@ private const val REFERENCE_KELVIN = 293
  * @throws IllegalArgumentException if [densityR] is at or past [CLOSE_PACKED], which has no
  *   pressure to report — see that constant.
  */
-fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
+fun pengRobinsonPressure(densityR: Long, temperatureR: Long, species: Species): Long {
     require(densityR in 0 until CLOSE_PACKED) {
         "density must be inside the close-packing limit; got $densityR of $CLOSE_PACKED"
     }
@@ -215,15 +291,29 @@ fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
     // thermal term reaches ~1e17, and multiplying that by a critical pressure in [partialPressure]
     // wrapped a Long for three species out of four. See NUMERIC_LIMITS.md §6.1.
     val rho = densityR.coerceAtMost(MAX_REDUCED_DENSITY)
-    val gap = CLOSE_PACKED - rho
 
-    // `8·Tr·ρr / (3 − ρr)`. Taken as the ratio `ρr / gap` first — bounded by [PACKING_DIVISIONS]
-    // because of the clamp above — so that no temperature, however absurd, can overflow the
-    // numerator on its way to a quotient that was always going to be small. Exactly equal to the
-    // old `8 * temperatureR * densityR / gap` wherever that did not overflow: `scaledRatio` splits
-    // the same division into a whole part and a remainder rather than approximating it.
-    val thermal = scaledRatio(rho, gap, 8L * temperatureR)
-    val attraction = 3L * rho * rho / SCALE
+    // ── Repulsion: `Tr·ρr / (Zc·(1 − b·ρr))` ────────────────────────────────
+    //
+    // Taken as the ratio `ρr / gap` first, so that no temperature, however absurd, can overflow the
+    // numerator on its way to a quotient that was always going to be small. `gap` is the distance
+    // left to the covolume wall in the same units the numerator is in, which is what makes the
+    // whole term one `scaledRatio` rather than three multiplies looking for somewhere to divide.
+    val gap = SCALE - COVOLUME * rho / SCALE
+    val thermal = scaledRatio(rho, gap, INV_ZC * temperatureR / SCALE)
+
+    // ── Attraction: `A·α(Tr)·ρr² / (1 + 2b·ρr − b²ρr²)` ─────────────────────
+    //
+    // The denominator is Peng-Robinson's whole departure from van der Waals — a quadratic in ρr
+    // rather than the bare `1`, which is what lets one equation carry a realistic liquid branch and
+    // a realistic vapour pressure at the same time. Written in terms of `bRho` so that `b²ρr²`
+    // arrives as `(b·ρr)²` and is never a product of two [SCALE] constants looking for a divide.
+    //
+    // ⚠️ It cannot vanish inside the domain: its positive root is at `ρr = (1 + √2)/b = 9.54`, well
+    // past [CLOSE_PACKED], so there is no second singularity to guard against.
+    val bRho = COVOLUME * rho / SCALE
+    val cohesion = SCALE + 2L * bRho - bRho * bRho / SCALE
+    val alpha = alphaAt(temperatureR, species)
+    val attraction = scaledRatio(ATTRACTION * alpha / SCALE * rho / SCALE * rho / SCALE, cohesion, SCALE)
 
     // The last guard, and the one that does not rest on an assumed maximum temperature: whatever
     // comes out, [partialPressure] is going to multiply it by a critical pressure. Clamping the
@@ -234,7 +324,7 @@ fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
 }
 
 /**
- * The pressure a cell actually reports: [vanDerWaalsPressure] outside the saturation dome, and the
+ * The pressure a cell actually reports: [pengRobinsonPressure] outside the saturation dome, and the
  * flat coexistence pressure inside it.
  *
  * **This is the one the solver must use, and the difference is not cosmetic.** The raw equation's
@@ -244,15 +334,14 @@ fun vanDerWaalsPressure(densityR: Long, temperatureR: Long): Long {
  * two phases at once, every density across the band coexists at the same pressure, and the slope
  * is zero.
  *
- * Outside the dome this is exactly [vanDerWaalsPressure], so nothing that was never near
- * condensing sees any change at all — which is what let this land without moving a single existing
- * pressure in the game. `SaturationTest` pins that.
+ * Outside the dome this is exactly [pengRobinsonPressure], so nothing that was never near
+ * condensing sees any change from the flattening. `SaturationTest` pins that.
  */
-fun reducedPressure(densityR: Long, temperatureR: Long): Long {
-    val raw = vanDerWaalsPressure(densityR, temperatureR)
-    val vapour = saturatedVapourDensity(temperatureR) ?: return raw
-    val liquid = saturatedLiquidDensity(temperatureR) ?: return raw
-    val saturation = saturationPressure(temperatureR)!!
+fun reducedPressure(densityR: Long, temperatureR: Long, species: Species): Long {
+    val raw = pengRobinsonPressure(densityR, temperatureR, species)
+    val vapour = saturatedVapourDensity(temperatureR, species) ?: return raw
+    val liquid = saturatedLiquidDensity(temperatureR, species) ?: return raw
+    val saturation = saturationPressure(temperatureR, species)!!
     // The clamps are what keep the seam continuous. Physically they say nothing new — a vapour
     // below its saturation density is below its saturation pressure, and a liquid above saturation
     // density is above it, both by definition of the dome. They are here because the three tables
@@ -282,9 +371,9 @@ fun reducedPressure(densityR: Long, temperatureR: Long): Long {
  * can no longer happen below the critical temperature, which `SaturationTest` asserts directly
  * because it is the property the solver's stability rests on.
  *
- * Analytically this is `24·Tr/(3 − ρr)² − 6·ρr`, which at critical density comes out as exactly
- * `6·(Tr − 1)` — zero at the critical point, negative below it, positive above. The transition
- * appears and disappears at precisely the right temperature without being told to.
+ * Analytically this is the derivative of [pengRobinsonPressure], which is zero at the critical
+ * point, negative below it and positive above — the transition appears and disappears at precisely
+ * the right temperature without being told to.
  *
  * It is nonetheless *measured* here, as a finite difference across [step], rather than evaluated
  * from that formula. The analytic version overflows as `ρr` approaches [CLOSE_PACKED] and the
@@ -292,12 +381,18 @@ fun reducedPressure(densityR: Long, temperatureR: Long): Long {
  * upright on is the integer curve [reducedPressure] really produces, rounding and all, not the
  * real-numbered one it approximates. So that is the curve this reports the slope of.
  */
-fun reducedStiffness(densityR: Long, temperatureR: Long, step: Long = SCALE / 1000L): Long {
+fun reducedStiffness(
+    densityR: Long,
+    temperatureR: Long,
+    species: Species,
+    step: Long = SCALE / 1000L,
+): Long {
     require(step > 0) { "step must be positive; got $step" }
     val low = (densityR - step).coerceAtLeast(0L)
     val high = (densityR + step).coerceAtMost(CLOSE_PACKED - 1)
     require(high > low) { "no room to measure a slope at $densityR" }
-    return (reducedPressure(high, temperatureR) - reducedPressure(low, temperatureR)) * SCALE / (high - low)
+    return (reducedPressure(high, temperatureR, species) - reducedPressure(low, temperatureR, species)) *
+        SCALE / (high - low)
 }
 
 /**
@@ -314,13 +409,15 @@ fun reducedStiffness(densityR: Long, temperatureR: Long, step: Long = SCALE / 10
  * is the correct treatment for anything the vessel never gets near condensing.
  */
 val CRITICAL: Map<Species, Critical> = mapOf(
-    Species.Water to critical(kelvin = 647, kgPerCubicMetre = 322, species = Species.Water),
-    Species.Nitrogen to critical(kelvin = 126, kgPerCubicMetre = 313, species = Species.Nitrogen),
-    Species.Oxygen to critical(kelvin = 155, kgPerCubicMetre = 436, species = Species.Oxygen),
-    Species.CarbonDioxide to critical(kelvin = 304, kgPerCubicMetre = 468, species = Species.CarbonDioxide),
+    Species.Water to critical(647, 220.64, 0.3443, 273, Species.Water),
+    Species.Nitrogen to critical(126, 33.958, 0.0372, 63, Species.Nitrogen),
+    Species.Oxygen to critical(155, 50.43, 0.0222, 54, Species.Oxygen),
+    Species.CarbonDioxide to critical(304, 73.773, 0.2276, 217, Species.CarbonDioxide),
     // Argon condenses at 151 K, between nitrogen and oxygen, which is where a noble gas belongs on
-    // this curve: the law of corresponding states does not care that it is monatomic.
-    Species.Argon to critical(kelvin = 151, kgPerCubicMetre = 536, species = Species.Argon),
+    // this curve: the law of corresponding states does not care that it is monatomic. Its acentric
+    // factor is zero by definition — argon is the reference the whole correction is measured
+    // against — so it is the row that shows the change here was never only about that constant.
+    Species.Argon to critical(151, 48.63, 0.0000, 84, Species.Argon),
 )
 
 /**
@@ -364,8 +461,13 @@ const val TILE_LITRES: Long = 830
  * turns those mass into integers, and it is the whole of this function's participation in the mass
  * unit. Before step 8's audit it was absent, and a tile of critical water weighed 267 milligrams.
  */
-private fun critical(kelvin: Int, kgPerCubicMetre: Int, species: Species): Critical =
-    Critical(kelvin = kelvin, massPerTile = kgPerCubicMetre * TILE_LITRES * Budget.GRAM, species = species)
+private fun critical(
+    kelvin: Int,
+    bar: Double,
+    acentric: Double,
+    triplePointKelvin: Int,
+    species: Species,
+): Critical = Critical(kelvin, bar, acentric, triplePointKelvin, species)
 
 /**
  * What a cell's fluid is *behaving* as. Read, never stored.
@@ -413,14 +515,14 @@ enum class FluidPhase {
  * vapour, both of which do separate in a cell that has a wall or a neighbour to nucleate against,
  * and every cell here has six.
  */
-fun phaseAt(densityR: Long, temperatureR: Long): FluidPhase = when {
+fun phaseAt(densityR: Long, temperatureR: Long, species: Species): FluidPhase = when {
     temperatureR >= SCALE -> FluidPhase.Supercritical
     // Inclusive at both edges, to agree with [liquidFraction], which reads a cell at exactly the
     // saturated liquid density as wholly liquid and one at exactly saturated vapour as wholly
     // vapour. A pool sitting in equilibrium lands precisely on that boundary, so the two functions
     // disagreeing about it is not an edge case but the ordinary situation.
-    densityR <= saturatedVapourDensity(temperatureR)!! -> FluidPhase.Vapour
-    densityR >= saturatedLiquidDensity(temperatureR)!! -> FluidPhase.Liquid
+    densityR <= saturatedVapourDensity(temperatureR, species)!! -> FluidPhase.Vapour
+    densityR >= saturatedLiquidDensity(temperatureR, species)!! -> FluidPhase.Liquid
     else -> FluidPhase.Separating
 }
 
@@ -500,7 +602,7 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
     val densityR = (reducedDensity(mass, species, volume, full) ?: return null)
         .coerceAtMost(MAX_REDUCED_DENSITY)
     val temperatureR = reducedTemperature(kelvin, species) ?: return null
-    return c.pressure * reducedPressure(densityR, temperatureR) / SCALE
+    return c.pressure * reducedPressure(densityR, temperatureR, species) / SCALE
 }
 
 /**
@@ -508,8 +610,8 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
  * millijoules the rest of the thermal bookkeeping uses. Always negative or zero: a cohering fluid
  * is in a bound state, and pulling it apart costs energy.
  *
- * **This is the latent heat**, and it is not a separate mechanism — it is the same `3·ρr²`
- * attraction term from [reducedPressure], multiplied by the cell's volume. When a cell boils, its
+ * **This is the latent heat**, and it is not a separate mechanism — it is the same attraction term
+ * from [pengRobinsonPressure], multiplied by the cell's volume. When a cell boils, its
  * density falls, this number rises toward zero, and the energy to pay for that has to come out of
  * the thermal pot, which is why a boiling liquid cools itself and why condensation gives the heat
  * back. Nothing anywhere states a latent heat of vaporisation; it is a consequence of the same two
@@ -524,9 +626,16 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
  * currently takes, so it is left for whoever turns latent heat on — it belongs with teaching the
  * ledger its third term, not before, since nothing consumes the difference until then.
  */
-fun cohesionEnergy(densityR: Long, species: Species, volume: Int, full: Int): Long {
+fun cohesionEnergy(densityR: Long, temperatureR: Long, species: Species, volume: Int, full: Int): Long {
     val c = CRITICAL[species] ?: return 0L
-    val attraction = 3L * densityR * densityR / SCALE
+    // The same attraction term [pengRobinsonPressure] subtracts, which is the whole point: a latent
+    // heat is not a separate quantity, it is what that term does as density falls.
+    val bRho = COVOLUME * densityR / SCALE
+    val cohesion = SCALE + 2L * bRho - bRho * bRho / SCALE
+    val alpha = alphaAt(temperatureR, species)
+    val attraction = scaledRatio(
+        ATTRACTION * alpha / SCALE * densityR / SCALE * densityR / SCALE, cohesion, SCALE,
+    )
     return -(c.pressure * attraction / SCALE) * volume / full * Budget.JOULE
 }
 
