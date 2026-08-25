@@ -136,8 +136,9 @@ class TransportTest {
         held: RailLayer,
         cursors: FlowCursors = FlowCursors(),
         log: MotionLog? = null,
+        handOver: (TileIndex, TileIndex) -> Long = { _, _ -> Long.MAX_VALUE },
         absorb: (TileIndex) -> Packet? = { null },
-    ): Int = advanceSegments(flow, held, cursors, log, absorb = absorb)
+    ): Int = advanceSegments(flow, held, cursors, log, handOver = handOver, absorb = absorb)
 
     // ── Which way is downstream ───────────────────────────────────────────────
 
@@ -701,6 +702,73 @@ class TransportTest {
             if (h[down.index] != null) reachedDown++
         }
         assertEquals(6, reachedDown, "every packet should have taken the branch that was open")
+    }
+
+    // ── Dividing a lump at a fork ─────────────────────────────────────────────
+    //
+    // A fork used to have two answers about a branch — yes and no — and a lump is not always the
+    // size of the thing waiting for it. Stu's save: 100kg of iron at a fork, one way leading to a
+    // rail ghost 30kg short of finishing, and the whole packet went that way because the ghost
+    // genuinely did want *some* of it. It skimmed its 30kg and the rest was left standing on the
+    // dead end it had just become.
+    //
+    // So the fork asks how much, and hands the rest to the next way out in the same pass. Stated
+    // here as a plain cap so the mechanism is pinned without any of the demand machinery — what the
+    // number means is `Whitelist.room`'s business, and `GhostTest` exercises the two together.
+
+    @Test
+    fun `a fork gives a capped branch its cap and sends the rest on`() {
+        val (n, f) = why()
+        val up = grid.tile(5, 2)
+        val down = grid.tile(5, 4)
+        val fork = grid.tile(5, 3)
+        val h = held(n, fork to lump())
+
+        // The upward branch can use three tenths of a packet; the downward one anything.
+        step(f, h, handOver = { _, to -> if (to == up) share(300) else Long.MAX_VALUE })
+
+        assertEquals(share(300), h[up.index]?.total, "the capped branch took more or less than it asked for")
+        assertEquals(
+            Capacity.PACKET_MASS - share(300),
+            h[down.index]?.total,
+            "the remainder did not take the other way out in the same pass",
+        )
+        assertTrue(h.isEmpty(fork), "the fork kept some of it back")
+    }
+
+    @Test
+    fun `a lump with one way out is never divided`() {
+        // ⛔ The cap is asked at a **fork** and nowhere else. A corridor has no second way out, so
+        // dividing a lump there does not save the surplus for anybody — it strands it, and stops the
+        // run behind it as well. Same rule, and the same reason, as rationing demand only at a fork.
+        val n = net().row(2, 8, 3)
+        val f = n.toward(grid.tile(8, 3).index)
+        val h = held(n, grid.tile(2, 3) to lump())
+
+        step(f, h, handOver = { _, _ -> share(100) })
+
+        assertEquals(
+            Capacity.PACKET_MASS,
+            h[grid.tile(3, 3).index]?.total,
+            "a lump with nowhere else to go crossed in pieces",
+        )
+        assertTrue(h.isEmpty(grid.tile(2, 3)))
+    }
+
+    @Test
+    fun `what no branch will take stays standing, and nothing is lost`() {
+        // Both ways out capped, and the two caps together are less than the lump. Each branch is fed
+        // once — it stops being empty the moment it is — so the pass terminates with the surplus
+        // still on the fork, which is where a lump nobody can use belongs.
+        val (n, f) = why()
+        val fork = grid.tile(5, 3)
+        val h = held(n, fork to lump())
+
+        step(f, h, handOver = { _, _ -> share(300) })
+
+        assertEquals(share(300), h[grid.tile(5, 2).index]?.total)
+        assertEquals(share(300), h[grid.tile(5, 4).index]?.total)
+        assertEquals(Capacity.PACKET_MASS - 2 * share(300), h[fork.index]?.total, "grams went missing at the fork")
     }
 
     @Test

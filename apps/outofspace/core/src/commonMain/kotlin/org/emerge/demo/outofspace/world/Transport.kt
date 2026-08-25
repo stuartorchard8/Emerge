@@ -27,6 +27,20 @@ fun advanceSegments(
      * Everything else admits everything, which is what a length of finished track has always done.
      */
     admits: (from: TileIndex, to: TileIndex) -> Boolean = { _, _ -> true },
+    /**
+     * How much of what stands at [from] the route into [to] can usefully take, or [Long.MAX_VALUE]
+     * for "all of it" — asked **only at a fork**, and only after [admits] has already said yes.
+     *
+     * ⛔ **Only at a fork, and that is not an optimisation.** Handing over less than the whole lump
+     * leaves a remainder standing, and a remainder standing in a corridor with one way out is not a
+     * saving — it is the material failing to arrive, with the run behind it stopped as well. Where a
+     * tile has a second way out the remainder has somewhere to be, and it goes there in this same
+     * pass: a fork is exactly where a lump has a choice, which is the same place demand is rationed.
+     *
+     * The caller sizes the slice and is responsible for it being one the door would still take — a
+     * proportional slice is only representative while it is big enough to carry every species.
+     */
+    handOver: (from: TileIndex, to: TileIndex) -> Long = { _, _ -> Long.MAX_VALUE },
     absorb: (tile: TileIndex) -> Packet?,
 ): Int {
     var moved = 0
@@ -63,19 +77,44 @@ fun advanceSegments(
             continue
         }
 
-        val way = cursors.choose(flow, tile) { target ->
-            rail.isEmpty(target) && admits(tile, target) &&
-                mayMerge(flow, cursors, rail, walked, tile, target, admits)
-        }
-        if (way != null) {
+        // ── One way out, or several ─────────────────────────────────────────
+        //
+        // A fork is the one place a lump can be **divided**: a route that wants 30kg of the 100kg
+        // standing here takes 30kg, and the rest goes the other way in this same pass rather than
+        // riding to a place that has no use for it. See [handOver], and [RailLayer.splitInto] for
+        // why taking from a lump is allowed where adding to one is not.
+        //
+        // ⚠️ Each branch can be used at most once — it stops being empty the moment it is fed — so
+        // the loop is bounded by the number of ways out however the sizing behaves.
+        val forked = flow.outDegree(tile) > 1
+        var handedOn = false
+        while (true) {
+            val way = cursors.choose(flow, tile) { target ->
+                rail.isEmpty(target) && admits(tile, target) &&
+                    mayMerge(flow, cursors, rail, walked, tile, target, admits)
+            } ?: break
             val target = flow.neighbour(tile, way)
             cursors.mergeUsed(flow.feeders(target), target, tile)
-            rail.moveInto(tile, target)
+            val here = rail.massAt(tile)
+            val room = if (forked) handOver(tile, target) else Long.MAX_VALUE
+            if (room >= here) {
+                rail.moveInto(tile, target)
+                arrived[target.index] = true
+                log?.moved(tile, target, way)
+                moved++
+                handedOn = true
+                break
+            }
+            // Less than the whole. Nought means the route can take nothing after all, which the
+            // door said it could — refuse rather than spin, and let the lump wait a step.
+            if (rail.splitInto(tile, target, room) == null) break
             arrived[target.index] = true
-            log?.moved(tile, target, way)
+            log?.splitOff(tile, target, way)
             moved++
-            continue
+            handedOn = true
+            // …and round again with what is left, for the next way out of this tile.
         }
+        if (handedOn) continue
 
         // Nowhere free. Squash forward into an identical packet if there is one with room. Checked
         // in the successors' own order so a fork behaves the same way it would when moving.

@@ -324,6 +324,76 @@ class GhostTest {
     }
 
     /**
+     * ⛔ **A fork hands a route what that route can use, and sends the rest the other way.**
+     *
+     * Stu's save, (14,28): 100kg of iron standing on finished track at a fork. One way leads to a
+     * rail ghost that already holds 100kg of its 130kg bill; the other to a ghost barely started.
+     * Every rule said yes — the ghost admits iron, and it still wants 30kg of it — so the **whole**
+     * packet went that way, the ghost skimmed the 30kg it was short of and finished, and the other
+     * 69kg was left standing on what was now a finished dead end. It is not a deadlock: the surplus
+     * walks back off the stub over the next few rail periods and eventually takes the turning it
+     * should have taken at once. It is the shape of the delivery — the branch that wanted the whole
+     * packet was fed one packet at a time, and the far ghost took five rail periods to reach a state
+     * it now reaches in three.
+     *
+     * Nothing was wrong with any of the answers. The question had two values and the situation
+     * needed three: not "may this cross" but "how much of this is worth sending". A route now takes
+     * what it can use and the remainder goes to the next way out **in the same step**, because a
+     * fork is precisely where a lump has somewhere else to be.
+     *
+     * ⚠️ The shortfall is deliberately not a round number of packets — a fork that split a packet
+     * evenly would pass a fixture that says "some went each way" and still strand the difference.
+     */
+    @Test
+    fun `a fork gives each ghost only what it is short of, in one step`() {
+        val grid = Grid(10, 8)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 5, 3)       // the fork tile and the ghost to its right
+        joinCol(grid, rails, 4, 3, 4)       // …and the ghost below it
+        val fork = grid.tile(4, 3)
+        val right = grid.tile(5, 3)
+        val down = grid.tile(4, 4)
+        val start = VesselState(
+            grid,
+            DeckArray(grid),
+            conduits = Conduits.ofRails(rails.toList()),
+            buffers = BufferLayer.forDeck(grid, DeckArray(grid)),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false)
+
+        val stuff = start.conduits.tracks[Conduit.Rail]
+        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        // ⚠️ **Neither shortfall is a round number of packets, and together they are exactly one.**
+        // A quarter and three quarters, so the packet covers both ghosts and neither can swallow it
+        // whole — which makes the outcome independent of which branch the fork's turn falls on, and
+        // that matters: with one capped branch the test would only fail when the cursor happened to
+        // point at it.
+        val quarter = Capacity.PACKET_MASS / 4
+        stuff[right, Species.Iron] = stuff[right, Species.Iron] - quarter
+        stuff[down, Species.Iron] = stuff[down, Species.Iron] - (Capacity.PACKET_MASS - quarter)
+        assertFalse(start.conduits.isComplete(Conduit.Rail, right), "the fixture left a finished rail")
+        assertFalse(start.conduits.isComplete(Conduit.Rail, down), "the fixture left a finished rail")
+        // No source anywhere: one packet, standing on the fork, and two ghosts wanting it.
+        start.rail.loadOnto(fork, bill.scaledTo(Capacity.PACKET_MASS))
+
+        // ⚠️ **One rail period**, which is the claim: the division happens in the step the lump
+        // moves, not over the several it takes a stranded remainder to find its way back out.
+        val stepped = run(start, RAIL_PERIOD)
+        assertEquals(0L, stepped.rail.massAt(fork), "the fork still holds something")
+        assertEquals(quarter, stepped.rail.massAt(right), "the near-finished ghost was not given its own shortfall")
+        assertEquals(
+            Capacity.PACKET_MASS - quarter,
+            stepped.rail.massAt(down),
+            "the remainder did not go the other way in the same step",
+        )
+
+        val s = run(stepped, RAIL_PERIOD * 4)
+        assertTrue(s.conduits.isComplete(Conduit.Rail, right), "the ghost to the right never finished")
+        assertTrue(s.conduits.isComplete(Conduit.Rail, down), "the ghost below never finished")
+        assertEquals(0L, grid.tiles.sumOf { s.rail.massAt(it) }, "iron was left standing once both jobs were done")
+    }
+
+    /**
      * ⛔ **A merge does not hold its turn open for a run that cannot move.**
      *
      * Stu's, and he called it from the symptom alone. Two runs join; one carries iron toward a ghost

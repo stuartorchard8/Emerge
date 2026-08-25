@@ -37,6 +37,20 @@ class MotionLog(rails: List<Segment?>, rail: RailLayer) {
     }
 
     /**
+     * Part of [from]'s packet stepped to [to], and the rest of it stayed put.
+     *
+     * The difference from [moved] is entirely in what happens to the tile left behind: it was not
+     * left behind. A fork that hands a route only as much as that route can use keeps the remainder
+     * standing, so [from]'s own arrival and previous mass are the ones it already had — it shrinks
+     * where it is rather than vanishing — while [to] slides in from [from] and shrinks as it comes,
+     * which is what carrying the whole lump's previous mass across gives it.
+     */
+    fun splitOff(from: TileIndex, to: TileIndex, direction: Direction) {
+        arrivals[to.index] = (direction.ordinal + 1).toByte()
+        previousMass[to.index] = previousMass[from.index]
+    }
+
+    /**
      * A packet was taken off the track by a machine's input port, and is drawn shrinking into it.
      *
      * Silently ignored for a tile that [handedToBridge] has already claimed. A bridge's input port

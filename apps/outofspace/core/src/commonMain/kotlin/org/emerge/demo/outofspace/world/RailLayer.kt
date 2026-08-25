@@ -93,6 +93,44 @@ class RailLayer(val stuff: StuffLayer) {
     }
 
     /**
+     * Hand [mass] of what is riding at [from] over to [to], leaving the rest standing where it is.
+     *
+     * The whole lump when [mass] covers it, and null when there is nothing to hand over.
+     *
+     * ⛔ **This is a draw, not a merge.** A packet is never *added to* — see [squashInto] — but it
+     * has always been something that can be **taken from**: a construction site skims what it needs
+     * off a lump standing on it and lets the remainder ride on. This is that same skim, performed by
+     * a tile that has more than one way out, so that a route wanting 30kg of a 100kg lump takes 30kg
+     * and the other 70kg goes the other way. Everything that made merging untenable — a lump's
+     * composition changing under whatever was routed toward it, so that "what is on its way to this
+     * tile" stopped having a stable answer — is absent here, because [Mixture.take] is proportional:
+     * both halves are the blend that arrived, and anything that admitted the whole admits either
+     * part.
+     *
+     * ⚠️ **A slice is only representative while it is big enough to carry every species.** A
+     * microgram of a blend is a microgram of whichever species the apportionment lands on, so the
+     * caller must ask the door of the slice and not merely of the pile — see the note in
+     * `scrapDeconstructing`, where the identical draw minted a speck of pure carbon onto a belt
+     * nothing could clear it from. Nothing here can check that; the sizing is the caller's.
+     */
+    fun splitInto(from: TileIndex, to: TileIndex, mass: Long): Mixture? {
+        if (mass <= 0L) return null
+        val standing = resourceAt(from) ?: return null
+        if (mass >= standing.total) {
+            moveInto(from, to)
+            return standing
+        }
+        require(isEmpty(to)) { "something is already riding at $to" }
+        val slice = standing.take(mass)
+        if (slice.isEmpty) return null
+        // The complement, exactly: [Mixture.take] and its remainder sum back to the whole, so this
+        // is the one place a split can be written without a gram or a joule going astray.
+        put(from, standing - slice)
+        put(to, slice)
+        return slice
+    }
+
+    /**
      * Move the lump at [from] onto [to] if [to] is free.
      *
      * ⛔ **A packet is never merged into another packet.** Once minted a lump can be *taken from* —

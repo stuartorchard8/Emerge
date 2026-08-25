@@ -2914,6 +2914,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
             this.whitelist = whitelist
 
+            // A construction site at [to] that stands **in the road** — unpaid track and nothing
+            // else. Named once because both questions below need it and neither may answer it
+            // differently. See [Acceptance.stopsTraffic].
+            fun plugAt(to: TileIndex): List<Acceptance>? =
+                accepts[to]?.filter { it.stopsTraffic }?.takeIf { it.isNotEmpty() }
+
+            // Whether [to] would take this exact matter: the site's own door, then the demand rule.
+            // Split out of `admits` because the split below has to ask it a second time, of the
+            // *slice* rather than of the pile.
+            fun wouldTake(to: TileIndex, plug: List<Acceptance>?, lump: Mixture, rationed: Boolean): Boolean =
+                (plug == null || plug.any { it.admits(lump) }) && whitelist.permits(to, lump, rationed)
+
             advanceSegments(
                 flow,
                 rail,
@@ -2936,15 +2948,53 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // ⛔ **Only a site that stands in the road is asked** — unpaid track, and nothing
                     // else. A half-built machine over finished track declines what it cannot use
                     // without refusing it passage. See [Acceptance.stopsTraffic].
-                    val site = accepts[to]?.filter { it.stopsTraffic }?.takeIf { it.isNotEmpty() }
+                    val site = plugAt(to)
                     if (site == null && whitelist.permitsAnything(to)) true
                     else rail.resourceAt(from)?.let { lump ->
                         // ⛔ Rationed only where the lump has somewhere else it could go — see
                         // [Whitelist.permits]. Holding back a lump with one way out saves nothing
                         // and only stops it arriving.
-                        (site == null || site.any { it.admits(lump) }) &&
-                            whitelist.permits(to, lump, rationed = flow.outDegree(from) > 1)
+                        wouldTake(to, site, lump, rationed = flow.outDegree(from) > 1)
                     } ?: false
+                },
+                // ── How much of it, once the answer is yes ───────────────────
+                //
+                // The quantity `admits` already summed, handed back as a number instead of a
+                // verdict, so the two can never form different opinions: [Whitelist.room] and the
+                // rationed half of [Whitelist.permits] are the same computation.
+                //
+                // Stu's save, (14,28): a 100kg packet of iron at a fork, one way leading to a rail
+                // ghost 30642g short of finishing and the other to a ghost that had barely started.
+                // Every rule said yes — the ghost admits iron and still wants some — so the **whole**
+                // packet went that way, the ghost skimmed the 30642g it was short of, finished, and
+                // stopped being a sink; the other 69kg then had to walk back off the dead end it was
+                // standing on before it could take the turning it should have taken in the first
+                // place, four rail periods later, while the ghost that wanted the lot was fed one
+                // packet at a time.
+                //
+                // Nothing was wrong with any of the answers. The question had two values and the
+                // situation needed three: not "may this cross" but "how much of this is worth
+                // sending". A route takes what it can use and the rest goes the other way, now.
+                handOver = { from, to ->
+                    val lump = rail.resourceAt(from)
+                    if (lump == null) Long.MAX_VALUE
+                    else {
+                        val room = whitelist.room(to, lump)
+                        // ⛔ **Asked again of the slice, not just of the pile** — the same guard
+                        // `scrapDeconstructing` needs, and for the same reason. A proportional slice
+                        // is only representative while it is big enough to carry every species: take
+                        // a microgram off a lump that is 98% iron with a trace of carbon and the
+                        // apportionment puts that microgram wherever the running total lands, so the
+                        // fork mints a speck of pure carbon that no ghost will admit and nothing can
+                        // clear away.
+                        //
+                        // Refused, the lump crosses **whole**, which is exactly what it did before
+                        // any of this existed. That is the right fallback and not merely the safe
+                        // one: a site short of its last microgram has to be able to get it, and the
+                        // only lump that can carry it there is one that is not sliced.
+                        if (room >= lump.total || wouldTake(to, plugAt(to), lump.take(room), rationed = true)) room
+                        else Long.MAX_VALUE
+                    }
                 },
             ) { tile ->
                 // A ghost eats first, and eats instead of the machine rather than after it: being
