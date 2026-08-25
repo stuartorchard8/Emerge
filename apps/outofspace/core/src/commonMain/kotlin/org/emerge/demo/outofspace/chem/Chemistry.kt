@@ -20,6 +20,34 @@ data class ProcessResult(val product: Mixture, val tailings: Mixture) {
 }
 
 /**
+ * How clean a product must be before the machine calls the separation finished: impurity under
+ * [PURE_ENOUGH_PERMILLE] of the product's own mass is sent to the tailings and the product comes
+ * out pure.
+ *
+ * ### Why a threshold has to exist
+ *
+ * Purity converges but never arrives. Once the machine rather than the ore is the binding
+ * constraint, each pass multiplies the impurity *fraction* by `1 - efficiency` — a geometric tail
+ * that approaches 100% and lands on it only when the impurity allowance happens to floor to zero.
+ * At one microgram per unit that means waiting for under a microgram of impurity in a 200 kg
+ * charge, and `refine` always pulls a full charge however deep in the chain it sits, so the wait is
+ * a fixed *fraction*: the finer the mass unit, the longer the tail. The 2026-08-12 rescale
+ * lengthened it from about seven stages to thirteen without anyone asking it to.
+ *
+ * Worse, the tail is invisible. The HUD prints integer percent, so 99.85%, 99.985% and 99.9985%
+ * are all "99%" — nine identical-looking stages, each genuinely cutting impurity tenfold. A player
+ * reads that as a chain that has stopped working.
+ *
+ * So the machine stops chasing it. Below this threshold the separation is done, and the last stage
+ * lands on a clean 100% that means what it says.
+ *
+ * ⚠️ **This snaps the product, never the input, and never destroys anything.** The impurity moves
+ * to the tailings, because [process] computes `tailings = input - product` and this only ever
+ * shrinks the product's impurity. Conservation is untouched, and [conservationOf] still closes.
+ */
+internal const val PURE_ENOUGH_PERMILLE = 10L
+
+/**
  * Concentrates [input] into a product stream and a tailings stream, each half its mass.
  *
  * [efficiencyPermille] is the machine's quality (1000 = perfect), but it is **capped by the input's
@@ -69,6 +97,25 @@ fun process(input: Mixture, efficiencyPermille: Int = 1000): ProcessResult {
         for (m in Species.ALL) if (m != dominant) impurityWeights[m.ordinal] = input[m]
         val share = apportion(impurityWeights, impuritiesForProduct)
         for (i in productMass.indices) if (i != dominant.ordinal) productMass[i] = share[i]
+    }
+
+    // What actually landed, which is not [impuritiesForProduct]: that is only the allowance, and an
+    // input with no impurity to spread leaves it unspent.
+    var productImpurity = 0L
+    for (i in productMass.indices) if (i != dominant.ordinal) productImpurity += productMass[i]
+    val productTotal = dominantForProduct + productImpurity
+
+    // Close enough is pure — see [PURE_ENOUGH_PERMILLE]. The `productTotal <= dominantMass` guard
+    // is what keeps this a *move* rather than an invention: the product can only be made wholly of
+    // the dominant species if the input actually held that much of it. It holds for free wherever
+    // the threshold fires (a product this clean is far past the halfway mark), which is exactly why
+    // it is worth stating rather than assuming.
+    if (productImpurity > 0L &&
+        productImpurity * 1000L < productTotal * PURE_ENOUGH_PERMILLE &&
+        productTotal <= dominantMass
+    ) {
+        productMass.fill(0L)
+        productMass[dominant.ordinal] = productTotal
     }
 
     val productMixture = Mixture.of(productMass, input.energy)

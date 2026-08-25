@@ -7,7 +7,10 @@ import org.emerge.demo.outofspace.world.Wiring
 
 /**
  * Mineral processor: concentrate out facing side, tailings out clockwise-side.
- * Chain: purity climbs (41%→75%→100%), wasteful (tailings = lost material).
+ *
+ * Chain: purity climbs, wastefully (tailings = lost material). Fed the standard ore body at the
+ * default efficiency the ladder runs **41% → 65% → 86% → 94% → 97% → 100%** — five machines, and
+ * half the mass lost at every one of them, so a pure packet costs about 32 packets of ore.
  */
 data class Processor(
     override val center: TileIndex,
@@ -18,7 +21,15 @@ data class Processor(
      */
     val ticksPerAction: Int = 16,
     val progress: Int = 0,
-    val efficiencyPermille: Int = 900,
+    /**
+     * Machine quality, capped by the ore's own purity — see [org.emerge.demo.outofspace.chem.process].
+     *
+     * 600 is the mid-tier separator: good enough to finish the job, slow enough that finishing it
+     * takes a chain. It is also the point where the curve is at its most even — at 650 and above,
+     * stage 2 is still limited by the ore rather than by the machine, so raising the rating past
+     * that buys a duplicated 87% step instead of a better one.
+     */
+    val efficiencyPermille: Int = 600,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Processor

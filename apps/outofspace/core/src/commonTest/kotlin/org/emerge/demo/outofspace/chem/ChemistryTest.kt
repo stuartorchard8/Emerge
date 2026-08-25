@@ -257,4 +257,63 @@ class ChemistryTest {
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 
+    // ── "close enough is pure": the threshold that ends the chain ───────────────
+
+    /** One charge of the standard ore body, which is what a real processor always works on. */
+    private fun charge() = org.emerge.demo.outofspace.OutofspaceReducer.DEFAULT_ORE_BODY
+        .scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS)
+
+    /**
+     * The ladder a player climbs, pinned end to end.
+     *
+     * This is the whole point of [PURE_ENOUGH_PERMILLE]: without it the tail runs to thirteen
+     * stages, nine of which print as an identical "99%". If this test starts failing because the
+     * chain got longer, the threshold or the efficiency moved — that is information about the
+     * game's shape, not a number to bring back into line.
+     */
+    @Test
+    fun `the standard chain reaches exactly pure in five stages`() {
+        val eff = org.emerge.demo.outofspace.world.machine.Processor(
+            org.emerge.demo.outofspace.world.TileIndex(0),
+            org.emerge.demo.outofspace.world.Direction.Right,
+        ).efficiencyPermille
+
+        var m = charge()
+        val shown = mutableListOf<Long>()
+        repeat(5) {
+            // Every stage works a full charge, as `refine` does via takeAtLeast(CHARGE_MASS).
+            m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS), eff).product
+            shown += m[m.dominant!!] * 100L / m.total
+        }
+        assertEquals(listOf(65L, 86L, 94L, 97L, 100L), shown, "the displayed purity ladder")
+        assertEquals(0L, m.total - m[m.dominant!!], "stage 5 must be exactly pure, not nearly")
+    }
+
+    @Test
+    fun `the snap moves impurity to the tailings rather than destroying it`() {
+        var m = charge()
+        val eff = 600
+        repeat(4) { m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS), eff).product }
+        // Stage 5 is the one that snaps: 97.77% in, exactly pure out.
+        val fed = m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS)
+        val r = process(fed, eff)
+        assertEquals(0L, r.product.total - r.product[r.product.dominant!!], "the snap fired")
+        assertConserved(listOf(fed), listOf(r.product, r.tailings), "the snapping stage")
+    }
+
+    @Test
+    fun `a product just dirtier than the threshold is left alone`() {
+        // 2% impurity in, so the product lands near 1% — straddling PURE_ENOUGH_PERMILLE either way
+        // is what this pins, so a change to the threshold shows up here as a pair, not a single.
+        fun productImpurityPermille(inputImpurityPermille: Long): Long {
+            val t = 1_000_000_000L
+            val dom = t - t * inputImpurityPermille / 1000L
+            val mix = Mixture.of(Species.Iron to dom, Species.Quartz to t - dom, energy = 0)
+            val p = process(mix, 1000).product
+            return (p.total - p[p.dominant!!]) * 1000L / p.total
+        }
+        assertTrue(productImpurityPermille(200L) > 0L, "a 20% impure feed must not snap")
+        assertEquals(0L, productImpurityPermille(1L), "a 0.1% impure feed must snap to pure")
+    }
+
 }

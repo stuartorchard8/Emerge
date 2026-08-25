@@ -499,7 +499,7 @@ data class SpeciesFilter(val species: Species?, val minPercent: Int?) {
     }
 
     companion object {
-        const val MAX_PERCENT = 99
+        const val MAX_PERCENT = 100
 
         /** The steps the panel offers, coarse at the bottom and fine where purity starts to cost. */
         val PERCENTS: List<Int?> = listOf(null, 25, 50, 75, 90, 95, MAX_PERCENT)

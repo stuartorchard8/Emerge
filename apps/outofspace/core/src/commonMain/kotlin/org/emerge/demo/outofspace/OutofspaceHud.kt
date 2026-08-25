@@ -704,7 +704,7 @@ class OutofspaceHud {
         for (species in named) {
             val percent = mixture[species] * 100 / total
             listed += percent
-            speciesRow(controller, "${percent.toString().padStart(3)}% ${species.name.uppercase()}", species)
+            speciesRow(controller, "${(if (percent < 1) "<1" else percent.toString()).padStart(3)}% ${species.name.uppercase()}", species)
         }
         if (present.size > maxEntries) row(" ${(100L - listed).toString().padStart(3)}% other", 0x9AA4B4FFL)
     }
