@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.num.scaledRatio
@@ -274,6 +275,68 @@ class RockContactTest {
      * atmosphere rings, the hull recoils from it, and every "the ship is moving *because of the
      * body*" claim below would be measuring the weather instead.
      */
+    /**
+     * The same throw at the same wall gives the same answer **in the grid** whatever angle the ship
+     * is flying at — step 6 of `PLAN_rigid_bodies.md`.
+     *
+     * This is the property the world frame is for, and it was not previously stateable. Contacts
+     * used to be generated, solved and pushed out in the *grid's* axes, which made the claim nearly
+     * vacuous: the hull was square by construction because everything else had been turned to make
+     * it so. Now the narrow phase meets a hull tile as a box that carries its own turn, the solve is
+     * in world axes, and the ship's angle is a real input to arithmetic that could get it wrong.
+     *
+     * ⚠️ Read back in the **grid**, deliberately. A bounce off the starboard wall is a statement
+     * about where the rock is relative to the ship; the two runs' *world* tracks are supposed to
+     * differ, since one of them is rotated a quarter turn.
+     *
+     * A quarter turn is chosen because it is exact — the cosine is 0 and the sine is 1, so a
+     * transcription error cannot hide inside a rounding difference — and the tolerance is the
+     * rotation round trip that [Pose] documents, not a number tuned until this passed.
+     */
+    @Test
+    fun `a bounce is the same bounce whatever angle the ship is flying at`() {
+        fun track(turn: Coord): Pair<Long, Long> {
+            val ship = vacuumHull().copy(ang = turn)
+            // The rock is stated in the **grid** — thrown at the starboard wall — and then put into
+            // the world through the ship's own pose, which is what "the same situation aboard a
+            // rolled ship" means. At a zero turn this is the identity and the fixture is unchanged.
+            val inGrid = bodyAt(x = 26, y = 16, velocityX = Flight.PER_TILE / 4L)
+            val pose = ship.pose
+            val aboard = inGrid.copy(
+                positionX = pose.toWorldX(inGrid.positionX, inGrid.positionY),
+                positionY = pose.toWorldY(inGrid.positionX, inGrid.positionY),
+                // ⚠️ A momentum is a **direction**, so it turns and does not translate — see
+                // [Pose.turnedX]. Put through `toWorldX` instead it would gain the ship's position.
+                impulseX = pose.turnedX(inGrid.impulseX, inGrid.impulseY),
+                impulseY = pose.turnedY(inGrid.impulseX, inGrid.impulseY),
+                ang = Coord(inGrid.ang.raw + turn.raw),
+            )
+            val controller = OutofspaceController(CFG, ship.copy(bodies = listOf(aboard)))
+            repeat(TICKS) { controller.stepOnce() }
+            val body = controller.state.bodies.single()
+            return body.localCentreX(controller.state.pose) to body.localCentreY(controller.state.pose)
+        }
+
+        val square = track(Coord(0))
+        val rolled = track(Coord(1, 4))
+
+        // A tile is 1e9, so this is a thousandth of a tile — three orders of magnitude above the
+        // ~3e-6 round trip and far below anything the bounce itself does. ⚠️ **A near miss here is a
+        // transcription error, not a tight bound**, which is the rule `Trig` earned.
+        val slack = Flight.PER_TILE / 1_000L
+        assertTrue(
+            abs(square.first - rolled.first) <= slack && abs(square.second - rolled.second) <= slack,
+            "the ship's angle changed where the rock ended up in its own hold: " +
+                "square ${square.first / 1e9}, ${square.second / 1e9} vs " +
+                "rolled ${rolled.first / 1e9}, ${rolled.second / 1e9}",
+        )
+        // And it actually went somewhere, or the two agreed about nothing happening.
+        assertTrue(
+            abs(square.first - 26L * Flight.PER_TILE) > Flight.PER_TILE,
+            "the rock never moved, so the agreement above is between two still lifes",
+        )
+    }
+
     private fun vacuumHull(): VesselState {
         val grid = CFG.initialGrid
         val deck = DeckArray(grid)
