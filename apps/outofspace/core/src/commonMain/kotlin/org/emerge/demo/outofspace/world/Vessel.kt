@@ -347,6 +347,15 @@ data class VesselState(
      */
     val creative: Boolean = false,
     /**
+     * Whether the autopilot is holding the ship still — see [Sas].
+     *
+     * On the **vessel** and not on any thruster, because it is not a property of an engine: it is a
+     * standing instruction about what the ship should do with the engines it has, and a fleet of
+     * motors each with its own opinion about whether to stabilise is not a thing anybody wants to
+     * configure. The same reason `state["SAS"]` sat on the vessel in the original.
+     */
+    val sas: Boolean = false,
+    /**
      * The centre tiles of the deck machines the player has marked for deconstruction.
      *
      * A **set on the vessel rather than a bit on the machine**, which is the one place this differs

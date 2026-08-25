@@ -7,6 +7,8 @@
 #   `thruster-firing`   -- the same panel with LEFT held: FIRING 100%. Nothing was wired, nothing
 #                          was bound to a key, and the motor worked out for itself that a push to
 #                          port is what was asked for.
+#   `thruster-sas`      -- SAS HOLDING beside the flight-mode banner. It is a fact about the ship,
+#                          not about any motor, so it does not appear in the machine's panel.
 #   `thruster-wired`    -- switched over to WIRE, where it is a machine again and its WIRING drives
 #                          it. The stick no longer reaches it.
 new
@@ -33,6 +35,13 @@ shot thruster-opposed
 # And the switch back to the wire, where it is a machine again: the stick no longer reaches it and
 # its own WIRING drives it.
 release
+
+# The autopilot: a vessel-wide switch, on T, shown beside the mode toggle.
+sas on
+inspect 34 9 DECK
+shot thruster-sas
+
+sas off
 tap LISTENS TO
 inspect 34 9 DECK
 shot thruster-wired

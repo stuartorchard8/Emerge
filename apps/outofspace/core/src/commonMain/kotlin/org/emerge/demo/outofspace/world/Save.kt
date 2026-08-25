@@ -91,6 +91,8 @@ object Save {
         // Absent reads as creative, which is what every world written before the switch existed was
         // — and what every world still is until a ghost can finish building itself.
         out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
+        // Absent reads as off, which is what every world written before the autopilot existed was.
+        out.append("sas ").append(if (state.sas) 1 else 0).append('\n')
         out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
@@ -381,6 +383,9 @@ object Save {
                 // no key here and so loads FLIGHT, which is the intended migration — see
                 // [ThrusterControl].
                 if (m.control != ThrusterControl.Flight) put("control", m.control.name)
+                // A readout rather than a setting, and saved for the reason a gauge's last reading
+                // is: a loaded world should show what it was doing, not a panel full of zeroes.
+                if (m.firing != 0) put("firing", m.firing.toString())
             }
         }
         // The same store loop the machine record has, and it is not optional: a deck machine's
@@ -603,6 +608,7 @@ object Save {
         val layers = Array(Conduit.entries.size) { arrayOfNulls<Segment>(grid.size) }
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         var creative = false
+        var sas = false
         val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
         var baselineCargo: Long? = null
@@ -806,6 +812,7 @@ object Save {
                 "momx" -> readSparse(tokens, momentumX, scale, ::fail)
                 "momy" -> readSparse(tokens, momentumY, scale, ::fail)
                 "creative" -> creative = tokens.getOrNull(1) != "0"
+                "sas" -> sas = tokens.getOrNull(1) == "1"
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
                 // what a world where nothing has ever been built out of its own stores has.
                 "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
@@ -947,6 +954,7 @@ object Save {
             structure = structure,
             occupancy = occupancy,
             creative = creative,
+            sas = sas,
             scrapping = scrapping,
             builtMass = built,
             // A file that predates the field means "started empty", not "recompute from what is
@@ -1163,6 +1171,7 @@ object Save {
                 control = f["control"]?.let { name ->
                     ThrusterControl.ALL.firstOrNull { it.name == name } ?: fail("unknown thruster control '$name'")
                 } ?: ThrusterControl.Flight,
+                firing = num("firing", 0L).toInt(),
             )
             // Both are fittings that stand over a run and hold nothing. A gauge's reading is state
             // and comes back with it; a valve is only a position.

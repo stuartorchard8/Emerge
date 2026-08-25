@@ -57,6 +57,17 @@ data class Thruster(
      * Where this motor takes its orders from. Flight controls by default — see [ThrusterControl].
      */
     val control: ThrusterControl = ThrusterControl.Flight,
+    /**
+     * What it was actually told to do last tick, in permille — a readout, not a setting.
+     *
+     * ⚠️ **The panel cannot work this out for itself, and must not try.** On flight control a motor's
+     * throttle depends on every other motor aboard: the whole-ship balance in
+     * [org.emerge.demo.outofspace.world.flightActivations] may have throttled this one back to keep a
+     * burn straight, and a panel that recomputed the single-engine answer would confidently report
+     * 100% at an engine running at 40. Recorded where it was decided, and read from there — the same
+     * trade [Gauge.lastMass] makes.
+     */
+    val firing: Int = 0,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Thruster

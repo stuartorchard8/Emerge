@@ -331,6 +331,12 @@ object OutofspaceAgentHarness {
                     settle()
                     println("[agent] holding ${t.drop(1).joinToString(" ")}")
                 }
+                // `sas on|off` — the vessel-wide autopilot, which is a switch and not a key.
+                "sas" -> {
+                    if ((t.getOrNull(1) != "off") != state.sas) controller.toggleSas()
+                    settle()
+                    println("[agent] sas -> ${state.sas}")
+                }
                 "release" -> {
                     controller.heldKeys = 0
                     settle()

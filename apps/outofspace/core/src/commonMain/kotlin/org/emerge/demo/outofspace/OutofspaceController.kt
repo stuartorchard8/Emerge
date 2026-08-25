@@ -445,6 +445,9 @@ class OutofspaceController(
         pending.add(Edit.TuneDecomposer(tile, all[wrap(at + delta, all.size)], m.dwellTicks))
     }
 
+    /** Turns the autopilot on or off — see [org.emerge.demo.outofspace.world.Sas]. */
+    fun toggleSas() = pending.add(Edit.SetSas(!state.sas))
+
     /**
      * Switches a thruster between flying the ship and answering its wire — see [ThrusterControl].
      *

@@ -83,6 +83,14 @@ sealed interface Edit {
      */
     data class SetThrusterControl(val tile: TileIndex, val control: ThrusterControl) : Edit
 
+    /**
+     * Turns the autopilot on or off — see [org.emerge.demo.outofspace.world.Sas].
+     *
+     * A vessel-wide switch and so an edit with no tile. Absolute rather than a toggle, for
+     * [TuneDecomposer]'s reason.
+     */
+    data class SetSas(val on: Boolean) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

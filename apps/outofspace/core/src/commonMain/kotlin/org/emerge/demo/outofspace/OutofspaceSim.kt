@@ -92,6 +92,9 @@ import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TrackLayers
 import org.emerge.demo.outofspace.world.FlightIntent
+import org.emerge.demo.outofspace.world.Motor
+import org.emerge.demo.outofspace.world.flightActivations
+import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.thrusterActivation
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
@@ -221,7 +224,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            val intent = FlightIntent.of(heldKeys)
+            // The stick, plus whatever the autopilot is leaning on it with. Taken once for the
+            // whole pass so that every motor is answering the same request — see [Sas].
+            val stick = FlightIntent.of(heldKeys)
+            val intent = if (w.sas) stick.withSas(angularVelocity(state.angImpulse, w.about)) else stick
+            val flight = w.flightPlan(intent)
 
             openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
             structure = StructureMap.derive(w.grid, w.deck, openness)
@@ -248,7 +255,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // A thruster on flight control answers the pilot's stick, not the wire — see
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
                     // points, so the ship needs no allocation of engines to axes anywhere.
-                    is Thruster -> w.fire(cfg, m, w.thrustCommand(m, tile, intent, activation), tile, structure)
+                    is Thruster -> w.fire(cfg, m, flight[tile.index].takeIf { m.control == ThrusterControl.Flight } ?: activation, tile, structure)
                     is Processor -> w.refine(cfg, m, activation, tile)
                     is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
                     is Extractor -> w.leech(m, activation, tile)
@@ -572,6 +579,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventedMass = w.ventedMass,
             builtMass = w.builtMass,
             scrapping = w.scrapping.toSet(),
+            sas = w.sas,
             signals = signals,
             networks = networks,
             structure = structure,
@@ -848,28 +856,41 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * How hard one motor runs this tick: the pilot's stick, or the wire, depending on the machine.
+     * How hard every flight-controlled motor aboard should fire this tick, indexed by tile.
      *
-     * The whole of the difference between the two modes lives here, in one expression, and the rest
-     * of [fire] cannot tell them apart — an activation in permille is an activation in permille.
-     * That is deliberate: the thing a player switches is *where the number comes from*, and if the
-     * two modes reached any further into the machine than this they would drift apart.
+     * The one place the ship is considered as a whole. It has to be: keeping a translation burn
+     * straight means throttling one engine against another, and no motor can work that out alone —
+     * see [flightActivations], which does the arithmetic and holds the argument for why.
      *
-     * [wired] is computed by the caller for every machine anyway, so nothing is spent working it out
-     * for a motor that will not use it.
+     * ⚠️ **The guards here must match the machine loop's.** A ghost, and a machine being taken
+     * apart, do not run — and if this pass disagreed with that one about which motors exist, the
+     * balance would be struck against an engine that never fired and the ship would twist. They are
+     * repeated rather than shared because the loop's version also has to *do* something with every
+     * other kind of machine, and hoisting a predicate out of it would leave the two apart anyway.
      */
-    private fun Work.thrustCommand(m: Thruster, tile: TileIndex, intent: FlightIntent, wired: Int): Int =
-        when (m.control) {
-            ThrusterControl.Wire -> wired
-            ThrusterControl.Flight -> thrusterActivation(
-                intent,
-                m.thrust,
-                tileCentre(grid.xOf(tile)),
-                tileCentre(grid.yOf(tile)),
-                about.comX,
-                about.comY,
+    private fun Work.flightPlan(intent: FlightIntent): IntArray {
+        val plan = IntArray(grid.size)
+        if (intent.isIdle) return plan
+        val tiles = ArrayList<TileIndex>()
+        val motors = ArrayList<Motor>()
+        for (tile in grid.tiles) {
+            if (deck.isGhost(tile) || tile in scrapping) continue
+            val m = deck[tile] as? Thruster ?: continue
+            if (m.control != ThrusterControl.Flight) continue
+            tiles.add(tile)
+            motors.add(
+                Motor(
+                    thrust = m.thrust,
+                    leverX = tileCentre(grid.xOf(tile)) - about.comX,
+                    leverY = tileCentre(grid.yOf(tile)) - about.comY,
+                    massPerTick = m.massPerTick,
+                ),
             )
         }
+        val activations = flightActivations(intent, motors)
+        for (i in tiles.indices) plan[tiles[i].index] = activations[i]
+        return plan
+    }
 
     /**
      * One tick of a [Thruster]: throw propellant out of the nozzle and take whatever was in the way
@@ -899,10 +920,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         tile: TileIndex,
         structure: StructureMap,
     ): Thruster {
-        val input = store(m, tile, BufferRole.Input) ?: return m
+        // Recorded before any of the reasons it might not run, because "told to fire, had nothing to
+        // fire" is a different fault from "not asked", and the panel is where a player finds out
+        // which of the two they have built.
+        val told = m.copy(firing = activation)
+        val input = store(m, tile, BufferRole.Input) ?: return told
         val (allowance, carry) = throttled(m.massPerTick, activation, m.carry)
         val chunkMass = minOf(allowance, input.total)
-        if (chunkMass <= 0L) return m.copy(carry = carry)
+        if (chunkMass <= 0L) return told.copy(carry = carry)
 
         val path = exhaustPath(grid, structure, tile, m.facing)
 
@@ -976,7 +1001,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         putStore(m, tile, BufferRole.Input, (input - chunk).orNull())
-        return m.copy(carry = carry)
+        return told.copy(carry = carry)
     }
 
 /**
@@ -1280,6 +1305,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         val creative: Boolean = state.creative
 
+        /** Whether the autopilot is holding the ship still this tick — see [Sas]. */
+        var sas: Boolean = state.sas
+
         /** Deck machines marked for deconstruction, by centre tile — see [VesselState.scrapping]. */
         val scrapping: MutableSet<TileIndex> = state.scrapping.toMutableSet()
         var acquiredEnergy: Long = state.acquiredEnergy
@@ -1504,6 +1532,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val m = deck[tile]
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
+                is Edit.SetSas -> sas = edit.on
                 is Edit.SetThrusterControl -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]

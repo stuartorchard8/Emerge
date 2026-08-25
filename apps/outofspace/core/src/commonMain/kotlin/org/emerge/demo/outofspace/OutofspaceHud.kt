@@ -31,9 +31,6 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
-import org.emerge.demo.outofspace.world.FlightIntent
-import org.emerge.demo.outofspace.world.thrusterActivation
-import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
@@ -182,6 +179,17 @@ class OutofspaceHud {
                     if (flying) 0x8A5A2AFFL else 0x232A38FFL,
                 ) { controller.mode = controller.mode.next }
                 if (flying) {
+                    // The autopilot lives beside the mode toggle because it is the same kind of
+                    // thing: a standing instruction about the whole ship, not a machine's setting.
+                    button(
+                        listOf(
+                            "SAS  " to 0x9A9A9AFFL,
+                            (if (controller.state.sas) "HOLDING" else "OFF") to
+                                (if (controller.state.sas) 0x6EE08AFFL else 0x9A9A9AFFL),
+                            "  ·  T" to 0x7A7A7AFFL,
+                        ),
+                        0x2E5A6BFFL,
+                    ) { controller.toggleSas() }
                     val held = InputKey.ALL.filter { InputKey.heldIn(controller.heldKeys, it) }
                     row(
                         if (held.isEmpty()) "WASD moves  ·  QE turns  ·  arrows / Z / X also drive buttons"
@@ -1051,22 +1059,11 @@ class OutofspaceHud {
                 row("WSAD moves  ·  QE turns  ·  press F to fly", 0x9A9A9AFFL)
                 // What the motor makes of the stick right now, which is the readout that turns a
                 // badly placed engine from a mystery into something a player can see is idle.
-                // ⚠️ One mass walk per frame, and only while this panel is pinned open — the
-                // reducer's own answer is a tick's private business and not reachable from here.
-                val about = controller.state.distribution
-                keyValue(
-                    "FIRING",
-                    "${thrusterActivation(
-                        FlightIntent.of(controller.heldKeys),
-                        machine.thrust,
-                        tileCentre(controller.state.grid.xOf(machine.center)),
-                        tileCentre(controller.state.grid.yOf(machine.center)),
-                        about.comX,
-                        about.comY,
-                    ).coerceAtLeast(0) / 10}%",
-                    0x9A9A9AFFL,
-                    0xE0A93AFFL,
-                )
+                // Read off the machine and never recomputed here — see [Thruster.firing]. On a
+                // ship whose engines were throttled against each other to keep a burn straight, the
+                // single-motor answer is the wrong number and it is wrong in the flattering
+                // direction.
+                keyValue("FIRING", "${machine.firing.coerceAtLeast(0) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
             }
             ThrusterControl.Wire -> row("driven by its WIRING, below", 0x9A9A9AFFL)
         }

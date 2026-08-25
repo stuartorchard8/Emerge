@@ -182,7 +182,10 @@ fun main() {
         // Taken before everything else, because in flight the pilot's keys belong to the vessel and
         // nothing else may claim them. Only the mode toggle and ESC are held back, so there is always
         // a way out.
-        if (controller.mode == Mode.Flight && key != GLFW_KEY_F && key != GLFW_KEY_ESCAPE) {
+        // ⚠️ `T` joins `F` and `ESC` in being held back from the pilot: the autopilot is a control
+        // you reach for *while flying*, and a stick that swallowed it would make it unreachable in
+        // the only mode it does anything in.
+        if (controller.mode == Mode.Flight && key != GLFW_KEY_F && key != GLFW_KEY_T && key != GLFW_KEY_ESCAPE) {
             val bound = when (key) {
                 GLFW_KEY_UP, GLFW_KEY_W -> InputKey.Up
                 GLFW_KEY_DOWN, GLFW_KEY_S -> InputKey.Down
@@ -248,6 +251,8 @@ fun main() {
                 controller.thrustX = 0
                 controller.thrustY = 0
             }
+            // Stability augmentation, on the key every space game puts it on.
+            GLFW_KEY_T -> controller.toggleSas()
             GLFW_KEY_R -> controller.rotateBrush()
             GLFW_KEY_H -> controller.overlay = controller.overlay.next
             // Cycles rather than toggles, since there are four tools now. `W` used to do this and
