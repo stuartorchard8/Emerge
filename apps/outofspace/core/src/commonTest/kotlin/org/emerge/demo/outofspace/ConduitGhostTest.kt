@@ -15,6 +15,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
@@ -154,6 +155,35 @@ class ConduitGhostTest {
     }
 
     /**
+     * ⛔ **A ghost machine must not starve the wire under it.** Found in Stu's save at (10, 19).
+     *
+     * One address serves one appetite a step, and the plan's reason the loser is not starved by that
+     * is that the winner *stops being a ghost when it finishes*. A Sensor is titanium and a wire is
+     * copper, so a Sensor ghost standing on a wire ghost finishes from nothing the wire is fed with:
+     * it took the tile's turn, refused the copper, and the copper could not move on either, because
+     * the tile it stood on was the sink it had been routed to. One packet, one wire, for ever.
+     *
+     * ⚠️ The two sites are stated on the same tile deliberately — that is the arrangement a player
+     * makes by drawing a wire under an instrument, which is the only way to wire one at all.
+     */
+    @Test
+    fun `a wire ghost is fed past the ghost machine standing on it`() {
+        var s = tankAndWiredRunUnderSensor()
+        assertEquals(0L, wireMass(s, 5), "the wire started with metal in it")
+
+        s = run(s, RAIL_PERIOD * 200)
+
+        assertEquals(
+            conduitBillOfMaterials(Conduit.Signal).total,
+            wireMass(s, 5),
+            "the wire under the Sensor ghost never finished",
+        )
+        // ⚠️ And the Sensor is still a ghost: it is titanium, and nothing here is. The wire being
+        // fed must not have been the machine quietly eating copper it cannot be made of.
+        assertEquals(0L, deckMass(s, 5), "the Sensor ghost took copper into its casing")
+    }
+
+    /**
      * ⚠️ **A marked pipe with no road out waits, and stays waiting.**
      *
      * Copper leaves on the rail network, so a pipe with no track on its tile has nowhere to put what
@@ -177,5 +207,48 @@ class ConduitGhostTest {
 
         assertNotNull(s.conduits.at(Conduit.Pipe, grid.tile(5, 3)), "the pipe went without handing anything back")
         assertEquals(before, pipeMass(s, 5), "the copper left by a road that does not exist")
+    }
+
+    private fun wireMass(s: VesselState, x: Int): Long = s.conduits.massAt(Conduit.Signal, s.grid.tile(x, 3))
+
+    private fun deckMass(s: VesselState, x: Int): Long = s.deck.stuff.massAt(s.grid.tile(x, 3))
+
+    /**
+     * The piped run again, with a **wire** rather than a pipe and a **Sensor ghost** standing on one
+     * tile of it — a player wiring an instrument, which is the arrangement that found the bug.
+     *
+     * The Sensor is stated as a ghost the way `MachineGhostTest` states its own, rather than placed:
+     * a fixture says what the world is.
+     */
+    private fun tankAndWiredRunUnderSensor(): VesselState {
+        val deck = DeckArray(grid)
+        deck += Storage(grid.tile(3, 3), Direction.Right)
+        deck += Storage(grid.tile(9, 3), Direction.Right)
+        deck.stand(Sensor(grid.tile(5, 3), Direction.Right), withCasing = false)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        joinRow(grid, rails, 4, 8, 3)
+        val wires = arrayOfNulls<Segment>(grid.size)
+        for (x in 4..7) {
+            var links = 0
+            if (x > 4) links = links or (1 shl Direction.Left.ordinal)
+            if (x < 7) links = links or (1 shl Direction.Right.ordinal)
+            wires[grid.tile(x, 3).index] = Segment(Conduit.Signal, links = links)
+        }
+        val s = VesselState(
+            grid,
+            deck,
+            conduits = Conduits.of(
+                grid.size,
+                Conduit.Rail to rails.toList(),
+                Conduit.Signal to wires.toList(),
+            ),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        ).copy(creative = false).stocked(
+            grid.tile(3, 3),
+            Mixture.of(Species.Copper to 12 * Capacity.PACKET_MASS, energy = 0),
+        )
+        for (x in 4..7) s.conduits.tracks[Conduit.Signal].release(grid.tile(x, 3))
+        return s
     }
 }

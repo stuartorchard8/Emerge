@@ -2387,6 +2387,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /**
+         * Whether a site whose bill is [bill] could be built from what is standing on [tile].
+         *
+         * The door [absorbIntoGhost] and [absorbIntoMachineGhost] each open with, pulled out so the
+         * absorb pass can ask it *before* handing a site the tile's one turn — a site that would
+         * only refuse the lump is not an appetite, and must not stand in front of one that is.
+         */
+        fun canBeBuiltFromLumpAt(tile: TileIndex, bill: Mixture): Boolean {
+            val standing = rail.resourceAt(tile) ?: return false
+            return buildableFrom(bill, standing)
+        }
+
+        /**
          * A ghost takes what it still needs off the lump standing on it, and books the transfer.
          *
          * Returns the whole packet when the tile is left empty — the contract [advanceSegments]
@@ -2944,13 +2956,38 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // win, because a machine standing on track that cannot carry anything is a machine
                 // nothing can ever reach.
                 if (ghosts.contains(tile)) return@advanceSegments absorbIntoGhost(tile)
-                machineGhosts[tile]?.let { return@advanceSegments absorbIntoMachineGhost(tile, it) }
+                // ⛔ **A site that cannot use what is standing here does not spend the tile's turn.**
+                //
+                // One address serves one appetite a step, and the reason the loser is not starved by
+                // that is that *the winner stops being a ghost when it finishes*. A winner that
+                // refuses the lump never finishes, so the reasoning fails and the wait is for ever:
+                // a Sensor ghost — titanium — standing on a wire ghost took the turn every step and
+                // turned away the one packet of copper the wire was waiting for, which could not
+                // leave either, because the tile it stood on was the sink. Found in Stu's save at
+                // (10, 19), stuck since the wire was drawn.
+                //
+                // The same door [absorbIntoMachineGhost] opens with, asked *before* the turn is
+                // granted rather than after it is gone. Only a tile carrying both a lump and a ghost
+                // machine pays for the extra read.
+                val machineSite = machineGhosts[tile]
+                if (machineSite != null &&
+                    canBeBuiltFromLumpAt(tile, machineBillOfMaterials(machineSite.kind, machineSite.tiles(grid).size))
+                ) {
+                    return@advanceSegments absorbIntoMachineGhost(tile, machineSite)
+                }
                 // Then plumbing and cable, which come last for want of a reason to come sooner: the
                 // two above win on reachability — unbuilt track carries nothing, and a machine
                 // standing over it is cut off — and a pipe gates neither. One address still serves
-                // one appetite a step, so a pipe under a ghost machine waits for it and is then fed
-                // normally. See [conduitGhosts].
+                // one appetite a step, so a pipe under a ghost machine that *can* use what is here
+                // waits for it and is then fed normally. See [conduitGhosts].
                 otherGhosts[tile]?.let { return@advanceSegments absorbIntoGhost(tile, it) }
+                // ⛔ **A ghost machine still cuts its tile off from ordinary delivery**, whether or
+                // not it could use what is standing here — so the door above hands the turn on to
+                // the conduit layer and to nothing else. Its construction port is a real input port,
+                // and a lump it refused reaching that port puts the machine's own building iron into
+                // its **buffers** instead of its casing. Pinned by `MachineGhostTest`'s
+                // `iron crosses a half-built machine to reach the ghost beyond it`.
+                if (machineSite != null) return@advanceSegments null
                 // Nothing here can take anything, so the lump is not even read off the layer. Every
                 // loaded tile of every run reaches this on every step; only a handful have a port.
                 val at = ports[tile]

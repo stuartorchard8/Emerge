@@ -209,6 +209,15 @@ more.
   ghost when it finishes.
 - Absorb order is rail → machine → pipe/wire. The first two win on *reachability* (unbuilt track
   carries nothing, and a machine over it is cut off); a pipe gates neither, so it goes last.
+- ⛔ **A site that cannot use what is standing there does not take the turn** — fixed 2026-08-25.
+  "The loser is not starved, because the winner stops being a ghost when it finishes" only holds
+  while the winner *can* finish from what is on the tile. A Sensor ghost is titanium and a wire ghost
+  is copper, so a Sensor drawn over a wire took the address's turn every step, refused the one packet
+  of copper the wire was waiting for, and the copper could not leave either — the tile it stood on
+  was the sink it had been routed to. Found in Stu's save at (10, 19). The door is now asked *before*
+  the turn is granted rather than after it is spent. ⚠️ The turn passes to the conduit layer and to
+  **nothing else**: a ghost machine's construction port is a real input port, so letting a refused
+  lump fall through to ordinary delivery puts a machine's own building iron into its *buffers*.
 - `conduitBillOfMaterials` is now **interned**, which it had to be: `railAppetites` groups sites into
   classes by bill *identity*, so a freshly computed Mixture per call put every tile in its own class.
 
