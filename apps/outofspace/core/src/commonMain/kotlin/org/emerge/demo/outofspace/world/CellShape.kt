@@ -95,10 +95,30 @@ fun contactBetween(
     restingSpeedY: Long,
     friction: Long,
     into: MutableList<Contact>,
+    /**
+     * The frame [b] is square in — its cos and sin are all that is read, never its origin.
+     *
+     * `null` means "square in the frame this query is being asked in", which is what every
+     * axis-aligned caller wants and what the whole table meant implicitly before step 6.
+     *
+     * ### ⚠️ Why this parameter is the end of the shared frame
+     *
+     * A [CellShape.Box] has no angle of its own, so before this it was axis-aligned in *whatever
+     * frame it was handed* — and the only way to guarantee that for the hull was to express
+     * everything else relative to the hull. One operand got to be square and every other operand had
+     * to be turned into its axes first, which is §5's *"you cannot unify vessels and rocks while one
+     * of them defines the coordinate system"* showing up as a function signature. Two box-celled
+     * operands at different angles have no shared frame that is axis-aligned for both, so as long as
+     * this parameter did not exist there could only ever be one of them.
+     *
+     * Passed as a [Pose] rather than a [Coord] because the caller already has one — a body's pose
+     * for the substep — and [Norm.fromAngle] is a CORDIC loop that must not run per cell per tile.
+     */
+    bFrame: Pose? = null,
 ) {
     when {
         a is CellShape.Disc && b is CellShape.Box ->
-            discVsBox(a, ax, ay, b, bx, by, body, other, restingSpeedX, restingSpeedY, friction, into)
+            discVsBox(a, ax, ay, b, bx, by, bFrame, body, other, restingSpeedX, restingSpeedY, friction, into)
         a is CellShape.Disc && b is CellShape.Disc ->
             discVsDisc(a, ax, ay, b, bx, by, body, other, restingSpeedX, restingSpeedY, friction, into)
         else -> throw IllegalArgumentException(
@@ -123,6 +143,8 @@ private fun discVsBox(
     box: CellShape.Box,
     boxX: Long,
     boxY: Long,
+    /** The frame the box is square in, or `null` for the query's own — see [contactBetween]. */
+    boxFrame: Pose?,
     body: Int,
     other: Int,
     restingSpeedX: Long,
@@ -130,9 +152,15 @@ private fun discVsBox(
     friction: Long,
     into: MutableList<Contact>,
 ) {
-    // Relative to the box, so nothing here multiplies an absolute coordinate. §5.3.
-    val dx = discX - boxX
-    val dy = discY - boxY
+    // ⚠️ Relative to the box **first**, and turned into the box's axes second. Both orders give the
+    // same answer in exact arithmetic and only one of them is computable: [rotScale] applied to an
+    // absolute world coordinate overflows four tiles from the origin (§5.3), so the difference is
+    // taken before anything is multiplied by a cosine. This is [Pose.toLocalX]'s own warning, and
+    // the reason that function subtracts before it rotates.
+    val worldDx = discX - boxX
+    val worldDy = discY - boxY
+    val dx = if (boxFrame == null) worldDx else boxFrame.unturnedX(worldDx, worldDy)
+    val dy = if (boxFrame == null) worldDy else boxFrame.unturnedY(worldDx, worldDy)
     val nearX = if (dx < -box.halfWidth) -box.halfWidth else if (dx > box.halfWidth) box.halfWidth else dx
     val nearY = if (dy < -box.halfHeight) -box.halfHeight else if (dy > box.halfHeight) box.halfHeight else dy
     val outX = dx - nearX
@@ -144,11 +172,18 @@ private fun discVsBox(
         if (distSq >= disc.radius * disc.radius) return
         val dist = isqrt(distSq)
         if (dist <= 0L) return
+        // ⚠️ The point and the normal go back out in the frame they came in from. A **point**
+        // translates and a **direction** does not, which is why one uses [Pose.turnedX] with the
+        // box's centre added back and the other uses it alone — see [Pose.turnedX]'s KDoc. The depth
+        // needs neither: it is a length, and a rotation does not change one.
         into.add(
             contactAt(
                 body = body, other = other,
-                pointX = boxX + nearX, pointY = boxY + nearY,
-                dirX = outX, dirY = outY, dirLength = dist,
+                pointX = boxX + (if (boxFrame == null) nearX else boxFrame.turnedX(nearX, nearY)),
+                pointY = boxY + (if (boxFrame == null) nearY else boxFrame.turnedY(nearX, nearY)),
+                dirX = if (boxFrame == null) outX else boxFrame.turnedX(outX, outY),
+                dirY = if (boxFrame == null) outY else boxFrame.turnedY(outX, outY),
+                dirLength = dist,
                 depth = disc.radius - dist,
                 restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
                 friction = friction,
@@ -167,14 +202,24 @@ private fun discVsBox(
     val throughY = box.halfHeight - if (dy < 0L) -dy else dy
     val alongX = throughX <= throughY
     val sign = if (alongX) (if (dx >= 0L) 1L else -1L) else (if (dy >= 0L) 1L else -1L)
+    // The nearest face is a face **of the box**, so the axis it points along is one of the box's,
+    // and it comes back out through the same turn as the ordinary case above.
+    val localNormalX = if (alongX) sign * Flight.FRAC_ONE else 0L
+    val localNormalY = if (alongX) 0L else sign * Flight.FRAC_ONE
+    // ⚠️ Emitted through [contactAt] rather than as a [Contact] built by hand, and that is a step-6
+    // correction rather than tidying. The resting speed used to be picked as `if (alongX) x else y`,
+    // which reads the threshold off the axis the *box* is square in — the same thing as the query's
+    // axis for exactly as long as a box could not be turned. Blending it off the normal after the
+    // turn is what the shallow case above has always done, and it is the frame-independent form.
     into.add(
-        Contact(
+        contactAt(
             body = body, other = other,
             pointX = discX, pointY = discY,
-            normalX = if (alongX) sign * Flight.FRAC_ONE else 0L,
-            normalY = if (alongX) 0L else sign * Flight.FRAC_ONE,
+            dirX = if (boxFrame == null) localNormalX else boxFrame.turnedX(localNormalX, localNormalY),
+            dirY = if (boxFrame == null) localNormalY else boxFrame.turnedY(localNormalX, localNormalY),
+            dirLength = Flight.FRAC_ONE,
             depth = disc.radius + (if (alongX) throughX else throughY),
-            restingSpeed = if (alongX) restingSpeedX else restingSpeedY,
+            restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
             friction = friction,
         ),
     )
@@ -294,11 +339,24 @@ private fun unitOf(component: Long, length: Long): Long {
  * Kept as arithmetic rather than as "did [contactBetween] emit anything" because it is asked per
  * cell per tile and must not allocate; `CellShapeTest` is what holds the two to the same answer.
  */
-fun overlapBetween(a: CellShape, ax: Long, ay: Long, b: CellShape, bx: Long, by: Long): Boolean =
+fun overlapBetween(
+    a: CellShape,
+    ax: Long,
+    ay: Long,
+    b: CellShape,
+    bx: Long,
+    by: Long,
+    /** The frame [b] is square in — the same argument [contactBetween] takes, and for the same
+     * reason. It **must** be passed whenever that one is, or the two answer different questions and
+     * a body reads as wedged in a wall it is not in. */
+    bFrame: Pose? = null,
+): Boolean =
     when {
         a is CellShape.Disc && b is CellShape.Box -> {
-            val dx = ax - bx
-            val dy = ay - by
+            val worldDx = ax - bx
+            val worldDy = ay - by
+            val dx = if (bFrame == null) worldDx else bFrame.unturnedX(worldDx, worldDy)
+            val dy = if (bFrame == null) worldDy else bFrame.unturnedY(worldDx, worldDy)
             val outX = dx - clampTo(dx, b.halfWidth)
             val outY = dy - clampTo(dy, b.halfHeight)
             val distSq = outX * outX + outY * outY

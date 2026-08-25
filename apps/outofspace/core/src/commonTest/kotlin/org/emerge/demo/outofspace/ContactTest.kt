@@ -4,7 +4,10 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.Stuff
+import org.emerge.demo.outofspace.world.CellShape
 import org.emerge.demo.outofspace.world.Contact
+import org.emerge.demo.outofspace.world.contactBetween
+import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
@@ -423,6 +426,83 @@ class ContactTest {
         oreComposition = OutofspaceReducer.DEFAULT_ORE_BODY,
         energy = TileEnergy.uniform(1, 0L),
     )
+
+    // ── A box has an orientation, and that is what deletes the shared frame ────
+
+    /**
+     * A disc touching a box turned 45° is pushed **along the face it actually touched**, not along
+     * a grid axis.
+     *
+     * This is step 6's blocker stated as small as it goes. Every hull contact in the game is
+     * Disc-vs-Box, and a [CellShape.Box] is axis-aligned *in whatever frame it is handed* — it has
+     * nowhere to carry an angle. That is not a gap in the shape table, it is the reason the sweep
+     * has to turn every operand into the grid's axes before it can ask a single question: one
+     * operand is allowed to be square and everybody else has to be expressed relative to it.
+     *
+     * Which is exactly what §5 says cannot survive the unification — *"you cannot unify vessels and
+     * rocks while one of them defines the coordinate system"*. Two box-celled operands at different
+     * angles have no shared frame that is axis-aligned for both, so as long as a box cannot be
+     * asked at an angle there can only ever be one of them, and it can only ever be the ship.
+     *
+     * The claim is stated structurally rather than against transcribed cosines, so that it survives
+     * a change in how the turn is computed: at 45° the two components of a unit normal are equal,
+     * they are both positive when the disc sits off the box's local +x face, and their length is a
+     * unit. A tolerance here is the rotation round trip — [Pose]'s own bound is ~3e-6 of a tile — so
+     * **a near miss means the transcription is wrong, not that the bound is tight.**
+     */
+    @Test
+    fun `a box can be asked at an angle`() {
+        val half = Flight.PER_TILE / 2L
+        val radius = Flight.PER_TILE / 2L
+        val overlap = Flight.PER_TILE / 4L
+        // ⚠️ A quarter turn, and `Coord(1, 4)` is what writes one: a full turn is the whole `Int`
+        // range, so [Coord]'s `(n, d)` constructor — `n * Int.MAX_VALUE / d` — is in **half** turns.
+        // `Coord(1, 8)` is 22.5°, which this test caught by reporting a normal at exactly tan 22.5°.
+        val turn = Coord(1, 4)
+
+        // The box sits somewhere unremarkable; the disc sits off its local +x face, overlapping by
+        // a quarter tile. Placed *through* the turn so the setup states a direction in the box's
+        // frame and lets the transform put it in the world — the thing under test is the answer
+        // coming back out, not the arithmetic going in.
+        val boxX = 20L * Flight.PER_TILE
+        val boxY = 15L * Flight.PER_TILE
+        val frame = Pose(boxX, boxY, turn)
+        val reach = half + radius - overlap
+        val contacts = ArrayList<Contact>()
+
+        contactBetween(
+            a = CellShape.CELL, ax = frame.toWorldX(reach, 0L), ay = frame.toWorldY(reach, 0L),
+            b = CellShape.Box(half, half), bx = boxX, by = boxY, bFrame = frame,
+            body = 0, restingSpeedX = 0L, restingSpeedY = 0L, friction = 0L, into = contacts,
+        )
+
+        assertEquals(1, contacts.size, "a disc a quarter tile into a face is one touch")
+        val c = contacts.single()
+        assertTrue(c.normalX > 0L && c.normalY > 0L, "the push is out along the turned face: $c")
+        assertNear(c.normalX, c.normalY, "at 45 degrees the two components of the normal are equal")
+        assertNear(
+            isqrt(c.normalX * c.normalX + c.normalY * c.normalY), Flight.FRAC_ONE,
+            "a contact normal is a unit, whatever angle it came out at",
+        )
+        assertNear(c.depth, overlap, "the depth is how far into the turned face it got")
+        // And the point is on that face — reach minus the radius back along the local +x axis.
+        assertNear(c.pointX, frame.toWorldX(half, 0L), "the touch is on the face, not at the centre")
+        assertNear(c.pointY, frame.toWorldY(half, 0L), "the touch is on the face, not at the centre")
+    }
+
+    /**
+     * The rotation round trip, as [Pose] measures it: ~3e-6 of a tile over a full grid, and normals
+     * are unit vectors of [Flight.FRAC_ONE] rather than lengths, so the same relative bound applies
+     * to both. Generous by three orders of magnitude against a transcription error.
+     */
+    private fun assertNear(actual: Long, expected: Long, why: String) {
+        val slack = 1L + (if (expected < 0L) -expected else expected) / 100_000L
+        val off = actual - expected
+        assertTrue(
+            (if (off < 0L) -off else off) <= slack,
+            "$why: expected $expected, got $actual (off by $off, slack $slack)",
+        )
+    }
 
     private companion object {
         init { RockSpawner.enabled = false }
