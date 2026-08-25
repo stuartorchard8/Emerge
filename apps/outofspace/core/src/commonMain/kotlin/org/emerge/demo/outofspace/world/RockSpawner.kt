@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.speciesColor
 import org.emerge.sim.core.physics.primitives.Frac
 import kotlin.math.abs
 import kotlin.random.Random
@@ -66,6 +67,40 @@ object RockSpawner {
     /** Flat backing store: row-major, indexed as state[row * WINDOW_SIZE + col]. */
     internal val state = IntArray(WINDOW_SIZE * WINDOW_SIZE)
     internal val abundanceBytes = ByteArray(WINDOW_BUFFER_SIZE * WINDOW_BUFFER_SIZE * 4)
+
+    /**
+     * The composition and rock density rolled for each populated window slot, kept so the nav map can
+     * be recoloured for a different [highlight] without re-rolling the noise: the roll is pure (see
+     * [mixtureForChunk]) but a hundred and sixty-five species of two-octave simplex per chunk is not
+     * something to pay for on a frame that only changed which species the player is reading about.
+     *
+     * Indexed like [state]; null where the slot is UNPOPULATED. [densityBytes] holds the same 0..255
+     * the alpha channel carries by default.
+     */
+    private val slotMixture = arrayOfNulls<Mixture>(WINDOW_SIZE * WINDOW_SIZE)
+    private val densityBytes = IntArray(WINDOW_SIZE * WINDOW_SIZE)
+
+    /**
+     * The species the nav map is being read for, or null for the full spectrum.
+     *
+     * With a species set, a chunk is drawn in that species' own colour at a brightness telling how far
+     * above or below its ordinary share of a rock this chunk came out — so a seam is a bright patch on
+     * a dark field, and a prospector has somewhere to fly to. Sharing the field's alpha with the rock
+     * density means an empty region stays empty however concentrated its (absent) rock would be.
+     */
+    var highlight: Species? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            for (row in 0 until WINDOW_SIZE) {
+                for (col in 0 until WINDOW_SIZE) {
+                    writeSlot(col, row)
+                }
+            }
+        }
+
+    /** Total of every natural [Species.relativeAbundance] — the denominator of an ordinary share. */
+    private val NATURAL_ABUNDANCE_TOTAL: Long = Species.NATURAL.sumOf { it.relativeAbundance.toLong() }
 
     private var baseChunkX: Int = 0
 
@@ -213,12 +248,61 @@ object RockSpawner {
     }
 
     private fun setAbundanceAt(x: Int, y: Int, mixture: Mixture, density: Frac) {
-        val color = mixture.color
+        slotMixture[y * WINDOW_SIZE + x] = mixture
+        densityBytes[y * WINDOW_SIZE + x] = density.scaleInt(0xFF)
+        writeSlot(x, y)
+    }
 
+    /** Paint one window slot into [abundanceBytes] from what was rolled for it, under the current [highlight]. */
+    private fun writeSlot(x: Int, y: Int) {
+        val mixture = slotMixture[y * WINDOW_SIZE + x]
+        if (mixture == null) {
+            clearSlot(x, y)
+            return
+        }
+        val density = densityBytes[y * WINDOW_SIZE + x]
+        val species = highlight
+        val color: Int
+        val alpha: Int
+        if (species == null) {
+            color = mixture.color
+            alpha = density
+        } else {
+            color = speciesColor(species).toInt()
+            alpha = density * concentration(mixture, species) / 0xFF
+        }
         abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+0] = (color.shr(24) and 0xFF).toByte()
         abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+1] = (color.shr(16) and 0xFF).toByte()
         abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+2] = (color.shr(8) and 0xFF).toByte()
-        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+3] = (density.scaleInt(0xFF)).toByte()
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+3] = alpha.toByte()
+    }
+
+    /**
+     * How rich this chunk is in [species], as 0..255, against the share that species has of an
+     * *ordinary* rock.
+     *
+     * The share itself is useless as a brightness: gold is fourteen parts per hundred million however
+     * good the seam, so a linear reading of it is black everywhere. What a prospector wants is the
+     * ratio to the ordinary share, which [mixtureForChunk]'s `1 + 15×noise` weighting keeps inside
+     * roughly [0.1, 2]; twice ordinary is drawn full brightness.
+     *
+     * The multiplication is in `Long` on purpose: a share of a billion times a hundred-million-part
+     * abundance total is 10¹⁷, and would overflow an `Int` several times over.
+     */
+    private fun concentration(mixture: Mixture, species: Species): Int {
+        val total = mixture.total
+        if (total <= 0L || species.relativeAbundance <= 0) return 0
+        val ordinary = total * species.relativeAbundance / NATURAL_ABUNDANCE_TOTAL
+        if (ordinary <= 0L) return 0
+        return (mixture[species] * 0xFF / (2L * ordinary)).coerceAtMost(0xFFL).toInt()
+    }
+
+    /** Blank one window slot — nothing was rolled there, so the nav map shows empty space. */
+    private fun clearSlot(x: Int, y: Int) {
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+0] = 0
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+1] = 0
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+2] = 0
+        abundanceBytes[(y * WINDOW_BUFFER_SIZE + x)*4+3] = 0
     }
 
     /**
@@ -469,10 +553,9 @@ object RockSpawner {
         for (row in 0 until WINDOW_SIZE) {
             for (col in 0 until WINDOW_SIZE) {
                 state[row * WINDOW_SIZE + col] = UNPOPULATED
-                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+0] = 0
-                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+1] = 0
-                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+2] = 0
-                abundanceBytes[(row * WINDOW_BUFFER_SIZE + col)*4+3] = 0
+                slotMixture[row * WINDOW_SIZE + col] = null
+                densityBytes[row * WINDOW_SIZE + col] = 0
+                clearSlot(col, row)
             }
         }
     }
@@ -503,12 +586,13 @@ object RockSpawner {
                         srcY !in 0..<WINDOW_SIZE) {
                         // Source is outside of bounds of previous representation
                         state[dstY * WINDOW_SIZE + dstX] = UNPOPULATED
-                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+0] = 0
-                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+1] = 0
-                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+2] = 0
-                        abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+3] = 0
+                        slotMixture[dstY * WINDOW_SIZE + dstX] = null
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = 0
+                        clearSlot(dstX, dstY)
                     } else {
                         state[dstY * WINDOW_SIZE + dstX] = state[srcY * WINDOW_SIZE + srcX]
+                        slotMixture[dstY * WINDOW_SIZE + dstX] = slotMixture[srcY * WINDOW_SIZE + srcX]
+                        densityBytes[dstY * WINDOW_SIZE + dstX] = densityBytes[srcY * WINDOW_SIZE + srcX]
                         abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+0] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+0]
                         abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+1] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+1]
                         abundanceBytes[(dstY * WINDOW_BUFFER_SIZE + dstX)*4+2] = abundanceBytes[(srcY * WINDOW_BUFFER_SIZE + srcX)*4+2]

@@ -84,6 +84,8 @@ import kotlin.math.roundToInt
  *                            # and admits it — `airBalance` stays 0, `injectedAir` is the admission
  * water <x> <y> [ticks]      # the same, but liquid water — ~11kg a tick, arriving at 230K because
  *                            # this model boils water near -33C (PLAN_phase_transitions.md 5c)
+ * wiki <Species> | wiki off      # open the reference on a species — also what narrows the nav map
+ *                            # to it, so this is how a prospecting map gets photographed
  * overlay <name>             # PLAIN/HEAT/AIR/PRESSURE/DENSITY/FLOW — what `shot` draws through
  * camera fit|centre <x> <y>|zoom <tilePx>|pan <dx> <dy>
  * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|
@@ -402,6 +404,21 @@ object OutofspaceAgentHarness {
                     controller.fit()
                     settle()
                     println("[agent] fit -> ${state.grid.width}x${state.grid.height}")
+                }
+                // `wiki <Species>` | `wiki off` — open the reference on a species, which is also what
+                // narrows the nav map to it (see `OutofspaceHud.navView`). Reachable by `tap` only
+                // from whatever chip happens to be on screen, and a script that wants to photograph
+                // the prospecting map should not have to build a rock into a panel first.
+                "wiki" -> {
+                    if (t.getOrNull(1)?.equals("off", true) != false) {
+                        controller.closeWiki()
+                        println("[agent] reference closed")
+                    } else {
+                        val species = Species.ALL.firstOrNull { it.name.equals(t[1], true) }
+                            ?: error("unknown species '${t[1]}'")
+                        controller.openWiki(species)
+                        println("[agent] reference -> ${species.name}")
+                    }
                 }
                 "camera" -> camera(t)
                 "field" -> field(t[1], t.drop(2).map { it.toInt() })

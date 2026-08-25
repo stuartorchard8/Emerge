@@ -87,7 +87,7 @@ class OutofspaceHud {
         val s = controller.state
         ui.frame {
             // Drawn first (occludes everything).
-            navView(s)
+            navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
             panel(Anchor.TopLeft) {
                 title("OUT OF SPACE")
                 keyValue("Tick", s.tick.toString())
@@ -301,8 +301,15 @@ class OutofspaceHud {
         clipboardStatus = ""
     }
 
-    /** Ship nav: origin marker + velocity needle (two scales — distance vs velocity). */
-    private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState) = canvas {
+    /**
+     * Ship nav: origin marker + velocity needle (two scales — distance vs velocity).
+     *
+     * @param prospecting the species the field is being read for, or null for the full spectrum. It is
+     *   whatever the reference is open on, so reading about a mineral is itself the act of going
+     *   looking for it — the map answers the question the article raised.
+     */
+    private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState, prospecting: Species?) = canvas {
+        RockSpawner.highlight = prospecting
         val size = 190f * density
         val pad = 10f * density
         val x0 = (screenW - size) / 2f
@@ -359,7 +366,11 @@ class OutofspaceHud {
         rect(cx - h - density, cy - h - density, (h + density) * 2f, (h + density) * 2f, 0x080D14FFL)
         rect(cx - h, cy - h, h * 2f, h * 2f, 0xFFFFFFFFL)
 
-        label("NAV  ·  ${NAV_RANGE_TILES.toInt()} tiles", cx, y0 + 3f * density, 9f * density, 0x7A8A9AFFL)
+        if (prospecting == null) {
+            label("NAV  ·  ${NAV_RANGE_TILES.toInt()} tiles", cx, y0 + 3f * density, 9f * density, 0x7A8A9AFFL)
+        } else {
+            label("NAV  ·  ${prospecting.name.uppercase()}", cx, y0 + 3f * density, 9f * density, speciesColor(prospecting))
+        }
         label(
             "${tiles(s.positionX)}, ${tiles(s.positionY)}",
             cx, y0 + size - 11f * density, 9f * density, 0x9AA4B4FFL,
