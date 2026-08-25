@@ -319,10 +319,12 @@ class OutofspaceRenderer {
         }
         if (inspectLayer == InspectLayer.Deck && inspectTile != TileIndex.NONE) {
             val origin = state.occupancy[inspectTile]
-            if (state[origin]?.kind != DeckMachineKind.Bridge) {
-                val diameter = state[origin]?.kind?.diameter ?: 1
-                tileRect(grid.xOf(origin), grid.yOf(origin), diameter.toFloat(), Colors.HOVER)
-            }
+            val hovered = state[origin]
+            // ⚠️ Over the machine's **footprint**, not a square of `diameter` off its origin. A
+            // bridge's is a line and a thruster's is not even centred on the tile it is stored at,
+            // so the square form lit two tiles of open deck beside a motor and left its bell dark.
+            if (hovered == null) tileRect(grid.xOf(inspectTile), grid.yOf(inspectTile), 1f, Colors.HOVER)
+            else if (hovered.kind != DeckMachineKind.Bridge) footprintRect(state, hovered, 1f, Colors.HOVER)
         }
 
         // Signal wire under everything: it is the thinnest run and the one most often threaded
@@ -725,6 +727,9 @@ class OutofspaceRenderer {
         val tile = m.center
         val x = state.grid.xOf(tile)
         val y = state.grid.yOf(tile)
+        // How wide the machine is, for the readouts drawn *inside* a square body — a fill bar and a
+        // tank level. ⚠️ Never for the body itself: see [footprintRect] for why a size and a centre
+        // is not enough to say where a machine is any more.
         val n = m.kind.diameter
         // A **ghost** is drawn as one body fading up from [Colors.GHOST] as it fills, the same ramp a
         // drawn run of track uses and for the same reason: a machine the player has just placed
@@ -738,13 +743,13 @@ class OutofspaceRenderer {
         // by [drawBridge] rather than on the tile, so a body rect here would put a box in the middle
         // of the span. It fades in its own pass.
         if (m !is Bridge && state.deck.isGhost(tile)) {
-            bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.GHOST)
+            footprintRect(state, m, Visual.MACHINE_INSET, Colors.GHOST)
             // Outlined in the colour of the thing it is going to be, brightening as it fills. The
             // fill alone is [Colors.GHOST] against a deck that is nearly the same slate, which is
             // right for a rail arm — a thin bright line over dark — and all but invisible as a body
             // the size of a machine. The outline is what says *which* machine, and the ramp is what
             // says how far along it is.
-            bodyOutline(x, y, n, ghostColor(state, m))
+            footprintOutline(state, m, ghostColor(state, m))
             drawPorts(state, m)
             return
         }
@@ -755,8 +760,8 @@ class OutofspaceRenderer {
         if (m !is Airlock && m !is Sensor && m !is WireButton &&
             m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0
         ) {
-            bodyRect(x, y, n, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
-            bodyRect(x, y, n, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
+            footprintRect(state, m, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
+            footprintRect(state, m, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)
             drawPorts(state, m)
             return
         }
@@ -777,30 +782,33 @@ class OutofspaceRenderer {
             // because it names none: what it reports on is the wire beneath it.
             is Gauge -> frame(x, y, Colors.GAUGE_COLLAR)
             // Bright core, wider than the pipe it opens, centred on the tile.
-            is Valve -> bodyRect(x, y, 1, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
+            is Valve -> footprintRect(state, m, Visual.VALVE_COLLAR, Colors.VALVE_CORE)
             is Hull -> tileRect(x, y, 1f, kindColor(DeckMachineKind.Hull))
             is Extractor -> {
                 // A tray, not a block. The recessed floor is what says "things go on top of this",
                 // and the rock pass draws over it — see [drawRock].
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Extractor))
-                bodyRect(x, y, n, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Extractor))
+                footprintRect(state, m, Visual.EXTRACTOR_FLOOR_INSET, Colors.EXTRACTOR_FLOOR)
                 fillBar(x, y, n, (state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Product)!!)?.total ?: 0L)
                     .toFloat() / Extractor.BUFFER_CAP)
             }
 
             is Processor -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Processor))
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Processor))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             is ThermalDecomposer -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            // The bell marks the exhaust face, so which way a motor pushes is readable without
-            // selecting it — the one thing about a thruster you cannot afford to get wrong.
+            // Two tiles: the chamber it is stored at and the bell in front of it, drawn as one
+            // body so a motor reads as the object it is rather than as two machines. The nozzle
+            // mark sits on the *outer* face of the bell, so which way a thruster pushes is readable
+            // without selecting it — the one thing about a motor you cannot afford to get wrong.
             is Thruster -> {
-                tileRect(x, y, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Thruster))
-                edgeMark(x, y, m.facing, Colors.VENT_CORE)
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Thruster))
+                val bell = m.bell(state.grid)
+                edgeMark(state.grid.xOf(bell), state.grid.yOf(bell), m.facing, Colors.VENT_CORE)
             }
 
             // A button: its face lights up while it is held, and its key is written on it by the
@@ -833,7 +841,7 @@ class OutofspaceRenderer {
             // and the player should read them as the same kind of thing.
             // Tank: room-sized fill (legible at distance).
             is Storage -> {
-                bodyRect(x, y, n, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Storage))
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Storage))
                 val stored = state.buffers.resourceAt(bufferTile(state.grid, m, tile, BufferRole.Inside)!!)
                 val level = (stored?.total ?: 0L).toFloat() / Storage.CAP
                 if (level > 0f) {
@@ -856,32 +864,62 @@ class OutofspaceRenderer {
     }
 
     /**
-     * The body of a machine: a square of [span] tiles centred on its anchor tile, inset a little.
+     * A rect over the whole of [m]'s footprint, inset a little — whatever shape that footprint is.
      *
-     * Machines anchor at their centre, so this is the same expression for every size — a one-tile
-     * conveyor and a five-tile furnace differ only in [span]. Drawing from a corner would need the
-     * offset to depend on facing as well, since rotation would move the anchor.
-     */
-    /**
-     * A hollow [bodyRect]: four thin sides around a machine's footprint, whatever size it is.
+     * **The only way a machine body is drawn.** It replaced a helper that took a tile and a size
+     * and drew a square centred on it, which is the question a caller must stop answering for
+     * itself: a bridge is a line, and a thruster's two tiles are the one it is stored at and the one
+     * in front of it, so a square drawn off the anchor is wrong by half a tile in a direction that
+     * depends on the facing. Folding the footprint's own bounding box cannot be wrong that way.
      *
-     * [frame] draws one tile and is sized for a fitting in a line; this is the same idea for a body
-     * that may be three or five tiles across.
+     * Every footprint in the game fills its own bounding box, so a rect is the whole shape. The
+     * first kind whose footprint has a hole or a corner in it needs a different helper, not a
+     * fudge factor in this one.
      */
-    private fun bodyOutline(x: Int, y: Int, span: Int, color: Long) {
-        val side = (span - (1f - Visual.MACHINE_INSET)) * tilePx
-        val t = Visual.FRAME_THICKNESS * tilePx
-        val cx = (x + 0.5f) * tilePx
-        val cy = (y + 0.5f) * tilePx
-        rect(cx, cy - (side - t) * 0.5f, side, t, color)
-        rect(cx, cy + (side - t) * 0.5f, side, t, color)
-        rect(cx - (side - t) * 0.5f, cy, t, side, color)
-        rect(cx + (side - t) * 0.5f, cy, t, side, color)
-    }
+    private fun footprintRect(state: VesselState, m: DeckMachine, inset: Float, color: Long) =
+        overFootprint(state, m) { cx, cy, tilesW, tilesH ->
+            rect(cx, cy, (tilesW - (1f - inset)) * tilePx, (tilesH - (1f - inset)) * tilePx, color)
+        }
 
-    private fun bodyRect(x: Int, y: Int, span: Int, inset: Float, color: Long) {
-        val side = (span - (1f - inset)) * tilePx
-        rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, side, side, color)
+    /** A hollow [footprintRect]: four thin sides around whatever shape the machine's footprint is. */
+    private fun footprintOutline(state: VesselState, m: DeckMachine, color: Long) =
+        overFootprint(state, m) { cx, cy, tilesW, tilesH ->
+            val w = (tilesW - (1f - Visual.MACHINE_INSET)) * tilePx
+            val h = (tilesH - (1f - Visual.MACHINE_INSET)) * tilePx
+            val t = Visual.FRAME_THICKNESS * tilePx
+            rect(cx, cy - (h - t) * 0.5f, w, t, color)
+            rect(cx, cy + (h - t) * 0.5f, w, t, color)
+            rect(cx - (w - t) * 0.5f, cy, t, h, color)
+            rect(cx + (w - t) * 0.5f, cy, t, h, color)
+        }
+
+    /**
+     * The bounding box of [m]'s footprint, handed to [draw] as world-pixel centre and size in tiles.
+     *
+     * The one place the shape of a machine is turned into a place on the screen, so the two helpers
+     * above cannot come to disagree about where a bridge or a motor is. A **centre** and a size and
+     * not a corner, because every rect this renderer draws is centred — see [rect].
+     */
+    private inline fun overFootprint(
+        state: VesselState,
+        m: DeckMachine,
+        draw: (cx: Float, cy: Float, tilesW: Int, tilesH: Int) -> Unit,
+    ) {
+        var minX = Int.MAX_VALUE; var minY = Int.MAX_VALUE
+        var maxX = Int.MIN_VALUE; var maxY = Int.MIN_VALUE
+        for (t in m.tiles(state.grid)) {
+            val tx = state.grid.xOf(t); val ty = state.grid.yOf(t)
+            if (tx < minX) minX = tx
+            if (ty < minY) minY = ty
+            if (tx > maxX) maxX = tx
+            if (ty > maxY) maxY = ty
+        }
+        draw(
+            (minX + maxX + 1) * 0.5f * tilePx,
+            (minY + maxY + 1) * 0.5f * tilePx,
+            maxX - minX + 1,
+            maxY - minY + 1,
+        )
     }
 
     /**

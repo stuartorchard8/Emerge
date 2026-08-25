@@ -22,8 +22,8 @@ import org.emerge.demo.outofspace.world.Wiring
  * over another deck machine or another bridge**, and crossing a run costs three tiles of deck. That
  * is a real constraint and it is meant to be: the game is about being out of space.
  *
- * ⚠️ Its footprint is a **line along [facing]**, the only non-square one in the game — see
- * `DeckMachineKind.span`. Turning a bridge therefore moves it onto two different tiles, so unlike
+ * ⚠️ Its footprint is a **line along [facing]** — see
+ * `FootprintShape.Span`. Turning a bridge therefore moves it onto two different tiles, so unlike
  * every other machine a rotation can be refused.
  */
 data class Bridge(

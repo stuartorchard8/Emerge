@@ -65,11 +65,15 @@ fun structureMass(grid: Grid, rail: RailLayer, conduits: Conduits, deck: DeckArr
  * cargo there (what it is carrying), kept apart because the two totals are separately meaningful and
  * separately tested.
  *
- * ⚠️ **A multi-tile machine is a point mass at its anchor tile.** That is exactly right for the
- * centre of mass — [coveredTiles] centres a footprint on its anchor, so the anchor *is* the centre —
- * and it is an approximation for the moment of inertia, which loses the machine's own spread about
- * its centre. A five-tile smelter is short by `m·(w²+h²)/12`, about two tile² against the tens to
- * hundreds a real lever arm contributes. Worth knowing, not worth a second walk.
+ * ⚠️ **The fabric is booked tile by tile and the cargo at the anchor**, which is the distinction the
+ * loop below turns on. Fabric per tile is exact for the centre of mass whatever shape the footprint
+ * is, and that matters now that a footprint need not be centred on its anchor at all — a thruster's
+ * metal is half in its chamber and half in its bell, and booking the lot at the chamber would put
+ * the ship's centre of mass a little astern of where it is. Cargo stays at the anchor because a
+ * machine's stores are addressed from there; it is an approximation for the moment of inertia, which
+ * loses the load's own spread about the anchor. A five-tile smelter is short by `m·(w²+h²)/12`,
+ * about two tile² against the tens to hundreds a real lever arm contributes. Worth knowing, not
+ * worth a second walk.
  */
 inline fun forEachVesselMass(
     grid: Grid,

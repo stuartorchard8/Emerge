@@ -16,6 +16,10 @@ creative 1
 camera centre 34 9 64
 
 # In the starboard wall, exhausting outboard: it pushes the ship to port.
+#
+# ⚠️ A motor is **two tiles**: the chamber goes where you click and the bell juts out one step in the
+# exhaust direction. So (34,9) puts the chamber in the plate and the bell at (35,9), outboard of the
+# hull, and the placement is refused outright if that tile is taken.
 brush THRUSTER RIGHT
 place 34 9
 

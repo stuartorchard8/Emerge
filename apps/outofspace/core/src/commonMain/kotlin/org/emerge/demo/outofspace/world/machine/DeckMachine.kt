@@ -43,13 +43,22 @@ sealed interface DeckMachine {
      */
     val wiring: Wiring
 
-    /** Half-width of the footprint — see [DeckMachineKind.reach]. */
+    /** Half-width — where a square kind's ports and stores sit. See [DeckMachineKind.reach]. */
     val reach: Int get() = kind.reach
 
     /** Quarter-turns clockwise from the facing-Right frame. Zero for anything that does not face. */
     val turns: Int get() = (this as? DirectedDeckMachine)?.facing?.ordinal ?: 0
 
-    /** The tile it is stored at, and the middle of its footprint. */
+    /**
+     * The tile it is stored at: where the deck array holds it, what [Occupancy] points every covered
+     * tile back at, and the frame its ports and stores are offset from.
+     *
+     * ⚠️ **Not necessarily the middle of its footprint.** It is for a square kind and for a bridge,
+     * and it is *not* for a thruster, whose anchor is its chamber and whose second tile is its bell
+     * — see [org.emerge.demo.outofspace.world.FootprintShape.Nose]. Anything that wants the middle
+     * of the thing standing here — a lever arm, a bounding box, a body to draw — must walk [tiles],
+     * not add and subtract a half-width from this.
+     */
     val center: TileIndex
 
     /**

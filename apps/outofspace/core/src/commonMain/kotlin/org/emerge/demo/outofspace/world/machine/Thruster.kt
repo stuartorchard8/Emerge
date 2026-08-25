@@ -11,8 +11,20 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * A rocket motor on one tile: propellant in at the back, exhaust out the front, and the ship goes
- * the other way.
+ * A rocket motor two tiles long: propellant in at the chamber, exhaust out of the bell in front of
+ * it, and the ship goes the other way.
+ *
+ * ### The two tiles
+ *
+ * [center] is the **chamber** — where the machine is stored, where a rail is threaded under it, and
+ * where its one store sits. [bell] is the tile immediately [facing]-ward of that, and it is part of
+ * the machine: it is claimed, it is made of metal, it weighs, and nothing else may be built there.
+ * That makes the thruster the one kind whose anchor is not the middle of its own footprint — see
+ * [org.emerge.demo.outofspace.world.FootprintShape.Nose], which holds the argument.
+ *
+ * Everything about where the exhaust *goes* is measured from the bell and not from the chamber:
+ * [exhaustPath] starts its walk there, the impulse is booked there, and the lever arm the flight
+ * controls give this motor is the bell's. A motor is a thing that pushes at its nozzle.
  *
  * The first engine in the game that is a *thing you build* rather than a hole in the hull or a key
  * held down. [org.emerge.demo.outofspace.Edit.Thrust] mints momentum and books the fact; a breach
@@ -34,10 +46,11 @@ import org.emerge.demo.outofspace.world.Wiring
  * it through [org.emerge.demo.outofspace.world.applyPressureForce] like any other pressure — so a badly placed thruster is not
  * *nothing*, it is a wildly inefficient one. See [exhaustPath] for how "blocked" is decided.
  *
- * A motor bolted face-first against a wall is that case taken to its limit rather than a fourth
- * case needing a rule of its own: the machine does not [DeckMachineKind.preventAirflow], so its own tile holds
- * gas, and with nowhere further to send the exhaust it sends it there. It runs, it produces no
- * thrust, and it cooks itself — which is a legible thing to build by mistake and to have to fix.
+ * A motor bolted bell-first against a wall is that case taken to its limit rather than a fourth
+ * case needing a rule of its own: the machine does not [DeckMachineKind.preventAirflow], so the bell
+ * tile holds gas, and with nowhere further to send the exhaust it sends it there. It runs, it
+ * produces no thrust, and it cooks itself — which is a legible thing to build by mistake and to have
+ * to fix.
  */
 data class Thruster(
     override val center: TileIndex,
@@ -77,6 +90,16 @@ data class Thruster(
 
     /** The way the ship is pushed: the other way from the way the exhaust goes. */
     val thrust: Direction get() = facing.opposite
+
+    /**
+     * The nozzle: the second tile of the footprint, one step [facing]-ward of the chamber.
+     *
+     * Derived rather than stored, for the reason the footprint is — a tile index means a different
+     * place on a different lattice. A standing thruster always has one, because a footprint that did
+     * not fit was refused at placement.
+     */
+    fun bell(grid: Grid): TileIndex = grid.neighbour(center, facing)
+
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)
 
     companion object {
@@ -134,12 +157,12 @@ data class Thruster(
 }
 
 /**
- * Where a thruster's exhaust ends up: straight out of the exit face until something stops it.
+ * Where a thruster's exhaust ends up: straight out of the bell until something stops it.
  *
  * [blocker] is the first impermeable tile in the way, or **−1** if the exhaust reaches the rim and
  * leaves the world. [destination] is the last tile the exhaust can actually get to: the permeable
- * tile immediately before the blocker, or — for a motor bolted face-first against a wall, with no
- * such tile — **the thruster's own**, which it can hold because a thruster is permeable.
+ * tile immediately before the blocker, or — for a motor bolted bell-first against a wall, with no
+ * such tile — **the bell itself**, which it can hold because a thruster is permeable.
  *
  * [path] is every permeable tile the jet crosses, exit face first, **including** [destination]. A
  * jet at 3 km/s does not politely thread between the gas already in the corridor: it takes it with
@@ -168,17 +191,34 @@ class ExhaustPath(val path: Array<TileIndex>, val blocker: TileIndex, val destin
     val isClear: Boolean get() = blocker == TileIndex.NONE
 }
 
-/** The exhaust path of the thruster stored at [tile] — see [ExhaustPath]. */
-fun exhaustPath(grid: Grid, structure: StructureMap, tile: TileIndex, facing: Direction): ExhaustPath {
+/**
+ * The exhaust path of [m] — see [ExhaustPath].
+ *
+ * ⚠️ **It takes the machine and not a tile, and the ray below is private for that reason.** The
+ * walk starts at the [Thruster.bell], never at the chamber, and a caller that had to remember which
+ * of a motor's two tiles to hand over would eventually hand over the wrong one — silently, since the
+ * chamber is a perfectly plausible place to start a ray from and the answer it gives is merely one
+ * tile too long.
+ */
+fun exhaustPath(grid: Grid, structure: StructureMap, m: Thruster): ExhaustPath =
+    exhaustPath(grid, structure, m.bell(grid), m.facing)
+
+/**
+ * The same walk stated as a ray: out of [bell] along [facing] until something stops it.
+ *
+ * The gas in [bell] itself is **not** on the path. It is the machine's own tile, and what is in a
+ * bell when it lights is what the chamber is about to throw out anyway.
+ */
+private fun exhaustPath(grid: Grid, structure: StructureMap, bell: TileIndex, facing: Direction): ExhaustPath {
     val crossed = ArrayList<TileIndex>(grid.width + grid.height)
-    var at = tile
+    var at = bell
     while (true) {
         val next = grid.neighbour(at, facing)
         // Off the edge of the world: nothing ever stopped it.
-        if (next == TileIndex.NONE) return ExhaustPath(crossed.toTypedArray(), blocker = TileIndex.NONE, destination = crossed.lastOrNull() ?: tile)
+        if (next == TileIndex.NONE) return ExhaustPath(crossed.toTypedArray(), blocker = TileIndex.NONE, destination = crossed.lastOrNull() ?: bell)
         if (structure.blocksAir(next)) {
             // Nothing crossed means the wall is against the nozzle, and the exhaust stays home.
-            return ExhaustPath(crossed.toTypedArray(), blocker = next, destination = crossed.lastOrNull() ?: tile)
+            return ExhaustPath(crossed.toTypedArray(), blocker = next, destination = crossed.lastOrNull() ?: bell)
         }
         crossed.add(next)
         at = next

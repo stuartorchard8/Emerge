@@ -25,6 +25,7 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.starterVessel
@@ -389,6 +390,142 @@ class SaveTest {
         assertEquals(Conduit.Pipe, back.conduits.at(Conduit.Pipe, TileIndex(9))?.conduit)
         assertNull(back.conduits.at(Conduit.Pipe, TileIndex(8)), "a rail was filed on the pipe layer")
         assertNull(back.conduits.at(Conduit.Rail, TileIndex(9)), "a pipe was filed on the rail layer")
+    }
+
+    // ── The bell migration ────────────────────────────────────────────────────
+
+    /**
+     * A version 17 motor was one tile. It comes back two, with a bell in front of it.
+     *
+     * The whole of the migration when there is room for it: the chamber keeps everything the file
+     * said about it, and the tile it fires through becomes part of the machine.
+     */
+    @Test
+    fun `a version 17 thruster comes back with a bell`() {
+        val grid = Grid(8, 6)
+        val at = grid.tile(4, 2)
+        val state = Save.read(
+            """
+            outofspace 17 ${Budget.MICROGRAMS_PER_UNIT} ${Budget.NANOJOULES_PER_UNIT}
+            grid 8 6
+            deckmachine ${at.index} Thruster facing=Right in=Water=5000,energy=0
+            """.trimIndent(),
+        )
+        val motor = state.deck[at] as? Thruster
+        assertNotNull(motor, "the motor did not survive the load")
+        val bell = grid.tile(5, 2)
+        assertEquals(setOf(at, bell), motor.tiles(grid).toSet(), "it did not grow a bell")
+        assertEquals(at, state.occupancy[bell], "the bell is not registered to the machine on it")
+        assertTrue(state.deck.stuff.massAt(bell) > 0L, "the bell came back made of nothing")
+        // Its chamber is untouched: the store is where it always was, holding what it always held.
+        assertEquals(
+            5000L,
+            state.buffers.resourceAt(bufferTile(grid, motor, at, BufferRole.Input)!!)?.total,
+            "the propellant did not come back",
+        )
+    }
+
+    /**
+     * A version 17 motor whose bell would land on something already standing is **dropped**.
+     *
+     * Stu's call, and the two ledgers are re-anchored so that the loss is stated rather than turning
+     * up on the next tick as a leak. What is asserted here is the *ledgers*: the machine going is
+     * the easy half, and a silent hole in the mass balance is the half that would cost a day.
+     *
+     * ⚠️ The blocking hull is written **after** the motor on purpose. A migration applied where the
+     * record is read would have had to decide before it could know, and would have refused the file
+     * — this is the ordering that proves it does not.
+     */
+    @Test
+    fun `a version 17 thruster with nowhere for its bell is dropped, and the ledgers close`() {
+        val grid = Grid(8, 6)
+        val at = grid.tile(4, 2)
+        val blocker = grid.tile(5, 2)
+        val motorEnergy = 7_000_000L
+        val hullEnergy = 3_000_000L
+        val state = Save.read(
+            """
+            outofspace 17 ${Budget.MICROGRAMS_PER_UNIT} ${Budget.NANOJOULES_PER_UNIT}
+            grid 8 6
+            deckmachine ${at.index} Thruster facing=Right in=Water=5000,energy=0
+            deckmachine ${blocker.index} Hull
+            deckheat ${at.index}=$motorEnergy ${blocker.index}=$hullEnergy
+            baselinejoules ${motorEnergy + hullEnergy}
+            baselinecargo 5000
+            """.trimIndent(),
+        )
+        assertNull(state.deck[at], "a motor was nosed into a hull plate")
+        assertNotNull(state.deck[blocker], "the plate that blocked it went too")
+        assertTrue(state.occupancy.isFree(at), "the dropped motor is still holding its tile")
+
+        assertEquals(
+            0L,
+            state.storedEnergy - state.baselineEnergy,
+            "the dropped motor's casing heat left the world without the baseline being told",
+        )
+        assertEquals(
+            0L,
+            state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass,
+            "the dropped motor's propellant left the world without the mass ledger being told",
+        )
+    }
+
+    /**
+     * The bell a migration mints is metal the file never described, so the thermal baseline has to
+     * move with it.
+     *
+     * The mirror of the drop case above, and the easier one to get wrong: nothing is *missing* here,
+     * something has *appeared*, and a baseline read straight off the file would report the new
+     * casing as heat the world generated on the tick after the load.
+     */
+    @Test
+    fun `the bell a migration mints is added to the thermal baseline`() {
+        val grid = Grid(8, 6)
+        val at = grid.tile(4, 2)
+        val motorEnergy = 7_000_000L
+        val state = Save.read(
+            """
+            outofspace 17 ${Budget.MICROGRAMS_PER_UNIT} ${Budget.NANOJOULES_PER_UNIT}
+            grid 8 6
+            deckmachine ${at.index} Thruster facing=Right
+            deckheat ${at.index}=$motorEnergy
+            baselinejoules $motorEnergy
+            """.trimIndent(),
+        )
+        assertNotNull(state.deck[at], "the motor did not survive, so this proved nothing")
+        assertEquals(motorEnergy, state.deck.stuff.energyAt(at), "the chamber did not keep its own heat")
+        assertTrue(state.deck.stuff.energyAt(grid.tile(5, 2)) > 0L, "the bell came back stone cold")
+        assertEquals(
+            0L,
+            state.storedEnergy - state.baselineEnergy,
+            "the minted bell is heat the world cannot account for",
+        )
+    }
+
+    /**
+     * A file this build wrote states both tiles, and must not be migrated a second time.
+     *
+     * The version gate, asserted the only way that matters: round-trip a motor and check it is still
+     * one motor on two tiles rather than two motors, a refusal, or a bell that moved.
+     */
+    @Test
+    fun `a current save round-trips a thruster without migrating it`() {
+        val grid = Grid(8, 6)
+        val at = grid.tile(4, 2)
+        val deck = DeckArray(grid)
+        deck += Thruster(at, facing = Direction.Right)
+        val state = VesselState(
+            grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
+        )
+        val back = Save.read(Save.write(state))
+        assertEquals(state.deck[at], back.deck[at], "the motor changed across the file")
+        assertEquals(
+            (state.deck[at] as Thruster).tiles(grid).toSet(),
+            (back.deck[at] as Thruster).tiles(grid).toSet(),
+            "its footprint changed across the file",
+        )
+        assertEquals(state.deck.stuff.massAt(grid.tile(5, 2)), back.deck.stuff.massAt(grid.tile(5, 2)),
+            "the bell's metal did not survive the file")
     }
 
     @Test

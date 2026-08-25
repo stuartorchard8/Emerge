@@ -4,9 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.Wiring
-import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.capacityPerTile
-import org.emerge.demo.outofspace.world.diameter
 
 /**
  * Thermal energy stored **per tile** of something that occupies several.
@@ -93,7 +91,7 @@ class TileEnergy private constructor(private val perTile: LongArray) {
  *
  * The footprint, squared — except for a bridge, which claims no floor space at all and is
  * nonetheless three tiles of metal spanning three tiles of room. Deliberately **not** derived from
- * the clipped [org.emerge.demo.outofspace.world.coveredTiles] of wherever it stands: what a thing is made of does not change when it
+ * the clipped footprint of wherever it stands: what a thing is made of does not change when it
  * is built near the edge of the grid, and a capacity that varied with position would make an
  * identical machine hold a different amount of heat depending on where you put it.
  */

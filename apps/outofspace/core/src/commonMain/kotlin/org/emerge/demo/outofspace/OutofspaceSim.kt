@@ -880,11 +880,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val m = deck[tile] as? Thruster ?: continue
             if (m.control != ThrusterControl.Flight) continue
             tiles.add(tile)
+            // ⚠️ **From the bell, not from the tile the motor is stored at.** A [Motor]'s lever arm
+            // is where the push is applied, and a thruster pushes at its nozzle — which is a tile
+            // further out than its chamber, and on the far side of it. On a motor mounted a couple
+            // of tiles off the axis that one tile is a measurable share of the torque it makes, and
+            // getting it from the chamber would have the balance struck against a lever the ship
+            // does not have.
+            val bell = m.bell(grid)
             motors.add(
                 Motor(
                     thrust = m.thrust,
-                    leverX = tileCentre(grid.xOf(tile)) - about.comX,
-                    leverY = tileCentre(grid.yOf(tile)) - about.comY,
+                    leverX = tileCentre(grid.xOf(bell)) - about.comX,
+                    leverY = tileCentre(grid.yOf(bell)) - about.comY,
                     massPerTick = m.massPerTick,
                 ),
             )
@@ -931,7 +938,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val chunkMass = minOf(allowance, input.total)
         if (chunkMass <= 0L) return told.copy(carry = carry)
 
-        val path = exhaustPath(grid, structure, tile, m.facing)
+        val path = exhaustPath(grid, structure, m)
 
         heat(tile, heatOfWorking(chunkMass, m))
 
@@ -980,10 +987,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val outY = impulse * m.facing.dy
             exhaustMomentumX += outX
             exhaustMomentumY += outY
-            // At the bell, which is the tile the machine is on. The ship keeps `−p` and `−τ`, and
-            // both halves are written from the one number here so neither can be minted.
+            // At the bell — the second tile of the footprint, not the one the machine is stored at.
+            // The ship keeps `−p` and `−τ`, and both halves are written from the one number here so
+            // neither can be minted.
+            val bell = m.bell(grid)
             exhaustTorque += torqueAbout(
-                about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)), outX, outY,
+                about, tileCentre(grid.xOf(bell)), tileCentre(grid.yOf(bell)), outX, outY,
             )
         } else {
             val destination = path.destination
@@ -1268,11 +1277,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val originOf: TileArray = TileArray(state.grid.size).also { o ->
             for (tile in grid.tiles) {
                 val m = deck[tile] ?: continue
-                // ⚠️ `m.tiles(grid)`, not `coveredTiles(grid, tile, diameter)`. A bridge's footprint
-                // is a **line along its facing**, and the square form claimed the two tiles either
-                // side of it as well — which silently stole the origin of whatever was standing
-                // there, so a rotation check found the neighbouring tile free and turned onto it.
-                // [Occupancy.derive] is the twin of this and already walks the footprint.
+                // ⚠️ `m.tiles(grid)`, and never a square built from a centre and a half-width. A
+                // bridge's footprint is a **line along its facing**, and the square form claimed the
+                // two tiles either side of it as well — which silently stole the origin of whatever
+                // was standing there, so a rotation check found the neighbouring tile free and
+                // turned onto it. A thruster is worse still: its footprint is not centred on this
+                // tile at all. [Occupancy.derive] is the twin of this and already walks the
+                // footprint.
                 for (t in m.tiles(state.grid)) o[t] = tile
             }
             for (i in 0 until o.size) o[TileIndex(i)] = TileIndex(o[TileIndex(i)].index)
@@ -1818,9 +1829,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /**
          * Place building (click names centre, footprint grows around it).
          *
-         * The footprint comes from the machine rather than from `coveredTiles(grid, tile, size)`,
-         * because a bridge's is a **line along its facing** and a square would have it claim two
-         * tiles it does not stand on. `tiles(grid)` is the one answer both shapes give.
+         * The footprint comes from the machine rather than being squared off the cursor tile,
+         * because a bridge's is a **line along its facing** and a thruster's is a pair whose second
+         * tile is entirely in front of the cursor. [DeckMachineKind.footprint] is the one answer
+         * every shape gives — and this is where a motor's bell is checked for room, so an engine
+         * cannot be nosed into a wall or off the rim.
          */
         private fun placeDeckBuilding(tile: TileIndex, kind: DeckMachineKind, facing: Direction, deck: DeckArray) {
             val built = newDeckMachine(kind, tile, facing) ?: return

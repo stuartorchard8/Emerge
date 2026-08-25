@@ -36,6 +36,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -119,6 +120,29 @@ class MachineGhostTest {
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
         assertFalse(s.deck.isGhost(at), "the machine never finished itself")
         assertTrue(s.deck.stuff.massAt(at) > 0L, "it is finished but made of nothing")
+    }
+
+    /**
+     * A **thruster** builds itself over both its tiles, and it is fed at only one of them.
+     *
+     * The footprint whose anchor is an *end* rather than a middle. Everything in the construction
+     * path is stated in terms of a machine's tiles, so this ought to be free — and it is exactly the
+     * kind of "ought to be free" that is worth a test, because a bill counted per kind instead of
+     * per tile, or a spread that assumed the anchor was in the middle of what it was spreading over,
+     * both finish a motor with a bell made of nothing and neither says a word about it.
+     */
+    @Test
+    fun `a thruster builds itself over its chamber and its bell`() {
+        val at = grid.tile(10, 4)
+        val bell = grid.tile(11, 4)
+        val start = tankAndGhost(Thruster(at, Direction.Right))
+        assertTrue(start.deck.isGhost(at), "the fixture stood a finished motor")
+        assertEquals(at, start.occupancy[bell], "the fixture's motor is not standing on its bell")
+
+        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        assertFalse(s.deck.isGhost(at), "the motor never finished itself")
+        assertTrue(s.deck.stuff.massAt(at) > 0L, "its chamber is finished and made of nothing")
+        assertTrue(s.deck.stuff.massAt(bell) > 0L, "its bell is finished and made of nothing")
     }
 
     /**

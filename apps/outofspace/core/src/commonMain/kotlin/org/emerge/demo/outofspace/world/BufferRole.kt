@@ -99,8 +99,9 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // upstream of a full buffer is a rate nobody can observe. A bite now lands straight in the
         // store it leaves from.
         is Extractor -> if (role == BufferRole.Product) pack(r, 0) else NO_OFFSET
-        // One port, one store. Both are one-tile machines, so both stores are the centre tile —
-        // legal precisely because neither keeps a second role there.
+        // One port, one store, both on the chamber — the tile the machine is stored at. A thruster
+        // is two tiles long but only one wide, so its reach is zero and there is no second role to
+        // collide with; its bell is footprint and never a store.
         is Thruster -> if (role == BufferRole.Input) pack(0, 0) else NO_OFFSET
 
         // In at the back, concentrate out the front, tailings out of the floor, and a lump held in

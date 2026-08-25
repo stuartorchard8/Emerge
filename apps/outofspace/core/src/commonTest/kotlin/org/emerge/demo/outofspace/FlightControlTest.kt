@@ -403,14 +403,21 @@ class FlightControlTest {
      * The whole point, end to end: a motor nobody wired, bolted well off the axis, turns the ship
      * when the pilot asks for a turn.
      *
-     * Six tiles above midships and pushing to port, this engine's lever arm swings the vessel
+     * Eight tiles above midships and pushing to port, this engine's lever arm swings the vessel
      * *counter-clockwise* — so it is Q that lights it, and the ship's angular momentum must come out
      * negative. Nothing here binds a key to a motor; the geometry does all of it.
+     *
+     * ⚠️ **It used to be six, and six is no longer far enough off the axis.** A motor's lever arm is
+     * measured to its bell, which moved a tile outboard when a thruster grew one — so this engine is
+     * now very slightly *more* nearly in line with the centre of mass than it was, and at six tiles
+     * that put it a fifth of a percent the wrong side of [rotationTerm]'s anti-chatter floor
+     * (`3|cross| > lever`). The floor is doing exactly its job; the fixture was sitting on it. Moved
+     * out to eight so the test measures the claim in its title rather than the threshold.
      */
     @Test
     fun `an off-axis motor turns the ship on the rotate key`() {
         val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, row = BAY_Y - 6))
+        val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, row = BAY_Y - 8))
         controller.mode = Mode.Flight
         controller.heldKeys = InputKey.A.bit
 
@@ -452,6 +459,8 @@ class FlightControlTest {
         for (y in HULL_TOP..HULL_BOTTOM) { put(HULL_LEFT, y); put(HULL_RIGHT, y) }
         val tile: TileIndex = grid.tile(HULL_RIGHT, row)
         deck -= tile
+        // Two tiles long: the chamber in the starboard plate and the bell one step outboard of it,
+        // hanging in space. The plate under the chamber comes out; there is never one under a bell.
         deck += Thruster(tile, facing = Direction.Right, control = control)
         return VesselState(
             grid = grid,

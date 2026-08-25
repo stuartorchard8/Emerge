@@ -49,7 +49,16 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 17
+    const val VERSION = 18
+
+    /**
+     * The first version whose thrusters have a bell — see [ThrusterMigration].
+     *
+     * A file older than this states a motor that occupied exactly the tile it was stored at. This
+     * build's occupies that tile *and* the one in front of it, so an old file describes a world this
+     * one cannot represent until something is done about the second tile.
+     */
+    private const val THRUSTER_BELL_VERSION = 18
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -616,6 +625,12 @@ object Save {
         // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
         // segment has been read, and this line *replaces* the metal [Conduits.of] lays.
         val trackStuff = HashMap<Pair<Int, Int>, Mixture>()
+        // Thrusters out of a file older than [THRUSTER_BELL_VERSION], and the lines that describe
+        // them, held aside until every other machine is standing — see [standMigratedThrusters].
+        val legacyThrusters = LinkedHashMap<TileIndex, Thruster>()
+        val legacyThrusterCasing = HashMap<TileIndex, Mixture>()
+        val legacyThrusterEnergy = HashMap<TileIndex, Long>()
+        val legacyThrusterScrapping = mutableSetOf<TileIndex>()
         val diverters = HashMap<TileIndex, Int>()
         val merges = HashMap<TileIndex, Int>()
         val airMass = MassArray(grid.size)
@@ -719,26 +734,42 @@ object Save {
                 // is what is left of the machine list.
                 "machine" -> {
                     val t = tile(1)
-                    if (deck[t] != null) fail("two machines at tile $t")
+                    if (deck[t] != null || t in legacyThrusters) fail("two machines at tile $t")
                     val dm = readMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
-                    deck += dm
-                    // Its heat rode that record in `k=`, and `deckheat` was not written for it, so
-                    // without this the machine comes back at ambient and the thermal ledger reports
-                    // the difference on the first tick after the load.
-                    readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
-                        val tiles = dm.tiles(grid)
-                        val each = total / tiles.size
-                        for (tile in tiles) deck.stuff.setEnergy(tile, each)
-                        deck.stuff.addEnergy(dm.center, total % tiles.size)
+                    // A motor out of a file that predates its bell cannot be stood yet — the tile
+                    // in front of it may belong to a machine listed further down. See
+                    // [standMigratedThrusters].
+                    if (dm is Thruster && version < THRUSTER_BELL_VERSION) {
+                        legacyThrusters[t] = dm
+                        readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)
+                            ?.let { legacyThrusterEnergy[t] = it }
+                    } else {
+                        deck += dm
+                        // Its heat rode that record in `k=`, and `deckheat` was not written for it,
+                        // so without this the machine comes back at ambient and the thermal ledger
+                        // reports the difference on the first tick after the load.
+                        readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)?.let { total ->
+                            val tiles = dm.tiles(grid)
+                            val each = total / tiles.size
+                            for (tile in tiles) deck.stuff.setEnergy(tile, each)
+                            deck.stuff.addEnergy(dm.center, total % tiles.size)
+                        }
                     }
                 }
                 "deckmachine" -> {
                     val t = tile(1)
-                    if (deck[t] != null) fail("two machines at tile $t")
-                    deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    if (deck[t] != null || t in legacyThrusters) fail("two machines at tile $t")
+                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
                     // Read off the raw tokens rather than through the machine, because the mark is a
                     // fact about the vessel and not about the machine — see [VesselState.scrapping].
-                    if (tokens.any { it == "scrapping=1" }) scrapping.add(t)
+                    val marked = tokens.any { it == "scrapping=1" }
+                    if (dm is Thruster && version < THRUSTER_BELL_VERSION) {
+                        legacyThrusters[t] = dm
+                        if (marked) legacyThrusterScrapping.add(t)
+                    } else {
+                        deck += dm
+                        if (marked) scrapping.add(t)
+                    }
                 }
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
@@ -783,15 +814,20 @@ object Save {
                     tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad energy in '${tokens[i]}'")
                 }
                 "airheat" -> readSparse(tokens, airEnergy.data, energyScale, ::fail)
-                "deckheat" -> readDeckHeat(tokens, deck.stuff, energyScale, ::fail)
+                "deckheat" -> readDeckHeat(
+                    tokens, deck.stuff, energyScale, ::fail, legacyThrusterEnergy, legacyThrusters.keys,
+                )
                 "deckstuff" -> {
                     val t = tile(1)
                     val mix = readMixture(tokens.getOrNull(2) ?: fail("expected a mixture"), scale, ::fail)
                     // The machine must already be down: this line *replaces* the bill of materials
                     // `+=` laid, and writing it onto a bare tile would claim a row the deck has no
                     // machine for. The writer emits it after the machine records for that reason.
-                    if (!deck.stuff.occupies(t)) fail("deckstuff at $t, where no deck machine stands")
-                    for (s in Species.ALL) deck.stuff[t, s] = mix[s]
+                    // A legacy thruster is the one machine that is deliberately *not* down yet, so
+                    // its composition is held aside with it — see [standMigratedThrusters].
+                    if (t in legacyThrusters) legacyThrusterCasing[t] = mix
+                    else if (!deck.stuff.occupies(t)) fail("deckstuff at $t, where no deck machine stands")
+                    else for (s in Species.ALL) deck.stuff[t, s] = mix[s]
                 }
                 "trackstuff" -> {
                     val name = tokens.getOrNull(1) ?: fail("expected a conduit")
@@ -867,6 +903,14 @@ object Save {
                 else -> fail("unknown entry '${tokens[0]}'")
             }
         }
+
+        // Last of the deck to go down, and it has to be: a motor's bell can only be asked for once
+        // everything that might already be standing there is. A no-op — and an empty migration — for
+        // every file from [THRUSTER_BELL_VERSION] on, which held nothing aside.
+        val thrusters = standMigratedThrusters(
+            grid, deck, buffers, legacyThrusters, legacyThrusterCasing, legacyThrusterEnergy,
+            legacyThrusterScrapping, scrapping,
+        )
 
         val structure = StructureMap.derive(grid, deck)
         val occupancy = Occupancy.derive(grid, deck)
@@ -959,7 +1003,10 @@ object Save {
             builtMass = built,
             // A file that predates the field means "started empty", not "recompute from what is
             // aboard now" -- recomputing would launder every leak the save was written to catch.
-            baselineCargoMass = baselineCargo ?: 0L,
+            // Re-anchored by whatever a dropped motor took overboard with it — see
+            // [ThrusterMigration]. Zero for every file that has no such motor, which is all of them
+            // from [THRUSTER_BELL_VERSION] on.
+            baselineCargoMass = (baselineCargo ?: 0L) - thrusters.cargo,
             insertedEnergy = inserted,
             acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,
@@ -967,7 +1014,10 @@ object Save {
             // world and harmless for a saved one, where the line is always present. A version 4
             // file's baseline described the per-tile field, so it is not carried across: the
             // ledger is re-anchored to what the bodies actually hold.
-            baselineEnergy = baselineEnergy ?: solidEnergy(conduits),
+            // Re-anchored by the casing this load minted and the casing it dropped — see
+            // [ThrusterMigration]. Only against a baseline the file actually stated: the fallback is
+            // computed from the world as it now is, so it already counts the bells.
+            baselineEnergy = baselineEnergy?.plus(thrusters.energy) ?: solidEnergy(conduits),
             air = air,
             pipeAir = pipeAir,
             pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
@@ -1014,15 +1064,128 @@ object Save {
         return sum
     }
 
-    /** The reading half of [writeSparse]. */
-    private fun readDeckHeat(tokens: List<String>, deck: StuffLayer, scale: Rescale, fail: (String) -> Nothing) {
+    /**
+     * The reading half of [writeSparse].
+     *
+     * A reading for a tile in [heldTiles] goes into [aside] rather than into the layer. That is for
+     * the legacy thruster, which is not standing yet when this line is read (see
+     * [standMigratedThrusters]): the deck layer is row-allocated, so writing an energy at a tile
+     * with no machine on it claims a row there — and a claimed row is exactly what refuses the
+     * `stand` the migration is waiting to do. Both are empty for every file that has no such motor.
+     */
+    private fun readDeckHeat(
+        tokens: List<String>,
+        deck: StuffLayer,
+        scale: Rescale,
+        fail: (String) -> Nothing,
+        aside: MutableMap<TileIndex, Long>,
+        heldTiles: Set<TileIndex>,
+    ) {
         for (i in 1 until tokens.size) {
             val eq = tokens[i].indexOf('=')
             if (eq < 0) fail("expected index=value, got '${tokens[i]}'")
             val at = tokens[i].substring(0, eq).toIntOrNull() ?: fail("bad index in '${tokens[i]}'")
             if (at !in 0 until deck.tileCount) fail("index $at is outside the field")
-            deck.setEnergy(TileIndex(at), scale.of(tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'")))
+            val energy = scale.of(tokens[i].substring(eq + 1).toLongOrNull() ?: fail("bad value in '${tokens[i]}'"))
+            val tile = TileIndex(at)
+            if (tile in heldTiles) aside[tile] = energy else deck.setEnergy(tile, energy)
         }
+    }
+
+    /**
+     * What giving every thruster in an old save a bell cost the two ledgers that would otherwise
+     * notice.
+     *
+     * A migration that changes what the world is made of has to say so, or the first tick after the
+     * load reports the difference as a leak. Both terms are re-anchorings of a *baseline* rather
+     * than income: nothing arrived from off-world and nothing was spent, the world is simply
+     * constituted differently from the one the file described.
+     */
+    private class ThrusterMigration(
+        /**
+         * Casing energy the deck holds that the file's `baselineenergy` never counted — a freshly
+         * minted bell at room temperature — less the casing of any motor that had to be dropped.
+         */
+        val energy: Long,
+        /** Propellant that went with a dropped motor, and so has left [VesselState.inTransitMass]. */
+        val cargo: Long,
+    )
+
+    /**
+     * Stands the thrusters of a pre-[THRUSTER_BELL_VERSION] file, now that they are two tiles long.
+     *
+     * ### Why they are not stood where they are read
+     *
+     * A machine record is applied the moment it is read, and that works because a file lists no two
+     * machines on one tile. It stops working the instant a kind grows: this build's thruster claims
+     * a tile the file never mentioned in connection with it, and that tile may well be the middle of
+     * a warehouse listed forty lines further down. Whichever of the two was read second would fail
+     * its "nothing here yet" check and the whole save would be refused.
+     *
+     * So a legacy motor is held aside — along with the `deckstuff` and `deckheat` lines that name
+     * its tile — until every other machine in the file is standing and the deck can be *asked*
+     * whether there is room for a bell. Files at [THRUSTER_BELL_VERSION] or later go down the
+     * ordinary path: they already state the world this build represents.
+     *
+     * ### What happens to a motor with nowhere to put its bell
+     *
+     * **It is dropped**, and its propellant with it. That is Stu's call and it is the right one: the
+     * alternatives are refusing to load a legal old save, or inventing a rotation for the player's
+     * engine, and a motor pointing a way nobody chose is worse than a motor that is gone.
+     *
+     * ⚠️ It goes **quietly**. Both ledgers are re-anchored so the loss is stated rather than showing
+     * up later as a leak, but nothing tells the player, because [read] has no channel to tell them
+     * on. A motor that vanishes between two loads is therefore this, and there is nowhere else it
+     * could have gone.
+     *
+     * A surviving motor keeps its chamber exactly as the file described it — composition, heat,
+     * propellant, wiring, throttle — and its bell arrives as new metal at room temperature. A
+     * half-built motor stays half-built: its bill doubled along with its footprint, so a chamber
+     * that was short of one tile's worth is still short of two tiles' worth.
+     */
+    private fun standMigratedThrusters(
+        grid: Grid,
+        deck: DeckArray,
+        buffers: BufferLayer,
+        pending: Map<TileIndex, Thruster>,
+        casing: Map<TileIndex, Mixture>,
+        energies: Map<TileIndex, Long>,
+        markedScrapping: Set<TileIndex>,
+        scrapping: MutableSet<TileIndex>,
+    ): ThrusterMigration {
+        var minted = 0L
+        var lostCargo = 0L
+        // Every chamber, whether it has been stood yet or not — and whether it ends up standing at
+        // all. Two reasons: a motor read earlier in the file is not on the deck while a later one is
+        // being placed, so `deck.stuff` alone would let the second put its bell through the first's
+        // chamber; and keeping a *dropped* motor's tile reserved is what makes the outcome
+        // independent of the order the file happens to list its engines in. Slightly conservative,
+        // and deliberately so: "which of my thrusters survived" must not depend on line numbers.
+        val chambers = pending.keys
+        for ((tile, m) in pending) {
+            val footprint = m.kind.footprint(tile, grid, m.facing)
+            // Off the rim, or over something already standing. Its own chamber is not in its way.
+            val room = footprint != null &&
+                footprint.all { it == tile || (!deck.stuff.occupies(it) && it !in chambers) }
+            if (!room) {
+                lostCargo += bufferRolesOf(m).sumOf { role ->
+                    bufferTile(grid, m, tile, role)?.let { buffers.massAt(it) } ?: 0L
+                }
+                buffers.releaseRoles(grid, m, tile)
+                // Its casing heat was held aside and is never written, so the file's baseline is
+                // over by exactly that much.
+                minted -= energies[tile] ?: 0L
+                continue
+            }
+            deck.stand(m, withCasing = true)
+            // The chamber goes back to exactly what the file said it was; the bell keeps the bill
+            // `stand` just laid, which is the metal this migration is minting.
+            casing[tile]?.let { mix -> for (sp in Species.ALL) deck.stuff[tile, sp] = mix[sp] }
+            energies[tile]?.let { deck.stuff.setEnergy(tile, it) }
+            for (part in footprint!!) if (part != tile) minted += deck.stuff.energyAt(part)
+            if (tile in markedScrapping) scrapping.add(tile)
+        }
+        return ThrusterMigration(minted, lostCargo)
     }
 
     private fun readSparse(tokens: List<String>, into: LongArray, scale: Rescale, fail: (String) -> Nothing) {

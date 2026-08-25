@@ -23,6 +23,8 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Thruster
+import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Ignore
@@ -151,6 +153,51 @@ class FootprintTest {
         // Waste is a quarter turn clockwise of the product in the machine's own frame, and stays so.
         assertEquals(grid.tile(4, 5), waste.tile)
         assertEquals(Direction.Left, waste.side)
+    }
+
+    /**
+     * The shape that broke the symmetry: a footprint that is **not centred on its anchor**.
+     *
+     * Every other kind covers the same tiles when you turn it, or at worst a different line through
+     * the same middle. A thruster turned swings its whole second tile from one neighbour to another,
+     * and the tile it is stored at is an *end* of the machine rather than the middle of it — so this
+     * asserts the four facings separately. A single facing would pass against arithmetic that had
+     * the sign of the offset backwards.
+     */
+    @Test
+    fun `a thruster's footprint is its chamber and the tile in front of it`() {
+        val grid = Grid(12, 12)
+        val at = grid.tile(5, 5)
+        for (facing in Direction.ALL) {
+            val m = Thruster(at, facing = facing)
+            assertEquals(
+                setOf(at, grid.tile(5 + facing.dx, 5 + facing.dy)),
+                m.tiles(grid).toSet(),
+                "facing $facing, a motor stood on the wrong pair of tiles",
+            )
+            // Ascending index whichever way it points — row-major, like every other footprint, so
+            // two walks of the same machine pair up with each other.
+            val tiles = m.tiles(grid)
+            assertTrue(tiles[0].index < tiles[1].index, "facing $facing, the footprint came back out of order")
+        }
+    }
+
+    /** A motor whose bell would hang off the rim does not fit, whichever end of the world it is at. */
+    @Test
+    fun `a thruster does not fit when its bell is off the grid`() {
+        val grid = Grid(12, 12)
+        assertNull(
+            DeckMachineKind.Thruster.footprint(grid.tile(11, 5), grid, Direction.Right),
+            "a motor nosed off the right-hand rim fitted",
+        )
+        assertNull(
+            DeckMachineKind.Thruster.footprint(grid.tile(0, 5), grid, Direction.Left),
+            "a motor nosed off the left-hand rim fitted",
+        )
+        assertNotNull(
+            DeckMachineKind.Thruster.footprint(grid.tile(11, 5), grid, Direction.Left),
+            "a motor on the rim pointing inboard was refused",
+        )
     }
 
     @Test

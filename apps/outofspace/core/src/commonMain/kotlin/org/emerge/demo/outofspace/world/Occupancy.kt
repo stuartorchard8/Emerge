@@ -34,42 +34,19 @@ class Occupancy(private val originOf: TileArray) {
             for (i in 0 until deck.size) {
                 val tile = TileIndex(i)
                 val m = deck[tile] ?: continue
-                // ⚠️ To the machine's **centre**, not to each tile itself. Identical while every
+                // ⚠️ To the machine's **anchor**, not to each tile itself. Identical while every
                 // deck machine was one tile across, and wrong the moment one is not: the origin
                 // index is how any tile of a footprint finds the machine standing on it, and a
                 // tile that points at itself finds nothing.
+                //
+                // ⚠️ And by walking [DeckMachine.tiles], never by squaring a half-width off the
+                // anchor: a bridge's footprint is a line and a thruster's is not even centred on
+                // the tile it is stored at. This file used to export that square as a helper; it
+                // is deleted rather than deprecated, because a wrong footprint does not read as a
+                // wrong footprint — it reads as a rotation turning onto an occupied tile.
                 for (part in m.tiles(grid)) originOf[part] = m.center
             }
             return Occupancy(originOf)
         }
     }
-}
-
-/**
- * Every tile a machine of [size] centred on [tile] covers, clipped to the grid.
- *
- * Row-major order, which is arbitrary but fixed — the only property anything downstream relies on.
- */
-fun coveredTiles(grid: Grid, tile: TileIndex, size: Int): List<TileIndex> {
-    if (size <= 1) return listOf(tile)
-    val reach = size / 2
-    val cx = grid.xOf(tile)
-    val cy = grid.yOf(tile)
-    val out = ArrayList<TileIndex>(size * size)
-    for (dy in -reach..reach) {
-        for (dx in -reach..reach) {
-            val x = cx + dx
-            val y = cy + dy
-            if (grid.inBounds(x, y)) out.add(grid.tile(x, y))
-        }
-    }
-    return out
-}
-
-/** True when a machine of [size] centred here would fit entirely on the grid. */
-fun footprintFits(grid: Grid, tile: TileIndex, size: Int): Boolean {
-    val reach = size / 2
-    val cx = grid.xOf(tile)
-    val cy = grid.yOf(tile)
-    return grid.inBounds(cx - reach, cy - reach) && grid.inBounds(cx + reach, cy + reach)
 }

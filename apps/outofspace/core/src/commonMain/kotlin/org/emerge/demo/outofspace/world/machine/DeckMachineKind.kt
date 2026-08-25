@@ -33,6 +33,14 @@ enum class DeckMachineKind(
     Sensor("SENSOR"),
     KeyInput("BUTTON"),
     Pump("PUMP"),
+    /**
+     * A rocket motor: two tiles end to end, and the only kind whose anchor is **not** the middle of
+     * its own footprint — see `FootprintShape.Nose`.
+     *
+     * The tile it is stored at is the chamber, which is what you feed; the second tile is the bell,
+     * which juts out into the exhaust direction. Solid to a rock, permeable to gas, because a bell
+     * that held the air out could not exhaust into anything.
+     */
     Thruster("THRUSTER", preventThoroughfare = true),
     Processor("PROCESSOR", preventThoroughfare = true, gatesOutput = true),
     ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true, gatesOutput = true),
@@ -40,7 +48,7 @@ enum class DeckMachineKind(
 
     /**
      * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
-     * see `DeckMachineKind.span`.
+     * see `FootprintShape.Span`.
      *
      * Permeable, because a bridge is a gantry and not a block: it is mostly the air under it, so it
      * divides no room and displaces no gas. What it *does* claim is the floor, which is the whole

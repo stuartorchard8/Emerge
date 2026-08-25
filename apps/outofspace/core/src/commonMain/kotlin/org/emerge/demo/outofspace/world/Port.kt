@@ -75,9 +75,11 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
         is Extractor -> listOf(LocalPort(r, 0, Direction.Right, PortKind.Output))
 
-        // Propellant in at the back, which for a one-tile machine is its own tile — a rail is
-        // threaded underneath it exactly as it is under an extractor. The exhaust leaves out the front
-        // and is not a port: nothing on a belt is going to catch it.
+        // Propellant in at the chamber, which is the tile the machine is stored at — a rail is
+        // threaded underneath it exactly as it is under an extractor. Not at `-r`, which would be the
+        // tile *behind* the motor: a thruster is one tile wide, so its reach is zero and its port is
+        // its anchor. The exhaust leaves out of the bell and is not a port: nothing on a belt is
+        // going to catch it.
         is Thruster -> listOf(LocalPort(0, 0, Direction.Left, PortKind.Input))
 
 
