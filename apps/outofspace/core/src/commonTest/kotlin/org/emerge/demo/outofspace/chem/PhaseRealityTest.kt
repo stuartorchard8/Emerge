@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.Budget
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -162,6 +163,54 @@ class PhaseRealityTest {
                     "should be a liquid; got ${phaseAt(dense, tr, species)}",
             )
         }
+    }
+
+    // ── Latent heat, which nothing states and everything needs ───────────────
+
+    @Test
+    fun `the latent heat is the slope of the boiling curve, and lands on the measured value`() {
+        // ⛔ Nothing anywhere states a latent heat. It is the slope of a substance's own boiling
+        // curve — Clausius and Clapeyron — and the curve is already on file, so a table of
+        // enthalpies beside it would be a second source of truth for a number the first one
+        // answers. What that leaves to check is whether the derivation actually lands on reality.
+        //
+        // Joules per kilogram, because that is the figure people quote and recognise: water's
+        // 2.26 MJ/kg is the reason a kettle takes longer to boil dry than to boil.
+        val cases = listOf(
+            Triple(Species.Water, 373, 2_257_000L),      // vaporisation at the boiling point
+            Triple(Species.Nitrogen, 77, 199_000L),      // liquid nitrogen, 5.58 kJ/mol
+            Triple(Species.Argon, 87, 161_000L),         // 6.43 kJ/mol
+        )
+        val wrong = mutableListOf<String>()
+        for ((species, kelvin, expected) in cases) {
+            val got = vaporisationHeat(Budget.KILOGRAM, species, kelvin) / Budget.JOULE
+            val ratio = got.toDouble() / expected
+            if (ratio < 0.75 || ratio > 1.30) {
+                wrong += "$species at ${kelvin}K: ${got} J/kg against a measured $expected (${ratio}x)"
+            }
+        }
+        if (wrong.isNotEmpty()) fail("the latent heat does not match reality:\n  " + wrong.joinToString("\n  "))
+    }
+
+    @Test
+    fun `subliming costs more than boiling, because it pays the heat of fusion too`() {
+        // The property that comes free from carrying a sublimation branch: it is steeper than the
+        // liquid line by exactly the heat of fusion, and the slope IS the latent heat, so frost is
+        // more expensive to lift than a puddle without anything having been told so.
+        val ice = vaporisationHeat(Budget.KILOGRAM, Species.Water, 250)
+        val water = vaporisationHeat(Budget.KILOGRAM, Species.Water, 373)
+        assertTrue(
+            ice > water,
+            "subliming ice cost $ice and boiling water cost $water — the fusion term is missing",
+        )
+    }
+
+    @Test
+    fun `a gas with no liquid phase costs nothing to vaporise`() {
+        // Not a fallback: something that has no condensed phase in this model is already a gas.
+        assertTrue(vaporisationHeat(Budget.KILOGRAM, Species.Methane, 200) == 0L, "methane has no dome")
+        // And above the critical point there is no phase change left to pay for.
+        assertTrue(vaporisationHeat(Budget.KILOGRAM, Species.Water, 700) == 0L, "water is supercritical at 700K")
     }
 
     private companion object {

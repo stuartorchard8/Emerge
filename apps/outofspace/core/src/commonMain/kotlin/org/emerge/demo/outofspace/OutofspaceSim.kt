@@ -381,7 +381,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
             // The enthalpies, which since increment 4 are real: a fire is an energy source and
             // calcining is an energy sink, and the world holds more or less because of it.
+            // ⚠️ The off-gas passes are in this sum now: since latent heat landed they report the
+            // energy that went into breaking the bonds of whatever evaporated, which is negative and
+            // is exactly the same kind of quantity a reaction enthalpy is.
             val made = onRails.releasedEnergy + inHoppers.releasedEnergy +
+                offRails.releasedEnergy + offHoppers.releasedEnergy +
                 inTheAir.releasedEnergy + inThePipes.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }

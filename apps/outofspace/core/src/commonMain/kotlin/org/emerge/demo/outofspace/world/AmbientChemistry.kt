@@ -17,6 +17,7 @@ import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedTemperature
 import org.emerge.demo.outofspace.chem.saturatedVapourDensity
+import org.emerge.demo.outofspace.chem.vaporisationHeat
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -413,6 +414,7 @@ fun offGas(
 ): ChemistryStep {
     var toGasMass = 0L
     var toGasEnergy = 0L
+    var released = 0L
 
     // One buffer for the whole sweep rather than one per tile — [oxidise]'s reason exactly. Indexed
     // by [Fluid] ordinal because that is the space the answers live in, and it is a seventh of
@@ -446,12 +448,14 @@ fun offGas(
         }
         if (total <= 0L) return@forEachOccupiedTile
 
-        // ── And now it goes ───────────────────────────────────────────────────────
+        // ── And now it goes, and pays for going ───────────────────────────────────
+        var latent = 0L
         for (fluid in Fluid.ALL) {
             val release = leaving[fluid.ordinal]
             if (release <= 0L) continue
             layer.add(tile, fluid.species, -release)
             air.add(tile, fluid, release)
+            latent += vaporisationHeat(release, fluid.species, kelvin)
         }
 
         // The heat rides along with it, as a share of what the matter held before any of it left —
@@ -462,14 +466,31 @@ fun offGas(
             layer.addEnergy(tile, -carried)
             airEnergy?.let { it[tile] += carried }
         }
+        // ⛔ **The latent heat, taken out of what is left behind.** Until this was here, evaporation
+        // was free: a lump shed vapour, the vapour took its share of the warmth, and the lump came
+        // out at exactly the temperature it went in at. That is not a rounding error in the physics,
+        // it is the missing half of the mechanism — **a boiling liquid cools itself**, and that is
+        // what stops a warm wet rock emptying into the room until there is nothing left of it.
+        //
+        // Booked as [ChemistryStep.releasedEnergy] and negative, because it belongs to neither
+        // medium's ledger: this is thermal energy disappearing into intermolecular bonds, which is
+        // the same kind of quantity a reaction enthalpy is and is told the same way.
+        //
+        // ⚠️ Clamped by [applyEnthalpy] at zero, so matter too cold to pay the bill evaporates
+        // anyway and merely reaches absolute zero rather than going below it. Nearly unreachable in
+        // practice — the saturation ceiling is vanishingly small at the temperatures where it could
+        // bind — but it is a clamp and not a refusal, and a caller that ever sees it should know
+        // that the honest answer would have been "then it does not evaporate".
+        released += applyEnthalpy(layer, tile, -latent)
+
         toGasMass += total
         toGasEnergy += carried
     }
 
-    return if (toGasMass == 0L && toGasEnergy == 0L) {
+    return if (toGasMass == 0L && toGasEnergy == 0L && released == 0L) {
         ChemistryStep.NOTHING
     } else {
-        ChemistryStep(toGasMass, toGasEnergy, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = 0L)
+        ChemistryStep(toGasMass, toGasEnergy, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = released)
     }
 }
 

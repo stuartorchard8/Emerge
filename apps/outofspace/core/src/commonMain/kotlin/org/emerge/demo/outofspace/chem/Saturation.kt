@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.chem
 
+import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.isqrt
 import org.emerge.demo.outofspace.num.scaledRatio
 
@@ -709,4 +710,69 @@ fun vapourMass(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int
     val fullTile = massAtReducedDensity(vapourR, species, full, full) ?: return mass
     val asVapour = scaledRatio(SCALE - condensedShare, SCALE, fullTile) * volume / full
     return minOf(asVapour, mass)
+}
+
+/** `R × 10⁴`, so the gas constant can be carried without floating point. */
+private const val GAS_CONSTANT_SCALED = 83_145L
+
+/**
+ * The energy it takes to turn [mass] of [species] at [kelvin] from its condensed phase into vapour,
+ * in the simulation's energy units — the **latent heat**, and positive because it has to be paid.
+ *
+ * ⛔ **Nothing states a latent heat anywhere, and nothing should.** It is not an independent property
+ * of a substance; it is the slope of that substance's own boiling curve, and this file already has
+ * the curve. Clausius and Clapeyron:
+ *
+ *     ΔH = R · T² · d(ln P_sat)/dT
+ *
+ * which in reduced units is `ΔH/(R·Tc) = Tr² · d(ln Pr)/dTr` — and `ln Pr` is exactly what
+ * [Dome.negLogSaturationPressure] holds, so the derivative is one subtraction between knots. A
+ * species that boils at a high temperature has a steep curve and a large latent heat *because* those
+ * are the same fact, and inventing a table of enthalpies alongside the pressures would be a second
+ * source of truth for a number the first one already answers.
+ *
+ * ⚠️ **Below the triple point this is the heat of SUBLIMATION and it comes out larger, for free.**
+ * The table carries the sublimation branch down there and that branch is steeper by exactly the heat
+ * of fusion — which is what makes it steeper. Frost costs more to lift than a puddle does, and
+ * nothing here had to be told so.
+ *
+ * ⚠️ **About 7% high**, measured against water at its boiling point: 43.6 kJ/mol against a real
+ * 40.65. The exact relation carries a compressibility factor `Δz` for the volume the vapour occupies
+ * against the liquid, and this uses the ideal form that drops it. Worth knowing before trusting the
+ * figure quantitatively; the shape — that it grows as a fluid gets colder and vanishes at the
+ * critical point — is right, and it is the shape that does the work.
+ *
+ * Zero for a species with no critical point on file, which is the correct answer rather than a
+ * fallback: something that has no liquid phase in this model is already a gas and costs nothing to
+ * make into one.
+ */
+fun vaporisationHeat(mass: Long, species: Species, kelvin: Int): Long {
+    if (mass <= 0L) return 0L
+    val critical = CRITICAL[species] ?: return 0L
+    val dome = DOME_OF[species.ordinal] ?: return 0L
+    val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
+    // At and above the critical point there is no phase change to pay for: the distinction between
+    // liquid and vapour has stopped existing, which is the same reason the dome closes there.
+    if (temperatureR >= SCALE) return 0L
+
+    val position = temperatureR * (N - 1)
+    val index = (position / SCALE).toInt()
+    if (index >= N - 1 || index <= 0) return 0L
+    val low = dome.negLogSaturationPressure[index]
+    val high = dome.negLogSaturationPressure[index + 1]
+    if (low == Long.MAX_VALUE || high == Long.MAX_VALUE) return 0L
+
+    // `d(ln Pr)/dTr`, in [NEG_LOG_SCALE]. The table is *minus* the logarithm and falls as the
+    // temperature rises, so the subtraction is this way round and the result is positive.
+    val slope = (low - high) * (N - 1)
+    if (slope <= 0L) return 0L
+
+    val squared = temperatureR * temperatureR / SCALE
+    val rTc = GAS_CONSTANT_SCALED * critical.kelvin / 10_000L
+    val joulesPerMole = rTc * squared / SCALE * slope / NEG_LOG_SCALE
+    if (joulesPerMole <= 0L) return 0L
+
+    // Per mole to per kilogram to the simulation's units, by the route every enthalpy in `chem`
+    // takes — see [kJPerMolAt], whose divisor is a formula mass in grams.
+    return perKilogram(mass, joulesPerMole * 1_000L * Budget.JOULE / species.molarMass)
 }

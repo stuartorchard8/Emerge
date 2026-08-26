@@ -84,7 +84,18 @@ class OffGasTest {
         assertTrue(step.toGasMass > 0L, "nothing left, so there is nothing to have carried")
         assertTrue(step.toGasEnergy > 0L, "the vapour left its heat behind in the lump")
         assertEquals(step.toGasEnergy, airEnergy[tile], "the room did not receive what left")
-        assertEquals(before - step.toGasEnergy, layer.energyAt(tile), "the lump kept what it gave away")
+
+        // ⚠️ **Two things leave the lump and only one of them arrives.** [ChemistryStep.toGasEnergy]
+        // is the warmth that rode across with the mass, and the room gets all of it.
+        // [ChemistryStep.releasedEnergy] is the latent heat, which is negative and goes nowhere at
+        // all — it is thermal energy disappearing into intermolecular bonds. So the lump's books
+        // balance against both, and this is the whole energy statement for a pass rather than half
+        // of one. It read `before - toGasEnergy` while evaporating was free.
+        assertEquals(
+            before - step.toGasEnergy + step.releasedEnergy, layer.energyAt(tile),
+            "the lump kept what it gave away",
+        )
+        assertTrue(step.releasedEnergy < 0L, "evaporating cost nothing")
     }
 
     // ── And it stops ─────────────────────────────────────────────────────────
@@ -149,6 +160,58 @@ class OffGasTest {
 
         assertEquals(alreadyThere, air[tile, Fluid.Water], "a saturated room took more water anyway")
         assertEquals(10L * kg, layer[tile, Species.Water], "the second lump gave up water into a full room")
+    }
+
+    // ── Evaporation is not free ──────────────────────────────────────────────
+
+    @Test
+    fun `a lump that sheds vapour cools itself doing it`() {
+        // ⛔ **The half of the mechanism that was missing until latent heat landed.** Before it, a
+        // lump shed vapour, the vapour took its proportional share of the warmth, and the lump came
+        // out at exactly the temperature it went in at — so nothing about evaporating ever made
+        // evaporating harder. A boiling liquid cools itself, and that is what stops a warm wet rock
+        // emptying into the room until there is nothing left of it.
+        val layer = layerWith(Species.Iron to 100L * kg, Species.Water to 10L * kg, kelvin = 400)
+        val air = air()
+        val before = layer.kelvinAt(tile)
+
+        val step = offGas(layer, air, null, inTheOpen)
+
+        assertTrue(step.toGasMass > 0L, "nothing evaporated, so nothing was paid for")
+        assertTrue(
+            layer.kelvinAt(tile) < before,
+            "the lump left at ${layer.kelvinAt(tile)}K having gone in at ${before}K — evaporating was free",
+        )
+        assertTrue(
+            step.releasedEnergy < 0L,
+            "the step reported ${step.releasedEnergy}; breaking bonds consumes energy, so this is negative",
+        )
+    }
+
+    @Test
+    fun `cooling itself is what makes it stop`() {
+        // The consequence worth having, and the reason this is a mechanism rather than a decoration:
+        // the saturation ceiling falls as the lump cools, so a rock shedding water throttles itself
+        // instead of running at its opening rate until the water is gone.
+        fun shed(withLatent: Boolean): Long {
+            val layer = layerWith(Species.Iron to 100L * kg, Species.Water to 10L * kg, kelvin = 400)
+            val air = air()
+            // Re-warming the lump between passes is what "without latent heat" looked like.
+            var out = 0L
+            repeat(8) {
+                out += offGas(layer, air, null, inTheOpen).toGasMass
+                if (!withLatent) layer.setEnergy(tile, layer.heatCapacityAt(tile) * 400)
+                // The room is emptied each pass, so saturation is never what limits this — the only
+                // difference between the two runs is whether the lump was allowed to get colder.
+                for (f in Fluid.ALL) air[tile, f] = 0L
+            }
+            return out
+        }
+
+        assertTrue(
+            shed(withLatent = true) < shed(withLatent = false),
+            "cooling made no difference to how much came off",
+        )
     }
 
     // ── Never into a wall ────────────────────────────────────────────────────
