@@ -180,16 +180,32 @@ internal fun mulDiv(a: Long, b: Long, d: Long, round: Boolean): Long {
         // out. It is the same condition the loop used to `require` bit by bit — `high >= divisor` is
         // exactly "some quotient bit lands at 64 or above" — asked once, out of the loop.
         require(high < divisor) { "quotient of $a × $b / $d does not fit a Long" }
-        remainder = 0uL
-        quotient = 0uL
-        // Start at the product's top set bit rather than at 127. The bits above it are zero, so
-        // every iteration they buy is a shift of a zero remainder onto a zero quotient.
-        for (bit in (127 - high.countLeadingZeroBits()) downTo 0) {
-            val digit = if (bit >= 64) (high shr (bit - 64)) and 1uL else (low shr bit) and 1uL
-            remainder = (remainder shl 1) or digit
-            if (remainder >= divisor) {
-                remainder -= divisor
-                quotient = quotient or (1uL shl bit)
+        if (divisor <= 0xFFFFFFFFuL) {
+            // Schoolbook base-2^32 long division, two digits of it. A divisor narrower than a word
+            // lets each 96-bit intermediate be assembled inside a `ULong`, so the whole thing is
+            // four hardware divisions rather than sixty-odd loop iterations — and this is the shape
+            // `rotScale` has, every time it turns anything: a fraction over `Flight.FRAC_ONE`,
+            // which is `Int.MAX_VALUE`, scaled by a momentum big enough to make the product wide.
+            //
+            // `high < divisor` above is what makes the leading digit zero, so the quotient is the
+            // two digits computed here and nothing is dropped off the top.
+            val topDigit = (high shl 32) or (low shr 32)
+            val topQuotient = topDigit / divisor
+            val lowDigit = ((topDigit % divisor) shl 32) or (low and 0xFFFFFFFFuL)
+            quotient = (topQuotient shl 32) or (lowDigit / divisor)
+            remainder = lowDigit % divisor
+        } else {
+            remainder = 0uL
+            quotient = 0uL
+            // Start at the product's top set bit rather than at 127. The bits above it are zero, so
+            // every iteration they buy is a shift of a zero remainder onto a zero quotient.
+            for (bit in (127 - high.countLeadingZeroBits()) downTo 0) {
+                val digit = if (bit >= 64) (high shr (bit - 64)) and 1uL else (low shr bit) and 1uL
+                remainder = (remainder shl 1) or digit
+                if (remainder >= divisor) {
+                    remainder -= divisor
+                    quotient = quotient or (1uL shl bit)
+                }
             }
         }
     }
@@ -208,11 +224,17 @@ internal fun mulDiv(a: Long, b: Long, d: Long, round: Boolean): Long {
 fun isqrt(n: Long): Long {
     if (n < 0L) throw IllegalArgumentException("isqrt of negative")
     if (n == 0L) return 0L
-    var x = n
-    var y = (x + 1L) shr 1
-    while (y < x) {
-        x = y
-        y = (x + n / x) shr 1
-    }
+    // A double seed, corrected to the exact integer floor. `sqrt` on a `Double` is one instruction
+    // and lands within an ulp or two of the answer even at 9×10¹⁸, where the result is ~3×10⁹ and
+    // still exactly representable; the two loops below then walk to the true floor and almost never
+    // run more than once. Newton from `n` needed about thirty iterations with a 64-bit division in
+    // every one of them, which `alphaAt` was paying per species per tile.
+    //
+    // ⚠️ **Exact, so still deterministic across platforms.** The seed is floating point but the
+    // answer is not: the corrections are integer comparisons written as `x > n / x` rather than
+    // `x * x > n`, which would overflow for any x past 3×10⁹.
+    var x = kotlin.math.sqrt(n.toDouble()).toLong().coerceAtLeast(1L)
+    while (x > n / x) x--
+    while (x + 1L <= n / (x + 1L)) x++
     return x
 }
