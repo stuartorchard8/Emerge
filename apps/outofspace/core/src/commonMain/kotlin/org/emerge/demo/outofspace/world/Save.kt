@@ -204,6 +204,12 @@ object Save {
         out.append("rotation ").append(state.ang.raw)
             .append(' ').append(state.angImpulse).append(' ').append(state.netTorque)
             .append('\n')
+        // The angular ledger's two stores, on their own line and appended for the same reason
+        // `rotation` was: absent reads as zero, which is a ship that has thrown nothing and hit
+        // nothing. Both carry the mass unit, so both are rescaled on the way in.
+        out.append("angularstores ").append(state.exhaustAngImpulse)
+            .append(' ').append(state.bodyAngImpulse)
+            .append('\n')
         return out.toString()
     }
 
@@ -663,6 +669,8 @@ object Save {
         var ang = Coord(0)
         var angImpulse = 0L
         var netTorque = 0L
+        var exhaustAngImpulse = 0L
+        var bodyAngImpulse = 0L
         var netImpulseX = 0L
         var netImpulseY = 0L
         var tick = 0L
@@ -711,6 +719,7 @@ object Save {
                     ang = Coord(tokens.getOrNull(1)?.toIntOrNull() ?: fail("expected an angle"))
                     angImpulse = scaled(2); netTorque = scaled(3)
                 }
+                "angularstores" -> { exhaustAngImpulse = scaled(1); bodyAngImpulse = scaled(2) }
                 "tick" -> tick = long(1)
                 // `mined` is v9's name for it: the same quantity, counted at the miner instead.
                 "mined", "extracted" -> extracted = scaled(1)
@@ -989,6 +998,8 @@ object Save {
             ang = ang,
             angImpulse = angImpulse,
             netTorque = netTorque,
+            exhaustAngImpulse = exhaustAngImpulse,
+            bodyAngImpulse = bodyAngImpulse,
             tick = tick,
             extractedMass = extracted,
             ventedMass = vented,

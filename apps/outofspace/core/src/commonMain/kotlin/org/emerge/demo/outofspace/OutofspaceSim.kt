@@ -849,6 +849,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodies = bodiesDrifted.bodies,
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
+            // The angular halves of the two stores above, and the counterparts `netTorque`
+            // subtracts. Booked from the same two numbers, so neither pair can be unbalanced —
+            // see [VesselState.angularBalance], which is the identity these close.
+            //
+            // ⚠️ Un-turned, unlike the linear stores a few lines up: a torque is a scalar and reads
+            // the same in the grid and in the world, so there is no pose to apply and no running
+            // total accumulated at attitudes that have since changed.
+            exhaustAngImpulse = state.exhaustAngImpulse + w.exhaustTorque,
+            bodyAngImpulse = state.bodyAngImpulse + handedTorque,
             motion = motion,
             impacts = bodiesDrifted.impacts,
             cadences = cadences,

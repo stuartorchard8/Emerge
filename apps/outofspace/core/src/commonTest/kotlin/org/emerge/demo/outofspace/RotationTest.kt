@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Flight
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.RigidBody
@@ -26,6 +28,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.torqueAbout
+import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -168,6 +171,119 @@ class RotationTest {
         assertEquals(0L, s.angVel, "a ship with no angular momentum cannot be turning")
     }
 
+    // ── The angular ledger ────────────────────────────────────────────────────
+
+    /**
+     * **The tripwire.** A burn spins the ship and the exhaust carries off exactly the counterpart,
+     * so the angular identity closes — every tick, exactly, not nearly.
+     *
+     * This is the angular twin of `momentumBalance` and deliberately **not** built the same way.
+     * The linear ledger carries a term for the gas aboard, and because that field is spent by no
+     * physics, counting it lets the identity close over momentum that can never move anything:
+     * measured, a sealed starter vessel with a pressure pocket and nothing vented accelerates from
+     * 0.0058 to 0.0142 tiles/tick while `momentumBalance` reads zero throughout. So
+     * [VesselState.angularBalance] states the identity over the ship alone. See its note.
+     *
+     * Vacuum, like everything else here — which is what makes the zero exact and is also precisely
+     * why this passes while the sealed-with-air case below does not.
+     */
+    @Test
+    fun `a burn leaves the angular ledger closed`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, box(cfg.initialGrid, BAY_HIGH))
+
+        repeat(TICKS) {
+            controller.stepOnce()
+            val s = controller.state
+            assertEquals(0L, s.angularBalance, "tick ${s.tick}: the ship was spun by nothing")
+        }
+
+        val s = controller.state
+        assertTrue(s.exhaustMomentumX > 0L, "nothing was ever fired, so this proved nothing")
+        assertTrue(s.angImpulse < 0L, "and the ship never span, so the zero above was trivial")
+        assertEquals(
+            -s.angImpulse, s.exhaustAngImpulse,
+            "the plume must be carrying exactly what the ship kept",
+        )
+    }
+
+    /**
+     * A balanced pair spins nothing and so throws nothing away either — both halves zero, which is
+     * a different statement from the two cancelling and worth its own line.
+     */
+    @Test
+    fun `a balanced pair leaves both angular stores empty`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, box(cfg.initialGrid, BAY_HIGH, BAY_LOW))
+        repeat(TICKS) { controller.stepOnce() }
+
+        val s = controller.state
+        assertTrue(s.exhaustMomentumX > 0L, "neither motor ever fired, so this proved nothing")
+        assertEquals(0L, s.angImpulse, "a balanced pair turned the ship")
+        assertEquals(0L, s.exhaustAngImpulse, "and its plume carried a twist off with it")
+        assertEquals(0L, s.angularBalance)
+    }
+
+    /** The two stores are a save's business like every other ledger term. */
+    @Test
+    fun `the angular stores survive a save round trip`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, box(cfg.initialGrid, BAY_HIGH))
+        repeat(TICKS) { controller.stepOnce() }
+
+        val played = controller.state
+        assertTrue(played.exhaustAngImpulse != 0L, "the fixture threw nothing, so this proves nothing")
+
+        val loaded = Save.read(Save.write(played))
+        assertEquals(played.exhaustAngImpulse, loaded.exhaustAngImpulse, "what the exhaust took")
+        assertEquals(played.bodyAngImpulse, loaded.bodyAngImpulse, "what the rocks took")
+        assertEquals(played.angularBalance, loaded.angularBalance, "and so the identity itself")
+    }
+
+    /** A save written before the angular ledger existed loads with both stores empty. */
+    @Test
+    fun `a save with no angular stores line loads with empty stores`() {
+        val cfg = OutofspaceConfig()
+        val text = Save.write(box(cfg.initialGrid, BAY_HIGH))
+        val without = text.lineSequence().filterNot { it.startsWith("angularstores ") }.joinToString("\n")
+        assertTrue(without.length < text.length, "the line was never written, so nothing was removed")
+
+        val loaded = Save.read(without)
+        assertEquals(0L, loaded.exhaustAngImpulse)
+        assertEquals(0L, loaded.bodyAngImpulse)
+    }
+
+    /**
+     * ⛔ **PARKED, and red on today's code — this is the bug the ledger above was built to see.**
+     *
+     * A ship with air aboard and **no way out for any of it** spins itself up, for free, for ever.
+     * [org.emerge.demo.outofspace.world.applyPressureForce] hands the hull its share of every
+     * blocked face and writes the gas's share into `momentum`, a field spent by no physics. The
+     * hull's shares telescope to zero as a *force* and do **not** as a torque — equal pushes on
+     * opposite bulkheads cancel as force and add as twist, because they act at different points.
+     *
+     * Diagnosed off a live save turning at 3.75 rev/s on an empty tank: 13,235,440 booked every
+     * eighth tick, same sign, `sas` off, and 4.6x the ship's entire rotational authority so no
+     * amount of propellant could have held attitude against it.
+     *
+     * Returned by the step that stops booking the hull for exchanges that never happen — hull
+     * reaction only where mass genuinely crosses the vessel boundary. See `PLAN_grid_vs_
+     * continuous.md` and [VesselState.angularBalance].
+     */
+    @Ignore
+    @Test
+    fun `a sealed ship does not spin itself up on its own air`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, sealedWithPocket(cfg.initialGrid))
+
+        repeat(200) { controller.stepOnce() }
+
+        val s = controller.state
+        assertEquals(0L, s.airVentedMass, "gas left the ship, so this is not the sealed case")
+        assertEquals(0L, s.exhaustAngImpulse, "a motor fired, so this is not the sealed case")
+        assertEquals(0L, s.angularBalance, "a sealed ship was spun by its own atmosphere")
+    }
+
     /** An orientation and a spin that did not survive a save is a ship that straightens up on load. */
     @Test
     fun `rotation survives a save round trip`() {
@@ -256,6 +372,25 @@ class RotationTest {
                 Mixture.of(Species.Water to INITIAL_PROPELLANT, energy = 0),
             )
         }
+    }
+
+    /**
+     * The same box, sealed, with the air piled into one corner instead of spread evenly.
+     *
+     * The pile is the whole fixture: uniform air books no torque at all, because the pushes on
+     * opposite bulkheads are then equal *and* symmetrically placed. It takes a gradient to
+     * separate them, and a gradient is what any ship that has ever run a machine has.
+     */
+    private fun sealedWithPocket(grid: Grid): VesselState {
+        val masses = MassArray(grid.size)
+        for (y in HULL_TOP + 1 until HULL_BOTTOM) {
+            for (x in HULL_LEFT + 1 until HULL_RIGHT) {
+                // Twenty tiles' worth crammed into the one corner tile, ambient everywhere else.
+                val share = if (x == HULL_LEFT + 1 && y == HULL_TOP + 1) 20L else 1L
+                for (f in Fluid.ALL) masses[MassIndex(grid.tile(x, y), f)] = Stuff.AMBIENT_AIR[f.species] * share
+            }
+        }
+        return box(grid).copy(air = Stuff.gas(masses))
     }
 
     private companion object {

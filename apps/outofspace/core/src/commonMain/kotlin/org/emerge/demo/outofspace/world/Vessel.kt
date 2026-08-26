@@ -467,6 +467,24 @@ data class VesselState(
     val bodyImpulseX: Long = 0L,
     val bodyImpulseY: Long = 0L,
     /**
+     * Cumulative angular momentum the exhaust carried off, about the centre of mass — the angular
+     * twin of [exhaustMomentumX], and the first term of [angularBalance].
+     *
+     * Booked from the same number as [Thruster]'s linear half and at the same point, so the pair
+     * cannot be unbalanced: the plume leaves with `+τ` about the bell and the ship keeps `−τ`.
+     *
+     * ⚠️ **Not turned into the world, unlike its linear twin.** A torque is a scalar and reads the
+     * same in both frames, so there is no pose to apply and no running total accumulated at
+     * attitudes that no longer apply. That is the one thing the angular ledger gets for free.
+     */
+    val exhaustAngImpulse: Long = 0L,
+    /**
+     * Cumulative angular momentum the vessel has handed the bodies — the angular twin of
+     * [bodyImpulseX], and the same kind of store for the same reason: `+τ` to the body and `−τ` to
+     * the ship conserve by construction, but only the ship's half is inside the ledger.
+     */
+    val bodyAngImpulse: Long = 0L,
+    /**
      * **World-frame momentum that appeared because the ship turned, and that nobody applied.**
      *
      * The one term in the ledger that is not an impulse. The gas's momentum lives per-edge on the
@@ -839,6 +857,35 @@ data class VesselState(
     /** Everything the gas is holding, in the grid's axes — the un-turned half of [momentumBalanceX]. */
     private val gasMomentumX: Long get() = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX
     private val gasMomentumY: Long get() = momentum.totalY + pipeMomentum.totalY + undeliveredImpulseY
+
+    /**
+     * The angular identity as one number: `angImpulse + exhaust + bodies == 0`, or the ship has been
+     * spun by something that took no reaction.
+     *
+     * A torque is a scalar and reads the same in both frames, so unlike [momentumBalanceX] there is
+     * no pose to apply here and no frame-turn term to carry — that whole class of correction simply
+     * does not arise. What is left is the three stores that can actually spin something: what the
+     * ship is turning at, what its exhaust carried off, and what it handed the rocks.
+     *
+     * ⛔ **There is deliberately no term here for the gas aboard, and that is the entire point of
+     * the instrument.** [momentumBalanceX] carries one — `momentum.totalX`, the per-edge field
+     * [org.emerge.demo.outofspace.world.applyPressureForce] writes the gas's half of every push
+     * into — and because that field is read by no physics, counting it as a store lets the linear
+     * ledger close over momentum that can never move anything. Measured: a sealed starter vessel
+     * with a pressure pocket and nothing vented accelerates from 0.0058 to 0.0142 tiles/tick over
+     * 1200 ticks while `momentumBalance` reads `-0.0000` throughout. **A store nothing can spend is
+     * not a store, and an identity that counts one is not an instrument.** So this states the
+     * identity over the ship alone, and the gas aboard is treated as rigidly carried — which is what
+     * a momentum-free diffusion model is actually saying.
+     *
+     * ⚠️ **It is therefore RED on today's code, on purpose**, and what it reads is the accumulated
+     * pressure torque: `netTorque` books `pressureTorque` onto the ship with nothing on the other
+     * side. That is the omission stated as a number rather than hidden behind a store, and it is the
+     * thing to watch go to zero. See `PLAN_grid_vs_continuous.md` and [[project_rotation]] for the
+     * two ways out — book the hull only where mass genuinely crosses the vessel boundary, or give
+     * the gas back a momentum that something spends.
+     */
+    val angularBalance: Long get() = angImpulse + exhaustAngImpulse + bodyAngImpulse
 
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.

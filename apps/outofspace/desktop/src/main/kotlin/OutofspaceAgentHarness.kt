@@ -18,6 +18,8 @@ import org.emerge.demo.outofspace.InspectLayer
 import org.emerge.demo.outofspace.inspectableLayers
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.num.isqrt
+import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.railFlow
 import org.emerge.demo.outofspace.world.Grid
@@ -1040,6 +1042,23 @@ object OutofspaceAgentHarness {
             "rockImpulseX" -> grams(state.bodyImpulseX)
             "rockImpulseY" -> grams(state.bodyImpulseY)
             "momentumBalance" -> grams(state.momentumBalanceX + state.momentumBalanceY)
+            // The angular half of flight, and there was no readout for any of it until a ship span
+            // up in play and nothing in the harness could say how fast or which way. `spin` is the
+            // one to watch: revolutions per second, signed clockwise, so a script can assert a ship
+            // is holding attitude rather than merely assert it has not moved.
+            "spin" -> state.angVel.toDouble() / (2.0 * Int.MAX_VALUE) * controller.cfg.ticksPerSecond
+            "angImpulse" -> grams(state.angImpulse)
+            // The angular ledger. Zero, or the ship has been spun by something that took no
+            // reaction -- and it is RED today by design; see [VesselState.angularBalance].
+            "angularBalance" -> grams(state.angularBalance)
+            "exhaustAngImpulse" -> grams(state.exhaustAngImpulse)
+            "bodyAngImpulse" -> grams(state.bodyAngImpulse)
+            "netTorque" -> grams(state.netTorque)
+            // Where the ship turns about and how reluctantly -- both in tiles, both moving, which is
+            // the point: a torque booked about last tick's centre is booked about the wrong place.
+            "comX" -> state.distribution.comX.toDouble() / Rotation.MILLI_TILE
+            "comY" -> state.distribution.comY.toDouble() / Rotation.MILLI_TILE
+            "gyration" -> isqrt(state.distribution.gyrationSq).toDouble() / 1000.0
             // Flight, in tiles rather than in the sim's billionths, so a script can say what it means.
             "mass" -> grams(state.mass)
             "thrustX" -> grams(state.netImpulseX)
@@ -1064,6 +1083,8 @@ object OutofspaceAgentHarness {
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
             "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",
             "rockImpulseX", "rockImpulseY", "momentumBalance",
+            "spin", "angImpulse", "netTorque", "angularBalance", "exhaustAngImpulse",
+            "bodyAngImpulse", "comX", "comY", "gyration",
             "mass", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",
             "gravityX", "gravityY",
         )
