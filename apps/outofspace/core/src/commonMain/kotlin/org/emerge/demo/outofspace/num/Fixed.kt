@@ -59,6 +59,16 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
     // anything upstream gets its mass unit wrong. The answer is zero either way, so the guard costs
     // nothing and turns a crash a long way from its cause into an ordinary result.
     if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
+    // ⚠️ **Asked first, because the split is two divisions and this is one.** Where `n × scale` fits
+    // outright there is nothing to split: `n / d × s + n % d × s / d` is the same value by the same
+    // truncation, but the JIT folds `n/d` and `n%d` into one `idiv` and then pays a second for the
+    // remainder term. Integer division is the slowest arithmetic there is and does not pipeline, so
+    // the difference is most of the cost of the expression.
+    //
+    // `logFraction` is why this ordering matters: its numerator is under 65 × SCALE and its scale is
+    // SCALE, so the product is ~6.5e17 and has never been near overflowing — and it was **26% of
+    // every execution sample in the game**, paying the split every time.
+    if (productFits(numerator, scale)) return numerator * scale / denominator
     // Below this, `remainder × scale` cannot overflow, because the remainder is smaller than `d`.
     // Exact, and for both signs: Kotlin truncates toward zero and `%` takes the dividend's sign,
     // so the whole part and the remainder always agree about which way they lean.
@@ -69,9 +79,6 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
     // up — see [swapFits].
     if (swapFits(numerator, denominator)) {
         return scale / denominator * numerator + scale % denominator * numerator / denominator
-    }
-    if (productFits(numerator, scale)) {
-        return numerator / denominator * scale + numerator % denominator * scale / denominator
     }
     return mulDiv(numerator, scale, denominator, round = false)
 }
