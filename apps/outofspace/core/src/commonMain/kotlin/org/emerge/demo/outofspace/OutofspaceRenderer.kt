@@ -33,6 +33,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.FlowField
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.machine.Thruster
@@ -276,10 +277,15 @@ class OutofspaceRenderer {
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
         this.simTime = simTime
         railPacketAlpha = state.motion.cadence.progress(simTime)
-        if (overlay != fadedOverlay) overlayFade.forget()
+        if (overlay != fadedOverlay) {
+            overlayFade.forget()
+            flowFade.forget()
+        }
         fadedOverlay = overlay
         if (overlay != Overlay.None) {
-            overlayFade.sample(state.grid, cadenceOf(overlay, state), simTime) { overlayColor(overlay, state, it) }
+            val cadence = cadenceOf(overlay, state)
+            overlayFade.sample(state.grid, cadence, simTime) { overlayColor(overlay, state, it) }
+            if (overlay == Overlay.Flow) flowFade.sample(state.grid, cadence, simTime, state.flow)
         }
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
@@ -425,7 +431,10 @@ class OutofspaceRenderer {
                 for (x in minX..maxX) {
                     val index = grid.tile(x, y)
                     if (negligibleFlow(state, index)) continue
-                    val s = state.flow.speedAt(index)
+                    // The faded speed, not the tick's: a peak taken from the field as it is would
+                    // jump on the pass and rescale every streak on screen at once, which is the
+                    // step this is here to remove — reintroduced through the denominator.
+                    val s = flowFade.speedAt(index)
                     if (s > peak) peak = s
                 }
             }
@@ -1037,6 +1046,66 @@ class OutofspaceRenderer {
     // which costs two numbers per pass) and the view keeps the *values*, which cost a grid.
 
     /**
+     * The bookkeeping every fading view shares: whether this frame holds, rolls forward or snaps,
+     * and how far through the span it is.
+     *
+     * Split out because there are two payloads now — packed colours for the tint overlays, a vector
+     * field for the flow arrows — and the rules about *when* to roll are the subtle half. Keeping
+     * one copy of them is what stops the two drifting into disagreeing about what a resize means.
+     */
+    private class Span {
+        enum class Step { Hold, Roll, Snap }
+
+        private var stamp = NEVER_SAMPLED
+
+        /**
+         * Grid shape the payload is indexed against.
+         *
+         * ⚠️ **Shape rather than array length.** The grid can grow on one edge and shift every tile
+         * index sideways (see `VesselState.resized`) without changing how many tiles there are.
+         * Same length, different meaning, and a fade between two different tiles' values is a lie
+         * the player would read as the field moving.
+         */
+        private var width = -1
+        private var height = -1
+
+        /** How far this frame is through the span. */
+        var fade = 1f
+            private set
+
+        /** Forget everything, so the next [advance] snaps. For a view that has just been switched to. */
+        fun forget() {
+            stamp = NEVER_SAMPLED
+        }
+
+        /**
+         * What this frame should do with its snapshots.
+         *
+         * [Step.Snap] — both snapshots set to the world as it is — whenever there is nothing honest
+         * to fade from: the first frame the view is drawn, a grid that has changed shape, a world
+         * that has just been loaded and whose stamp therefore goes backwards, or a view that has
+         * been off long enough to have missed a pass entirely.
+         */
+        fun advance(grid: Grid, cadence: Cadence, simTime: Double): Step {
+            val sameGrid = width == grid.width && height == grid.height
+            val sampled = stamp != NEVER_SAMPLED
+            // Guarded by `sampled`, which is what keeps the subtraction away from the sentinel.
+            val passes = if (sampled) cadence.writtenAtTick - stamp else -1L
+            val step = when {
+                !sameGrid || !sampled -> Step.Snap
+                passes == 0L -> Step.Hold                       // still inside the span
+                passes in 1..cadence.spanTicks.toLong() -> Step.Roll
+                else -> Step.Snap                               // missed a pass, or time went backwards
+            }
+            width = grid.width
+            height = grid.height
+            stamp = cadence.writtenAtTick
+            fade = cadence.progress(simTime)
+            return step
+        }
+    }
+
+    /**
      * A grid of overlay colours, fading from what the last pass showed to what this one shows.
      *
      * ⚠️ **Colours, not the quantities behind them.** It is what makes one of these serve a
@@ -1052,64 +1121,33 @@ class OutofspaceRenderer {
      * of every field in the world.
      */
     private class Fading {
+        private val span = Span()
         private var from = LongArray(0)
         private var to = LongArray(0)
-        private var stamp = NEVER_SAMPLED
-        private var fade = 1f
 
-        /**
-         * Grid shape [from] and [to] are indexed against.
-         *
-         * ⚠️ **Shape rather than array length.** The grid can grow on one edge and shift every tile
-         * index sideways (see `VesselState.resized`) without changing how many tiles there are.
-         * Same length, different meaning, and a fade between two different tiles' values is a lie
-         * the player would read as the field moving.
-         */
-        private var width = -1
-        private var height = -1
+        fun forget() = span.forget()
 
-        /** Forget everything, so the next [sample] snaps. For an overlay that has just been switched. */
-        fun forget() {
-            stamp = NEVER_SAMPLED
-        }
-
-        /**
-         * Rolls the two snapshots forward if [cadence]'s pass has run since the last frame.
-         *
-         * Snaps instead — both snapshots set to the world as it is — whenever there is nothing
-         * honest to fade from: the first frame this overlay is drawn, a grid that has changed shape,
-         * a world that has just been loaded and whose stamp therefore goes backwards, or an overlay
-         * that has been off long enough to have missed a pass entirely.
-         */
         fun sample(grid: Grid, cadence: Cadence, simTime: Double, colorAt: (TileIndex) -> Long) {
-            val sameGrid = width == grid.width && height == grid.height
-            val sampled = stamp != NEVER_SAMPLED
-            // Guarded by `sampled`, which is what keeps the subtraction away from the sentinel.
-            val passes = if (sampled) cadence.writtenAtTick - stamp else -1L
-            when {
-                sameGrid && sampled && passes == 0L -> {}                   // still inside the span
-                sameGrid && sampled && passes in 1..cadence.spanTicks.toLong() -> {
+            when (span.advance(grid, cadence, simTime)) {
+                Span.Step.Hold -> {}
+                Span.Step.Roll -> {
                     val spare = from
                     from = to
                     to = spare
-                    read(grid, colorAt)
+                    read(colorAt)
                 }
-                else -> {
+                Span.Step.Snap -> {
                     if (to.size != grid.size) {
                         from = LongArray(grid.size)
                         to = LongArray(grid.size)
                     }
-                    read(grid, colorAt)
+                    read(colorAt)
                     to.copyInto(from)
                 }
             }
-            width = grid.width
-            height = grid.height
-            stamp = cadence.writtenAtTick
-            fade = cadence.progress(simTime)
         }
 
-        private fun read(grid: Grid, colorAt: (TileIndex) -> Long) {
+        private fun read(colorAt: (TileIndex) -> Long) {
             for (i in to.indices) to[i] = colorAt(TileIndex(i))
         }
 
@@ -1118,11 +1156,93 @@ class OutofspaceRenderer {
             val a = from[tile.index]
             val b = to[tile.index]
             // Nearly every tile, nearly every frame: a field that did not move here.
-            return if (a == b) b else lerpColor(a, b, fade)
+            return if (a == b) b else lerpColor(a, b, span.fade)
+        }
+    }
+
+    /**
+     * The flow field's own fade — the same span, a different thing to blend.
+     *
+     * Its own type rather than a colour, because a streak is a *direction* and a *length* and
+     * neither survives being packed into one: two arrows drawn in the same white are not the same
+     * arrow. Of the five overlays this is the one that stepped worst — measured over a burst of
+     * injected gas, every streak on screen was pixel-identical for six ticks and then jumped at
+     * once, by up to 719 of a possible 765 units on a pixel, which is a streak leaving a place
+     * entirely rather than shading between two values.
+     *
+     * ⛔ **The raw components are what is interpolated, not the angle.** A flow that reverses then
+     * shrinks to nothing and grows back the other way, which is what reversing looks like. Easing
+     * the *angle* instead would swing the arrow through ninety degrees on its way round and show
+     * the player a rotation that never happened — a confident lie about which way the air went, of
+     * exactly the kind [Motion] exists to avoid.
+     *
+     * ⚠️ [speed] is carried separately rather than taken as the vector's length: `FlowField` divides
+     * the net mass by the tile's own mass to get it, so it has a scale of its own and the two are
+     * not recoverable from each other.
+     */
+    private class FlowFading {
+        private val span = Span()
+        private var fromX = FloatArray(0)
+        private var fromY = FloatArray(0)
+        private var fromSpeed = FloatArray(0)
+        private var toX = FloatArray(0)
+        private var toY = FloatArray(0)
+        private var toSpeed = FloatArray(0)
+
+        fun forget() = span.forget()
+
+        fun sample(grid: Grid, cadence: Cadence, simTime: Double, field: FlowField) {
+            when (span.advance(grid, cadence, simTime)) {
+                Span.Step.Hold -> {}
+                Span.Step.Roll -> {
+                    var spare = fromX; fromX = toX; toX = spare
+                    spare = fromY; fromY = toY; toY = spare
+                    spare = fromSpeed; fromSpeed = toSpeed; toSpeed = spare
+                    read(field)
+                }
+                Span.Step.Snap -> {
+                    if (toX.size != grid.size) {
+                        fromX = FloatArray(grid.size); toX = FloatArray(grid.size)
+                        fromY = FloatArray(grid.size); toY = FloatArray(grid.size)
+                        fromSpeed = FloatArray(grid.size); toSpeed = FloatArray(grid.size)
+                    }
+                    read(field)
+                    toX.copyInto(fromX)
+                    toY.copyInto(fromY)
+                    toSpeed.copyInto(fromSpeed)
+                }
+            }
+        }
+
+        private fun read(field: FlowField) {
+            for (i in toX.indices) {
+                val tile = TileIndex(i)
+                toX[i] = field.xAt(tile).toFloat()
+                toY[i] = field.yAt(tile).toFloat()
+                toSpeed[i] = field.speedAt(tile)
+            }
+        }
+
+        fun xAt(tile: TileIndex): Float = blend(fromX, toX, tile)
+
+        fun yAt(tile: TileIndex): Float = blend(fromY, toY, tile)
+
+        fun speedAt(tile: TileIndex): Float = blend(fromSpeed, toSpeed, tile)
+
+        private fun blend(from: FloatArray, to: FloatArray, tile: TileIndex): Float {
+            // Still until sampled. The arrays are empty until the flow overlay is drawn, and every
+            // caller today is inside that branch — but a bounds-tolerant read is what [Motion] does
+            // for the same reason, and the alternative to it here is a crash rather than a wrong
+            // colour.
+            if (tile.index >= to.size) return 0f
+            val a = from[tile.index]
+            val b = to[tile.index]
+            return if (a == b) b else a + (b - a) * span.fade
         }
     }
 
     private val overlayFade = Fading()
+    private val flowFade = FlowFading()
 
     /** Which overlay [overlayFade] is holding — switching overlay throws its snapshots away. */
     private var fadedOverlay = Overlay.None
@@ -1136,10 +1256,11 @@ class OutofspaceRenderer {
      */
     private fun cadenceOf(overlay: Overlay, state: VesselState): Cadence = when (overlay) {
         Overlay.Heat -> state.cadences.heat
-        Overlay.Air, Overlay.Pressure, Overlay.Density -> state.cadences.fluid
-        // The backdrop is one flat colour, so there is nothing about it to fade. The arrows over it
-        // are a movement rather than a colour and are still drawn straight from the tick's field.
-        Overlay.Flow, Overlay.None -> Cadence.SETTLED
+        // Flow among them: `VesselState.flow` is a dry-run diffusion off the current air, so it
+        // changes exactly when the air does. Its backdrop is a flat colour with nothing to fade; the
+        // streaks drawn over it are what this span is really for. See [FlowFading].
+        Overlay.Air, Overlay.Pressure, Overlay.Density, Overlay.Flow -> state.cadences.fluid
+        Overlay.None -> Cadence.SETTLED
     }
 
     /** An overlay's colour for a tile, as of right now — what [Fading] samples once a span. */
@@ -1202,8 +1323,15 @@ class OutofspaceRenderer {
     }
 
     /** Whether this tile's flow is beneath notice — asked by both the scaling pass and the drawing. */
+    /**
+     * Too little air, or too little movement of it, to be worth drawing.
+     *
+     * ⚠️ **Asked of the faded vector**, so a streak dying away shrinks through the threshold instead
+     * of being cut off at whatever length the pass left it. The density is the tick's own: it is a
+     * question about whether there is any air here to talk about, not about the flow.
+     */
     private fun negligibleFlow(state: VesselState, tile: TileIndex): Boolean =
-        Negligible.flow(state.flow.xAt(tile), state.flow.yAt(tile), state.air.densityAt(tile))
+        Negligible.flow(flowFade.xAt(tile).toLong(), flowFade.yAt(tile).toLong(), state.air.densityAt(tile))
 
     /**
      * A scalar as a *deviation from ambient*: blue where there is less than there should be, orange
@@ -1266,7 +1394,7 @@ class OutofspaceRenderer {
      * answering.
      */
     private fun drawFlow(state: VesselState, tile: TileIndex, x: Int, y: Int, peak: Float) {
-        val speed = state.flow.speedAt(tile)
+        val speed = flowFade.speedAt(tile)
         // Still air guard (0/0), and trace air, which can report any speed at all. Visibility
         // threshold among the flows that survive is FLOW_MIN_FRACTION.
         if (speed <= 0f || negligibleFlow(state, tile)) return
@@ -1275,8 +1403,8 @@ class OutofspaceRenderer {
 
         // Unit direction. Normalised against the pair's own magnitude rather than against `speed`,
         // which is that magnitude over the tile's mass and so carries a scale of its own.
-        val fx = state.flow.xAt(tile).toFloat()
-        val fy = state.flow.yAt(tile).toFloat()
+        val fx = flowFade.xAt(tile)
+        val fy = flowFade.yAt(tile)
         val scale = sqrt(fx * fx + fy * fy)
         if (scale <= 0f) return
         val dx = fx / scale
