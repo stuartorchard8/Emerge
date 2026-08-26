@@ -8,11 +8,13 @@ import org.emerge.demo.outofspace.audio.ImpactAudioSystem
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
+import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.Brush
 import org.emerge.demo.outofspace.InspectLayer
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.render.torus.ui.Ui
 import org.lwjgl.glfw.GLFW.*
 import org.lwjgl.system.MemoryStack
@@ -48,7 +50,8 @@ fun main() {
     org.lwjgl.opengl.GL.createCapabilities()
 
     // Everything GL must be constructed after the context is current.
-    val controller = OutofspaceController()
+    val profiler = PipelineProfiler()
+    val controller = OutofspaceController().also { it.profiler = profiler }
     val renderer = OutofspaceRenderer()
     val hud = OutofspaceHud()
     val ui = Ui()
@@ -277,6 +280,16 @@ fun main() {
             GLFW_KEY_F8 -> controller.fit()
             GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
             GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
+            GLFW_KEY_F11 -> {
+                val report = profiler.report()
+                println("═══ PROFILER REPORT (tick ${controller.tick}) ═══")
+                println("  wall: ${(report.tickAvgNanos / 1000).toInt()} us avg, p50=${(report.tickP50Nanos / 1000).toInt()} us, p95=${(report.tickP95Nanos / 1000).toInt()} us, p99=${(report.tickP99Nanos / 1000).toInt()} us")
+                println("  ${report.phases.size} phases")
+                for (phase in report.phases.sortedByDescending { it.avgNanos }) {
+                    println("    ${"%-20s".format(phase.name)}: avg=${(phase.avgNanos / 1000).toInt()} us  max=${(phase.maxNanos / 1000).toInt()} us  share=${"%.1f".format(phase.sharePercent)}%  alloc=${(phase.avgBytes / 1024).toInt()} KB/tick")
+                }
+                println("════════════════════════════════════════════════════════")
+            }
             GLFW_KEY_C -> {
                 val (ix, iy) = renderer.screenToTile(lastX, lastY)
                 hud.clipboardStatus = controller.copySettings(TileIndex(ix.toInt() + iy.toInt() * controller.state.grid.width))

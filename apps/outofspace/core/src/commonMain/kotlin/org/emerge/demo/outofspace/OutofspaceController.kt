@@ -24,6 +24,7 @@ import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
+import org.emerge.sim.core.ecs.PipelineProfiler
 
 /**
  * Owns the running world and the boundary between real time and sim time.
@@ -47,6 +48,9 @@ class OutofspaceController(
 
     var paused: Boolean = false
     var speed: Float = 1f
+
+    /** Optional profiler for per-phase tick analysis. Null unless [enableProfiling] is called. */
+    var profiler: PipelineProfiler? = null
 
     /** What the player is about to place, and which way it will face. */
     var brush: Brush = Brush.Run(Conduit.Rail)
@@ -583,6 +587,7 @@ class OutofspaceController(
      * this, so a scripted world and a played one advance by the same call.
      */
     fun stepOnce(): VesselState {
+        stepper.profiler = profiler
         stepper.step(mapOf(localPlayer to takeInput()))
         followFrame()
         return stepper.state

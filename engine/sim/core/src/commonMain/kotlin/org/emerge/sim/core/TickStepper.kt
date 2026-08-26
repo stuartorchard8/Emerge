@@ -1,11 +1,15 @@
 package org.emerge.sim.core
 
+import org.emerge.sim.core.ecs.PipelineProfiler
+
 class TickStepper<C, S, I>(
     private val cfg: C,
     initialState: S,
     private val reducer: SimReducer<C, S, I>,
     initialTick: Tick = Tick(0),
 ) {
+    var profiler: PipelineProfiler? = null
+
     var tick: Tick = initialTick
         private set
 
@@ -13,7 +17,9 @@ class TickStepper<C, S, I>(
         private set
 
     fun step(inputs: Map<PlayerId, I>): S {
-        state = reducer.reduce(cfg, state, inputs)
+        val start = System.nanoTime()
+        state = reducer.reduce(cfg, state, inputs, profiler)
+        profiler?.recordTick(System.nanoTime() - start)
         tick = Tick(tick.value + 1)
         return state
     }
