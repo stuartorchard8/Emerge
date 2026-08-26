@@ -227,8 +227,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var networks = SignalNetworks.none(w.grid.size)
         var signals = SignalField.none(w.grid.size)
         var openness = IntArray(w.grid.size)
-        var structure = StructureMap.derive(w.grid, w.deck, openness)
-        if (shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET)) {
+        // ⚠️ **Not derived yet.** An airlock is a wall whose solidity is a signal, so the structure
+        // cannot be known until the openness is, and the openness comes out of the signal pass
+        // below. This used to derive here as well — a whole flood fill of the grid, thrown away
+        // unread a few lines later on every tick there has ever been, because [MACHINE_PERIOD] is
+        // one and the pass that recomputes it therefore always runs. Measured at 10% of the tick.
+        var structure: StructureMap
+        val machineTick = shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET)
+        if (machineTick) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
@@ -269,14 +275,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
+            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
+        }
+        // The one derivation, off whatever the openness turned out to be: the pass's answer on a
+        // machine tick, and all-shut on a tick that skipped it, which is what the pass would leave
+        // behind anyway with nothing to open a lock.
+        structure = StructureMap.derive(w.grid, w.deck, openness)
+        if (machineTick) {
             // The stick, plus whatever the autopilot is leaning on it with. Taken once for the
-            // whole pass so that every motor is answering the same request — see [Sas].
+            // whole pass so that every motor is answering the same request — see [Sas]. It sits
+            // below the structure now only because the structure had to move up; nothing here reads
+            // it and [Work.flightPlan] writes nothing, so the two are independent.
             val stick = FlightIntent.of(heldKeys)
             val intent = if (w.sas) stick.withSas(angularVelocity(state.angImpulse, w.about)) else stick
             val flight = w.flightPlan(intent)
-
-            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
-            structure = StructureMap.derive(w.grid, w.deck, openness)
 
             for (tile in w.grid.tiles) {
                 val m : DeckMachine = w[tile] ?: continue
