@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
 import org.emerge.demo.outofspace.chem.criticalOf
 import org.emerge.demo.outofspace.chem.SCALE
@@ -92,8 +93,17 @@ fun tilePressure(
     masses: MassArray,
     kelvin: IntArray? = null,
     volumes: VolumeField? = null,
-): LongArray =
-    LongArray(tileCount) { i ->
+): LongArray {
+    // Each fluid's share of its tile, written by the first pass and read by the second — the two
+    // passes ask exactly the same question of exactly the same numbers, and the answer is a dome
+    // reading per species per tile.
+    //
+    // ⚠️ **Never cleared, and it does not need to be.** The first pass writes an entry for every
+    // fluid present at the tile and the second reads only those, so an entry left over from another
+    // tile is unreachable rather than stale. Clearing it per tile would cost more than the walk it
+    // is replacing, since a tile holds about six of the twenty-three.
+    val condensedOf = LongArray(Fluid.COUNT)
+    return LongArray(tileCount) { i ->
         val tile = TileIndex(i)
         val hot = kelvin?.get(tile.index) ?: Temperature.AMBIENT_KELVIN
         val room = volumes?.at(tile) ?: VolumeField.FULL
@@ -103,8 +113,10 @@ fun tilePressure(
         // until something actually condenses — see [condensedVolumeFraction] for why it has to exist
         // at all.
         var condensedShare = 0L
-        masses.forEachSpecies(tile) { s, g ->
-            condensedShare += condensedVolumeFraction(g, s, room, VolumeField.FULL, hot)
+        masses.forEachFluid(tile) { f, g ->
+            val share = condensedVolumeFraction(g, f.species, room, VolumeField.FULL, hot)
+            condensedOf[f.ordinal] = share
+            condensedShare += share
         }
         // Floored rather than allowed to reach zero: a cell packed entirely with liquid has no room
         // for gas at all, and the honest rendering of "a gas squeezed into no volume" is a division
@@ -113,12 +125,13 @@ fun tilePressure(
         val gasRoom = (room - room * minOf(condensedShare, SCALE) / SCALE).coerceAtLeast(1L).toInt()
 
         var sum = 0L
-        masses.forEachSpecies(tile) { s, g ->
+        masses.forEachFluid(tile) { f, g ->
+            val s = f.species
             // A condensing species is measured against the whole cell, because the lever rule has
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
             // left over.
-            val wanted = if (condensedVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
+            val wanted = if (condensedOf[f.ordinal] > 0L) room else gasRoom
             // ...but never squeezed past close packing, which is where the equation of state stops
             // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
             // above says "a very large pressure"; without this it says "a crash", and a cell can now
@@ -132,6 +145,7 @@ fun tilePressure(
         }
         sum
     }
+}
 
 /**
  * The smallest volume [mass] of [species] can be squeezed into and still have a pressure: the
