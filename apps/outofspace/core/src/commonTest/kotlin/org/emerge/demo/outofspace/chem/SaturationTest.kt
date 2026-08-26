@@ -109,20 +109,26 @@ class SaturationTest {
         // plausible but sits wrong against its neighbours is still caught by the interpolation.
         var worst = 0.0
         var worstAbsolute = 0.0
-        // Starts at Tr = 0.40 rather than at zero, and that is a statement about the model rather
-        // than a convenience. Every fluid the vessel carries is a *solid* below roughly this point
-        // — water freezes at Tr 0.42, nitrogen at 0.50, carbon dioxide at 0.71 — and there is no
-        // solid phase here, so the curve down there describes a substance that does not exist. What
-        // matters below 0.40 is only that the numbers stay small, positive and monotone so the
-        // solver stays upright, which `pressure never falls as a fluid is compressed` covers over
-        // the whole range.
-        for (i in 40..99) {
+        // ⛔ **Starts at the triple point, and that boundary is now enforced rather than estimated.**
+        // This used to start at a hand-picked Tr = 0.40, with a comment observing that every fluid
+        // the vessel carries is a solid below roughly there — water at 0.42, nitrogen at 0.50,
+        // carbon dioxide at 0.71 — and that there was no solid phase, so the curve below described
+        // a substance that did not exist.
+        //
+        // There is one now. Below [Critical.triplePointKelvin] the table carries the **sublimation**
+        // curve, which is steeper because subliming pays the heat of fusion as well as the heat of
+        // vaporisation. The oracle below solves for liquid-vapour coexistence, which down there is
+        // not a thing that happens — so the two disagree by about 5% at Tr = 0.40 and both are
+        // right about different questions. `PhaseRealityTest` is what checks the sublimation branch,
+        // against measured numbers, which is the only way to check it.
+        val triplePoint = (CRITICAL[Species.Water]!!.triplePointR * 100 / SCALE).toInt() + 1
+        for (i in triplePoint..99) {
             val tr = i / 100.0
             val temperatureR = (tr * SCALE).toLong()
             val (expectedP, expectedLiquid, expectedVapour) = solveSaturation(tr)
 
             val actualP = saturationPressure(temperatureR, Species.Water)!!
-            val actualLiquid = saturatedLiquidDensity(temperatureR, Species.Water)!!
+            val actualLiquid = condensedDensity(temperatureR, Species.Water)!!
             val actualVapour = saturatedVapourDensity(temperatureR, Species.Water)!!
 
             // Relative, with an absolute floor, because neither bound alone is meaningful across
@@ -239,17 +245,17 @@ class SaturationTest {
         // boiling, run backwards.
         val temperatureR = reducedTemperature(293, Species.Water)!!
         val vapour = saturatedVapourDensity(temperatureR, Species.Water)!!
-        val liquid = saturatedLiquidDensity(temperatureR, Species.Water)!!
+        val liquid = condensedDensity(temperatureR, Species.Water)!!
         val saturation = saturationPressure(temperatureR, Species.Water)!!
 
-        assertEquals(0L, liquidFraction(vapour, temperatureR, Species.Water))
-        assertEquals(SCALE, liquidFraction(liquid, temperatureR, Species.Water))
+        assertEquals(0L, condensedFraction(vapour, temperatureR, Species.Water))
+        assertEquals(SCALE, condensedFraction(liquid, temperatureR, Species.Water))
 
         val midpoint = (vapour + liquid) / 2
         assertEquals(saturation, reducedPressure(midpoint, temperatureR, Species.Water))
         assertEquals(FluidPhase.Separating, phaseAt(midpoint, temperatureR, Species.Water))
 
-        val fraction = liquidFraction(midpoint, temperatureR, Species.Water)!!
+        val fraction = condensedFraction(midpoint, temperatureR, Species.Water)!!
         assertTrue(fraction in (SCALE * 45 / 100)..(SCALE * 55 / 100), "half-way across should be about half liquid, was $fraction")
     }
 }

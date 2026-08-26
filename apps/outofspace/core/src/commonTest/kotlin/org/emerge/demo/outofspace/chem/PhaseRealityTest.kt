@@ -51,8 +51,22 @@ class PhaseRealityTest {
         Reference(Species.Oxygen, criticalBar = 50.43, kelvin = 90, bar = 1.01325, what = "liquid oxygen boils at 90K"),
         Reference(Species.Argon, criticalBar = 48.63, kelvin = 87, bar = 1.01325, what = "liquid argon boils at 87K"),
         // Above CO2's triple point (216.6 K, 5.18 bar), so this is a genuine liquid-vapour
-        // equilibrium rather than a sublimation point the model has no way to represent yet.
+        // equilibrium.
         Reference(Species.CarbonDioxide, criticalBar = 73.77, kelvin = 273, bar = 34.85, what = "CO2 in a cylinder at 0C"),
+
+        // ── Below the triple point, where the condensed phase is a solid ──────────
+        //
+        // The curve does not stop at the triple point, it *bends*: subliming has to pay the heat of
+        // fusion as well as the heat of vaporisation, so `ln P` falls away more steeply below the
+        // triple point than the liquid line extrapolated through it would.
+        //
+        // Dry ice is the marquee case and the one everybody has a feel for. Carbon dioxide has no
+        // liquid phase at one atmosphere at all — its triple point is at 5.18 bar — so a block of it
+        // goes straight to gas at 194.7 K, and a model that extrapolates the liquid line answers
+        // about 20 K too warm.
+        Reference(Species.CarbonDioxide, criticalBar = 73.77, kelvin = 195, bar = 1.01325, what = "dry ice sublimes at -78C"),
+        Reference(Species.Water, criticalBar = 220.64, kelvin = 263, bar = 2.599e-3, what = "ice at -10C"),
+        Reference(Species.Water, criticalBar = 220.64, kelvin = 250, bar = 7.60e-4, what = "ice at -23C"),
     )
 
     /** The model's saturation pressure at [kelvin], in bar, using [criticalBar] to leave reduced units. */
@@ -109,6 +123,45 @@ class PhaseRealityTest {
                 "${(got / real).toInt()}x too high, so a room holds that much more water vapour " +
                 "than it should before anything condenses",
         )
+    }
+
+    // ── The solid phase itself ───────────────────────────────────────────────
+
+    @Test
+    fun `below its triple point a fluid is a solid and not a very cold liquid`() {
+        // The triple point is the temperature below which there is no liquid phase at any pressure
+        // at all. A model without one does not merely mislabel it: it hands the transport pass a
+        // liquid, which flows, where the world has a solid, which does not.
+        val wrong = mutableListOf<String>()
+        for (species in listOf(Species.Water, Species.CarbonDioxide, Species.Nitrogen, Species.Argon)) {
+            val c = CRITICAL[species]!!
+            val cold = c.triplePointKelvin - 20
+            val tr = reducedTemperature(cold, species)!!
+            // Dense enough to be condensed at all — the solid branch itself.
+            val dense = condensedDensity(tr, species)!!
+            val phase = phaseAt(dense, tr, species)
+            if (phase != FluidPhase.Solid) {
+                wrong += "$species at ${cold}K is ${c.triplePointKelvin - cold}K below its triple " +
+                    "point and reads as $phase"
+            }
+        }
+        if (wrong.isNotEmpty()) fail("a fluid below its triple point is not solid:\n  " + wrong.joinToString("\n  "))
+    }
+
+    @Test
+    fun `above the triple point the condensed phase is still a liquid`() {
+        // The other half, so that the test above cannot be satisfied by calling everything solid.
+        for (species in listOf(Species.Water, Species.CarbonDioxide, Species.Nitrogen, Species.Argon)) {
+            val c = CRITICAL[species]!!
+            val warm = (c.triplePointKelvin + c.kelvin) / 2
+            val tr = reducedTemperature(warm, species)!!
+            val dense = condensedDensity(tr, species)!!
+            assertTrue(
+                phaseAt(dense, tr, species) == FluidPhase.Liquid,
+                "$species at ${warm}K is between its triple point and its critical point and " +
+                    "should be a liquid; got ${phaseAt(dense, tr, species)}",
+            )
+        }
     }
 
     private companion object {

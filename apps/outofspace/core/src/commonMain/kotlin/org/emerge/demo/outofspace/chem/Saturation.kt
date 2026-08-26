@@ -16,7 +16,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *
  * The resolution is the one real fluids use: **the cell does not sit at that mean density, it
  * separates.** A tile holding "half a pool" is not a uniform fluid of intermediate density; it is
- * some liquid at [saturatedLiquidDensity] and some vapour at [saturatedVapourDensity], and the
+ * some liquid at [condensedDensity] and some vapour at [saturatedVapourDensity], and the
  * pressure it reports is neither branch's but the pressure the two coexist at — [saturationPressure],
  * the same value at every density across the band. So the falling stretch is replaced by a flat
  * one, `dP/dρ` becomes **zero rather than negative**, and the cell is neutrally stable instead of
@@ -120,13 +120,13 @@ private class Dome(
 private val DOMES: Map<Species, Dome> = mapOf(
     Species.Water to Dome(
         negLogSaturationPressure = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19854043L,
-            18267462L, 16846697L, 15568281L, 14412925L,
-            13364629L, 12410017L, 11537819L, 10738477L,
+            Long.MAX_VALUE, 595616900L, 291930597L, 190701829L,
+            140087445L, 109718815L, 89473061L, 75011809L,
+            64165869L, 55730139L, 48981554L, 43459985L,
+            38858677L, 34965263L, 31628051L, 28735800L,
+            26205081L, 23972094L, 21987216L, 20211273L,
+            18612924L, 17166798L, 15852139L, 14651798L,
+            13551485L, 12539198L, 11604778L, 10739575L,
             10003827L, 9326858L, 8701508L, 8122509L,
             7585259L, 7085717L, 6620317L, 6185899L,
             5779654L, 5399072L, 5041907L, 4706144L,
@@ -139,13 +139,13 @@ private val DOMES: Map<Species, Dome> = mapOf(
             0L,
         ),
         liquidDensity = longArrayOf(
-            373553221L, 373553221L, 373553221L, 373553221L,
-            373553221L, 373553221L, 373553221L, 373553221L,
-            373553221L, 373553221L, 373553221L, 373553221L,
-            373553221L, 373553221L, 373553221L, 373553221L,
-            373553221L, 373553221L, 373553221L, 373553221L,
-            371913260L, 370214507L, 368454968L, 366632498L,
-            364744791L, 362789370L, 360763572L, 358664530L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
+            356489161L, 356489161L, 356489161L, 356489161L,
             356489161L, 354234143L, 351895895L, 349470551L,
             346953934L, 344341529L, 341628444L, 338809378L,
             335878577L, 332829783L, 329656184L, 326350345L,
@@ -158,13 +158,13 @@ private val DOMES: Map<Species, Dome> = mapOf(
             100000000L,
         ),
         negLogVapourDensity = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19819200L,
-            18283912L, 16911937L, 15680041L, 14569134L,
-            13563392L, 12649590L, 11816589L, 11054940L,
+            Long.MAX_VALUE, 592637618L, 289644462L, 188821159L,
+            138494457L, 108348971L, 88285539L, 73978437L,
+            63266029L, 54948081L, 48304857L, 42878598L,
+            38364302L, 34550931L, 31287826L, 28464569L,
+            25998388L, 23826025L, 21898306L, 20176430L,
+            18629374L, 17232039L, 15963899L, 14808008L,
+            13750250L, 12778773L, 11883551L, 11056039L,
             10356577L, 9714560L, 9122887L, 8576335L,
             8070325L, 7600827L, 7164274L, 6757489L,
             6377637L, 6022174L, 5688810L, 5375479L,
@@ -179,15 +179,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
     ),
     Species.Nitrogen to Dome(
         negLogSaturationPressure = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19385628L,
-            17696447L, 16216025L, 14908882L, 13747098L,
-            12708408L, 11774837L, 10931722L, 10166978L,
-            9470553L, 8834021L, 8250257L, 7713198L,
-            7217650L, 6759133L, 6333765L, 5938164L,
-            5569371L, 5224784L, 4902110L, 4599320L,
+            Long.MAX_VALUE, 411536511L, 202005846L, 132162291L,
+            97240514L, 76287447L, 62318736L, 52341085L,
+            44857847L, 39037551L, 34381314L, 30571666L,
+            27396959L, 24710668L, 22408133L, 20412603L,
+            18666514L, 17125848L, 15756366L, 14531041L,
+            13428248L, 12430483L, 11523424L, 10695239L,
+            9936070L, 9237634L, 8592925L, 7995971L,
+            7441657L, 6925572L, 6443892L, 5993289L,
+            5570848L, 5224784L, 4902110L, 4599320L,
             4314611L, 4046382L, 3793202L, 3553792L,
             3327006L, 3111814L, 2907290L, 2712599L,
             2526986L, 2349767L, 2180324L, 2018094L,
@@ -198,15 +198,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
             0L,
         ),
         liquidDensity = longArrayOf(
-            372830846L, 372830846L, 372830846L, 372830846L,
-            372830846L, 372830846L, 372830846L, 372830846L,
-            372830846L, 372830846L, 372830846L, 372830846L,
-            372830846L, 372830846L, 372830846L, 372830846L,
-            370960164L, 369038990L, 367066153L, 365040367L,
-            362960226L, 360824201L, 358630634L, 356377733L,
-            354063560L, 351686030L, 349242896L, 346731740L,
-            344149964L, 341494778L, 338763182L, 335951956L,
-            333057640L, 330076514L, 327004580L, 323837527L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 330076514L, 330076514L,
+            330076514L, 330076514L, 327004580L, 323837527L,
             320570710L, 317199108L, 313717287L, 310119349L,
             306398877L, 302548867L, 298561646L, 294428779L,
             290140950L, 285687818L, 281057850L, 276238095L,
@@ -217,15 +217,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
             100000000L,
         ),
         negLogVapourDensity = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19114397L,
-            17489754L, 16069955L, 14819969L, 13712248L,
-            12724839L, 11840034L, 11043391L, 10323011L,
-            9669000L, 9073054L, 8528152L, 8028311L,
-            7568395L, 7143968L, 6751179L, 6386666L,
-            6047477L, 5731017L, 5434991L, 5157363L,
+            Long.MAX_VALUE, 408557229L, 199719711L, 130281622L,
+            95647526L, 74917603L, 61131214L, 51307714L,
+            43958007L, 38255494L, 33704617L, 29990279L,
+            26902583L, 24296336L, 22067909L, 20141372L,
+            18459821L, 16979779L, 15667455L, 14496194L,
+            13444689L, 12495700L, 11635133L, 10851346L,
+            10134638L, 9476854L, 8871087L, 8311440L,
+            7792840L, 7310896L, 6861778L, 6442125L,
+            6048966L, 5731017L, 5434991L, 5157363L,
             4896324L, 4650260L, 4417728L, 4197432L,
             3988209L, 3789006L, 3598873L, 3416941L,
             3242421L, 3074584L, 2912759L, 2756317L,
@@ -238,12 +238,12 @@ private val DOMES: Map<Species, Dome> = mapOf(
     ),
     Species.Oxygen to Dome(
         negLogSaturationPressure = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, 20850955L, 18957023L,
-            17310688L, 15867461L, 14592853L, 13459716L,
-            12446399L, 11535421L, 10712518L, 9965931L,
+            Long.MAX_VALUE, 399080780L, 195665043L, 127859797L,
+            93957175L, 73615601L, 60054552L, 50368088L,
+            43103240L, 37452803L, 32932454L, 29233986L,
+            26151929L, 23544035L, 21308697L, 19371404L,
+            17676273L, 16180569L, 14851055L, 13661489L,
+            12590880L, 11622234L, 10741646L, 9965931L,
             9285880L, 8664161L, 8093839L, 7569011L,
             7084616L, 6636293L, 6220260L, 5833223L,
             5472298L, 5134954L, 4818957L, 4522331L,
@@ -257,12 +257,12 @@ private val DOMES: Map<Species, Dome> = mapOf(
             0L,
         ),
         liquidDensity = longArrayOf(
-            374216896L, 374216896L, 374216896L, 374216896L,
-            374216896L, 374216896L, 374216896L, 374216896L,
-            374216896L, 374216896L, 374216896L, 374216896L,
-            374216896L, 374216896L, 374216896L, 372366774L,
-            370467550L, 368518180L, 366517508L, 364464260L,
-            362357046L, 360194351L, 357974535L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
+            355695822L, 355695822L, 355695822L, 355695822L,
             353356294L, 350953887L, 348486376L, 345951370L,
             343346299L, 340668404L, 337914722L, 335082073L,
             332167040L, 329165955L, 326074872L, 322889544L,
@@ -276,12 +276,12 @@ private val DOMES: Map<Species, Dome> = mapOf(
             100000000L,
         ),
         negLogVapourDensity = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, 20510730L, 18685792L,
-            17103995L, 15721392L, 14503939L, 13424863L,
-            12462824L, 11600607L, 10824166L, 10121928L,
+            Long.MAX_VALUE, 396101498L, 193378908L, 125979128L,
+            92364187L, 72245757L, 58867029L, 49334716L,
+            42203400L, 36670746L, 32255757L, 28652599L,
+            25657554L, 23129702L, 20968473L, 19100173L,
+            17469580L, 16034500L, 14762142L, 13626638L,
+            12607309L, 11687424L, 10853297L, 10121928L,
             9484266L, 8903100L, 8371595L, 7883924L,
             7435086L, 7020761L, 6637198L, 6281122L,
             5949662L, 5640289L, 5350770L, 5079126L,
@@ -297,18 +297,18 @@ private val DOMES: Map<Species, Dome> = mapOf(
     ),
     Species.CarbonDioxide to Dome(
         negLogSaturationPressure = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, 20769881L, 19033213L, 17493591L,
-            16120546L, 14889526L, 13780526L, 12777093L,
-            11865570L, 11034528L, 10274331L, 9576796L,
-            8934928L, 8342709L, 7794929L, 7287058L,
-            6815131L, 6375664L, 5965582L, 5582160L,
-            5222975L, 4885865L, 4568897L, 4270339L,
-            3988633L, 3722378L, 3470310L, 3231286L,
-            3004275L, 2788340L, 2582632L, 2386382L,
+            Long.MAX_VALUE, 648757296L, 318466068L, 208368992L,
+            153320454L, 120291332L, 98271916L, 82543763L,
+            70747647L, 61572891L, 54233086L, 48227791L,
+            43223378L, 38988876L, 35359302L, 32213671L,
+            29461244L, 27032632L, 24873866L, 22942338L,
+            21203963L, 19631148L, 18201316L, 16895817L,
+            15699109L, 14598139L, 13581858L, 12640857L,
+            11767071L, 10953546L, 10194256L, 9483952L,
+            8818042L, 8192491L, 7603736L, 7048625L,
+            6524353L, 6028420L, 5558589L, 5112852L,
+            4689402L, 4286608L, 3902994L, 3537223L,
+            3188078L, 2854451L, 2582632L, 2386382L,
             2198886L, 2019505L, 1847657L, 1682808L,
             1524471L, 1372198L, 1225579L, 1084236L,
             947822L, 816016L, 688522L, 565064L,
@@ -316,18 +316,18 @@ private val DOMES: Map<Species, Dome> = mapOf(
             0L,
         ),
         liquidDensity = longArrayOf(
-            374321470L, 374321470L, 374321470L, 374321470L,
-            374321470L, 374321470L, 374321470L, 374321470L,
-            374321470L, 374321470L, 374321470L, 374321470L,
-            374321470L, 374321470L, 374321470L, 374321470L,
-            374321470L, 374321470L, 372649019L, 370921318L,
-            369136760L, 367293609L, 365389989L, 363423880L,
-            361393108L, 359295330L, 357128026L, 354888484L,
-            352573782L, 350180775L, 347706072L, 345146016L,
-            342496664L, 339753755L, 336912687L, 333968482L,
-            330915744L, 327748625L, 324460768L, 321045252L,
-            317494524L, 313800319L, 309953569L, 305944283L,
-            301761417L, 297392707L, 292824465L, 288041329L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 292824465L,
+            292824465L, 292824465L, 292824465L, 288041329L,
             283025948L, 277758580L, 272216578L, 266373708L,
             260199239L, 253656702L, 246702133L, 239281537L,
             231327066L, 222751014L, 213435837L, 203216382L,
@@ -335,18 +335,18 @@ private val DOMES: Map<Species, Dome> = mapOf(
             100000000L,
         ),
         negLogVapourDensity = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, 20623813L, 18944303L, 17458747L,
-            16136996L, 14954764L, 13892280L, 12933290L,
-            12064306L, 11274047L, 10553001L, 9893086L,
-            9287389L, 8729957L, 8215626L, 7739895L,
-            7298815L, 6888905L, 6507080L, 6150597L,
-            5817010L, 5504125L, 5209973L, 4932783L,
-            4670955L, 4423041L, 4187727L, 3963818L,
-            3750222L, 3545940L, 3350049L, 3161693L,
+            Long.MAX_VALUE, 645778014L, 316179934L, 206488323L,
+            151727467L, 118921488L, 97084394L, 81510391L,
+            69847807L, 60790834L, 53556389L, 47646404L,
+            42729003L, 38574543L, 35019077L, 31942439L,
+            29254551L, 26886563L, 24784956L, 22907495L,
+            21220414L, 19696388L, 18313076L, 17052029L,
+            15897881L, 14837731L, 13860667L, 12957400L,
+            12119967L, 11341504L, 10616061L, 9938450L,
+            9304124L, 8709072L, 8149737L, 7622945L,
+            7125841L, 6655841L, 6210582L, 5787883L,
+            5385710L, 5002135L, 4635306L, 4283400L,
+            3944578L, 3616914L, 3350049L, 3161693L,
             2980075L, 2804441L, 2634073L, 2468273L,
             2306356L, 2147629L, 1991373L, 1836815L,
             1683094L, 1529196L, 1373866L, 1215430L,
@@ -356,15 +356,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
     ),
     Species.Argon to Dome(
         negLogSaturationPressure = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, 22262219L, 20147952L, 18327022L,
-            16743536L, 15354882L, 14128015L, 13036924L,
-            12060854L, 11183048L, 10389824L, 9669904L,
-            9013901L, 8413941L, 7863365L, 7356503L,
-            6888493L, 6455146L, 6052827L, 5678371L,
-            5329010L, 5002309L, 4696126L, 4408562L,
+            Long.MAX_VALUE, 388506914L, 190822549L, 124927760L,
+            91980366L, 72211930L, 59032972L, 49619431L,
+            42559275L, 37068043L, 32675057L, 29080795L,
+            26085578L, 23551163L, 21378807L, 19496099L,
+            17848729L, 16395168L, 15103113L, 13947064L,
+            12906620L, 11965266L, 11109490L, 10328128L,
+            9611881L, 8952933L, 8344673L, 7781470L,
+            7258495L, 6771588L, 6317141L, 5892014L,
+            5493456L, 5119054L, 4766676L, 4434433L,
             4137936L, 3882750L, 3641670L, 3413503L,
             3197180L, 2991740L, 2796321L, 2610144L,
             2432504L, 2262766L, 2100353L, 1944738L,
@@ -375,15 +375,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
             0L,
         ),
         liquidDensity = longArrayOf(
-            375388594L, 375388594L, 375388594L, 375388594L,
-            375388594L, 375388594L, 375388594L, 375388594L,
-            375388594L, 375388594L, 375388594L, 375388594L,
-            375388594L, 375388594L, 373541845L, 371647475L,
-            369704570L, 367712106L, 365668944L, 363573829L,
-            361425391L, 359222138L, 356962453L, 354644584L,
-            352266644L, 349826597L, 347322254L, 344751263L,
-            342111096L, 339399042L, 336612192L, 333747427L,
-            330801400L, 327770515L, 324650911L, 321438433L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
+            318128604L, 318128604L, 318128604L, 318128604L,
             318128604L, 314716591L, 311197164L, 307564652L,
             303812887L, 299935136L, 295924028L, 291771458L,
             287468475L, 283005145L, 278370379L, 273551727L,
@@ -394,15 +394,15 @@ private val DOMES: Map<Species, Dome> = mapOf(
             100000000L,
         ),
         negLogVapourDensity = longArrayOf(
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
-            Long.MAX_VALUE, 21847886L, 19807727L, 18055791L,
-            16536842L, 15208811L, 14039099L, 13002066L,
-            12077269L, 11248212L, 10501433L, 9825834L,
-            9212179L, 8652714L, 8140876L, 7671071L,
-            7238493L, 6838995L, 6468971L, 6125277L,
-            5805156L, 5506182L, 5226214L, 4963355L,
+            Long.MAX_VALUE, 385527632L, 188536414L, 123047091L,
+            90387379L, 70842086L, 57845450L, 48586059L,
+            41659435L, 36285985L, 31998360L, 28499409L,
+            25591203L, 23136830L, 21038583L, 19224867L,
+            17642036L, 16249099L, 15014201L, 13912215L,
+            12923055L, 12030472L, 11221176L, 10484195L,
+            9810381L, 9192048L, 8622683L, 8096727L,
+            7609402L, 7156571L, 6734634L, 6340432L,
+            5971184L, 5624422L, 5297946L, 4989784L,
             4715917L, 4482399L, 4261457L, 4051889L,
             3852611L, 3662647L, 3481111L, 3307197L,
             3140171L, 2979353L, 2824117L, 2673877L,
@@ -605,10 +605,32 @@ fun saturationPressure(temperatureR: Long, species: Species): Long? {
     return if (temperatureR >= SCALE) null else sampleLog(dome.negLogSaturationPressure, temperatureR)
 }
 
-/** Reduced density of saturated liquid at [temperatureR], or null above the critical point. */
-fun saturatedLiquidDensity(temperatureR: Long, species: Species): Long? {
+/**
+ * Reduced density of the **condensed** phase at [temperatureR] — liquid above the triple point and
+ * solid below it — or null above the critical point.
+ *
+ * ⚠️ **It was `condensedDensity` and the rename is not cosmetic.** Below
+ * [Critical.triplePointKelvin] there is no liquid at any pressure, and answering with one is not a
+ * labelling mistake: it hands [org.emerge.demo.outofspace.world.diffuseFluid] something that flows
+ * where the world has something that does not.
+ *
+ * The solid branch is a **measured density** ([Species.solidKgPerCubicMetre]) rather than anything
+ * the equation of state produces, because a cubic equation has no solid phase to produce it from —
+ * see [Critical.solidDensityR]. So the branch steps at the triple point, which is real: matter does
+ * change density when it freezes.
+ *
+ * ⛔ **For water the step goes the wrong way**, and it is worth knowing before it reads as a bug.
+ * Ice really is *less* dense than liquid water — that anomaly is most of why water is interesting —
+ * and here it comes out denser, because Peng-Robinson puts liquid water at the triple point around
+ * 890 kg/m³ against a real 1000 while the ice branch is the measured 917. It is the equation's
+ * liquid-density deficit showing through, not a claim about ice.
+ */
+fun condensedDensity(temperatureR: Long, species: Species): Long? {
+    val c = CRITICAL[species] ?: return null
+    if (temperatureR >= SCALE) return null
+    if (temperatureR < c.triplePointR) return c.solidDensityR
     val dome = DOME_OF[species.ordinal] ?: return null
-    return if (temperatureR >= SCALE) null else sample(dome.liquidDensity, temperatureR)
+    return sample(dome.liquidDensity, temperatureR)
 }
 
 /** Reduced density of saturated vapour at [temperatureR], or null above the critical point. */
@@ -629,9 +651,9 @@ fun saturatedVapourDensity(temperatureR: Long, species: Species): Long? {
  *
  * Returns 0 below the dome, [SCALE] above it, and null above the critical temperature.
  */
-fun liquidFraction(densityR: Long, temperatureR: Long, species: Species): Long? {
+fun condensedFraction(densityR: Long, temperatureR: Long, species: Species): Long? {
     val vapour = saturatedVapourDensity(temperatureR, species) ?: return null
-    val liquid = saturatedLiquidDensity(temperatureR, species) ?: return null
+    val liquid = condensedDensity(temperatureR, species) ?: return null
     if (densityR <= vapour) return 0L
     if (densityR >= liquid) return SCALE
     return (densityR - vapour) * SCALE / (liquid - vapour)
@@ -650,10 +672,10 @@ fun liquidFraction(densityR: Long, temperatureR: Long, species: Species): Long? 
  *
  * Returns 0 for a species that is not condensing.
  */
-fun liquidVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
+fun condensedVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
     val densityR = reducedDensity(mass, species, volume, full) ?: return 0L
     val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
-    return liquidFraction(densityR, temperatureR, species) ?: 0L
+    return condensedFraction(densityR, temperatureR, species) ?: 0L
 }
 
 /**
@@ -679,12 +701,12 @@ fun vapourMass(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int
     if (mass <= 0L) return mass
     val temperatureR = reducedTemperature(kelvin, species) ?: return mass
     val vapourR = saturatedVapourDensity(temperatureR, species) ?: return mass
-    val liquidShare = liquidVolumeFraction(mass, species, volume, full, kelvin)
-    if (liquidShare <= 0L) return mass
+    val condensedShare = condensedVolumeFraction(mass, species, volume, full, kelvin)
+    if (condensedShare <= 0L) return mass
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
     // its way to nothing before the density has been divided down — hence the full tile asked for
     // here and the `volume / full` at the end rather than letting the helper do it.
     val fullTile = massAtReducedDensity(vapourR, species, full, full) ?: return mass
-    val asVapour = scaledRatio(SCALE - liquidShare, SCALE, fullTile) * volume / full
+    val asVapour = scaledRatio(SCALE - condensedShare, SCALE, fullTile) * volume / full
     return minOf(asVapour, mass)
 }

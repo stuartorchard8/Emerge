@@ -177,7 +177,7 @@ class PhaseEmergenceTest {
      */
     private fun saturatedLiquid(species: Species, kelvin: Int): Long {
         val tr = reducedTemperature(kelvin, species)!!
-        val branch = saturatedLiquidDensity(tr, species) ?: error("$species is supercritical at $kelvin K")
+        val branch = condensedDensity(tr, species) ?: error("$species is supercritical at $kelvin K")
         // A tenth of a percent past the branch, so that integer rounding on the way back through
         // reducedDensity cannot land it on the boundary and read as Separating again. Applied to the
         // reduced density rather than to the mass, so the whole conversion is the simulation's own.

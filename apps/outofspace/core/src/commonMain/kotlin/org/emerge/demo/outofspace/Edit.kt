@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.reducedTemperature
-import org.emerge.demo.outofspace.chem.saturatedLiquidDensity
+import org.emerge.demo.outofspace.chem.condensedDensity
 
 import org.emerge.demo.outofspace.world.Action
 import org.emerge.demo.outofspace.num.Budget
@@ -163,7 +163,7 @@ sealed interface Edit {
          * [WATER_INJECT_KELVIN], divided by 64.
          */
         val WATER_INJECT_MASS: Long = massAtReducedDensity(
-            saturatedLiquidDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!, Species.Water)!!,
+            condensedDensity(reducedTemperature(WATER_INJECT_KELVIN, Species.Water)!!, Species.Water)!!,
             Species.Water,
             VolumeField.FULL,
             VolumeField.FULL,

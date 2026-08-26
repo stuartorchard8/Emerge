@@ -223,6 +223,29 @@ class Critical(
      * equation of state *does* when the molecules are far apart. The old behaviour is the sparse
      * limit of the new one.
      */
+    /**
+     * The triple point as a reduced temperature, for the one comparison that needs it every time
+     * [phaseAt] is asked a question.
+     */
+    val triplePointR: Long = triplePointKelvin.toLong() * SCALE / kelvin
+
+    /**
+     * Reduced density of this species as a **solid** — the condensed branch below [triplePointR].
+     *
+     * ⛔ **Measured, not derived, and it has to be.** A cubic equation of state describes fluids: it
+     * has a vapour branch and a liquid branch and no third one, so there is nothing in
+     * Peng-Robinson that could produce this. [Species.solidKgPerCubicMetre] is a laboratory number
+     * and it is already on file for all 165 species.
+     *
+     * ⚠️ Clamped to [MAX_REDUCED_DENSITY]. All five fluids that have a dome land between 3.19 and
+     * 3.82 against a wall at 3.95, so the clamp is a guard rather than a mechanism — but a species
+     * added later with a dense solid and a light critical point could reach it, and being quietly
+     * held at the wall is better than an exception from inside the equation of state.
+     */
+    val solidDensityR: Long = scaledRatio(
+        species.solidKgPerCubicMetre.toLong() * TILE_LITRES * Budget.GRAM, massPerTile, SCALE,
+    ).coerceAtMost(MAX_REDUCED_DENSITY)
+
     val pressure: Long =
         millimolesIn(massPerTile, species) * kelvin * PENG_ROBINSON_ZC_NUMERATOR /
             (PENG_ROBINSON_ZC_DENOMINATOR * REFERENCE_KELVIN)
@@ -340,7 +363,7 @@ fun pengRobinsonPressure(densityR: Long, temperatureR: Long, species: Species): 
 fun reducedPressure(densityR: Long, temperatureR: Long, species: Species): Long {
     val raw = pengRobinsonPressure(densityR, temperatureR, species)
     val vapour = saturatedVapourDensity(temperatureR, species) ?: return raw
-    val liquid = saturatedLiquidDensity(temperatureR, species) ?: return raw
+    val liquid = condensedDensity(temperatureR, species) ?: return raw
     val saturation = saturationPressure(temperatureR, species)!!
     // The clamps are what keep the seam continuous. Physically they say nothing new — a vapour
     // below its saturation density is below its saturation pressure, and a liquid above saturation
@@ -498,13 +521,23 @@ enum class FluidPhase {
      * more than twice its own critical temperature.
      */
     Supercritical,
+
+    /**
+     * Colder than the triple point and dense enough to be condensed: frost, ice, dry ice.
+     *
+     * A separate name from [Liquid] because the difference is not descriptive — a solid does not
+     * flow, and [org.emerge.demo.outofspace.world.diffuseFluid] has to be able to tell. The
+     * boundary is [Critical.triplePointKelvin], which is a measured property and the temperature
+     * below which a substance has no liquid phase **at any pressure at all**.
+     */
+    Solid,
 }
 
 /**
  * Which branch a cell's fluid sits on, from reduced density and temperature alone.
  *
  * Above the critical temperature there is nothing to decide. Below it, the saturation dome does the
- * deciding: sparser than [saturatedVapourDensity] is vapour, denser than [saturatedLiquidDensity]
+ * deciding: sparser than [saturatedVapourDensity] is vapour, denser than [condensedDensity]
  * is liquid, and between them the cell is holding both at once.
  *
  * This reads the dome rather than the sign of [reducedStiffness], which is both cheaper — two
@@ -517,12 +550,13 @@ enum class FluidPhase {
  */
 fun phaseAt(densityR: Long, temperatureR: Long, species: Species): FluidPhase = when {
     temperatureR >= SCALE -> FluidPhase.Supercritical
-    // Inclusive at both edges, to agree with [liquidFraction], which reads a cell at exactly the
+    // Inclusive at both edges, to agree with [condensedFraction], which reads a cell at exactly the
     // saturated liquid density as wholly liquid and one at exactly saturated vapour as wholly
     // vapour. A pool sitting in equilibrium lands precisely on that boundary, so the two functions
     // disagreeing about it is not an edge case but the ordinary situation.
     densityR <= saturatedVapourDensity(temperatureR, species)!! -> FluidPhase.Vapour
-    densityR >= saturatedLiquidDensity(temperatureR, species)!! -> FluidPhase.Liquid
+    densityR >= condensedDensity(temperatureR, species)!! ->
+        if (temperatureR < (CRITICAL[species]?.triplePointR ?: 0L)) FluidPhase.Solid else FluidPhase.Liquid
     else -> FluidPhase.Separating
 }
 
@@ -618,7 +652,7 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
  * constants that produced the phase transition in the first place.
  *
  * ⚠️ **Inside the saturation dome this is not yet right, and knowingly so.** A cell there is not
- * uniform — it is [liquidFraction] of its volume at [saturatedLiquidDensity] and the rest at
+ * uniform — it is [condensedFraction] of its volume at [condensedDensity] and the rest at
  * [saturatedVapourDensity] — and because the term is quadratic, the attraction of that mixture is
  * not the attraction of its mean density. The lever-rule version is what makes latent heat come out
  * *linear in the fraction boiled*, i.e. a constant energy-per-gram, which is what a latent heat is.

@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.SCALE
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedDensity
-import org.emerge.demo.outofspace.chem.liquidVolumeFraction
+import org.emerge.demo.outofspace.chem.condensedVolumeFraction
 import org.emerge.demo.outofspace.chem.partialPressure
 
 /**
@@ -100,17 +100,17 @@ fun tilePressure(
 
         // First pass: how much of the cell is taken up by liquid, and so is not room for gas. Zero
         // for everything the vessel carries today, which is what makes this free of consequence
-        // until something actually condenses — see [liquidVolumeFraction] for why it has to exist
+        // until something actually condenses — see [condensedVolumeFraction] for why it has to exist
         // at all.
-        var liquidShare = 0L
+        var condensedShare = 0L
         masses.forEachSpecies(tile) { s, g ->
-            liquidShare += liquidVolumeFraction(g, s, room, VolumeField.FULL, hot)
+            condensedShare += condensedVolumeFraction(g, s, room, VolumeField.FULL, hot)
         }
         // Floored rather than allowed to reach zero: a cell packed entirely with liquid has no room
         // for gas at all, and the honest rendering of "a gas squeezed into no volume" is a division
         // by zero. The floor makes it merely a very large pressure, which is both finite and the
         // right direction — that gas is being crushed, and the solver should feel it and push back.
-        val gasRoom = (room - room * minOf(liquidShare, SCALE) / SCALE).coerceAtLeast(1L).toInt()
+        val gasRoom = (room - room * minOf(condensedShare, SCALE) / SCALE).coerceAtLeast(1L).toInt()
 
         var sum = 0L
         masses.forEachSpecies(tile) { s, g ->
@@ -118,7 +118,7 @@ fun tilePressure(
             // already divided that cell between its own liquid and its own vapour — the volume it
             // is competing for is the volume it is itself defining. Everything else gets what is
             // left over.
-            val wanted = if (liquidVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
+            val wanted = if (condensedVolumeFraction(g, s, room, VolumeField.FULL, hot) > 0L) room else gasRoom
             // ...but never squeezed past close packing, which is where the equation of state stops
             // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
             // above says "a very large pressure"; without this it says "a crash", and a cell can now
