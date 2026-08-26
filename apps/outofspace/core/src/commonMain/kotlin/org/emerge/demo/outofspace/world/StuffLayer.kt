@@ -45,6 +45,19 @@ class StuffLayer private constructor(
     private var masses: LongArray,
     private var present: LongArray,
     private var energies: LongArray,
+    /**
+     * Total mass in each row — [massAt]'s answer, kept rather than re-derived.
+     *
+     * ⚠️ **Like [present], authoritative and not a cache**, and maintained by exactly the same write.
+     * [checkInvariants] asserts it against the row it summarises, because a total that drifts from
+     * its row is the kind of fault that reads as the ship quietly gaining or losing weight.
+     *
+     * It is here because `massAt` is not an inspector's convenience: [forEachVesselMass] asks it for
+     * every deck tile and every conduit tile, and the tick asks that walk more than once. Summing
+     * the bitmask each time made `StuffLayer.massAt` **18% of every execution sample in the game**,
+     * to answer a question whose answer only changes when somebody writes.
+     */
+    private var totals: LongArray,
     private var rowCount: Int,
 ) {
 
@@ -65,7 +78,9 @@ class StuffLayer private constructor(
         // Writing a zero into a tile we do not hold is a no-op, not a reason to allocate.
         if (mass == 0L && rowOf[tile.index] == NO_ROW) return
         val row = rowFor(tile)
-        masses[row * Species.COUNT + species.ordinal] = mass
+        val at = row * Species.COUNT + species.ordinal
+        totals[row] += mass - masses[at]
+        masses[at] = mass
         val word = row * PRESENCE_WORDS + (species.ordinal ushr 6)
         val bit = 1L shl (species.ordinal and 63)
         if (mass == 0L) present[word] = present[word] and bit.inv() else present[word] = present[word] or bit
@@ -87,11 +102,10 @@ class StuffLayer private constructor(
         forEachPresentOrdinal(tile) { ordinal -> action(Species.ALL[ordinal], massByOrdinal(tile, ordinal)) }
     }
 
-    /** Total mass this layer holds at [tile]. Walks only what is present. */
+    /** Total mass this layer holds at [tile]. One load — see [totals]. */
     fun massAt(tile: TileIndex): Long {
-        var sum = 0L
-        forEachSpecies(tile) { _, m -> sum += m }
-        return sum
+        val row = rowOf[tile.index]
+        return if (row == NO_ROW) 0L else totals[row]
     }
 
     /** Everything at [tile] as a [Mixture], for inspectors and saves. Allocates — not for the hot path. */
@@ -178,6 +192,7 @@ class StuffLayer private constructor(
             masses.copyInto(masses, row * Species.COUNT, last * Species.COUNT, (last + 1) * Species.COUNT)
             present.copyInto(present, row * PRESENCE_WORDS, last * PRESENCE_WORDS, (last + 1) * PRESENCE_WORDS)
             energies[row] = energies[last]
+            totals[row] = totals[last]
             tileOf[row] = tileOf[last]
             rowOf[tileOf[row]] = row
         }
@@ -196,7 +211,7 @@ class StuffLayer private constructor(
 
     val totalMass: Long get() {
         var sum = 0L
-        for (i in 0 until rowCount * Species.COUNT) sum += masses[i]
+        for (row in 0 until rowCount) sum += totals[row]
         return sum
     }
 
@@ -221,6 +236,7 @@ class StuffLayer private constructor(
         masses = masses.copyOf(),
         present = present.copyOf(),
         energies = energies.copyOf(),
+        totals = totals.copyOf(),
         rowCount = rowCount,
     )
 
@@ -255,11 +271,14 @@ class StuffLayer private constructor(
             val tile = tileOf[row]
             require(tile in 0 until tileCount) { "row $row maps to out-of-range tile $tile" }
             require(rowOf[tile] == row) { "tile $tile maps to row ${rowOf[tile]}, not $row" }
+            var sum = 0L
             for (s in Species.ALL) {
                 val mass = masses[row * Species.COUNT + s.ordinal]
+                sum += mass
                 val bit = present[row * PRESENCE_WORDS + (s.ordinal ushr 6)] and (1L shl (s.ordinal and 63))
                 require((mass != 0L) == (bit != 0L)) { "tile $tile species $s: mass $mass, present ${bit != 0L}" }
             }
+            require(totals[row] == sum) { "tile $tile totals ${totals[row]}, row sums to $sum" }
         }
         for (tile in 0 until tileCount) {
             val row = rowOf[tile]
@@ -316,6 +335,7 @@ class StuffLayer private constructor(
         masses.fill(0L, row * Species.COUNT, (row + 1) * Species.COUNT)
         present.fill(0L, row * PRESENCE_WORDS, (row + 1) * PRESENCE_WORDS)
         energies[row] = 0L
+        totals[row] = 0L
     }
 
     private fun grow() {
@@ -323,6 +343,7 @@ class StuffLayer private constructor(
         masses = masses.copyOf(next * Species.COUNT)
         present = present.copyOf(next * PRESENCE_WORDS)
         energies = energies.copyOf(next)
+        totals = totals.copyOf(next)
         tileOf = tileOf.copyOf(next).also { it.fill(TileIndex.NONE.index, rowCount, next) }
     }
 
@@ -344,6 +365,7 @@ class StuffLayer private constructor(
             masses = LongArray(0),
             present = LongArray(0),
             energies = LongArray(0),
+            totals = LongArray(0),
             rowCount = 0,
         )
     }
