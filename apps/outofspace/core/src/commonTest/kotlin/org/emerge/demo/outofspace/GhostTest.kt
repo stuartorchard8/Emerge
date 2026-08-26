@@ -803,7 +803,15 @@ class GhostTest {
 
     @Test
     fun `outside creative mode deleting a rail marks it rather than removing it`() {
-        val laid = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        // ⚠️ **Not on the rail step's tick**, because the mark is what this test is about and the
+        // rail step is what acts on it: a ghost that never received any metal has nothing to hand
+        // back, so `scrapDeconstructing` takes it away the moment it next runs. That is correct and
+        // is a different claim from this one. The fixture happened to land six edits from tick zero,
+        // which was clear of the rail step until it stopped firing on tick zero.
+        var laid = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 8)
+        while (laid.tick % OutofspaceReducer.RAIL_PERIOD == OutofspaceReducer.RAIL_OFFSET.toLong()) {
+            laid = OutofspaceReducer.reduce(cfg, laid, emptyMap())
+        }
         val tile = grid.tile(5, 3)
         val s = remove(laid, tile)
 

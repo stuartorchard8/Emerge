@@ -153,7 +153,12 @@ class FlightTest {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
         controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
-        controller.stepOnce()
+        // Up to and including the pressure step's tick, and no further. That is the whole assertion:
+        // the pressure step fires on [OutofspaceReducer.PRESSURE_OFFSET] and the fluid step on the
+        // tick *after*, so this stops in the gap between them — the hull is open, the push has
+        // landed, and not a molecule has crossed the breach yet. It used to be one tick because the
+        // two fired together and the ordering lived inside a single tick instead of across two.
+        repeat(OutofspaceReducer.PRESSURE_OFFSET + 1) { controller.stepOnce() }
 
         val s = controller.state
         assertEquals(0L, s.exhaustMomentumX, "gas had already left, so this proved nothing")

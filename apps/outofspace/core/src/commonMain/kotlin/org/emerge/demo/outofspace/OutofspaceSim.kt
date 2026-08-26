@@ -150,6 +150,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
     /** Periods (ticks between activations). All must divide [OutofspaceConfig.ticksPerSecond] evenly. */
     const val FLUID_PERIOD      = 8
+    const val PRESSURE_PERIOD   = 8
     const val HEAT_PERIOD       = 8
     const val PUMP_PERIOD       = 8
     const val MACHINE_PERIOD    = 1
@@ -162,8 +163,39 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      */
     const val CHEM_PERIOD       = 8
 
-    /** Runs on tick 0 (all periods divide 0). */
-    private fun shouldRun(tick: Long, period: Int): Boolean = tick % period == 0L
+    /**
+     * **Which** tick of its period each subsystem fires on. Every one of them used to be zero, and
+     * that was the whole problem: five period-8 subsystems and a period-32 one all divide zero, so
+     * one tick in eight did every expensive thing in the game and seven did almost nothing.
+     *
+     * ⚠️ Measured on the desktop save: p50 2.0 ms against a p99 of 25-29 ms. The *average* tick was
+     * never the complaint — 12% of ticks costing ten times the rest is what a player feels, and no
+     * amount of making the work cheaper fixes a distribution that shape.
+     *
+     * ⛔ **The order is the physics, and it is preserved exactly.** Each fires one tick after the
+     * one it depends on, in the order the blocks below already ran in when they shared a tick:
+     * pumps and valves move gas between the layers, heat sets the temperatures, chemistry reacts at
+     * those temperatures, pressure pushes on the field chemistry has just added to, and the fluid
+     * step then lets that field answer. Every argument in the comments below about what must come
+     * before what still holds — it is a sequence of five ticks now instead of five blocks in one.
+     *
+     * ⚠️ **Not bit-identical, and not meant to be.** A subsystem fires exactly as often as it did
+     * and still moves its full amount when it fires; what changed is *when*, so everything
+     * downstream sees the same quantities a few ticks out of phase. Deliberate.
+     *
+     * ⚠️ [RAIL_OFFSET] is stated mod [RAIL_PERIOD] but only has to miss the others mod 8, since
+     * that is the period they repeat on. 6 is clear of 0..4.
+     */
+    const val PUMP_OFFSET       = 0
+    const val HEAT_OFFSET       = 1
+    const val CHEM_OFFSET       = 2
+    const val PRESSURE_OFFSET   = 3
+    const val FLUID_OFFSET      = 4
+    const val MACHINE_OFFSET    = 0
+    const val RAIL_OFFSET       = 6
+
+    /** Whether a subsystem of [period] whose turn is tick [offset] fires on [tick]. */
+    private fun shouldRun(tick: Long, period: Int, offset: Int): Boolean = tick % period == offset.toLong()
 
     override fun reduce(
         cfg: OutofspaceConfig,
@@ -196,7 +228,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var signals = SignalField.none(w.grid.size)
         var openness = IntArray(w.grid.size)
         var structure = StructureMap.derive(w.grid, w.deck, openness)
-        if (shouldRun(state.tick, MACHINE_PERIOD)) {
+        if (shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET)) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
@@ -307,7 +339,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Rails ─────────────────────────────────────────────────────────────────
         val _r0 = _prof0; val _r = if (_r0) TimeSource.Monotonic.markNow() else null
         val motion: Motion
-        if (shouldRun(state.tick, RAIL_PERIOD)) {
+        if (shouldRun(state.tick, RAIL_PERIOD, RAIL_OFFSET)) {
             // Rails first: produced output can go on the track after it moves.
             val ports = w.portsByTile(Conduit.Rail)
             w.advanceRails(ports)
@@ -333,7 +365,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // When skipped, heat state is carried forward from the previous tick.
         var conductedRadiated = 0L
         var conductedToAir = 0L
-        if (shouldRun(state.tick, HEAT_PERIOD)) {
+        if (shouldRun(state.tick, HEAT_PERIOD, HEAT_OFFSET)) {
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
                 grid = state.grid,
@@ -366,7 +398,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // decomposer a machine at all: it holds a charge at a temperature the player chose, and the
         // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
         // the same matter on a belt. The machine controls the conditions and nothing else.
-        if (shouldRun(state.tick, CHEM_PERIOD)) {
+        if (shouldRun(state.tick, CHEM_PERIOD, CHEM_OFFSET)) {
             val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
             val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
             // Then what the matter will no longer hold on to, which is the only pass of the two
@@ -415,7 +447,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Valves + Pumps ────────────────────────────────────────────────────────
         val _v0 = _prof0; val _v = if (_v0) TimeSource.Monotonic.markNow() else null
-        if (shouldRun(state.tick, PUMP_PERIOD)) {
+        if (shouldRun(state.tick, PUMP_PERIOD, PUMP_OFFSET)) {
             // Valves first: pressure propagates immediately, both layers see exchange
             // (see [exchangeLayers]).
             exchangeLayers(
@@ -441,11 +473,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Pressure ──────────────────────────────────────────────────────────────
         //
-        // On the fluid's period, and not on every tick. Two [tilePressure] sweeps are the most
-        // expensive thing the sim does — 47% of a 64 Hz tick, measured — and they are a pure
-        // function of the air, which only moves when [diffuseFluid] below fires. Between fluid
-        // ticks the sweep would rebuild a field identical to the one already in the state, so on
-        // those ticks there is simply no push to apply.
+        // On the fluid's period, one tick ahead of it, and not on every tick. Two [tilePressure]
+        // sweeps are among the most expensive things the sim does, and they are a pure function of
+        // the air, which only moves when [diffuseFluid] below fires. Between fluid ticks the sweep
+        // would rebuild a field identical to the one already in the state, so on those ticks there
+        // is simply no push to apply.
+        //
+        // ⚠️ It fires on [PRESSURE_OFFSET] and the diffusion on [FLUID_OFFSET], the tick after. The
+        // two shared a tick until the pair of them made one tick in eight cost ten times the rest;
+        // what the offsets are ordered to keep is the relationship that matters — push on the
+        // field, and *then* let the field answer.
         //
         // ⚠️ **Zero on a skipped tick, and emphatically not the last tick's push carried forward.**
         // [applyPressureForce] books both halves of one exchange: the gas takes `+J` on a face it
@@ -462,17 +499,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pressureImpulseY: Long
         val pressureTorque: Long
         val _p0 = _prof0; val _p = if (_p0) TimeSource.Monotonic.markNow() else null
-        // Hoisted out of the block below because the fluid step wants the same two arrays and they
-        // are not cheap — a heat capacity sweep and a division per tile, each. Taken *before*
-        // diffusion on purpose, which is the same snapshot rule the pressure field is read under:
-        // every tile answers about the tick it started, so nothing depends on visit order.
-        var roomKelvin: IntArray? = null
-        var pipeKelvin: IntArray? = null
-        if (shouldRun(state.tick, FLUID_PERIOD)) {
-            roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
-            pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
+        if (shouldRun(state.tick, PRESSURE_PERIOD, PRESSURE_OFFSET)) {
+            val roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
+            val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
             // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
-            // that exists before the gas has been allowed to answer it.
+            // that exists before the gas has been allowed to answer it. Still true with the two a
+            // tick apart — this is the tick *before* the diffusion, so the field it pushes on is
+            // the one that diffusion is about to flatten.
             val roomPressure = tilePressure(state.grid.size, w.masses, roomKelvin)
             val pushed = applyPressureForce(
                 edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
@@ -507,7 +540,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
-        if (shouldRun(state.tick, FLUID_PERIOD)) {
+        if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET)) {
+            // The temperatures this pass moves the vapour by, taken here rather than shared with the
+            // pressure block. They were hoisted above it while the two fired together, because a
+            // capacity sweep and a division per tile are not free twice; now that they are a tick
+            // apart, sharing them would mean diffusing by yesterday's temperatures.
+            val roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
+            val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
             val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy, roomKelvin)
