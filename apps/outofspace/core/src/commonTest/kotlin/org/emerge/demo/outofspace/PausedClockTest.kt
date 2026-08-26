@@ -198,19 +198,37 @@ class PausedClockTest {
         assertTrue(c.livedTicks > 0, "and it is counting lived ticks again")
     }
 
-    /** The speed dial is not a pause and a pause is not a speed: settling takes the time it takes. */
+    /**
+     * A paused world settles at the rate it was running at.
+     *
+     * ⚠️ **The dial applies to a stopped game as well**, which reads like a contradiction and is not:
+     * what a pause stops is the passes, and what the dial sets is how fast the clock turns. An
+     * animation half-way through when the player hit pause was proceeding at this rate and should go
+     * on proceeding at it. Settling at a flat 1× instead — which is what this did first — makes a
+     * world paused at 0.25× visibly speed up as it comes to rest, and one paused at 4× drag.
+     *
+     * The clock advances by `real seconds × speed × ticksPerSecond` exactly: every tick stepped takes
+     * one tick's worth out of the accumulator and puts 1 on the counter, so nothing is lost between
+     * the two terms of `simTime`.
+     */
     @Test
-    fun `the speed dial does not change how fast a paused world settles`() {
-        fun settledAfter(speed: Float): Double {
+    fun `a paused world settles at the speed it was running at`() {
+        fun clockRanBy(speed: Float): Double {
             val c = controller()
             frame(c, 60)
             c.speed = speed
             c.paused = true
             val from = c.simTime
-            frame(c, 30)
+            frame(c, 30)                              // half a second of real time
             return c.simTime - from
         }
-        assertEquals(settledAfter(1f), settledAfter(0.25f), "a slow dial slowed the settling")
-        assertEquals(settledAfter(1f), settledAfter(4f), "a fast dial hurried it")
+        val quarter = clockRanBy(0.25f)
+        val normal = clockRanBy(1f)
+        val quadruple = clockRanBy(4f)
+
+        // Half a second at 64 ticks a second is 32 ticks of clock, times the dial.
+        assertEquals(8.0, quarter, 0.01, "a paused world at quarter speed did not settle at quarter speed")
+        assertEquals(32.0, normal, 0.01)
+        assertEquals(128.0, quadruple, 0.01, "a paused world at quadruple speed did not settle at quadruple speed")
     }
 }

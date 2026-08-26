@@ -65,8 +65,13 @@ class OutofspaceController(
     var paused: Boolean = false
 
     /**
-     * The game-speed dial. ⚠️ **Does not apply while [paused]** — a pause is not a speed, and the
-     * settling of a half-drawn animation should take the time it would have taken.
+     * The game-speed dial — how much sim time a second of real time buys.
+     *
+     * ⚠️ **It applies while [paused] too**, which is not the contradiction it sounds like. What a
+     * pause stops is the passes; what the dial sets is how fast the clock turns, and the clock is
+     * still turning. An animation half-way through when the player stopped the game was proceeding
+     * at this rate, and it should go on proceeding at it: settle at a flat 1× instead and a world
+     * paused at 0.25× visibly *speeds up* as it comes to rest, while one paused at 4× drags.
      */
     var speed: Float = 1f
 
@@ -612,7 +617,7 @@ class OutofspaceController(
         // kind of tick it runs. It used to branch here: a running game stepped, and a stopped one
         // stepped anyway if an edit happened to be waiting — a whole tick of physics for a click.
         // See [paused] for what the two consequences of this are and why they are the point.
-        accumulator += deltaSeconds.coerceIn(0f, 0.25f) * if (paused) 1f else speed
+        accumulator += deltaSeconds.coerceIn(0f, 0.25f) * speed
         var steps = 0
         while (accumulator >= cfg.secondsPerTick && steps < maxTicksPerFrame) {
             if (paused) stepFrozen() else stepOnce()
