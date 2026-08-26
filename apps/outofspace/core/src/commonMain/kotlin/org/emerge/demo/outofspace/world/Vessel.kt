@@ -772,8 +772,23 @@ data class VesselState(
      * its mass, so there is no accumulated velocity to drift and nothing to be wrong about across a
      * save. See [Flight] for what counts as the ship and why the atmosphere does not.
      */
-    val velocityX: Long get() = scaledRatio(vesselImpulseX, mass, Flight.PER_TILE)
-    val velocityY: Long get() = scaledRatio(vesselImpulseY, mass, Flight.PER_TILE)
+    val velocityX: Long get() = velocityXAt(mass)
+    val velocityY: Long get() = velocityYAt(mass)
+
+    /**
+     * The same two velocities, against a [mass] the caller already has.
+     *
+     * ⚠️ [mass] is a walk over every tile of every layer, and `velocityX`/`velocityY` each start one.
+     * The tick reads both, twice — to advance the pose and to hand the bodies the ship's motion —
+     * so the plain properties had it walking the whole vessel four times before anything moved.
+     * Measured on the desktop save, that was 11% of every execution sample.
+     *
+     * The formula stays here and stays single: these are what the properties above call, so there is
+     * still one statement of what a velocity is, and a caller that has the mass simply stops asking
+     * for it again.
+     */
+    fun velocityXAt(mass: Long): Long = scaledRatio(vesselImpulseX, mass, Flight.PER_TILE)
+    fun velocityYAt(mass: Long): Long = scaledRatio(vesselImpulseY, mass, Flight.PER_TILE)
 
     /**
      * Where the grid sits in the world and how far it is turned — the vessel as one rigid body.

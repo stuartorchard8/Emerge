@@ -534,6 +534,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         val _g0 = _prof0; val _g = if (_g0) TimeSource.Monotonic.markNow() else null
         val mass = vesselMass(w.grid, w.rail, conduits, w.deck, w.buffers)
+        // The vessel as it was when the tick began, which is what the pose is advanced by and what a
+        // body is told the ship is doing. One walk: see [VesselState.velocityXAt].
+        val startMass = state.mass
+        val startVelocityX = state.velocityXAt(startMass)
+        val startVelocityY = state.velocityYAt(startMass)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
         val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
@@ -559,7 +564,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val comScale = Flight.PER_TILE / Rotation.MILLI_TILE
         val newPose = state.pose
             .turnedAbout(Coord(spin.toInt()), w.about.comX * comScale, w.about.comY * comScale)
-            .movedBy(state.velocityX, state.velocityY)
+            .movedBy(startVelocityX, startVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y
         val newAng = newPose.ang
@@ -592,7 +597,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             structure,
             w.bodies,
             state.gravity,
-            ShipMotion(state.pose, state.velocityX, state.velocityY, spin),
+            ShipMotion(state.pose, startVelocityX, startVelocityY, spin),
             mass,
             w.about,
             w.deck,
