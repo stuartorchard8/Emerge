@@ -69,33 +69,46 @@ private const val N = 65
  */
 private class Dome(
     /**
-     * Reduced saturation pressure at each sample.
+     * **Minus the natural logarithm** of the reduced saturation pressure at each sample, in
+     * [NEG_LOG_SCALE]. [Long.MAX_VALUE] means the fugacity solve gave out — colder than any fluid
+     * here has a liquid phase worth describing.
      *
-     * The leading zeros are real rather than missing data: at the cold end the true saturation
-     * pressure is smaller than [SCALE] can represent — under `1e-8` of critical — and zero is the
-     * correct rendering of it. A liquid that cold has no measurable vapour pressure and does not
-     * evaporate, which is what the zero goes on to make happen.
+     * ⛔ **Stored as a logarithm because a chord cannot fit an exponential.** Vapour pressure obeys
+     * Clausius-Clapeyron, `ln P ≈ A − B/T`, which is a straight line in `1/T` and nothing like one
+     * in `T`. Interpolating the pressure itself overshot by **7.7%** at the cold end; interpolating
+     * its logarithm against `1/Tr` — the variable it is actually linear in — leaves **0.112%**.
+     * The negation is so that every stored value is a positive integer.
      */
-    val saturationPressure: LongArray,
+    val negLogSaturationPressure: LongArray,
     /**
-     * Reduced density of the liquid that coexists at [saturationPressure] — the dense branch.
+     * Reduced density of the liquid that coexists at saturation — the dense branch, in [SCALE].
      *
-     * Runs from [CLOSE_PACKED] at absolute zero down to critical density at the critical point,
-     * where it meets [vapourDensity] and the two phases stop being distinguishable. That meeting is
-     * why the dome closes and why there is no liquid above `Tc`.
+     * ⚠️ **Linear, unlike the other two, and measured rather than assumed.** This branch is not
+     * exponential: it runs from close packing down to critical density along a gentle curve, and
+     * putting it in log space makes it *worse* — 0.033% against 0.063% over the cold range. What
+     * error it has is the cusp at the top, which no change of basis fixes.
+     *
+     * Runs from near [CLOSE_PACKED] at absolute zero down to critical density at the critical point,
+     * where it meets the vapour branch and the two phases stop being distinguishable.
+     *
+     * ⛔ The cold end holds the coldest value the solver reached, **not** [CLOSE_PACKED]. Clamping
+     * it to the wall puts it above [MAX_REDUCED_DENSITY], so no density is ever "liquid", every cell
+     * reads as [FluidPhase.Separating], and the tile reports zero pressure at every density.
      */
     val liquidDensity: LongArray,
     /**
-     * Reduced density of the vapour that coexists at [saturationPressure] — the sparse branch, and
-     * the density at which a gas becomes unable to hold any more of itself and starts to condense.
+     * Minus the natural logarithm of the reduced density of saturated vapour, in [NEG_LOG_SCALE] —
+     * the sparse branch, and the density at which a gas can hold no more of itself.
      *
-     * The zeros at the cold end carry the same meaning as in [saturationPressure], and one further
-     * consequence: where this reads zero, any amount of the species at all is at or above
-     * saturation, so a trace of it in a cold cell condenses completely rather than lingering as a
-     * vapour. That is the right behaviour, and it is what makes a cold surface collect frost rather
-     * than ignore it.
+     * In log space for the same reason as the pressure, and it gains as much: **7.0% to 0.120%**
+     * over the cold range. It tracks the saturation pressure closely enough that it is the same
+     * curve wearing different units.
+     *
+     * Where this is small enough that [expNeg] rounds it to zero, any amount of the species at all
+     * is at or above saturation, so a trace in a cold cell condenses completely rather than
+     * lingering as a vapour. That is what makes a cold surface collect frost rather than ignore it.
      */
-    val vapourDensity: LongArray,
+    val negLogVapourDensity: LongArray,
 )
 
 /**
@@ -106,24 +119,24 @@ private class Dome(
  */
 private val DOMES: Map<Species, Dome> = mapOf(
     Species.Water to Dome(
-        saturationPressure = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            1L, 5L, 17L, 55L,
-            157L, 408L, 975L, 2169L,
-            4523L, 8900L, 16633L, 29678L,
-            50788L, 83697L, 133301L, 205825L,
-            308979L, 452078L, 646141L, 903956L,
-            1240113L, 1671010L, 2214845L, 2891574L,
-            3722875L, 4732088L, 5944164L, 7385614L,
-            9084460L, 11070197L, 13373766L, 16027547L,
-            19065353L, 22522458L, 26435631L, 30843197L,
-            35785115L, 41303085L, 47440672L, 54243470L,
-            61759284L, 70038358L, 79133637L, 89101075L,
-            100000000L,
+        negLogSaturationPressure = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19854043L,
+            18267462L, 16846697L, 15568281L, 14412925L,
+            13364629L, 12410017L, 11537819L, 10738477L,
+            10003827L, 9326858L, 8701508L, 8122509L,
+            7585259L, 7085717L, 6620317L, 6185899L,
+            5779654L, 5399072L, 5041907L, 4706144L,
+            4389968L, 4091742L, 3809988L, 3543369L,
+            3290674L, 3050804L, 2822760L, 2605636L,
+            2398605L, 2200914L, 2011875L, 1830861L,
+            1657297L, 1490657L, 1330457L, 1176254L,
+            1027638L, 884233L, 745690L, 611688L,
+            481926L, 356127L, 234032L, 115399L,
+            0L,
         ),
         liquidDensity = longArrayOf(
             373553221L, 373553221L, 373553221L, 373553221L,
@@ -144,45 +157,45 @@ private val DOMES: Map<Species, Dome> = mapOf(
             196080167L, 182632039L, 166698487L, 146210657L,
             100000000L,
         ),
-        vapourDensity = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            1L, 5L, 15L, 47L,
-            129L, 321L, 738L, 1581L,
-            3178L, 6040L, 10914L, 18851L,
-            31268L, 50004L, 77374L, 116214L,
-            169913L, 242439L, 338362L, 462870L,
-            621796L, 821644L, 1069638L, 1373778L,
-            1742934L, 2186963L, 2716873L, 3345035L,
-            4085472L, 4954227L, 5969866L, 7154144L,
-            8532908L, 10137362L, 12005848L, 14186461L,
-            16740995L, 19751190L, 23329132L, 27635848L,
-            32917698L, 39587477L, 48444777L, 61534870L,
-            100000000L,
+        negLogVapourDensity = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19819200L,
+            18283912L, 16911937L, 15680041L, 14569134L,
+            13563392L, 12649590L, 11816589L, 11054940L,
+            10356577L, 9714560L, 9122887L, 8576335L,
+            8070325L, 7600827L, 7164274L, 6757489L,
+            6377637L, 6022174L, 5688810L, 5375479L,
+            5080314L, 4801618L, 4537850L, 4287606L,
+            4049600L, 3822656L, 3605689L, 3397693L,
+            3197733L, 3004929L, 2818446L, 2637478L,
+            2461240L, 2288942L, 2119776L, 1952882L,
+            1787310L, 1621956L, 1455467L, 1286056L,
+            1111160L, 926657L, 724746L, 485566L,
+            0L,
         ),
     ),
     Species.Nitrogen to Dome(
-        saturationPressure = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            2L, 9L, 34L, 107L,
-            303L, 770L, 1788L, 3842L,
-            7709L, 14569L, 26119L, 44689L,
-            73352L, 116023L, 177534L, 263687L,
-            381288L, 538152L, 743088L, 1005867L,
-            1337174L, 1748552L, 2252337L, 2861593L,
-            3590044L, 4452013L, 5462356L, 6636411L,
-            7989951L, 9539138L, 11300490L, 13290854L,
-            15527386L, 18027534L, 20809032L, 23889900L,
-            27288448L, 31023284L, 35113335L, 39577865L,
-            44436502L, 49709272L, 55416635L, 61579531L,
-            68219424L, 75358363L, 83019038L, 91224852L,
-            100000000L,
+        negLogSaturationPressure = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19385628L,
+            17696447L, 16216025L, 14908882L, 13747098L,
+            12708408L, 11774837L, 10931722L, 10166978L,
+            9470553L, 8834021L, 8250257L, 7713198L,
+            7217650L, 6759133L, 6333765L, 5938164L,
+            5569371L, 5224784L, 4902110L, 4599320L,
+            4314611L, 4046382L, 3793202L, 3553792L,
+            3327006L, 3111814L, 2907290L, 2712599L,
+            2526986L, 2349767L, 2180324L, 2018094L,
+            1862565L, 1713270L, 1569783L, 1431714L,
+            1298707L, 1170432L, 1046589L, 926900L,
+            811109L, 698979L, 590290L, 484841L,
+            382441L, 282915L, 186100L, 91843L,
+            0L,
         ),
         liquidDensity = longArrayOf(
             372830846L, 372830846L, 372830846L, 372830846L,
@@ -203,45 +216,45 @@ private val DOMES: Map<Species, Dome> = mapOf(
             183939965L, 172010338L, 158008811L, 140153394L,
             100000000L,
         ),
-        vapourDensity = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            3L, 10L, 37L, 111L,
-            298L, 721L, 1599L, 3287L,
-            6321L, 11472L, 19782L, 32610L,
-            51652L, 78961L, 116950L, 168386L,
-            236382L, 324378L, 436127L, 575686L,
-            747401L, 955912L, 1206161L, 1503413L,
-            1853288L, 2261806L, 2735455L, 3281265L,
-            3906920L, 4620883L, 5432565L, 6352530L,
-            7392758L, 8566990L, 9891166L, 11384009L,
-            13067819L, 14969561L, 17122402L, 19567966L,
-            22359731L, 25568406L, 29290894L, 33666327L,
-            38907511L, 45371114L, 53748750L, 65813537L,
-            100000000L,
+        negLogVapourDensity = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, 19114397L,
+            17489754L, 16069955L, 14819969L, 13712248L,
+            12724839L, 11840034L, 11043391L, 10323011L,
+            9669000L, 9073054L, 8528152L, 8028311L,
+            7568395L, 7143968L, 6751179L, 6386666L,
+            6047477L, 5731017L, 5434991L, 5157363L,
+            4896324L, 4650260L, 4417728L, 4197432L,
+            3988209L, 3789006L, 3598873L, 3416941L,
+            3242421L, 3074584L, 2912759L, 2756317L,
+            2604669L, 2457254L, 2313528L, 2172961L,
+            2035018L, 1899151L, 1764783L, 1631276L,
+            1497909L, 1363813L, 1227894L, 1088672L,
+            943983L, 790295L, 620850L, 418345L,
+            0L,
         ),
     ),
     Species.Oxygen to Dome(
-        saturationPressure = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 1L,
-            3L, 13L, 46L, 143L,
-            393L, 978L, 2226L, 4697L,
-            9272L, 17266L, 30541L, 51620L,
-            83790L, 131188L, 198873L, 292862L,
-            420156L, 588732L, 807521L, 1086368L,
-            1435981L, 1867871L, 2394282L, 3028132L,
-            3782938L, 4672761L, 5712143L, 6916056L,
-            8299858L, 9879248L, 11670242L, 13689140L,
-            15952511L, 18477179L, 21280218L, 24378952L,
-            27790955L, 31534070L, 35626416L, 40086414L,
-            44932812L, 50184711L, 55861605L, 61983419L,
-            68570554L, 75643938L, 83225082L, 91336145L,
-            100000000L,
+        negLogSaturationPressure = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, 20850955L, 18957023L,
+            17310688L, 15867461L, 14592853L, 13459716L,
+            12446399L, 11535421L, 10712518L, 9965931L,
+            9285880L, 8664161L, 8093839L, 7569011L,
+            7084616L, 6636293L, 6220260L, 5833223L,
+            5472298L, 5134954L, 4818957L, 4522331L,
+            4243322L, 3980371L, 3732087L, 3497224L,
+            3274669L, 3063420L, 2862576L, 2671324L,
+            2488932L, 2314734L, 2148128L, 1988567L,
+            1835554L, 1688634L, 1547392L, 1411450L,
+            1280460L, 1154102L, 1032083L, 914133L,
+            800002L, 689460L, 582293L, 478303L,
+            377307L, 279133L, 183621L, 90624L,
+            0L,
         ),
         liquidDensity = longArrayOf(
             374216896L, 374216896L, 374216896L, 374216896L,
@@ -262,45 +275,45 @@ private val DOMES: Map<Species, Dome> = mapOf(
             183256604L, 171415424L, 157524325L, 139816882L,
             100000000L,
         ),
-        vapourDensity = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 1L,
-            4L, 15L, 50L, 148L,
-            387L, 916L, 1991L, 4019L,
-            7604L, 13597L, 23135L, 37675L,
-            59018L, 89315L, 131069L, 187130L,
-            260672L, 355184L, 474450L, 622535L,
-            803782L, 1022812L, 1284532L, 1594161L,
-            1957261L, 2379787L, 2868152L, 3429308L,
-            4070847L, 4801138L, 5629489L, 6566350L,
-            7623579L, 8814782L, 10155742L, 11665008L,
-            13364676L, 15281463L, 17448243L, 19906269L,
-            22708544L, 25925152L, 29652141L, 34027416L,
-            39261916L, 45709196L, 54054904L, 66057132L,
-            100000000L,
+        negLogVapourDensity = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, 20510730L, 18685792L,
+            17103995L, 15721392L, 14503939L, 13424863L,
+            12462824L, 11600607L, 10824166L, 10121928L,
+            9484266L, 8903100L, 8371595L, 7883924L,
+            7435086L, 7020761L, 6637198L, 6281122L,
+            5949662L, 5640289L, 5350770L, 5079126L,
+            4823597L, 4582614L, 4354776L, 4138823L,
+            3933624L, 3738159L, 3551502L, 3372812L,
+            3201319L, 3036317L, 2877152L, 2723212L,
+            2573924L, 2428740L, 2287131L, 2148577L,
+            2012555L, 1878530L, 1745931L, 1614135L,
+            1482429L, 1349957L, 1215636L, 1078004L,
+            934915L, 782871L, 615170L, 414650L,
+            0L,
         ),
     ),
     Species.CarbonDioxide to Dome(
-        saturationPressure = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 1L, 3L,
-            10L, 34L, 104L, 282L,
-            703L, 1613L, 3451L, 6932L,
-            13171L, 23813L, 41182L, 68434L,
-            109705L, 170249L, 256555L, 376443L,
-            539127L, 755259L, 1036939L, 1397704L,
-            1852501L, 2417640L, 3110739L, 3950666L,
-            4957470L, 6152328L, 7557480L, 9196184L,
-            11092670L, 13272111L, 15760597L, 18585130L,
-            21773619L, 25354903L, 29358767L, 33815994L,
-            38758411L, 44218963L, 50231795L, 56832358L,
-            64057524L, 71945730L, 80537139L, 89873827L,
-            100000000L,
+        negLogSaturationPressure = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, 20769881L, 19033213L, 17493591L,
+            16120546L, 14889526L, 13780526L, 12777093L,
+            11865570L, 11034528L, 10274331L, 9576796L,
+            8934928L, 8342709L, 7794929L, 7287058L,
+            6815131L, 6375664L, 5965582L, 5582160L,
+            5222975L, 4885865L, 4568897L, 4270339L,
+            3988633L, 3722378L, 3470310L, 3231286L,
+            3004275L, 2788340L, 2582632L, 2386382L,
+            2198886L, 2019505L, 1847657L, 1682808L,
+            1524471L, 1372198L, 1225579L, 1084236L,
+            947822L, 816016L, 688522L, 565064L,
+            445389L, 329258L, 216452L, 106763L,
+            0L,
         ),
         liquidDensity = longArrayOf(
             374321470L, 374321470L, 374321470L, 374321470L,
@@ -321,45 +334,45 @@ private val DOMES: Map<Species, Dome> = mapOf(
             191845131L, 178914853L, 163648453L, 144079587L,
             100000000L,
         ),
-        vapourDensity = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 1L, 3L,
-            10L, 32L, 93L, 242L,
-            576L, 1270L, 2611L, 5052L,
-            9258L, 16167L, 27040L, 43512L,
-            67634L, 101903L, 149283L, 213221L,
-            297649L, 406995L, 546182L, 720642L,
-            936332L, 1199770L, 1518076L, 1899048L,
-            2351252L, 2884149L, 3508264L, 4235395L,
-            5078900L, 6054058L, 7178550L, 8473104L,
-            9962357L, 11676064L, 13650790L, 15932402L,
-            18579826L, 21670976L, 25312659L, 29658253L,
-            34942349L, 41557991L, 50266671L, 63017565L,
-            100000000L,
+        negLogVapourDensity = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, 20623813L, 18944303L, 17458747L,
+            16136996L, 14954764L, 13892280L, 12933290L,
+            12064306L, 11274047L, 10553001L, 9893086L,
+            9287389L, 8729957L, 8215626L, 7739895L,
+            7298815L, 6888905L, 6507080L, 6150597L,
+            5817010L, 5504125L, 5209973L, 4932783L,
+            4670955L, 4423041L, 4187727L, 3963818L,
+            3750222L, 3545940L, 3350049L, 3161693L,
+            2980075L, 2804441L, 2634073L, 2468273L,
+            2306356L, 2147629L, 1991373L, 1836815L,
+            1683094L, 1529196L, 1373866L, 1215430L,
+            1051471L, 878080L, 687828L, 461757L,
+            0L,
         ),
     ),
     Species.Argon to Dome(
-        saturationPressure = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 1L,
-            5L, 21L, 73L, 218L,
-            578L, 1391L, 3074L, 6316L,
-            12171L, 22175L, 38458L, 63843L,
-            101945L, 157241L, 235121L, 341912L,
-            484887L, 672241L, 913058L, 1217267L,
-            1595575L, 2059411L, 2620853L, 3292565L,
-            4087732L, 5019999L, 6103418L, 7352398L,
-            8781664L, 10406222L, 12241326L, 14302465L,
-            16605335L, 19165839L, 22000076L, 25124345L,
-            28555148L, 32309204L, 36403459L, 40855107L,
-            45681618L, 50900755L, 56530616L, 62589663L,
-            69096767L, 76071248L, 83532926L, 91502180L,
-            100000000L,
+        negLogSaturationPressure = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, 22262219L, 20147952L, 18327022L,
+            16743536L, 15354882L, 14128015L, 13036924L,
+            12060854L, 11183048L, 10389824L, 9669904L,
+            9013901L, 8413941L, 7863365L, 7356503L,
+            6888493L, 6455146L, 6052827L, 5678371L,
+            5329010L, 5002309L, 4696126L, 4408562L,
+            4137936L, 3882750L, 3641670L, 3413503L,
+            3197180L, 2991740L, 2796321L, 2610144L,
+            2432504L, 2262766L, 2100353L, 1944738L,
+            1795446L, 1652041L, 1514124L, 1381333L,
+            1253333L, 1129818L, 1010506L, 895138L,
+            783474L, 675292L, 570388L, 468570L,
+            369662L, 273500L, 179929L, 88807L,
+            0L,
         ),
         liquidDensity = longArrayOf(
             375388594L, 375388594L, 375388594L, 375388594L,
@@ -380,24 +393,24 @@ private val DOMES: Map<Species, Dome> = mapOf(
             182227088L, 170519710L, 156795281L, 139310717L,
             100000000L,
         ),
-        vapourDensity = longArrayOf(
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 0L,
-            0L, 0L, 0L, 1L,
-            7L, 25L, 80L, 226L,
-            569L, 1303L, 2750L, 5404L,
-            9982L, 17465L, 29138L, 46612L,
-            71839L, 107118L, 155082L, 218689L,
-            301199L, 406158L, 537383L, 698944L,
-            895166L, 1130626L, 1410173L, 1738949L,
-            2122424L, 2566449L, 3077321L, 3661866L,
-            4327542L, 5082572L, 5936106L, 6898426L,
-            7981204L, 9197837L, 10563879L, 12097613L,
-            13820824L, 15759863L, 17947153L, 20423390L,
-            23240864L, 26468716L, 30201705L, 34575893L,
-            39799406L, 46221124L, 54517730L, 66424729L,
-            100000000L,
+        negLogVapourDensity = longArrayOf(
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE, Long.MAX_VALUE,
+            Long.MAX_VALUE, 21847886L, 19807727L, 18055791L,
+            16536842L, 15208811L, 14039099L, 13002066L,
+            12077269L, 11248212L, 10501433L, 9825834L,
+            9212179L, 8652714L, 8140876L, 7671071L,
+            7238493L, 6838995L, 6468971L, 6125277L,
+            5805156L, 5506182L, 5226214L, 4963355L,
+            4715917L, 4482399L, 4261457L, 4051889L,
+            3852611L, 3662647L, 3481111L, 3307197L,
+            3140171L, 2979353L, 2824117L, 2673877L,
+            2528081L, 2386202L, 2247730L, 2112162L,
+            1978994L, 1847704L, 1717739L, 1588489L,
+            1459258L, 1329207L, 1197272L, 1062013L,
+            921318L, 771733L, 606644L, 409101L,
+            0L,
         ),
     ),
 )
@@ -438,30 +451,133 @@ internal fun alphaAt(temperatureR: Long, species: Species): Long {
     return bracket * bracket / SCALE
 }
 
+/** Natural logarithms are carried to six decimal places. See [Dome.negLogSaturationPressure]. */
+private const val NEG_LOG_SCALE = 1_000_000L
+
+/** `ln 2` in [NEG_LOG_SCALE], for the halving-and-remainder split in [expNeg]. */
+private const val LN2 = 693_147L
+
 /**
- * Linear interpolation into one of the dome's branches at reduced temperature [temperatureR].
+ * `2^(−j/64)` in [SCALE], for `j` in `0..64`.
+ *
+ * Shared by every fluid because this is arithmetic and not chemistry. Linear interpolation across a
+ * sixty-fourth of an octave is good to about 15 parts per million, two orders below the 0.112% the
+ * dome itself carries, so it contributes nothing to the error budget.
+ */
+private val POW2_NEG = longArrayOf(
+        100000000L, 98922801L, 97857206L, 96803090L,
+        95760328L, 94728799L, 93708382L, 92698956L,
+        91700404L, 90712609L, 89735454L, 88768825L,
+        87812608L, 86866692L, 85930965L, 85005318L,
+        84089642L, 83183829L, 82287774L, 81401371L,
+        80524517L, 79657108L, 78799042L, 77950220L,
+        77110541L, 76279908L, 75458221L, 74645386L,
+        73841307L, 73045890L, 72259040L, 71480667L,
+        70710678L, 69948984L, 69195494L, 68450121L,
+        67712777L, 66983376L, 66261832L, 65548061L,
+        64841978L, 64143501L, 63452548L, 62769038L,
+        62092891L, 61424027L, 60762368L, 60107837L,
+        59460356L, 58819850L, 58186243L, 57559461L,
+        56939432L, 56326081L, 55719337L, 55119129L,
+        54525387L, 53938040L, 53357020L, 52782259L,
+        52213689L, 51651244L, 51094857L, 50544464L,
+        50000000L,
+)
+
+/**
+ * `exp(−x / NEG_LOG_SCALE)`, in [SCALE] — the way back out of log space.
+ *
+ * Split into whole halvings and a remainder: `exp(−x) = 2^-n · 2^-f`, where the first is a shift and
+ * the second is one lookup in [POW2_NEG]. No division by a variable, no floating point, and the
+ * result is exact at the knots.
+ *
+ * ⚠️ **Guarded above forty halvings** rather than left to `shr`, which in Kotlin takes its count
+ * modulo 64 and would turn a very small pressure into a very large one. Forty halvings is `1e-12`
+ * of critical, far below anything [SCALE] can represent, so the guard costs nothing real.
+ */
+private fun expNeg(x: Long): Long {
+    if (x <= 0L) return SCALE
+    val halvings = x / LN2
+    if (halvings > 40L) return 0L
+    val remainder = x - halvings * LN2
+    // `t · 64` in [SCALE], where `t` is how far through the octave the remainder sits.
+    val position = remainder * 64L * SCALE / LN2
+    val index = (position / SCALE).toInt()
+    val fraction = position % SCALE
+    val low = POW2_NEG[index]
+    val base = low + (POW2_NEG[index + 1] - low) * fraction / SCALE
+    return base shr halvings.toInt()
+}
+
+/**
+ * Where [temperatureR] sits between knots [index] and `index + 1`, in [SCALE] — **measured in
+ * `1/Tr`, not in `Tr`**.
+ *
+ * That is the whole of what makes the logarithmic tables worth having. `ln P` is a straight line in
+ * reciprocal temperature and a curve in temperature, so interpolating the log against `Tr` recovers
+ * most of the accuracy and interpolating it against `1/Tr` recovers nearly all of it: 0.921% against
+ * 0.112% over the cold range, for one division.
+ *
+ * Rearranged so it never forms `1/Tr` explicitly — that would be a reciprocal of a reciprocal and
+ * would throw away most of the precision it was supposed to buy. The algebra reduces to
+ * `(i+1)·(64·Tr − i) / (64·Tr)`, and [scaledRatio] takes the fraction before the scale so the
+ * numerator cannot run away.
+ */
+private fun logFraction(index: Int, temperatureR: Long): Long {
+    val span = 64L * temperatureR
+    return scaledRatio((index + 1L) * (span - index * SCALE), span, SCALE)
+}
+
+/**
+ * Interpolation into one of the logarithmic branches, returning a value in [SCALE].
+ *
+ * Returns zero where either knot is out of the solver's reach, which is the honest rendering of a
+ * vapour pressure too small for the equation to have solved for at all.
+ *
+ * ### What it costs, measured
+ *
+ * - **Saturation pressure: 0.028%**, against 6% when this branch was interpolated linearly. The
+ *   figure the test reports is 0.12%, and that is [SCALE] quantisation rather than this function —
+ *   at the cold end of the sweep the pressure is around 800 units and one unit of rounding is an
+ *   eighth of a percent.
+ * - **Vapour density: 0.12%** over the cold range, against 7.0% linear. Its worst case is 7.2% and
+ *   sits in the last knot interval before the critical point, where the dome closes as `√(1 − Tr)`
+ *   and no evenly-sampled table can follow a cusp. A change of basis does not help that and was
+ *   never going to: it is a different defect, and it is the one [sample] documents.
+ */
+private fun sampleLog(table: LongArray, temperatureR: Long): Long {
+    val position = temperatureR * (N - 1)
+    val index = (position / SCALE).toInt()
+    if (index >= N - 1) return expNeg(table[N - 1])
+    // The first interval reaches down to absolute zero, where `1/Tr` has no value and the table has
+    // nothing to interpolate from anyway.
+    if (index <= 0) return 0L
+    val low = table[index]
+    val high = table[index + 1]
+    if (low == Long.MAX_VALUE || high == Long.MAX_VALUE) return 0L
+    return expNeg(low + (high - low) * logFraction(index, temperatureR) / SCALE)
+}
+
+/**
+ * Linear interpolation into the dome's one non-logarithmic branch at reduced temperature
+ * [temperatureR].
  *
  * Linear is enough, but the error is not uniform and it is worth knowing where it lives — all of it
  * is measured by `SaturationTest`, which re-solves the curve rather than trusting these numbers.
  *
- * - **Saturation pressure: within 1%** wherever it exceeds about 2 bar, and within 6% below that.
- *   The error is a chord fitted to an exponential and it is worst where the curve is steepest, which
- *   is the cold end — where the quantity itself is a hundredth of an atmosphere and the absolute
- *   error is a fortieth of one. A logarithmic table would remove it outright; a finer linear one
- *   only buys a factor of four per doubling.
- * - **The two densities: within 11%**, and essentially all of it in the one knot interval below
- *   the critical point — 10.1% for the vapour branch at `Tr = 0.99` against 1.2% at `Tr = 0.98`,
- *   and better than that everywhere colder. The dome closes
+ * ⚠️ **Only the liquid branch comes through here.** The other two are exponential and are stored as
+ * logarithms — see [sampleLog], which is where their accuracy is discussed. What is left for this
+ * one is the branch that is genuinely close to a straight line.
+ *
+ * - **The liquid density: within 5.1%**, and essentially all of it in the one knot interval below
+ *   the critical point — 0.033% everywhere colder than `Tr = 0.9`. The dome closes
  *   as `√(1 − Tr)`, so both branches reach the critical point with infinite slope, and no table
  *   sampled evenly in `Tr` can follow a cusp. Sampling evenly in `√(1 − Tr)` instead would remove
  *   it, at the cost of a square root on this path; not done, because nothing in the vessel runs
  *   near a critical point.
- * - **At the cold end** the values are exponentially small and a chord overestimates them. That is
- *   where a solid phase belongs and there is not one yet — see [Critical.triplePointKelvin], which
- *   is on file for exactly that and which nothing reads.
- *
- * Refining [N] moves the first two with a known exchange rate — the error is second order, so it
- * falls fourfold per doubling — if a use ever needs it to.
+ * Refining [N] moves it with a known exchange rate — the error is second order, so it falls
+ * fourfold per doubling — if a use ever needs it to. Changing the *basis* would not: this branch is
+ * already in the one it belongs in, which is exactly why the other two are not.
  */
 private fun sample(table: LongArray, temperatureR: Long): Long {
     val position = temperatureR * (N - 1)
@@ -486,7 +602,7 @@ private fun sample(table: LongArray, temperatureR: Long): Long {
  */
 fun saturationPressure(temperatureR: Long, species: Species): Long? {
     val dome = DOME_OF[species.ordinal] ?: return null
-    return if (temperatureR >= SCALE) null else sample(dome.saturationPressure, temperatureR)
+    return if (temperatureR >= SCALE) null else sampleLog(dome.negLogSaturationPressure, temperatureR)
 }
 
 /** Reduced density of saturated liquid at [temperatureR], or null above the critical point. */
@@ -498,7 +614,7 @@ fun saturatedLiquidDensity(temperatureR: Long, species: Species): Long? {
 /** Reduced density of saturated vapour at [temperatureR], or null above the critical point. */
 fun saturatedVapourDensity(temperatureR: Long, species: Species): Long? {
     val dome = DOME_OF[species.ordinal] ?: return null
-    return if (temperatureR >= SCALE) null else sample(dome.vapourDensity, temperatureR)
+    return if (temperatureR >= SCALE) null else sampleLog(dome.negLogVapourDensity, temperatureR)
 }
 
 /**

@@ -129,25 +129,18 @@ class SaturationTest {
             // eleven orders of magnitude. In the cold tail the true value is a handful of SCALE
             // units and a relative bound there asks the table to beat its own quantisation.
             //
-            // ⚠️ **The floor moved from 100 units to 12,000 when the law did, and that is the price
-            // of a curve that is now steep enough to be right.** Van der Waals put water's vapour
-            // pressure at Tr = 0.42 some 250x too high; a chord across a knot interval fitted that
-            // inflated curve well, because it was much flatter in log terms than the real one. The
-            // real curve is close to exponential down there, and linear interpolation of an
-            // exponential always overshoots — measured at up to 6% below Tr = 0.5, falling under
-            // 0.2% above Tr = 0.7.
+            // The floor is 100 units, which is about a thousandth of an atmosphere for water and
+            // is there for the cold tail, where the true value is a handful of SCALE units and a
+            // relative bound would be asking the table to beat its own quantisation.
             //
-            // 12,000 SCALE units is **0.026 bar for water**, against a true vapour pressure at that
-            // point of 1.6 bar. So the floor binds only where the pressure is small enough that a
-            // fortieth of an atmosphere is the whole quantity, and the relative bound governs
-            // everywhere the number is doing any work. If that ever stops being good enough the fix
-            // is not a finer table but a logarithmic one: this is the wrong interpolation basis for
-            // an exponential, and doubling [N] buys a factor of four where changing the basis buys
-            // the whole error.
+            // ⚠️ It was briefly 12,000 while the two exponential branches were interpolated
+            // linearly, which overshot by up to 7.7%. They are stored as logarithms now and
+            // interpolated against `1/Tr` — see [Dome.negLogSaturationPressure] — so the floor is
+            // back where it was and the relative bound does the work again.
             fun agrees(actual: Long, expected: Double, tolerance: Double): Boolean =
-                abs(actual - expected * SCALE) <= maxOf(12_000.0, tolerance * expected * SCALE)
+                abs(actual - expected * SCALE) <= maxOf(100.0, tolerance * expected * SCALE)
 
-            if (expectedP * SCALE > 1_000_000) {
+            if (expectedP * SCALE > 1000) {
                 worst = maxOf(worst, abs(actualP - expectedP * SCALE) / (expectedP * SCALE))
             }
             worstAbsolute = maxOf(worstAbsolute, abs(actualP - expectedP * SCALE))
@@ -162,18 +155,23 @@ class SaturationTest {
             // ⚠️ 11%, measured, and all of it in the single knot interval below the critical point:
             // 10.1% for the vapour branch and 5.1% for the liquid branch at Tr = 0.99, against
             // 1.2% and 0.5% at Tr = 0.98 and better than that everywhere colder.
-            assertTrue(agrees(actualLiquid, expectedLiquid, 0.11), "rhoL at Tr=$tr")
-            assertTrue(agrees(actualVapour, expectedVapour, 0.11), "rhoV at Tr=$tr")
+            assertTrue(agrees(actualLiquid, expectedLiquid, 0.08), "rhoL at Tr=$tr")
+            assertTrue(agrees(actualVapour, expectedVapour, 0.08), "rhoV at Tr=$tr")
         }
         // Both budgets stated outright, so that refining the table shows up as these falling rather
         // than as nothing visible changing. The absolute one is dominated by the near-critical
         // knots, where the dome is steepest, not by the cold tail.
         // Both budgets stated as measured rather than as round numbers, so that changing the table
-        // shows up here as a number moving. Relative is taken only where the pressure exceeds 1e6
-        // SCALE units — about 2.2 bar for water — since below that the interpolation error is
-        // dominated by the exponential and the absolute figure is the one that means anything.
-        assertTrue(worst < 0.01, "worst relative saturation-pressure error was $worst")
-        assertTrue(worstAbsolute < 150_000, "worst absolute saturation-pressure error was $worstAbsolute SCALE units")
+        // shows up here as a number moving.
+        //
+        // ⚠️ **0.12% relative, and it is [SCALE] quantisation rather than interpolation.** At the
+        // cold end of the sweep the saturation pressure is around 800 units, so one unit of rounding
+        // is an eighth of a percent and no table can do better without a finer fixed point. The
+        // interpolation's own contribution, measured where the values are large enough not to be
+        // quantisation-bound, is 0.028%. Both were around 6% while the branch was interpolated
+        // linearly — see [Dome.negLogSaturationPressure].
+        assertTrue(worst < 0.002, "worst relative saturation-pressure error was $worst")
+        assertTrue(worstAbsolute < 10_000, "worst absolute saturation-pressure error was $worstAbsolute SCALE units")
     }
 
     @Test
