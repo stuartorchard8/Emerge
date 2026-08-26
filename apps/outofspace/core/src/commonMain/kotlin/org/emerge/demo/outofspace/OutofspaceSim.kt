@@ -124,7 +124,6 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
-import org.emerge.demo.outofspace.world.scavengeFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
@@ -305,19 +304,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for ((tile, at) in ports) for (port in at) {
                 if (port.kind == PortKind.Output) w.pushOut(tile, port)
             }
-
-            // ── Scavenging ────────────────────────────────────────────────────
-            //
-            // Empty track lifts frost off the floor. After the advance and beside [pushOut], for
-            // the same reason that one is here: a tile that takes delivery this pass should not
-            // also be advanced this pass. See [scavengeFrost] — and note it adjusts the air's
-            // cohesion itself, because a hundred kilograms of frost leaving a tile is a hundred
-            // kilograms' worth of binding leaving with it.
-            val lifted = scavengeFrost(
-                state.grid, w.conduitsSnapshot(), w.rail, w.masses, w.airEnergy, w.airCohesion,
-            )
-            if (!lifted.isNothing) w.gasBecameSolid(lifted.mass, lifted.energy)
-
             w.readGauges()
             motion = w.motion.freeze()
         } else {
