@@ -122,6 +122,7 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
+import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
@@ -359,6 +360,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // pressure sweep in the first place.
             val offRails = offGas(w.rail.stuff, w.masses, w.airEnergy, structure::blocksAir)
             val offHoppers = offGas(w.buffers.stuff, w.masses, w.airEnergy, structure::blocksAir)
+            // Then the air burns, if it is hot enough and has both halves of a fire in it. Last of
+            // the three because the two above are what put fuel there: a volatile that came off a
+            // lump this tick can catch this tick, rather than waiting a pass for no reason a player
+            // could see. Rooms and pipes alike — a pipe full of methane is not fireproof, and the
+            // rate is a fraction of the fuel present, so the eighth of a tile a pipe holds changes
+            // nothing about the arithmetic.
+            //
+            // ⚠️ Each derives its own temperatures rather than borrowing the pressure step's. Those
+            // are taken later in the tick and *after* this pass has changed the air, so they answer
+            // about a room this one has already burned; and the two run on different periods, so
+            // there are ticks where they do not exist at all.
+            val inTheAir = combust(w.masses, w.airEnergy)
+            val inThePipes = combust(w.pipeMass, w.pipeEnergy)
             val toGasMass = offRails.toGasMass + offHoppers.toGasMass
             val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy
             val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
@@ -367,7 +381,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
             // The enthalpies, which since increment 4 are real: a fire is an energy source and
             // calcining is an energy sink, and the world holds more or less because of it.
-            val made = onRails.releasedEnergy + inHoppers.releasedEnergy
+            val made = onRails.releasedEnergy + inHoppers.releasedEnergy +
+                inTheAir.releasedEnergy + inThePipes.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
 

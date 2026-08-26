@@ -1,6 +1,9 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.COMBUSTIONS
+import org.emerge.demo.outofspace.chem.COMBUSTION_COUNT
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
+import org.emerge.demo.outofspace.chem.LOWEST_COMBUSTION_ONSET
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.chem.LOWEST_DECOMPOSITION_ONSET
 import org.emerge.demo.outofspace.chem.LOWEST_REDUCTION_ONSET
@@ -46,8 +49,12 @@ class ChemistryStep(
      * A fifth number and a different kind from the other four: those are mass changing medium and
      * the heat that rode along with it, which is energy *moving*. This is energy appearing out of
      * chemical bonds or disappearing into them, so it belongs to neither medium's ledger and needs
-     * telling on its own. Burning carbon is strongly negative — a fire is a source; calcining is
-     * strongly positive the other way, and is why a decomposer's element has to keep working.
+     * telling on its own.
+     *
+     * ⚠️ **Positive is energy released.** Burning is strongly positive — a fire is a source — and
+     * calcining is strongly negative, which is why a decomposer's element has to keep working.
+     * This sentence had the two signs the wrong way round until 2026-08-26; the arithmetic never
+     * did, and `reactionEnergy` adds this straight into `generatedEnergy`, which is a source term.
      */
     val releasedEnergy: Long,
 ) {
@@ -479,4 +486,102 @@ private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
     val ceiling = massAtReducedDensity(vapourR, species, VolumeField.FULL, VolumeField.FULL)
         ?: return Long.MAX_VALUE
     return if (ceiling > inAir) ceiling - inAir else 0L
+}
+
+/**
+ * A pass of every gas-phase fire over the whole of [air] — see
+ * [org.emerge.demo.outofspace.chem.Combustion] for why this is a shape of its own.
+ *
+ * ### Nothing crosses a ledger
+ *
+ * Both reagents come out of [air] and every product goes back into it, so the cargo identity is
+ * untouched and the air identity is untouched. **The total mass of a tile's gas is unchanged by
+ * this function, exactly**, which is the strongest statement available about it and the one
+ * `GasFireTest` makes. The only thing a pass reports is [ChemistryStep.releasedEnergy].
+ *
+ * ⚠️ **The tile's oxygen is contended, as in [oxidise], and by the same rule.** Every row is asked
+ * what it wants against one snapshot before any oxygen is taken; only then is the supply handed out.
+ * Hydrogen and methane in the same starved room both get a share, and which came first in the table
+ * changes nothing but the rounding.
+ *
+ * ⚠️ **Temperatures are derived when they are not given**, for [diffuseFluid]'s reason: a caller
+ * holding [airEnergy] knows them whether or not it passed them, and a fire that failed to start
+ * because an argument was omitted would be a silent one. Read once per tile, before anything
+ * reacts, so no row's rate depends on the heat an earlier row released.
+ */
+fun combust(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): ChemistryStep {
+    val tiles = air.data.size / Fluid.COUNT
+    val temperature = kelvin ?: gasKelvin(airEnergy, heatCapacity(tiles, air))
+
+    // Hoisted for the whole sweep rather than per tile — [oxidise]'s reason exactly.
+    val demands = LongArray(COMBUSTION_COUNT)
+    val allowed = LongArray(COMBUSTION_COUNT)
+
+    var released = 0L
+
+    for (i in 0 until tiles) {
+        val tile = TileIndex(i)
+        // Two compares, and between them they reject every tile in an ordinary vessel: a fire needs
+        // an oxidiser and it needs to be hot enough for the most eager row in the table.
+        val oxygenHere = air[tile, Fluid.Oxygen]
+        if (oxygenHere <= 0L) continue
+        val hot = temperature[i]
+        if (hot < LOWEST_COMBUSTION_ONSET) continue
+
+        demands.fill(0L)
+        var wanted = 0L
+        for (r in COMBUSTIONS.indices) {
+            val reaction = COMBUSTIONS[r]
+            val fuel = reaction.fuel.fluid ?: continue
+            val want = reaction.demand(air[tile, fuel], hot)
+            demands[r] = want
+            wanted += want
+        }
+        if (wanted <= 0L) continue
+        if (wanted <= oxygenHere) demands.copyInto(allowed) else apportionInto(demands, oxygenHere, allowed)
+
+        for (r in COMBUSTIONS.indices) {
+            if (allowed[r] <= 0L) continue
+            val reaction = COMBUSTIONS[r]
+            val fuel = reaction.fuel.fluid ?: continue
+            val burned = reaction.react(air[tile, fuel], allowed[r], hot)
+            if (burned.isNothing) continue
+
+            air.add(tile, fuel, -burned.fuel)
+            air.add(tile, Fluid.Oxygen, -burned.oxygen)
+
+            // Both reagents are handed out across the products, so the tile's gas weighs what it
+            // did — see [org.emerge.demo.outofspace.chem.Combustion.split].
+            val parts = reaction.split(burned.total)
+            for (p in reaction.products.indices) {
+                val mass = parts[p]
+                if (mass <= 0L) continue
+                val product = reaction.products[p].first.fluid ?: continue
+                air.add(tile, product, mass)
+            }
+
+            // Per kilogram of **fuel**, which is what the rate was a fraction of and what the row's
+            // enthalpy is quoted against.
+            released += applyAirEnthalpy(airEnergy, tile, -reaction.enthalpy(burned.fuel))
+        }
+    }
+
+    return if (released == 0L) ChemistryStep.NOTHING
+    else ChemistryStep(toGasMass = 0L, toGasEnergy = 0L, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = released)
+}
+
+/**
+ * [applyEnthalpy]'s twin for the atmosphere, and clamped for the same reason: a reaction may not
+ * drive a cell below zero energy, which is below absolute zero and would read back as a nonsensical
+ * temperature for as long as the gas sat there.
+ *
+ * Every row of [COMBUSTIONS] is exothermic, so in practice this only ever adds — the clamp is a
+ * guard against a future endothermic gas reaction rather than a mechanism.
+ */
+private fun applyAirEnthalpy(airEnergy: EnergyArray, tile: TileIndex, delta: Long): Long {
+    if (delta == 0L) return 0L
+    val applied = if (delta < 0L) maxOf(delta, -airEnergy[tile]) else delta
+    if (applied == 0L) return 0L
+    airEnergy[tile] += applied
+    return applied
 }
