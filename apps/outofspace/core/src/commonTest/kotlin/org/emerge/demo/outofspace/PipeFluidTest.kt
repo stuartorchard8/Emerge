@@ -19,6 +19,8 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
 import org.emerge.sim.core.PlayerId
+import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_OFFSET
+import org.emerge.demo.outofspace.OutofspaceReducer.FLUID_PERIOD
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -230,5 +232,24 @@ class PipeFluidTest {
         assertEquals(after.pipeAir, back.pipeAir, "the pipes came back holding something else")
         assertEquals(after.pipeMomentum, back.pipeMomentum, "the pipes came back becalmed")
         assertEquals(after.baselineAirMass, back.baselineAirMass, "the shared baseline did not survive")
+    }
+
+    /**
+     * The stamp the air, pressure and density overlays fade against — see
+     * [org.emerge.demo.outofspace.world.Cadence].
+     *
+     * Pinned against the schedule rather than a literal so the two cannot drift apart. Nothing in
+     * the sim reads it, which is exactly why it needs a test: a stamp that quietly went wrong would
+     * show up only as an overlay that fades oddly, and nothing else would ever complain.
+     */
+    @Test
+    fun `the fluid pass stamps the tick it ran on`() {
+        val s = run(charged(), FLUID_PERIOD * 4)
+        assertEquals(
+            FLUID_OFFSET.toLong(), s.cadences.fluid.writtenAtTick % FLUID_PERIOD,
+            "fluid fires on tick $FLUID_OFFSET of its period and stamped ${s.cadences.fluid.writtenAtTick}",
+        )
+        assertEquals(FLUID_PERIOD, s.cadences.fluid.spanTicks, "a fade lasts until the next fluid pass")
+        assertTrue(s.cadences.fluid.writtenAtTick < s.tick, "stamped in the future")
     }
 }

@@ -558,6 +558,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET)) {
+            cadences = cadences.copy(fluid = Cadence(state.tick, FLUID_PERIOD))
             // The temperatures this pass moves the vapour by, taken here rather than shared with the
             // pressure block. They were hoisted above it while the two fired together, because a
             // capacity sweep and a division per tile are not free twice; now that they are a tick

@@ -12,6 +12,7 @@ import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.Action
@@ -275,7 +276,11 @@ class OutofspaceRenderer {
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
         this.simTime = simTime
         railPacketAlpha = state.motion.cadence.progress(simTime)
-        if (overlay == Overlay.Heat) sampleHeat(state)
+        if (overlay != fadedOverlay) overlayFade.forget()
+        fadedOverlay = overlay
+        if (overlay != Overlay.None) {
+            overlayFade.sample(state.grid, cadenceOf(overlay, state), simTime) { overlayColor(overlay, state, it) }
+        }
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
         val starscapeBearing = if (camera == CameraFrame.Grid) state.ang else Coord(0)
@@ -405,22 +410,7 @@ class OutofspaceRenderer {
                     val tile = grid.tile(x, y)
                     val pressure = state.air.pressureAt(tile)
                     if (state[state.occupancy[tile]] == null && Negligible.pressure(pressure)) continue
-                    val tint = when (overlay) {
-                        Overlay.Heat -> heatColor(tile)
-                        Overlay.Air -> mixtureColor(state, tile)
-                        // A trace reads as vacuum rather than as "very thin air": see [Negligible].
-                        Overlay.Pressure -> pressure.let {
-                            if (Negligible.pressure(it)) Colors.OVERLAY_VACUUM
-                            else divergingColor(it.toFloat() / AMBIENT_PRESSURE)
-                        }
-                        Overlay.Density -> state.air.densityAt(tile).let {
-                            if (Negligible.gas(it)) Colors.OVERLAY_VACUUM
-                            else divergingColor(it.toFloat() / Stuff.AMBIENT_AIR.total)
-                        }
-                        Overlay.Flow -> Colors.FLOW_BACKDROP
-                        Overlay.None -> 0L
-                    }
-                    tileRect(x, y, 1f, tint)
+                    tileRect(x, y, 1f, overlayFade.color(tile))
                 }
             }
         }
@@ -1032,115 +1022,141 @@ class OutofspaceRenderer {
      * this used a 220K span, across which an 18K spread was a single flat wash of blue: technically
      * honest and completely useless. An absolute ramp still has to be scaled to the question.
      */
+
+    // ── The overlays' fade ────────────────────────────────────────────────────
+    //
+    // Every tint overlay is a picture of a field the sim rewrites once every eight ticks, so drawn
+    // straight each one is a slideshow at eight frames a second — and a diagnostic that flickers is
+    // one a player stops reading.
+    //
+    // ⛔ **The view remembers the values, the sim only says when.** [Motion] lives in the state
+    // because which of three joined neighbours a packet came from is genuinely unrecoverable
+    // downstream — the mover knows and the observer is guessing. A tile does not move, so two
+    // readings of its temperature or its air are unambiguous and anything that can remember what it
+    // drew last time can work the rest out. So the sim stamps *when* a pass ran (see [Cadence],
+    // which costs two numbers per pass) and the view keeps the *values*, which cost a grid.
+
     /**
-     * [a] to [b] at [f], channel by channel — the wire's value ramp.
+     * A grid of overlay colours, fading from what the last pass showed to what this one shows.
      *
-     * The whole readability argument for the signal layer rests on this: a wire you cannot see the
-     * state of is worse than a global channel, because at least a channel had a readout. A run that
-     * lights up as its sensor fills is the feature.
+     * ⚠️ **Colours, not the quantities behind them.** It is what makes one of these serve a
+     * temperature, a millimole count, a gas mass and a mixture identically — a mixture in
+     * particular has no sensible midpoint to interpolate, but the colour naming it does. It also
+     * keeps the ramps' kinks out of the fade: the heat ramp changes which pair of endpoints it
+     * mixes at ambient, and easing a kelvin across that would wobble where easing the colour
+     * does not.
+     *
+     * ⚠️ **It draws one pass behind, deliberately.** [to] can only be sampled once the pass has
+     * landed, so what it fades *from* has to be what the previous span was showing. The cost is an
+     * eighth of a second of lag on an overlay; buying it back means the sim carrying a spare copy
+     * of every field in the world.
      */
-    private fun lerpColor(a: Long, b: Long, f: Float): Long {
-        val t = f.coerceIn(0f, 1f)
-        fun ch(shift: Int): Int {
-            val from = ((a shr shift) and 0xFF).toInt()
-            val to = ((b shr shift) and 0xFF).toInt()
-            return (from + (to - from) * t).toInt()
+    private class Fading {
+        private var from = LongArray(0)
+        private var to = LongArray(0)
+        private var stamp = NEVER_SAMPLED
+        private var fade = 1f
+
+        /**
+         * Grid shape [from] and [to] are indexed against.
+         *
+         * ⚠️ **Shape rather than array length.** The grid can grow on one edge and shift every tile
+         * index sideways (see `VesselState.resized`) without changing how many tiles there are.
+         * Same length, different meaning, and a fade between two different tiles' values is a lie
+         * the player would read as the field moving.
+         */
+        private var width = -1
+        private var height = -1
+
+        /** Forget everything, so the next [sample] snaps. For an overlay that has just been switched. */
+        fun forget() {
+            stamp = NEVER_SAMPLED
         }
-        return rgba(ch(24), ch(16), ch(8), ch(0).toLong())
-    }
 
-    // ── The heat overlay's fade ───────────────────────────────────────────────
-    //
-    // The heat pass runs once every eight ticks, so without this the overlay is a slideshow at
-    // eight frames a second — and a diagnostic that flickers is one a player stops reading.
-    //
-    // ⛔ **The view remembers this, the sim does not, and that is the rule.** [Motion] lives in the
-    // state because which of three joined neighbours a packet came from is genuinely unrecoverable
-    // downstream — the mover knows and the observer is guessing. A temperature is not like that: a
-    // tile does not move, so two successive readings of it are unambiguous, and anything that can
-    // remember what it drew last time can work out the rest. So the sim stamps *when* the pass ran
-    // (see [Cadence], which costs two numbers) and the view keeps the *values*, which cost a grid.
-    //
-    // ⚠️ **It draws one pass behind, deliberately.** [heatTo] is sampled on the first frame that
-    // sees a new stamp, which is after the pass has landed, so the value it fades *from* has to be
-    // the one the previous span was showing — [heatFrom]. Fading to a target that is already true
-    // would mean sampling before a pass we only find out about afterwards. The cost is an eighth of
-    // a second of lag on an overlay; the alternative is the sim carrying a spare copy of every
-    // temperature in the world so a colour can arrive 125 ms sooner.
-
-    /** Tile temperatures as the overlay showed them last span, and as it shows them this one. */
-    private var heatFrom = IntArray(0)
-    private var heatTo = IntArray(0)
-
-    /** The stamp [heatTo] was sampled against, and how far this frame is through its span. */
-    private var heatStamp = NEVER_SAMPLED
-    private var heatFade = 1f
-
-    /**
-     * Grid shape [heatFrom] and [heatTo] are indexed against.
-     *
-     * ⚠️ **A resize is why these are checked rather than the array length.** The grid can grow on
-     * one edge and shift every tile index sideways (see `VesselState.resized`), and it can do that
-     * without changing how many tiles there are. Same size, different meaning, and a fade between
-     * two different tiles' temperatures is a lie the player would read as heat moving.
-     */
-    private var heatWidth = -1
-    private var heatHeight = -1
-
-    /**
-     * Rolls the overlay's two snapshots forward if the heat pass has run since the last frame.
-     *
-     * Snaps rather than fades — both snapshots set to the world as it is — whenever there is
-     * nothing honest to fade from: the first frame the overlay is drawn, a grid that has changed
-     * shape, a world that has just been loaded (its stamp goes backwards), or an overlay that has
-     * been switched off long enough to have missed a pass entirely.
-     */
-    private fun sampleHeat(state: VesselState) {
-        val grid = state.grid
-        val cadence = state.cadences.heat
-        val sameGrid = heatWidth == grid.width && heatHeight == grid.height
-        val sampled = heatStamp != NEVER_SAMPLED
-        // Guarded by `sampled`, which is what keeps the subtraction away from the sentinel.
-        val passes = if (sampled) cadence.writtenAtTick - heatStamp else -1L
-        when {
-            sameGrid && sampled && passes == 0L -> {}                       // still inside the span
-            sameGrid && sampled && passes in 1..cadence.spanTicks.toLong() -> {
-                val spare = heatFrom
-                heatFrom = heatTo
-                heatTo = spare
-                readKelvin(state, heatTo)
-            }
-            else -> {
-                if (heatTo.size != grid.size) {
-                    heatFrom = IntArray(grid.size)
-                    heatTo = IntArray(grid.size)
+        /**
+         * Rolls the two snapshots forward if [cadence]'s pass has run since the last frame.
+         *
+         * Snaps instead — both snapshots set to the world as it is — whenever there is nothing
+         * honest to fade from: the first frame this overlay is drawn, a grid that has changed shape,
+         * a world that has just been loaded and whose stamp therefore goes backwards, or an overlay
+         * that has been off long enough to have missed a pass entirely.
+         */
+        fun sample(grid: Grid, cadence: Cadence, simTime: Double, colorAt: (TileIndex) -> Long) {
+            val sameGrid = width == grid.width && height == grid.height
+            val sampled = stamp != NEVER_SAMPLED
+            // Guarded by `sampled`, which is what keeps the subtraction away from the sentinel.
+            val passes = if (sampled) cadence.writtenAtTick - stamp else -1L
+            when {
+                sameGrid && sampled && passes == 0L -> {}                   // still inside the span
+                sameGrid && sampled && passes in 1..cadence.spanTicks.toLong() -> {
+                    val spare = from
+                    from = to
+                    to = spare
+                    read(grid, colorAt)
                 }
-                readKelvin(state, heatTo)
-                heatTo.copyInto(heatFrom)
+                else -> {
+                    if (to.size != grid.size) {
+                        from = LongArray(grid.size)
+                        to = LongArray(grid.size)
+                    }
+                    read(grid, colorAt)
+                    to.copyInto(from)
+                }
             }
+            width = grid.width
+            height = grid.height
+            stamp = cadence.writtenAtTick
+            fade = cadence.progress(simTime)
         }
-        heatWidth = grid.width
-        heatHeight = grid.height
-        heatStamp = cadence.writtenAtTick
-        heatFade = cadence.progress(simTime)
+
+        private fun read(grid: Grid, colorAt: (TileIndex) -> Long) {
+            for (i in to.indices) to[i] = colorAt(TileIndex(i))
+        }
+
+        /** A tile's colour, part-way from what it was to what it is. */
+        fun color(tile: TileIndex): Long {
+            val a = from[tile.index]
+            val b = to[tile.index]
+            // Nearly every tile, nearly every frame: a field that did not move here.
+            return if (a == b) b else lerpColor(a, b, fade)
+        }
     }
 
-    private fun readKelvin(state: VesselState, into: IntArray) {
-        for (i in into.indices) into[i] = state.kelvinAt(TileIndex(i))
-    }
+    private val overlayFade = Fading()
+
+    /** Which overlay [overlayFade] is holding — switching overlay throws its snapshots away. */
+    private var fadedOverlay = Overlay.None
 
     /**
-     * A tile's overlay colour, part-way from what it was to what it is.
+     * The pass whose span an overlay fades across.
      *
-     * The **colour** is interpolated rather than the kelvin, so the ramp's kink at ambient — where
-     * it changes which pair of endpoints it is mixing — cannot show up as a wobble part-way through
-     * a fade. A tile whose temperature did not move skips both, which is nearly all of them.
+     * ⚠️ **Pressure fades on the fluid pass**, which is not the confusion it looks like:
+     * `Stuff.pressureAt` is millimoles of gas in a tile, and the pass that moves gas between tiles
+     * is diffusion. The pressure pass computes the forces that field exerts and moves nothing.
      */
-    private fun heatColor(tile: TileIndex): Long {
-        val from = heatFrom[tile.index]
-        val to = heatTo[tile.index]
-        return if (from == to) temperatureColor(to)
-        else lerpColor(temperatureColor(from), temperatureColor(to), heatFade)
+    private fun cadenceOf(overlay: Overlay, state: VesselState): Cadence = when (overlay) {
+        Overlay.Heat -> state.cadences.heat
+        Overlay.Air, Overlay.Pressure, Overlay.Density -> state.cadences.fluid
+        // The backdrop is one flat colour, so there is nothing about it to fade. The arrows over it
+        // are a movement rather than a colour and are still drawn straight from the tick's field.
+        Overlay.Flow, Overlay.None -> Cadence.SETTLED
+    }
+
+    /** An overlay's colour for a tile, as of right now — what [Fading] samples once a span. */
+    private fun overlayColor(overlay: Overlay, state: VesselState, tile: TileIndex): Long = when (overlay) {
+        Overlay.Heat -> temperatureColor(state.kelvinAt(tile))
+        Overlay.Air -> mixtureColor(state, tile)
+        // A trace reads as vacuum rather than as "very thin air": see [Negligible].
+        Overlay.Pressure -> state.air.pressureAt(tile).let {
+            if (Negligible.pressure(it)) Colors.OVERLAY_VACUUM
+            else divergingColor(it.toFloat() / AMBIENT_PRESSURE)
+        }
+        Overlay.Density -> state.air.densityAt(tile).let {
+            if (Negligible.gas(it)) Colors.OVERLAY_VACUUM
+            else divergingColor(it.toFloat() / Stuff.AMBIENT_AIR.total)
+        }
+        Overlay.Flow -> Colors.FLOW_BACKDROP
+        Overlay.None -> 0L
     }
 
     private fun temperatureColor(kelvin: Int): Long {
@@ -1285,10 +1301,6 @@ class OutofspaceRenderer {
         }
     }
 
-    private fun rgba(r: Int, g: Int, b: Int, a: Long): Long =
-        (r.coerceIn(0, 255).toLong() shl 24) or (g.coerceIn(0, 255).toLong() shl 16) or
-            (b.coerceIn(0, 255).toLong() shl 8) or a
-
     // ── Primitives ────────────────────────────────────────────────────────────
 
     /** A bar on the face a pump draws through, so which room it empties is visible without clicking. */
@@ -1351,8 +1363,31 @@ class OutofspaceRenderer {
          */
         const val SETTLED = Double.POSITIVE_INFINITY
 
-        /** [heatStamp] before the overlay has ever been drawn — distinct from any real tick. */
+        private fun rgba(r: Int, g: Int, b: Int, a: Long): Long =
+            (r.coerceIn(0, 255).toLong() shl 24) or (g.coerceIn(0, 255).toLong() shl 16) or
+                (b.coerceIn(0, 255).toLong() shl 8) or a
+
+        /** A [Fading]'s stamp before it has ever sampled — distinct from any real tick. */
         private const val NEVER_SAMPLED = Long.MIN_VALUE
+
+        /**
+         * [a] to [b] at [f], channel by channel — the wire's value ramp, and the overlays' fade.
+         *
+         * The whole readability argument for the signal layer rests on this: a wire you cannot see
+         * the state of is worse than a global channel, because at least a channel had a readout. A
+         * run that lights up as its sensor fills is the feature.
+         *
+         * In the companion because [Fading] is a nested class and needs it too.
+         */
+        private fun lerpColor(a: Long, b: Long, f: Float): Long {
+            val t = f.coerceIn(0f, 1f)
+            fun ch(shift: Int): Int {
+                val from = ((a shr shift) and 0xFF).toInt()
+                val to = ((b shr shift) and 0xFF).toInt()
+                return (from + (to - from) * t).toInt()
+            }
+            return rgba(ch(24), ch(16), ch(8), ch(0).toLong())
+        }
 
         /**
          * Raised from 20,000 when the flow overlay arrived: it draws up to four rects per visible
