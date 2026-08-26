@@ -16,7 +16,7 @@ import org.emerge.demo.outofspace.chem.apportionInto
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedTemperature
-import org.emerge.demo.outofspace.chem.saturatedVapourDensity
+import org.emerge.demo.outofspace.chem.saturatedVapourDensityAt
 import org.emerge.demo.outofspace.chem.vaporisationHeat
 import org.emerge.demo.outofspace.num.scaledRatio
 
@@ -502,8 +502,9 @@ fun offGas(
  * where liquid and vapour stop being different things and there is nothing to saturate.
  */
 private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
-    val temperatureR = reducedTemperature(kelvin, species) ?: return Long.MAX_VALUE
-    val vapourR = saturatedVapourDensity(temperatureR, species) ?: return Long.MAX_VALUE
+    // Null covers both escapes the doc names: no critical point on file, and hotter than the one
+    // there is. The reduced temperature this used to take first said only the former.
+    val vapourR = saturatedVapourDensityAt(kelvin, species) ?: return Long.MAX_VALUE
     val ceiling = massAtReducedDensity(vapourR, species, VolumeField.FULL, VolumeField.FULL)
         ?: return Long.MAX_VALUE
     return if (ceiling > inAir) ceiling - inAir else 0L

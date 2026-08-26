@@ -371,19 +371,39 @@ fun reducedPressure(densityR: Long, temperatureR: Long, species: Species): Long 
     val raw = pengRobinsonPressure(densityR, temperatureR, species)
     val vapour = saturatedVapourDensity(temperatureR, species) ?: return raw
     val liquid = condensedDensity(temperatureR, species) ?: return raw
-    val saturation = saturationPressure(temperatureR, species)!!
-    // The clamps are what keep the seam continuous. Physically they say nothing new — a vapour
-    // below its saturation density is below its saturation pressure, and a liquid above saturation
-    // density is above it, both by definition of the dome. They are here because the three tables
-    // are interpolated independently and so disagree slightly between knots, and that disagreement
-    // would otherwise show up as a small pressure *step* at the edge of the dome, which is exactly
-    // the kind of discontinuity an explicit solver turns into a standing oscillation.
-    return when {
+    return flattened(raw, densityR, vapour, liquid, saturationPressure(temperatureR, species)!!)
+}
+
+/**
+ * [reducedPressure] for a caller holding a whole [kelvin] — the dome read off
+ * [org.emerge.demo.outofspace.chem.DomeTable] rather than interpolated. [temperatureR] is still
+ * wanted because [pengRobinsonPressure] is a curve in reduced temperature and is not tabled; only
+ * the three saturation curves are.
+ */
+internal fun reducedPressureAt(densityR: Long, temperatureR: Long, kelvin: Int, species: Species): Long {
+    val raw = pengRobinsonPressure(densityR, temperatureR, species)
+    val vapour = saturatedVapourDensityAt(kelvin, species) ?: return raw
+    val liquid = condensedDensityAt(kelvin, species) ?: return raw
+    return flattened(raw, densityR, vapour, liquid, saturationPressureAt(kelvin, species)!!)
+}
+
+/**
+ * The Maxwell flattening itself, given the dome — the arithmetic both readings above share, stated
+ * once so there is one rule and not two.
+ *
+ * The clamps are what keep the seam continuous. Physically they say nothing new — a vapour below its
+ * saturation density is below its saturation pressure, and a liquid above saturation density is
+ * above it, both by definition of the dome. They are here because the three tables are interpolated
+ * independently and so disagree slightly between knots, and that disagreement would otherwise show
+ * up as a small pressure *step* at the edge of the dome, which is exactly the kind of discontinuity
+ * an explicit solver turns into a standing oscillation.
+ */
+private fun flattened(raw: Long, densityR: Long, vapour: Long, liquid: Long, saturation: Long): Long =
+    when {
         densityR <= vapour -> minOf(raw, saturation)
         densityR >= liquid -> maxOf(raw, saturation)
         else -> saturation
     }
-}
 
 /**
  * How the reduced pressure responds to being compressed a little further: `dPr/dρr`, in [SCALE].
@@ -736,7 +756,7 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
     val densityR = (reducedDensity(mass, species, volume, full) ?: return null)
         .coerceAtMost(MAX_REDUCED_DENSITY)
     val temperatureR = reducedTemperature(kelvin, species) ?: return null
-    return c.pressure * reducedPressure(densityR, temperatureR, species) / SCALE
+    return c.pressure * reducedPressureAt(densityR, temperatureR, kelvin, species) / SCALE
 }
 
 /**

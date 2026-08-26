@@ -368,6 +368,90 @@ fun saturatedVapourDensity(temperatureR: Long, species: Species): Long? {
 }
 
 /**
+ * The dome, sampled once per whole kelvin, per species — the form the simulation actually reads it in.
+ *
+ * ### Why a table on top of a table
+ *
+ * [DOMES] is 65 knots against *reduced* temperature, and reading it is not a lookup: [sampleLog]
+ * interpolates in log space against `1/Tr`, which costs a [logFraction] — one `scaledRatio`, with a
+ * variable denominator — and an [expNeg] on top. That is the right shape for a curve that has to
+ * answer at any real temperature. It is the wrong shape for how it is asked.
+ *
+ * ⚠️ **Every call the simulation makes arrives with a whole kelvin.**
+ * [org.emerge.demo.outofspace.world.settleCohesion] bisects on an `Int`,
+ * [org.emerge.demo.outofspace.world.diffuseFluid] is handed an `IntArray`, and
+ * [org.emerge.demo.outofspace.world.tilePressure] reads one per tile. There is nothing in between
+ * two kelvin for the interpolation to find, so it was re-deriving, millions of times a second, one
+ * of a few thousand distinct answers.
+ *
+ * ⚠️ Measured: `sampleLog` and the [logFraction] under it were **26% of every execution sample in
+ * the game**, spread across the fluid, pressure and diffusion phases.
+ *
+ * ### What it costs to hold
+ *
+ * One entry per kelvin from absolute zero up to the species' own critical temperature, because above
+ * that all three curves are null and there is nothing to hold. The hottest critical point in the
+ * table is zinc at 3,170 K, most are far colder, and only the fluids have domes at all — three
+ * `LongArray`s totalling well under a megabyte for the whole vessel's chemistry, built once.
+ *
+ * ⛔ **Memoisation, not approximation.** Each entry is what the curve itself returns at that kelvin,
+ * so every reading is bit-for-bit what interpolating would have produced. `DomeTableTest` asserts
+ * that against the curve at every kelvin of every species, which is the only thing that keeps this
+ * from becoming a second, quietly diverging source of truth.
+ */
+private class DomeTable(
+    val vapourDensity: LongArray,
+    val condensedDensity: LongArray,
+    val saturationPressure: LongArray,
+)
+
+private val DOME_AT: Array<DomeTable?> = Array(Species.COUNT) { ordinal ->
+    val species = Species.ALL[ordinal]
+    val critical = criticalOf(species)
+    // Both, and not just one: `condensedDensity` answers off `solidDensityR` below the triple point
+    // without consulting the dome at all, so a species with a critical point and no dome would tabulate
+    // two curves and be missing the third. Nothing in the game is in that position today, and the
+    // accessors fall back to the curve rather than assuming it stays that way.
+    if (critical == null || DOME_OF[ordinal] == null) null
+    else DomeTable(
+        LongArray(critical.kelvin) { k -> saturatedVapourDensity(reducedTemperature(k, species)!!, species)!! },
+        LongArray(critical.kelvin) { k -> condensedDensity(reducedTemperature(k, species)!!, species)!! },
+        LongArray(critical.kelvin) { k -> saturationPressure(reducedTemperature(k, species)!!, species)!! },
+    )
+}
+
+/**
+ * Whether [kelvin] is inside [species]' table — i.e. non-negative and below its critical point.
+ *
+ * ⚠️ The bound is exactly the curve's own `temperatureR >= SCALE` test, not an approximation of it:
+ * `kelvin × SCALE / c.kelvin >= SCALE` holds precisely when `kelvin >= c.kelvin`, so the table ends
+ * where the answers start being null and the two agree at the seam by construction.
+ */
+private fun tabled(kelvin: Int, table: DomeTable?): Boolean =
+    table != null && kelvin >= 0 && kelvin < table.vapourDensity.size
+
+/** [saturatedVapourDensity] at a whole [kelvin] — see [DomeTable]. */
+fun saturatedVapourDensityAt(kelvin: Int, species: Species): Long? {
+    val table = DOME_AT[species.ordinal]
+    if (!tabled(kelvin, table)) return saturatedVapourDensity(reducedTemperature(kelvin, species) ?: return null, species)
+    return table!!.vapourDensity[kelvin]
+}
+
+/** [condensedDensity] at a whole [kelvin] — see [DomeTable]. */
+fun condensedDensityAt(kelvin: Int, species: Species): Long? {
+    val table = DOME_AT[species.ordinal]
+    if (!tabled(kelvin, table)) return condensedDensity(reducedTemperature(kelvin, species) ?: return null, species)
+    return table!!.condensedDensity[kelvin]
+}
+
+/** [saturationPressure] at a whole [kelvin] — see [DomeTable]. */
+fun saturationPressureAt(kelvin: Int, species: Species): Long? {
+    val table = DOME_AT[species.ordinal]
+    if (!tabled(kelvin, table)) return saturationPressure(reducedTemperature(kelvin, species) ?: return null, species)
+    return table!!.saturationPressure[kelvin]
+}
+
+/**
  * What fraction of a cell's volume is liquid, in [SCALE], for a cell inside the saturation dome —
  * the **lever rule**.
  *
@@ -382,9 +466,28 @@ fun saturatedVapourDensity(temperatureR: Long, species: Species): Long? {
 fun condensedFraction(densityR: Long, temperatureR: Long, species: Species): Long? {
     val vapour = saturatedVapourDensity(temperatureR, species) ?: return null
     val liquid = condensedDensity(temperatureR, species) ?: return null
-    if (densityR <= vapour) return 0L
-    if (densityR >= liquid) return SCALE
-    return (densityR - vapour) * SCALE / (liquid - vapour)
+    return leverRule(densityR, vapour, liquid)
+}
+
+/** [condensedFraction] at a whole [kelvin], off the table rather than the curve — see [DomeTable]. */
+fun condensedFractionAt(densityR: Long, kelvin: Int, species: Species): Long? {
+    val vapour = saturatedVapourDensityAt(kelvin, species) ?: return null
+    val liquid = condensedDensityAt(kelvin, species) ?: return null
+    return leverRule(densityR, vapour, liquid)
+}
+
+/**
+ * The lever rule itself, given the two branches — the arithmetic both readings above share.
+ *
+ * Split out so the *rule* is stated once and the two functions differ only in how they reach the
+ * dome. Two copies of `(ρ − ρv)/(ρl − ρv)` would be two places to get an inclusive bound wrong, and
+ * the bounds are load-bearing: [phaseAt] reads a cell at exactly the saturated liquid density as
+ * wholly liquid because this does.
+ */
+private fun leverRule(densityR: Long, vapour: Long, liquid: Long): Long = when {
+    densityR <= vapour -> 0L
+    densityR >= liquid -> SCALE
+    else -> (densityR - vapour) * SCALE / (liquid - vapour)
 }
 
 /**
@@ -402,8 +505,7 @@ fun condensedFraction(densityR: Long, temperatureR: Long, species: Species): Lon
  */
 fun condensedVolumeFraction(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
     val densityR = reducedDensity(mass, species, volume, full) ?: return 0L
-    val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
-    return condensedFraction(densityR, temperatureR, species) ?: 0L
+    return condensedFractionAt(densityR, kelvin, species) ?: 0L
 }
 
 /**
@@ -427,8 +529,7 @@ fun condensedVolumeFraction(mass: Long, species: Species, volume: Int, full: Int
  */
 fun vapourMass(mass: Long, species: Species, volume: Int, full: Int, kelvin: Int): Long {
     if (mass <= 0L) return mass
-    val temperatureR = reducedTemperature(kelvin, species) ?: return mass
-    val vapourR = saturatedVapourDensity(temperatureR, species) ?: return mass
+    val vapourR = saturatedVapourDensityAt(kelvin, species) ?: return mass
     val condensedShare = condensedVolumeFraction(mass, species, volume, full, kelvin)
     if (condensedShare <= 0L) return mass
     // Density × volume, with the fullness applied last so a pipe's eighth of a tile does not round
