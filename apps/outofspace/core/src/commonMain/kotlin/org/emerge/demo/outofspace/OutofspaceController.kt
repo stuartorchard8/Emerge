@@ -46,8 +46,40 @@ class OutofspaceController(
     /** Tracks the grid growing under the indices held below — see [followFrame]. */
     private val frame = FrameShift(initial)
 
+    /**
+     * Whether the world is stopped.
+     *
+     * ⛔ **A paused game still runs its loop.** The ticks it runs are *frozen* ones — see
+     * [OutofspaceReducer.freeze] — which apply the player's edits, advance the clock, and do nothing
+     * else whatsoever. Two things fall out of that and both are the reason for it:
+     *
+     * A half-finished animation **finishes**. Every interpolation in the game measures against the
+     * clock (see [org.emerge.demo.outofspace.world.Cadence]), so a clock that keeps moving lets a
+     * packet complete the step it was part-way through and an overlay complete its fade, and then
+     * settle — instead of freezing mid-slide, which is what a stopped world used to look like.
+     *
+     * The world can be **edited without time passing**. Placing a ghost or marking a machine for
+     * demolition used to force a whole live tick, because that was the only way an edit could reach
+     * the world; a click while stopped moved the game on by a tick of physics. Now it does not.
+     */
     var paused: Boolean = false
+
+    /**
+     * The game-speed dial. ⚠️ **Does not apply while [paused]** — a pause is not a speed, and the
+     * settling of a half-drawn animation should take the time it would have taken.
+     */
     var speed: Float = 1f
+
+    /**
+     * Ticks in which the world actually moved — what a player means by "tick".
+     *
+     * ⚠️ **Not `state.tick`**, which counts frozen ticks too because everything is stamped against
+     * it and it must never go backwards or stand still. Left as the readout, it would climb while
+     * the game was paused, which reads as time passing in a stopped world — the exact impression
+     * frozen ticks exist to avoid.
+     */
+    var livedTicks: Long = initial.tick
+        private set
 
     /** Optional profiler for per-phase tick analysis. Null unless [enableProfiling] is called. */
     var profiler: PipelineProfiler? = null
@@ -576,19 +608,18 @@ class OutofspaceController(
      * recoverable; the alternative is a freeze.
      */
     fun tick(deltaSeconds: Float, maxTicksPerFrame: Int = 8): VesselState {
-        if (!paused) {
-            accumulator += deltaSeconds.coerceIn(0f, 0.25f) * speed
-            var steps = 0
-            while (accumulator >= cfg.secondsPerTick && steps < maxTicksPerFrame) {
-                stepOnce()
-                accumulator -= cfg.secondsPerTick
-                steps++
-            }
-            if (steps == maxTicksPerFrame) accumulator = 0f
-        } else if (pending.isNotEmpty()) {
-            // Edits still land while paused, so the world reacts to a click when it is stopped.
-            stepOnce()
+        // ⛔ **The loop runs whether or not the game is stopped**, and [paused] decides only what
+        // kind of tick it runs. It used to branch here: a running game stepped, and a stopped one
+        // stepped anyway if an edit happened to be waiting — a whole tick of physics for a click.
+        // See [paused] for what the two consequences of this are and why they are the point.
+        accumulator += deltaSeconds.coerceIn(0f, 0.25f) * if (paused) 1f else speed
+        var steps = 0
+        while (accumulator >= cfg.secondsPerTick && steps < maxTicksPerFrame) {
+            if (paused) stepFrozen() else stepOnce()
+            accumulator -= cfg.secondsPerTick
+            steps++
         }
+        if (steps == maxTicksPerFrame) accumulator = 0f
         return stepper.state
     }
 
@@ -603,6 +634,21 @@ class OutofspaceController(
     fun stepOnce(): VesselState {
         stepper.profiler = profiler
         stepper.step(mapOf(localPlayer to takeInput()))
+        livedTicks++
+        followFrame()
+        return stepper.state
+    }
+
+    /**
+     * Advances the clock by exactly one tick and lets the player's edits land, and does nothing else
+     * — see [OutofspaceReducer.freeze]. What a paused game runs.
+     *
+     * Outside the stepper because a frozen tick is not the reducer's `reduce` and there is nothing
+     * to profile: it is one edit pass and a great many blocks declining to run.
+     */
+    private fun stepFrozen(): VesselState {
+        val next = OutofspaceReducer.freeze(cfg, stepper.state, mapOf(localPlayer to takeInput()))
+        stepper.reset(next, Tick(stepper.tick.value + 1))
         followFrame()
         return stepper.state
     }
@@ -659,6 +705,7 @@ class OutofspaceController(
         injectTile = TileIndex.NONE
         accumulator = 0f
         stepper.reset(newState, Tick(0))
+        livedTicks = newState.tick
         frame.reset(newState)
     }
 }

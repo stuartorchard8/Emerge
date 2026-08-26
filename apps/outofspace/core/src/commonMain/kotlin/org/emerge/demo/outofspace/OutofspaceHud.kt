@@ -90,7 +90,9 @@ class OutofspaceHud {
             navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
             panel(Anchor.TopLeft) {
                 title("OUT OF SPACE")
-                keyValue("Tick", s.tick.toString())
+                // The controller's count, not the state's: `state.tick` counts frozen ticks too and
+                // would climb while the game was stopped. See [OutofspaceController.livedTicks].
+                keyValue("Tick", controller.livedTicks.toString())
                 keyValue("FPS", fps.toInt().toString())
                 keyValue("Speed", "${controller.speed}x")
                 gap()

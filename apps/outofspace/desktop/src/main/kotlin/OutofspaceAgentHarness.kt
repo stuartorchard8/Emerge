@@ -69,7 +69,10 @@ import kotlin.math.roundToInt
  *                            # around it (default a field of them); `new 0` is an empty sky, which
  *                            # is what a script that counts or weighs its own rocks wants
  * load <path> | save <path>  # the text save format (Save.kt) — how a world gets handed over
- * run <ticks>                # advance exactly N ticks. The ONLY clock; nothing here is real-time
+ * run <ticks>                # advance exactly N ticks of the world. Ignores `pause` by design
+ * pause on|off               # stop the world without stopping the loop — see `frames`
+ * frames <n> [hz]            # N frames of real time, as a window would. The only way to watch a
+ *                            # paused world settle: the clock runs, the passes do not
  * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/VENT/... and Right|Down|Left|Up
  * place <x> <y>              # build with the current brush
  * fit                        # shrink grid back to ship + pad
@@ -185,6 +188,25 @@ object OutofspaceAgentHarness {
                     val n = t[1].toInt()
                     repeat(n) { controller.stepOnce() }
                     println("[agent] ran $n ticks -> tick ${controller.tick}")
+                }
+                // `pause on|off` — stops the world without stopping the loop. A paused game runs
+                // *frozen* ticks (see `OutofspaceReducer.freeze`): the clock advances, edits land,
+                // and nothing else happens. Paired with `frames` below, this is how a script gets at
+                // a stopped world at all — `run` steps live ticks and ignores the pause entirely,
+                // deliberately, since every existing script means "advance the world" by it.
+                "pause" -> {
+                    controller.paused = t.getOrNull(1) != "off"
+                    println("[agent] paused -> ${controller.paused}")
+                }
+                // `frames <n> [hz]` — n frames of *real time* through the same call a window makes,
+                // rather than n ticks. The only clock that can show a paused world settling: what
+                // makes a half-drawn slide finish is wall time reaching the controller while the
+                // passes decline to run, and `run` cannot express that.
+                "frames" -> {
+                    val n = t[1].toInt()
+                    val hz = t.getOrNull(2)?.toFloat() ?: 60f
+                    repeat(n) { controller.tick(1f / hz) }
+                    println("[agent] $n frames at ${hz}Hz -> tick ${controller.tick} (lived ${controller.livedTicks})")
                 }
                 // Turn the free-build privilege off, so a drawn run arrives as ghosts and has to be
                 // paid for out of the tank. The switch is a world setting with no UI -- see
