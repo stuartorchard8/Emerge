@@ -124,6 +124,7 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
+import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -474,7 +475,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         // When skipped, fluid state is carried forward from the previous tick.
-        var fluidAir = Stuff(w.masses, w.airEnergy)
+        var fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
         var pipeAirResult = state.pipeAir
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
@@ -482,12 +483,25 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
             val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy, roomKelvin)
-            fluidAir = result.air
+            fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
             fluidVentedMass = result.ventedMass
             fluidVentedEnergy = result.ventedEnergy
             // Pipes: same model, connectivity from player-drawn layout.
             val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin)
-            pipeAirResult = pipes.air
+
+            // ── Latent heat ───────────────────────────────────────────────────
+            //
+            // After the gas has moved, because the split between heat and bonds is a statement about
+            // where matter has ended up. `offGas` charges the latent heat when something evaporates
+            // off a lump — that is an event and there is a moment to bill. **Condensing is not an
+            // event**: phase is derived, so a tile of vapour that cools becomes frost with no code
+            // running, and nothing could credit the heat back. See [settleCohesion], which solves
+            // for the consistent split rather than applying a difference, because applying it
+            // oscillates with a gain above one.
+            val settledRoom = settleCohesion(w.masses, w.airEnergy, w.airCohesion)
+            val settledPipes = settleCohesion(w.pipeMass, w.pipeEnergy, w.pipeCohesion, volumes)
+            if (settledRoom != 0L || settledPipes != 0L) w.reactionEnergy(settledRoom + settledPipes)
+            pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
             // Pipes cannot vent to rim (ledger check).
             require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {
                 "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
@@ -1308,6 +1322,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** This tick's air temperature, as energy — mutable for the same reason [masses] is. */
         val airEnergy: EnergyArray = state.air.copyEnergy()
+        val airCohesion: EnergyArray = state.air.copyCohesion()
 
         /** This tick's momentum, mutable for the same reason [masses] is. */
         val momentumX: LongArray = state.momentum.copyX()
@@ -1316,6 +1331,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
         val pipeMass: MassArray = state.pipeAir.copyMass()
         val pipeEnergy: EnergyArray = state.pipeAir.copyEnergy()
+        val pipeCohesion: EnergyArray = state.pipeAir.copyCohesion()
         val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
         val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 

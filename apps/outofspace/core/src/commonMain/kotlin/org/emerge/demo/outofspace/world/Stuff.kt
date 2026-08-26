@@ -13,7 +13,29 @@ import org.emerge.demo.outofspace.chem.apportion
  * densityAt = mass/volume.
  * pressureAt = millimoles (not mass — lets heavy gas sink).
  */
-class Stuff(private val masses: MassArray, private val energies: EnergyArray) {
+class Stuff(
+    private val masses: MassArray,
+    private val energies: EnergyArray,
+    /**
+     * How much energy this field is holding in its own **bonds** — negative, and the ledger's third
+     * term. See [settleCohesion], which is the only thing that changes it.
+     *
+     * ⚠️ **Inside [Stuff] rather than beside it, for exactly the reason [energies] is.** A parallel
+     * cohesion array would go on describing matter that had been replaced, and it would do so
+     * silently: the number would look plausible and would inject or destroy energy on the next
+     * settlement. One object, three arrays, and no way to swap the air without swapping all of it.
+     *
+     * Derived from the other two when it is not given, so a freshly loaded world starts consistent
+     * and its first settlement is a no-op. **Nothing about this goes on disk** — it is a function of
+     * what does.
+     */
+    private val cohesion: EnergyArray = cohesionOf(
+        masses, gasKelvin(energies, heatCapacity(energies.data.size, masses)),
+    ),
+) {
+
+    /** The bond energy of every tile, for a caller that is about to settle it. */
+    fun copyCohesion(): EnergyArray = EnergyArray(cohesion.data.copyOf())
 
     fun massOf(tile: TileIndex, fluid: Fluid): Long = masses[MassIndex(tile, fluid)]
 
