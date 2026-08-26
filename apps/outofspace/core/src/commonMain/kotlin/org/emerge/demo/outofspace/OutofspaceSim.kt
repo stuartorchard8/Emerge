@@ -60,6 +60,7 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
+import org.emerge.demo.outofspace.world.Cadence
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.reach
@@ -377,7 +378,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // When skipped, heat state is carried forward from the previous tick.
         var conductedRadiated = 0L
         var conductedToAir = 0L
+        // Carried forward on a tick the pass skips, so it keeps saying when the pass last ran —
+        // which is the question the overlay is asking. See [Cadences].
+        var cadences = state.cadences
         if (shouldRun(state.tick, HEAT_PERIOD, HEAT_OFFSET)) {
+            cadences = cadences.copy(heat = Cadence(state.tick, HEAT_PERIOD))
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
                 grid = state.grid,
@@ -772,6 +777,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodyImpulseY = state.bodyImpulseY + handedY,
             motion = motion,
             impacts = bodiesDrifted.impacts,
+            cadences = cadences,
         ).bookedFrameTurn(state.pose).resized(w.fitRequested).also {
         if (_g0) profiler.recordPhase("motion", _g!!.elapsedNow().inWholeNanoseconds)
     }

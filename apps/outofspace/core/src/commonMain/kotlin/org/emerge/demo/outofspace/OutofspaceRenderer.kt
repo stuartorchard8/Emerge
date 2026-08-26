@@ -259,6 +259,9 @@ class OutofspaceRenderer {
      */
     private var railPacketAlpha: Float = 1f
 
+    /** The frame's place on the sim clock — see [OutofspaceController.simTime]. */
+    private var simTime: Double = SETTLED
+
     fun draw(
         state: VesselState,
         inspectTile: TileIndex,
@@ -270,7 +273,9 @@ class OutofspaceRenderer {
     ) {
         followAnchor(state, camera)
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
+        this.simTime = simTime
         railPacketAlpha = state.motion.cadence.progress(simTime)
+        if (overlay == Overlay.Heat) sampleHeat(state)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
         val starscapeBearing = if (camera == CameraFrame.Grid) state.ang else Coord(0)
@@ -401,7 +406,7 @@ class OutofspaceRenderer {
                     val pressure = state.air.pressureAt(tile)
                     if (state[state.occupancy[tile]] == null && Negligible.pressure(pressure)) continue
                     val tint = when (overlay) {
-                        Overlay.Heat -> temperatureColor(state.kelvinAt(tile))
+                        Overlay.Heat -> heatColor(tile)
                         Overlay.Air -> mixtureColor(state, tile)
                         // A trace reads as vacuum rather than as "very thin air": see [Negligible].
                         Overlay.Pressure -> pressure.let {
@@ -1044,6 +1049,100 @@ class OutofspaceRenderer {
         return rgba(ch(24), ch(16), ch(8), ch(0).toLong())
     }
 
+    // ── The heat overlay's fade ───────────────────────────────────────────────
+    //
+    // The heat pass runs once every eight ticks, so without this the overlay is a slideshow at
+    // eight frames a second — and a diagnostic that flickers is one a player stops reading.
+    //
+    // ⛔ **The view remembers this, the sim does not, and that is the rule.** [Motion] lives in the
+    // state because which of three joined neighbours a packet came from is genuinely unrecoverable
+    // downstream — the mover knows and the observer is guessing. A temperature is not like that: a
+    // tile does not move, so two successive readings of it are unambiguous, and anything that can
+    // remember what it drew last time can work out the rest. So the sim stamps *when* the pass ran
+    // (see [Cadence], which costs two numbers) and the view keeps the *values*, which cost a grid.
+    //
+    // ⚠️ **It draws one pass behind, deliberately.** [heatTo] is sampled on the first frame that
+    // sees a new stamp, which is after the pass has landed, so the value it fades *from* has to be
+    // the one the previous span was showing — [heatFrom]. Fading to a target that is already true
+    // would mean sampling before a pass we only find out about afterwards. The cost is an eighth of
+    // a second of lag on an overlay; the alternative is the sim carrying a spare copy of every
+    // temperature in the world so a colour can arrive 125 ms sooner.
+
+    /** Tile temperatures as the overlay showed them last span, and as it shows them this one. */
+    private var heatFrom = IntArray(0)
+    private var heatTo = IntArray(0)
+
+    /** The stamp [heatTo] was sampled against, and how far this frame is through its span. */
+    private var heatStamp = NEVER_SAMPLED
+    private var heatFade = 1f
+
+    /**
+     * Grid shape [heatFrom] and [heatTo] are indexed against.
+     *
+     * ⚠️ **A resize is why these are checked rather than the array length.** The grid can grow on
+     * one edge and shift every tile index sideways (see `VesselState.resized`), and it can do that
+     * without changing how many tiles there are. Same size, different meaning, and a fade between
+     * two different tiles' temperatures is a lie the player would read as heat moving.
+     */
+    private var heatWidth = -1
+    private var heatHeight = -1
+
+    /**
+     * Rolls the overlay's two snapshots forward if the heat pass has run since the last frame.
+     *
+     * Snaps rather than fades — both snapshots set to the world as it is — whenever there is
+     * nothing honest to fade from: the first frame the overlay is drawn, a grid that has changed
+     * shape, a world that has just been loaded (its stamp goes backwards), or an overlay that has
+     * been switched off long enough to have missed a pass entirely.
+     */
+    private fun sampleHeat(state: VesselState) {
+        val grid = state.grid
+        val cadence = state.cadences.heat
+        val sameGrid = heatWidth == grid.width && heatHeight == grid.height
+        val sampled = heatStamp != NEVER_SAMPLED
+        // Guarded by `sampled`, which is what keeps the subtraction away from the sentinel.
+        val passes = if (sampled) cadence.writtenAtTick - heatStamp else -1L
+        when {
+            sameGrid && sampled && passes == 0L -> {}                       // still inside the span
+            sameGrid && sampled && passes in 1..cadence.spanTicks.toLong() -> {
+                val spare = heatFrom
+                heatFrom = heatTo
+                heatTo = spare
+                readKelvin(state, heatTo)
+            }
+            else -> {
+                if (heatTo.size != grid.size) {
+                    heatFrom = IntArray(grid.size)
+                    heatTo = IntArray(grid.size)
+                }
+                readKelvin(state, heatTo)
+                heatTo.copyInto(heatFrom)
+            }
+        }
+        heatWidth = grid.width
+        heatHeight = grid.height
+        heatStamp = cadence.writtenAtTick
+        heatFade = cadence.progress(simTime)
+    }
+
+    private fun readKelvin(state: VesselState, into: IntArray) {
+        for (i in into.indices) into[i] = state.kelvinAt(TileIndex(i))
+    }
+
+    /**
+     * A tile's overlay colour, part-way from what it was to what it is.
+     *
+     * The **colour** is interpolated rather than the kelvin, so the ramp's kink at ambient — where
+     * it changes which pair of endpoints it is mixing — cannot show up as a wobble part-way through
+     * a fade. A tile whose temperature did not move skips both, which is nearly all of them.
+     */
+    private fun heatColor(tile: TileIndex): Long {
+        val from = heatFrom[tile.index]
+        val to = heatTo[tile.index]
+        return if (from == to) temperatureColor(to)
+        else lerpColor(temperatureColor(from), temperatureColor(to), heatFade)
+    }
+
     private fun temperatureColor(kelvin: Int): Long {
         val alpha = Colors.HEAT_ALPHA
         val f = ((kelvin - Temperature.AMBIENT_KELVIN).toFloat() / RAMP_SPAN).coerceIn(-1f, 1f)
@@ -1251,6 +1350,9 @@ class OutofspaceRenderer {
          * settled whatever the span, whatever the stamp, with no arithmetic to get wrong.
          */
         const val SETTLED = Double.POSITIVE_INFINITY
+
+        /** [heatStamp] before the overlay has ever been drawn — distinct from any real tick. */
+        private const val NEVER_SAMPLED = Long.MIN_VALUE
 
         /**
          * Raised from 20,000 when the flow overlay arrived: it draws up to four rects per visible

@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_OFFSET
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.logistics.Capacity
@@ -396,6 +397,44 @@ class HeatTest {
         }
         val grid = Grid(40, 28)
         assertEquals(digest(run(starterVessel(grid), 900)), digest(run(starterVessel(grid), 900)))
+    }
+
+    /**
+     * The stamp the heat overlay fades against — see [org.emerge.demo.outofspace.world.Cadence].
+     *
+     * Pinned against the schedule rather than a literal so the two cannot drift apart: change
+     * [HEAT_OFFSET] and this still passes, stamp it from the wrong tick and it does not. Nothing in
+     * the sim reads it, which is exactly why it needs a test — a stamp that quietly went wrong would
+     * show up only as an overlay that fades oddly, and nothing else would ever complain.
+     */
+    @Test
+    fun `the heat pass stamps the tick it ran on`() {
+        val grid = Grid(8, 6)
+        val s = run(starterVessel(grid), HEAT_PERIOD * 4)
+        assertEquals(
+            HEAT_OFFSET.toLong(), s.cadences.heat.writtenAtTick % HEAT_PERIOD,
+            "heat fires on tick $HEAT_OFFSET of its period and stamped ${s.cadences.heat.writtenAtTick}",
+        )
+        assertEquals(HEAT_PERIOD, s.cadences.heat.spanTicks, "a fade lasts until the next heat pass")
+        assertTrue(s.cadences.heat.writtenAtTick < s.tick, "stamped in the future")
+    }
+
+    /** A tick the pass skips must leave the stamp alone, or the fade restarts every frame. */
+    @Test
+    fun `a tick without a heat pass carries the stamp forward`() {
+        val grid = Grid(8, 6)
+        var s = run(starterVessel(grid), HEAT_PERIOD * 4)
+        val stamped = s.cadences.heat.writtenAtTick
+        // Ticks left before the next pass — worked out rather than assumed, because where in its
+        // period a run of N ticks leaves the world depends on [HEAT_OFFSET].
+        val quiet = (stamped + HEAT_PERIOD - s.tick).toInt()
+        assertTrue(quiet in 1 until HEAT_PERIOD, "expected to be mid-period, not $quiet ticks from a pass")
+        repeat(quiet) {
+            s = run(s, 1)
+            assertEquals(stamped, s.cadences.heat.writtenAtTick, "the stamp moved on a tick that did no heat")
+        }
+        s = run(s, 1)
+        assertEquals(stamped + HEAT_PERIOD, s.cadences.heat.writtenAtTick, "and then the next pass stamped it")
     }
 
     @Test

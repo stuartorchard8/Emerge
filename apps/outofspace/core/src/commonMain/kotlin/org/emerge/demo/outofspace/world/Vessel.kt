@@ -112,6 +112,13 @@ data class VesselState(
      */
     val impacts: List<Impact> = emptyList(),
     /**
+     * When the passes a view interpolates last ran — see [Cadences].
+     *
+     * Presentation only, exactly like [motion] and [impacts]. Unlike them it survives a resize
+     * untouched: it holds ticks and spans rather than anything indexed by tile.
+     */
+    val cadences: Cadences = Cadences(),
+    /**
      * Cumulative tiles the grid origin has moved since this world was created, in the world's own
      * frame — bumped whenever the grid grows on a near edge (see `growToFit`).
      *
