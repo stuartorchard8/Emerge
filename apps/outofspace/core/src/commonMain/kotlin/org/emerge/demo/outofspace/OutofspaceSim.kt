@@ -136,6 +136,7 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.PipelineProfiler
+import kotlin.time.TimeSource
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
  *
@@ -171,7 +172,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         profiler: PipelineProfiler?,
     ): VesselState {
         val _prof0 = profiler != null
-        val _prof = if (_prof0) System.nanoTime() else 0L
+        val _prof = if (_prof0) TimeSource.Monotonic.markNow() else null
         val w = Work(state)
 
         // Sorted by PlayerId for determinism across peers.
@@ -184,13 +185,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         val occupancy = Occupancy(w.originOf.copyOf())
-        if (_prof0) profiler.recordPhase("edit", System.nanoTime() - _prof)
+        if (_prof0) profiler.recordPhase("edit", _prof!!.elapsedNow().inWholeNanoseconds)
 
         // ── Machines ─────────────────────────────────────────────────────────────
         // Signals/networks/structure/openness only change when machines change, so
         // we compute them here and reuse between machine ticks (where nothing else
         // modifies them).
-        val _m0 = _prof0; val _m = if (_m0) System.nanoTime() else 0L
+        val _m0 = _prof0; val _m = if (_m0) TimeSource.Monotonic.markNow() else null
         var networks = SignalNetworks.none(w.grid.size)
         var signals = SignalField.none(w.grid.size)
         var openness = IntArray(w.grid.size)
@@ -301,7 +302,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 w[tile]?.addEnergySpread(added, w.grid, w.deck)
             }
         }
-        if (_m0) profiler.recordPhase("machines", System.nanoTime() - _m)
+        if (_m0) profiler.recordPhase("machines", _m!!.elapsedNow().inWholeNanoseconds)
 
         val motion: Motion
         if (shouldRun(state.tick, RAIL_PERIOD)) {
@@ -318,7 +319,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Same motion is still in progress from last time.
             motion = state.motion
         }
-        if (_prof0) profiler.recordPhase("rails", System.nanoTime() - _prof)
+        if (_prof0) profiler.recordPhase("rails", _prof!!.elapsedNow().inWholeNanoseconds)
 
         // A ghost that finished above is a wall now — see [Work.solidityChanged]. Everything below
         // reads `structure`, and the fluid step in particular would otherwise pour air back into the
@@ -326,7 +327,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         if (w.solidityChanged) structure = StructureMap.derive(w.grid, w.deck, openness)
 
         // ── Heat ──────────────────────────────────────────────────────────────────
-        val _h0 = _prof0; val _h = if (_h0) System.nanoTime() else 0L
+        val _h0 = _prof0; val _h = if (_h0) TimeSource.Monotonic.markNow() else null
         // When skipped, heat state is carried forward from the previous tick.
         var conductedRadiated = 0L
         var conductedToAir = 0L
@@ -343,10 +344,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             conductedToAir = result.toAir
             w.applyBodyHeat(bodies, result.energy)
         }
-        if (_h0) profiler.recordPhase("heat", System.nanoTime() - _h)
+        if (_h0) profiler.recordPhase("heat", _h!!.elapsedNow().inWholeNanoseconds)
 
         // ── Chemistry ─────────────────────────────────────────────────────────────
-        val _c0 = _prof0; val _c = if (_c0) System.nanoTime() else 0L
+        val _c0 = _prof0; val _c = if (_c0) TimeSource.Monotonic.markNow() else null
         //
         // After the heat, because temperature is what decides whether anything happens; before the
         // pressure and the fluid, so gas made this tick pushes and spreads in the tick it was made
@@ -402,7 +403,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 inTheAir.releasedEnergy + inThePipes.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
-        if (_c0) profiler.recordPhase("chemistry", System.nanoTime() - _c)
+        if (_c0) profiler.recordPhase("chemistry", _c!!.elapsedNow().inWholeNanoseconds)
 
         val edges = EdgeGrid(state.grid)
         val conduits = w.conduitsSnapshot()
@@ -433,7 +434,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 pipeVolumes = volumes,
             )
         }
-        if (_prof0) profiler.recordPhase("valves+pumps", System.nanoTime() - _prof)
+        if (_prof0) profiler.recordPhase("valves+pumps", _prof!!.elapsedNow().inWholeNanoseconds)
 
         // ── Pressure ──────────────────────────────────────────────────────────────
         //
@@ -457,7 +458,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pressureImpulseX: Long
         val pressureImpulseY: Long
         val pressureTorque: Long
-        val _p0 = _prof0; val _p = if (_p0) System.nanoTime() else 0L
+        val _p0 = _prof0; val _p = if (_p0) TimeSource.Monotonic.markNow() else null
         // Hoisted out of the block below because the fluid step wants the same two arrays and they
         // are not cheap — a heat capacity sweep and a division per tile, each. Taken *before*
         // diffusion on purpose, which is the same snapshot rule the pressure field is read under:
@@ -487,10 +488,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             pressureImpulseY = 0L
             pressureTorque = 0L
         }
-        if (_p0) profiler.recordPhase("pressure", System.nanoTime() - _p)
+        if (_p0) profiler.recordPhase("pressure", _p!!.elapsedNow().inWholeNanoseconds)
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
-        val _f0 = _prof0; val _f = if (_f0) System.nanoTime() else 0L
+        val _f0 = _prof0; val _f = if (_f0) TimeSource.Monotonic.markNow() else null
         // When skipped, fluid state is carried forward from the previous tick.
         var fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
         var pipeAirResult = state.pipeAir
@@ -524,11 +525,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 "a sealed pipe network vented ${pipes.ventedMass}g — a rim face was open"
             }
         }
-        if (_f0) profiler.recordPhase("fluid", System.nanoTime() - _f)
+        if (_f0) profiler.recordPhase("fluid", _f!!.elapsedNow().inWholeNanoseconds)
 
         // ── Flight ────────────────────────────────────────────────────────────────
         //
-        val _g0 = _prof0; val _g = if (_g0) System.nanoTime() else 0L
+        val _g0 = _prof0; val _g = if (_g0) TimeSource.Monotonic.markNow() else null
         val mass = vesselMass(w.grid, w.rail, conduits, w.deck, w.buffers)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
@@ -706,7 +707,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             motion = motion,
             impacts = bodiesDrifted.impacts,
         ).bookedFrameTurn(state.pose).resized(w.fitRequested).also {
-        if (_g0) profiler.recordPhase("motion", System.nanoTime() - _g)
+        if (_g0) profiler.recordPhase("motion", _g!!.elapsedNow().inWholeNanoseconds)
     }
     if (_prof0) profiler.reset()
     }

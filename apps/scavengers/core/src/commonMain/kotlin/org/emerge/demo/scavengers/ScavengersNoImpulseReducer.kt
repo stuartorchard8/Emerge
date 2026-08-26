@@ -15,6 +15,7 @@ import org.emerge.sim.core.sim.setImpulses
 
 import org.emerge.sim.core.physics.systems.IntegrationSystem
 import org.emerge.sim.core.physics.systems.ParticleSystem
+import org.emerge.sim.core.ecs.PipelineProfiler
 
 /**
  * Reducer used by thin clients that receive impulses over the wire rather than computing
@@ -32,6 +33,7 @@ class ScavengersNoImpulseReducer : SimReducer<ScavengersConfig, ScavengersState,
         cfg: ScavengersConfig,
         state: ScavengersState,
         inputs: Map<PlayerId, ScavengersInput>,
+        profiler: PipelineProfiler?,
     ): ScavengersState {
         val builder = SimBuilder(state.core)
         val scavengersScratch = builder.seedScavengersScratch(

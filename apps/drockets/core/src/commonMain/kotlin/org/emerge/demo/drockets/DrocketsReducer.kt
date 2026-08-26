@@ -9,6 +9,7 @@ import org.emerge.sim.core.sim.SimState
 import org.emerge.sim.core.sim.setImpulses
 
 import org.emerge.sim.core.physics.systems.*
+import org.emerge.sim.core.ecs.PipelineProfiler
 
 /**
  * Reducer for the Drockets demo. Composes engine physics systems with drocket-specific
@@ -67,6 +68,7 @@ class DrocketsReducer(
         cfg: DrocketsConfig,
         state: SimState,
         inputs: Map<PlayerId, DrocketsInput>,
+        profiler: PipelineProfiler?,
     ): SimState {
         val builder = SimBuilder(state)
         if (executor != null) {

@@ -85,6 +85,7 @@ class ScavengersReducer(
         cfg: ScavengersConfig,
         state: ScavengersState,
         inputs: Map<PlayerId, ScavengersInput>,
+        profiler: PipelineProfiler?,
     ): ScavengersState {
         val builder = SimBuilder(state.core)
         val scavengersScratch = builder.seedScavengersScratch(

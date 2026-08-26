@@ -16,6 +16,7 @@ import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
+import org.emerge.sim.core.ecs.PipelineProfiler
 
 /**
  * **Fluidlab** — the momentum-solving fluid simulation, extracted from Out of Space so it stays
@@ -193,6 +194,7 @@ object FluidlabReducer : SimReducer<FluidlabConfig, FluidlabState, FluidlabInput
         cfg: FluidlabConfig,
         state: FluidlabState,
         inputs: Map<PlayerId, FluidlabInput>,
+        profiler: PipelineProfiler?,
     ): FluidlabState {
         val grid = state.grid
         val mass = state.air.copyGrams()

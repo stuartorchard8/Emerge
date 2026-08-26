@@ -3,6 +3,7 @@ package org.emerge.demo.template
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.SimInput
 import org.emerge.sim.core.SimReducer
+import org.emerge.sim.core.ecs.PipelineProfiler
 
 /**
  * The simulation. Replace all of this with your game — it exists to show the shape the engine
@@ -101,6 +102,7 @@ object TemplateReducer : SimReducer<TemplateConfig, TemplateState, TemplateInput
         cfg: TemplateConfig,
         state: TemplateState,
         inputs: Map<PlayerId, TemplateInput>,
+        profiler: PipelineProfiler?,
     ): TemplateState {
         val ordered = inputs.entries.sortedBy { it.key.value }
         if (ordered.any { it.value.clear }) {
