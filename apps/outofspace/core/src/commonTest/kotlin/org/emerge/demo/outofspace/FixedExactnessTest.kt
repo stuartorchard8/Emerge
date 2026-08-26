@@ -40,7 +40,11 @@ class FixedExactnessTest {
         -1L, -1_000_000_007L, -4_000_000_000_000_000L,
     )
 
-    private val scales = longArrayOf(1L, 1000L, 100_000_000L, Int.MAX_VALUE.toLong())
+    // The last two are what makes the *swap* path reachable: a scale big enough that the divisor
+    // fails `d <= MAX / scale`, against a numerator small enough that it passes `d <= MAX / n`.
+    private val scales = longArrayOf(
+        1L, 1000L, 100_000_000L, Int.MAX_VALUE.toLong(), 322_000_000_000L, Long.MAX_VALUE / 4,
+    )
 
     @Test
     fun `the split form and the 128-bit product agree everywhere both are defined`() {

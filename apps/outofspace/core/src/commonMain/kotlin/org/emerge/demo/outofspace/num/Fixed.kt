@@ -60,9 +60,17 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
     // nothing and turns a crash a long way from its cause into an ordinary result.
     if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
     // Below this, `remainder × scale` cannot overflow, because the remainder is smaller than `d`.
-    if (fitsSplit(numerator, denominator, scale)) {
-        // Exact, and for both signs: Kotlin truncates toward zero and `%` takes the dividend's sign,
-        // so the whole part and the remainder always agree about which way they lean.
+    // Exact, and for both signs: Kotlin truncates toward zero and `%` takes the dividend's sign,
+    // so the whole part and the remainder always agree about which way they lean.
+    if (denominator <= Long.MAX_VALUE / scale) {
+        return numerator / denominator * scale + numerator % denominator * scale / denominator
+    }
+    // The same split with the two factors swapped, which is the *other* thing to try before giving
+    // up — see [swapFits].
+    if (swapFits(numerator, denominator)) {
+        return scale / denominator * numerator + scale % denominator * numerator / denominator
+    }
+    if (productFits(numerator, scale)) {
         return numerator / denominator * scale + numerator % denominator * scale / denominator
     }
     return mulDiv(numerator, scale, denominator, round = false)
@@ -91,9 +99,15 @@ fun scaledRatio(numerator: Long, denominator: Long, scale: Long): Long {
  */
 fun scaledRatioRounded(numerator: Long, denominator: Long, scale: Long): Long {
     if (denominator <= 0L || numerator == 0L || scale <= 0L) return 0L
-    if (fitsSplit(numerator, denominator, scale)) {
-        val whole = numerator / denominator * scale
-        val part = numerator % denominator * scale
+    // The factors, in whichever order lets the split hold them — see [scaledRatio], which chooses
+    // between the same three cases for the same reasons. `n × s / d` does not care which of the two
+    // it multiplies first, and rounding a value that is already exact cannot care either.
+    val swap = denominator > Long.MAX_VALUE / scale && swapFits(numerator, denominator)
+    val top = if (swap) scale else numerator
+    val factor = if (swap) numerator else scale
+    if (swap || denominator <= Long.MAX_VALUE / scale || productFits(numerator, scale)) {
+        val whole = top / denominator * factor
+        val part = top % denominator * factor
         var q = part / denominator
         val r = part % denominator
         // `2×|r| ≥ d` said without the doubling, which would overflow for a denominator past 2^62.
@@ -103,6 +117,21 @@ fun scaledRatioRounded(numerator: Long, denominator: Long, scale: Long): Long {
     }
     return mulDiv(numerator, scale, denominator, round = true)
 }
+
+/**
+ * Whether the split can hold `n × s / d` with the factors **swapped** — `s / d × n` instead.
+ *
+ * `n × s / d` does not care which of its two factors it multiplies first, and neither of the two
+ * orders is exact where the other is not, so if either fits the split, use it. That is the shape
+ * `rotScale` has and the reason it kept reaching [mulDiv] even after the fast paths landed: a
+ * fraction over `Flight.FRAC_ONE` scaled by a momentum, where the *scale* is the big term and the
+ * numerator is the small one. Written the other way round the remainder is smaller than `FRAC_ONE`
+ * and the factor is a fraction no larger, so the product is well inside a `Long`.
+ *
+ * ⚠️ Only for a positive numerator, because it becomes the scale and [scaledRatio] divides by that.
+ */
+private fun swapFits(numerator: Long, denominator: Long): Boolean =
+    numerator > 0L && denominator <= Long.MAX_VALUE / numerator
 
 /**
  * Whether the split form above is safe — i.e. whether `(n % d) × scale` and `n / d × scale` both fit.
@@ -125,8 +154,7 @@ fun scaledRatioRounded(numerator: Long, denominator: Long, scale: Long): Long {
  * built from quantities no larger than `n` (`|n / d| ≤ |n|` and `|n % d| ≤ |n|`), so it bounds them
  * as well. The body it guards is unchanged, which is what makes this bit-for-bit the same answer.
  */
-private fun fitsSplit(numerator: Long, denominator: Long, scale: Long): Boolean {
-    if (denominator <= Long.MAX_VALUE / scale) return true
+private fun productFits(numerator: Long, scale: Long): Boolean {
     // `Long.MIN_VALUE` has no positive magnitude; it cannot fit whatever the scale, so say so
     // rather than negating it into itself.
     if (numerator == Long.MIN_VALUE) return false
