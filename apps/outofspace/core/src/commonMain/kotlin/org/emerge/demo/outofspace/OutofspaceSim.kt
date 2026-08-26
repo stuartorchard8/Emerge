@@ -497,7 +497,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val _f0 = _prof0; val _f = if (_f0) TimeSource.Monotonic.markNow() else null
         // When skipped, fluid state is carried forward from the previous tick.
         var fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
-        var pipeAirResult = state.pipeAir
+        // ⛔ **The working copy, not `state.pipeAir`** — the same default the room air gets one line
+        // up, and for the same reason. This read from last tick's state, so anything that moved gas
+        // out of a pipe on a tick the fluid step skipped had the pipe's contents *restored*
+        // underneath it: `cutOpen` put the gas in the room and the pipe kept it too, which the
+        // shared ledger reports as gas minted out of nothing. `combust` in the pipes lost the same
+        // way. Nothing caught it because every subsystem that touches the pipe layer used to fire on
+        // the fluid's own tick, so the block below always overwrote this before it could be seen.
+        var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         if (shouldRun(state.tick, FLUID_PERIOD)) {

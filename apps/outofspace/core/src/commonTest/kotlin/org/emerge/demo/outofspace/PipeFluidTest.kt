@@ -173,6 +173,35 @@ class PipeFluidTest {
     }
 
     @Test
+    fun `a pipe emptied on a tick the fluid step skips still empties`() {
+        // ⛔ The pipe layer used to be written back to the state **only inside the fluid block**,
+        // while the room air was written back on every tick. Anything that moved gas out of a pipe
+        // on any other tick therefore put it in the room and then had the pipe's copy restored from
+        // last tick's state -- the gas arrived without leaving, and the ledger says so.
+        //
+        // It stayed hidden because every subsystem that touches the pipes used to fire on the same
+        // tick the fluid did. They no longer do (see `OutofspaceReducer`'s offsets), so this is now
+        // the ordinary case rather than the awkward one; it was always a bug.
+        val head = grid.tile(3, 4)
+        // Every phase of the period, so this cannot pass by landing on a lucky tick -- which is
+        // exactly how the test below missed it.
+        for (delay in 0 until OutofspaceReducer.FLUID_PERIOD) {
+            val start = run(charged(), delay)
+            val roomBefore = start.air.totalMass
+            val after = OutofspaceReducer.reduce(
+                cfg, start, mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Remove(head)))),
+            )
+            assertEquals(0L, pipeMass(after, head), "the removed cell kept its gas, $delay ticks in")
+            assertTrue(after.air.totalMass > roomBefore, "the gas did not arrive in the room, $delay ticks in")
+            assertEquals(
+                after.baselineAirMass,
+                after.atmosphereMass + after.airVentedMass,
+                "cutting a pipe $delay ticks in minted or destroyed gas",
+            )
+        }
+    }
+
+    @Test
     fun `cutting a pipe lets what was in it out into the room`() {
         val start = charged()
         val head = grid.tile(3, 4)
