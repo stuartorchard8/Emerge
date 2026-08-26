@@ -239,9 +239,9 @@ class Critical(
      *
      * ⚠️ **Clamped to [MAX_REDUCED_DENSITY], and that clamp is now a mechanism rather than a
      * guard.** It was a guard while five fluids had domes and all of them landed between 3.19 and
-     * 3.82 against a wall at 3.95. Three of the twelve now reach it: ammonia at 4.40, sulfur
-     * dioxide at 4.19 and sulfur at 10.50, the last because [Species.Sulfur] is atomic where its
-     * critical constants describe S8.
+     * 3.82 against a wall at 3.95. Four of the twenty-two now reach it: ammonia at 4.40, sulfur
+     * dioxide at 4.19, chlorine at 3.95 and sulfur at 10.50 — the last because [Species.Sulfur] is
+     * atomic where its critical constants describe S8.
      *
      * What that costs is a solid that reads *less dense than it is*, so a tile packed with frozen
      * ammonia answers [FluidPhase.Separating] where it should answer [FluidPhase.Solid]. It costs
@@ -480,6 +480,38 @@ val CRITICAL: Map<Species, Critical> = mapOf(
     // because a sulfur that condenses ten kelvin late is a great deal closer than a sulfur that is
     // an ideal gas at thirteen hundred kelvin, which is what it was.
     Species.Sulfur to critical(1314, 207.0, 0.207, 388, Species.Sulfur),
+
+    // ── The noble gases and the halogens ──────────────────────────────────────
+    //
+    // Cheap to add and all of them land within a kelvin: these are the substances the law of
+    // corresponding states was *fitted to*, and their acentric factors sit within a few hundredths
+    // of zero. The halogens are stored diatomic ([Species.Fluorine] is 38 g/mol, which is F2), so
+    // unlike sulfur their molar mass is the molecule the critical constants describe.
+    Species.Neon to critical(44, 26.79, -0.0387, 25, Species.Neon),
+    Species.Krypton to critical(209, 55.00, -0.002, 116, Species.Krypton),
+    Species.Xenon to critical(290, 58.40, 0.002, 161, Species.Xenon),
+    Species.Fluorine to critical(144, 51.72, 0.0530, 53, Species.Fluorine),
+    Species.Chlorine to critical(417, 77.10, 0.0688, 172, Species.Chlorine),
+    Species.Bromine to critical(584, 103.40, 0.1286, 266, Species.Bromine),
+    Species.Iodine to critical(819, 117.00, 0.1115, 387, Species.Iodine),
+
+    // ── The volatile metals, which are the ones to be careful about ───────────
+    //
+    // ⚠️ **Mercury's critical point is measured; zinc's and cadmium's are extrapolations.** A metal
+    // critical point sits at thousands of kelvin and thousands of bar, and only mercury's is
+    // experimentally reachable — the other two are model extrapolations carrying perhaps twenty per
+    // cent. Their acentric factors are not tabulated at all, so they are derived here by the
+    // **Edmister correlation from their measured normal boiling points**, which is a derivation from
+    // a measurement rather than a number somebody liked.
+    //
+    // What that buys is worth the caveat. These three are in [Fluid] because a roasting bed loses
+    // them as vapour; without a dome that vapour was an ideal gas for ever and could never come back
+    // out of the air, so a roaster leaked zinc into the atmosphere permanently. `PhaseRealityTest`
+    // pins each of them to its *boiling point*, which is measured, and that is the number the game
+    // actually feels.
+    Species.Mercury to critical(1750, 1720.0, -0.167, 234, Species.Mercury),
+    Species.Zinc to critical(3170, 2900.0, -0.1216, 693, Species.Zinc),
+    Species.Cadmium to critical(2570, 2000.0, -0.0400, 594, Species.Cadmium),
 )
 
 // ⛔ **Helium is deliberately absent.** Its critical temperature is 5.2 K — colder than anything a
@@ -488,9 +520,7 @@ val CRITICAL: Map<Species, Critical> = mapOf(
 // factor is −0.39, which would give the α function a negative κ and send attraction the wrong way
 // with temperature; there is nothing to gain and a pathology to import.
 //
-// The remaining absentees are the halogens, the heavier noble gases and the volatile metals. Each
-// needs the same four measured numbers and a heat of sublimation, and the metals need care: their
-// critical points are extrapolations rather than measurements.
+// It is the only absentee. Every other fluid the vessel can hold has a dome.
 
 /**
  * The largest reduced pressure [vanDerWaalsPressure] will report.

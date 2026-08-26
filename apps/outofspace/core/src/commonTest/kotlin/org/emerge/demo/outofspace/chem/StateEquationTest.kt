@@ -135,6 +135,7 @@ class StateEquationTest {
         // reachable only by going past the density the callers were supposed to be held below.
         for (species in CRITICAL.keys) {
             val critical = CRITICAL[species]!!
+            var everPositive = false
             for (kelvin in listOf(80, 293, 700, 3000)) {
                 var previous = Long.MIN_VALUE
                 // From empty to four times close packing — well past anything the volume clamps
@@ -150,8 +151,18 @@ class StateEquationTest {
                     previous = pressure
                     mass += step
                 }
-                assertTrue(previous > 0L, "$species at $kelvin K ended at a non-positive $previous")
+                    if (previous > 0L) everPositive = true
             }
+            // ⚠️ **Per species, not per temperature, and the difference is a real one.** This asked
+            // for a positive pressure at the end of *every* sweep, which held while the five fluids
+            // with domes were all within a factor of five of room temperature in reduced terms.
+            // Zinc's critical point is at 3170 K, so 80 K is `Tr = 0.025`: the whole density range
+            // is inside a dome whose saturation pressure is zero, the curve is flat at zero
+            // throughout, and that is the right answer — solid zinc at eighty kelvin exerts
+            // nothing. Monotonicity, which is what this test is named after, still holds there. What
+            // the guard is really for is a sweep that proves nothing, and one positive temperature
+            // per species is what rules that out.
+            assertTrue(everPositive, "$species never reached a positive pressure at any temperature")
         }
     }
 

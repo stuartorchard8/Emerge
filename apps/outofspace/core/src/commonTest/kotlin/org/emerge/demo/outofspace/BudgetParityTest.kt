@@ -137,6 +137,17 @@ class BudgetParityTest {
                 Species.SulfurDioxide -> 380_178L
                 Species.Hydrogen -> 25_841L
                 Species.Sulfur -> 163_705L
+                // The noble gases, the halogens and the volatile metals.
+                Species.Neon -> 395_446L
+                Species.Krypton -> 717_850L
+                Species.Xenon -> 856_691L
+                Species.Fluorine -> 443_218L
+                Species.Chlorine -> 426_299L
+                Species.Bromine -> 919_953L
+                Species.Iodine -> 1_178_348L
+                Species.Mercury -> 6_415_413L
+                Species.Zinc -> 1_931_035L
+                Species.Cadmium -> 2_830_434L
                 else -> error("no critical density stated for $species")
             }
             assertEquals(expected, c.massPerTile.grams, "critical $species")

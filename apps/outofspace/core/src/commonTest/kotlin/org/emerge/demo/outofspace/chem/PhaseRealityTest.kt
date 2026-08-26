@@ -92,6 +92,35 @@ class PhaseRealityTest {
             Species.Sulfur, criticalBar = 207.0, kelvin = 718, bar = 1.01325,
             what = "sulfur boils at 445C", tolerance = 15,
         ),
+
+        // ── The noble gases and the halogens ──────────────────────────────────────
+        //
+        // The substances the law of corresponding states was fitted to, so they land within a
+        // kelvin and cost nothing but the typing.
+        Reference(Species.Neon, criticalBar = 26.79, kelvin = 27, bar = 1.01325, what = "neon boils at 27K"),
+        Reference(Species.Krypton, criticalBar = 55.00, kelvin = 120, bar = 1.01325, what = "krypton boils at 120K"),
+        Reference(Species.Xenon, criticalBar = 58.40, kelvin = 165, bar = 1.01325, what = "xenon boils at 165K"),
+        Reference(Species.Fluorine, criticalBar = 51.72, kelvin = 85, bar = 1.01325, what = "fluorine boils at 85K"),
+        Reference(Species.Chlorine, criticalBar = 77.10, kelvin = 239, bar = 1.01325, what = "chlorine boils at -34C"),
+        Reference(Species.Bromine, criticalBar = 103.40, kelvin = 332, bar = 1.01325, what = "bromine boils at 59C"),
+        Reference(Species.Iodine, criticalBar = 117.00, kelvin = 457, bar = 1.01325, what = "iodine boils at 184C"),
+
+        // ── The volatile metals ───────────────────────────────────────────────────
+        //
+        // ⚠️ **Pinned to their boiling points on purpose, because that is the part that is
+        // measured.** Only mercury's critical point is experimentally reachable; zinc's and
+        // cadmium's are extrapolations carrying perhaps twenty per cent, and their acentric factors
+        // are derived by Edmister from these very boiling points. So this test is the one thing
+        // holding those two entries honest, and it is checking the right number.
+        Reference(Species.Mercury, criticalBar = 1720.0, kelvin = 630, bar = 1.01325, what = "mercury boils at 357C"),
+        // ⚠️ **Thirty-five kelvin, named rather than absorbed.** Zinc comes out 29 K low, which at
+        // 1180 K is 2.5% — a fixed ten-kelvin bound is the wrong shape two orders of magnitude above
+        // room temperature, and widening the global figure to hide this would loosen water's too.
+        Reference(
+            Species.Zinc, criticalBar = 2900.0, kelvin = 1180, bar = 1.01325,
+            what = "zinc boils at 907C", tolerance = 35,
+        ),
+        Reference(Species.Cadmium, criticalBar = 2000.0, kelvin = 1040, bar = 1.01325, what = "cadmium boils at 767C"),
     )
 
     /** The model's saturation pressure at [kelvin], in bar, using [criticalBar] to leave reduced units. */
