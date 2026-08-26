@@ -423,20 +423,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pressureImpulseX: Long
         val pressureImpulseY: Long
         val pressureTorque: Long
+        // Hoisted out of the block below because the fluid step wants the same two arrays and they
+        // are not cheap — a heat capacity sweep and a division per tile, each. Taken *before*
+        // diffusion on purpose, which is the same snapshot rule the pressure field is read under:
+        // every tile answers about the tick it started, so nothing depends on visit order.
+        var roomKelvin: IntArray? = null
+        var pipeKelvin: IntArray? = null
         if (shouldRun(state.tick, FLUID_PERIOD)) {
+            roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
+            pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
             // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
             // that exists before the gas has been allowed to answer it.
-            val roomPressure = tilePressure(
-                state.grid.size, w.masses, gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses)),
-            )
+            val roomPressure = tilePressure(state.grid.size, w.masses, roomKelvin)
             val pushed = applyPressureForce(
                 edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
                 w.about,
             )
-            val pipePressure = tilePressure(
-                state.grid.size, w.pipeMass,
-                gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass)), volumes,
-            )
+            val pipePressure = tilePressure(state.grid.size, w.pipeMass, pipeKelvin, volumes)
             val pipePushed = applyPressureForce(
                 edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
                 tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
@@ -457,12 +460,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
         if (shouldRun(state.tick, FLUID_PERIOD)) {
-            val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy)
+            // With the temperatures, so the pass moves the vapour and leaves the frost and the
+            // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
+            val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy, roomKelvin)
             fluidAir = result.air
             fluidVentedMass = result.ventedMass
             fluidVentedEnergy = result.ventedEnergy
             // Pipes: same model, connectivity from player-drawn layout.
-            val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy)
+            val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin)
             pipeAirResult = pipes.air
             // Pipes cannot vent to rim (ledger check).
             require(pipes.ventedMass == 0L && pipes.ventedEnergy == 0L) {

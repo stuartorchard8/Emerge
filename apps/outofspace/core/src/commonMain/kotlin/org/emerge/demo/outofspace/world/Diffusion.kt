@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.vapourMass
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
@@ -157,10 +158,24 @@ fun diffuseFluid(
     apertures: ApertureField,
     masses: MassArray,
     energies: EnergyArray? = null,
+    kelvin: IntArray? = null,
     subSteps: Int = SUB_STEPS,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
+
+    // ── What is allowed to move ───────────────────────────────────────────────
+    //
+    // **Only the vapour.** See [vapourMass], and see `PhaseTransportTest` for why it matters: a
+    // condensed phase is not a steep gradient, it is a different substance sitting there, and
+    // differencing across the interface dissolves it.
+    //
+    // ⚠️ **Derived when it is not given, rather than defaulted to "no phases".** A caller that
+    // tracks [energies] knows its temperatures whether or not it happened to pass them, and a pass
+    // that silently moved ice because an argument was omitted is exactly the kind of hole that
+    // would go unnoticed for a year. Absent energies there is genuinely nothing to derive from, and
+    // that is the only case that gets the old behaviour — which is what the mass-only tests want.
+    val temperature = kelvin ?: energies?.let { gasKelvin(it, heatCapacity(tiles, masses)) }
 
     val startingMass = tileMass(tiles, masses)
     val deltaMass = MassArray(tiles)
@@ -200,7 +215,13 @@ fun diffuseFluid(
 
         var outMass = 0L
         masses.forEachFluid(tile) { fluid, count ->
-            val share = count * FACE_SHARE / SLOTS
+            // Whatever of this species is *not* frost or puddle. Free for a fluid with no critical
+            // point on file — the overwhelming majority of what a vessel's air is made of — because
+            // [vapourMass] answers those from the first line without touching the dome.
+            val mobile =
+                if (temperature == null) count
+                else vapourMass(count, fluid.species, VolumeField.FULL, VolumeField.FULL, temperature[tile.index])
+            val share = mobile * FACE_SHARE / SLOTS
             if (share <= 0L) return@forEachFluid
 
             for (f in 0 until FACES) {
