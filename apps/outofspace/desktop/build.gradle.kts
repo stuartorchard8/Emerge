@@ -46,3 +46,12 @@ tasks.register<JavaExec>("benchOutofspace") {
     classpath = sourceSets["main"].runtimeClasspath
     workingDir = rootDir
 }
+
+// Sampling profile of whichever entry point you are measuring. `-Poos.jfr=<file>` on any of the
+// tasks above turns on Flight Recorder for that run, because "which phase" is a different question
+// from "which method", and the profiler's phase marks cannot answer the second one.
+for (name in listOf("benchOutofspace", "outofspaceAgent")) tasks.named<JavaExec>(name) {
+    (project.findProperty("oos.jfr") as String?)?.let {
+        jvmArgs("-XX:StartFlightRecording=settings=profile,filename=$it,dumponexit=true")
+    }
+}

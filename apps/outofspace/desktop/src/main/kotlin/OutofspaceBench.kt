@@ -2,6 +2,8 @@ package org.emerge.desktop
 
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.OutofspaceController
+import org.emerge.demo.outofspace.world.Save
+import org.emerge.sim.core.ecs.PipelineProfiler
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.ApertureField
@@ -46,9 +48,9 @@ object OutofspaceBench {
     /** Discarded. Long enough for JIT to settle and for the starter vessel to stop being pristine. */
     private const val WARMUP_TICKS = 200
 
-    fun run(ticks: Int, innerReps: Int) {
+    fun run(ticks: Int, innerReps: Int, savePath: String?) {
         val controller = OutofspaceController()
-        controller.reset(starterVessel(controller.cfg.initialGrid))
+        controller.reset(worldFrom(savePath, controller))
 
         repeat(WARMUP_TICKS) { controller.stepOnce() }
 
@@ -60,9 +62,13 @@ object OutofspaceBench {
         println("[bench] dense field = ${tiles.toLong() * Species.COUNT * 8 / 1024} KiB each")
         println()
 
-        // ── The denominator ──
+        // ── The denominator, and where it goes ──
+        val profiler = PipelineProfiler()
+        controller.profiler = profiler
         val tickNanos = time(ticks) { controller.stepOnce() }
+        controller.profiler = null
         report("TICK (whole sim)", tickNanos, ticks)
+        phases(profiler)
         println()
         println("  — species-linear —")
 
@@ -94,7 +100,7 @@ object OutofspaceBench {
         // zero, so the block above is largely measuring branches — this is the real per-species cost.
         val full = mass.copyOf()
         for (tile in grid.tiles) {
-            val base = tile.index * Species.COUNT
+            val base = tile.index * Fluid.COUNT
             // Only where there is already air: filling vacuum would change which tiles are worked at
             // all, and then this would measure a different world rather than a fuller one.
             if (full.data.sliceOfIsEmpty(base)) continue
@@ -145,19 +151,65 @@ object OutofspaceBench {
         println("  %-24s %8.3f ms   %5.1f%% of tick".format(label, per / 1e6, 100.0 * per / tick))
     }
 
-    /** True if this tile's whole species slice is zero — i.e. vacuum, and not somewhere to add air. */
+    /**
+     * True if this tile's whole fluid slice is zero — i.e. vacuum, and not somewhere to add air.
+     *
+     * ⚠️ The stride is [Fluid.COUNT], not [Species.COUNT]. The air field has been fluid-indexed since
+     * [org.emerge.demo.outofspace.world.MassArray] narrowed it; reading it at the species stride ran
+     * off the end of the array and took the bench down with it.
+     */
     private fun LongArray.sliceOfIsEmpty(base: Int): Boolean {
-        for (s in 0 until Species.COUNT) if (this[base + s] != 0L) return false
+        for (s in 0 until Fluid.COUNT) if (this[base + s] != 0L) return false
         return true
     }
 
     private fun perOp(label: String, nanos: Long, reps: Int) {
         println("  %-24s %8.0f ns/op".format(label, nanos.toDouble() / reps))
     }
+
+    /**
+     * The world to measure: a save if one was named, and the starter vessel otherwise.
+     *
+     * ⚠️ **The starter vessel is not a representative workload and never was.** It is a handful of
+     * plating with no rail network, no ghosts and one room, so every phase that scales with what the
+     * player has *built* reads near zero on it. A real save is the only thing that ranks the phases
+     * the way the player experiences them, which is why this takes a path at all.
+     */
+    private fun worldFrom(savePath: String?, controller: OutofspaceController) =
+        if (savePath == null) starterVessel(controller.cfg.initialGrid)
+        else Save.read(java.io.File(savePath).readText()).also { println("[bench] loaded $savePath") }
+
+    /**
+     * Where the tick went, phase by phase — the ranking that decides what is worth touching.
+     *
+     * `share` is each phase's cut of the sum of all phases, not of wall time: the marks do not tile
+     * the tick (the setup between chemistry and valves is billed to nobody), so the shares sum to
+     * somewhat less than 100% and the residue is real work that no mark covers. Compare the phase
+     * total against `TICK` above to see how much is unattributed.
+     */
+    private fun phases(profiler: PipelineProfiler) {
+        val report = profiler.report()
+        val attributed = report.phases.sumOf { it.avgNanos }
+        println("  %-24s p50 %.3f ms   p95 %.3f ms   p99 %.3f ms".format(
+            "", report.tickP50Nanos / 1e6, report.tickP95Nanos / 1e6, report.tickP99Nanos / 1e6))
+        println()
+        println("  — phases —")
+        for (phase in report.phases.sortedByDescending { it.avgNanos }) {
+            println("  %-24s %8.3f ms   %5.1f%% of tick   max %.3f ms".format(
+                phase.name,
+                phase.avgNanos / 1e6,
+                100.0 * phase.avgNanos / (report.tickAvgNanos.coerceAtLeast(1L)),
+                phase.maxNanos / 1e6))
+        }
+        println("  %-24s %8.3f ms   %5.1f%% of tick".format(
+            "(unattributed)",
+            (report.tickAvgNanos - attributed) / 1e6,
+            100.0 * (report.tickAvgNanos - attributed) / report.tickAvgNanos.coerceAtLeast(1L)))
+    }
 }
 
 fun main(args: Array<String>) {
     val ticks = args.getOrNull(0)?.toIntOrNull() ?: 300
     val innerReps = args.getOrNull(1)?.toIntOrNull() ?: 2000
-    OutofspaceBench.run(ticks, innerReps)
+    OutofspaceBench.run(ticks, innerReps, args.getOrNull(2))
 }
