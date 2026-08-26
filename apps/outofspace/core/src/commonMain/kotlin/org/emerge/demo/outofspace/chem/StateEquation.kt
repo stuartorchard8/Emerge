@@ -514,6 +514,27 @@ val CRITICAL: Map<Species, Critical> = mapOf(
     Species.Cadmium to critical(2570, 2000.0, -0.0400, 594, Species.Cadmium),
 )
 
+/**
+ * [CRITICAL] by ordinal, because this is read inside the pressure sweep — the same reason [DOMES]
+ * has a `DOME_OF` beside it, and the same fix.
+ *
+ * ⚠️ **A `Map` lookup is not free at this frequency.** `reducedTemperature` is two arithmetic
+ * operations wrapped around one of these, and `tilePressure` reaches it six times per species per
+ * tile: once the 128-bit divide came off the hot path, `HashMap.getNode` was **31% of every
+ * execution sample in the game** and `reducedTemperature` 23% inclusive, for a function whose own
+ * body is a multiply and a divide.
+ *
+ * The map stays because it is the readable statement of the table and what the tests iterate; this
+ * is the same data reached the way a sweep wants to reach it.
+ */
+private val CRITICAL_OF: Array<Critical?> = arrayOfNulls<Critical>(Species.COUNT).also {
+    for ((species, critical) in CRITICAL) it[species.ordinal] = critical
+}
+
+/** [CRITICAL] for [species], by ordinal. Prefer this to `criticalOf(species)` anywhere in a loop. */
+internal fun criticalOf(species: Species): Critical? = CRITICAL_OF[species.ordinal]
+
+
 // ⛔ **Helium is deliberately absent.** Its critical temperature is 5.2 K — colder than anything a
 // vessel can reach, and colder than deep space — so it can never be inside its own dome and "ideal
 // gas at every temperature" is the *correct* treatment rather than a missing row. Its acentric
@@ -635,7 +656,7 @@ fun phaseAt(densityR: Long, temperatureR: Long, species: Species): FluidPhase = 
     // disagreeing about it is not an edge case but the ordinary situation.
     densityR <= saturatedVapourDensity(temperatureR, species)!! -> FluidPhase.Vapour
     densityR >= condensedDensity(temperatureR, species)!! ->
-        if (temperatureR < (CRITICAL[species]?.triplePointR ?: 0L)) FluidPhase.Solid else FluidPhase.Liquid
+        if (temperatureR < (criticalOf(species)?.triplePointR ?: 0L)) FluidPhase.Solid else FluidPhase.Liquid
     else -> FluidPhase.Separating
 }
 
@@ -648,7 +669,7 @@ fun phaseAt(densityR: Long, temperatureR: Long, species: Species): FluidPhase = 
  * as an ideal gas.
  */
 fun reducedDensity(mass: Long, species: Species, volume: Int, full: Int): Long? {
-    val c = CRITICAL[species] ?: return null
+    val c = criticalOf(species) ?: return null
     if (mass <= 0L) return 0L
     // `mass / c.massPerTile` is a ratio of two masses, so the mass unit cancels out of it and
     // what comes back — a multiple of critical density — does not depend on what a unit means.
@@ -681,14 +702,14 @@ fun reducedDensity(mass: Long, species: Species, volume: Int, full: Int): Long? 
  * Returns null for a species with no critical point on file, matching [reducedDensity].
  */
 fun massAtReducedDensity(densityR: Long, species: Species, volume: Int, full: Int): Long? {
-    val c = CRITICAL[species] ?: return null
+    val c = criticalOf(species) ?: return null
     if (densityR <= 0L) return 0L
     return scaledRatio(densityR, SCALE, c.massPerTile) * volume / full
 }
 
 /** Reduced temperature — [kelvin] as a multiple of the species' critical temperature. */
 fun reducedTemperature(kelvin: Int, species: Species): Long? {
-    val c = CRITICAL[species] ?: return null
+    val c = criticalOf(species) ?: return null
     return kelvin.toLong() * SCALE / c.kelvin
 }
 
@@ -705,7 +726,7 @@ fun reducedTemperature(kelvin: Int, species: Species): Long? {
  * caller should compute the old way.
  */
 fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full: Int): Long? {
-    val c = CRITICAL[species] ?: return null
+    val c = criticalOf(species) ?: return null
     // Clamped, so that adding mass to a cell can never *throw*. [reducedPressure] keeps its strict
     // domain — past close packing there is genuinely no pressure to report — but that contract
     // belongs between the equation and its own internals, not between the equation and a caller
@@ -740,7 +761,7 @@ fun partialPressure(mass: Long, species: Species, kelvin: Int, volume: Int, full
  * ledger its third term, not before, since nothing consumes the difference until then.
  */
 fun cohesionEnergy(densityR: Long, temperatureR: Long, species: Species, volume: Int, full: Int): Long {
-    val c = CRITICAL[species] ?: return 0L
+    val c = criticalOf(species) ?: return 0L
     // The same attraction term [pengRobinsonPressure] subtracts, which is the whole point: a latent
     // heat is not a separate quantity, it is what that term does as density falls.
     val bRho = COVOLUME * densityR / SCALE

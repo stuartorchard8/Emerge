@@ -1,7 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Fluid
-import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.criticalOf
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.apportionInto
@@ -107,7 +107,7 @@ fun liftFrost(
         air.forEachFluid(tile) { fluid, mass ->
             if (mass <= 0L) return@forEachFluid
             val species = fluid.species
-            val triplePoint = CRITICAL[species]?.triplePointKelvin ?: return@forEachFluid
+            val triplePoint = criticalOf(species)?.triplePointKelvin ?: return@forEachFluid
             if (kelvin >= triplePoint) return@forEachFluid
             // Only what is actually frost. A tile at its sublimation point holds both, and the
             // vapour above the frost is the room's.

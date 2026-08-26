@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.CLOSE_PACKED
-import org.emerge.demo.outofspace.chem.CRITICAL
+import org.emerge.demo.outofspace.chem.criticalOf
 import org.emerge.demo.outofspace.chem.SCALE
 import org.emerge.demo.outofspace.chem.massAtReducedDensity
 import org.emerge.demo.outofspace.chem.reducedDensity
@@ -142,7 +142,7 @@ fun tilePressure(
  */
 private fun leastRoomFor(mass: Long, species: Species): Int {
     if (mass <= 0L) return 0
-    val critical = CRITICAL[species] ?: return 0
+    val critical = criticalOf(species) ?: return 0
     // Asked of [reducedDensity] rather than recomputed, since "how packed would this be in a full
     // tile" is exactly what that function answers, and its own `mass * SCALE` was the same k1
     // overflow being repaired everywhere else here — 7.6e19 for a packed tile of water at one

@@ -168,7 +168,7 @@ private val COLDEST_SOLVED: IntArray = IntArray(Species.COUNT) { -1 }.also { out
  * constant that could be computed once.
  */
 internal fun alphaAt(temperatureR: Long, species: Species): Long {
-    val kappa = CRITICAL[species]?.kappa ?: return SCALE
+    val kappa = criticalOf(species)?.kappa ?: return SCALE
     if (temperatureR <= 0L) {
         val cold = SCALE + kappa
         return cold * cold / SCALE
@@ -354,7 +354,7 @@ fun saturationPressure(temperatureR: Long, species: Species): Long? {
  * liquid-density deficit showing through, not a claim about ice.
  */
 fun condensedDensity(temperatureR: Long, species: Species): Long? {
-    val c = CRITICAL[species] ?: return null
+    val c = criticalOf(species) ?: return null
     if (temperatureR >= SCALE) return null
     if (temperatureR < c.triplePointR) return c.solidDensityR
     val dome = DOME_OF[species.ordinal] ?: return null
@@ -475,7 +475,7 @@ private const val GAS_CONSTANT_SCALED = 83_145L
  */
 fun vaporisationHeat(mass: Long, species: Species, kelvin: Int): Long {
     if (mass <= 0L) return 0L
-    val critical = CRITICAL[species] ?: return 0L
+    val critical = criticalOf(species) ?: return 0L
     val dome = DOME_OF[species.ordinal] ?: return 0L
     val temperatureR = reducedTemperature(kelvin, species) ?: return 0L
     // At and above the critical point there is no phase change to pay for: the distinction between
