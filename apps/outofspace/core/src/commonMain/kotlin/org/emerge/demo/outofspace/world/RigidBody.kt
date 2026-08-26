@@ -368,7 +368,20 @@ class BodyStep(
      * nothing between here and a host has anything to add to it.
      */
     val impacts: List<Impact> = emptyList(),
-)
+) {
+    companion object {
+        /**
+         * The bodies exactly as they are, nothing exchanged and nothing struck — what a tick that
+         * did not sweep them at all produces. See `OutofspaceReducer.freeze`.
+         *
+         * ⚠️ **Not the same as sweeping them zero distance.** A sweep still resolves the contacts a
+         * body is already standing in and still reports them, so a rock resting on the plating would
+         * report a hit on every frozen tick and a paused game would clang once a tick for as long as
+         * it was stopped. This reports none, which is what "nothing happened" means.
+         */
+        fun still(bodies: List<RigidBody>) = BodyStep(bodies, 0L, 0L)
+    }
+}
 
 /**
  * Body drift: grid moves by ship velocity, body advances by (body - ship) velocity.

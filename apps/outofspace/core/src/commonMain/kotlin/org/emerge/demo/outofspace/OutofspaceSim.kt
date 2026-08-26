@@ -77,6 +77,7 @@ import org.emerge.demo.outofspace.world.StructureMap
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.BodyStep
 import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.MassDistribution
@@ -195,14 +196,62 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     const val MACHINE_OFFSET    = 0
     const val RAIL_OFFSET       = 6
 
-    /** Whether a subsystem of [period] whose turn is tick [offset] fires on [tick]. */
-    private fun shouldRun(tick: Long, period: Int, offset: Int): Boolean = tick % period == offset.toLong()
+    /**
+     * Whether a subsystem of [period] whose turn is tick [offset] fires on [tick].
+     *
+     * ⛔ **A frozen tick fires nothing**, and that one word is most of what a frozen tick is. Every
+     * block below already has a correct carry-forward for the ticks it skips — it has to, since each
+     * one skips seven ticks in eight — so a tick where every schedule says no lands on exactly the
+     * state it started from. See [freeze].
+     */
+    private fun shouldRun(tick: Long, period: Int, offset: Int, frozen: Boolean): Boolean =
+        !frozen && tick % period == offset.toLong()
 
     override fun reduce(
         cfg: OutofspaceConfig,
         state: VesselState,
         inputs: Map<PlayerId, OutofspaceInput>,
         profiler: PipelineProfiler?,
+    ): VesselState = step(cfg, state, inputs, profiler, frozen = false)
+
+    /**
+     * **A tick in which the world is edited and no time passes.**
+     *
+     * Everything an edit does — placing a ghost, marking a machine for demolition, laying track,
+     * turning a thruster, rebinding a key — lands exactly as it does on a live tick. Nothing else
+     * happens at all: no packet steps, no gas moves, no heat conducts, no rock drifts, and the ship
+     * does not travel a millimetre.
+     *
+     * ⚠️ **The clock still advances**, and that is the point rather than an oversight. A paused
+     * world whose tick stood still would also freeze every interpolation mid-slide, since a
+     * [org.emerge.demo.outofspace.world.Cadence] measures against the tick. Letting the clock run
+     * while the passes do not is what lets a packet finish the step it was half-way through and
+     * *then* stop, and an overlay finish its fade — which is what a stopped world should look like.
+     * Advancing a view clock separately instead would have to snap back on resume, and every
+     * animation in the game would jump backwards at the moment the player pressed play.
+     *
+     * ⚠️ Frozen ticks shift where the staggered subsystems sit in their periods, because they are
+     * counted like any other. Harmless: the offsets are arbitrary and only have to miss each other.
+     *
+     * ⚠️ **The derivations still run** — signals, networks, openness, structure. They are not time
+     * passing, they are what the world *is*, and skipping them would slam every airlock shut for as
+     * long as the game was stopped (`openness` defaults to all-shut, a path that is dead today only
+     * because [MACHINE_PERIOD] is one). They cost about a tenth of a tick, which a stopped game can
+     * well afford; if that ever stops being true it is an optimisation with a measurement behind it,
+     * not a correctness question.
+     */
+    fun freeze(
+        cfg: OutofspaceConfig,
+        state: VesselState,
+        inputs: Map<PlayerId, OutofspaceInput>,
+    ): VesselState = step(cfg, state, inputs, profiler = null, frozen = true)
+
+    private fun step(
+        cfg: OutofspaceConfig,
+        state: VesselState,
+        inputs: Map<PlayerId, OutofspaceInput>,
+        profiler: PipelineProfiler?,
+        frozen: Boolean,
     ): VesselState {
         val _prof0 = profiler != null
         val _prof = if (_prof0) TimeSource.Monotonic.markNow() else null
@@ -234,7 +283,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // unread a few lines later on every tick there has ever been, because [MACHINE_PERIOD] is
         // one and the pass that recomputes it therefore always runs. Measured at 10% of the tick.
         var structure: StructureMap
-        val machineTick = shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET)
+        // ⚠️ **Deliberately not told about `frozen`**, unlike every other schedule here. What sits
+        // under this flag is a *derivation* — what the wires carry, which doors are open, what the
+        // structure therefore is — and a derivation is not time passing. A frozen tick that skipped
+        // it would recompute `structure` against an all-shut `openness` and slam every airlock for
+        // as long as the game was stopped. The machine *pass* below is the part that is time
+        // passing, and that one is gated on [runMachines].
+        val machineTick = shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET, frozen = false)
+        val runMachines = machineTick && !frozen
         if (machineTick) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
@@ -282,7 +338,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // machine tick, and all-shut on a tick that skipped it, which is what the pass would leave
         // behind anyway with nothing to open a lock.
         structure = StructureMap.derive(w.grid, w.deck, openness)
-        if (machineTick) {
+        if (runMachines) {
             // The stick, plus whatever the autopilot is leaning on it with. Taken once for the
             // whole pass so that every motor is answering the same request — see [Sas]. It sits
             // below the structure now only because the structure had to move up; nothing here reads
@@ -352,7 +408,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // ── Rails ─────────────────────────────────────────────────────────────────
         val _r0 = _prof0; val _r = if (_r0) TimeSource.Monotonic.markNow() else null
         val motion: Motion
-        if (shouldRun(state.tick, RAIL_PERIOD, RAIL_OFFSET)) {
+        if (shouldRun(state.tick, RAIL_PERIOD, RAIL_OFFSET, frozen)) {
             // Rails first: produced output can go on the track after it moves.
             val ports = w.portsByTile(Conduit.Rail)
             w.advanceRails(ports)
@@ -381,7 +437,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // Carried forward on a tick the pass skips, so it keeps saying when the pass last ran —
         // which is the question the overlay is asking. See [Cadences].
         var cadences = state.cadences
-        if (shouldRun(state.tick, HEAT_PERIOD, HEAT_OFFSET)) {
+        if (shouldRun(state.tick, HEAT_PERIOD, HEAT_OFFSET, frozen)) {
             cadences = cadences.copy(heat = Cadence(state.tick, HEAT_PERIOD))
             val bodies = bodiesOf(state.grid, w.conduitsSnapshot(), w.deck, w.buffers, w.rail)
             val result = stepSolidHeat(
@@ -415,7 +471,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // decomposer a machine at all: it holds a charge at a temperature the player chose, and the
         // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
         // the same matter on a belt. The machine controls the conditions and nothing else.
-        if (shouldRun(state.tick, CHEM_PERIOD, CHEM_OFFSET)) {
+        if (shouldRun(state.tick, CHEM_PERIOD, CHEM_OFFSET, frozen)) {
             val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
             val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
             // Then what the matter will no longer hold on to, which is the only pass of the two
@@ -464,7 +520,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         // ── Valves + Pumps ────────────────────────────────────────────────────────
         val _v0 = _prof0; val _v = if (_v0) TimeSource.Monotonic.markNow() else null
-        if (shouldRun(state.tick, PUMP_PERIOD, PUMP_OFFSET)) {
+        if (shouldRun(state.tick, PUMP_PERIOD, PUMP_OFFSET, frozen)) {
             // Valves first: pressure propagates immediately, both layers see exchange
             // (see [exchangeLayers]).
             exchangeLayers(
@@ -516,7 +572,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val pressureImpulseY: Long
         val pressureTorque: Long
         val _p0 = _prof0; val _p = if (_p0) TimeSource.Monotonic.markNow() else null
-        if (shouldRun(state.tick, PRESSURE_PERIOD, PRESSURE_OFFSET)) {
+        if (shouldRun(state.tick, PRESSURE_PERIOD, PRESSURE_OFFSET, frozen)) {
             val roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
             val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
             // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
@@ -557,7 +613,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
-        if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET)) {
+        if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET, frozen)) {
             cadences = cadences.copy(fluid = Cadence(state.tick, FLUID_PERIOD))
             // The temperatures this pass moves the vapour by, taken here rather than shared with the
             // pressure block. They were hoisted above it while the two fired together, because a
@@ -605,8 +661,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val startVelocityY = state.velocityYAt(startMass)
 
         // Debug thrust: acceleration × mass (see [Edit.Thrust]).
-        val thrustX = w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
-        val thrustY = w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+        //
+        // ⚠️ **Nothing on a frozen tick.** A `Thrust` is an edit like any other and so it lands in
+        // `w` while the game is stopped; it must not then push the ship, which is the one edit whose
+        // effect *is* time passing. The controller does not send one while paused, and this is here
+        // so that it would not matter if it did.
+        val thrustX = if (frozen) 0L else w.thrustDx.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
+        val thrustY = if (frozen) 0L else w.thrustDy.coerceIn(-1, 1) * mass * Edit.DEBUG_THRUST_MILLI_G / 1000L
 
         // Dynamic rock spawning/despawning
         // World-spawned rocks are free mass, not counted in baselineRockMass.
@@ -626,7 +687,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // past π comes back at −π exactly and never drifts. See [Rotation].
         val spin = angularVelocity(state.angImpulse, w.about)
         val comScale = Flight.PER_TILE / Rotation.MILLI_TILE
-        val newPose = state.pose
+        // ⛔ **A frozen tick does not fly.** The ship keeps the pose it had — which is the whole of
+        // "no time passes" as far as the world outside the hull is concerned, since the pose is what
+        // carries the vessel through space and what every body's frame conversion is taken against.
+        // Its momentum is untouched, so releasing the pause resumes the same trajectory rather than
+        // restarting it.
+        val newPose = if (frozen) state.pose else state.pose
             .turnedAbout(Coord(spin.toInt()), w.about.comX * comScale, w.about.comY * comScale)
             .movedBy(startVelocityX, startVelocityY)
         val newPositionX = newPose.x
@@ -634,7 +700,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val newAng = newPose.ang
         val vesselTileX = newPositionX / Flight.PER_TILE
         val vesselTileY = newPositionY / Flight.PER_TILE
-        val bodiesToDrift = RockSpawner.process(
+        // Frozen: the sky neither gains a rock nor loses one. Spawning is a function of where the
+        // ship has got to, and it has not got anywhere.
+        val bodiesToDrift = if (frozen) w.bodies.toList() else RockSpawner.process(
             pose = state.pose,
             tick = state.tick,
             bodies = w.bodies.toList(),
@@ -656,7 +724,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         //
         // It is also where a body can hit something, because a contact is an exchange and the ship's
         // half of it has to join `netImpulse` below in the same tick the body's half is booked. The
-        val bodiesDrifted = driftBodies(
+        //
+        // ⚠️ **Frozen: not swept at all, rather than swept by zero.** A sweep of no distance would
+        // still resolve standing contacts and still report them, so a rock resting on the plating
+        // would clang once per frozen tick for as long as the game was stopped. [BodyStep.still]
+        // is the bodies exactly as they are, no exchange and no impacts.
+        val bodiesDrifted = if (frozen) BodyStep.still(w.bodies.toList()) else driftBodies(
             state.grid,
             structure,
             w.bodies,
