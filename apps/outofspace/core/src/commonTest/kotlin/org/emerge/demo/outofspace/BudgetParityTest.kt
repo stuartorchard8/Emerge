@@ -108,7 +108,13 @@ class BudgetParityTest {
         //
         //     water   240 against a measured 322      carbon dioxide  417 against 468
         //     nitrogen 295 against 313                argon           504 against 536
-        //     oxygen   407 against 436
+        //     oxygen   407 against 436                ammonia         186 against 225
+        //     methane  150 against 163                carbon monoxide 287 against 301
+        //     H2S      319 against 349                SO2             458 against 525
+        //     hydrogen  31 against 31 (luck)          sulfur          197 against 563
+        //
+        // ⚠️ Sulfur is the outlier and it is not the equation's fault: [Species.Sulfur] is atomic
+        // because every mineral formula needs it to be, while its critical constants describe S8.
         //
         // Liquid densities downstream are low by the same proportion — liquid water comes out near
         // 850 kg/m³ rather than 998. A Péneloux volume shift is the standard fix and moves densities
@@ -123,6 +129,14 @@ class BudgetParityTest {
                 Species.Oxygen -> 338_100L
                 Species.CarbonDioxide -> 346_748L
                 Species.Argon -> 418_336L
+                // The seven that gained a dome in 2026-08-26's widening of CRITICAL.
+                Species.Ammonia -> 154_440L
+                Species.Methane -> 125_108L
+                Species.CarbonMonoxide -> 238_873L
+                Species.HydrogenSulfide -> 265_314L
+                Species.SulfurDioxide -> 380_178L
+                Species.Hydrogen -> 25_841L
+                Species.Sulfur -> 163_705L
                 else -> error("no critical density stated for $species")
             }
             assertEquals(expected, c.massPerTile.grams, "critical $species")

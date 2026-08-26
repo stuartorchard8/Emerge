@@ -237,10 +237,17 @@ class Critical(
      * Peng-Robinson that could produce this. [Species.solidKgPerCubicMetre] is a laboratory number
      * and it is already on file for all 165 species.
      *
-     * ⚠️ Clamped to [MAX_REDUCED_DENSITY]. All five fluids that have a dome land between 3.19 and
-     * 3.82 against a wall at 3.95, so the clamp is a guard rather than a mechanism — but a species
-     * added later with a dense solid and a light critical point could reach it, and being quietly
-     * held at the wall is better than an exception from inside the equation of state.
+     * ⚠️ **Clamped to [MAX_REDUCED_DENSITY], and that clamp is now a mechanism rather than a
+     * guard.** It was a guard while five fluids had domes and all of them landed between 3.19 and
+     * 3.82 against a wall at 3.95. Three of the twelve now reach it: ammonia at 4.40, sulfur
+     * dioxide at 4.19 and sulfur at 10.50, the last because [Species.Sulfur] is atomic where its
+     * critical constants describe S8.
+     *
+     * What that costs is a solid that reads *less dense than it is*, so a tile packed with frozen
+     * ammonia answers [FluidPhase.Separating] where it should answer [FluidPhase.Solid]. It costs
+     * nothing at all to `scavengeFrost`, which asks the triple point rather than the density. The
+     * real fix is a Péneloux volume shift, which moves densities without touching the pressure
+     * curve and would pull all three back inside the wall.
      */
     val solidDensityR: Long = scaledRatio(
         species.solidKgPerCubicMetre.toLong() * TILE_LITRES * Budget.GRAM, massPerTile, SCALE,
@@ -432,6 +439,7 @@ fun reducedStiffness(
  * is the correct treatment for anything the vessel never gets near condensing.
  */
 val CRITICAL: Map<Species, Critical> = mapOf(
+    // ── The vessel's own atmosphere ───────────────────────────────────────────
     Species.Water to critical(647, 220.64, 0.3443, 273, Species.Water),
     Species.Nitrogen to critical(126, 33.958, 0.0372, 63, Species.Nitrogen),
     Species.Oxygen to critical(155, 50.43, 0.0222, 54, Species.Oxygen),
@@ -441,7 +449,48 @@ val CRITICAL: Map<Species, Critical> = mapOf(
     // factor is zero by definition — argon is the reference the whole correction is measured
     // against — so it is the row that shows the change here was never only about that constant.
     Species.Argon to critical(151, 48.63, 0.0000, 84, Species.Argon),
+
+    // ── What a comet gives up, and what a roast puts in the air ───────────────
+    //
+    // ⛔ **These seven were absent, and absent here means "an ideal gas at every temperature".** On
+    // a live save at 50 K they were 59% of the atmosphere between them and not one of them could
+    // condense, freeze, stop diffusing or be picked up off the floor — because a fluid with no
+    // critical point has no dome, and a fluid with no dome has no phase behaviour at all. Ammonia
+    // was 28% of a room at forty-four kelvin and the model called it a gas.
+    //
+    // Every one of them lands within a kelvin of its measured boiling point except sulfur; see
+    // `PhaseRealityTest`, which is what says so.
+    Species.Ammonia to critical(405, 113.30, 0.2526, 195, Species.Ammonia),
+    Species.Methane to critical(191, 45.99, 0.0115, 91, Species.Methane),
+    Species.CarbonMonoxide to critical(133, 34.94, 0.0497, 68, Species.CarbonMonoxide),
+    Species.HydrogenSulfide to critical(373, 89.63, 0.0942, 188, Species.HydrogenSulfide),
+    Species.SulfurDioxide to critical(431, 78.84, 0.2454, 198, Species.SulfurDioxide),
+    // ⚠️ **Hydrogen is a quantum fluid and a cubic equation of state has no business with it.** Its
+    // acentric factor is *negative* — the only one here that is — which is the correlation reporting
+    // that hydrogen does not behave like the substances it was fitted to. It comes out at 21 K
+    // against a measured 20.3, which is better than it deserves, and the critical density lands at
+    // 31.0 kg/m³ against a measured 31.3, which is luck. Treat a hydrogen liquid as indicative.
+    Species.Hydrogen to critical(33, 13.13, -0.216, 14, Species.Hydrogen),
+    // ⛔ **Sulfur is the one entry here that is genuinely approximate, and it is worth knowing why.**
+    // Sulfur vapour is not sulfur atoms: near its boiling point it is mostly S8 rings, with S6 and
+    // S2 as it gets hotter. [Species.Sulfur] is atomic — 32 g/mol — because that is what every
+    // mineral formula in the game needs it to be, so the molar mass the reduction uses is a factor
+    // of eight from the molecule the critical constants describe. The boiling point comes out ten
+    // kelvin high and the critical density about a third of the measured 563 kg/m³. It is here
+    // because a sulfur that condenses ten kelvin late is a great deal closer than a sulfur that is
+    // an ideal gas at thirteen hundred kelvin, which is what it was.
+    Species.Sulfur to critical(1314, 207.0, 0.207, 388, Species.Sulfur),
 )
+
+// ⛔ **Helium is deliberately absent.** Its critical temperature is 5.2 K — colder than anything a
+// vessel can reach, and colder than deep space — so it can never be inside its own dome and "ideal
+// gas at every temperature" is the *correct* treatment rather than a missing row. Its acentric
+// factor is −0.39, which would give the α function a negative κ and send attraction the wrong way
+// with temperature; there is nothing to gain and a pathology to import.
+//
+// The remaining absentees are the halogens, the heavier noble gases and the volatile metals. Each
+// needs the same four measured numbers and a heat of sublimation, and the metals need care: their
+// critical points are extrapolations rather than measurements.
 
 /**
  * The largest reduced pressure [vanDerWaalsPressure] will report.

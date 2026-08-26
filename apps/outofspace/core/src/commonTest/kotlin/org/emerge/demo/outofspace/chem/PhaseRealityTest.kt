@@ -39,6 +39,8 @@ class PhaseRealityTest {
         val kelvin: Int,
         val bar: Double,
         val what: String,
+        /** How far this row may sit from the measured value. See [TOLERANCE_KELVIN]. */
+        val tolerance: Int = TOLERANCE_KELVIN,
     )
 
     private val references = listOf(
@@ -68,6 +70,28 @@ class PhaseRealityTest {
         Reference(Species.CarbonDioxide, criticalBar = 73.77, kelvin = 195, bar = 1.01325, what = "dry ice sublimes at -78C"),
         Reference(Species.Water, criticalBar = 220.64, kelvin = 263, bar = 2.599e-3, what = "ice at -10C"),
         Reference(Species.Water, criticalBar = 220.64, kelvin = 250, bar = 7.60e-4, what = "ice at -23C"),
+
+        // ── The seven that were ideal gases until 2026-08-26 ──────────────────────
+        //
+        // On a live save at 50 K these were 59% of the atmosphere between them, and not one of them
+        // could condense, freeze, stop diffusing or be picked up off the floor, because a fluid with
+        // no critical point has no dome and a fluid with no dome has no phase behaviour at all.
+        Reference(Species.Ammonia, criticalBar = 113.30, kelvin = 240, bar = 1.01325, what = "ammonia boils at -33C"),
+        Reference(Species.Methane, criticalBar = 45.99, kelvin = 112, bar = 1.01325, what = "LNG boils at 112K"),
+        Reference(Species.CarbonMonoxide, criticalBar = 34.94, kelvin = 82, bar = 1.01325, what = "CO boils at 82K"),
+        Reference(Species.HydrogenSulfide, criticalBar = 89.63, kelvin = 213, bar = 1.01325, what = "H2S boils at -60C"),
+        Reference(Species.SulfurDioxide, criticalBar = 78.84, kelvin = 263, bar = 1.01325, what = "SO2 boils at -10C"),
+        Reference(Species.Hydrogen, criticalBar = 13.13, kelvin = 20, bar = 1.01325, what = "liquid hydrogen boils at 20K"),
+        // ⚠️ **Sulfur gets fifteen kelvin instead of ten, and the exemption is named rather than
+        // absorbed into the global figure.** Sulfur vapour is not sulfur atoms — near its boiling
+        // point it is mostly S8 rings — while [Species.Sulfur] is atomic, because that is what every
+        // mineral formula in the game needs. So the molar mass the reduction uses is a factor of
+        // eight from the molecule the critical constants describe, and it comes out ten kelvin high.
+        // Ten kelvin late is a great deal closer than the ideal gas at 1300 K that it was.
+        Reference(
+            Species.Sulfur, criticalBar = 207.0, kelvin = 718, bar = 1.01325,
+            what = "sulfur boils at 445C", tolerance = 15,
+        ),
     )
 
     /** The model's saturation pressure at [kelvin], in bar, using [criticalBar] to leave reduced units. */
@@ -102,7 +126,7 @@ class PhaseRealityTest {
                 continue
             }
             val off = got - r.kelvin
-            if (abs(off) > TOLERANCE_KELVIN) {
+            if (abs(off) > r.tolerance) {
                 wrong += "${r.species}: ${r.what} — model says ${got}K, reality says ${r.kelvin}K " +
                     "(${if (off > 0) "+" else ""}${off}K)"
             }
@@ -133,10 +157,13 @@ class PhaseRealityTest {
         // The triple point is the temperature below which there is no liquid phase at any pressure
         // at all. A model without one does not merely mislabel it: it hands the transport pass a
         // liquid, which flows, where the world has a solid, which does not.
+        // ⚠️ **Every fluid with a dome, not a list.** A row added to [CRITICAL] without a solid
+        // phase that works is a row that would slip past a hardcoded four.
         val wrong = mutableListOf<String>()
-        for (species in listOf(Species.Water, Species.CarbonDioxide, Species.Nitrogen, Species.Argon)) {
-            val c = CRITICAL[species]!!
-            val cold = c.triplePointKelvin - 20
+        for ((species, c) in CRITICAL) {
+            // A fifth below the triple point rather than a fixed twenty kelvin, because hydrogen's
+            // triple point is at fourteen and twenty below that is not a temperature.
+            val cold = c.triplePointKelvin * 4 / 5
             val tr = reducedTemperature(cold, species)!!
             // Dense enough to be condensed at all — the solid branch itself.
             val dense = condensedDensity(tr, species)!!
@@ -152,8 +179,7 @@ class PhaseRealityTest {
     @Test
     fun `above the triple point the condensed phase is still a liquid`() {
         // The other half, so that the test above cannot be satisfied by calling everything solid.
-        for (species in listOf(Species.Water, Species.CarbonDioxide, Species.Nitrogen, Species.Argon)) {
-            val c = CRITICAL[species]!!
+        for ((species, c) in CRITICAL) {
             val warm = (c.triplePointKelvin + c.kelvin) / 2
             val tr = reducedTemperature(warm, species)!!
             val dense = condensedDensity(tr, species)!!
@@ -208,7 +234,13 @@ class PhaseRealityTest {
     @Test
     fun `a gas with no liquid phase costs nothing to vaporise`() {
         // Not a fallback: something that has no condensed phase in this model is already a gas.
-        assertTrue(vaporisationHeat(Budget.KILOGRAM, Species.Methane, 200) == 0L, "methane has no dome")
+        //
+        // ⚠️ This asked about **methane** until methane got a dome, and it went on passing — because
+        // 200 K is above methane's critical point, so the answer was still zero for a completely
+        // different reason. Helium is the species that is absent on purpose (its critical point is
+        // 5.2 K, colder than deep space), so it is the one that tests what this claims to test.
+        assertTrue(CRITICAL[Species.Helium] == null, "helium has acquired a dome; pick another absentee")
+        assertTrue(vaporisationHeat(Budget.KILOGRAM, Species.Helium, 200) == 0L, "helium has no dome")
         // And above the critical point there is no phase change left to pay for.
         assertTrue(vaporisationHeat(Budget.KILOGRAM, Species.Water, 700) == 0L, "water is supercritical at 700K")
     }
