@@ -118,6 +118,37 @@ private val DOME_OF: Array<Dome?> = arrayOfNulls<Dome>(Species.COUNT).also {
 }
 
 /**
+ * The coldest knot interval of each fluid's boiling curve that the fugacity solve actually reached,
+ * or −1 for a fluid with no dome — see [Dome.negLogSaturationPressure], where the unreached samples
+ * are [Long.MAX_VALUE].
+ *
+ * ⛔ **[vaporisationHeat] clamps to this rather than answering zero below it**, and the difference is
+ * not a nicety. Zero says *this frost costs nothing to sublime*, which is false — ice at 5 K is
+ * bound, and bound harder than ice at 200 K — and it says so as a **step**: one kelvin colder than
+ * the first solved knot the latent heat fell off a cliff to nothing, which is a discontinuity of the
+ * whole latent heat in a single degree. Clausius-Clapeyron says the opposite, that `B` barely moves
+ * as a fluid gets colder, so continuing the coldest solved segment is both the honest extrapolation
+ * and a continuous one.
+ *
+ * ⚠️ **Where the cliff sat varied by fluid**, which is why it went unnoticed: water reaches down to
+ * 10 K and nothing in the game is that cold, but mercury's solve gives out below **273 K** and
+ * zinc's below 49 K, so for the metal vapours the cliff was sitting in the middle of the ordinary
+ * range. Computed here rather than in `SaturationTables.kt` because that file is generated and is
+ * not to be edited by hand.
+ */
+private val COLDEST_SOLVED: IntArray = IntArray(Species.COUNT) { -1 }.also { out ->
+    for (ordinal in 0 until Species.COUNT) {
+        val table = DOME_OF[ordinal]?.negLogSaturationPressure ?: continue
+        for (knot in 1 until N - 1) {
+            if (table[knot] != Long.MAX_VALUE && table[knot + 1] != Long.MAX_VALUE) {
+                out[ordinal] = knot
+                break
+            }
+        }
+    }
+}
+
+/**
  * Peng-Robinson's `α(Tr)` for [species], in [SCALE] — the temperature dependence of the attraction
  * term, and the only place the acentric factor enters the equation of state.
  *
@@ -451,21 +482,72 @@ fun vaporisationHeat(mass: Long, species: Species, kelvin: Int): Long {
     // liquid and vapour has stopped existing, which is the same reason the dome closes there.
     if (temperatureR >= SCALE) return 0L
 
+    // Colder than the solve reached, the coldest segment it did reach is continued — see
+    // [COLDEST_SOLVED]. Above the top knot there is nothing to continue: the dome has closed.
+    val coldest = COLDEST_SOLVED[species.ordinal]
+    if (coldest < 0) return 0L
     val position = temperatureR * (N - 1)
-    val index = (position / SCALE).toInt()
-    if (index >= N - 1 || index <= 0) return 0L
+    val at = (position / SCALE).toInt()
+    if (at >= N - 1) return 0L
+    val index = if (at < coldest) coldest else at
     val low = dome.negLogSaturationPressure[index]
     val high = dome.negLogSaturationPressure[index + 1]
-    if (low == Long.MAX_VALUE || high == Long.MAX_VALUE) return 0L
 
-    // `d(ln Pr)/dTr`, in [NEG_LOG_SCALE]. The table is *minus* the logarithm and falls as the
-    // temperature rises, so the subtraction is this way round and the result is positive.
+    // The chord across this knot interval, in [NEG_LOG_SCALE]. The table is *minus* the logarithm
+    // and falls as the temperature rises, so the subtraction is this way round and the result is
+    // positive.
     val slope = (low - high) * (N - 1)
     if (slope <= 0L) return 0L
 
-    val squared = temperatureR * temperatureR / SCALE
-    val rTc = GAS_CONSTANT_SCALED * critical.kelvin / 10_000L
-    val joulesPerMole = rTc * squared / SCALE * slope / NEG_LOG_SCALE
+    // ⛔ **`Tr_i · Tr_{i+1}`, and NOT `Tr²`.** This is the one line that has to agree with
+    // [sampleLog], and for a long time it did not.
+    //
+    // The curve these knots describe is `ln Pr = A − B/Tr` — that is *why* [sampleLog] interpolates
+    // against `1/Tr` rather than against `Tr`, and the 0.028% it reports is the measure of how well
+    // the table obeys it. Differentiate the model the table is actually read as, and
+    // `d(ln Pr)/dTr = B/Tr²`, so the `Tr²` in Clausius-Clapeyron **cancels exactly** and the latent
+    // heat is `B` alone — which is the physical statement that a fluid obeying Clausius-Clapeyron
+    // has a latent heat that does not depend on temperature.
+    //
+    // `B` follows from the two knots: `L_i − L_{i+1} = B(1/Tr_i − 1/Tr_{i+1})`, and since the
+    // samples are evenly spaced the reciprocal difference is `(1/64) / (Tr_i · Tr_{i+1})`. So `B`
+    // is the chord above times the two knot temperatures, and the temperature *inside* the interval
+    // does not enter at all.
+    //
+    // ⚠️ **What it was doing instead**, and the failure is worth stating because it was invisible:
+    // it took the chord as though the curve were straight in `Tr` and then multiplied by the live
+    // `Tr²`. Those are two different models of the same table and the mismatch **double-counts the
+    // temperature dependence**, so within every knot interval the latent heat *climbed* with
+    // temperature — backwards, since it has to vanish at the critical point — and then fell off a
+    // cliff at the next knot. For water at 200 K it rose 3% across three kelvin and then dropped 7%
+    // in one: measured, a rise of 2.8 MJ/kg per kelvin against a specific heat of 4.18 kJ/kg/K,
+    // **6.8 times steeper than the tile's own heat capacity**.
+    //
+    // ⛔ That is what broke [org.emerge.demo.outofspace.world.settleCohesion], whose bisection rests
+    // on `capacity·T + cohesion(T)` being strictly increasing. It was solving a sawtooth: a tile
+    // holding 20 kg of water frost, exactly consistent at 200 K, settled to **171 K** on the first
+    // call and booked 245 MJ of energy across the bond boundary for having been asked a question.
+    // `LatentHeatTest` now asserts the slope bound directly, per species and per kelvin, because a
+    // solver's precondition that nothing checks is a solver's precondition that drifts.
+    val trLow = index.toLong() * SCALE / (N - 1)
+    val trHigh = (index + 1).toLong() * SCALE / (N - 1)
+    val knots = trLow * trHigh / SCALE
+
+    // `B` itself, in [NEG_LOG_SCALE]. On the sublimation branch this comes out **constant to seven
+    // digits** across every knot interval — 9 490 19x for water, all the way from 10 K to the triple
+    // point — which is the table saying plainly that it was generated by extending
+    // Clausius-Clapeyron at a fixed heat of sublimation, exactly as `SaturationTables.kt` claims. It
+    // then steps down at the triple point by the heat of fusion and falls away toward the critical
+    // point, and both of those are the direction that keeps a settlement monotone.
+    val b = slope * knots / SCALE
+    if (b <= 0L) return 0L
+
+    // ⚠️ **One divide, and it is at the end.** `rTc · knots / SCALE` as its own step truncated a
+    // value of 2.6 to **2** in the coldest knot interval, because `knots` is `Tr_i · Tr_{i+1}` and
+    // that is a small number down there. The constant `B` above then came back out of this function
+    // as a curve that climbed 31% from 10 K to 100 K — an artifact of integer division masquerading
+    // as physics, and the last thing standing between a settlement and a monotone function to solve.
+    val joulesPerMole = GAS_CONSTANT_SCALED * critical.kelvin * b / (10_000L * NEG_LOG_SCALE)
     if (joulesPerMole <= 0L) return 0L
 
     // Per mole to per kilogram to the simulation's units, by the route every enthalpy in `chem`

@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.CRITICAL
 import org.emerge.demo.outofspace.chem.Fluid
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.world.EnergyArray
@@ -11,6 +12,7 @@ import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.heatCapacityAt
 import org.emerge.demo.outofspace.world.settleCohesion
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -180,6 +182,63 @@ class LatentHeatTest {
         assertTrue(
             kotlin.math.abs(booked) < bite,
             "a closed cycle booked $booked of net energy out of nowhere",
+        )
+    }
+
+    /**
+     * ⛔ **The precondition [settleCohesion] rests on, asserted per fluid and per kelvin.**
+     *
+     * It solves `f(K) = capacity·K + cohesion(K) = total` by bisection, and the whole correctness
+     * argument is the one word in `LatentHeat.kt`: *strictly increasing*. Nothing checked it, and
+     * for a long time it was false. A tile holding 20 kg of water, `cohesionOf`-consistent at
+     * 200 K, settled to **171 K** and booked 245 MJ across the bond boundary for having been asked
+     * a question — the bisection walks past the true root and stops at the first place the
+     * predicate happens to hold. A solver's precondition that nothing checks is one that drifts.
+     *
+     * ⚠️ **Two fluids are named exceptions rather than skipped**, and the set is asserted to be
+     * exactly those two, so the gap can neither grow unnoticed nor be closed without this test
+     * saying so. Both fail for the same pre-existing reason, and it is not in the reading of the
+     * table: [vaporisationHeat] extracts `L` from Clausius-Clapeyron assuming the vapour is ideal
+     * and `Δv ≈ v_gas`. That holds well below the critical point and fails approaching it, where
+     * `Δv → 0` while `dP/dT` stays finite — so `L` turns back upward toward `Tc` instead of falling
+     * to zero. Zinc returns to 200 818 at 3169 K against a critical point of 3170 K. Every fluid
+     * does it; it only defeats a settlement where the climb outruns one kelvin of sensible heat,
+     * which is Fluorine at 52–54 K and Cadmium at 563 K. Closing it means a compressibility
+     * correction on the latent heat, and `PhaseRealityTest` is the only test that can see whether
+     * the replacement law is right.
+     */
+    @Test
+    fun `the function a settlement bisects is strictly increasing, per fluid and per kelvin`() {
+        val nonMonotone = mutableSetOf<Fluid>()
+        for (fluid in Fluid.entries) {
+            // Helium has no dome — nothing condenses, so there is no `f` to be monotone.
+            val critical = CRITICAL[fluid.species] ?: continue
+            for (kilograms in listOf(1L, 20L)) {
+                val masses = MassArray(tiles)
+                masses.add(tile, fluid, kilograms * kg)
+                val capacity = heatCapacityAt(masses, tile)
+
+                // Up to the critical point, where the dome closes and cohesion is zero above.
+                var previous = Long.MIN_VALUE
+                for (kelvin in 1..critical.kelvin) {
+                    val bound = cohesionOf(masses, IntArray(tiles) { kelvin })[tile]
+                    val f = capacity * kelvin + bound
+                    if (previous != Long.MIN_VALUE && f <= previous) {
+                        nonMonotone += fluid
+                        break
+                    }
+                    previous = f
+                }
+            }
+        }
+
+        assertEquals(
+            setOf(Fluid.Fluorine, Fluid.Cadmium),
+            nonMonotone,
+            "the set of fluids whose settlement function is not strictly increasing has changed. " +
+                "Gained one and a settlement can silently land tens of kelvin from the root for it; " +
+                "lost one and the near-critical latent heat has been corrected, so drop it from the " +
+                "expected set and delete the paragraph in this test's doc that explains it.",
         )
     }
 }
