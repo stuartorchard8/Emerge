@@ -132,7 +132,7 @@ private fun start(canvas: HTMLCanvasElement) {
         val delta = if (last == 0.0) 0f else ((ts - last) / 1000.0).toFloat().coerceIn(0f, 0.25f)
         last = ts
         ui.advanceClock(delta)
-        renderer.draw(controller.tick(delta), controller.inspectTile, controller.inspectLayer, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
+        renderer.draw(controller.tick(delta), controller.inspectTile, controller.inspectLayer, hovered, controller.overlay, controller.simTime, controller.mode.camera)
         hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f, hovered)
         ui.draw()
         window.requestAnimationFrame(::frame)

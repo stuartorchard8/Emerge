@@ -93,7 +93,9 @@ import kotlin.math.roundToInt
  * probe <x> <y>              # everything known about one tile, in full
  * landmarks                  # print all landmark names and their current (x, y) coordinates
  * trend <samples> <ticks>    # run and tabulate the conserved totals — the drift/blow-up detector
- * state [name] | shot [name] # JSON totals / PNG capture, both written to outDir
+ * state [name] | shot [name] [live]  # JSON totals / PNG capture, both written to outDir. `live`
+ *                            # draws on the world's clock rather than settled — the only way to
+ *                            # photograph a packet mid-slide or an overlay mid-fade
  * expect <field> <op> <value># op is = < > ; non-zero exit if any fail
  * echo <text>
  *
@@ -428,7 +430,10 @@ object OutofspaceAgentHarness {
                 "flow" -> flowAt(index(t[1], t[2]))
                 "trend" -> trend(t[1].toInt(), t[2].toInt())
                 "state" -> dumpState(t.getOrElse(1) { "state" })
-                "shot" -> shot(t.getOrElse(1) { "shot" })
+                // `shot <name> [live]` — `live` draws on the world's real clock instead of a
+                // settled one, which is the only way to photograph anything mid-animation. See
+                // [shot].
+                "shot" -> shot(t.getOrElse(1) { "shot" }, live = t.getOrElse(2) { "" }.equals("live", true))
                 // `tap <label>` — presses a HUD button by the text on it, which is the only way to
                 // drive a control that exists purely in the panel layer (the reference panel's
                 // species rows, its back button). It builds the HUD exactly as `shot` does and then
@@ -1127,13 +1132,29 @@ object OutofspaceAgentHarness {
             settle()
         }
 
-        private fun shot(name: String) {
+        /**
+         * A PNG of the world as the desktop host would draw it.
+         *
+         * Settled by default: the tick has landed, and a capture must show where things **are**, not
+         * an interpolated position corresponding to no state the sim was ever in. Every existing
+         * script wants that, and every existing script gets it.
+         *
+         * ⚠️ **[live] is the exception, and it exists because of a bug nothing could photograph.**
+         * A packet slides over the 32 ticks between one rail pass and the next, and drawing every
+         * capture settled meant the harness could only ever see it parked. The interpolation was
+         * wrong for months — snapping a fifth of a tile forward on arrival, teleporting a whole one
+         * backwards mid-slide — with a green suite and a folder full of screenshots in which
+         * nothing was moving. `live` draws on [OutofspaceController.simTime], the same clock a
+         * frame on a real display uses, so `run` to a tick part-way through a span and the capture
+         * shows the packet part-way along. No sub-tick fraction is involved or needed: the harness
+         * advances whole ticks, and a whole tick part-way through a 32-tick span is a real frame.
+         */
+        private fun shot(name: String, live: Boolean = false) {
             val (r, h, u) = ensureGl()
             pendingCamera(r)
             glViewport(0, 0, RES_W, RES_H)
-            // tickAlpha 1: the tick has landed. A capture must show where things ARE, not an
-            // interpolated position that corresponds to no state the sim was ever in.
-            r.draw(state, TileIndex.NONE, InspectLayer.Deck, TileIndex.NONE, overlay, 1f, 1f, controller.mode.camera)
+            val clock = if (live) controller.simTime else OutofspaceRenderer.SETTLED
+            r.draw(state, TileIndex.NONE, InspectLayer.Deck, TileIndex.NONE, overlay, clock, controller.mode.camera)
             h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
             u.draw()
             glFinish()

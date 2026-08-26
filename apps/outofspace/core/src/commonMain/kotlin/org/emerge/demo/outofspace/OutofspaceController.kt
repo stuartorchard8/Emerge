@@ -546,13 +546,27 @@ class OutofspaceController(
     }
 
     /**
-     * How far the clock has got through the next N ticks that have not happened yet, 0 to [OutofspaceConfig.ticksPerSecond].
+     * The frame's position on the sim's clock, in **fractional ticks since the world began**.
      *
      * This is the whole of what makes the world move smoothly at sub-sixty ticks a second: the sim's
-     * state is a series of stills, and this says how far between two of them the frame is.
+     * state is a series of stills, and this says how far between two of them the frame is. Anything
+     * that interpolates asks a [org.emerge.demo.outofspace.world.Cadence] how far along it is, and a
+     * cadence measures against this.
+     *
+     * ⚠️ **`tick - 1` is the reducer's tick, and that is the point.** The reducer is scheduled
+     * against `state.tick` and hands back a state numbered one higher, so the step that just landed
+     * ran at `tick - 1`; a pass that fired during it stamps that number. Line the two up anywhere
+     * else and every interpolation in the game is a tick out.
+     *
+     * ⛔ **It does not wrap, and it must not.** It used to be taken modulo the tick rate, which the
+     * renderer then took modulo a subsystem period — an arrangement that is only ever right when
+     * the period divides the tick rate *and* the subsystem fires on tick zero of it. Neither is
+     * true any more. Unwrapped there is nothing to line up: the difference between now and a stamp
+     * is just a number of ticks. `Double` rather than `Float` because unwrapped it has to stay
+     * exact for the life of a session, and a `Float`'s mantissa runs out after about three days.
      */
-    val tickAlpha: Float
-        get() = (((tick-1)%cfg.ticksPerSecond).toFloat() + (accumulator*cfg.ticksPerSecond))
+    val simTime: Double
+        get() = (tick - 1).toDouble() + accumulator.toDouble() * cfg.ticksPerSecond
 
     /**
      * Advances by [deltaSeconds] of real time and returns the state to draw.

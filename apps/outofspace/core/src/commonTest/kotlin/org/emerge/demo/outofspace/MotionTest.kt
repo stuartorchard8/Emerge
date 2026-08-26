@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_OFFSET
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
 
@@ -244,6 +245,26 @@ class MotionTest {
         val b = run(starterVessel(cfg.initialGrid), 150)
         assertEquals(Save.write(a), Save.write(b))
         assertTrue(a.motion.departures.isNotEmpty() || a.tick > 0, "and the record was actually built")
+    }
+
+    /**
+     * The stamp the renderer hangs every packet's slide off — see [org.emerge.demo.outofspace.world.Cadence].
+     *
+     * Pinned against the schedule itself rather than a literal, because the point is that the two
+     * cannot drift apart. Change [RAIL_OFFSET] and this still passes; write the stamp from the
+     * wrong tick and it does not.
+     */
+    @Test
+    fun `motion is stamped with the tick the rail pass ran on`() {
+        val s = run(line(), RAIL_PERIOD * 3)
+        assertEquals(
+            RAIL_OFFSET.toLong(), s.motion.cadence.writtenAtTick % RAIL_PERIOD,
+            "the rail fires on tick $RAIL_OFFSET of its period and stamped ${s.motion.cadence.writtenAtTick}",
+        )
+        assertEquals(RAIL_PERIOD, s.motion.cadence.spanTicks, "a slide lasts until the next rail pass")
+        // The stamp is a tick the sim has already run, never one still to come: a frame drawn now
+        // is somewhere inside the span, not waiting for it to open.
+        assertTrue(s.motion.cadence.writtenAtTick < s.tick, "stamped in the future")
     }
 
     @Test

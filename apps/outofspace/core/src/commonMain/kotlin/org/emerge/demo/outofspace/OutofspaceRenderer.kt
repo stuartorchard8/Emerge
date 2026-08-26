@@ -1,6 +1,5 @@
 package org.emerge.demo.outofspace
 
-import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.chem.LANTHANIDE_SUITE
 import org.emerge.demo.outofspace.chem.MINERALS
 import org.emerge.demo.outofspace.chem.Mixture
@@ -21,6 +20,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.Cadence
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
@@ -245,9 +245,19 @@ class OutofspaceRenderer {
         return if (state.grid.inBounds(x, y)) state.grid.tile(x, y) else TileIndex.NONE
     }
 
-    /** Tick progress 0–[OutofspaceConfig.ticksPerSecond] (see [OutofspaceController.tickAlpha]). Defaults to 1 (tests). */
-    private var alpha: Float = 1f
-    private val railPacketAlpha get() = (alpha%RAIL_PERIOD)/RAIL_PERIOD
+    /**
+     * How far this frame is between the rail pass that last ran and the one that runs next: 0 as a
+     * packet leaves a tile, 1 as it lands on the next. Set once per [draw] from the [Cadence] the
+     * rail pass stamped on [org.emerge.demo.outofspace.world.Motion].
+     *
+     * ⛔ **Nothing here works out when a pass ran.** This used to be `(alpha % RAIL_PERIOD) /
+     * RAIL_PERIOD` off a wrapped global clock, which is only right when the pass fires on tick zero
+     * of a period that divides the tick rate — and the day the subsystems were given staggered
+     * offsets it became a fifth of a tile of snap on arrival and a whole tile of teleport two
+     * thirds of the way through the slide. The sim says when it ran. No period or offset constant
+     * belongs in this file.
+     */
+    private var railPacketAlpha: Float = 1f
 
     fun draw(
         state: VesselState,
@@ -255,13 +265,12 @@ class OutofspaceRenderer {
         inspectLayer: InspectLayer,
         hoveredTile: TileIndex,
         overlay: Overlay = Overlay.None,
-        tickAlpha: Float = 1f,
-        ticksPerSecond: Float = 1f,
+        simTime: Double = SETTLED,
         camera: CameraFrame = CameraFrame.Grid,
     ) {
         followAnchor(state, camera)
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
-        alpha = tickAlpha.coerceIn(0f, ticksPerSecond)
+        railPacketAlpha = state.motion.cadence.progress(simTime)
         GPU.setClearColor(0.05f, 0.06f, 0.08f, 1f) // dark blue-grey void
         GPU.clearColorBuffer()
         val starscapeBearing = if (camera == CameraFrame.Grid) state.ang else Coord(0)
@@ -1233,6 +1242,16 @@ class OutofspaceRenderer {
     }
 
     companion object {
+        /**
+         * A clock reading infinitely far past every stamp, so every [Cadence] reads as finished.
+         *
+         * The default for [draw], and what a test or a screenshot wants: a capture must show where
+         * things **are**, not an interpolated position corresponding to no state the sim was ever
+         * in. Infinity rather than a large number because it is the honest statement of the thing —
+         * settled whatever the span, whatever the stamp, with no arithmetic to get wrong.
+         */
+        const val SETTLED = Double.POSITIVE_INFINITY
+
         /**
          * Raised from 20,000 when the flow overlay arrived: it draws up to four rects per visible
          * tile *on top of* the tint pass, which at a wide zoom is more than the deck and the

@@ -114,8 +114,7 @@ internal class OutofspaceAndroidView(context: Context) : GLSurfaceView(context) 
             // needs no change to this call.
             TileIndex.NONE,
             controller.overlay,
-            controller.tickAlpha,
-            controller.cfg.ticksPerSecond.toFloat(),
+            controller.simTime,
             controller.mode.camera,
         )
         hud.build(ui, controller, if (delta > 0f) 1f / delta else 0f)

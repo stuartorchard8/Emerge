@@ -75,5 +75,14 @@ class MotionLog(rails: List<Segment?>, rail: RailLayer) {
         bridgeSlots[tile] = (bridgeSlots[tile] ?: 0) or (1 shl slot)
     }
 
-    fun freeze(): Motion = Motion(arrivals, previousMass, bridgeSlots.toMap(), departures.toList())
+    /**
+     * Freezes the tick's record, stamped with when the pass ran and how long it stands.
+     *
+     * [tick] is the **reducer's** tick — `state.tick`, the one the pass was scheduled against, not
+     * the one on the state it goes on to produce. [span] is the rail period. Together they are the
+     * whole of what the renderer needs to know about the schedule, which is why it no longer knows
+     * anything about the schedule. See [Cadence].
+     */
+    fun freeze(tick: Long, span: Int): Motion =
+        Motion(arrivals, previousMass, bridgeSlots.toMap(), departures.toList(), Cadence(tick, span))
 }

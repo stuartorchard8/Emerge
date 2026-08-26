@@ -33,6 +33,14 @@ class Motion(
     private val bridgeSlots: Map<TileIndex, Int>,
     /** Things that left the layer this tick, drawn shrinking away as they go. */
     val departures: List<Departure>,
+    /**
+     * When the pass that wrote this ran, and how long it stands — see [Cadence].
+     *
+     * The renderer interpolates every one of these facts, and this is the only thing that says how
+     * far along. It is here rather than worked out downstream because the rail pass is the only
+     * thing that knows when the rail pass ran.
+     */
+    val cadence: Cadence = Cadence.SETTLED,
 ) {
     /** Whether [tile]'s packet arrived from a neighbour, and if so which way it was travelling. */
     fun arrivedFrom(tile: TileIndex): Direction? {
@@ -57,7 +65,8 @@ class Motion(
             arrivals.contentEquals(other.arrivals) &&
             previousMass.contentEquals(other.previousMass) &&
             bridgeSlots == other.bridgeSlots &&
-            departures == other.departures)
+            departures == other.departures &&
+            cadence == other.cadence)
 
     override fun hashCode(): Int = arrivals.contentHashCode()
 
@@ -81,6 +90,6 @@ class Motion(
         const val SLOT_EXIT = 2
 
         /** A world with nothing moving — what a freshly loaded or freshly built vessel has. */
-        val NONE = Motion(ByteArray(0), LongArray(0), emptyMap(), emptyList())
+        val NONE = Motion(ByteArray(0), LongArray(0), emptyMap(), emptyList(), Cadence.SETTLED)
     }
 }

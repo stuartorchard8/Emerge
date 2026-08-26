@@ -360,7 +360,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (port.kind == PortKind.Output) w.pushOut(tile, port)
             }
             w.readGauges()
-            motion = w.motion.freeze()
+            motion = w.motion.freeze(state.tick, RAIL_PERIOD)
         } else {
             // Same motion is still in progress from last time.
             motion = state.motion

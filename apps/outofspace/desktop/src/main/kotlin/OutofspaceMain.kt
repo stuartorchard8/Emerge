@@ -351,7 +351,7 @@ fun main() {
         // falloff is measured from where the player is actually looking.
         impactAudio.onFrame(state, renderer.camX, renderer.camY)
 
-        renderer.draw(state, controller.inspectTile, controller.inspectLayer, hovered, controller.overlay, controller.tickAlpha, controller.cfg.ticksPerSecond.toFloat(), controller.mode.camera)
+        renderer.draw(state, controller.inspectTile, controller.inspectLayer, hovered, controller.overlay, controller.simTime, controller.mode.camera)
         hud.build(ui, controller, fps, hovered)
         ui.draw()
 
