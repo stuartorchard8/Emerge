@@ -304,6 +304,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         if (_m0) profiler.recordPhase("machines", _m!!.elapsedNow().inWholeNanoseconds)
 
+        // ── Rails ─────────────────────────────────────────────────────────────────
+        val _r0 = _prof0; val _r = if (_r0) TimeSource.Monotonic.markNow() else null
         val motion: Motion
         if (shouldRun(state.tick, RAIL_PERIOD)) {
             // Rails first: produced output can go on the track after it moves.
@@ -319,7 +321,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Same motion is still in progress from last time.
             motion = state.motion
         }
-        if (_prof0) profiler.recordPhase("rails", _prof!!.elapsedNow().inWholeNanoseconds)
+        if (_r0) profiler.recordPhase("rails", _r!!.elapsedNow().inWholeNanoseconds)
 
         // A ghost that finished above is a wall now — see [Work.solidityChanged]. Everything below
         // reads `structure`, and the fluid step in particular would otherwise pour air back into the
@@ -412,6 +414,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val volumes = pipeVolumes(state.grid, conduits)
 
         // ── Valves + Pumps ────────────────────────────────────────────────────────
+        val _v0 = _prof0; val _v = if (_v0) TimeSource.Monotonic.markNow() else null
         if (shouldRun(state.tick, PUMP_PERIOD)) {
             // Valves first: pressure propagates immediately, both layers see exchange
             // (see [exchangeLayers]).
@@ -434,7 +437,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 pipeVolumes = volumes,
             )
         }
-        if (_prof0) profiler.recordPhase("valves+pumps", _prof!!.elapsedNow().inWholeNanoseconds)
+        if (_v0) profiler.recordPhase("valves+pumps", _v!!.elapsedNow().inWholeNanoseconds)
 
         // ── Pressure ──────────────────────────────────────────────────────────────
         //
@@ -709,7 +712,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         ).bookedFrameTurn(state.pose).resized(w.fitRequested).also {
         if (_g0) profiler.recordPhase("motion", _g!!.elapsedNow().inWholeNanoseconds)
     }
-    if (_prof0) profiler.reset()
     }
 
     /**
