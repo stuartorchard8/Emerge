@@ -124,6 +124,7 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
+import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
@@ -1991,11 +1992,23 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * the ledgers exist to catch.
          */
         fun leech(m: Extractor, activation: Int, tile: TileIndex): Extractor {
-            // Backed up: stop biting. What is not taken is still in the rock, which is a better
-            // place for it than a buffer — nothing is forfeit by waiting.
+            // Backed up: stop biting. What is not taken is still in the rock — or still on the floor
+            // — which is a better place for it than a buffer; nothing is forfeit by waiting.
             val held = buffers.resourceAt(bufferTile(grid, m, tile, BufferRole.Product)!!)
             if ((held?.total ?: 0L) >= Extractor.BUFFER_CAP) return m
             if (activation <= 0) return m
+
+            var taken = Mixture.EMPTY
+
+            // **The second source, and it needs no rock.** A plate standing in a cold room is
+            // standing in frost, and frost is a deposit — the same thing a rock is, lying flatter.
+            // See [liftFrost] for why this is the machine's job and not the track's, and for the
+            // cohesion line that keeps it from chilling the room it scrapes.
+            val frost = liftFrost(m.tiles(grid), masses, airEnergy, airCohesion)
+            if (!frost.isEmpty) {
+                gasBecameSolid(frost.total, frost.energy)
+                taken += frost
+            }
 
             // ⚠️ **A bite goes straight into the store it leaves from.** It used to land in a second
             // buffer and be ground across at a rate; the rate was unobservable, because a belt tile
@@ -2004,11 +2017,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // meet a rock measured in whole cells with a rate measured in mass — and the buffer cap
             // does that on its own, one cell at a time.
             val found = reachedBody(m, tile)
-            if (found < 0) return m
-            val bitten = bite(found, tile) ?: return m
-            if (bitten.total <= 0L) return m
-            heat(tile, heatOfWorking(bitten.total, m))
-            putStore(m, tile, BufferRole.Product, (held ?: Mixture.EMPTY) + bitten)
+            if (found >= 0) {
+                val bitten = bite(found, tile)
+                if (bitten != null && bitten.total > 0L) {
+                    heat(tile, heatOfWorking(bitten.total, m))
+                    taken += bitten
+                }
+            }
+
+            if (taken.isEmpty) return m
+            putStore(m, tile, BufferRole.Product, (held ?: Mixture.EMPTY) + taken)
             return m
         }
 
@@ -2742,6 +2760,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Only as much as will actually fit: an empty tile takes a whole packet, a partial one
             // takes what tops it up.
             val room = minOf(rail.headroom(tile), useful)
+            // ⚠️ **Some kinds ship whole packets or nothing** — see [DeckMachineKind
+            // .shipsWholePackets]. A machine whose store is a hopper rather than a pair of finished
+            // packets holds its remainder back instead of sending a runt lump that will own a tile
+            // for good.
+            //
+            // ⛔ **Unless it is being taken apart**, and that exception is the whole reason this is
+            // a condition rather than a cap. Deconstruction waits on the stores that an output port
+            // drains — see [scrapMachines] — so a machine that will not let go of its last eighty
+            // grams is a machine that never comes apart. Told to go, it hands over whatever it has.
+            if (m.kind.shipsWholePackets && port.owner !in scrapping &&
+                minOf(room, buffer.total) < Capacity.PACKET_MASS
+            ) return
             val (packet, rest) = takePacket(buffer, room) ?: return
             val wasEmpty = rail.isEmpty(tile)
             if (!rail.loadOnto(tile, packet.contents)) return

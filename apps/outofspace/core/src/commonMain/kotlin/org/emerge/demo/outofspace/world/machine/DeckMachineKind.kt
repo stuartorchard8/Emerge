@@ -25,6 +25,23 @@ enum class DeckMachineKind(
     val preventThoroughfare: Boolean = preventAirflow,
     /** Whether this machine holds its product when its RUN activation is zero. */
     val gatesOutput: Boolean = false,
+    /**
+     * Whether this machine will only ever put a **whole packet** on the track.
+     *
+     * A machine that produces in packets — a processor works a charge and hands out one packet of
+     * concentrate and one of tailings — never has a part-packet to offer in the first place. An
+     * [Extractor] does: it takes rock a whole *cell* at a time and frost by whatever happens to be
+     * lying on its plate, neither of which is a round number, so its store is nearly always some
+     * packets plus a remainder. Left to dribble, that remainder goes out as a runt lump which owns
+     * its tile for good — packets never merge — and the corridor behind it carries a hundred grams
+     * where it could have carried a hundred kilograms.
+     *
+     * So the remainder waits in the hopper for the next bite to top it up, which is where it is
+     * useful and where it costs nothing. ⚠️ **Except when the machine is being taken apart**, at
+     * which point holding on is a deadlock rather than a policy and any size is allowed out — see
+     * `Work.pushOut`.
+     */
+    val shipsWholePackets: Boolean = false,
 ) {
     Hull("HULL", preventAirflow = true),
     Airlock("AIRLOCK", preventAirflow = true),
@@ -44,7 +61,7 @@ enum class DeckMachineKind(
     Thruster("THRUSTER", preventThoroughfare = true),
     Processor("PROCESSOR", preventThoroughfare = true, gatesOutput = true),
     ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true, gatesOutput = true),
-    Extractor("EXTRACTOR", gatesOutput = true),
+    Extractor("EXTRACTOR", gatesOutput = true, shipsWholePackets = true),
 
     /**
      * Three tiles end to end, and the only kind whose footprint is a line rather than a square —
