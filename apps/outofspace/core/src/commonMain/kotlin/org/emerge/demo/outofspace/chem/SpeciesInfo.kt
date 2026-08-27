@@ -74,8 +74,9 @@ class ReactionInfo(
 /**
  * Every reaction in the game, flattened.
  *
- * Order is table order — oxidations, decompositions, reductions, then gas fires — which is arbitrary
- * and only has to be stable, since this list is read by a panel and never by the sim.
+ * Order is table order — oxidations, decompositions, reductions, gas fires, then the store-agnostic
+ * rows — which is arbitrary and only has to be stable, since this list is read by a panel and never
+ * by the sim.
  */
 val ALL_REACTIONS: List<ReactionInfo> = buildList {
     for (o in OXIDATIONS) {
@@ -125,6 +126,46 @@ val ALL_REACTIONS: List<ReactionInfo> = buildList {
                 enthalpyPerKg = c.enthalpyPerKg,
             ),
         )
+    }
+    for (r in REACTIONS) {
+        add(
+            ReactionInfo(
+                // ⚠️ **Derived, not stated — and this is the point of the whole plan.** A
+                // [Reaction] holds no kind, because what store its matter is in is not its business.
+                // What the *player* must arrange is still a real distinction and still worth
+                // printing, so it is worked out from the reagents here, where it is a label rather
+                // than a fact the simulation acts on.
+                kind = kindOf(r),
+                inputs = r.reagents,
+                products = r.products,
+                onsetKelvin = r.onsetKelvin,
+                enthalpyPerKg = r.enthalpyPerKg,
+            ),
+        )
+    }
+}
+
+/**
+ * What a player has to arrange for [reaction] — [ReactionKind] worked out rather than declared.
+ *
+ * Oxygen among the reagents and a fluid principal is a fire; oxygen with a solid principal is
+ * something burning in the room's air; a second solid reagent is something mixed into the charge;
+ * and one reagent is heat and nothing else. Those are the four the four old tables encoded
+ * structurally, recovered from the only thing that ever actually distinguished them.
+ *
+ * ⚠️ **The label may be wrong here in a way it could not be before, and that is the trade.** A
+ * table said what it was; this infers it. The inference is a panel's caption and nothing in the
+ * simulation reads it, so the cost of getting it wrong is a misleading word — against a store claim
+ * that was wrong for three rows and cost them their existence.
+ */
+private fun kindOf(reaction: Reaction): ReactionKind {
+    val takesOxygen = reaction.reagents.any { it.first == Species.Oxygen }
+    val gaseousPrincipal = reaction.principal.isFluid
+    return when {
+        takesOxygen && gaseousPrincipal -> ReactionKind.Fire
+        takesOxygen -> ReactionKind.Burn
+        reaction.reagents.size > 1 -> ReactionKind.Reduce
+        else -> ReactionKind.Heat
     }
 }
 

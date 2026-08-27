@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.ALL_REACTIONS
 import org.emerge.demo.outofspace.chem.COMBUSTIONS
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.OXIDATIONS
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.REDUCTIONS
 import org.emerge.demo.outofspace.chem.ReactionKind
 import org.emerge.demo.outofspace.chem.Species
@@ -55,6 +56,9 @@ class SpeciesReferenceTest {
         assertTrue(reactionsConsuming(Species.Rutile).any { it.kind == ReactionKind.Reduce })
         // A fuel burning in the air it is already mixed with.
         assertTrue(reactionsConsuming(Species.Methane).any { it.kind == ReactionKind.Fire })
+        // And the fifth table, whose rows state no kind at all — this one is derived from the fact
+        // that ammonia cracking has a single reagent, so it is heat and nothing else.
+        assertTrue(reactionsConsuming(Species.Ammonia).any { it.kind == ReactionKind.Heat })
     }
 
     @Test
@@ -64,7 +68,11 @@ class SpeciesReferenceTest {
         // table nobody thought to name here. Counting is what makes the reference structurally
         // unable to fall behind the chemistry — a new table is a red test on the day it lands, not
         // an article that quietly says nothing happens to methane.
-        val expected = OXIDATIONS.size + DECOMPOSITIONS.size + REDUCTIONS.size + COMBUSTIONS.size
+        // ⚠️ It has already done its job once: `REACTIONS` — the store-agnostic table increment 1 of
+        // `PLAN_unified_reactions.md` introduced — turned this red on the commit that added it,
+        // which is a day's notice instead of five.
+        val expected = OXIDATIONS.size + DECOMPOSITIONS.size + REDUCTIONS.size +
+            COMBUSTIONS.size + REACTIONS.size
         assertEquals(expected, ALL_REACTIONS.size)
     }
 

@@ -149,14 +149,15 @@ val DECOMPOSITIONS: List<Decomposition> = listOf(
 
     // ── The ices, cracked ──
     //
-    // 2 NH₃ → N₂ + 3 H₂, and CH₄ → C + 2 H₂. Both turn a comet volatile into something a vessel
-    // actually wants, and methane's carbon comes out as a solid that stays on the belt.
-    Decomposition(
-        reactant = Species.Ammonia, reactantUnits = 2,
-        products = listOf(Species.Nitrogen to 1, Species.Hydrogen to 3),
-        onsetKelvin = 1100,
-        enthalpyPerKg = 46L * kJPerMolAt(34),
-    ),
+    // ⛔ **Ammonia cracking has moved to [REACTIONS]** (`PLAN_unified_reactions.md`, increment 1).
+    // It was here, at 1100 K, and ammonia is evicted from a cargo layer above its critical point of
+    // 405 K — so this table swept it over a store it could not be in, and it never fired outside a
+    // sealed tile. It is now swept over the fluid field, where the ammonia actually is.
+    //
+    // ⚠️ **CH₄ → C + 2 H₂ has the same bug and is still here**, because the fix is not the same: its
+    // carbon is not something the atmosphere can hold, so moving it needs the fluid field widened
+    // first. Parked deliberately — see the plan's decision 4, and `ReactionReachabilityTest`, which
+    // pins it as known-dead rather than letting it read as a route the player can plan around.
     Decomposition(
         reactant = Species.Methane, reactantUnits = 1,
         products = listOf(Species.Carbon to 1, Species.Hydrogen to 2),

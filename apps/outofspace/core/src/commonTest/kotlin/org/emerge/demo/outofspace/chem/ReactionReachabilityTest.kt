@@ -61,6 +61,19 @@ class ReactionReachabilityTest {
         for (r in REDUCTIONS) add(Triple("REAGENT", r.oxide, r.onsetKelvin))
     }
 
+    /**
+     * Every row swept over the fluid field — the fires, and the store-agnostic rows whose principal
+     * happens to be a fluid.
+     *
+     * ⚠️ **The audit is two-sided now.** A cargo row fails by naming a principal the cargo layer
+     * cannot hold; a fluid row fails the other way, by naming one the *air* cannot. Increment 1
+     * moved ammonia across, so both directions are live and neither can be checked alone.
+     */
+    private fun fluidSweptRows(): List<Triple<String, Species, Int>> = buildList {
+        for (c in COMBUSTIONS) add(Triple("GAS FIRE", c.fuel, c.onsetKelvin))
+        for (r in REACTIONS) add(Triple("FLUID", r.principal, r.onsetKelvin))
+    }
+
     @Test
     fun `no row asks for a principal its own store cannot hold`() {
         val dead = layerSweptRows()
@@ -76,8 +89,9 @@ class ReactionReachabilityTest {
         // ⛔ Strike a row from this set only when it has genuinely moved store — never to make the
         // test green. See `PLAN_unified_reactions.md`; increments 1 and 3 are what empty it.
         val knownDead = setOf(
-            // Increment 1. Ammonia critical at 405 K, cracking at 1100 K.
-            "HEAT Ammonia@1100K",
+            // ✅ Ammonia cracking was here and is gone — increment 1 moved it to [REACTIONS], which
+            // is swept over the fluid field where the ammonia actually is.
+            //
             // Increment 2, ⛔ PARKED — it needs the fluid field to be able to hold carbon. Methane
             // critical at 191 K, pyrolysis at 1300 K.
             "HEAT Methane@1300K",
@@ -86,6 +100,45 @@ class ReactionReachabilityTest {
             "REAGENT CarbonDioxide@973K",
         )
         assertEquals(knownDead, dead)
+    }
+
+    @Test
+    fun `no fluid-swept row asks for a principal the air cannot hold`() {
+        // The mirror of the case above, and it is not hypothetical: the way to "fix" a dead cargo
+        // row is to move it to the fluid sweep, and the way to get that wrong is to move one whose
+        // principal is a rock. A pass finds no fluid for it and skips it silently, which is the same
+        // symptom the plan exists to eliminate — a reaction that never happens.
+        for ((table, principal, onset) in fluidSweptRows()) {
+            assertTrue(principal.isFluid, "$table ${principal.name}@${onset}K: the air cannot hold it")
+        }
+    }
+
+    @Test
+    fun `a fluid-swept row leaves nothing behind that the air cannot hold`() {
+        // Products, where the case above is reagents. A gas-phase reaction with a solid product has
+        // nowhere to put it — `MassIndex(tile, Species.Carbon)` does not compile, by `Fluid.kt`'s
+        // design — so the mass would vanish. The answer when such a row is wanted is to widen the
+        // fluid field, which is parked; see the plan, decision 4.
+        for (r in REACTIONS) {
+            for ((product, _) in r.products) {
+                assertTrue(
+                    product.isFluid,
+                    "${r.principal.name} leaves ${product.name}, which the air cannot hold",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `every store-agnostic row has one reagent until contention exists`() {
+        // ⛔ `reactInFluid` allocates nothing between rows, so a row with a second reagent would take
+        // as much of it as it liked and no row would ever be starved. The list shape is the target
+        // shape and it is right that it is a list — but until increment 3 builds the Jacobi
+        // demand-then-apportion, a second entry is a reaction that quietly runs rich.
+        for (r in REACTIONS) {
+            assertEquals(1, r.reagents.size, "${r.principal.name} has a reagent nothing allocates")
+            assertEquals(r.principal, r.reagents.single().first)
+        }
     }
 
     @Test
@@ -116,7 +169,6 @@ class ReactionReachabilityTest {
         // audit does not is a reaction the player can read about and nobody has checked can happen;
         // a table this audit walks and the reference does not is the bug fixed in `0de81dd9`. One
         // count, asserted equal, closes both directions.
-        assertEquals(ALL_REACTIONS.count { it.kind != ReactionKind.Fire }, layerSweptRows().size)
-        assertEquals(ALL_REACTIONS.count { it.kind == ReactionKind.Fire }, COMBUSTIONS.size)
+        assertEquals(ALL_REACTIONS.size, layerSweptRows().size + fluidSweptRows().size)
     }
 }

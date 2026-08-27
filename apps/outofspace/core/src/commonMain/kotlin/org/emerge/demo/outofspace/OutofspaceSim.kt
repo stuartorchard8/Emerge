@@ -126,6 +126,7 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
+import org.emerge.demo.outofspace.world.reactInFluid
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.settleCondensate
@@ -495,6 +496,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // there are ticks where they do not exist at all.
             val inTheAir = combust(w.masses, w.airEnergy)
             val inThePipes = combust(w.pipeMass, w.pipeEnergy)
+            // And the reactions that are neither cargo chemistry nor fires — the ones whose
+            // principal simply happens to be a fluid, so the fluid field is where they are swept.
+            // Ammonia cracking is the first; see `PLAN_unified_reactions.md`. Alongside `combust`
+            // rather than folded into it because it settles no contention: every row has one
+            // reagent, so nothing here can starve anything.
+            val crackedInAir = reactInFluid(w.masses, w.airEnergy)
+            val crackedInPipes = reactInFluid(w.pipeMass, w.pipeEnergy)
             val toGasMass = offRails.toGasMass + offHoppers.toGasMass
             val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy
             val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
@@ -508,7 +516,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // is exactly the same kind of quantity a reaction enthalpy is.
             val made = onRails.releasedEnergy + inHoppers.releasedEnergy +
                 offRails.releasedEnergy + offHoppers.releasedEnergy +
-                inTheAir.releasedEnergy + inThePipes.releasedEnergy
+                inTheAir.releasedEnergy + inThePipes.releasedEnergy +
+                crackedInAir.releasedEnergy + crackedInPipes.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
         if (_c0) profiler.recordPhase("chemistry", _c!!.elapsedNow().inWholeNanoseconds)

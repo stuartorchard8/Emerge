@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.COMBUSTIONS
 import org.emerge.demo.outofspace.chem.COMBUSTION_COUNT
+import org.emerge.demo.outofspace.chem.LOWEST_REACTION_ONSET
+import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.LOWEST_COMBUSTION_ONSET
 import org.emerge.demo.outofspace.chem.Fluid
@@ -593,12 +595,97 @@ fun combust(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): C
 }
 
 /**
+ * One pass of every [REACTIONS] row over the whole of [air] — increment 1 of
+ * `PLAN_unified_reactions.md`.
+ *
+ * ### Why this is not [combust] with another table
+ *
+ * [combust] runs reactions that are *defined* as gas fires: fuel plus the tile's oxygen, contended,
+ * every product a fluid. This runs reactions that do not say what they are at all. A
+ * [org.emerge.demo.outofspace.chem.Reaction] states its principal, and the principal's store decides
+ * where the pass finds its matter and where the products go — so a row lands here because its
+ * principal is a fluid, not because somebody filed it under fires.
+ *
+ * That is the whole point of the plan: ammonia cracking sat in
+ * [org.emerge.demo.outofspace.chem.DECOMPOSITIONS] claiming to be cargo chemistry, at an onset
+ * hundreds of kelvin above where `offGas` evicts ammonia from a cargo layer. It never fired outside
+ * a sealed tile. Nothing about the row was wrong; the store it claimed was.
+ *
+ * ### Nothing crosses a ledger
+ *
+ * Every reagent comes out of [air] and every product goes back into it, so the cargo identity is
+ * untouched and the air identity is untouched: **the total mass of a tile's gas is unchanged by this
+ * function, exactly**, which is [combust]'s strongest property and this one's too. The only thing a
+ * pass reports is [ChemistryStep.releasedEnergy], and for ammonia that number is *negative* — this
+ * is the first gas reaction that takes energy out of a room.
+ *
+ * ⛔ **No contention, because nothing here has anything to contend over.** Every current row has one
+ * reagent, which is its own principal, so a tile holding two of them runs both in full. When rows
+ * with a scarce shared reagent arrive, they arrive with the Jacobi demand-then-apportion that
+ * increment 3 builds — never by reacting each in turn against a dwindling supply, which would hand
+ * the tile to whichever row came first.
+ *
+ * ⚠️ **Temperatures are derived when they are not given**, for [combust]'s reason: a caller holding
+ * [airEnergy] knows them whether or not it passed them, and a reaction that failed to start because
+ * an argument was omitted would be a silent one. Read once per tile, before anything reacts, so no
+ * row's rate depends on the heat an earlier row moved.
+ */
+fun reactInFluid(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): ChemistryStep {
+    val tiles = air.data.size / Fluid.COUNT
+    val temperature = kelvin ?: gasKelvin(airEnergy, heatCapacity(tiles, air))
+
+    var released = 0L
+
+    for (i in 0 until tiles) {
+        val tile = TileIndex(i)
+        // Where nearly every tile stops, for one compare — [oxidise]'s `LOWEST_ONSET` and
+        // [combust]'s `LOWEST_COMBUSTION_ONSET`, for the same reason.
+        val hot = temperature[i]
+        if (hot < LOWEST_REACTION_ONSET) continue
+
+        for (r in REACTIONS.indices) {
+            val reaction = REACTIONS[r]
+            // A row is here because its principal is a fluid; a row whose principal is not belongs
+            // to a cargo sweep and is skipped rather than guessed at.
+            val principal = reaction.principal.fluid ?: continue
+            val consumed = reaction.consumed(air[tile, principal], hot)
+            if (consumed <= 0L) continue
+
+            air.add(tile, principal, -consumed)
+
+            // The principal's whole mass is handed out across the products, so the tile's gas
+            // weighs what it did — see [org.emerge.demo.outofspace.chem.Reaction.split].
+            val parts = reaction.split(consumed)
+            for (p in reaction.products.indices) {
+                val mass = parts[p]
+                if (mass <= 0L) continue
+                // ⛔ Unrepresentable rather than merely skipped: a product the air cannot hold would
+                // vanish here, and quietly. `ReactionReachabilityTest` is what stops such a row
+                // being written; this line is what the compiler leaves behind.
+                val product = reaction.products[p].first.fluid ?: continue
+                air.add(tile, product, mass)
+            }
+
+            // Per kilogram of the **principal**, which is what the rate was a fraction of and what
+            // the row's enthalpy is quoted against.
+            released += applyAirEnthalpy(airEnergy, tile, -reaction.enthalpy(consumed))
+        }
+    }
+
+    return if (released == 0L) ChemistryStep.NOTHING
+    else ChemistryStep(toGasMass = 0L, toGasEnergy = 0L, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = released)
+}
+
+/**
  * [applyEnthalpy]'s twin for the atmosphere, and clamped for the same reason: a reaction may not
  * drive a cell below zero energy, which is below absolute zero and would read back as a nonsensical
  * temperature for as long as the gas sat there.
  *
- * Every row of [COMBUSTIONS] is exothermic, so in practice this only ever adds — the clamp is a
- * guard against a future endothermic gas reaction rather than a mechanism.
+ * ⚠️ **The clamp is a mechanism now, not a guard.** Every row of [COMBUSTIONS] is exothermic, so
+ * while fires were the only gas chemistry this only ever added. [REACTIONS] brought ammonia
+ * cracking, which is endothermic: it is the first thing that takes energy *out* of a room's air, and
+ * so the first thing that can drive a cell toward zero. What the ledger must hear is what was
+ * actually taken, which is why this returns a value rather than being a statement.
  */
 private fun applyAirEnthalpy(airEnergy: EnergyArray, tile: TileIndex, delta: Long): Long {
     if (delta == 0L) return 0L
