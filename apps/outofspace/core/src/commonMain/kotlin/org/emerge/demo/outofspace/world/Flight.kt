@@ -65,6 +65,18 @@ object Flight {
 
     /** [Frac]'s unit: 1 tile/tick² = one whole Frac. Shared to prevent copies. */
     const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()
+
+    /**
+     * **The dial.** How hard felt gravity leans on the diffusion, in permille of a face's share per
+     * whole [FRAC_ONE] of acceleration along it.
+     *
+     * ⚠️ **Bounded below 1000 for a reason that is not taste.** The four faces are skewed in
+     * opposite pairs, so their total is invariant however hard this leans — but a single face
+     * scaled past double would take more than the pass allotted it, and past 1000 the opposite face
+     * would go *negative*, which is gas flowing backwards up its own gradient. Half is a strong
+     * lean that keeps both ends of every pair positive.
+     */
+    const val MAX_DRIFT_PERMILLE: Long = 500L
 }
 
 
@@ -310,4 +322,58 @@ fun airCoupling(
         dragTorque = dragTorque,
         carriedX = carriedX, carriedY = carriedY, carriedTorque = carriedTorque,
     )
+}
+
+/**
+ * The centrifugal acceleration felt at an arm of ([armX], [armY]) millitiles from the axis, on
+ * something turning at [angVel] — outward, and quadratic in the spin.
+ *
+ * ⛔ **For the GAS and nothing else.** A fictitious force is what a *rotating frame* needs, and the
+ * atmosphere is the only thing in the game that lives in one: it is addressed by tile, so the grid
+ * turning means the gas turning with it. Bodies are stored in the **world**, which is inertial —
+ * they get the outward spiral for free from travelling straight while the grid turns underneath, and
+ * `RotationTest :: a body aboard a spinning ship drifts outward on its own` measures it against the
+ * closed form. Adding this to a body would count the same effect twice.
+ *
+ * ⚠️ **No Coriolis, and that costs no conservation and no symmetry** (Stu, 2026-08-27). Fictitious
+ * forces carry no momentum in an inertial frame, and this one only ever *redistributes gas inside
+ * the hull*, which cannot move a centre of mass. Measured: a ship spinning at 0.63 rev/s with air
+ * aboard holds `angularBalance` constant and `momentumBalanceX/Y` at exactly zero. Coriolis would
+ * need a per-tile gas velocity — the per-edge field that cost the transport solver its life — and
+ * buys only swirl.
+ *
+ * ⚠️ `ω²` is formed through [scaledRatio] twice rather than as `angVel * angVel`, which reaches
+ * 3e21 for an ordinary spin and wraps. The rescale's standing lesson, and the fourth time this
+ * session.
+ */
+fun centrifugalAt(angVel: Long, armX: Long, armY: Long): Frac2 {
+    if (angVel == 0L) return Frac2(Frac(0L), Frac(0L))
+    val w = if (angVel < 0L) -angVel else angVel
+    // ω in Frac units, then ω² in Frac units — each step a division, never a bare product.
+    val omegaFrac = scaledRatio(w, Rotation.RAW_PER_RADIAN, Flight.FRAC_ONE)
+    val omegaSq = scaledRatio(w, Rotation.RAW_PER_RADIAN, omegaFrac)
+    // Outward: the arm's own direction, scaled by ω². The arm is millitiles and the answer wants
+    // tiles, which is the division by MILLI_TILE.
+    fun along(arm: Long): Frac {
+        if (arm == 0L || omegaSq == 0L) return Frac(0L)
+        val magnitude = scaledRatio(if (arm < 0L) -arm else arm, Rotation.MILLI_TILE, omegaSq)
+        return Frac(if (arm < 0L) -magnitude else magnitude)
+    }
+    return Frac2(along(armX), along(armY))
+}
+
+/**
+ * How much a face's share is skewed by a felt gravity of [alongFace] pointing through it, in
+ * permille — positive downhill, negative up.
+ *
+ * Paired: the face gravity points through is opened by exactly as much as the opposite one is
+ * closed, so the total leaving a cell is untouched and the pass stays a redistribution rather than
+ * a source. See [Flight.MAX_DRIFT_PERMILLE] for the bound and why it matters.
+ */
+fun driftPermille(alongFace: Long): Int {
+    if (alongFace == 0L) return 0
+    val magnitude = scaledRatio(
+        if (alongFace < 0L) -alongFace else alongFace, Flight.FRAC_ONE, Flight.MAX_DRIFT_PERMILLE,
+    ).coerceAtMost(Flight.MAX_DRIFT_PERMILLE)
+    return (if (alongFace < 0L) -magnitude else magnitude).toInt()
 }

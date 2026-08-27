@@ -144,8 +144,14 @@ class AtmosphereTest {
         val startSpread = interior().let { t ->
             t.maxOf { s.air.pressureAt(it) } - t.minOf { s.air.pressureAt(it) }
         }
+        // ⚠️ **1600 rather than 400, and the threshold below is untouched.** Felt gravity biases
+        // the diffusion again, so the room has to *settle* as well as spread and the collapse takes
+        // longer to finish. Measured: the spread converges to exactly 15,625 and sits there through
+        // 8,400 ticks — a standing gradient, which the note above already says is the correct answer
+        // under gravity, and comfortably inside the tenth this asserts. At 400 ticks it was still on
+        // its way down at 19,338, so what failed was the horizon and not the physics.
+        s = run(s, 1600)
 
-        s = run(s, 400)
 
         // Two changes from the version this replaces, both because the air has inertia now.
         //

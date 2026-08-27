@@ -626,9 +626,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
             val ventSpeed = Flight.ventTilesPerTick(cfg.ticksPerSecond)
+            // ⚠️ **The start-of-tick felt gravity and spin**, which is the attitude and thrust
+            // the gas was actually sitting in when the pass ran. Reading this tick's would drift the
+            // air by a burn that has not been booked yet.
+            val down = state.feltGravity
+            val spin = angularVelocity(state.angImpulse, w.about)
             val result = diffuseFluid(
                 edges, roomApertures, w.masses, w.airEnergy, roomKelvin,
-                ventSpeed = ventSpeed, about = w.about,
+                ventSpeed = ventSpeed, about = w.about, feltGravity = down, spin = spin,
             )
             fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
             fluidVentedMass = result.ventedMass
@@ -638,6 +643,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventTorque += result.ventTorque
             // Pipes: same model, connectivity from player-drawn layout.
             // A pipe that reaches the rim vents like a hole in the hull, and pushes like one.
+            // ⛔ **No drift in the pipes.** Plumbing is sealed and pumped; what is in a pipe goes
+            // where the pipe goes, and a puddle settling to the bottom of a horizontal run is not a
+            // thing this game models. Passing the gravity here would make pipes into slow tanks.
             val pipes = diffuseFluid(
                 edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin,
                 ventSpeed = ventSpeed, about = w.about,

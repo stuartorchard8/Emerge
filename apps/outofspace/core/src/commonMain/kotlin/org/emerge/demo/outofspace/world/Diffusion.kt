@@ -5,6 +5,8 @@ import org.emerge.demo.outofspace.chem.condensedDensityAt
 import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.chem.vapourMass
 import org.emerge.demo.outofspace.num.scaledRatio
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 
 /**
  * Rapid diffusion: the replacement for the momentum solver.
@@ -202,8 +204,18 @@ fun diffuseFluid(
      * like it nothing is ever integrated at this speed. Zero books no reaction at all.
      */
     ventSpeed: Long = 0L,
-    /** The point the vented gas's torque is taken about — the vessel's centre of mass. */
+    /**
+     * The point the vented gas's torque is taken about, and the axis the centrifugal drift is
+     * measured from — the vessel's centre of mass.
+     */
     about: MassDistribution = MassDistribution.EMPTY,
+    /**
+     * What the gas feels, everywhere at once: the plating plus whatever the engines are doing. The
+     * per-tile half — centrifugal — is derived here from [spin] and [about].
+     */
+    feltGravity: Frac2 = Frac2(Frac(0L), Frac(0L)),
+    /** The vessel's spin, [Coord] raw per tick, for the centrifugal half of the drift. */
+    spin: Long = 0L,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
@@ -243,6 +255,8 @@ fun diffuseFluid(
     val faceNeighbour = Array(FACES) { TileIndex.NONE }
     val faceOut = LongArray(FACES)
     val faceEdge = IntArray(FACES)
+    /** How much felt gravity opens or closes each face, in permille — see [driftPermille]. */
+    val faceSkew = IntArray(FACES)
 
     for (i in 0 until tiles) {
         val tile = TileIndex(i)
@@ -259,6 +273,34 @@ fun diffuseFluid(
         faceAperture[3] = apertures.xAt(right); faceNeighbour[3] = edges.xEdgeAfter(right)
         faceEdge[0] = up; faceEdge[1] = down; faceEdge[2] = left; faceEdge[3] = right
         faceOut.fill(0L)
+
+        // ── Which way is down, here ──
+        //
+        // ⛔ **The one place the atmosphere is treated as living in a rotating frame**, because it
+        // is the only thing that does: gas is addressed by tile, so a turning grid turns the gas
+        // with it. Bodies are stored in the world and get the outward spiral for free — see
+        // [centrifugalAt], which must never be applied to one.
+        //
+        // The uniform part is the plating plus the engines; the per-tile part is `ω²r` outward from
+        // the axis, which is what makes a spun ring hold its air against the rim.
+        var downX = feltGravity.x.raw
+        var downY = feltGravity.y.raw
+        if (spin != 0L && about.mass > 0L) {
+            val spun = centrifugalAt(
+                spin,
+                tileCentre(grid.xOf(tile)) - about.comX,
+                tileCentre(grid.yOf(tile)) - about.comY,
+            )
+            downX += spun.x.raw
+            downY += spun.y.raw
+        }
+        // Faces are ordered up, down, left, right — see where [faceAperture] is filled. A face is
+        // opened by the gravity pointing *through* it and its opposite closed by the same amount, so
+        // the four still sum to what the cell was going to shed either way.
+        faceSkew[0] = -driftPermille(downY)
+        faceSkew[1] = driftPermille(downY)
+        faceSkew[2] = -driftPermille(downX)
+        faceSkew[3] = driftPermille(downX)
 
         var outMass = 0L
         masses.forEachFluid(tile) { fluid, count ->
@@ -279,9 +321,11 @@ fun diffuseFluid(
                 // fit stays home, which is the same thing a shut face does. Full openness is the
                 // overwhelmingly common case and is exact — the rounding here is confined to valves
                 // and doors mid-cycle, where a stranded gram is a gram behind a nearly-shut door.
-                val out =
+                val even =
                     if (aperture >= ApertureField.OPEN) share
                     else share * aperture / ApertureField.OPEN
+                // Downhill passes more, uphill less, and the pair cancels — see [driftPermille].
+                val out = if (faceSkew[f] == 0) even else even + even / 1000L * faceSkew[f]
                 if (out <= 0L) continue
 
                 val neighbour = faceNeighbour[f]
