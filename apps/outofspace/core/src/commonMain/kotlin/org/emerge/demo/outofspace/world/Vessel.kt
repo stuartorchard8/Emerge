@@ -306,8 +306,6 @@ data class VesselState(
      * Its heat lives inside it, for the reason [Stuff.gas] gives at length.
      */
     val pipeAir: Stuff = Stuff.empty(grid.size),
-    /** How the gas in the pipes is moving. The pipes' twin of [momentum], and state for the same reason. */
-    val pipeMomentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
     /**
      * What the atmosphere's energy started at — the gas's twin of [baselineAirMass], and checked the
      * same way: `airEnergy + airVentedEnergy == baselineAirEnergy` on every tick.
@@ -391,14 +389,6 @@ data class VesselState(
     /** Cumulative net energy conducted from the solids into the atmosphere. Negative the other way. */
     val solidToAirEnergy: Long = 0L,
     /**
-     * How the air is moving: momentum on the faces between tiles — see [MomentumField].
-     *
-     * In state rather than derived, because it is the fluid's memory. A room does not stop being
-     * draughty between ticks, and an exhaust plume that had to be recomputed from pressure every
-     * tick would have no inertia and so could never be a jet.
-     */
-    val momentum: MomentumField = MomentumField.still(EdgeGrid(grid)),
-    /**
      * Cumulative impulse the air has delivered to the ship, and cumulative momentum that has gone
      * overboard with escaping gas.
      *
@@ -413,24 +403,12 @@ data class VesselState(
     val exhaustMomentumX: Long = 0L,
     val exhaustMomentumY: Long = 0L,
     /**
-     * Momentum the fluid solve worked out and could not hand to anything — see
-     * [org.emerge.demo.outofspace.world.ProjectionResult.undeliveredX].
-     *
-     * The fourth store, and the one that is an admission rather than a place. A pressure difference
-     * across a face with no gas on it has no fluid to accelerate and no wall to push, so it is
-     * counted here instead of quietly unbalancing the other three. Small and non-accumulating today
-     * — 238 against a vessel impulse of 25310 over 120 ticks of a breach — and expected to grow once
-     * the ship moves and drives its own atmosphere toward the hole.
-     */
-    val undeliveredImpulseX: Long = 0L,
-    val undeliveredImpulseY: Long = 0L,
-    /**
      * Cumulative momentum put into the ship by [org.emerge.demo.outofspace.Edit.Thrust] — the debug
      * engine — rather than by any gas pushing on anything.
      *
      * The fifth store, and the only one that is not physics. It exists so that the shortcut is
      * *legible*: the ledger identity becomes
-     * `vesselImpulse + momentum + pipeMomentum + exhaust + undelivered − debugImpulse == 0`,
+     * `vesselImpulse + exhaust + bodies + vented − debug == 0`,
      * which is the old identity exactly whenever nothing has cheated, and the whole point is that a
      * key which minted momentum without this term would make `momentumBalance` non-zero forever and
      * so retire the one instrument that found §5e's truncation bug. An instrument you have learned
@@ -452,7 +430,7 @@ data class VesselState(
      * ship gaining momentum from nowhere — which is exactly the reading the ledger is for. So the
      * identity becomes
      *
-     *     vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body − debug == 0
+     *     vesselImpulse + exhaust + bodies + vented − debug == 0
      *
      * and `body` is the same kind of thing [exhaustMomentumX] is: momentum that is genuinely
      * somewhere else now. It stops being a separate store the day a body is *held* rather than
@@ -497,30 +475,6 @@ data class VesselState(
      * the ship conserve by construction, but only the ship's half is inside the ledger.
      */
     val bodyAngImpulse: Long = 0L,
-    /**
-     * **World-frame momentum that appeared because the ship turned, and that nobody applied.**
-     *
-     * The one term in the ledger that is not an impulse. The gas's momentum lives per-edge on the
-     * grid, so it is stated in the *ship's* axes and it is turned into the world at read time — see
-     * [momentumBalanceX]. Turn the ship and that stored vector points somewhere else in the world
-     * without anything having pushed it: `R(θₜ)·G` is simply not `R(θₜ₋₁)·G`. The difference is real
-     * — a shipful of air genuinely does swing round with the hull — but the hull is never charged
-     * for swinging it, so the world-frame linear identity has no way to close while the ship rotates.
-     *
-     * Measured before this term existed: `momentumBalanceX` on a rotating starter vessel walked
-     * monotonically to 359 by tick 116, tick by tick exactly equal to
-     * `pose.turnedX(gas) − previousPose.turnedX(gas)`, and stopped dead on the ticks the rotation
-     * stopped. Nothing was leaking; the instrument was reading a frame change as a loss.
-     *
-     * ⚠️ **This is bookkeeping and not physics.** It is accumulated and subtracted here so that the
-     * ledger states a true identity, and it touches no trajectory: nothing reads it but
-     * [momentumBalanceX]. The physics it stands in for — the hull taking a reaction for dragging its
-     * own atmosphere round, and that reaction's torque — is not modelled, and this term is exactly
-     * how big that omission is. If it ever grows to a size that matters next to [vesselImpulseX],
-     * that is the signal to model it rather than to book it.
-     */
-    val frameTurnImpulseX: Long = 0L,
-    val frameTurnImpulseY: Long = 0L,
     /**
      * The air the world started with. Solids and gases never interconvert, so they get separate
      * ledgers — `atmosphere + airVented == baselineAir` is a cleaner statement than folding gas into
@@ -846,26 +800,29 @@ data class VesselState(
     /**
      * The whole momentum identity as one number: zero, or momentum has been minted or lost.
      *
-     * `vessel + gas + pipe gas + exhaust + undelivered + bodies − debug engine − frame turn == 0`,
-     * where the last term is the one that is not an impulse — see [frameTurnImpulseX]. Written here
-     * once because it was written out by hand in seven places, and a conservation law that is
-     * transcribed seven times is a conservation law with seven chances to be transcribed wrong.
+     * `vessel + exhaust + bodies + vented − debug engine == 0`. Written here once because it was
+     * written out by hand in seven places, and a conservation law transcribed seven times is a
+     * conservation law with seven chances to be transcribed wrong.
      *
-     * ⚠️ **Stated in the world frame, and the ship's own stores are the ones already in it.**
-     * [vesselImpulseX], [exhaustMomentumX] and [bodyImpulseX] are world-frame — see
-     * [org.emerge.demo.outofspace.OutofspaceSim] for where the turn happens and why. The gas fields
-     * are not and cannot be: [momentum] is per-edge on the grid, so it is a direction in the ship by
-     * construction, and it is turned here on the way out instead. That is exact for the gas, whose
-     * momentum is a live quantity read at the pose it is read at; [undeliveredImpulseX] is a running
-     * total and so is turned by an angle that is only approximately its own, which is tolerable only
-     * because the term is tiny and non-accumulating (see its own note). If it ever grows, it needs
-     * turning where it is booked, exactly as the exhaust does.
+     * ⛔ **There is no term for the gas aboard, and that is the point.** It used to carry one — the
+     * per-edge field `applyPressureForce` posted the gas's half of every push into — and because no
+     * physics ever spent that field, counting it let the identity close over momentum that could
+     * never move anything: a sealed vessel with a pressure pocket and nothing vented accelerated
+     * from 0.0058 to 0.0142 tiles/tick while this read `-0.0000` throughout. A store nothing can
+     * spend is not a store. Only mass that genuinely leaves the vessel may push it now, so the gas
+     * aboard is carried and the identity is over the ship and what it has thrown away.
+     *
+     * ⚠️ **Stated in the world frame, and every store here is already in it.** [vesselImpulseX],
+     * [exhaustMomentumX], [bodyImpulseX] and [ventMomentumX] are all turned where they are booked —
+     * see [org.emerge.demo.outofspace.OutofspaceSim] for the one frame boundary. Nothing is turned
+     * at read time any more, which is what retired the frame-turn correction along with the field
+     * it was correcting for.
      */
     val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX +
-        ventMomentumX - debugImpulseX - frameTurnImpulseX
+        ventMomentumX - debugImpulseX
 
     val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY +
-        ventMomentumY - debugImpulseY - frameTurnImpulseY
+        ventMomentumY - debugImpulseY
 
     /**
      * The angular identity as one number: `angImpulse + exhaust + bodies == 0`, or the ship has been
@@ -1226,60 +1183,9 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     val newAir = remapAirField(air)
     val newPipeAir = remapAirField(pipeAir)
 
-    // ── 5. Edge fields: momentum, pipeMomentum ───────────────────────────
-    val oldMomentumEdges = EdgeGrid(grid)
-    val newMomentumEdges = EdgeGrid(newGrid)
-    val newMomentumX = LongArray(newMomentumEdges.xEdgeCount)
-    val newMomentumY = LongArray(newMomentumEdges.yEdgeCount)
-    val srcX = momentum.copyX()
-    val srcY = momentum.copyY()
-    // x-faces: (x, y) where x ∈ [0, oldW], y ∈ [0, oldH)
-    for (oy in 0 until oldH) for (ox in 0..oldW) {
-        val oldEdge = oldMomentumEdges.xEdge(ox, oy)
-        val nx = ox + dx
-        val ny = oy + dy
-        if (ny >= 0 && ny < newGrid.height && nx >= 0 && nx <= newGrid.width) {
-            val newEdge = newMomentumEdges.xEdge(nx, ny)
-            newMomentumX[newEdge] = srcX[oldEdge]
-        }
-    }
-    // y-faces: (x, y) where x ∈ [0, oldW), y ∈ [0, oldH]
-    for (ox in 0 until oldW) for (oy in 0..oldH) {
-        val oldEdge = oldMomentumEdges.yEdge(ox, oy)
-        val nx = ox + dx
-        val ny = oy + dy
-        if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
-            val newEdge = newMomentumEdges.yEdge(nx, ny)
-            newMomentumY[newEdge] = srcY[oldEdge]
-        }
-    }
-    val newMomentum = MomentumField.of(newMomentumEdges, newMomentumX, newMomentumY)
-
-    val oldPipeEdges = EdgeGrid(grid)
-    val newPipeEdges = EdgeGrid(newGrid)
-    val newPipeMomentumX = LongArray(newPipeEdges.xEdgeCount)
-    val newPipeMomentumY = LongArray(newPipeEdges.yEdgeCount)
-    val psrcX = pipeMomentum.copyX()
-    val psrcY = pipeMomentum.copyY()
-    for (oy in 0 until oldH) for (ox in 0..oldW) {
-        val oldEdge = oldPipeEdges.xEdge(ox, oy)
-        val nx = ox + dx
-        val ny = oy + dy
-        if (ny >= 0 && ny < newGrid.height && nx >= 0 && nx <= newGrid.width) {
-            val newEdge = newPipeEdges.xEdge(nx, ny)
-            newPipeMomentumX[newEdge] = psrcX[oldEdge]
-        }
-    }
-    for (ox in 0 until oldW) for (oy in 0..oldH) {
-        val oldEdge = oldPipeEdges.yEdge(ox, oy)
-        val nx = ox + dx
-        val ny = oy + dy
-        if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
-            val newEdge = newPipeEdges.yEdge(nx, ny)
-            newPipeMomentumY[newEdge] = psrcY[oldEdge]
-        }
-    }
-    val newPipeMomentum = MomentumField.of(newPipeEdges, newPipeMomentumX, newPipeMomentumY)
+    // ⛔ Section 5 remapped two per-edge momentum fields across a resize. Both are deleted: the
+    // gas's half of a pressure exchange no physics ever spent, retired when the hull's reaction
+    // moved to the vessel boundary. Nothing on a face is carried now.
 
     // ── 5b. The signal maps, and the structure that depends on them ──────
     // Re-derived on the new lattice rather than carried; see the block in the `copy` below for why
@@ -1352,8 +1258,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         diverters = newDiverters,
         air = newAir,
         pipeAir = newPipeAir,
-        momentum = newMomentum,
-        pipeMomentum = newPipeMomentum,
         bodies = newBodies,
         positionX = shiftedOrigin.x,
         positionY = shiftedOrigin.y,

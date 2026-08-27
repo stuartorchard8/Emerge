@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
  * them was a bug:
  *
  *  1. **The turn itself moves momentum, and nobody was charged.** Fixed, and it was the whole of the
- *     failure this file was written for: see `VesselState.frameTurnImpulseX`. Unbooked, the balance
+ *     failure this file was written for. Every store is turned where it is booked; unturned, the balance
  *     walked monotonically to 359 by tick 116 on a starter vessel and to billions on a long run.
  *  2. **The integer turn is not exactly linear.** `R(a) + R(b)` and `R(a + b)` differ by a unit or
  *     two, because each `R` rounds. The ship is charged the impulse the gas gave it, turned, while
@@ -56,8 +56,8 @@ object MomentumLedger {
         assertTrue(
             abs(balance) <= SLOP,
             "$what: the ledger is out by $balance, past the $SLOP the integer turn can account " +
-                "for at ang=${s.ang.raw} — see MomentumLedger, and check frameTurnImpulse " +
-                "(${s.frameTurnImpulseX}, ${s.frameTurnImpulseY}) before blaming the rounding",
+                "for at ang=${s.ang.raw} — see MomentumLedger. Every store in the identity is " +
+                "turned where it is booked, so a break here is momentum and not a frame.",
         )
     }
 }

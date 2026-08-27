@@ -20,7 +20,6 @@ import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
-import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import kotlin.test.Ignore
@@ -72,15 +71,12 @@ class RemappedTest {
         val airMass = MassArray(grid.size) { _,_ -> 100L}
         val airEnergy = EnergyArray(grid.size) { 500L }
         val air = Stuff.from(airMass, airEnergy)
-        // Momentum with non-zero values
         val xEdges = EdgeGrid(grid).xEdgeCount
         val yEdges = EdgeGrid(grid).yEdgeCount
         val momX = LongArray(xEdges) { 10L }
         val momY = LongArray(yEdges) { 20L }
-        val momentum = MomentumField.of(EdgeGrid(grid), momX, momY)
         // Pipe air: empty
         val pipeAir = Stuff.gas(MassArray(grid.size))
-        val pipeMomentum = MomentumField.of(EdgeGrid(grid), LongArray(xEdges), LongArray(yEdges))
         // One body
         val bodies = listOf(
             RigidBody.rockBlob(
@@ -95,9 +91,7 @@ class RemappedTest {
                         deck = deck,
             diverters = diverters,
             air = air,
-            momentum = momentum,
             pipeAir = pipeAir,
-            pipeMomentum = pipeMomentum,
             bodies = bodies,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
@@ -118,10 +112,6 @@ class RemappedTest {
         assertEquals(s0.air.copyEnergy().data.contentToString(), s1.air.copyEnergy().data.contentToString())
         assertEquals(s0.pipeAir.copyMass().data.contentToString(), s1.pipeAir.copyMass().data.contentToString())
         assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s1.pipeAir.copyEnergy().data.contentToString())
-        assertTrue(s0.momentum.copyX().contentEquals(s1.momentum.copyX()), "momentum X")
-        assertTrue(s0.momentum.copyY().contentEquals(s1.momentum.copyY()), "momentum Y")
-        assertTrue(s0.pipeMomentum.copyX().contentEquals(s1.pipeMomentum.copyX()), "pipeMomentum X")
-        assertTrue(s0.pipeMomentum.copyY().contentEquals(s1.pipeMomentum.copyY()), "pipeMomentum Y")
         assertEquals(s0.bodies, s1.bodies)
         assertEquals(s0.baselineAirMass, s1.baselineAirMass)
         assertEquals(s0.baselineAirEnergy, s1.baselineAirEnergy)
@@ -266,133 +256,11 @@ class RemappedTest {
         }
     }
 
-    // ── Edge fields: momentum ────────────────────────────────────────────
+    // ⛔ Three tests stood here — that momentum's x-faces, its y-faces and the pipes' remap
+    // correctly across a resize. The per-edge momentum fields they were about are deleted: they
+    // held the gas's half of a pressure exchange no physics ever spent, retired when the hull's
+    // reaction moved to the vessel boundary. Nothing on a face is carried across a resize now.
 
-    @Test
-    fun `momentum x-faces remap correctly`() {
-        val s0 = populatedWorld(10, 8)
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 3, oldGrid.height + 2)
-        val dx = 3
-        val dy = 2
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        for (oy in 0 until oldGrid.height) {
-            for (ox in 0..oldGrid.width) {
-                val nx = ox + dx
-                val ny = oy + dy
-                if (ny >= 0 && ny < newGrid.height && nx >= 0 && nx <= newGrid.width) {
-                    val oldEdge = EdgeGrid(oldGrid).xEdge(ox, oy)
-                    val newEdge = EdgeGrid(newGrid).xEdge(nx, ny)
-                    assertEquals(s0.momentum.copyX()[oldEdge], s1.momentum.copyX()[newEdge],
-                        "momentum x-face at ($ox,$oy)")
-                }
-            }
-        }
-    }
-
-    @Test
-    fun `momentum y-faces remap correctly`() {
-        val s0 = populatedWorld(10, 8)
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 3, oldGrid.height + 2)
-        val dx = 3
-        val dy = 2
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        for (ox in 0 until oldGrid.width) {
-            for (oy in 0..oldGrid.height) {
-                val nx = ox + dx
-                val ny = oy + dy
-                if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
-                    val oldEdge = EdgeGrid(oldGrid).yEdge(ox, oy)
-                    val newEdge = EdgeGrid(newGrid).yEdge(nx, ny)
-                    assertEquals(s0.momentum.copyY()[oldEdge], s1.momentum.copyY()[newEdge],
-                        "momentum y-face at ($ox,$oy)")
-                }
-            }
-        }
-    }
-
-    @Test
-    fun `pipeMomentum remaps correctly on both axes`() {
-        val s0 = populatedWorld(10, 8)
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 2, oldGrid.height + 3)
-        val dx = 2
-        val dy = 3
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        // x-faces
-        for (oy in 0 until oldGrid.height) {
-            for (ox in 0..oldGrid.width) {
-                val nx = ox + dx
-                val ny = oy + dy
-                if (newGrid.inBounds(nx, ny) && ny < newGrid.height && nx <= newGrid.width) {
-                    val oldEdge = EdgeGrid(oldGrid).xEdge(ox, oy)
-                    val newEdge = EdgeGrid(newGrid).xEdge(nx, ny)
-                    assertEquals(s0.pipeMomentum.copyX()[oldEdge], s1.pipeMomentum.copyX()[newEdge])
-                }
-            }
-        }
-        // y-faces
-        for (ox in 0 until oldGrid.width) {
-            for (oy in 0..oldGrid.height) {
-                val nx = ox + dx
-                val ny = oy + dy
-                if (ny >= 0 && ny <= newGrid.height && nx >= 0 && nx < newGrid.width) {
-                    val oldEdge = EdgeGrid(oldGrid).yEdge(ox, oy)
-                    val newEdge = EdgeGrid(newGrid).yEdge(nx, ny)
-                    assertEquals(s0.pipeMomentum.copyY()[oldEdge], s1.pipeMomentum.copyY()[newEdge])
-                }
-            }
-        }
-    }
-
-    // ── Bodies ────────────────────────────────────────────────────────────
-
-    /**
-     * A rock does not move because the player built a row of hull off the port bow.
-     *
-     * **This replaces `bodies shift by dx_PER_TILE and dy_PER_TILE`, which asserted the opposite** —
-     * correctly, while a body's position was stored in the grid's frame and every tile index moved
-     * under it. Step 1 of `PLAN_rigid_bodies.md` moved bodies into the world, and the same physical
-     * fact now has the opposite spelling: the body holds still and the *origin* is what moves.
-     *
-     * Both halves are asserted, because either alone would pass on a broken implementation. A body
-     * that never moved would satisfy the first even if the pose had been left behind, and the grid
-     * would then have slid out from under the whole asteroid field.
-     */
-    @Test
-    fun `a grid that grows moves its origin, not its bodies`() {
-        val s0 = populatedWorld()
-        val oldGrid = s0.grid
-        val newGrid = Grid(oldGrid.width + 4, oldGrid.height + 3)
-        val dx = 4
-        val dy = 3
-
-        val s1 = s0.remapped(newGrid, dx, dy)
-
-        for (i in s0.bodies.indices) {
-            assertEquals(s0.bodies[i].positionX, s1.bodies[i].positionX, "body $i moved in the world, x")
-            assertEquals(s0.bodies[i].positionY, s1.bodies[i].positionY, "body $i moved in the world, y")
-            // And the point of it: in the *grid* it has shifted by exactly the growth, so a body
-            // that was over tile (5,5) is over tile (9,8), which is the same place on the deck.
-            assertEquals(
-                s0.bodies[i].localX(s0.pose) + dx * Flight.PER_TILE,
-                s1.bodies[i].localX(s1.pose),
-                "body $i is over the wrong tile now, x",
-            )
-            assertEquals(
-                s0.bodies[i].localY(s0.pose) + dy * Flight.PER_TILE,
-                s1.bodies[i].localY(s1.pose),
-                "body $i is over the wrong tile now, y",
-            )
-        }
-    }
 
     // ── Ledger identities ────────────────────────────────────────────────
 
@@ -438,7 +306,7 @@ class RemappedTest {
         val s1 = s0.remapped(newGrid, dx, dy)
 
         // The full momentum identity:
-        // vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body - debug == 0
+        // vesselImpulse + exhaust + bodies + vented - debug == 0
         fun momentumX(s: VesselState) = s.momentumBalanceX
 
         fun momentumY(s: VesselState) = s.momentumBalanceY
@@ -544,10 +412,6 @@ class RemappedTest {
         assertEquals(s0.air.copyEnergy().data.contentToString(), s2.air.copyEnergy().data.contentToString(), "air energy")
         assertEquals(s0.pipeAir.copyMass().data.contentToString(), s2.pipeAir.copyMass().data.contentToString(), "pipeAir mass")
         assertEquals(s0.pipeAir.copyEnergy().data.contentToString(), s2.pipeAir.copyEnergy().data.contentToString(), "pipeAir energy")
-        assertTrue(s0.momentum.copyX().contentEquals(s2.momentum.copyX()), "momentum X")
-        assertTrue(s0.momentum.copyY().contentEquals(s2.momentum.copyY()), "momentum Y")
-        assertTrue(s0.pipeMomentum.copyX().contentEquals(s2.pipeMomentum.copyX()), "pipeMomentum X")
-        assertTrue(s0.pipeMomentum.copyY().contentEquals(s2.pipeMomentum.copyY()), "pipeMomentum Y")
         assertEquals(s0.bodies, s2.bodies, "bodies should be identical")
         assertEquals(s0.baselineAirMass, s2.baselineAirMass)
         assertEquals(s0.baselineAirEnergy, s2.baselineAirEnergy)

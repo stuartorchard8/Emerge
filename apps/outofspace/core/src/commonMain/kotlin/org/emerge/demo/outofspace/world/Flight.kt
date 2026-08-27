@@ -189,7 +189,7 @@ fun vesselMass(
   * ⚠️ **Gravity must not truncate**: q*g/SPEED_LIMIT at non-1g killed thin plumes asymmetrically.
   * Fix: scaleByGravity rounds instead (was identity at g=1, truncation at all other values).
   * [downDirection] rounds off-axis gravity to lean axis (prevents frozen piles under diagonal plating).
-  * ⚠️ Thrust→gravity→pressure→thrust loop: self-limiting (gas runs out), converges (undelivered flat at −163).
+  * ⚠️ Thrust→gravity→pressure→thrust loop: self-limiting (gas runs out) and no longer a loop at all — pressure does not push the hull.
   */
 fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 {
     if (mass <= 0L) return deckGravity

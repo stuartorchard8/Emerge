@@ -230,7 +230,6 @@ class PipeFluidTest {
         val back = Save.read(Save.write(after))
 
         assertEquals(after.pipeAir, back.pipeAir, "the pipes came back holding something else")
-        assertEquals(after.pipeMomentum, back.pipeMomentum, "the pipes came back becalmed")
         assertEquals(after.baselineAirMass, back.baselineAirMass, "the shared baseline did not survive")
     }
 

@@ -391,39 +391,11 @@ class FlightTest {
      * every tick rather than at the end because the tick it first parts company on is most of the
      * diagnosis.
      *
-     * The **undelivered** term is checked too, and it is the instrument rather than an afterthought:
-     * it was expected to grow under acceleration, since a bigger, faster plume is more plume front —
-     * see the projection that used to produce it. Measured, it does
-     * not. It settles at −163 by the sixth tick and is still −163 three hundred ticks later, because
-     * it is a property of the interface and not of the volume behind it. Pinned here so that the day
-     * it does start growing is a failing test rather than a slow drift in a thrust figure nobody was
-     * checking.
+     * (It used to watch the `undelivered` term too — the share of the projection's solve that had
+     * nowhere to go. That store is retired along with the per-edge gas momentum.)
      */
-    @Test
-    fun `the momentum ledger still balances while the ship is under way`() {
-        val cfg = OutofspaceConfig()
-        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
-        controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
-
-        repeat(TICKS) {
-            controller.stepOnce()
-            val s = controller.state
-            val aboardX = s.momentum.totalX + s.pipeMomentum.totalX
-            val aboardY = s.momentum.totalY + s.pipeMomentum.totalY
-            MomentumLedger.assertBalanced(
-                s,
-                "tick ${s.tick} — ship (${s.vesselImpulseX}, ${s.vesselImpulseY}), " +
-                    "aboard ($aboardX, $aboardY), " +
-                    "exhaust (${s.exhaustMomentumX}, ${s.exhaustMomentumY}), " +
-                    "undelivered (${s.undeliveredImpulseX}, ${s.undeliveredImpulseY})",
-            )
-        }
-
-        val s = controller.state
-        assertTrue(
-            abs(s.undeliveredImpulseX) * 100L < abs(s.vesselImpulseX),
-            "the undelivered term has grown to ${s.undeliveredImpulseX} against a thrust of " +
-                "${s.vesselImpulseX} — the plume front is now a material part of the thrust figure",
-        )
-    }
+    // ⛔ A test stood here watching the `undelivered` term stay small against the thrust — the
+    // share of the projection's solve that had nowhere to go. Both it and the per-edge gas momentum
+    // it belonged to are retired: only mass that genuinely leaves the vessel may push it now, so
+    // there is no undelivered remainder for a plume front to accumulate in.
 }

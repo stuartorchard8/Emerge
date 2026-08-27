@@ -105,7 +105,6 @@ import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.exhaustPath
 import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.heatCapacityAt
-import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.ApertureField
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
@@ -821,22 +820,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             solidToAirEnergy = state.solidToAirEnergy + conductedToAir,
             air = fluidAir,
             pipeAir = pipeAirResult,
-            pipeMomentum = MomentumField.of(edges, w.pipeMomentumX, w.pipeMomentumY),
             airVentedMass = state.airVentedMass + fluidVentedMass + w.exhaustAirMass,
             // Separate from radiatedEnergy: cleaner ledger.
             airVentedEnergy = state.airVentedEnergy + fluidVentedEnergy + w.exhaustAirEnergy,
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirMass = w.injectedAirMass,
             injectedAirEnergy = w.injectedAirEnergy,
-            // ⛔ **Dead: no writer and no reader.** `applyPressureForce` was the only thing that
-            // ever filled this, and it is gone — the hull's reaction moved to the vessel boundary,
-            // where only mass that genuinely leaves may push. It is left in place for one release so
-            // that a save written before the change still round-trips; it carries whatever it loaded
-            // and contributes to no identity. Delete it, `pipeMomentum` and `undeliveredImpulse`
-            // together with the `momx`/`momy` keywords.
-            // ⚠️ Never was a velocity field — the flow overlay measures [diffuseFluid] (see
-            // [VesselState.flow]).
-            momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
             // Momentum that is genuinely somewhere else now: astern of the ship at 3 km/s.
             //
             // ⚠️ Turned into the world by the same pose `netImpulse` was, and it has to be the same
@@ -1508,16 +1497,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val airEnergy: EnergyArray = state.air.copyEnergy()
         val airCohesion: EnergyArray = state.air.copyCohesion()
 
-        /** This tick's momentum, mutable for the same reason [masses] is. */
-        val momentumX: LongArray = state.momentum.copyX()
-        val momentumY: LongArray = state.momentum.copyY()
-
         /** The pipes' own fluid, in the same four working arrays and for the same reasons. */
         val pipeMass: MassArray = state.pipeAir.copyMass()
         val pipeEnergy: EnergyArray = state.pipeAir.copyEnergy()
         val pipeCohesion: EnergyArray = state.pipeAir.copyCohesion()
-        val pipeMomentumX: LongArray = state.pipeMomentum.copyX()
-        val pipeMomentumY: LongArray = state.pipeMomentum.copyY()
 
         // Motion log for renderer, built from pre-tick rail state.
         val motion: MotionLog = MotionLog(state.rails, state.rail)

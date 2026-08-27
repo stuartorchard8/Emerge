@@ -12,7 +12,6 @@ import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
-import org.emerge.demo.outofspace.world.MomentumField
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.remapped
 import kotlin.test.Ignore
@@ -109,8 +108,6 @@ class GridVentTest {
                         deck = deck,
             air = air,
             pipeAir = pipeAir,
-            momentum = MomentumField.of(edges, momX, momY),
-            pipeMomentum = MomentumField.of(edges, pipeMomX, pipeMomY),
             // The ship carries the counterpart of whatever the faces hold, because the identity is
             // a statement about the *signed total*: a world handed arbitrary face momentum and
             // nothing else is genuinely out of balance before anything resizes it, and the

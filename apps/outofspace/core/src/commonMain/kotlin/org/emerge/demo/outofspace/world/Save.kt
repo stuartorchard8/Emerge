@@ -182,19 +182,21 @@ object Save {
             out.append("pipeair ").append(tile.index).append(' ').append(writeMixture(mix)).append('\n')
         }
         writeSparse(out, "pipeairheat", state.pipeAir.copyEnergy().data)
-        writeSparse(out, "pipemomx", state.pipeMomentum.copyX())
-        writeSparse(out, "pipemomy", state.pipeMomentum.copyY())
 
-        writeSparse(out, "momx", state.momentum.copyX())
-        writeSparse(out, "momy", state.momentum.copyY())
 
         // Twelve impulse values (ledger grew). Appended, not versioned: absent reads as zero.
+        //
+        // ⚠️ **Slots 5-6 and 11-12 are written as zero and read into nothing.** They held
+        // `undeliveredImpulse` and `frameTurnImpulse`, both retired with the per-edge gas momentum
+        // they existed to account for. The line is **positional**, so the slots are held rather
+        // than closed up — shifting them would make every older save read its body impulse as its
+        // debug impulse, silently and in the player's favour.
         out.append("impulse ").append(state.vesselImpulseX).append(' ').append(state.vesselImpulseY)
             .append(' ').append(state.exhaustMomentumX).append(' ').append(state.exhaustMomentumY)
-            .append(' ').append(state.undeliveredImpulseX).append(' ').append(state.undeliveredImpulseY)
+            .append(" 0 0")
             .append(' ').append(state.debugImpulseX).append(' ').append(state.debugImpulseY)
             .append(' ').append(state.bodyImpulseX).append(' ').append(state.bodyImpulseY)
-            .append(' ').append(state.frameTurnImpulseX).append(' ').append(state.frameTurnImpulseY)
+            .append(" 0 0")
             .append('\n')
         // Rotation. A new keyword rather than more fields on `thrust`, because `thrust` means the
         // linear pair and a reader that had to count tokens to find out otherwise is a reader that
@@ -648,22 +650,14 @@ object Save {
         val airMass = MassArray(grid.size)
         val airEnergy = EnergyArray(grid.size)
         val edges = EdgeGrid(grid)
-        val momentumX = LongArray(edges.xEdgeCount)
-        val momentumY = LongArray(edges.yEdgeCount)
         val pipeMass = MassArray(grid.size)
         val pipeEnergy = EnergyArray(grid.size)
-        val pipeMomentumX = LongArray(edges.xEdgeCount)
-        val pipeMomentumY = LongArray(edges.yEdgeCount)
         var impulseX = 0L
         var impulseY = 0L
         var exhaustX = 0L
         var exhaustY = 0L
-        var undeliveredX = 0L
-        var undeliveredY = 0L
         var debugX = 0L
         var debugY = 0L
-        var frameTurnX = 0L
-        var frameTurnY = 0L
         var bodyImpulseX = 0L
         var bodyImpulseY = 0L
         val bodies = ArrayList<RigidBody>()
@@ -865,10 +859,9 @@ object Save {
                     readFluids(mix, ::fail) { f, mass -> pipeMass[t, f] = mass }
                 }
                 "pipeairheat" -> readSparse(tokens, pipeEnergy.data, energyScale, ::fail)
-                "pipemomx" -> readSparse(tokens, pipeMomentumX, scale, ::fail)
-                "pipemomy" -> readSparse(tokens, pipeMomentumY, scale, ::fail)
-                "momx" -> readSparse(tokens, momentumX, scale, ::fail)
-                "momy" -> readSparse(tokens, momentumY, scale, ::fail)
+                // Retired: the per-edge gas momentum. Accepted and dropped so a file written
+                // before the vessel boundary became the only place momentum crosses still loads.
+                "pipemomx", "pipemomy", "momx", "momy" -> Unit
                 "creative" -> creative = tokens.getOrNull(1) != "0"
                 "sas" -> sas = tokens.getOrNull(1) == "1"
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
@@ -911,11 +904,11 @@ object Save {
                 "impulse" -> {
                     impulseX = scaled(1); impulseY = scaled(2)
                     exhaustX = scaled(3); exhaustY = scaled(4)
-                    // Absent = zero (ledger had fewer stores).
-                    if (tokens.size > 6) { undeliveredX = scaled(5); undeliveredY = scaled(6) }
+                    // Absent = zero (ledger had fewer stores). Slots 5-6 and 11-12 are read past:
+                    // they held retired stores, and the positions are kept so the ones after them
+                    // stay where every existing file put them.
                     if (tokens.size > 8) { debugX = scaled(7); debugY = scaled(8) }
                     if (tokens.size > 10) { bodyImpulseX = scaled(9); bodyImpulseY = scaled(10) }
-                    if (tokens.size > 12) { frameTurnX = scaled(11); frameTurnY = scaled(12) }
                 }
                 "air" -> {
                     val t = tile(1)
@@ -1047,26 +1040,20 @@ object Save {
             baselineEnergy = baselineEnergy?.plus(thrusters.energy) ?: solidEnergy(conduits),
             air = air,
             pipeAir = pipeAir,
-            pipeMomentum = MomentumField.of(edges, pipeMomentumX, pipeMomentumY),
             // Both fields, because they share one ledger — see VesselState.baselineAirMass.
             baselineAirMass = baselineAir ?: (air.totalMass + pipeAir.totalMass),
             airVentedEnergy = airVentedEnergy,
             injectedAirMass = injectedAirMass,
             injectedAirEnergy = injectedAirEnergy,
             baselineAirEnergy = baselineAirEnergy ?: (air.totalEnergy + pipeAir.totalEnergy),
-            momentum = MomentumField.of(edges, momentumX, momentumY),
             vesselImpulseX = impulseX,
             vesselImpulseY = impulseY,
             exhaustMomentumX = exhaustX,
             exhaustMomentumY = exhaustY,
-            undeliveredImpulseX = undeliveredX,
-            undeliveredImpulseY = undeliveredY,
             debugImpulseX = debugX,
             debugImpulseY = debugY,
             bodyImpulseX = bodyImpulseX,
             bodyImpulseY = bodyImpulseY,
-            frameTurnImpulseX = frameTurnX,
-            frameTurnImpulseY = frameTurnY,
             bodies = loaded,
         )
     }

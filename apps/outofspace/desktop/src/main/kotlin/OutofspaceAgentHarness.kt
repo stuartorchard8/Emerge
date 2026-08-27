@@ -1025,11 +1025,11 @@ object OutofspaceAgentHarness {
             "peakSpeed" -> state.flow.peakSpeed().toDouble()
             "impulseX" -> grams(state.vesselImpulseX)
             "impulseY" -> grams(state.vesselImpulseY)
-            // The two instruments the momentum ledger is watched with. `undelivered` is the part of
-            // the solve that had nowhere to go, and it is expected to grow under acceleration; the
-            // whole ledger as one number is `momentumBalance`, which is zero or something is wrong.
-            "undeliveredX" -> grams(state.undeliveredImpulseX)
-            "undeliveredY" -> grams(state.undeliveredImpulseY)
+            // The vented atmosphere's half of the boundary exchange — the twin of the exhaust
+            // stores, and the only thing the air is allowed to do to the ship.
+            "ventMomentumX" -> grams(state.ventMomentumX)
+            "ventMomentumY" -> grams(state.ventMomentumY)
+            "ventAngImpulse" -> grams(state.ventAngImpulse)
             // The debug engine's cumulative cheating, which is subtracted rather than ignored: the
             // identity has a fifth store now, and it reduces to the old one whenever nothing has
             // fired. See [VesselState.debugImpulseX] for why a shortcut that did not book this would
@@ -1081,7 +1081,7 @@ object OutofspaceAgentHarness {
             "massBalance", "builtMass", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
-            "undeliveredX", "undeliveredY", "debugImpulseX", "debugImpulseY",
+            "ventMomentumX", "ventMomentumY", "ventAngImpulse", "debugImpulseX", "debugImpulseY",
             "rockImpulseX", "rockImpulseY", "momentumBalance",
             "spin", "angImpulse", "netTorque", "angularBalance", "exhaustAngImpulse",
             "bodyAngImpulse", "comX", "comY", "gyration",

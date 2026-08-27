@@ -37,7 +37,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * [EXHAUST_METRES_PER_SECOND]. The momentum that leaves is booked to `exhaustMomentum` and the
  * negative of it goes to the ship, so this adds **no new term** to the momentum ledger: it is the
  * same `+p` overboard / `−p` aboard pair that a venting breach already is, and
- * `vesselImpulse + momentum + pipeMomentum + exhaust + undelivered + body − debug == 0` still holds
+ * `vesselImpulse + exhaust + bodies + vented − debug == 0` still holds
  * on every tick of a burn.
  *
  * ⚠️ **A blocked motor produces no direct impulse at all**, and that is the physics and not a
