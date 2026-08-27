@@ -7,7 +7,7 @@ import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.heatCapacityAt
-import org.emerge.demo.outofspace.world.reactInFluid
+import org.emerge.demo.outofspace.world.react
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -66,7 +66,7 @@ class AmmoniaCrackingTest {
     @Test
     fun `ammonia in a hot room cracks`() {
         val (air, energy) = room(Fluid.Ammonia to 100 * kg, kelvin = 1400)
-        val step = reactInFluid(air, energy)
+        val step = react(air, energy)
 
         assertTrue(air[tile, Fluid.Ammonia] < 100 * kg, "the ammonia did not react")
         assertTrue(air[tile, Fluid.Nitrogen] > 0L, "no nitrogen came out")
@@ -82,7 +82,7 @@ class AmmoniaCrackingTest {
         // one compare, and where nearly every tile in the game stops.
         val (air, energy) = room(Fluid.Ammonia to 100 * kg, kelvin = 1000)
         val before = air[tile, Fluid.Ammonia]
-        val step = reactInFluid(air, energy)
+        val step = react(air, energy)
         assertEquals(before, air[tile, Fluid.Ammonia])
         assertTrue(step.isNothing)
     }
@@ -95,7 +95,7 @@ class AmmoniaCrackingTest {
         // own mass and their sum is the total by construction, so no rounding can leak a gram.
         val (air, energy) = room(Fluid.Ammonia to 100 * kg, kelvin = 1400)
         val before = total(air)
-        reactInFluid(air, energy)
+        react(air, energy)
         assertEquals(before, total(air))
     }
 
@@ -107,7 +107,7 @@ class AmmoniaCrackingTest {
         // cracking its own ammonia, which is a perpetual motion machine that looks like it works.
         val (air, energy) = room(Fluid.Ammonia to 100 * kg, kelvin = 1400)
         val before = energy[tile]
-        val step = reactInFluid(air, energy)
+        val step = react(air, energy)
         assertTrue(step.releasedEnergy < 0L, "cracking claimed to release energy")
         assertTrue(energy[tile] < before, "the room did not cool")
         // What the ledger hears is what was actually taken, which is what the clamp makes possible.
@@ -121,7 +121,7 @@ class AmmoniaCrackingTest {
         // apportioning by the wrong weights, which would yield the right species in the wrong
         // amounts, for ever, silently.
         val (air, energy) = room(Fluid.Ammonia to 100 * kg, kelvin = 1500)
-        reactInFluid(air, energy)
+        react(air, energy)
         val nitrogen = air[tile, Fluid.Nitrogen]
         val hydrogen = air[tile, Fluid.Hydrogen]
         val consumed = 100 * kg - air[tile, Fluid.Ammonia]
@@ -138,7 +138,7 @@ class AmmoniaCrackingTest {
     @Test
     fun `an empty room is not a reaction`() {
         val (air, energy) = room(Fluid.Nitrogen to 10 * kg, kelvin = 1400)
-        val step = reactInFluid(air, energy)
+        val step = react(air, energy)
         assertTrue(step.isNothing)
         assertEquals(10 * kg, air[tile, Fluid.Nitrogen])
     }

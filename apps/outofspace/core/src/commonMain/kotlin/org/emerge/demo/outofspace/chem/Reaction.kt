@@ -111,189 +111,21 @@ fun reactionFraction(kelvin: Int, onsetKelvin: Int, baseRate: Long): Long =
     minOf(scaledRatio(rateMultiplier(kelvin, onsetKelvin), SCALE, baseRate), SCALE)
 
 /**
- * What one pass of an [Oxidation] consumes and produces at one place.
+ * ⛔ **`Oxidation`, `Reacted`, `CARBON_BURN`, `IRON_RUST` and `burn` were here** — deleted by
+ * increment 4 of `PLAN_unified_reactions.md`.
  *
- * All three numbers are masses, and they close by construction: [product] is `reactant + oxygen`
- * rather than a third computed quantity, which is [conservationOf]'s rule everywhere else in this
- * file — compute all the products but one and let the last be the remainder, so no arithmetic path
- * can invent or lose a gram.
+ * The class existed because its two reagents came from two different stores: a solid out of a cargo
+ * layer and oxygen out of the room. Under the placement rule that is what the pass does for *every*
+ * row — a reagent is drawn from wherever it is — so there was nothing left for the class to be. Both
+ * rows are in [REACTIONS] with oxygen among their reagents, carrying every number unchanged.
+ *
+ * ⚠️ **They had to move in the same commit as the fires**, because both tables drank from a tile's
+ * oxygen. A well that covered one and not the other is the pass-order bug increment 3 deleted, back
+ * again in a smaller room.
+ *
+ * What survives in this file is the part that was never about a shape: the Arrhenius climb every
+ * reaction in the game shares, and the two dials below.
  */
-class Reacted(val reactant: Long, val oxygen: Long) {
-    /** ⚠️ Derived, never stated: the mass that reacted plus the mass that joined it. */
-    val product: Long get() = reactant + oxygen
-
-    val isNothing: Boolean get() = reactant <= 0L
-}
-
-/**
- * A reactant, oxygen from the air, and what the two of them become.
- *
- * One class for every reaction of this shape there will ever be — increment 4's table is rows of
- * this, not a second mechanism. The **formula** is what is stated: `4 Fe + 3 O₂ → 2 Fe₂O₃` is
- * `reactantUnits = 4, oxygenUnits = 3, productUnits = 2`, and every mass ratio the arithmetic needs
- * is derived from those units and the molar masses `Species` already holds.
- *
- * ⚠️ **Derived, never restated.** A hand-written mass fraction would be a second source of truth
- * for a number the species table already answers, and it would be wrong silently — the reaction
- * would run at a plausible speed and quietly break the atom balance. This is `MineralTest`'s
- * argument, and `ReactionTest` checks the closure the same way: the product's molar mass must
- * account for exactly the reactant and the oxygen that went into it.
- *
- * ### Which ledger the product lands in is not a field
- *
- * A product that *is* a [Fluid] joins the tile's air; anything else stays in the solid layer. So
- * `CO₂` leaves and `Fe₂O₃` does not, and neither reaction had to say so — [productIsGas] asks
- * `Species.fluid`, which is the same fact that made the air array narrow in increment 0. A flag
- * here would be a third place for the phase of a species to be recorded and a third place for it
- * to disagree.
- */
-class Oxidation(
-    val reactant: Species,
-    val reactantUnits: Int,
-    val oxygenUnits: Int,
-    val product: Species,
-    val productUnits: Int,
-    val onsetKelvin: Int,
-    val baseRate: Long,
-    /** Positive is **endothermic**. Both of these are combustions, so both are negative. */
-    val enthalpyPerKg: Long,
-) {
-    /** Mass of O₂ per mass of reactant, as the exact ratio of formula-unit masses. */
-    internal val oxygenNumerator: Long = oxygenUnits.toLong() * Species.Oxygen.molarMass
-    internal val oxygenDenominator: Long = reactantUnits.toLong() * reactant.molarMass
-
-    /** Whether the product joins the atmosphere rather than staying where the reactant was. */
-    val productIsGas: Boolean get() = product.fluid != null
-
-    /**
-     * The energy [mass] of this reactant releases as it burns — negative, because burning is
-     * exothermic, and the sign convention is [Decomposition.enthalpy]'s.
-     *
-     * ⚠️ **This is what increment 1 said it was not inventing yet.** A fire that did not warm the
-     * room was always a half-truth; it was left out until the *table* existed, so that where the
-     * heat goes would be answered once rather than once per reaction. Per kilogram of the reactant,
-     * not of the product, because the reactant is what the rate is a fraction of.
-     */
-    fun enthalpy(mass: Long): Long = perKilogram(mass, enthalpyPerKg)
-
-    /**
-     * How much oxygen this reaction **wants** at [kelvin] with [reactantMass] present — what it
-     * would take if it were the only thing in the tile that wanted any.
-     *
-     * This is half of the Jacobi rule. It is asked of every reaction against the same snapshot,
-     * before any oxygen has been taken, so that no reaction's answer depends on when it was asked.
-     * The other half is [react], which is given an allowance rather than finding one.
-     *
-     * Cold matter is rejected by one compare, which is what makes this cheap enough to ask of every
-     * occupied tile of a layer every pass.
-     */
-    fun demand(reactantMass: Long, kelvin: Int): Long {
-        if (reactantMass <= 0L || kelvin < onsetKelvin) return 0L
-        val fraction = reactionFraction(kelvin, onsetKelvin, baseRate)
-        val consumed = scaledRatio(fraction, SCALE, reactantMass)
-        if (consumed <= 0L) return 0L
-        return scaledRatio(oxygenNumerator, oxygenDenominator, consumed)
-    }
-
-    /**
-     * What one pass consumes and produces, given what is there, how hot it is, and **how much
-     * oxygen this reaction is allowed** — which in a contended tile is less than [demand] asked for.
-     *
-     * Three things bound it and all three are real: how fast the reaction runs at this temperature,
-     * how much reactant there is, and the oxygen allowance. The last is the one with consequences —
-     * decision 2 of the plan says gaseous reagents come from the atmosphere, which is what makes a
-     * sealed room and an airy one different places to put a machine, and what will make a
-     * carbothermic reduction want a vacuum.
-     */
-    fun react(reactantMass: Long, oxygenAllowed: Long, kelvin: Int): Reacted {
-        if (reactantMass <= 0L || oxygenAllowed <= 0L || kelvin < onsetKelvin) return NOTHING
-
-        val fraction = reactionFraction(kelvin, onsetKelvin, baseRate)
-        var consumed = scaledRatio(fraction, SCALE, reactantMass)
-        if (consumed <= 0L) return NOTHING
-
-        var oxygen = scaledRatio(oxygenNumerator, oxygenDenominator, consumed)
-
-        // Starved of oxygen — either because the tile's air is thin or because another reaction got
-        // the rest of it. React what the allowance will support. The reactant is re-derived from the
-        // oxygen rather than the other way about, so the pair stays on the stoichiometric line: the
-        // reaction slows down instead of running rich and quietly breaking the atom balance.
-        if (oxygen > oxygenAllowed) {
-            oxygen = oxygenAllowed
-            consumed = scaledRatio(oxygenDenominator, oxygenNumerator, oxygen)
-            if (consumed <= 0L) return NOTHING
-            // Flooring twice can only shrink, never inflate: re-derive the oxygen from the reactant
-            // that actually survived the division so the two agree exactly and no oxygen is taken
-            // for matter that did not react.
-            oxygen = scaledRatio(oxygenNumerator, oxygenDenominator, consumed)
-            if (oxygen <= 0L) return NOTHING
-        }
-
-        return Reacted(consumed, oxygen)
-    }
-
-    companion object {
-        private val NOTHING = Reacted(0L, 0L)
-    }
-}
-
-/**
- * `C + O₂ → CO₂` — carbon burning in the vessel's air, the first reaction in the game and the one
- * whose product leaves the solid ledger entirely.
- */
-val CARBON_BURN = Oxidation(
-    reactant = Species.Carbon, reactantUnits = 1,
-    oxygenUnits = 1,
-    product = Species.CarbonDioxide, productUnits = 1,
-    onsetKelvin = CARBON_IGNITION_KELVIN,
-    baseRate = BASE_RATE,
-    // −393.5 kJ/mol of carbon. The number that makes a fire something that sustains itself: a lump
-    // burning puts back about thirty times the energy it takes to hold it at its ignition point.
-    enthalpyPerKg = -394L * kJPerMolAt(12),
-)
-
-/**
- * `4 Fe + 3 O₂ → 2 Fe₂O₃` — iron going back to ore, and the second consumer of a tile's oxygen.
- *
- * It is here because contention needs two reactions, and it is *this* one because it is the
- * awkward direction: the product is a solid, so the tile gets **heavier** and the air gets lighter,
- * which is the mass crossing that increment 1 only ever ran the other way.
- *
- * ⚠️ **[IRON_OXIDATION_KELVIN] is dry oxidation, not rust in a puddle.** Iron in damp air corrodes
- * at room temperature by an electrochemical mechanism this model has nothing to say about; what is
- * modelled is scale forming on hot iron, which is why the onset is where it is. A wet, ambient
- * corrosion is a different reaction with different conditions, and inventing it here to make rust
- * appear sooner would be a rate dial pretending to be a mechanism.
- */
-val IRON_RUST = Oxidation(
-    reactant = Species.Iron, reactantUnits = 4,
-    oxygenUnits = 3,
-    product = Species.Hematite, productUnits = 2,
-    onsetKelvin = IRON_OXIDATION_KELVIN,
-    baseRate = IRON_BASE_RATE,
-    // −1648 kJ per 4 mol of iron, which is 224 g of it. Scaling iron is exothermic too, and
-    // vigorously so — hot iron in air is a thing that gets hotter.
-    enthalpyPerKg = -1648L * kJPerMolAt(224),
-)
-
-/**
- * Every reaction an ambient pass runs, in a fixed order.
- *
- * ⚠️ **The order is for reproducibility, not for priority.** Contention is settled by demand before
- * anything is taken (see this file's header), so which entry comes first changes nothing about who
- * gets the oxygen — it only fixes the rounding, and it must stay fixed for the simulation to be
- * deterministic.
- */
-val OXIDATIONS: List<Oxidation> = listOf(CARBON_BURN, IRON_RUST)
-
-/**
- * How much carbon burns this tick — [CARBON_BURN] with the tile's whole oxygen to itself.
- *
- * The uncontended shorthand, kept because a single reaction is still the thing most tests and most
- * readers want to talk about.
- */
-fun burn(carbonMass: Long, oxygenMass: Long, kelvin: Int): Reacted =
-    CARBON_BURN.react(carbonMass, oxygenMass, kelvin)
 
 /** The temperature carbon in air starts to burn at. Graphite in air, near enough — see [burn]. */
 const val CARBON_IGNITION_KELVIN: Int = 700

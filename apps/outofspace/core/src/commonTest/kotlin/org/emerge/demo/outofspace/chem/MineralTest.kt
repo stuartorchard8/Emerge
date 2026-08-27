@@ -81,7 +81,7 @@ class MineralTest {
     @Test
     fun everyMineralIsMinedOrMade() {
         val made = DECOMPOSITIONS.flatMap { d -> d.products.map { it.first } }.toSet() +
-            OXIDATIONS.map { it.product }
+            REACTIONS.filter { r -> r.reagents.any { it.first == Species.Oxygen } }.flatMap { r -> r.products.map { it.first } }
         val unreachable = MINERALS.keys
             .filter { it.relativeAbundance == 0 && it !in made }
             .map { it.name }

@@ -1,181 +1,93 @@
 package org.emerge.demo.outofspace.chem
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Whether a reaction can happen **at all** — increment 0 of `PLAN_unified_reactions.md`.
+ * Whether a reaction can happen **at all**, and whether what it makes has anywhere to go —
+ * increment 0 of `PLAN_unified_reactions.md`, rewritten by increment 4.
  *
  * Every other test in this package asks whether a row is *right*: that it balances atom for atom,
  * that its enthalpy is quoted against its own formula mass, that its rate follows the law. All of
  * them pass for a row that never fires, because none of them knows where the matter is kept.
  *
- * ### The failure this exists to catch
+ * ### What it caught, and how the question changed
  *
- * A row states a reactant and an onset temperature. The table it lives in decides which **store** it
- * is swept over — [DECOMPOSITIONS], [OXIDATIONS] and [REDUCTIONS] are swept by `oxidise` over the
- * cargo layers; [COMBUSTIONS] is swept by `combust` over the fluid field. Nothing checks that the
- * reactant can be in that store at that temperature.
+ * When it was written there were four tables and each *claimed* a store by which table it was in.
+ * Three rows claimed one their reactant could not be in: `offGas` empties a cargo layer of anything
+ * the tile wants as a gas, so ammonia at 1100 K, methane at 1300 K and the Boudouard reaction at
+ * 973 K were all asking for matter that had been evicted hundreds of kelvin earlier. They could only
+ * fire inside a sealed tile, where nothing is allowed to leave.
  *
- * For a fluid, it usually cannot. `offGas` runs over the same cargo layers on the same pass and
- * empties them of anything the tile's conditions want as a gas, and above a species' critical
- * temperature `vapourHeadroom` returns "as much as you have" — every gram leaves. So a row whose
- * reactant is a fluid and whose onset is above that fluid's critical temperature is asking for
- * matter that was evicted hundreds of kelvin ago.
+ * A row cannot claim a store any more — the pass finds the principal wherever it is — so **that
+ * failure is now unrepresentable** and the test's first case is gone with it.
  *
- * `CH₄ → C + 2 H₂` is the one that prompted the plan: onset 1300 K, methane critical at 191 K. It
- * can only fire where `offGas` is forbidden to run — inside a sealed tile. **Methane pyrolysis works
- * if and only if it happens inside a wall.**
+ * ⚠️ **The failure it turned into is the opposite one, and it is live.** Making every row
+ * store-agnostic meant methane pyrolysis and photosynthesis started firing *in the air*, where their
+ * solid products cannot go: `addTo` looks up `Species.fluid`, finds nothing, and returns. The mass
+ * would have been dropped on the floor every pass, silently, with the ledgers none the wiser.
  *
- * ⚠️ **The only other signal is a reaction that never happens**, which is indistinguishable from a
- * vessel the player has not built the right machine for. At twenty-two rows this is four mistakes
- * that took five days to notice; at the few hundred rows the plan is written for, it is a coin flip
- * on every row involving a volatile — which is most of what a comet-mining vessel does.
+ * So this is the check now: **whatever a reaction can make, the store it makes it in can hold.**
  */
 class ReactionReachabilityTest {
 
-    /**
-     * Whether a cargo layer can still be holding [species] once it is this hot.
-     *
-     * The question `offGas` asks, put the same way it asks it: a species with no saturated vapour
-     * density at this temperature has no ceiling on how much of it the tile's air will take, so all
-     * of it goes. That is `vapourHeadroom` returning [Long.MAX_VALUE], and it happens both for a
-     * species with no critical point on file and for one hotter than the critical point it has.
-     *
-     * ⚠️ **Below the critical point this is a "maybe", and the test only asserts the "never".** A
-     * fluid under its Tc is evicted up to the saturation ceiling, so whether any is left depends on
-     * how much of it the room's air is already carrying — a fact about a live world, not about a
-     * table. The unconditional case is the one a static test can be certain of, and it is the one
-     * that is actually wrong.
-     */
-    private fun survivesInCargoAt(species: Species, kelvin: Int): Boolean {
-        if (species.fluid == null) return true
-        return saturatedVapourDensityAt(kelvin, species) != null
-    }
-
-    /** Every row swept over the cargo layers, as `(table, principal, onset)`. */
-    private fun layerSweptRows(): List<Triple<String, Species, Int>> = buildList {
-        for (d in DECOMPOSITIONS) add(Triple("HEAT", d.reactant, d.onsetKelvin))
-        for (o in OXIDATIONS) add(Triple("AIR", o.reactant, o.onsetKelvin))
-        for (r in REDUCTIONS) add(Triple("REAGENT", r.oxide, r.onsetKelvin))
-    }
-
-    /**
-     * Every row swept over the fluid field — the fires, and the store-agnostic rows whose principal
-     * happens to be a fluid.
-     *
-     * ⚠️ **The audit is two-sided now.** A cargo row fails by naming a principal the cargo layer
-     * cannot hold; a fluid row fails the other way, by naming one the *air* cannot. Increment 1
-     * moved ammonia across, so both directions are live and neither can be checked alone.
-     */
-    private fun fluidSweptRows(): List<Triple<String, Species, Int>> = buildList {
-        for (c in COMBUSTIONS) add(Triple("GAS FIRE", c.fuel, c.onsetKelvin))
-        for (r in REACTIONS) add(Triple("FLUID", r.principal, r.onsetKelvin))
-    }
-
     @Test
-    fun `no row asks for a principal its own store cannot hold`() {
-        val dead = layerSweptRows()
-            .filterNot { (_, principal, onset) -> survivesInCargoAt(principal, onset) }
-            .map { (table, principal, onset) -> "$table ${principal.name}@${onset}K" }
-            .toSet()
-
-        // ⚠️ **Pinned exactly, not asserted empty.** Three of these are known and are the reason the
-        // plan exists; listing them keeps the test live rather than `@Ignore`d, so a *fourth* dead
-        // row is a failure on the day it lands. Fixing one of these without striking it from here is
-        // also a failure, which is what stops the list quietly outliving the bug.
+    fun `a row whose principal is a fluid leaves nothing the air cannot hold`() {
+        // ⛔ The one that was live. A fluid principal means the pass finds it in the air and runs it
+        // there, so every product has to be something the air can hold — `MassIndex(tile,
+        // Species.Carbon)` does not compile, by `Fluid.kt`'s design, and `addTo` cannot do at
+        // runtime what the type system forbids at compile time. It drops it.
         //
-        // ⛔ Strike a row from this set only when it has genuinely moved store — never to make the
-        // test green. See `PLAN_unified_reactions.md`; increments 1 and 3 are what empty it.
-        val knownDead = setOf(
-            // ✅ Ammonia cracking was here and is gone — increment 1 moved it to [REACTIONS], which
-            // is swept over the fluid field where the ammonia actually is.
-            //
-            // ✅ The Boudouard reaction was here and is gone — increment 4 moved it too, and it is
-            // the row that proved the cross-store shape: its CO2 is in the room and its carbon is on
-            // a belt, which no single-store table could express.
-            //
-            // Increment 2, ⛔ PARKED — it needs the fluid field to be able to hold carbon. Methane
-            // critical at 191 K, pyrolysis at 1300 K.
-            "HEAT Methane@1300K",
-        )
-        assertEquals(knownDead, dead)
-    }
-
-    @Test
-    fun `no fluid-swept row asks for a principal the air cannot hold`() {
-        // The mirror of the case above, and it is not hypothetical: the way to "fix" a dead cargo
-        // row is to move it to the fluid sweep, and the way to get that wrong is to move one whose
-        // principal is a rock. A pass finds no fluid for it and skips it silently, which is the same
-        // symptom the plan exists to eliminate — a reaction that never happens.
-        for ((table, principal, onset) in fluidSweptRows()) {
-            assertTrue(principal.isFluid, "$table ${principal.name}@${onset}K: the air cannot hold it")
-        }
-    }
-
-    @Test
-    fun `a fluid-swept row leaves nothing behind that the air cannot hold`() {
-        // Products, where the case above is reagents. A gas-phase reaction with a solid product has
-        // nowhere to put it — `MassIndex(tile, Species.Carbon)` does not compile, by `Fluid.kt`'s
-        // design — so the mass would vanish. The answer when such a row is wanted is to widen the
-        // fluid field, which is parked; see the plan, decision 4.
+        // Two rows failed this the day the tables were unified:
+        //
+        //  - `CH₄ → C + 2 H₂` — deleted. It had never fired anywhere but inside a wall, and the fix
+        //    is to widen the fluid field, which is parked (plan, decision 4).
+        //  - photosynthesis — its principal became the *algae* rather than the water. Asking where
+        //    the products should go answers what the principal is: the bloom is the thing that
+        //    grows, so the reaction happens in the tank and draws the room's water and CO₂ into it.
         for (r in REACTIONS) {
+            if (!r.principal.isFluid) continue
             for ((product, _) in r.products) {
                 assertTrue(
                     product.isFluid,
-                    "${r.principal.name} leaves ${product.name}, which the air cannot hold",
+                    "${r.principal.name} reacts in the air and leaves ${product.name}, " +
+                        "which the air cannot hold — it would be dropped silently",
                 )
             }
         }
     }
 
     @Test
-    fun `every store-agnostic row consumes its own principal`() {
-        // The principal is what the rate is a fraction of and the enthalpy is per kilogram of, so a
-        // row that did not actually consume it would be quoting both against a bystander.
-        //
-        // ⚠️ This was "exactly one reagent" until increment 4, which was the guard standing in for a
-        // contention pass that did not exist yet. `reactInFluid` now settles a species between rows
-        // before either takes any, so a second reagent is expressible — and the Boudouard row is the
-        // one that needed it.
+    fun `a row whose principal is a solid can still reach every reagent it needs`() {
+        // The mirror. A cargo reaction draws from its own layer and from the surrounding air, so a
+        // reagent that is neither something a layer can hold nor a fluid would be unreachable —
+        // which is not possible today, since a cargo layer holds every species. Stated so that it
+        // stays true if that ever stops being so.
         for (r in REACTIONS) {
-            assertTrue(
-                r.reagents.any { it.first == r.principal },
-                "${r.principal.name} is the principal of a row that does not consume it",
-            )
-            assertTrue(r.principalIndex >= 0)
-        }
-    }
-
-    @Test
-    fun `a gas fire leaves nothing behind that the air cannot hold`() {
-        // The guard that would have caught methane pyrolysis the day it was written, and it costs
-        // nothing today: every product of every current gas fire is already a fluid. A gas-phase
-        // reaction with a solid product has nowhere to put it — `MassIndex(tile, Species.Carbon)`
-        // does not compile, by `Fluid.kt`'s design — and the answer when one is wanted is to widen
-        // the fluid field rather than to invent a store. See the plan, decision 4.
-        for (c in COMBUSTIONS) {
-            assertTrue(c.fuel.isFluid, "${c.fuel.name} burns in the air but cannot be in it")
-            for ((product, _) in c.products) {
+            if (r.principal.isFluid) continue
+            for ((reagent, _) in r.reagents) {
                 assertTrue(
-                    product.isFluid,
-                    "${c.fuel.name} burning leaves ${product.name}, which the air cannot hold",
+                    reagent.isFluid || Species.ALL.contains(reagent),
+                    "${r.principal.name} needs ${reagent.name}, which is in no store it can reach",
                 )
             }
         }
     }
 
     @Test
-    fun `the reference describes exactly the rows this file audits`() {
-        // Not a second copy of the first case — the point is *who is told*. Every dead row above is
-        // printed by the in-game reference as a route the player can plan around, with an onset
-        // temperature and an arrow, in the same confident voice as a row that works.
+    fun `nothing outside REACTIONS is still waiting for a sweep`() {
+        // ⛔ **A row in an old table is a row nothing runs.** The four sweeps are deleted; anything
+        // left behind in `DECOMPOSITIONS` or `REDUCTIONS` is read only as data for `REACTIONS`, and
+        // anything in the two emptied tables is read by nothing at all.
         //
-        // So the two have to be looking at the same rows. A table the reference flattens and this
-        // audit does not is a reaction the player can read about and nobody has checked can happen;
-        // a table this audit walks and the reference does not is the bug fixed in `0de81dd9`. One
-        // count, asserted equal, closes both directions.
-        assertEquals(ALL_REACTIONS.size, layerSweptRows().size + fluidSweptRows().size)
+        // ⚠️ Rows in *both* would be worse than rows in neither — two engines running the same
+        // reaction at the same tile, each unaware of the other's draw. That is the pass-order bug
+        // wearing a different hat, so the count is pinned.
+        val derived = DECOMPOSITIONS.size + REDUCTIONS.size
+        assertTrue(
+            REACTIONS.size > derived,
+            "REACTIONS has ${REACTIONS.size} rows and the tables it derives from have $derived — " +
+                "some hand-written rows have gone missing",
+        )
     }
 }

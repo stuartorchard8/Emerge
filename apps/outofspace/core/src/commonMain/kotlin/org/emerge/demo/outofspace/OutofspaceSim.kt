@@ -124,14 +124,11 @@ import org.emerge.demo.outofspace.world.tileMass
 import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
-import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
-import org.emerge.demo.outofspace.world.oxygenScales
-import org.emerge.demo.outofspace.world.reactInFluid
+import org.emerge.demo.outofspace.world.react
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.settleCondensate
-import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
@@ -475,72 +472,48 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
         // the same matter on a belt. The machine controls the conditions and nothing else.
         if (shouldRun(state.tick, CHEM_PERIOD, CHEM_OFFSET, frozen)) {
-            // ⚠️ **Who gets the oxygen is settled before anybody takes any.** Every consumer at a
-            // tile — both cargo layers and every gas fire — is asked what it wants against one
-            // snapshot, and the well is divided once. Until this existed the three passes below ran
-            // in order against a dwindling array, so rail matter had first refusal, then hoppers,
-            // then fires: burning carbon on a belt structurally starved a methane fire in the same
-            // room, by a rule nobody wrote. See `oxygenScales`, and `Reaction.kt`'s ⛔ on iteration
-            // order, which this is the pass-level version of.
+            // ⚠️ **One pass, and it decides nothing about where matter is kept.** Every row in
+            // `REACTIONS` is offered every store at every tile — the room's air and both cargo
+            // layers — and runs wherever its principal actually is, putting its products back
+            // there. Four tables and three sweeps used to do this, each claiming a store for its
+            // rows and each dividing a tile's oxygen after the one before it had taken some. See
+            // `PLAN_unified_reactions.md`.
             //
-            // ⚠️ Derived once and handed to all four calls below. `combust` would otherwise derive
-            // it again, and a temperature taken after a pass has already burned some of the air is
-            // an answer about a different room.
+            // ⚠️ Temperatures derived once and handed in. A temperature taken after a pass has
+            // already changed the air is an answer about a different room, and that alone was
+            // enough to make two orderings disagree — see `OxygenWellTest`.
             val airKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
-            val oxygen = LongArray(state.grid.size)
-            oxygenScales(listOf(w.rail.stuff, w.buffers.stuff), w.masses, airKelvin, oxygen)
-            val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy, oxygen)
-            val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy, oxygen)
-            // Then what the matter will no longer hold on to, which is the only pass of the two
-            // that can put anything into the air — and the only one that is told where the walls
-            // are. Reactions first, so a volatile made this tick can leave in the tick it was made
-            // rather than waiting a pass, which is the reason the chemistry sits ahead of the
-            // pressure sweep in the first place.
+            val cargo = listOf(w.rail.stuff, w.buffers.stuff)
+            val inRooms = react(w.masses, w.airEnergy, airKelvin, cargo)
+            // ⚠️ **The cargo layers are not given to the pipes' pass.** A pipe has no cargo in it,
+            // so a reagent on a belt is not reachable from inside one, and handing the layers over
+            // would let a pipe full of CO2 eat the carbon off a belt it merely runs past.
+            val inPipes = react(w.pipeMass, w.pipeEnergy)
+            // Then what the matter will no longer hold on to — the only pass that can put anything
+            // into the air on its own account, and the only one told where the walls are. Chemistry
+            // first, so a volatile made this tick can leave in the tick it was made rather than
+            // waiting a pass.
             val offRails = offGas(w.rail.stuff, w.masses, w.airEnergy, structure::blocksAir)
             val offHoppers = offGas(w.buffers.stuff, w.masses, w.airEnergy, structure::blocksAir)
-            // Then the air burns, if it is hot enough and has both halves of a fire in it. Last of
-            // the three because the two above are what put fuel there: a volatile that came off a
-            // lump this tick can catch this tick, rather than waiting a pass for no reason a player
-            // could see. Rooms and pipes alike — a pipe full of methane is not fireproof, and the
-            // rate is a fraction of the fuel present, so the eighth of a tile a pipe holds changes
-            // nothing about the arithmetic.
-            //
-            // ⚠️ Each derives its own temperatures rather than borrowing the pressure step's. Those
-            // are taken later in the tick and *after* this pass has changed the air, so they answer
-            // about a room this one has already burned; and the two run on different periods, so
-            // there are ticks where they do not exist at all.
-            val inTheAir = combust(w.masses, w.airEnergy, airKelvin, oxygen)
-            val inThePipes = combust(w.pipeMass, w.pipeEnergy)
-            // And the reactions that are neither cargo chemistry nor fires — the ones whose
-            // principal simply happens to be a fluid, so the fluid field is where they are swept.
-            // Ammonia cracking is the first; see `PLAN_unified_reactions.md`. Alongside `combust`
-            // rather than folded into it because it settles no contention: every row has one
-            // reagent, so nothing here can starve anything.
-            // ⚠️ **The cargo layers are given to the room's pass and not to the pipes'.** A pipe
-            // has no cargo in it, so a reagent on a belt is not reachable from inside one — and
-            // handing the layers over anyway would let a pipe full of CO2 eat the carbon off a belt
-            // it merely happens to run past.
-            val crackedInAir = reactInFluid(w.masses, w.airEnergy, airKelvin, listOf(w.rail.stuff, w.buffers.stuff))
-            val crackedInPipes = reactInFluid(w.pipeMass, w.pipeEnergy)
-            // ⚠️ The cross-store reactions are in this sum now. A row whose principal is in the air
+
+            // ⚠️ The cross-store reactions are in these sums. A row whose principal is in the air
             // and whose other reagent is on a belt — the Boudouard reaction — moves cargo mass into
-            // the atmosphere as surely as an off-gassing lump does, and the two ledgers only close
-            // if it is told.
-            val toGasMass = offRails.toGasMass + offHoppers.toGasMass + crackedInAir.toGasMass
-            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy + crackedInAir.toGasEnergy
-            val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
-            val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
+            // the atmosphere as surely as an off-gassing lump does, and a row burning a lump with
+            // the room's oxygen moves air mass the other way. The two ledgers only close if both
+            // are told.
+            val toGasMass = offRails.toGasMass + offHoppers.toGasMass + inRooms.toGasMass
+            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy + inRooms.toGasEnergy
+            val toSolidMass = inRooms.toSolidMass
+            val toSolidEnergy = inRooms.toSolidEnergy
             if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)
             if (toSolidMass != 0L || toSolidEnergy != 0L) w.gasBecameSolid(toSolidMass, toSolidEnergy)
-            // The enthalpies, which since increment 4 are real: a fire is an energy source and
-            // calcining is an energy sink, and the world holds more or less because of it.
-            // ⚠️ The off-gas passes are in this sum now: since latent heat landed they report the
-            // energy that went into breaking the bonds of whatever evaporated, which is negative and
-            // is exactly the same kind of quantity a reaction enthalpy is.
-            val made = onRails.releasedEnergy + inHoppers.releasedEnergy +
-                offRails.releasedEnergy + offHoppers.releasedEnergy +
-                inTheAir.releasedEnergy + inThePipes.releasedEnergy +
-                crackedInAir.releasedEnergy + crackedInPipes.releasedEnergy
+            // The enthalpies: a fire is an energy source and calcining is an energy sink, and the
+            // world holds more or less because of it.
+            // ⚠️ The off-gas passes are in this sum: since latent heat landed they report the energy
+            // that went into breaking the bonds of whatever evaporated, which is negative and is
+            // exactly the same kind of quantity a reaction enthalpy is.
+            val made = inRooms.releasedEnergy + inPipes.releasedEnergy +
+                offRails.releasedEnergy + offHoppers.releasedEnergy
             if (made != 0L) w.reactionEnergy(made)
         }
         if (_c0) profiler.recordPhase("chemistry", _c!!.elapsedNow().inWholeNanoseconds)

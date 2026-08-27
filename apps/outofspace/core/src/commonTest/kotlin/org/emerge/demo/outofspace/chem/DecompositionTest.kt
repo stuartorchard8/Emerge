@@ -182,7 +182,12 @@ class DecompositionTest {
         val kilogram = Budget.KILOGRAM
         val heldAtIgnition =
             kilogram * Species.Carbon.specificHeat / Budget.CAPACITY_DIVISOR * CARBON_IGNITION_KELVIN
-        val released = -CARBON_BURN.enthalpy(kilogram)
+        // The carbon-burning row, which used to be `CARBON_BURN` and is now an ordinary entry in
+        // [REACTIONS] with oxygen among its reagents.
+        val carbonBurn = REACTIONS.first { r ->
+            r.principal == Species.Carbon && r.reagents.any { it.first == Species.Oxygen }
+        }
+        val released = -carbonBurn.enthalpy(kilogram)
 
         assertTrue(released > 0L, "burning carbon is not exothermic")
         assertTrue(

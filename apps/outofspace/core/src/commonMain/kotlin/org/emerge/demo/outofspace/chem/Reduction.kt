@@ -267,14 +267,11 @@ val REDUCTIONS: List<Reduction> = listOf(
      * molarMass`, and the test exists precisely because the one number a reader cannot check by
      * eye is which unit an enthalpy is per.
      */
-    Reduction(
-        oxide = Species.Water, oxideUnits = 6,
-        reductant = Species.CarbonDioxide, reductantUnits = 6,
-        catalyst = Species.Algae, catalystUnits = 100,
-        products = listOf(Species.Algae to 1, Species.Oxygen to 6),
-        onsetKelvin = 273, // ~0°C.
-        enthalpyPerKg = 2803L * kJPerMolAt(108),
-    ),
+    // ⛔ **Photosynthesis has moved to [REACTIONS] and its principal changed** — see there. It was
+    // quoted against its six waters, which under the unified pass would have made *water* the
+    // principal and run the reaction in the room's air, where the algae it makes cannot go. The
+    // bloom is the thing that grows and the thing the products belong to, so the bloom is the
+    // principal. `PLAN_unified_reactions.md`, increment 4.
 
     // ── Enstatite cracking: the high-silicon alternative ──
     //

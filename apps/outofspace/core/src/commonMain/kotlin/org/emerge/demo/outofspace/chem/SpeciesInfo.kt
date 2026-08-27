@@ -72,129 +72,47 @@ class ReactionInfo(
 }
 
 /**
- * Every reaction in the game, flattened.
+ * Every reaction in the game, in the shape a reader wants it.
  *
- * Order is table order — oxidations, decompositions, reductions, gas fires, then the store-agnostic
- * rows — which is arbitrary and only has to be stable, since this list is read by a panel and never
- * by the sim.
+ * ⛔ **Almost nothing, now — and that is the point.** This used to be four loops converting four
+ * classes into one row type, and it was where the gas fires were forgotten for five days: a table
+ * added and a loop not written is a species the panel says nothing happens to. There is one table
+ * left, so there is nothing to forget.
+ *
+ * All that remains is the [ReactionKind] label, which is a caption and not a fact the simulation
+ * acts on — see [kindOf].
  */
-val ALL_REACTIONS: List<ReactionInfo> = buildList {
-    for (o in OXIDATIONS) {
-        add(
-            ReactionInfo(
-                kind = ReactionKind.Burn,
-                inputs = listOf(o.reactant to o.reactantUnits, Species.Oxygen to o.oxygenUnits),
-                products = listOf(o.product to o.productUnits),
-                onsetKelvin = o.onsetKelvin,
-                enthalpyPerKg = o.enthalpyPerKg,
-            ),
-        )
-    }
-    for (d in DECOMPOSITIONS) {
-        add(
-            ReactionInfo(
-                kind = ReactionKind.Heat,
-                inputs = listOf(d.reactant to d.reactantUnits),
-                products = d.products,
-                onsetKelvin = d.onsetKelvin,
-                enthalpyPerKg = d.enthalpyPerKg,
-            ),
-        )
-    }
-    for (r in REDUCTIONS) {
-        add(
-            ReactionInfo(
-                kind = ReactionKind.Reduce,
-                inputs = withCatalyst(
-                    listOf(r.oxide to r.oxideUnits, r.reductant to r.reductantUnits),
-                    r.catalyst,
-                    r.catalystUnits,
-                ),
-                products = withCatalyst(r.products, r.catalyst, r.catalystUnits),
-                onsetKelvin = r.onsetKelvin,
-                enthalpyPerKg = r.enthalpyPerKg,
-            ),
-        )
-    }
-    for (c in COMBUSTIONS) {
-        add(
-            ReactionInfo(
-                kind = ReactionKind.Fire,
-                inputs = listOf(c.fuel to c.fuelUnits, Species.Oxygen to c.oxygenUnits),
-                products = c.products,
-                onsetKelvin = c.onsetKelvin,
-                enthalpyPerKg = c.enthalpyPerKg,
-            ),
-        )
-    }
-    for (r in REACTIONS) {
-        add(
-            ReactionInfo(
-                // ⚠️ **Derived, not stated — and this is the point of the whole plan.** A
-                // [Reaction] holds no kind, because what store its matter is in is not its business.
-                // What the *player* must arrange is still a real distinction and still worth
-                // printing, so it is worked out from the reagents here, where it is a label rather
-                // than a fact the simulation acts on.
-                kind = kindOf(r),
-                inputs = r.reagents,
-                products = r.products,
-                onsetKelvin = r.onsetKelvin,
-                enthalpyPerKg = r.enthalpyPerKg,
-            ),
-        )
-    }
+val ALL_REACTIONS: List<ReactionInfo> = REACTIONS.map {
+    ReactionInfo(
+        kind = kindOf(it),
+        inputs = it.reagents,
+        products = it.products,
+        onsetKelvin = it.onsetKelvin,
+        enthalpyPerKg = it.enthalpyPerKg,
+    )
 }
 
 /**
  * What a player has to arrange for [reaction] — [ReactionKind] worked out rather than declared.
  *
  * Oxygen among the reagents and a fluid principal is a fire; oxygen with a solid principal is
- * something burning in the room's air; a second solid reagent is something mixed into the charge;
- * and one reagent is heat and nothing else. Those are the four the four old tables encoded
- * structurally, recovered from the only thing that ever actually distinguished them.
+ * something burning in the room's air; a second reagent is something mixed in; and one reagent is
+ * heat and nothing else. Those are the four distinctions the four old tables encoded *structurally*,
+ * recovered here from the only thing that ever actually separated them.
  *
- * ⚠️ **The label may be wrong here in a way it could not be before, and that is the trade.** A
- * table said what it was; this infers it. The inference is a panel's caption and nothing in the
- * simulation reads it, so the cost of getting it wrong is a misleading word — against a store claim
- * that was wrong for three rows and cost them their existence.
+ * ⚠️ **The label can be wrong in a way it could not be before, and that is the trade.** A table said
+ * what it was; this infers it. Nothing in the simulation reads the answer, so the cost of getting it
+ * wrong is a misleading caption — against a store claim that was wrong for four rows and cost three
+ * of them their existence.
  */
 private fun kindOf(reaction: Reaction): ReactionKind {
     val takesOxygen = reaction.reagents.any { it.first == Species.Oxygen }
-    val gaseousPrincipal = reaction.principal.isFluid
     return when {
-        takesOxygen && gaseousPrincipal -> ReactionKind.Fire
+        takesOxygen && reaction.principal.isFluid -> ReactionKind.Fire
         takesOxygen -> ReactionKind.Burn
         reaction.reagents.size > 1 -> ReactionKind.Reduce
         else -> ReactionKind.Heat
     }
-}
-
-/**
- * [entries] with [catalyst] added to them, or [entries] unchanged if there is no catalyst.
- *
- * ⛔ **A catalyst is a reactant that appears on both sides, and the reference says exactly that.**
- * Called once for the inputs and once for the products, it turns [Reduction.catalyst]'s separate
- * field back into the formula the row's own documentation is written in:
- * `100 ALGAE + 6 WATER + 6 CO₂ → 101 ALGAE + 6 OXYGEN`. Nothing about it is a new kind of
- * ingredient, so the panel needs no new row type, no "NEEDS" line and no third lookup — a player
- * reads a hundred going in and a hundred and one coming out, and that *is* what a catalyst is.
- *
- * ⚠️ **Added to an existing entry rather than appended beside it.** Photosynthesis already lists
- * `Algae to 1` in its products — the one net new unit — so appending would print `1 ALGAE` and
- * `100 ALGAE` as two separate chips on the same side, which reads as two different things.
- */
-private fun withCatalyst(
-    entries: List<Pair<Species, Int>>,
-    catalyst: Species?,
-    units: Int,
-): List<Pair<Species, Int>> {
-    if (catalyst == null) return entries
-    // First on the side that did not already name it, so the two lines read as the one formula the
-    // row is documented by: `100 ALGAE + 6 WATER + 6 CO₂ → 101 ALGAE + 6 OXYGEN`. The bloom is the
-    // subject of the sentence on both sides, and burying it behind the reagents on one of them
-    // would hide the only thing the reader has to compare.
-    if (entries.none { it.first == catalyst }) return listOf(catalyst to units) + entries
-    return entries.map { (species, n) -> if (species == catalyst) species to (n + units) else species to n }
 }
 
 /** Every reaction [species] is an ingredient of, coldest first — the cheapest thing to try first. */

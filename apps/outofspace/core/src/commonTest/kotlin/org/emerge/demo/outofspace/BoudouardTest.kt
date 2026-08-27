@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.heatCapacityAt
-import org.emerge.demo.outofspace.world.reactInFluid
+import org.emerge.demo.outofspace.world.react
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -59,7 +59,7 @@ class BoudouardTest {
     }
 
     private fun sweep(r: Room, passes: Int = 1) {
-        repeat(passes) { reactInFluid(r.air, r.energy, null, listOf(r.belt)) }
+        repeat(passes) { react(r.air, r.energy, null, listOf(r.belt)) }
     }
 
     private fun airTotal(r: Room): Long {
@@ -108,7 +108,7 @@ class BoudouardTest {
         val airBefore = airTotal(r)
         val beltBefore = r.belt[tile, Species.Carbon]
 
-        val step = reactInFluid(r.air, r.energy, null, listOf(r.belt))
+        val step = react(r.air, r.energy, null, listOf(r.belt))
 
         val leftTheBelt = beltBefore - r.belt[tile, Species.Carbon]
         assertTrue(leftTheBelt > 0L, "nothing left the belt")
@@ -124,7 +124,7 @@ class BoudouardTest {
         // rule, applied to a reaction that moves mass the same way.
         val r = room(dioxide = 50 * kg, carbon = 50 * kg, kelvin = 1400)
         val beltEnergyBefore = r.belt.energyAt(tile)
-        val step = reactInFluid(r.air, r.energy, null, listOf(r.belt))
+        val step = react(r.air, r.energy, null, listOf(r.belt))
         assertTrue(step.toGasEnergy > 0L, "the carbon crossed without its heat")
         assertEquals(beltEnergyBefore - step.toGasEnergy, r.belt.energyAt(tile))
     }

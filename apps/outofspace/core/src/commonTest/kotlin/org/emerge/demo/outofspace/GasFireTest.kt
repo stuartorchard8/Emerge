@@ -12,7 +12,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.combust
+import org.emerge.demo.outofspace.world.react
 import org.emerge.demo.outofspace.world.heatCapacityAt
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,7 +64,7 @@ class GasFireTest {
         // spare so nothing here is about contention.
         val (air, energy) = room(Fluid.Methane to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 1200)
 
-        combust(air, energy)
+        react(air, energy)
 
         assertTrue(air[tile, Fluid.Methane] < 1L * kg, "the methane did not burn")
         assertTrue(air[tile, Fluid.Oxygen] < 10L * kg, "no oxygen was consumed")
@@ -76,7 +76,7 @@ class GasFireTest {
     fun `hydrogen burns too, and makes only water`() {
         val (air, energy) = room(Fluid.Hydrogen to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 1200)
 
-        combust(air, energy)
+        react(air, energy)
 
         assertTrue(air[tile, Fluid.Hydrogen] < 1L * kg, "the hydrogen did not burn")
         assertTrue(air[tile, Fluid.Water] > 0L, "no water was made")
@@ -91,7 +91,7 @@ class GasFireTest {
         // the same one `oxidise` already has for solids.
         val (air, energy) = room(Fluid.Methane to 1L * kg, kelvin = 1200)
 
-        combust(air, energy)
+        react(air, energy)
 
         assertEquals(1L * kg, air[tile, Fluid.Methane], "methane burned with nothing to burn in")
         assertEquals(0L, air[tile, Fluid.CarbonDioxide], "something was made out of nothing")
@@ -102,7 +102,7 @@ class GasFireTest {
         // Methane and oxygen sitting together at room temperature is what a fuel tank *is*.
         val (air, energy) = room(Fluid.Methane to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 293)
 
-        combust(air, energy)
+        react(air, energy)
 
         assertEquals(1L * kg, air[tile, Fluid.Methane], "a fuel tank at room temperature went off")
     }
@@ -116,7 +116,7 @@ class GasFireTest {
         val (air, energy) = room(Fluid.Methane to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 1200)
         val before = total(air)
 
-        repeat(20) { combust(air, energy) }
+        repeat(20) { react(air, energy) }
 
         assertEquals(before, total(air), "the room does not weigh what it did before it caught fire")
         assertTrue(air[tile, Fluid.CarbonDioxide] > 0L, "nothing burned, so nothing was proved")
@@ -127,7 +127,7 @@ class GasFireTest {
         val (air, energy) = room(Fluid.Methane to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 1200)
         val methaneBefore = air[tile, Fluid.Methane]
 
-        repeat(20) { combust(air, energy) }
+        repeat(20) { react(air, energy) }
 
         val burned = methaneBefore - air[tile, Fluid.Methane]
         // CH4 is 12/16 carbon by mass; CO2 is 12/44. Same atoms, different company.
@@ -146,7 +146,7 @@ class GasFireTest {
         val (air, energy) = room(Fluid.Methane to 1L * kg, Fluid.Oxygen to 10L * kg, kelvin = 1200)
         val before = energy[tile]
 
-        val step = combust(air, energy)
+        val step = react(air, energy)
 
         // Positive is released — see [ChemistryStep.releasedEnergy], whose prose said the opposite
         // until this test disagreed with it. `reactionEnergy` adds this into `generatedEnergy`,
@@ -213,7 +213,7 @@ class GasFireTest {
             kelvin = 1200,
         )
 
-        combust(air, energy)
+        react(air, energy)
 
         assertTrue(air[tile, Fluid.Methane] < 5L * kg, "the methane got none of the oxygen")
         assertTrue(air[tile, Fluid.Hydrogen] < 5L * kg, "the hydrogen got none of the oxygen")

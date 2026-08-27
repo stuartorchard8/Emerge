@@ -1,7 +1,7 @@
 # Unified reactions
 
-Status: **increments 0, 1 and 3 built** (2026-08-27). Increment 2 is parked by decision; 4 and 5
-remain. Successor to `PLAN_ambient_chemistry.md`, which
+Status: **increments 0, 1, 3 and 4 built** (2026-08-27). Increment 2 is parked by decision; 5 (the
+few hundred rows) is what is left. There is **one reaction type and one pass**. Successor to `PLAN_ambient_chemistry.md`, which
 built four reaction shapes as four classes swept by two passes. This plan makes them **one shape
 swept by one pass**, before the table grows from twenty-two rows to a few hundred.
 
@@ -247,7 +247,7 @@ The derived `baseRate` — surface-vs-volume from the principal's phase at this 
 this increment and moves to 4 with the rest of the generalisation. It is a rate change and it belongs
 with the pass that computes rates, which is the one increment 4 builds.
 
-### Increment 4 — the four classes become rows
+### Increment 4 — the four classes become rows ✅ BUILT
 
 `Decomposition`, `Oxidation`, `Reduction` and `Combustion` collapse into `Reaction`. The tables
 become data and `SpeciesInfo.kt`'s flattening becomes the identity function.
@@ -257,12 +257,65 @@ apportionment lands here, since it is only writable once there is one row type; 
 `baseRate`. And the Boudouard row — a reagent in each store — is the case that proves both, so it is
 the one to do first within this increment.
 
+## What the build found (2026-08-27)
+
+Four things, and three of them were bugs the unification *created* and then made visible. Worth
+keeping because each is a shape that will recur as the table grows.
+
+**1. Store-agnostic rows started firing where their products cannot go.** Methane pyrolysis and
+photosynthesis both have a fluid principal and a solid product. Once the pass found the principal in
+the air, `addTo` looked up `Species.fluid`, found nothing, and returned — dropping the mass on the
+floor every pass with both ledgers none the wiser. Methane pyrolysis is **deleted** (it had never
+fired anywhere but inside a wall; the fix is the parked widening). Photosynthesis got a **new
+principal**: asking "where should the products go?" answers "what is the principal?" — the bloom is
+the thing that grows, so the reaction happens in the tank and draws the room's water and CO₂ into it.
+That is a better model than the one it replaced, and it fell out of the rule rather than being
+argued for.
+
+**2. A same-store draw was moving heat that had not moved.** Matter reacting where it already is has
+not gone anywhere, so its share of the store's warmth must stay. Taking it and not handing it back
+cooled a room every time it cracked its own ammonia — caught by `AmmoniaCrackingTest`'s energy
+identity, a couple of billion joules short.
+
+**3. A row reserved a reagent it could never use.** A fire's rate depends only on its fuel and the
+temperature, so a fire with no oxygen anywhere still "wanted" a share of the carbon — and the well,
+dividing honestly between everybody who asked, gave it one. The carbon was then not consumed; it was
+simply withheld from the reduction that could have had it. The symptom is a charge that reduces at
+the same rate in air as in vacuum, and `ReductionSweepTest` had a case named for exactly that
+suspicion.
+
+⛔ **The obvious fix is wrong.** Clamping each row's demand to what the supply could support looks
+thorough and destroys the apportionment: when a reagent is the binding constraint, *every* row clamps
+to the same ceiling, so carbon and iron ask for the same oxygen and iron outbids carbon. Scarcity is
+the well's job. All the clamp may remove is demand for a reagent that is **absent**, not scarce.
+
+**4. Jacobi is a promise about one snapshot, and the react phase was re-asking.** `feasible` reads
+live supply, so recomputing it after the first consumer had drawn gave a different answer — and two
+identical cargo layers at one tile stopped burning identical amounts. What each consumer asked for is
+now *kept* between the phases.
+
 The reference panel's `ALL_REACTIONS` stops being a place a table can be forgotten — which is the
 bug fixed by hand on 2026-08-27 and worth deleting the possibility of.
 
 ### Increment 5 — the table grows
 
-The few hundred rows. Not before 0, 1, 3 and 4 — increment 2 is parked and is not a dependency.
+The few hundred rows. Everything is in place for them.
+
+⚠️ **Half the table is still derived rather than written.** `REACTIONS` hand-writes the rows that
+have been rewritten in this shape and mechanically converts `DECOMPOSITIONS` and `REDUCTIONS` as the
+list is built. That was the safe migration order — twenty-two rows of hand-copied stoichiometry is
+twenty-two chances to transpose a digit into a table where a wrong number is invisible — but it is
+not the end state. Retyping them (and deleting `Decomposition`, `Reduction` and the catalyst field
+with them) is the first thing to do here, and `UnifiedReactionTest` closes every row atom by atom
+either way.
+
+### Increment 4f — the derived base rate
+
+Still outstanding. `COMBUSTION_BASE_RATE` is eight times `BASE_RATE` because a solid burns at its
+surface and a gas burns throughout — which is a fact about the *phase of the principal at a tile*,
+and the phase model can answer it. Frozen methane should burn at the surface rate and methane gas at
+the volume rate, from the same row. It is the last piece of "which store am I in?" surviving in a
+table.
 
 ## Perf
 

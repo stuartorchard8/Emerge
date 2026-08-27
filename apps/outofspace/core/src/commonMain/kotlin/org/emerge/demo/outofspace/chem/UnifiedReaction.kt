@@ -190,7 +190,7 @@ class Reaction(
  * states, and it will start to mean something once contention arrives in increment 3. For now
  * nothing here competes for anything.
  */
-val REACTIONS: List<Reaction> = listOf(
+private val WRITTEN: List<Reaction> = listOf(
     /**
      * `2 NH₃ → N₂ + 3 H₂` — ammonia cracking, and the first reaction in the game that is swept over
      * the store its matter is actually in.
@@ -248,7 +248,246 @@ val REACTIONS: List<Reaction> = listOf(
         enthalpyPerKg = 172L * kJPerMolAt(44),
         baseRate = COMBUSTION_BASE_RATE,
     ),
+
+    /**
+     * `100 C₆H₁₂O₆ + 6 H₂O + 6 CO₂ → 101 C₆H₁₂O₆ + 6 O₂` — photosynthesis, and **the row whose
+     * principal the unification had to change**.
+     *
+     * It was a [Reduction] quoted against its six waters, which made water the thing the rate was a
+     * fraction of. Under the placement rule that puts the reaction *in the room's air*, and the
+     * algae it makes is not something the air can hold — so a bloom would have grown into the
+     * atmosphere and been dropped on the floor, silently, every pass.
+     *
+     * ⚠️ **Asking "where should the products go?" answers "what is the principal?"** The bloom is
+     * the thing that grows, so the bloom is what the products belong to, so the bloom is the
+     * principal — and it is not a fluid, so the reaction happens in the tank. The water and the CO₂
+     * come out of the air the tank is standing in, which is what photosynthesis is.
+     *
+     * ⛔ **The oxygen it makes lands in the cargo layer too, and that is correct.** A reaction never
+     * decides phase; `offGas` releases it on the next pass, once it can see there is a room to
+     * release it into. A tank inside a sealed bulkhead fills with its own oxygen instead of venting
+     * it through a hull plate.
+     *
+     * ⚠️ **The catalyst is gone as a concept.** A hundred units in and a hundred and one out is
+     * what a catalyst *is*, and being contended like any other reagent is what makes a bloom grow in
+     * proportion to itself. `Reduction.catalyst` was a bodge for a shape that could not say it.
+     *
+     * ⚠️ **Quoted against 100 × 180 g**, the principal's formula mass, not against the six waters.
+     * +2803 kJ per mole of glucose formed is per mole of *reaction*, and the divisor has to be
+     * whatever the rate is a fraction of — `UnifiedReactionTest` divides it back to check.
+     */
+    Reaction(
+        principal = Species.Algae,
+        reagents = listOf(Species.Algae to 100, Species.Water to 6, Species.CarbonDioxide to 6),
+        products = listOf(Species.Algae to 101, Species.Oxygen to 6),
+        onsetKelvin = 273, // ~0°C.
+        enthalpyPerKg = 2803L * kJPerMolAt(18000),
+        baseRate = BASE_RATE,
+    ),
+
+    // ══ THE FIRES ═════════════════════════════════════════════════════════════════════════════
+    //
+    // Increment 4b. These were [Combustion], a class earned by the fact that both reagents come out
+    // of the air and every product goes back into it — which under the placement rule is not a
+    // property of the row at all. It is a property of where the fuel happens to be, and the pass
+    // works it out.
+    //
+    // ⚠️ **They had to move with the oxidations, not before them.** Both tables drink from a tile's
+    // oxygen, and a well that covered one and not the other would put back the pass-order bug
+    // increment 3 deleted — the fires taking their share after the belts had taken theirs.
+    //
+    // ⚠️ The onsets are real autoignition temperatures, which is what makes them a design: hydrogen
+    // sulfide goes off at 260 °C and ammonia needs 651 °C, so a hold full of comet volatiles has a
+    // temperature at which it becomes a problem and a different one at which it becomes a bomb.
+
+    // CH4 + 2 O2 -> CO2 + 2 H2O. The marquee one: methane is what a comet gives up first and what
+    // `offGas` puts into every room the vessel has.
+    Reaction(
+        principal = Species.Methane,
+        reagents = listOf(Species.Methane to 1, Species.Oxygen to 2),
+        products = listOf(Species.CarbonDioxide to 1, Species.Water to 2),
+        onsetKelvin = 810,
+        enthalpyPerKg = -802L * kJPerMolAt(16),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+    // 2 H2 + O2 -> 2 H2O. The cleanest and the most eager: nothing else here lights at 773 K and
+    // leaves only water behind.
+    Reaction(
+        principal = Species.Hydrogen,
+        reagents = listOf(Species.Hydrogen to 2, Species.Oxygen to 1),
+        products = listOf(Species.Water to 2),
+        onsetKelvin = 773,
+        enthalpyPerKg = -242L * kJPerMolAt(4),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+    // 2 CO + O2 -> 2 CO2. Carbon monoxide is what a starved fire makes, so this is the second half
+    // of a fire that did not get enough air the first time -- and what the Boudouard reaction has
+    // been filling the rooms with since it started working.
+    Reaction(
+        principal = Species.CarbonMonoxide,
+        reagents = listOf(Species.CarbonMonoxide to 2, Species.Oxygen to 1),
+        products = listOf(Species.CarbonDioxide to 2),
+        onsetKelvin = 882,
+        enthalpyPerKg = -566L * kJPerMolAt(56),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+    // 2 H2S + 3 O2 -> 2 SO2 + 2 H2O. The lowest onset in the table by a wide margin, and the reason
+    // a sour hold is the one to worry about first.
+    Reaction(
+        principal = Species.HydrogenSulfide,
+        reagents = listOf(Species.HydrogenSulfide to 2, Species.Oxygen to 3),
+        products = listOf(Species.SulfurDioxide to 2, Species.Water to 2),
+        onsetKelvin = 533,
+        enthalpyPerKg = -1036L * kJPerMolAt(68),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+    // 4 NH3 + 3 O2 -> 2 N2 + 6 H2O. Ammonia is hard to light and worth the trouble: it burns back
+    // to breathable nitrogen and water, so a vessel that can get a hold hot enough has a way of
+    // turning a comet's worst volatile into two things it wants.
+    Reaction(
+        principal = Species.Ammonia,
+        reagents = listOf(Species.Ammonia to 4, Species.Oxygen to 3),
+        products = listOf(Species.Nitrogen to 2, Species.Water to 6),
+        onsetKelvin = 924,
+        enthalpyPerKg = -1267L * kJPerMolAt(68),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+    // S + O2 -> SO2. Sulfur vapour, which a pyrite roast puts into the air by the kilogram.
+    Reaction(
+        principal = Species.Sulfur,
+        reagents = listOf(Species.Sulfur to 1, Species.Oxygen to 1),
+        products = listOf(Species.SulfurDioxide to 1),
+        onsetKelvin = 505,
+        enthalpyPerKg = -297L * kJPerMolAt(32),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
+
+    // ══ BURNING IN THE ROOM'S AIR ═════════════════════════════════════════════════════════════
+    //
+    // Increment 4b. These were [Oxidation] — a solid in a cargo layer plus the tile's oxygen — and
+    // the shape that made the class was that the reagents come from two different stores. Under the
+    // placement rule that is what the pass does for every row, so the class had nothing left to be.
+    //
+    // ⚠️ **Their products stay in the cargo layer**, gaseous or not, because the principal is there.
+    // A burning lump keeps the CO2 it just made until `offGas` finds somewhere for it to go. ⛔ That
+    // is not a guard bolted on, it is the placement rule doing its job — and it is what stopped
+    // 18.45 kg of a live save being sealed inside six hull plates.
+
+    // C + O2 -> CO2. The first reaction the game ever had, and the one whose product leaves the
+    // solid ledger entirely once `offGas` gets to it.
+    Reaction(
+        principal = Species.Carbon,
+        reagents = listOf(Species.Carbon to 1, Species.Oxygen to 1),
+        products = listOf(Species.CarbonDioxide to 1),
+        onsetKelvin = CARBON_IGNITION_KELVIN,
+        // -393.5 kJ/mol of carbon. The number that makes a fire something that sustains itself: a
+        // lump burning puts back about thirty times the energy it takes to hold it at its ignition
+        // point.
+        enthalpyPerKg = -394L * kJPerMolAt(12),
+        baseRate = BASE_RATE,
+    ),
+    // 4 Fe + 3 O2 -> 2 Fe2O3. Iron going back to ore, and the awkward direction: the product is a
+    // solid, so the tile gets heavier and the air gets lighter.
+    //
+    // ⚠️ [IRON_OXIDATION_KELVIN] is dry oxidation, not rust in a puddle. Iron in damp air corrodes
+    // at room temperature by an electrochemical mechanism this model has nothing to say about; what
+    // is modelled is scale forming on hot iron.
+    Reaction(
+        principal = Species.Iron,
+        reagents = listOf(Species.Iron to 4, Species.Oxygen to 3),
+        products = listOf(Species.Hematite to 2),
+        onsetKelvin = IRON_OXIDATION_KELVIN,
+        // -1648 kJ per 4 mol of iron, which is 224 g of it. Hot iron in air gets hotter.
+        enthalpyPerKg = -1648L * kJPerMolAt(224),
+        // ⚠️ **A tenth of [BASE_RATE], and this is what makes "the oxygen attacks the carbon first"
+        // true.** In a tile holding both, carbon asks for the larger share of a scarce supply, so it
+        // gets it. There is no priority list; it is a consequence of two rates meeting.
+        baseRate = IRON_BASE_RATE,
+    ),
 )
+
+/**
+ * Every reaction in the game, in a fixed order — the whole of the game's chemistry, in one shape.
+ *
+ * ### ⚠️ Half of these are still *derived* from the old tables, on purpose
+ *
+ * [WRITTEN] is the rows that have been rewritten in this shape by hand. The rest are converted from
+ * [DECOMPOSITIONS] and [REDUCTIONS] as the list is built.
+ *
+ * That is a migration step and it is deliberately the *safe* order. Twenty-two rows carrying
+ * hand-copied stoichiometry, onsets and enthalpies is twenty-two chances to transpose a digit into a
+ * table where a wrong number is invisible — it balances by eye, it passes every test that exists,
+ * and it yields the wrong amount of the right thing for ever. Converting them mechanically means the
+ * *pass* can be proved to run all of them before anybody retypes a formula.
+ *
+ * ⛔ **The sweeps that used to read those tables are gone.** A row here and a sweep there would be
+ * two engines running the same reaction, which is worse than either. `DECOMPOSITIONS` and
+ * `REDUCTIONS` are data for this list and nothing else reads them.
+ *
+ * ### Order is for reproducibility, not for priority
+ *
+ * Contention is settled by demand before anything is taken, so which row comes first changes only
+ * the rounding. It must stay fixed for the simulation to be deterministic and it means nothing else.
+ */
+val REACTIONS: List<Reaction> = buildList {
+    addAll(WRITTEN)
+    for (d in DECOMPOSITIONS) {
+        add(
+            Reaction(
+                principal = d.reactant,
+                reagents = listOf(d.reactant to d.reactantUnits),
+                products = d.products,
+                onsetKelvin = d.onsetKelvin,
+                enthalpyPerKg = d.enthalpyPerKg,
+                baseRate = d.baseRate,
+            ),
+        )
+    }
+    for (r in REDUCTIONS) {
+        add(
+            Reaction(
+                principal = r.oxide,
+                // ⚠️ **The catalyst becomes an ordinary reagent on both sides**, which is what a
+                // catalyst is: `100 ALGAE + 6 H₂O + 6 CO₂ → 101 ALGAE + 6 O₂`. The separate
+                // [Reduction.catalyst] field was a bodge for a shape that could not say it, and the
+                // shape can now — the hundred units bound the rate because they are contended like
+                // any other reagent, so a bloom still grows in proportion to itself and nothing
+                // special had to be written to make it.
+                //
+                // ⛔ It balances by mass, which is the only reason this is safe: 100 glucose + 6
+                // water + 6 CO₂ is 18372 g, and 101 glucose + 6 O₂ is 18372 g. A catalyst that did
+                // not close would be matter created every pass.
+                reagents = withCatalyst(
+                    listOf(r.oxide to r.oxideUnits, r.reductant to r.reductantUnits),
+                    r.catalyst,
+                    r.catalystUnits,
+                ),
+                products = withCatalyst(r.products, r.catalyst, r.catalystUnits),
+                onsetKelvin = r.onsetKelvin,
+                enthalpyPerKg = r.enthalpyPerKg,
+                baseRate = r.baseRate,
+            ),
+        )
+    }
+}
+
+/**
+ * [entries] with [catalyst] added to them, or [entries] unchanged if there is no catalyst.
+ *
+ * The twin of `SpeciesInfo.kt`'s function of the same name, and it exists twice on purpose for
+ * exactly as long as the reference and the simulation disagree about what a catalyst is: this one
+ * makes it true, that one makes it *readable*. When [REDUCTIONS] is retyped in this shape the
+ * catalyst field goes with it and both disappear.
+ */
+private fun withCatalyst(
+    entries: List<Pair<Species, Int>>,
+    catalyst: Species?,
+    units: Int,
+): List<Pair<Species, Int>> {
+    if (catalyst == null) return entries
+    if (entries.none { it.first == catalyst }) return listOf(catalyst to units) + entries
+    return entries.map { (species, n) -> if (species == catalyst) species to (n + units) else species to n }
+}
 
 /** The widest [REACTIONS] gets, for the per-reagent scratch a sweep hoists once. */
 val WIDEST_REACTION: Int = REACTIONS.maxOf { it.reagents.size }

@@ -154,16 +154,18 @@ val DECOMPOSITIONS: List<Decomposition> = listOf(
     // 405 K — so this table swept it over a store it could not be in, and it never fired outside a
     // sealed tile. It is now swept over the fluid field, where the ammonia actually is.
     //
-    // ⚠️ **CH₄ → C + 2 H₂ has the same bug and is still here**, because the fix is not the same: its
-    // carbon is not something the atmosphere can hold, so moving it needs the fluid field widened
-    // first. Parked deliberately — see the plan's decision 4, and `ReactionReachabilityTest`, which
-    // pins it as known-dead rather than letting it read as a route the player can plan around.
-    Decomposition(
-        reactant = Species.Methane, reactantUnits = 1,
-        products = listOf(Species.Carbon to 1, Species.Hydrogen to 2),
-        onsetKelvin = 1300,
-        enthalpyPerKg = 75L * kJPerMolAt(16),
-    ),
+    // ⛔ **`CH₄ → C + 2 H₂` is GONE, not merely moved** (`PLAN_unified_reactions.md`, increment 4).
+    //
+    // It never fired: this table is swept over the cargo layers and methane is evicted from one
+    // above 191 K, eleven hundred kelvin below its onset. Once every row became store-agnostic the
+    // pass found the methane where it actually is — in the air — and fired it there, and **its
+    // carbon is not something the air can hold**. `addTo` would have dropped it on the floor, and
+    // the vessel would have lost mass every pass with nothing to show for it.
+    //
+    // The fix is to widen the fluid field so the atmosphere can hold carbon, which is decision 4 of
+    // the plan and is parked. Until then the row is deleted rather than left to look like a route a
+    // player could plan around. ⚠️ Carbon is still reachable, by a longer and more interesting
+    // chain: methane burns to CO₂, photosynthesis fixes it into algae, algae pyrolyses to char.
 
     // ── The bio-matter: pyrolysis and thermal death ──
     //

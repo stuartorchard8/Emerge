@@ -74,76 +74,16 @@ class ReactionTest {
 
     // ── Stoichiometry ────────────────────────────────────────────────────────
 
-    @Test
-    fun theReactionClosesAtomByAtom() {
-        // C + O₂ → CO₂, checked against the molar masses rather than against 12, 32 and 44 written
-        // out again here. If a mass ends up derived from a hand-copied fraction somewhere, this is
-        // the assertion that says so.
-        assertEquals(
-            Species.Carbon.molarMass + Species.Oxygen.molarMass,
-            Species.CarbonDioxide.molarMass,
-            "one carbon and one O₂ do not weigh what a CO₂ weighs",
-        )
-
-        val burned = burn(carbonMass = 100L * Budget.KILOGRAM, oxygenMass = 100L * Budget.KILOGRAM, kelvin = 900)
-        assertTrue(burned.reactant > 0L, "nothing burned at 900K with both reagents present")
-        assertEquals(
-            burned.reactant + burned.oxygen,
-            burned.product,
-            "the products do not weigh what the reactants did",
-        )
-        // The ratio, to the unit the flooring allows: mass of O₂ per mass of C is 32/12.
-        assertEquals(
-            burned.reactant * Species.Oxygen.molarMass / Species.Carbon.molarMass,
-            burned.oxygen,
-            "the reaction ran off the stoichiometric line",
-        )
-    }
-
-    // ── Bounds ───────────────────────────────────────────────────────────────
-
-    @Test
-    fun coldCarbonDoesNotBurn() {
-        val ambient = burn(100L * Budget.KILOGRAM, 100L * Budget.KILOGRAM, kelvin = 293)
-        assertTrue(ambient.isNothing, "carbon burned at room temperature")
-        // And right up to the line, which is where an off-by-one would live.
-        assertTrue(burn(100L * Budget.KILOGRAM, 100L * Budget.KILOGRAM, CARBON_IGNITION_KELVIN - 1).isNothing)
-        assertTrue(!burn(100L * Budget.KILOGRAM, 100L * Budget.KILOGRAM, CARBON_IGNITION_KELVIN).isNothing)
-    }
-
-    @Test
-    fun aStuffyRoomSlowsTheFireRatherThanBreakingIt() {
-        // The decision-2 property, and the one with real consequences: the reagent comes from the
-        // air, so a room with a trace of oxygen in it burns a trace of carbon and no more. The
-        // failure this guards is the reaction taking oxygen that is not there — which the air
-        // ledger would report as a leak somewhere else entirely.
-        val oxygen = 1L * Budget.GRAM
-        val burned = burn(carbonMass = 1000L * Budget.KILOGRAM, oxygenMass = oxygen, kelvin = 2000)
-
-        assertTrue(burned.oxygen <= oxygen, "the reaction consumed oxygen the tile did not have")
-        assertTrue(burned.reactant > 0L, "a little oxygen should still burn a little carbon")
-        assertEquals(
-            burned.reactant * Species.Oxygen.molarMass / Species.Carbon.molarMass,
-            burned.oxygen,
-            "starved of air, the reaction ran rich instead of slowing down",
-        )
-    }
-
-    @Test
-    fun aFireNeverConsumesMoreThanIsThere() {
-        // At an absurd temperature the fraction clamps at all of it. What it must not do is exceed
-        // it: a reactant mass larger than the tile's is a negative mass one line later.
-        val carbon = 5L * Budget.KILOGRAM
-        val burned = burn(carbon, oxygenMass = 1000L * Budget.KILOGRAM, kelvin = 100_000)
-        assertTrue(burned.reactant <= carbon, "burned ${burned.reactant} of a ${carbon} lump")
-    }
-
-    @Test
-    fun aTraceOfCarbonBurnsNothingRatherThanARoundedGram() {
-        // Flooring, deliberately: a fraction of a mass unit is zero and the lump keeps it. The
-        // alternative is a reaction that mints matter at the bottom of every division, which at a
-        // microgram a unit happens on every tile of a long belt at once.
-        val burned = burn(carbonMass = 1L, oxygenMass = 100L * Budget.KILOGRAM, kelvin = 800)
-        assertTrue(burned.isNothing, "a single unit of carbon burned into something")
-    }
+    // ⛔ **The reaction cases that were here have moved to `UnifiedReactionTest`** —
+    // `PLAN_unified_reactions.md`, increment 4. They were written against `CARBON_BURN` and the
+    // `burn` shorthand, both of which are gone: `Oxidation` existed because its two reagents came
+    // from two different stores, and that is what the pass does for every row now.
+    //
+    // ⚠️ **They were also four near-identical copies.** Every table closed itself atom by atom
+    // against its own class's field names, and a fifth table arrived with none — which is how six
+    // gas fires reached a live save without the reference knowing they existed. One table, one
+    // proof, and it covers rows nobody has written yet.
+    //
+    // What stays here is the part that was never about a shape: the Arrhenius climb every reaction
+    // in the game shares, checked against the law it is generated from.
 }

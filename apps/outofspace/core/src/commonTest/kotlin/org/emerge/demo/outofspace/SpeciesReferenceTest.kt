@@ -1,9 +1,7 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.chem.ALL_REACTIONS
-import org.emerge.demo.outofspace.chem.COMBUSTIONS
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
-import org.emerge.demo.outofspace.chem.OXIDATIONS
 import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.REDUCTIONS
 import org.emerge.demo.outofspace.chem.ReactionKind
@@ -68,12 +66,14 @@ class SpeciesReferenceTest {
         // table nobody thought to name here. Counting is what makes the reference structurally
         // unable to fall behind the chemistry — a new table is a red test on the day it lands, not
         // an article that quietly says nothing happens to methane.
-        // ⚠️ It has already done its job once: `REACTIONS` — the store-agnostic table increment 1 of
-        // `PLAN_unified_reactions.md` introduced — turned this red on the commit that added it,
-        // which is a day's notice instead of five.
-        val expected = OXIDATIONS.size + DECOMPOSITIONS.size + REDUCTIONS.size +
-            COMBUSTIONS.size + REACTIONS.size
-        assertEquals(expected, ALL_REACTIONS.size)
+        // ⚠️ It did its job twice before becoming a tautology, which is the right way for a guard
+        // like this to end. It caught `REACTIONS` on the commit that introduced it — a day's notice
+        // instead of the five days the gas fires got — and then increment 4 collapsed the four
+        // tables into that one, so the flattening it was guarding is the identity function now.
+        //
+        // Kept because "the reference shows every reaction" is still the claim worth making, and it
+        // is one line whichever way the tables go next.
+        assertEquals(REACTIONS.size, ALL_REACTIONS.size)
     }
 
     @Test

@@ -5,10 +5,11 @@ import org.emerge.demo.outofspace.chem.REDUCTIONS
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.fluid
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.TileIndex
-import org.emerge.demo.outofspace.world.oxidise
+import org.emerge.demo.outofspace.world.react
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -43,8 +44,14 @@ class ReductionSweepTest {
     /** No air at all — the condition every one of these reactions actually wants. */
     private fun vacuum() = MassArray(tiles)
 
+    /**
+     * ⚠️ **A vacuum still needs an energy array**, because `react` reads the air's temperature for
+     * the rows whose principal is a gas. `oxidise` took a nullable one and these sweeps passed
+     * nothing; the unified pass has no "cargo only" mode to fall into, which is the point of it.
+     */
     private fun sweep(layer: StuffLayer, air: MassArray = vacuum(), passes: Int = 1) {
-        repeat(passes) { oxidise(layer, air, null) }
+        val airEnergy = EnergyArray(tiles)
+        repeat(passes) { react(air, airEnergy, null, listOf(layer)) }
     }
 
     private val kg = Budget.KILOGRAM
@@ -206,7 +213,7 @@ class ReductionSweepTest {
         fun run(air: MassArray): Long {
             val layer = layerWith(Species.Quartz to 100L * kg, Species.Carbon to 200L * Budget.GRAM)
             layer.heatTo(2400)
-            oxidise(layer, air, null)
+            react(air, EnergyArray(tiles), null, listOf(layer))
             return layer[tile, Species.Silicon]
         }
 
@@ -244,7 +251,8 @@ class ReductionSweepTest {
         val before = layer.massAt(tile)
         val air = vacuum()
         var venting = 0L
-        repeat(16) { venting += oxidise(layer, air, null).toGasMass }
+        val airEnergy = EnergyArray(tiles)
+        repeat(16) { venting += react(air, airEnergy, null, listOf(layer)).toGasMass }
         val after = layer.massAt(tile)
 
         var inAir = 0L
@@ -272,7 +280,7 @@ class ReductionSweepTest {
         // chemistry gets there.
         repeat(400) {
             layer.heatTo(2400)
-            oxidise(layer, air, null)
+            react(air, EnergyArray(tiles), null, listOf(layer))
         }
 
         assertTrue(layer[tile, Species.Periclase] > 0L, "the magnesite never calcined")
