@@ -46,6 +46,16 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 
+/**
+ * How many buildable species the stockpile panel names before it stops counting.
+ *
+ * A shortlist and not an inventory: the question the panel answers is "what could I build with right
+ * now", and past the first handful the answer stops helping and starts pushing the panels below it
+ * off the screen. The remainder is counted rather than dropped, so a player can tell the difference
+ * between "that is all of it" and "there is more".
+ */
+private const val STOCKPILE_LINES = 6
+
 /** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
 
@@ -154,18 +164,37 @@ class OutofspaceHud {
             }
 
             panel(Anchor.TopRight) {
+                // ⛔ **What you can BUILD with, not what you happen to own.** This used to print
+                // the summed heap's dominant species and its purity, which on a real save read
+                // "53% WATER" across 187 machines and said nothing about iron, titanium or steel.
+                // Summing is what destroys the information: a storage can supply a species only if
+                // it holds nothing else, so buildability is a per-tank fact — see [Stockpile].
+                val stock = s.stockpile
                 title("STOCKPILE")
-                row("(sum of all storage aboard)", 0x7A8A9AFFL)
-                val held = s.stockpile.held
+                row("(what a site could be built from)", 0x7A8A9AFFL)
+                val held = stock.held
                 if (held.isEmpty) {
                     row("(no storage holding anything)", 0x9A9A9AFFL)
                 } else {
                     keyValue("TOTAL", mass(held.total))
-                    val dominant = held.dominant
-                    if (dominant != null && held[dominant] < held.total) {
-                        // Purity is the interesting number, so say it rather than hide it.
-                        val pct = held[dominant] * 100 / held.total
-                        row("   $pct% ${dominant.name}", 0x9A9A9AFFL)
+                    val buildable = stock.buildableSpecies
+                    if (buildable.isEmpty()) {
+                        // The case worth saying out loud rather than leaving as a blank: a hold full
+                        // of ore is not a hold full of building material, and the reason a site is
+                        // not being fed is usually this.
+                        row("nothing pure enough to build with", 0xC8A44AFFL)
+                    } else {
+                        // Heaviest first, capped: a picker's shortlist, not an inventory dump.
+                        for (species in buildable.take(STOCKPILE_LINES)) {
+                            keyValue(
+                                "  ${species.name}",
+                                mass(stock.buildable(species)),
+                                0x9A9A9AFFL,
+                                speciesColor(species),
+                            )
+                        }
+                        val rest = buildable.size - STOCKPILE_LINES
+                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
                     }
                 }
             }
