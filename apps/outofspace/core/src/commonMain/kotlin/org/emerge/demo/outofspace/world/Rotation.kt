@@ -172,8 +172,11 @@ fun massDistribution(
  * Taken about the *vessel's* centre of mass rather than the gas's own, because the pair only
  * exchanges angular momentum about a shared point, and the vessel's is the one the hull turns about.
  */
-fun atmosphereDistribution(grid: Grid, air: Stuff, about: MassDistribution): MassDistribution {
-    val perTile = tileMass(grid.size, air.copyMass())
+fun atmosphereDistribution(grid: Grid, masses: MassArray, about: MassDistribution): MassDistribution {
+    // ⚠️ **The working array, not a [Stuff] to copy out of.** This took a `Stuff` and called
+    // `copyMass()` on it, which is a **dense 1.9 MiB `LongArray`** duplicated every fluid tick to
+    // read some totals and then thrown away. The caller already holds the array.
+    val perTile = tileMass(grid.size, masses)
     var mass = 0L
     for (m in perTile) mass += m
     if (mass <= 0L) return MassDistribution.EMPTY

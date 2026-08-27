@@ -545,18 +545,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
         if (_v0) profiler.recordPhase("valves+pumps", _v!!.elapsedNow().inWholeNanoseconds)
 
-        // ── Pressure ──────────────────────────────────────────────────────────────
+        // ── What the boundary owed ────────────────────────────────────────────────
         //
-        // On the fluid's period, one tick ahead of it, and not on every tick. Two [tilePressure]
-        // sweeps are among the most expensive things the sim does, and they are a pure function of
-        // the air, which only moves when [diffuseFluid] below fires. Between fluid ticks the sweep
-        // would rebuild a field identical to the one already in the state, so on those ticks there
-        // is simply no push to apply.
-        //
-        // ⚠️ It fires on [PRESSURE_OFFSET] and the diffusion on [FLUID_OFFSET], the tick after. The
-        // two shared a tick until the pair of them made one tick in eight cost ten times the rest;
-        // what the offsets are ordered to keep is the relationship that matters — push on the
-        // field, and *then* let the field answer.
+        // ⛔ **A whole phase used to stand here**, computing two `tilePressure` sweeps and handing
+        // the hull its share of the drop across every blocked face. Both are gone: the sweeps were
+        // among the most expensive things the sim did — the per-kelvin dome table, `criticalOf` and
+        // half of `scaledRatio`'s tuning exist because of them — and **nothing in the tick calls
+        // `tilePressure` at all now.** Pressure decides where gas *goes*, and gas goes by
+        // concentration; it never decided anything about the hull that was not internal.
         //
         // ⚠️ **Zero on a skipped tick, and emphatically not the last tick's push carried forward.**
         // The vent reaction is booked from the mass that actually crossed the rim on the tick it
@@ -694,7 +690,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 vesselImpulseY = state.vesselImpulseY,
                 angImpulse = state.angImpulse,
                 ship = w.about,
-                air = atmosphereDistribution(state.grid, fluidAir, w.about),
+                air = atmosphereDistribution(state.grid, w.masses, w.about),
                 sharePermille = Flight.airCouplingPermille(cfg.ticksPerSecond, FLUID_PERIOD),
             )
             airDragX = exchange.dragX

@@ -44,6 +44,13 @@ fun settleCondensate(
     sharePermille: Int = SETTLE_PERMILLE,
 ): SettleStep {
     val grid = edges.grid
+    // ⛔ **No down, nothing to do — and answered before allocating anything.** Every unit of motion
+    // here is subjective gravity, so a coasting hull with no plating, no burn and no spin settles
+    // nothing at all. That is the common case in flight, and the two arrays below are a **dense
+    // 1.9 MiB `MassArray`** and its energy twin: worth not building to discover they stay empty.
+    if (feltGravity.x.raw == 0L && feltGravity.y.raw == 0L && (spin == 0L || about.mass <= 0L)) {
+        return SettleStep(0L, 0L)
+    }
     val delta = MassArray(grid.size)
     val deltaEnergy = if (energies == null) null else EnergyArray(grid.size)
     val startingMass = tileMass(grid.size, masses)
