@@ -48,7 +48,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 19
+    const val VERSION = 20
 
     /**
      * The first version whose thrusters have a bell — see [ThrusterMigration].
@@ -58,6 +58,11 @@ object Save {
      * one cannot represent until something is done about the second tile.
      */
     private const val THRUSTER_BELL_VERSION = 18
+
+    /**
+     * The first version whose casings and conduit metal are **one species** — see [purifyFabric].
+     */
+    private const val PURE_FABRIC_VERSION = 20
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -1107,6 +1112,11 @@ object Save {
         // ⛔ **It must be computed from the finished state**, because `inTransitMass` is derived from
         // the world rather than stored — which is the whole reason this cannot happen up in the
         // field list with the others.
+        // ⛔ **Purity first, and then the ledger.** Normalising a casing preserves its mass exactly,
+        // so the two migrations cannot interact — but they are ordered anyway, because the anchor's
+        // whole job is to measure the world as it finally is and a migration running after it would
+        // be a drift it had already decided did not exist.
+        if (version < PURE_FABRIC_VERSION) purifyFabric(state)
         if (reconciled != null) return state
         val drift = state.inTransitMass + state.ventedMass + state.builtMass -
             state.extractedMass - state.baselineCargoMass
@@ -1309,6 +1319,70 @@ object Save {
      * Applied at both readers rather than at one, because [readMachine] checks membership before it
      * delegates and would reject the old spelling before [readDeckMachine] ever saw it.
      */
+    /**
+     * **Makes every casing and every length of conduit one species**, in place, on a world loaded
+     * from a file written before that was true.
+     *
+     * ⛔ **Every save older than this is otherwise a vessel that cannot be rebuilt.**
+     * `BUILD_PURITY_PERCENT` is 100, so a construction site refuses anything off its recipe — and a
+     * hull built when steel was `Iron 990 : Carbon 10` is a mixture, so deconstructing one yields
+     * salvage no site will accept. The same for track laid out of that salvage, which is how a
+     * player's whole ship ends up made of material it can no longer use. Measured on a real save:
+     * every metal read **zero** in the stockpile's fabric column across 187 machines.
+     *
+     * ### What it does, and what that costs
+     *
+     * Each occupied tile keeps its **total mass exactly** and has that mass restated as the single
+     * species the thing standing there is made of. Mass is therefore untouched and no ledger moves,
+     * which is why this can run before the ledger anchor without the two interacting.
+     *
+     * ⚠️ **Energy is preserved and temperature is not.** Steel costs 490 J/kg/K to warm and the
+     * iron-and-carbon mixture it replaces cost 453, so the same heat in the same mass now reads
+     * about 8% cooler — a hull at room temperature comes back at roughly 271 K. The alternative is
+     * to preserve the temperature, which means minting the difference, and a migration that mints
+     * energy to keep a number looking right is exactly the kind of silent correction the ledger
+     * exists to catch. The ship is briefly a little cold; it warms up.
+     *
+     * ⛔ **It transmutes, and that is the point rather than a side effect.** Iron and carbon in a
+     * hull become steel — which is the alloying reaction the player would have had to run, applied
+     * retrospectively to a ship built before there was one. A tile that had swallowed something
+     * unrelated (a rail that took titanium, which was reachable in ordinary play) becomes iron. In
+     * every case the player keeps the mass and gets back a thing they can actually take apart.
+     *
+     * ⚠️ **Gated on the save version and not on "is this tile impure"**, because from this version on
+     * an impure tile is a legitimate thing — a site being fed, or a casing a future reaction has
+     * altered — and a rule that purified whatever looked wrong would keep quietly rewriting worlds
+     * that were right.
+     */
+    private fun purifyFabric(state: VesselState) {
+        fun purify(layer: StuffLayer, tile: TileIndex, species: Species) {
+            val mass = layer.massAt(tile)
+            if (mass <= 0L) return
+            if (layer.pureSpeciesAt(tile) == species) return
+            val energy = layer.energyAt(tile)
+            layer.release(tile)
+            layer[tile, species] = mass
+            layer.setEnergy(tile, energy)
+        }
+
+        for (i in 0 until state.deck.size) {
+            val tile = TileIndex(i)
+            val m = state.deck[tile] ?: continue
+            if (m.center != tile) continue
+            // Every tile of the footprint, because a casing is spread across it rather than held at
+            // one address — the same reason the stockpile counts fabric per tile and not per machine.
+            val species = state.deck.materialOf(m)
+            for (part in m.tiles(state.grid)) purify(state.deck.stuff, part, species)
+        }
+        for (conduit in Conduit.entries) {
+            val layer = state.conduits.tracks[conduit]
+            for (tile in state.grid.tiles) {
+                if (state.conduits.at(conduit, tile) == null) continue
+                purify(layer, tile, state.conduits.materialAt(conduit, tile))
+            }
+        }
+    }
+
     private fun canonicalKindName(name: String): String = when (name) {
         "Processor" -> DeckMachineKind.Concentrator.name
         "ThermalDecomposer" -> DeckMachineKind.Furnace.name

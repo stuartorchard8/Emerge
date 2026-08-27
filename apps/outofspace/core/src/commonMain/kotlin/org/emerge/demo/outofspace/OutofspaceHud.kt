@@ -208,24 +208,36 @@ class OutofspaceHud {
                         // The case worth saying out loud rather than leaving as a blank: a hold full
                         // of ore is not a hold full of building material, and the reason a site is
                         // not being fed is usually this.
-                        row("nothing pure enough to build with", 0xC8A44AFFL)
+                        row("nothing loose is pure enough to build with", 0xC8A44AFFL)
                     } else {
-                        // ⚠️ **Two figures, never their sum.** Loose metal the network can deliver
-                        // now, and metal built into the ship that a deconstruction order would free.
-                        // Adding them would have the panel promise a build that cannot start;
-                        // omitting the second told a player laying spare track that he had no iron
-                        // while he was standing on tonnes of it.
-                        row("loose · in fabric", 0x7A8A9AFFL)
-                        // Heaviest first, capped: a picker's shortlist, not an inventory dump.
+                        row("loose", 0x7A8A9AFFL)
                         for (species in buildable.take(STOCKPILE_LINES)) {
                             keyValue(
                                 "  ${species.name}",
-                                "${mass(stock.buildable(species))} · ${mass(stock.inFabric(species))}",
+                                mass(stock.buildable(species)),
                                 0x9A9A9AFFL,
                                 speciesColor(species),
                             )
                         }
                         val rest = buildable.size - STOCKPILE_LINES
+                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                    }
+                    // ⛔ **Its own list, and never folded into the one above.** Fabric outweighs
+                    // anything in a hold, so merged on mass it swamps the panel and ranked below it
+                    // it falls off the end — a save with tonnes of titanium in its casings reported
+                    // none at all until these were split.
+                    val inFabric = stock.fabricSpecies
+                    if (inFabric.isNotEmpty()) {
+                        row("in fabric · deconstruct to free", 0x7A8A9AFFL)
+                        for (species in inFabric.take(STOCKPILE_LINES)) {
+                            keyValue(
+                                "  ${species.name}",
+                                mass(stock.inFabric(species)),
+                                0x9A9A9AFFL,
+                                speciesColor(species),
+                            )
+                        }
+                        val rest = inFabric.size - STOCKPILE_LINES
                         if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
                     }
                 }

@@ -82,19 +82,21 @@ class Stockpile private constructor(
     fun inFabric(species: Species): Long = fabric[species.ordinal]
 
     /**
-     * Every species there is any pure quantity of at all — what a picker offers.
+     * Species the network could deliver right now, heaviest first — the picker's shortlist.
      *
-     * ⛔ **Ordered by [buildable] first and [inFabric] only as a tie-break, not by their sum.** The
-     * question a picker asks is "what can I build with", and that is answered by what the network
-     * can deliver; a vessel's own casings are heavier than anything in its tanks almost by
-     * definition, so ranking on the total puts whatever the ship is *made of* at the top of every
-     * list and buries what the player actually has. Fabric-only species still appear, below the
-     * loose ones, because "you have tonnes of this if you take something apart" is worth knowing.
+     * ⛔ **Separate from [fabricSpecies] rather than one list ordered somehow**, and the attempt to
+     * merge them is what proved it. Ranked on the sum, a vessel's own casings outweigh anything in
+     * its tanks almost by definition, so whatever the ship is *made of* takes the top of every list
+     * and buries what the player has. Ranked on loose with fabric as a tie-break, every fabric-only
+     * metal sorts below every ore in a hold and falls off the end of the panel — which is how a save
+     * with tonnes of titanium in it reported none. They are two questions and they get two lists.
      */
     val buildableSpecies: List<Species>
-        get() = Species.ALL
-            .filter { loose[it.ordinal] > 0L || fabric[it.ordinal] > 0L }
-            .sortedWith(compareByDescending<Species> { loose[it.ordinal] }.thenByDescending { fabric[it.ordinal] })
+        get() = Species.ALL.filter { loose[it.ordinal] > 0L }.sortedByDescending { loose[it.ordinal] }
+
+    /** Species built into the vessel, heaviest first — what a deconstruction order would free. */
+    val fabricSpecies: List<Species>
+        get() = Species.ALL.filter { fabric[it.ordinal] > 0L }.sortedByDescending { fabric[it.ordinal] }
 
     override fun equals(other: Any?): Boolean =
         this === other || (

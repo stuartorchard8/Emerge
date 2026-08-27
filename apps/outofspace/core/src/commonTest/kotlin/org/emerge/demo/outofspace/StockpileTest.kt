@@ -9,6 +9,9 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.TileIndex
+import kotlin.test.assertNull
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.demo.outofspace.world.starterVessel
@@ -233,5 +236,107 @@ class ReconciledLedgerTest {
     fun `the write-off round-trips`() {
         val s = starterVessel(cfg.initialGrid).copy(reconciledMass = -12_345L)
         assertEquals(-12_345L, Save.read(Save.write(s)).reconciledMass, "the write-off did not survive")
+    }
+}
+
+/**
+ * Making an old world's casings one species, so it can be taken apart again.
+ *
+ * ⛔ **Every save older than this is otherwise a vessel that cannot be rebuilt**: a hull built when
+ * steel was a mixture yields salvage no site will accept, and track laid from that salvage is worse.
+ * Measured on a real save — every metal read zero in the fabric column across 187 machines, and
+ * 82.2 t of titanium, 61.0 t of steel and 27.8 t of iron afterwards.
+ */
+class PureFabricMigrationTest {
+
+    private val cfg = OutofspaceConfig()
+
+    /** [world], written out and read back as though the file were one version older. */
+    private fun reloadedAsLegacy(world: VesselState): VesselState {
+        val native = Save.write(world)
+        val header = native.lineSequence().first().split(" ")
+        val older = header.toMutableList().also { it[1] = (it[1].toInt() - 1).toString() }
+        return Save.read(native.replaceFirst(header.joinToString(" "), older.joinToString(" ")))
+    }
+
+    /** A hull whose casing is the alloy *mixture* steel used to be, as an old file would hold it. */
+    private fun worldWithMixedHull(): Pair<VesselState, TileIndex> {
+        val grid = cfg.initialGrid
+        val world = starterVessel(grid)
+        val tile = grid.tiles.first { world.deck[it].let { m -> m != null && m.kind == DeckMachineKind.Hull } }
+        val stuff = world.deck.stuff
+        val mass = stuff.massAt(tile)
+        val energy = stuff.energyAt(tile)
+        stuff.release(tile)
+        stuff[tile, Species.Iron] = mass - mass / 100L
+        stuff[tile, Species.Carbon] = mass / 100L
+        stuff.setEnergy(tile, energy)
+        return world to tile
+    }
+
+    @Test
+    fun `an old world's casing comes back as one species`() {
+        val (world, tile) = worldWithMixedHull()
+        assertNull(world.deck.stuff.pureSpeciesAt(tile), "fixture: the casing is supposed to be a blend")
+        val before = world.deck.stuff.massAt(tile)
+
+        val loaded = reloadedAsLegacy(world)
+
+        assertEquals(
+            Species.Steel,
+            loaded.deck.stuff.pureSpeciesAt(tile),
+            "the casing did not come back as the one thing a hull is made of",
+        )
+        assertEquals(before, loaded.deck.stuff.massAt(tile), "mass moved, so a ledger moved with it")
+    }
+
+    /**
+     * ⛔ **Mass to the microgram, across the whole world**, which is what lets this run before the
+     * ledger anchor without the two interacting.
+     */
+    @Test
+    fun `purifying moves no mass at all`() {
+        val (world, _) = worldWithMixedHull()
+        val loaded = reloadedAsLegacy(world)
+        assertEquals(world.inTransitMass, loaded.inTransitMass, "cargo moved")
+        assertEquals(world.builtMass, loaded.builtMass, "fabric moved")
+        assertEquals(
+            world.grid.tiles.sumOf { world.deck.stuff.massAt(it) },
+            loaded.grid.tiles.sumOf { loaded.deck.stuff.massAt(it) },
+            "the deck as a whole weighs something different",
+        )
+    }
+
+    /**
+     * ⚠️ **Energy is preserved and temperature is not**, and this asserts the choice rather than the
+     * consequence. Steel costs more to warm than the mixture it replaces, so the same heat reads
+     * cooler; preserving the temperature instead would mean minting the difference, and a migration
+     * that mints energy to keep a number looking right is the silent correction the ledger exists to
+     * catch.
+     */
+    @Test
+    fun `purifying preserves energy rather than temperature`() {
+        val (world, tile) = worldWithMixedHull()
+        val energy = world.deck.stuff.energyAt(tile)
+        val wasKelvin = world.deck.stuff.kelvinAt(tile)
+
+        val loaded = reloadedAsLegacy(world)
+
+        assertEquals(energy, loaded.deck.stuff.energyAt(tile), "energy was invented or destroyed")
+        assertTrue(
+            loaded.deck.stuff.kelvinAt(tile) < wasKelvin,
+            "steel takes more heat per kelvin, so the same energy should read cooler",
+        )
+    }
+
+    /** ⛔ And a world already at this version is left exactly alone. */
+    @Test
+    fun `a current save is not purified again`() {
+        val (world, tile) = worldWithMixedHull()
+        val loaded = Save.read(Save.write(world))
+        assertNull(
+            loaded.deck.stuff.pureSpeciesAt(tile),
+            "a current file was re-purified, so the gate is not the version",
+        )
     }
 }
