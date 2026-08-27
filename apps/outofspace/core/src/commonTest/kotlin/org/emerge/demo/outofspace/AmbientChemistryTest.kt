@@ -47,6 +47,9 @@ class AmbientChemistryTest {
     /** The same, for iron — well above its onset and below carbon's, where only one runs. */
     private val scalingKelvin = 1400
 
+    /** Above steel's 1000 K decarburising onset, and well up the rate curve like the other two. */
+    private val decarburisingKelvin = 1400
+
     private fun run(state: VesselState, ticks: Int): VesselState {
         var s = state
         repeat(ticks) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
@@ -427,6 +430,74 @@ class AmbientChemistryTest {
         assertTrue(
             oxygenUsed <= expected && expected - oxygenUsed <= TICKS / 8,
             "the world ran off the stoichiometric line for 4Fe + 3O₂ → 2Fe₂O₃: $oxygenUsed against $expected",
+        )
+    }
+
+    /**
+     * ⛔ **Hull salvage becomes rail iron, and what it costs is the room's oxygen.**
+     *
+     * `Fe₉₉C + O₂ → 99 Fe + CO₂`, which is decarburisation and which is what a Bessemer converter
+     * does. It is the one way back out of an alloy in the game, and it is what makes a marked hull
+     * worth anything to a player who wants track: steel is not iron by any fraction, so without this
+     * row salvaged plate can only ever become more plate.
+     *
+     * ⚠️ **Asserted as "some iron appeared", not as a yield**, and deliberately. The iron this makes
+     * is standing in hot air well above [IRON_OXIDATION_KELVIN], so the rust row is competing for the
+     * same oxygen and some of the iron goes straight back to scale. Pinning a number here would be
+     * pinning the outcome of that race, which is a tuning fact and not the contract.
+     */
+    @Test
+    fun `steel in a hot airy room gives its carbon up and leaves iron behind`() {
+        val start = withLump(lumpAt(decarburisingKelvin, Species.Steel to 20L * Budget.KILOGRAM))
+        val after = run(start, TICKS)
+
+        val steelLost = railMass(start, Species.Steel) - railMass(after, Species.Steel)
+        assertTrue(steelLost > 0L, "the steel did not decarburise")
+
+        val ironMade = railMass(after, Species.Iron) - railMass(start, Species.Iron)
+        assertTrue(ironMade > 0L, "steel was consumed and no iron came out of it")
+
+        val oxygenUsed = airMass(start, Fluid.Oxygen) - airMass(after, Fluid.Oxygen)
+        assertTrue(oxygenUsed > 0L, "carbon left the steel without the room losing any oxygen")
+
+        // ⚠️ Iron plus its scale, because the rust row takes a share of the iron the moment it
+        // exists. The two together are what the steel actually turned into.
+        val hematiteMade = railMass(after, Species.Hematite) - railMass(start, Species.Hematite)
+        assertTrue(
+            ironMade + hematiteMade > steelLost * 90L / 100L,
+            "the iron went somewhere that is neither iron nor scale: " +
+                "lost $steelLost, made $ironMade iron and $hematiteMade scale",
+        )
+    }
+
+    /**
+     * ⚠️ **And it needs the oxygen, which is the whole point of the row.** In a vacuum the carbon has
+     * nowhere to go, so the alloy is simply hot metal — a player who wants their hull back as iron
+     * has to spend air on it.
+     */
+    @Test
+    fun `steel in a vacuum keeps its carbon however hot it is`() {
+        val start = starved(lumpAt(decarburisingKelvin, Species.Steel to 20L * Budget.KILOGRAM), oxygen = 0L)
+        val after = run(start, TICKS)
+
+        assertEquals(
+            railMass(start, Species.Steel),
+            railMass(after, Species.Steel),
+            "steel decarburised with no oxygen to carry the carbon away",
+        )
+    }
+
+    @Test
+    fun `cold steel keeps its carbon`() {
+        // A vessel's hull is made of this. If ambient were enough, every plate in the game would be
+        // quietly turning into iron and scale while the player watched something else.
+        val start = withLump(lumpAt(Temperature.AMBIENT_KELVIN, Species.Steel to 20L * Budget.KILOGRAM))
+        val after = run(start, TICKS)
+
+        assertEquals(
+            railMass(start, Species.Steel),
+            railMass(after, Species.Steel),
+            "steel decarburised at room temperature",
         )
     }
 

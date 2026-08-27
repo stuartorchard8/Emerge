@@ -405,6 +405,58 @@ private val WRITTEN: List<Reaction> = listOf(
         baseRate = IRON_BASE_RATE,
     ),
 
+    /**
+     * `Fe₉₉C + O₂ → 99 Fe + CO₂` — **decarburisation, and the way back out of an alloy.**
+     *
+     * ⛔ **The only reaction in the game that runs a recipe backwards**, and it is not a special case
+     * for doing so: it is what taking carbon out of steel actually is. Bessemer and basic-oxygen
+     * steelmaking are precisely this — blow oxygen through the metal and the carbon leaves as gas —
+     * and the reason a converter needs no fuel once it is lit is the sign of this row. So hull plate
+     * marked for salvage becomes rail iron, and the thing it costs is *oxygen*, which is the first
+     * job the atmosphere has ever had that a player has a reason to care about.
+     *
+     * ⚠️ **It balances exactly on the alloy formula and needed nothing changed to do so**, which is
+     * the strongest evidence that `Fe₉₉C` was the right integer pair: one formula unit of steel holds
+     * exactly one mole of carbon, so one mole of CO₂ carries it off and 99 iron atoms are left.
+     * 5588 g on both sides.
+     *
+     * ⚠️ **You will not get all of your iron back, and that is the model working rather than
+     * leaking.** Iron scales at [IRON_OXIDATION_KELVIN], far below this onset, so the iron this makes
+     * is standing in hot air next to the rust row competing for the same oxygen. Carbon wins most of
+     * it — [BASE_RATE] against [IRON_BASE_RATE] is the same "carbon outbids iron" mechanism the game
+     * already runs on, and it is *why* steelmaking works in reality: at these temperatures carbon has
+     * the greater affinity for oxygen. What is left over is scale, which is what a real converter
+     * makes too.
+     *
+     * **Measured, 20 kg of steel in ambient air, share of the consumed steel recovered as iron:**
+     *
+     * | held at | converted in ~400 passes | iron kept | as scale |
+     * |---|---|---|---|
+     * | 1100 K | ~nothing | — | — |
+     * | 1400 K | 6% | **90%** | 13% Fe₂O₃ |
+     * | 1800 K | 54% | **66%** | 46% Fe₂O₃ |
+     *
+     * ⛔ **So temperature is already the dial, and it is a real trade rather than a tax**: hotter
+     * converts faster and loses more of what it converts, because the rust row's rate climbs with the
+     * same Arrhenius curve this one does. Metering the blow is how a real converter keeps the loss
+     * down and would be a *machine*; it is deliberately not this row, and this table is the evidence
+     * that one is not yet needed.
+     *
+     * The onset is solid-state decarburisation in air, which is a real and well-known nuisance from
+     * about 700 °C — the soft skin on a forging that was left too long in the furnace. It does **not**
+     * need the metal molten, so a hot airy room is enough and no melting model is implied.
+     */
+    Reaction(
+        principal = Species.Steel,
+        reagents = listOf(Species.Steel to 1, Species.Oxygen to 1),
+        products = listOf(Species.Iron to 99, Species.CarbonDioxide to 1),
+        onsetKelvin = 1000,
+        // -394 kJ per mole of carbon burned, and a formula unit of steel holds exactly one — so this
+        // is the same figure the carbon row carries, quoted against the steel it came out of.
+        enthalpyPerKg = -394L * kJPerMolAt(5556),
+        baseRate = BASE_RATE,
+    ),
+
     // ══ MAKING THINGS THE VESSEL IS BUILT OF ══════════════════════════════════════════════════
     //
     // The two rows that turn a *recipe* into a *reaction*. Steel and firebrick used to be
