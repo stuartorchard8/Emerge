@@ -20,3 +20,16 @@ tap CARBON
 shot wiki-carbon
 scroll wiki 300
 shot wiki-carbon-scrolled
+
+# ── The four tables, not three ────────────────────────────────────────────────────────────────
+#
+# `wiki-methane` is the article that used to be the panel's clearest lie: gas-phase fires were not
+# in the flattening, so a player watching a room fill with methane and clicking it to find out
+# whether that mattered was told the gas takes part in nothing. It must show a GAS FIRE row.
+#
+# `wiki-algae` is the catalyst, and what it must show is that there is no such thing as a catalyst
+# row: 100 ALGAE goes in, 101 comes out, and the reader is looking at an ordinary reaction.
+wiki methane
+shot wiki-methane
+wiki algae
+shot wiki-algae

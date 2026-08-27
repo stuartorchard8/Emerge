@@ -4,14 +4,22 @@ package org.emerge.demo.outofspace.chem
  * Everything the game knows about one species, in the shape a reader wants it — what it is made of,
  * and every reaction it takes part in either end of.
  *
- * ⛔ **A view over the tables, never a second copy of them.** The three reaction tables are three
- * classes because they are three different mechanisms — heat alone, heat with air, heat with a solid
- * reagent — and each of them is arranged for the sweep that runs it: [DECOMPOSITION_OF] is indexed
- * by ordinal for the tick loop, [REDUCTION_GROUPS] is grouped by the reagent they contend for. None
- * of those shapes answers "what happens to magnesite?", which is the only question a player asks. So
- * this file flattens all three into one row type and looks *up* from a species, and it derives that
- * flattening rather than restating it: a reaction added to any table appears here without anybody
- * remembering to add it, which is [MINERALS]' argument and `MineralTest`'s.
+ * ⛔ **A view over the tables, never a second copy of them.** The four reaction tables are four
+ * classes because they are four different mechanisms — heat alone, heat with the room's air, heat
+ * with a solid reagent, and a fuel burning in the air it is already mixed with — and each of them is
+ * arranged for the sweep that runs it: [DECOMPOSITION_OF] is indexed by ordinal for the tick loop,
+ * [REDUCTION_GROUPS] is grouped by the reagent they contend for. None of those shapes answers "what
+ * happens to magnesite?", which is the only question a player asks. So this file flattens all four
+ * into one row type and looks *up* from a species, and it derives that flattening rather than
+ * restating it: a reaction added to any table appears here without anybody remembering to add it,
+ * which is [MINERALS]' argument and `MineralTest`'s.
+ *
+ * ⚠️ **A table this file has not been taught about is a species the panel says nothing happens to**,
+ * and it says it in the confident voice it uses for everything else. [COMBUSTIONS] existed for five
+ * days before this list knew about it, and for those five days a player who clicked METHANE in a
+ * room slowly filling with it was told the gas was inert. That is the failure mode of a flattening
+ * that has to be *added* to, and it is why `SpeciesReferenceTest` now counts the rows of every table
+ * against this one rather than checking a reaction it happens to remember.
  *
  * Nothing here runs in a tick. The lists are built once and read by a panel.
  */
@@ -26,6 +34,17 @@ enum class ReactionKind(val label: String) {
 
     /** Heat and a solid reagent mixed into the charge. */
     Reduce("REAGENT"),
+
+    /**
+     * Heat, and a fuel that is **already in the air** alongside the oxygen it burns in — a
+     * [Combustion] rather than an [Oxidation].
+     *
+     * ⚠️ **Not the same thing to arrange as [Burn], which is why it is not the same row.** A [Burn]
+     * asks the player to put a solid somewhere airy and hot; this one asks for nothing but a room,
+     * because `offGas` has already filled it with methane. What the article is really telling a
+     * player here is the temperature at which the corridor they are standing in becomes a bomb.
+     */
+    Fire("GAS FIRE"),
 }
 
 /**
@@ -41,7 +60,7 @@ class ReactionInfo(
     val inputs: List<Pair<Species, Int>>,
     val products: List<Pair<Species, Int>>,
     val onsetKelvin: Int,
-    /** Positive is **endothermic**, the sign convention of all three tables. */
+    /** Positive is **endothermic**, the sign convention of all four tables. */
     val enthalpyPerKg: Long,
 ) {
     /** Whether this reaction takes energy out of the matter to happen, rather than giving it back. */
@@ -55,8 +74,8 @@ class ReactionInfo(
 /**
  * Every reaction in the game, flattened.
  *
- * Order is table order — oxidations, then decompositions, then reductions — which is arbitrary and
- * only has to be stable, since this list is read by a panel and never by the sim.
+ * Order is table order — oxidations, decompositions, reductions, then gas fires — which is arbitrary
+ * and only has to be stable, since this list is read by a panel and never by the sim.
  */
 val ALL_REACTIONS: List<ReactionInfo> = buildList {
     for (o in OXIDATIONS) {
@@ -85,13 +104,56 @@ val ALL_REACTIONS: List<ReactionInfo> = buildList {
         add(
             ReactionInfo(
                 kind = ReactionKind.Reduce,
-                inputs = listOf(r.oxide to r.oxideUnits, r.reductant to r.reductantUnits),
-                products = r.products,
+                inputs = withCatalyst(
+                    listOf(r.oxide to r.oxideUnits, r.reductant to r.reductantUnits),
+                    r.catalyst,
+                    r.catalystUnits,
+                ),
+                products = withCatalyst(r.products, r.catalyst, r.catalystUnits),
                 onsetKelvin = r.onsetKelvin,
                 enthalpyPerKg = r.enthalpyPerKg,
             ),
         )
     }
+    for (c in COMBUSTIONS) {
+        add(
+            ReactionInfo(
+                kind = ReactionKind.Fire,
+                inputs = listOf(c.fuel to c.fuelUnits, Species.Oxygen to c.oxygenUnits),
+                products = c.products,
+                onsetKelvin = c.onsetKelvin,
+                enthalpyPerKg = c.enthalpyPerKg,
+            ),
+        )
+    }
+}
+
+/**
+ * [entries] with [catalyst] added to them, or [entries] unchanged if there is no catalyst.
+ *
+ * ⛔ **A catalyst is a reactant that appears on both sides, and the reference says exactly that.**
+ * Called once for the inputs and once for the products, it turns [Reduction.catalyst]'s separate
+ * field back into the formula the row's own documentation is written in:
+ * `100 ALGAE + 6 WATER + 6 CO₂ → 101 ALGAE + 6 OXYGEN`. Nothing about it is a new kind of
+ * ingredient, so the panel needs no new row type, no "NEEDS" line and no third lookup — a player
+ * reads a hundred going in and a hundred and one coming out, and that *is* what a catalyst is.
+ *
+ * ⚠️ **Added to an existing entry rather than appended beside it.** Photosynthesis already lists
+ * `Algae to 1` in its products — the one net new unit — so appending would print `1 ALGAE` and
+ * `100 ALGAE` as two separate chips on the same side, which reads as two different things.
+ */
+private fun withCatalyst(
+    entries: List<Pair<Species, Int>>,
+    catalyst: Species?,
+    units: Int,
+): List<Pair<Species, Int>> {
+    if (catalyst == null) return entries
+    // First on the side that did not already name it, so the two lines read as the one formula the
+    // row is documented by: `100 ALGAE + 6 WATER + 6 CO₂ → 101 ALGAE + 6 OXYGEN`. The bloom is the
+    // subject of the sentence on both sides, and burying it behind the reagents on one of them
+    // would hide the only thing the reader has to compare.
+    if (entries.none { it.first == catalyst }) return listOf(catalyst to units) + entries
+    return entries.map { (species, n) -> if (species == catalyst) species to (n + units) else species to n }
 }
 
 /** Every reaction [species] is an ingredient of, coldest first — the cheapest thing to try first. */
@@ -101,6 +163,7 @@ fun reactionsConsuming(species: Species): List<ReactionInfo> =
 /** Every reaction [species] comes out of, coldest first — the routes to making it. */
 fun reactionsProducing(species: Species): List<ReactionInfo> =
     ALL_REACTIONS.filter { it.produces(species) }.sortedBy { it.onsetKelvin }
+
 
 /**
  * What [species] is made of, richest element first: atoms per formula unit and share of the mass.

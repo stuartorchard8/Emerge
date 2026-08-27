@@ -1,5 +1,10 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.ALL_REACTIONS
+import org.emerge.demo.outofspace.chem.COMBUSTIONS
+import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
+import org.emerge.demo.outofspace.chem.OXIDATIONS
+import org.emerge.demo.outofspace.chem.REDUCTIONS
 import org.emerge.demo.outofspace.chem.ReactionKind
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.abundanceOf
@@ -41,13 +46,65 @@ class SpeciesReferenceTest {
     }
 
     @Test
-    fun `all three reaction tables reach the reference`() {
+    fun `all four reaction tables reach the reference`() {
         // Heat alone.
         assertTrue(reactionsConsuming(Species.Calcite).any { it.kind == ReactionKind.Heat })
         // Heat with the room's oxygen.
         assertTrue(reactionsConsuming(Species.Carbon).any { it.kind == ReactionKind.Burn })
         // Heat with a solid reagent.
         assertTrue(reactionsConsuming(Species.Rutile).any { it.kind == ReactionKind.Reduce })
+        // A fuel burning in the air it is already mixed with.
+        assertTrue(reactionsConsuming(Species.Methane).any { it.kind == ReactionKind.Fire })
+    }
+
+    @Test
+    fun `every row of every table is in the flattening`() {
+        // ⚠️ The test the previous one could not be. Naming a reaction per table catches a table
+        // that was never wired up at all, and misses the case that actually happened: a *fifth*
+        // table nobody thought to name here. Counting is what makes the reference structurally
+        // unable to fall behind the chemistry — a new table is a red test on the day it lands, not
+        // an article that quietly says nothing happens to methane.
+        val expected = OXIDATIONS.size + DECOMPOSITIONS.size + REDUCTIONS.size + COMBUSTIONS.size
+        assertEquals(expected, ALL_REACTIONS.size)
+    }
+
+    @Test
+    fun `a gas fire is reachable from the fuel and from what it leaves behind`() {
+        // Ammonia is the one worth reading about: it burns back to two things the vessel wants.
+        val burn = reactionsConsuming(Species.Ammonia).single { it.kind == ReactionKind.Fire }
+        assertEquals(924, burn.onsetKelvin)
+        assertFalse(burn.isEndothermic)
+        assertTrue(burn.consumes(Species.Oxygen))
+        assertTrue(burn.produces(Species.Nitrogen))
+        // And the trail runs the other way: a player looking at the water in the air can find out
+        // that burning the ammonia is where it came from.
+        assertTrue(reactionsProducing(Species.Water).any { it.consumes(Species.Ammonia) })
+    }
+
+    @Test
+    fun `a catalyst is a reactant on both sides, and reads as one`() {
+        // `100 ALGAE + 6 WATER + 6 CO2 -> 101 ALGAE + 6 OXYGEN`. The hundred is the bloom that has
+        // to already be there and the hundred and one is it plus the one it made, which is the
+        // whole of what a catalyst is — no third kind of ingredient, and nothing for the panel to
+        // learn. The row's own documentation writes the formula exactly this way.
+        val photosynthesis = reactionsProducing(Species.Algae).single()
+        assertEquals(100, photosynthesis.inputs.single { it.first == Species.Algae }.second)
+        assertEquals(101, photosynthesis.products.single { it.first == Species.Algae }.second)
+        // ⚠️ Added to the product entry the row already had, not appended beside it — two chips
+        // reading `1 ALGAE` and `100 ALGAE` on one side would read as two different substances.
+        assertEquals(1, photosynthesis.products.count { it.first == Species.Algae })
+        assertTrue(photosynthesis.consumes(Species.Water))
+    }
+
+    @Test
+    fun `a catalyst is reachable from its own article`() {
+        // Both directions find the row, which is what makes an article on algae a page about
+        // something rather than a substance that takes part in nothing. TAKES PART IN also carries
+        // the pyrolysis that cooks a dead bloom, so the bloom's two fates are on one page.
+        val consuming = reactionsConsuming(Species.Algae)
+        assertTrue(consuming.any { it.produces(Species.Oxygen) })
+        assertTrue(consuming.any { it.kind == ReactionKind.Heat })
+        assertEquals(1, reactionsProducing(Species.Algae).size)
     }
 
     @Test
