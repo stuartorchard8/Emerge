@@ -237,6 +237,43 @@ fun seriesConductance(a: Long, b: Long): Long {
     return if (sum <= 0L) 0L else scaledRatio(a, sum, 2L * b)
 }
 
+/**
+ * **What one tile of pure [Species] conducts, per kelvin per tick, when it fills a tile completely.**
+ *
+ * ⛔ **The bridge that lets a building be made of anything.** [Material] is five named substances;
+ * this is the same arithmetic asked of any of the hundred and seventy, and it is what a tile's
+ * conductance is looked up through now that the tile's material is a fact about the matter in it
+ * rather than about its kind.
+ *
+ * ⚠️ **A table and not a function, for the reason [Material]'s own derived fields are fields**: this
+ * is asked per tile per heat tick, and computing it walks a mixture. Species are an enum and their
+ * physical constants cannot change, so every evaluation after the first returns the identical number
+ * for identical work.
+ */
+private val SOLID_CONDUCTANCE: LongArray = LongArray(Species.COUNT) { i ->
+    val one = Mixture.of(Species.ALL[i] to 1_000L, energy = 0L)
+    val centiTicks = conductanceCentiTicksOf(one)
+    if (centiTicks <= 0L) 0L else capacityPerTileOf(one) * 100L / centiTicks
+}
+
+/**
+ * What a tile made of [species] conducts at [fillPermille] — the per-species twin of
+ * [Material.conductance], and identical to it for the five species a [Material] names.
+ */
+fun conductanceOf(species: Species, fillPermille: Int): Long =
+    SOLID_CONDUCTANCE[species.ordinal] * fillPermille / 1_000L
+
+/**
+ * The species a thing of this material is made of.
+ *
+ * ⚠️ **Total, because every [Material] is exactly one species** — and that is not a coincidence to
+ * lean on quietly but the property that makes material choice possible at all: material and species
+ * are in bijection, so a *built* tile's material is recoverable from what it is made of and needs no
+ * storage of its own. Steel and firebrick were the last two mixtures and became species; if one ever
+ * goes back to being a blend, this is the call site that stops compiling.
+ */
+val Material.species: Species get() = composition.dominant!!
+
 val DeckMachineKind.material: Material
     get() = when (this) {
         DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel

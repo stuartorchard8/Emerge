@@ -3,7 +3,19 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.TILE_LITRES
+import org.emerge.demo.outofspace.world.BufferLayer
+import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.Conduits
+import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.Material
+import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.bodiesOf
+import org.emerge.demo.outofspace.world.conductanceOf
+import org.emerge.demo.outofspace.world.fillPermille
+import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.conductanceCentiTicksOf
 import org.emerge.demo.outofspace.world.conductivityOf
 import kotlin.math.abs
@@ -116,5 +128,75 @@ class MaterialThermalTest {
     fun `an empty mixture has no thermal behaviour at all`() {
         assertEquals(0L, conductivityOf(Mixture.EMPTY), "nothing conducts")
         assertEquals(0L, conductanceCentiTicksOf(Mixture.EMPTY), "nothing has a time constant")
+    }
+
+    /**
+     * ⛔ **A tile conducts as what it is made of, not as what its kind usually is.**
+     *
+     * The whole point of the change: a run of track built out of copper salvage is a copper thermal
+     * object, and a titanium extractor and a steel one are two different ones. Until a player is
+     * given the choice everything is still built from its kind's default, which is why the entire
+     * suite stayed green — so this is the only test that can see the capability at all, and without
+     * it the derivation could quietly revert to a constant and nothing would notice.
+     */
+    @Test
+    fun `a length of track conducts as the metal actually in it`() {
+        val grid = Grid(6, 4)
+        val tile = grid.tile(2, 2)
+
+        fun conductanceMadeOf(species: Species): Long {
+            val rails = arrayOfNulls<Segment>(grid.size)
+            rails[tile.index] = Segment(Conduit.Rail)
+            val conduits = Conduits.ofRails(rails.toList())
+            // Replace the metal with the same *mass* of something else, so the only thing that can
+            // move the answer is which species it is.
+            val stuff = conduits.tracks[Conduit.Rail]
+            val mass = stuff.massAt(tile)
+            assertTrue(mass > 0L, "fixture: stated track is supposed to arrive finished")
+            stuff.release(tile)
+            stuff[tile, species] = mass
+            val deck = DeckArray(grid)
+            return bodiesOf(grid, conduits, deck, BufferLayer.forDeck(grid, deck), RailLayer.empty(grid.size))
+                .single { it.tile == tile && it.conduit == Conduit.Rail }
+                .conductance
+        }
+
+        val iron = conductanceMadeOf(Species.Iron)
+        val copper = conductanceMadeOf(Species.Copper)
+        val firebrick = conductanceMadeOf(Species.Firebrick)
+
+        assertEquals(
+            conductanceOf(Species.Iron, Conduit.Rail.fillPermille),
+            iron,
+            "an iron rail should conduct exactly what a tile of iron at rail fill does",
+        )
+        assertTrue(copper > iron * 2L, "a copper rail ($copper) barely beat an iron one ($iron)")
+        assertTrue(firebrick < iron / 2L, "a firebrick rail ($firebrick) conducted like metal")
+    }
+
+    /**
+     * ⚠️ And a construction site falls back to its kind's default rather than to nothing. It is not
+     * made of anything yet, and a node with no conductance at all is a different thing in the solve
+     * from a cold one.
+     */
+    @Test
+    fun `a ghost still has its kind's conductance`() {
+        val grid = Grid(6, 4)
+        val tile = grid.tile(2, 2)
+        val rails = arrayOfNulls<Segment>(grid.size)
+        rails[tile.index] = Segment(Conduit.Rail)
+        val conduits = Conduits.ofRails(rails.toList())
+        conduits.tracks[Conduit.Rail].release(tile)
+
+        val deck = DeckArray(grid)
+        val body = bodiesOf(grid, conduits, deck, BufferLayer.forDeck(grid, deck), RailLayer.empty(grid.size))
+            .single { it.tile == tile && it.conduit == Conduit.Rail }
+
+        assertEquals(0L, conduits.massAt(Conduit.Rail, tile), "fixture: it is supposed to be a ghost")
+        assertEquals(
+            conductanceOf(Conduit.Rail.material.species, Conduit.Rail.fillPermille),
+            body.conductance,
+            "a ghost rail lost its conductance instead of falling back to iron",
+        )
     }
 }

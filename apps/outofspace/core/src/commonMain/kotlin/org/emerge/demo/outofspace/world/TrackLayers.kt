@@ -86,6 +86,10 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
     fun heatCapacityAt(conduit: Conduit, tile: TileIndex): Long =
         layers[conduit.ordinal].heatCapacityAt(tile)
 
+    /** Which species the metal at [tile] mostly is — see `StuffLayer.dominantAt`. */
+    fun dominantAt(conduit: Conduit, tile: TileIndex): Species? =
+        layers[conduit.ordinal].dominantAt(tile)
+
     fun energyAt(conduit: Conduit, tile: TileIndex): Long = layers[conduit.ordinal].energyAt(tile)
 
     fun setEnergy(conduit: Conduit, tile: TileIndex, energy: Long) =

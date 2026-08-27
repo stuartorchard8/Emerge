@@ -1,5 +1,7 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Species
+
 
 /**
  * Conduit layers: one List<Segment?> per [Conduit] (rail/pipe/power/signal).
@@ -128,6 +130,9 @@ class Conduits private constructor(
     fun massAt(conduit: Conduit, tile: TileIndex): Long = tracks.massAt(conduit, tile)
 
     fun heatCapacityAt(conduit: Conduit, tile: TileIndex): Long = tracks.heatCapacityAt(conduit, tile)
+
+    /** Which species the metal at [tile] mostly is — what this length of it is made of. */
+    fun dominantAt(conduit: Conduit, tile: TileIndex): Species? = tracks.dominantAt(conduit, tile)
 
     /**
      * This, with one tile of one network holding [energy] instead of what it held.

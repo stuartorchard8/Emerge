@@ -83,7 +83,6 @@ class Body(
      * its tiles, and both are needed now that one object is several bodies.
      */
     val part: Int = 0,
-    val material: Material,
     /** False for a fitting on a conduit layer: it shares its tile with the air rather than filling it. */
     val preventAirflow: Boolean,
     /** Thermal energy, in the millijoules [Material] documents. */
@@ -93,8 +92,8 @@ class Body(
     /**
      * What crosses a contact of it, per kelvin per tick.
      *
-     * Carried rather than read off [material] because a joint conducts through the metal that is
-     * actually there: a hull plate is a few per cent of its tile, and so is its cross-section. It
+     * Read off the matter that is actually in the tile, because a joint conducts through the metal
+     * that is there: a hull plate is a few per cent of its tile, and so is its cross-section. It
      * therefore takes the same [DeckMachineKind.fillPermille] its [capacity] does, and the pair of them
      * moving together is what holds every thermal time constant in the game still while the masses
      * underneath them become real. Divide one by the other and you get the number
@@ -158,13 +157,24 @@ fun bodiesOf(
                     slot = BodySlot.DeckStore,
                     tile = part,
                     anchor = tile,
-                    material = m.kind.material,
                     preventAirflow = m.kind.preventAirflow,
                     energy = deck.stuff.energyAt(part),
                     // From the matter on the tile, not from the kind — so a casing that a reaction
                     // has altered conducts as what it has become. See [StuffLayer.heatCapacityAt].
                     capacity = deck.stuff.heatCapacityAt(part),
-                    conductance = m.kind.conductance,
+                    // ⛔ **The tile's own material, not its kind's.** A machine is made of whatever
+                    // was delivered to build it, so a titanium extractor and a copper one are two
+                    // different thermal objects and neither of them is "what an extractor is made
+                    // of". Identical to the old constant for anything built from its default
+                    // material, which is everything until a player is given the choice.
+                    //
+                    // ⚠️ Falls back to the kind's default while the site is still a ghost: it is
+                    // not made of anything yet, and answering zero would put a conductanceless node
+                    // in the solve rather than a cold one.
+                    conductance = conductanceOf(
+                        deck.stuff.dominantAt(part) ?: m.kind.material.species,
+                        m.kind.fillPermille,
+                    ),
                 )
             )
         }
@@ -180,7 +190,6 @@ fun bodiesOf(
                     slot = BodySlot.BufferStore,
                     tile = tile,
                     anchor = tile,
-                    material = Material.Steel,
                     // Air shares its tile: a buffer is inside a machine, not a wall of it.
                     preventAirflow = false,
                     energy = buffers.stuff.energyAt(tile),
@@ -203,9 +212,6 @@ fun bodiesOf(
                     slot = BodySlot.RailCargo,
                     tile = tile,
                     anchor = tile,
-                    // Nominal: [material] does not feed conduction — [conductance] does — and a heap
-                    // of ore is not made of its container any more than a buffer's charge is.
-                    material = Material.Steel,
                     preventAirflow = false,
                     energy = rail.stuff.energyAt(tile),
                     capacity = capacity,
@@ -221,7 +227,6 @@ fun bodiesOf(
                 slot = BodySlot.Fitting,
                 tile = tile,
                 anchor = tile,
-                material = conduit.material,
                 preventAirflow = false,
                 // Both read off the layer rather than off the segment and the kind: the metal in a
                 // tile of track is what holds the heat, so the two numbers come from one place and
@@ -229,7 +234,11 @@ fun bodiesOf(
                 // kind's to the unit.
                 energy = conduits.energyAt(conduit, tile),
                 capacity = conduits.heatCapacityAt(conduit, tile),
-                conductance = conduit.conductance,
+                // The same rule for track: a run built out of steel salvage conducts as steel.
+                conductance = conductanceOf(
+                    conduits.dominantAt(conduit, tile) ?: conduit.material.species,
+                    conduit.fillPermille,
+                ),
                 conduit = conduit,
                 links = s.links,
             )

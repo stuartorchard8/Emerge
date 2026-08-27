@@ -132,6 +132,35 @@ class StuffLayer private constructor(
     }
 
     /**
+     * **Which species the matter at [tile] mostly is** — the one that names what this tile is *made
+     * of*, and so which material's thermal behaviour it has.
+     *
+     * ⛔ **"Mostly" is exact for anything built under the current rules and an approximation only for
+     * legacy matter.** `BUILD_PURITY_PERCENT` is 100, so a casing or a length of track admits nothing
+     * its bill does not name and a built tile holds exactly one species; the dominant *is* the whole
+     * of it. A tile from a world saved before that admits a blend, and calling such a tile by its
+     * largest constituent is both the best available answer and the one a player would give.
+     *
+     * ⚠️ **Allocation-free and O(what the tile holds)**, which is why it is here rather than
+     * `mixtureAt(tile).dominant` — this is asked per tile per heat tick, and `mixtureAt` builds a
+     * hundred and seventy longs to answer it. Same reason [heatCapacityAt] exists beside
+     * `heatCapacityOf`.
+     *
+     * Null for a tile holding nothing, which is a construction site: it is not made of anything yet.
+     */
+    fun dominantAt(tile: TileIndex): Species? {
+        var best: Species? = null
+        var most = 0L
+        forEachSpecies(tile) { species, mass ->
+            if (mass > most) {
+                most = mass
+                best = species
+            }
+        }
+        return best
+    }
+
+    /**
      * How hot the stuff at [tile] is, in kelvin. Matterless tiles read as ambient, for the reason
      * [org.emerge.demo.outofspace.world.gasKelvin] documents.
      */
