@@ -1030,6 +1030,13 @@ object OutofspaceAgentHarness {
             "ventMomentumX" -> grams(state.ventMomentumX)
             "ventMomentumY" -> grams(state.ventMomentumY)
             "ventAngImpulse" -> grams(state.ventAngImpulse)
+            // The atmosphere as a body in its own right: what it is carrying, and how fast that
+            // makes it go compared with the hull towing it.
+            "airMomentumX" -> grams(state.airMomentumX)
+            "airMomentumY" -> grams(state.airMomentumY)
+            "airAngImpulse" -> grams(state.airAngImpulse)
+            "airVelocityX" -> if (state.air.totalMass <= 0L) 0.0
+                else state.airMomentumX.toDouble() / state.air.totalMass * Flight.PER_TILE / Flight.PER_TILE
             // The debug engine's cumulative cheating, which is subtracted rather than ignored: the
             // identity has a fifth store now, and it reduces to the old one whenever nothing has
             // fired. See [VesselState.debugImpulseX] for why a shortcut that did not book this would
@@ -1041,7 +1048,13 @@ object OutofspaceAgentHarness {
             // is here because only the ship's half is inside the ledger. See [VesselState.bodyImpulseX].
             "rockImpulseX" -> grams(state.bodyImpulseX)
             "rockImpulseY" -> grams(state.bodyImpulseY)
+            // ⚠️ **Summed, so a break on x and an equal one on y read as zero.** Kept because
+            // every script says `expect momentumBalance = 0`, but the axes are exposed beside it and
+            // they are the sharper question — a coupling with a sign error one way round is exactly
+            // the shape this hides.
             "momentumBalance" -> grams(state.momentumBalanceX + state.momentumBalanceY)
+            "momentumBalanceX" -> grams(state.momentumBalanceX)
+            "momentumBalanceY" -> grams(state.momentumBalanceY)
             // The angular half of flight, and there was no readout for any of it until a ship span
             // up in play and nothing in the harness could say how fast or which way. `spin` is the
             // one to watch: revolutions per second, signed clockwise, so a script can assert a ship
@@ -1081,8 +1094,11 @@ object OutofspaceAgentHarness {
             "massBalance", "builtMass", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",
             "hottestSolidK", "hottestAirK", "peakSpeed", "impulseX", "impulseY",
-            "ventMomentumX", "ventMomentumY", "ventAngImpulse", "debugImpulseX", "debugImpulseY",
+            "ventMomentumX", "ventMomentumY", "ventAngImpulse",
+            "airMomentumX", "airMomentumY", "airAngImpulse", "airVelocityX",
+            "debugImpulseX", "debugImpulseY",
             "rockImpulseX", "rockImpulseY", "momentumBalance",
+            "momentumBalanceX", "momentumBalanceY",
             "spin", "angImpulse", "netTorque", "angularBalance", "exhaustAngImpulse",
             "bodyAngImpulse", "comX", "comY", "gyration",
             "mass", "thrustX", "thrustY", "velocityX", "velocityY", "positionX", "positionY",

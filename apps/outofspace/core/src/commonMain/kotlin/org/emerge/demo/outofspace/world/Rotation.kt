@@ -157,6 +157,43 @@ fun massDistribution(
     return MassDistribution(mass = mass, comX = comX, comY = comY, gyrationSq = gyrationSq)
 }
 
+/**
+ * The same three numbers for the **atmosphere**: how much gas is aboard, where it is, and how
+ * reluctant it is to be spun.
+ *
+ * ⛔ **The air is not part of the vessel and never has been.** [forEachVesselMass] walks the deck,
+ * the buffers, the conduits and the rail and takes no air argument at all, so the atmosphere
+ * contributes exactly nothing to [VesselState.mass], to the centre of mass or to the radius of
+ * gyration — measured, 200 kg poured into a far corner leaves all three bit-identical. That is not
+ * an oversight to be corrected: gas is not bolted to the hull, and a ship that had to carry its own
+ * atmosphere's inertia rigidly could not slosh, drift or lag. It is a **second body**, and this is
+ * that body's own distribution, which is what makes the coupling between the two well posed.
+ *
+ * Taken about the *vessel's* centre of mass rather than the gas's own, because the pair only
+ * exchanges angular momentum about a shared point, and the vessel's is the one the hull turns about.
+ */
+fun atmosphereDistribution(grid: Grid, air: Stuff, about: MassDistribution): MassDistribution {
+    val perTile = tileMass(grid.size, air.copyMass())
+    var mass = 0L
+    for (m in perTile) mass += m
+    if (mass <= 0L) return MassDistribution.EMPTY
+
+    var gyrationSq = 0L
+    for (i in perTile.indices) {
+        val m = perTile[i]
+        if (m == 0L) continue
+        val rx = tileCentre(grid.xOf(TileIndex(i))) - about.comX
+        val ry = tileCentre(grid.yOf(TileIndex(i))) - about.comY
+        val rSq = rx * rx + ry * ry
+        if (rSq == 0L) continue
+        // Mass-normalised inside the call, exactly as [massDistribution] does and for the same
+        // reason: `Σ m·r²` is the quantity that overflows, and dividing by the total first bounds
+        // the accumulator by the largest `r²` on the grid however much gas is aboard.
+        gyrationSq += scaledRatio(m, mass, rSq)
+    }
+    return MassDistribution(mass = mass, comX = about.comX, comY = about.comY, gyrationSq = gyrationSq)
+}
+
 /** The centre of tile column/row [n], in millitiles. */
 fun tileCentre(n: Int): Long = n * Rotation.MILLI_TILE + Rotation.MILLI_TILE / 2L
 

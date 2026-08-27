@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Ignore
+import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.airCoupling
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -345,6 +347,159 @@ class FlightTest {
     }
 
     /** The mirror-symmetric box `ThrustBalanceTest` uses: a hull, a roomful of air, nothing else. */
+    // ── The ship and its air are two bodies ──────────────────────────────────
+
+    /**
+     * **A ship tows its own atmosphere, and pays for it.**
+     *
+     * The air is not in [VesselState.mass] — [forEachVesselMass] takes no air argument, and 200 kg
+     * poured into a corner leaves the mass, the centre of mass and the radius of gyration
+     * bit-identical. So a hull that changes speed leaves its gas behind and has to drag it along,
+     * and that drag is an exchange with two halves rather than a force from nowhere.
+     *
+     * ⛔ **The store this fills is the one the old per-edge momentum field only pretended to be.**
+     * That one was written by the pressure solver and read by no physics, so counting it in the
+     * ledger let the identity close over momentum that could never move anything. This one is read
+     * back every firing and changes what the ship does — which is the whole difference, and the
+     * reason it may be a ledger term at all. See [VesselState.momentumBalanceX].
+     */
+    @Test
+    fun `a ship tows its own atmosphere, and pays for it`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        repeat(200) {
+            controller.thrustX = 1
+            controller.stepOnce()
+            MomentumLedger.assertBalanced(controller.state, "tick ${controller.state.tick} under thrust")
+        }
+
+        val s = controller.state
+        assertTrue(s.vesselImpulseX > 0L, "the ship never got going, so this proves nothing")
+        assertTrue(
+            s.airMomentumX > 0L,
+            "the ship accelerated and its atmosphere was left exactly where it was: the air is " +
+                "being carried for free, which is what the coupling exists to stop",
+        )
+        // The air is lighter than the hull and lags it, so it may never be carrying more.
+        assertTrue(
+            s.airMomentumX < s.vesselImpulseX,
+            "the air is holding more momentum than the ship towing it: ${s.airMomentumX} vs ${s.vesselImpulseX}",
+        )
+    }
+
+    /**
+     * **The air keeps catching up after the engines stop**, which is what "loosely coupled" means:
+     * the gap closes at [Flight.AIR_COUPLING_SECONDS] whether or not anything is still pushing.
+     */
+    @Test
+    fun `the atmosphere goes on catching up once the burn ends`() {
+        val cfg = OutofspaceConfig()
+        val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
+        repeat(100) { controller.thrustX = 1; controller.stepOnce() }
+        controller.thrustX = 0
+        val atCutoff = controller.state.airMomentumX
+
+        repeat(400) { controller.stepOnce() }
+
+        val s = controller.state
+        assertTrue(
+            s.airMomentumX > atCutoff,
+            "the air stopped catching up the moment the engine did — it was following the thrust " +
+                "rather than following the hull ($atCutoff -> ${s.airMomentumX})",
+        )
+        MomentumLedger.assertBalanced(s, "coasting with a lagging atmosphere")
+    }
+
+    /**
+     * ⛔ **Gas that leaves takes its share of the atmosphere's momentum with it.**
+     *
+     * Without this the store outlives the gas that was carrying it: the coupling reads a momentum
+     * too large for the mass still aboard, decides the air is running ahead of the hull, and hands
+     * the difference **back to the ship** — a reactionless drive built out of the repair for one.
+     *
+     * ⚠️ **Asked of [airCoupling] directly, and that is why the function exists.** The same claim
+     * written as "fly a ship, breach it, watch" measures nothing: the effect is a couple of per cent
+     * and the breach reaction is a thousand times larger, so it passed identically with the
+     * carry-away removed. Two attempts at an integration-level version — one watching the air's
+     * speed, one venting both sides at once so the reaction cancelled — both failed to discriminate,
+     * by 0% and 1.6% respectively. The law is small and exact; it wants asking, not observing.
+     */
+    @Test
+    fun `vented gas takes its share of the air's momentum with it`() {
+        val air = MassDistribution(mass = 500L, comX = 0L, comY = 0L, gyrationSq = 1_000_000L)
+        val ship = MassDistribution(mass = 100_000L, comX = 0L, comY = 0L, gyrationSq = 4_000_000L)
+
+        // Half the gas goes overboard, and the ship is not moving, so nothing else can act.
+        val half = airCoupling(
+            airMomentumX = 8_000L, airMomentumY = -4_000L, airAngImpulse = 2_000L,
+            airMassBefore = 1_000L, ventedMass = 500L,
+            vesselImpulseX = 0L, vesselImpulseY = 0L, angImpulse = 0L,
+            ship = ship, air = air, sharePermille = 1000,
+        )
+        assertEquals(4_000L, half.carriedX, "half the gas took half the x momentum")
+        assertEquals(-2_000L, half.carriedY, "half the gas took half the y momentum")
+        assertEquals(1_000L, half.carriedTorque, "half the gas took half the twist")
+
+        // And what is left is dragged toward a hull that is not moving — so back to zero, and no
+        // further. The drag must answer for what is *still aboard*, not for what has gone.
+        assertEquals(-4_000L, half.dragX, "the drag was struck against the momentum that had left")
+        assertEquals(2_000L, half.dragY)
+
+        // Nothing vented, nothing carried.
+        val sealed = airCoupling(
+            airMomentumX = 8_000L, airMomentumY = 0L, airAngImpulse = 0L,
+            airMassBefore = 1_000L, ventedMass = 0L,
+            vesselImpulseX = 0L, vesselImpulseY = 0L, angImpulse = 0L,
+            ship = ship, air = air.copy(mass = 1_000L), sharePermille = 1000,
+        )
+        assertEquals(0L, sealed.carriedX, "a sealed ship sent momentum overboard")
+    }
+
+    /** All of it leaves when all of the gas does — no remainder stranded in a store with no mass. */
+    @Test
+    fun `an atmosphere that vents completely leaves nothing behind`() {
+        val gone = airCoupling(
+            airMomentumX = 7_777L, airMomentumY = 3_333L, airAngImpulse = -555L,
+            airMassBefore = 1_000L, ventedMass = 1_000L,
+            vesselImpulseX = 1_000_000L, vesselImpulseY = 0L, angImpulse = 0L,
+            ship = MassDistribution(100_000L, 0L, 0L, 4_000_000L),
+            air = MassDistribution.EMPTY,
+            sharePermille = 1000,
+        )
+        assertEquals(7_777L, gone.carriedX, "momentum was stranded in an atmosphere that no longer exists")
+        assertEquals(3_333L, gone.carriedY)
+        assertEquals(-555L, gone.carriedTorque)
+        assertEquals(0L, gone.dragX, "an empty atmosphere was still being dragged")
+    }
+
+    /** The hull drags its air toward its own motion, and never past it. */
+    @Test
+    fun `the drag closes the gap toward the hull and stops there`() {
+        val ship = MassDistribution(mass = 100_000L, comX = 0L, comY = 0L, gyrationSq = 4_000_000L)
+        val air = MassDistribution(mass = 1_000L, comX = 0L, comY = 0L, gyrationSq = 1_000_000L)
+        // The ship carries 1e6 over 100_000 of mass, so air of 1_000 wants exactly 10_000.
+        fun dragFrom(held: Long) = airCoupling(
+            airMomentumX = held, airMomentumY = 0L, airAngImpulse = 0L,
+            airMassBefore = 1_000L, ventedMass = 0L,
+            vesselImpulseX = 1_000_000L, vesselImpulseY = 0L, angImpulse = 0L,
+            ship = ship, air = air, sharePermille = 1000,
+        ).dragX
+
+        assertEquals(10_000L, dragFrom(0L), "still air was not brought up to the hull's speed")
+        assertEquals(0L, dragFrom(10_000L), "air already at the hull's speed was dragged further")
+        assertEquals(-5_000L, dragFrom(15_000L), "air running ahead of the hull was not slowed")
+        // A partial share closes part of the gap, and the sign is the same.
+        assertEquals(
+            1_000L,
+            airCoupling(
+                0L, 0L, 0L, 1_000L, 0L, 1_000_000L, 0L, 0L, ship, air, sharePermille = 100,
+            ).dragX,
+            "a tenth of the gap is not a tenth of the drag",
+        )
+    }
+
+
+
     private fun bareHull(grid: Grid): VesselState {
         val deck = DeckArray(grid)
         fun put(x: Int, y: Int) { if (grid.inBounds(x, y) && deck[grid.tile(x, y)] == null) deck += Hull(grid.tile(x, y)) }

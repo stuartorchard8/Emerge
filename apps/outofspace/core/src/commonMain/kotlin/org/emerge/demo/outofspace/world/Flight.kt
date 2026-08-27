@@ -38,6 +38,31 @@ object Flight {
     fun ventTilesPerTick(ticksPerSecond: Int): Long =
         VENT_METRES_PER_SECOND * 1_000L / (Thruster.TILE_MILLIMETRES * ticksPerSecond)
 
+    /**
+     * **The dial.** How long the atmosphere takes to catch up with a hull that has changed speed,
+     * in seconds.
+     *
+     * The vessel and its air are two bodies: the air is not in [VesselState.mass] and never has
+     * been, so a ship that accelerates leaves its atmosphere behind and has to drag it along. This
+     * is how hard it drags. Small is a stiff coupling — air that might as well be bolted down; large
+     * is a ship that swims inside its own gas and keeps drifting after the engines cut.
+     *
+     * ⚠️ **Not a physical constant, and there is no right answer to look up.** Real air in a real
+     * room follows its walls in well under a second, through viscosity and pressure waves this sim
+     * does not have. Two seconds is chosen to be *felt* — a ship whose air visibly lags is the point
+     * of modelling it at all.
+     */
+    const val AIR_COUPLING_SECONDS: Long = 2L
+
+    /**
+     * What share of the gap between hull and air is closed each time the coupling fires, in permille.
+     *
+     * Scaled by the firing period so that moving the fluid cadence changes how *often* the air is
+     * dragged and not how *fast* it catches up.
+     */
+    fun airCouplingPermille(ticksPerSecond: Int, period: Int): Int =
+        (1000L * period / (AIR_COUPLING_SECONDS * ticksPerSecond)).coerceIn(1L, 1000L).toInt()
+
     /** [Frac]'s unit: 1 tile/tick² = one whole Frac. Shared to prevent copies. */
     const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()
 }
@@ -195,4 +220,94 @@ fun experiencedGravity(deckGravity: Frac2, netImpulseX: Long, netImpulseY: Long,
     if (mass <= 0L) return deckGravity
     val a = frameAcceleration(netImpulseX, netImpulseY, mass)
     return Frac2(Frac(deckGravity.x.raw - a.x.raw), Frac(deckGravity.y.raw - a.y.raw))
+}
+
+/**
+ * What the coupling moves between a hull and its own atmosphere in one firing.
+ *
+ * [carriedX]/[carriedY]/[carriedTorque] left the vessel with vented gas and belong to
+ * [VesselState.ventMomentumX]; [dragX]/[dragY]/[dragTorque] moved from the ship to the air and
+ * belong to [VesselState.airMomentumX], with the ship taking the negative of each.
+ */
+data class AirExchange(
+    val dragX: Long, val dragY: Long, val dragTorque: Long,
+    val carriedX: Long, val carriedY: Long, val carriedTorque: Long,
+) {
+    companion object { val NONE = AirExchange(0L, 0L, 0L, 0L, 0L, 0L) }
+}
+
+/**
+ * The ship and its air are two bodies, and this is the whole of what passes between them.
+ *
+ * A hull that changes speed leaves its gas behind: the atmosphere is not in [VesselState.mass] —
+ * [forEachVesselMass] takes no air argument — so it is a body beside the vessel rather than part of
+ * it, and dragging it along costs the ship momentum it has to be charged for.
+ *
+ * **Two things happen here and the order matters.**
+ *
+ * 1. **Gas that left takes its share with it**, in proportion to the mass that went. This has to
+ *    come first, or the store outlives the gas that was carrying it: the coupling then reads a
+ *    momentum too large for the mass still aboard, decides the air is running ahead of the hull, and
+ *    hands the difference **back to the ship** — a reactionless drive built out of the repair for a
+ *    reactionless drive.
+ * 2. **The rest is dragged toward the hull's own motion**, by [sharePermille] of the gap. The target
+ *    is written as the ship's momentum through the mass ratio rather than as a velocity, so no
+ *    intermediate `p/m` is ever formed and rounded: `M_air · v_ship` is exactly
+ *    `p_ship · M_air / M_ship`.
+ *
+ * The angular half is the same statement about a shared ω — `L_air = ω · I_air`, so the target is
+ * the ship's angular momentum through the ratio of the two moments, divided gyration-first for the
+ * reason [angularVelocity] gives.
+ *
+ * ⚠️ **A pure function, and deliberately.** This lived inline in the reducer's tick, where the only
+ * way to ask it a question was to fly a ship and watch — and what it does is a couple of per cent
+ * against a breach reaction a thousand times larger, so a test written that way measured nothing and
+ * passed whether the first half was there or not. Two integration-level attempts failed to
+ * discriminate it, by 0% and 1.6%. The law is small and exact; it wants asking, not observing.
+ */
+fun airCoupling(
+    airMomentumX: Long,
+    airMomentumY: Long,
+    airAngImpulse: Long,
+    /** The atmosphere's mass before this tick's venting. */
+    airMassBefore: Long,
+    ventedMass: Long,
+    vesselImpulseX: Long,
+    vesselImpulseY: Long,
+    angImpulse: Long,
+    ship: MassDistribution,
+    /** The atmosphere's distribution *after* venting, taken about the ship's centre of mass. */
+    air: MassDistribution,
+    sharePermille: Int,
+): AirExchange {
+    val carriedX: Long
+    val carriedY: Long
+    val carriedTorque: Long
+    if (airMassBefore > 0L && ventedMass > 0L) {
+        val gone = ventedMass.coerceAtMost(airMassBefore)
+        carriedX = scaledRatio(airMomentumX, airMassBefore, gone)
+        carriedY = scaledRatio(airMomentumY, airMassBefore, gone)
+        carriedTorque = scaledRatio(airAngImpulse, airMassBefore, gone)
+    } else {
+        carriedX = 0L; carriedY = 0L; carriedTorque = 0L
+    }
+    if (air.mass <= 0L || ship.mass <= 0L) {
+        return AirExchange(0L, 0L, 0L, carriedX, carriedY, carriedTorque)
+    }
+
+    val heldX = airMomentumX - carriedX
+    val heldY = airMomentumY - carriedY
+    val heldAng = airAngImpulse - carriedTorque
+    val dragTorque =
+        if (air.gyrationSq <= 0L || ship.gyrationSq <= 0L) 0L
+        else {
+            val byGyration = scaledRatio(angImpulse, ship.gyrationSq, air.gyrationSq)
+            (scaledRatio(byGyration, ship.mass, air.mass) - heldAng) / 1000L * sharePermille
+        }
+    return AirExchange(
+        dragX = (scaledRatio(vesselImpulseX, ship.mass, air.mass) - heldX) / 1000L * sharePermille,
+        dragY = (scaledRatio(vesselImpulseY, ship.mass, air.mass) - heldY) / 1000L * sharePermille,
+        dragTorque = dragTorque,
+        carriedX = carriedX, carriedY = carriedY, carriedTorque = carriedTorque,
+    )
 }

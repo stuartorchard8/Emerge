@@ -88,6 +88,8 @@ import org.emerge.demo.outofspace.world.ShipMotion
 import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.massDistribution
 import org.emerge.demo.outofspace.world.tileCentre
+import org.emerge.demo.outofspace.world.airCoupling
+import org.emerge.demo.outofspace.world.atmosphereDistribution
 import org.emerge.demo.outofspace.world.torqueAbout
 import org.emerge.demo.outofspace.world.fullness
 import org.emerge.demo.outofspace.world.vesselMass
@@ -603,6 +605,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var ventImpulseX = 0L
         var ventImpulseY = 0L
         var ventTorque = 0L
+        // What the coupling moved between the hull and its own atmosphere this tick — see
+        // [Flight.AIR_COUPLING_SECONDS]. World frame already: it is derived from the ship's own
+        // world-frame momentum, so nothing here needs turning.
+        var airDragX = 0L
+        var airDragY = 0L
+        var airDragTorque = 0L
+        // Air momentum that left with vented gas, and so stops being the atmosphere's.
+        var airCarriedX = 0L
+        var airCarriedY = 0L
+        var airCarriedTorque = 0L
         if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET, frozen)) {
             cadences = cadences.copy(fluid = Cadence(state.tick, FLUID_PERIOD))
             // The temperatures this pass moves the vapour by, taken here rather than shared with the
@@ -633,6 +645,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventImpulseX += pipes.ventImpulseX
             ventImpulseY += pipes.ventImpulseY
             ventTorque += pipes.ventTorque
+
+            // ── The ship and its air are two bodies ───────────────────────────
+            //
+            // The atmosphere is not in [VesselState.mass] — `forEachVesselMass` takes no air
+            // argument — so a hull that changes speed leaves its gas behind and has to drag it
+            // along. Both halves of that exchange are stated in [airCoupling]; this only files them.
+            val exchange = airCoupling(
+                airMomentumX = state.airMomentumX,
+                airMomentumY = state.airMomentumY,
+                airAngImpulse = state.airAngImpulse,
+                airMassBefore = state.air.totalMass,
+                ventedMass = fluidVentedMass,
+                vesselImpulseX = state.vesselImpulseX,
+                vesselImpulseY = state.vesselImpulseY,
+                angImpulse = state.angImpulse,
+                ship = w.about,
+                air = atmosphereDistribution(state.grid, fluidAir, w.about),
+                sharePermille = Flight.airCouplingPermille(cfg.ticksPerSecond, FLUID_PERIOD),
+            )
+            airDragX = exchange.dragX
+            airDragY = exchange.dragY
+            airDragTorque = exchange.dragTorque
+            airCarriedX = exchange.carriedX
+            airCarriedY = exchange.carriedY
+            airCarriedTorque = exchange.carriedTorque
 
             // ── Latent heat ───────────────────────────────────────────────────
             //
@@ -783,8 +820,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // subtracts or the ledger drifts by a gram a tick.
         val ventX = state.pose.turnedX(ventImpulseX, ventImpulseY)
         val ventY = state.pose.turnedY(ventImpulseX, ventImpulseY)
-        val netImpulseX = thrustX - handedX - exhaustX - ventX
-        val netImpulseY = thrustY - handedY - exhaustY - ventY
+        // ⚠️ `airDrag` is subtracted like the exhaust and **not** turned: it is derived from the
+        // ship's own world-frame momentum, so it is already in the world. Turning it would rotate a
+        // world vector by the ship's attitude a second time.
+        val netImpulseX = thrustX - handedX - exhaustX - ventX - airDragX
+        val netImpulseY = thrustY - handedY - exhaustY - ventY - airDragY
 
         // The same five contributions crossed with the point each one is applied at — see
         // [torqueAbout] for why this is summed term by term and not derived from `netImpulse`.
@@ -794,7 +834,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // nozzle bolted anywhere, so the honest place to apply it is the centre of mass, where its
         // lever arm is zero. When a real engine retires it the term goes with it.
         val handedTorque = w.bodyHandedTorque + bodiesDrifted.handedTorque
-        val netTorque = -ventTorque - handedTorque - w.exhaustTorque
+        val netTorque = -ventTorque - handedTorque - w.exhaustTorque - airDragTorque
 
         return state.copy(
             deck = w.deck,
@@ -863,9 +903,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             bodyAngImpulse = state.bodyAngImpulse + handedTorque,
             // Momentum and twist that are genuinely overboard: astern of a breach, not aboard.
             // Written from the same two numbers the ship just took the negative of.
-            ventMomentumX = state.ventMomentumX + ventX,
-            ventMomentumY = state.ventMomentumY + ventY,
-            ventAngImpulse = state.ventAngImpulse + ventTorque,
+            ventMomentumX = state.ventMomentumX + ventX + airCarriedX,
+            ventMomentumY = state.ventMomentumY + ventY + airCarriedY,
+            ventAngImpulse = state.ventAngImpulse + ventTorque + airCarriedTorque,
+            // The atmosphere's own store: what it took off the hull, less what left with the gas.
+            airMomentumX = state.airMomentumX - airCarriedX + airDragX,
+            airMomentumY = state.airMomentumY - airCarriedY + airDragY,
+            airAngImpulse = state.airAngImpulse - airCarriedTorque + airDragTorque,
             motion = motion,
             impacts = bodiesDrifted.impacts,
             cadences = cadences,

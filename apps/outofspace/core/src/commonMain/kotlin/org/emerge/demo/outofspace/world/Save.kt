@@ -218,6 +218,12 @@ object Save {
         out.append("ventmomentum ").append(state.ventMomentumX)
             .append(' ').append(state.ventMomentumY)
             .append('\n')
+        // The atmosphere's own momentum, in the world, and its angular half. Appended: absent reads
+        // as zero, which is air that has never been dragged anywhere.
+        out.append("airmomentum ").append(state.airMomentumX)
+            .append(' ').append(state.airMomentumY)
+            .append(' ').append(state.airAngImpulse)
+            .append('\n')
         return out.toString()
     }
 
@@ -674,6 +680,9 @@ object Save {
         var ventAngImpulse = 0L
         var ventMomentumX = 0L
         var ventMomentumY = 0L
+        var airMomentumX = 0L
+        var airMomentumY = 0L
+        var airAngImpulse = 0L
         var netImpulseX = 0L
         var netImpulseY = 0L
         var tick = 0L
@@ -727,6 +736,9 @@ object Save {
                     if (tokens.size > 3) ventAngImpulse = scaled(3)
                 }
                 "ventmomentum" -> { ventMomentumX = scaled(1); ventMomentumY = scaled(2) }
+                "airmomentum" -> {
+                    airMomentumX = scaled(1); airMomentumY = scaled(2); airAngImpulse = scaled(3)
+                }
                 "tick" -> tick = long(1)
                 // `mined` is v9's name for it: the same quantity, counted at the miner instead.
                 "mined", "extracted" -> extracted = scaled(1)
@@ -1009,6 +1021,9 @@ object Save {
             ventAngImpulse = ventAngImpulse,
             ventMomentumX = ventMomentumX,
             ventMomentumY = ventMomentumY,
+            airMomentumX = airMomentumX,
+            airMomentumY = airMomentumY,
+            airAngImpulse = airAngImpulse,
             tick = tick,
             extractedMass = extracted,
             ventedMass = vented,

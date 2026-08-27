@@ -470,6 +470,22 @@ data class VesselState(
     /** The angular half of [ventMomentumX], about the centre of mass. */
     val ventAngImpulse: Long = 0L,
     /**
+     * The atmosphere's own momentum, in the **world** — the second body's half of the ledger.
+     *
+     * ⛔ **A store, and unlike the per-edge field this replaces, one that is actually spent.** That
+     * one was written by the pressure solver and read by no physics, so counting it let the identity
+     * close over momentum that could never move anything. This is read every time the coupling fires
+     * and it changes what the ship does: a hull that has just lit its engines is towing five tonnes
+     * of air that would rather stay where it was, and it pays for that.
+     *
+     * ⚠️ **Not in [mass], [distribution] or anything rotational** — see [atmosphereDistribution].
+     * The air is a body beside the vessel, not part of it, which is exactly what lets it lag.
+     */
+    val airMomentumX: Long = 0L,
+    val airMomentumY: Long = 0L,
+    /** The angular half of [airMomentumX], about the vessel's centre of mass. */
+    val airAngImpulse: Long = 0L,
+    /**
      * Cumulative angular momentum the vessel has handed the bodies — the angular twin of
      * [bodyImpulseX], and the same kind of store for the same reason: `+τ` to the body and `−τ` to
      * the ship conserve by construction, but only the ship's half is inside the ledger.
@@ -819,10 +835,10 @@ data class VesselState(
      * it was correcting for.
      */
     val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX +
-        ventMomentumX - debugImpulseX
+        ventMomentumX + airMomentumX - debugImpulseX
 
     val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY +
-        ventMomentumY - debugImpulseY
+        ventMomentumY + airMomentumY - debugImpulseY
 
     /**
      * The angular identity as one number: `angImpulse + exhaust + bodies == 0`, or the ship has been
@@ -852,7 +868,7 @@ data class VesselState(
      * the gas back a momentum that something spends.
      */
     val angularBalance: Long get() =
-        angImpulse + exhaustAngImpulse + bodyAngImpulse + ventAngImpulse
+        angImpulse + exhaustAngImpulse + bodyAngImpulse + ventAngImpulse + airAngImpulse
 
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
