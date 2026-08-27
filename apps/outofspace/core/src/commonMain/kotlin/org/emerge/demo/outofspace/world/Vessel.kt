@@ -470,6 +470,23 @@ data class VesselState(
     /** The angular half of [ventMomentumX], about the centre of mass. */
     val ventAngImpulse: Long = 0L,
     /**
+     * Mass and energy the vessel has drawn in **from the world outside** — see [Ambient].
+     *
+     * The mirror of [airVentedMass], and it needs its own store for the same reason that one does:
+     * a hull flying through an atmosphere is not a closed system, and gas appearing inside it is
+     * either accounted for or reads as the air ledger breaking. Zero in vacuum, which is every save
+     * written before there was anything out there.
+     */
+    val ambientAirMass: Long = 0L,
+    val ambientAirEnergy: Long = 0L,
+    /**
+     * **What is outside the grid**, and the only place a planet exists — see [Ambient].
+     *
+     * Vacuum unless a world says otherwise. It is a *setting*, like [gravity]: nothing in the tick
+     * writes it, and a fixture that states it means it.
+     */
+    val ambient: Ambient = Ambient.VACUUM,
+    /**
      * The atmosphere's own momentum, in the **world** — the second body's half of the ledger.
      *
      * ⛔ **A store, and unlike the per-edge field this replaces, one that is actually spent.** That
@@ -692,7 +709,8 @@ data class VesselState(
      * quantities that share a baseline have to be summed in one place, or eventually they are not
      * summed the same way.
      */
-    val airBalance: Long get() = atmosphereMass + airVentedMass - injectedAirMass - baselineAirMass
+    val airBalance: Long get() =
+        atmosphereMass + airVentedMass - injectedAirMass - ambientAirMass - baselineAirMass
 
     /**
      * The same statement about the air's energy — [airBalance]'s twin, and zero for its reasons.
@@ -706,7 +724,7 @@ data class VesselState(
      */
     val airEnergyBalance: Long
         get() = atmosphereEnergy + airVentedEnergy - solidToAirEnergy - injectedAirEnergy -
-            baselineAirEnergy
+            ambientAirEnergy - baselineAirEnergy
 
     /**
      * How far the solid energy ledger is out: `stored + radiated + toAir − generated − inserted −

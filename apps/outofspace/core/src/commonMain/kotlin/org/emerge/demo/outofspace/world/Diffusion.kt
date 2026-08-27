@@ -55,6 +55,16 @@ class DiffusionStep(
     val ventedMass: Long,
     val ventedEnergy: Long,
     /**
+     * Mass and energy drawn **in** from [Ambient] — the mirror of [ventedMass], and zero in vacuum.
+     *
+     * ⛔ **It brings no momentum with it, and that omission is the drag.** The ambient is at rest in
+     * the world, so a gram entering carries nothing; the coupling then drags that gram up to the
+     * hull's speed at the ship's expense. Booking an impulse here as well would charge the ship
+     * twice for the same gram. See [airCoupling] and [Ambient].
+     */
+    val enteredMass: Long,
+    val enteredEnergy: Long,
+    /**
      * The momentum [ventedMass] carried off the grid with it, in the **grid's** axes, and the twist
      * it took about the centre of mass.
      *
@@ -216,6 +226,17 @@ fun diffuseFluid(
     feltGravity: Frac2 = Frac2(Frac(0L), Frac(0L)),
     /** The vessel's spin, [Coord] raw per tick, for the centrifugal half of the drift. */
     spin: Long = 0L,
+    /** What is outside the grid — see [Ambient]. Vacuum by default, which is every save so far. */
+    ambient: Ambient = Ambient.VACUUM,
+    /**
+     * How fast the vessel is going through [ambient], world frame at [Flight.PER_TILE] to the tile.
+     *
+     * ⚠️ **The ship's velocity, not the gas's.** The ambient is at rest, so this *is* the closing
+     * speed, and it is what makes the leading face scoop more than the trailing one — the ram that
+     * turns a still atmosphere into drag.
+     */
+    throughX: Long = 0L,
+    throughY: Long = 0L,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
@@ -233,12 +254,23 @@ fun diffuseFluid(
     // that is the only case that gets the old behaviour — which is what the mass-only tests want.
     val temperature = kelvin ?: energies?.let { gasKelvin(it, heatCapacity(tiles, masses)) }
 
+    // One tile's worth of the outside, as energy — computed once rather than per face per species.
+    val ambientEnergyPerTile: Long =
+        if (ambient.massPerTile <= 0L) 0L
+        else {
+            val parcel = MassArray(1)
+            for (fluid in Fluid.ALL) parcel.add(TileIndex(0), fluid, ambient.perTile[fluid.species])
+            heatCapacityAt(parcel, TileIndex(0)) * ambient.kelvin
+        }
+
     val startingMass = tileMass(tiles, masses)
     val deltaMass = MassArray(tiles)
     val deltaEnergy = if (energies == null) null else EnergyArray(tiles)
 
     var ventedMass = 0L
     var ventedEnergy = 0L
+    var enteredMass = 0L
+    var enteredEnergy = 0L
     var ventImpulseX = 0L
     var ventImpulseY = 0L
     var ventTorque = 0L
@@ -261,7 +293,13 @@ fun diffuseFluid(
     for (i in 0 until tiles) {
         val tile = TileIndex(i)
         val ownMass = startingMass[tile.index]
-        if (ownMass <= 0L) continue
+        // ⚠️ **Not `continue` on an empty cell, and that is the whole of what makes an ambient
+        // work.** Shedding is skipped for a cell with nothing in it — obviously — but the rim
+        // faces are on exactly the cells that have nothing in them, because the tiles between a
+        // hull and the edge of the grid are vacuum. Guarding the whole tile skipped every face
+        // gas could have come *in* through, and the atmosphere outside was measured entering at
+        // precisely zero grams however dense it was and however fast the ship went.
+        if (ownMass <= 0L && ambient.massPerTile <= 0L) continue
 
         val left = edges.leftEdgeOf(tile)
         val right = edges.rightEdgeOf(tile)
@@ -303,7 +341,7 @@ fun diffuseFluid(
         faceSkew[3] = driftPermille(downX)
 
         var outMass = 0L
-        masses.forEachFluid(tile) { fluid, count ->
+        if (ownMass > 0L) masses.forEachFluid(tile) { fluid, count ->
             // Whatever of this species is *not* frost or puddle. Free for a fluid with no critical
             // point on file — the overwhelming majority of what a vessel's air is made of — because
             // [vapourMass] answers those from the first line without touching the dome.
@@ -355,29 +393,71 @@ fun diffuseFluid(
                 ) continue
 
                 deltaMass.add(tile, fluid, -out)
-                if (neighbour == TileIndex.NONE) {
-                    ventedMass += out
-                    if (ventSpeed > 0L) {
-                        // Out through this face, at [ventSpeed]. The faces are ordered up, down,
-                        // left, right — see where [faceAperture] is filled.
-                        val p = out * ventSpeed
-                        val px = if (f == 2) -p else if (f == 3) p else 0L
-                        val py = if (f == 0) -p else if (f == 1) p else 0L
-                        ventImpulseX += px
-                        ventImpulseY += py
-                        // ⚠️ Taken about the **cell's centre** rather than the face it left by, and
-                        // that is exact rather than close enough: the face is offset from the centre
-                        // along its own normal, the impulse is along that same normal, and moving
-                        // the arm parallel to the force does not change `r × F` at all.
-                        ventTorque += torqueAbout(
-                            about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)), px, py,
-                        )
-                    }
-                } else {
-                    deltaMass.add(neighbour, fluid, out)
-                }
+                if (neighbour == TileIndex.NONE) ventedMass += out
+                else deltaMass.add(neighbour, fluid, out)
                 faceOut[f] += out
                 outMass += out
+            }
+        }
+
+        // ── What came the other way, and what the rim therefore owes ──
+        //
+        // ⛔ **The rim is an exchange now, not a drain.** Outside used to be stated by absence — a
+        // face with nothing on the far side only ever shed. A vessel near a planet is *in*
+        // something, and that something pushes back: see [Ambient], which is the only place in the
+        // game a planet exists.
+        for (f in 0 until FACES) {
+            if (faceNeighbour[f] != TileIndex.NONE) continue
+            val aperture = faceAperture[f]
+            if (aperture <= 0) continue
+            var came = 0L
+            if (ambient.massPerTile > 0L) {
+                // ⚠️ **Two terms, and only the second one knows the ship is moving.** The first is
+                // the ambient shedding its share inward exactly as a neighbouring cell would, which
+                // is what fills a hull left sitting in air. The second is the **ram**: a face whose
+                // outward normal points into the oncoming stream sweeps up whatever it drives
+                // through, and it is that asymmetry between the leading and the trailing face that
+                // turns a still atmosphere into drag.
+                val approach = when (f) {
+                    0 -> -throughY
+                    1 -> throughY
+                    2 -> -throughX
+                    else -> throughX
+                }.coerceIn(0L, Flight.PER_TILE)
+                for (fluid in Fluid.ALL) {
+                    val held = ambient.perTile[fluid.species]
+                    if (held <= 0L) continue
+                    var inward = held / SLOTS * FACE_SHARE
+                    if (approach > 0L) inward += scaledRatio(held, Flight.PER_TILE, approach)
+                    if (aperture < ApertureField.OPEN) inward = inward * aperture / ApertureField.OPEN
+                    if (inward <= 0L) continue
+                    deltaMass.add(tile, fluid, inward)
+                    came += inward
+                }
+            }
+            enteredMass += came
+            if (came > 0L && ambientEnergyPerTile > 0L) {
+                enteredEnergy += scaledRatio(came, ambient.massPerTile, ambientEnergyPerTile)
+            }
+            // ⚠️ **Momentum on the NET, and that is not a rounding nicety.** The rocket term is gas
+            // expanding into vacuum; a hull submerged in a gas giant swaps enormous quantities both
+            // ways through the same face and is not a rocket at all. Booked on the gross outflow it
+            // would read as thrust proportional to how thick the soup was. Only mass the ship
+            // actually *loses* through a face is a rocket.
+            val net = faceOut[f] - came
+            if (ventSpeed > 0L && net > 0L) {
+                val p = net * ventSpeed
+                val px = if (f == 2) -p else if (f == 3) p else 0L
+                val py = if (f == 0) -p else if (f == 1) p else 0L
+                ventImpulseX += px
+                ventImpulseY += py
+                // ⚠️ Taken about the **cell's centre** rather than the face it left by, and that is
+                // exact rather than close enough: the face is offset from the centre along its own
+                // normal, the impulse is along that same normal, and moving the arm parallel to the
+                // force does not change `r × F` at all.
+                ventTorque += torqueAbout(
+                    about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)), px, py,
+                )
             }
         }
 
@@ -443,6 +523,8 @@ fun diffuseFluid(
         air = if (energies == null) Stuff.gas(masses) else Stuff.from(masses, energies),
         ventedMass = ventedMass,
         ventedEnergy = ventedEnergy,
+        enteredMass = enteredMass,
+        enteredEnergy = enteredEnergy,
         ventImpulseX = ventImpulseX,
         ventImpulseY = ventImpulseY,
         ventTorque = ventTorque,

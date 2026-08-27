@@ -600,6 +600,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
+        // Gas the vessel drew in from whatever it is flying through — see [Ambient].
+        var ambientInMass = 0L
+        var ambientInEnergy = 0L
         // The reaction the vessel takes for the gas that left it — the *only* way the atmosphere is
         // permitted to push the hull now. Grid axes; turned into the world with everything else at
         // the one frame boundary below.
@@ -632,9 +635,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // air by a burn that has not been booked yet.
             val down = state.feltGravity
             val spin = angularVelocity(state.angImpulse, w.about)
+            // ⚠️ **The start-of-tick velocity**, which is the speed the ship was actually doing
+            // while the gas was crossing its rim. Turned into the *grid* — the faces are grid faces,
+            // and which one is the leading one is a question about the ship's own axes.
+            val throughX = state.pose.unturnedX(state.velocityX, state.velocityY)
+            val throughY = state.pose.unturnedY(state.velocityX, state.velocityY)
             val result = diffuseFluid(
                 edges, roomApertures, w.masses, w.airEnergy, roomKelvin,
                 ventSpeed = ventSpeed, about = w.about, feltGravity = down, spin = spin,
+                ambient = state.ambient, throughX = throughX, throughY = throughY,
             )
             // ── And then the part that does not diffuse ───────────────────────
             //
@@ -652,6 +661,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
             fluidVentedMass = result.ventedMass + settled.ventedMass
             fluidVentedEnergy = result.ventedEnergy + settled.ventedEnergy
+            ambientInMass = result.enteredMass
+            ambientInEnergy = result.enteredEnergy
             ventImpulseX += result.ventImpulseX
             ventImpulseY += result.ventImpulseY
             ventTorque += result.ventTorque
@@ -929,6 +940,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             ventMomentumY = state.ventMomentumY + ventY + airCarriedY,
             ventAngImpulse = state.ventAngImpulse + ventTorque + airCarriedTorque,
             // The atmosphere's own store: what it took off the hull, less what left with the gas.
+            ambientAirMass = state.ambientAirMass + ambientInMass,
+            ambientAirEnergy = state.ambientAirEnergy + ambientInEnergy,
             airMomentumX = state.airMomentumX - airCarriedX + airDragX,
             airMomentumY = state.airMomentumY - airCarriedY + airDragY,
             airAngImpulse = state.airAngImpulse - airCarriedTorque + airDragTorque,
