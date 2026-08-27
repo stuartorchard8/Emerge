@@ -412,23 +412,47 @@ fun diffuseFluid(
             if (aperture <= 0) continue
             var came = 0L
             if (ambient.massPerTile > 0L) {
-                // ⚠️ **Two terms, and only the second one knows the ship is moving.** The first is
-                // the ambient shedding its share inward exactly as a neighbouring cell would, which
-                // is what fills a hull left sitting in air. The second is the **ram**: a face whose
-                // outward normal points into the oncoming stream sweeps up whatever it drives
-                // through, and it is that asymmetry between the leading and the trailing face that
-                // turns a still atmosphere into drag.
-                val approach = when (f) {
+                // ⛔ **The ambient is not the same on every face of a moving ship.** What a face
+                // meets is the outside compressed or rarefied by however fast the hull is driving
+                // into it — `1 + M` along that face's own outward normal, where `M` is the closing
+                // speed as a fraction of the speed of sound. Half of Mach 1 into the wind is a face
+                // reading **150%** of an atmosphere while the one behind reads **50%**, and past
+                // Mach 1 the trailing face reads **nothing at all**: a vessel outrunning sound
+                // leaves a vacuum behind it, and this is where the wake comes from.
+                //
+                // ⚠️ **This replaced a bespoke ram *intake* added on top of an unchanged share**,
+                // which was the wrong shape however it was tuned: it could make the leading face
+                // scoop harder but it could never make the trailing one empty, so a ship at any
+                // speed still sat in a full atmosphere and there was no wake to be had. Scaling the
+                // ambient instead is one idea rather than two, and the ordinary exchange then does
+                // all of the work.
+                //
+                // ⚠️ **[ventSpeed] is the speed of sound**, and it is the same number gas leaves a
+                // hole at because those are the same physical quantity. One constant, two uses.
+                val closing = when (f) {
                     0 -> -throughY
                     1 -> throughY
                     2 -> -throughX
                     else -> throughX
-                }.coerceIn(0L, Flight.PER_TILE)
-                for (fluid in Fluid.ALL) {
+                }
+                val sonic = ventSpeed * Flight.PER_TILE
+                val ramPermille =
+                    if (sonic <= 0L) 1000L else (1000L + closing * 1000L / sonic).coerceAtLeast(0L)
+                // ⚠️ **Two things multiply here and they are not the same thing twice.** How
+                // *dense* the outside is at this face is [ramPermille] above; how *fast* it is
+                // being driven across the face is the sweep below. A flux is one times the other —
+                // `ρ_eff × (thermal share + bulk sweep)` — and with only the first the intake is a
+                // fixed proportion of a denser atmosphere, which is a drag that stays stubbornly
+                // **linear** in speed however hard the ship goes. Measured with the sweep missing:
+                // momentum lost per unit of speed was 306, 306, 306, 300 from Mach 0.1 to 1, i.e.
+                // flat. The sweep is what makes fast cost more than proportionally.
+                val sweep = if (closing > 0L) closing else 0L
+                if (ramPermille > 0L) for (fluid in Fluid.ALL) {
                     val held = ambient.perTile[fluid.species]
                     if (held <= 0L) continue
-                    var inward = held / SLOTS * FACE_SHARE
-                    if (approach > 0L) inward += scaledRatio(held, Flight.PER_TILE, approach)
+                    val effective = scaledRatio(held, 1000L, ramPermille)
+                    var inward = effective / SLOTS * FACE_SHARE
+                    if (sweep > 0L) inward += scaledRatio(effective, Flight.PER_TILE, sweep)
                     if (aperture < ApertureField.OPEN) inward = inward * aperture / ApertureField.OPEN
                     if (inward <= 0L) continue
                     deltaMass.add(tile, fluid, inward)

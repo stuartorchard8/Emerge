@@ -111,7 +111,12 @@ class AtmosphericFlightTest {
      * share inward whatever happens, and the leading face *also* sweeps up whatever it drives
      * through. So the momentum lost per unit of speed is not constant — it climbs as the ram term
      * overtakes the diffusive one, which is a linear drag at a crawl tending to a quadratic one at
-     * speed. Measured across sixteen-fold: 248, 256, 271, 302, 365.
+     * speed. Measured as momentum lost per unit of speed from Mach 0.1 to Mach 1: **449, 674,
+     * 1005, 1320**.
+     *
+     * ⚠️ **It rolls back over above Mach 1** — 1091 at Mach 2 — and that is the model reaching its
+     * limit rather than a fact about flight. The hull floods faster than it can pass gas through, so
+     * the intake chokes on how much the interior will take. Real drag goes on climbing.
      */
     @Test
     fun `drag grows faster than linearly with speed`() {
@@ -178,6 +183,50 @@ class AtmosphericFlightTest {
             "a hull gas can blow straight through was dragged as hard as one that traps it " +
                 "($duct against $scoop) — the atmosphere has one bulk momentum, so what leaves " +
                 "carries the average and a fresh parcel is indistinguishable from a resident one",
+        )
+    }
+
+    /**
+     * **What a face meets is the outside compressed or rarefied by how fast the hull drives into
+     * it** — `1 + M` along that face's own outward normal.
+     *
+     * Half of Mach 1 into the wind is a leading face reading about 150% of an atmosphere while the
+     * one behind reads 50%; past Mach 1 the trailing face reads **nothing at all**, because a vessel
+     * outrunning sound leaves a vacuum behind it. That is where the wake comes from, and it is the
+     * whole of what makes a moving ship's boundary asymmetric.
+     *
+     * ⚠️ [Flight.ventTilesPerTick] is the speed of sound *and* the speed gas leaves a hole at,
+     * because those are the same physical quantity — five tiles a tick at 64 Hz.
+     *
+     * Measured, leading against trailing across the range: **3.0, 6.9, 15.2, 42.8, 201.5**.
+     */
+    @Test
+    fun `a moving hull meets a compressed atmosphere ahead and a rarefied one behind`() {
+        fun ratioAt(tilesPerTick: Long): Double {
+            val c = OutofspaceController(OutofspaceConfig(), flying(Ambient.EARTHLIKE, tilesPerTick))
+            repeat(600) { c.stepOnce() }
+            val s = c.state
+            assertEquals(0L, s.airBalance, "the air ledger broke at $tilesPerTick")
+            // The vacuum gap outside each wall: +x is the leading side, -x the trailing one.
+            val ahead = s.air.mixtureAt(s.grid.tile(23, 8)).total
+            val behind = s.air.mixtureAt(s.grid.tile(1, 8)).total
+            assertTrue(behind >= 0L)
+            return ahead.toDouble() / (behind + 1L)
+        }
+
+        val crawling = ratioAt(500_000_000L)     // Mach 0.1
+        val transonic = ratioAt(2_500_000_000L)  // Mach 0.5
+        val supersonic = ratioAt(10_000_000_000L) // Mach 2
+
+        assertTrue(crawling > 1.0, "a moving hull met the same atmosphere on both sides: $crawling")
+        assertTrue(
+            transonic > crawling * 2.0,
+            "the gradient did not steepen with speed: $crawling at Mach 0.1, $transonic at Mach 0.5",
+        )
+        assertTrue(
+            supersonic > 50.0,
+            "past the speed of sound the trailing face still held a real atmosphere " +
+                "(leading is only ${supersonic}x it) — there is no wake",
         )
     }
 
