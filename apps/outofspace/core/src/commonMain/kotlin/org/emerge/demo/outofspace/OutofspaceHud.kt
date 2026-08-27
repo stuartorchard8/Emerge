@@ -120,10 +120,26 @@ class OutofspaceHud {
                 keyValue("Extracted", mass(s.extractedMass))
                 keyValue("Aboard", mass(s.inTransitMass))
                 keyValue("- in storage", mass(s.stockpile.totalMass))
+                keyValue("Built in", mass(s.builtMass))
                 keyValue("Vented", mass(s.ventedMass))
-                // Storage is a view over storages (part of "aboard").
-                val balanced = s.extractedMass == s.inTransitMass + s.ventedMass
-                row(if (balanced) "balanced" else "LEAK", if (balanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                // ⛔ **`builtMass` and `baselineCargoMass` were missing from this sum, and their
+                // absence is what made the indicator useless.** `builtMass`'s own doc says why it
+                // has to be here — "without this term the conservation check would read a completed
+                // length of track as a leak of exactly its bill of materials" — and that is exactly
+                // what this panel did: on a real save it showed 8.8 t of LEAK, of which 7.8 t was
+                // simply the ship the player had built. An alarm that is always on is not an alarm,
+                // and it is worse than none because it hides the 1.0 t that was real.
+                //
+                // ⚠️ **The expression is the harness's `massBalance`, to the term.** The suite and
+                // the instrument have always used the four-term form; only the panel disagreed, so
+                // this is the panel being brought into line rather than a new rule. If they ever
+                // diverge again the harness is the one that is right.
+                val drift = s.inTransitMass + s.ventedMass + s.builtMass -
+                    s.extractedMass - s.baselineCargoMass
+                row(
+                    if (drift == 0L) "balanced" else "LEAK ${mass(drift)}",
+                    if (drift == 0L) 0x6ED09AFFL else 0xE05A4AFFL,
+                )
                 gap()
                 title("ATMOSPHERE")
                 keyValue("Aboard", mass(s.atmosphereMass))
@@ -1201,11 +1217,18 @@ class OutofspaceHud {
      * digits before it means anything to anyone.
      */
     private fun mass(v: Long): String {
-        val g = v / Budget.GRAM
+        // ⚠️ **Sign split off first, exactly as [tiles] does two functions down.** Written without
+        // it, `g < 10_000` is true of every negative number however large, so a tonne of deficit
+        // printed as "-1010624g" while a tonne of surplus printed as "1.0t"; and the kg and t
+        // branches would have made nonsense of a negative remainder if they had ever been reached.
+        // Invisible until the mass-balance row started showing a signed drift instead of the word
+        // LEAK, which is a fair argument for having made it show one.
+        val sign = if (v < 0L) "-" else ""
+        val g = (if (v < 0L) -v else v) / Budget.GRAM
         return when {
-            g < 10_000L -> "${g}g"
-            g < 10_000_000L -> "${g / 1000}.${(g % 1000) / 100}kg"
-            else -> "${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
+            g < 10_000L -> "$sign${g}g"
+            g < 10_000_000L -> "$sign${g / 1000}.${(g % 1000) / 100}kg"
+            else -> "$sign${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
         }
     }
 

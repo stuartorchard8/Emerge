@@ -1007,6 +1007,11 @@ object OutofspaceAgentHarness {
             // itself, down while a marked segment hands its metal back.
             "builtMass" -> grams(state.builtMass)
             "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass)
+            // The two terms `massBalance` is made of that had no readout of their own. Diagnosing a
+            // drift means asking which term moved, and a field that is only ever *inside* a sum
+            // cannot answer that — this was found while proving that 7.8 t of a "leak" on a real
+            // save was the ship's own fabric.
+            "baselineCargoMass" -> grams(state.baselineCargoMass)
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
@@ -1089,7 +1094,7 @@ object OutofspaceAgentHarness {
         private val FIELDS = listOf(
             "tick", "machines", "gridWidth", "gridHeight", "originX", "originY",
             "airMass", "pipeMass", "airVented", "airBalance", "extractedMass",
-            "ventedMass", "inTransitMass", "stockpileMass", "storedEnergy", "generatedEnergy",
+            "ventedMass", "inTransitMass", "stockpileMass", "baselineCargoMass", "storedEnergy", "generatedEnergy",
             "radiatedEnergy", "solidToAirEnergy", "heatBalance", "airHeatBalance",
             "massBalance", "builtMass", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",
