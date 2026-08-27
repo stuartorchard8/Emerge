@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.chem.saturatedVapourDensityAt
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.chem.Fluid
@@ -118,6 +119,9 @@ fun tilePressure(
             condensedOf[f.ordinal] = share
             condensedShare += share
         }
+        // [condensedOf] is written but no longer read per species — the second pass asks
+        // [vapourMass] instead, which puts the same question to the same tables. Only the total
+        // below is used now, and it is what says how much of the cell is left for vapour to be in.
         // Floored rather than allowed to reach zero: a cell packed entirely with liquid has no room
         // for gas at all, and the honest rendering of "a gas squeezed into no volume" is a division
         // by zero. The floor makes it merely a very large pressure, which is both finite and the
@@ -127,21 +131,43 @@ fun tilePressure(
         var sum = 0L
         masses.forEachFluid(tile) { f, g ->
             val s = f.species
-            // A condensing species is measured against the whole cell, because the lever rule has
-            // already divided that cell between its own liquid and its own vapour — the volume it
-            // is competing for is the volume it is itself defining. Everything else gets what is
-            // left over.
-            val wanted = if (condensedOf[f.ordinal] > 0L) room else gasRoom
-            // ...but never squeezed past close packing, which is where the equation of state stops
-            // having an answer and [vanDerWaalsPressure] throws rather than returning one. The floor
-            // above says "a very large pressure"; without this it says "a crash", and a cell can now
-            // genuinely reach that state — gas advected into a tile that is nearly solid with liquid
-            // has almost no room to be in, and a handful of mass in a thousandth of a tile is past
-            // the limit. Clamped to the densest that species can physically be, the pressure comes
-            // out enormous and finite, which is what the comment above always intended and what the
-            // solver needs in order to push the gas back out.
-            val mine = maxOf(wanted, leastRoomFor(g, s))
-            sum += partialPressure(g, s, hot, mine, VolumeField.FULL) ?: idealPressure(g, s, hot, mine)
+            // ⚠️ **Only the vapour pushes.** A puddle does not press on the far wall of the room it
+            // is lying in; the vapour above it does, at the saturation pressure, and that is the
+            // whole of what a cell of liquid-plus-vapour exerts. [vapourMass] answers with the mass
+            // unchanged for anything with no dome on file, so the overwhelming majority of what a
+            // vessel's air is made of is untouched by this line.
+            //
+            // ⛔ **This is the same question [diffuseFluid] asks, and it has to be the same
+            // answer.** Diffusion moves `vapourMass` and leaves the frost and the puddles where they
+            // are; charging the *whole* mass to the equation of state meant a tile could hold
+            // condensate that nothing could move and that pressed on the hull for ever. Measured on
+            // a live save: one tile at 19.3x liquid hydrogen's density, on the compressed branch at
+            // 104,400,822 — **99.87% of the entire pressure field of the ship** — five tiles from
+            // the bow and twenty from the centre of mass, quietly spinning it up. Two functions that
+            // disagree about what a phase is will disagree about everything downstream of it.
+            //
+            // ⚠️ Against [gasRoom], not the whole cell: the vapour is in what the condensate left.
+            // That is also why the condensing/not-condensing split that used to be here is gone —
+            // it existed to hand a condensing species the whole cell so the lever rule could divide
+            // it, and there is nothing left to divide once only the vapour half is being charged.
+            val vapourR = saturatedVapourDensityAt(hot, s)
+            // ⚠️ **Capped at its own saturated vapour density, never at zero.** A cell that has
+            // collected more of a species than can be vapour at its temperature is a puddle with a
+            // saturated vapour above it, and what it exerts is that vapour's pressure — not the
+            // compressed-liquid pressure the whole mass would imply, and *not nothing*. Charging
+            // the vapour mass alone reads a full tank as a vacuum, which does not remove the
+            // spurious gradient so much as invert it.
+            val charged =
+                if (vapourR == null) g
+                else minOf(g, massAtReducedDensity(vapourR, s, gasRoom, VolumeField.FULL) ?: g)
+            if (charged <= 0L) return@forEachFluid
+            // Never squeezed past close packing, which is where the equation of state stops having
+            // an answer and [vanDerWaalsPressure] throws rather than returning one. Unreachable for
+            // anything with a dome now that the mass is capped above — kept for the species that
+            // have none and so are still charged in full.
+            val mine = maxOf(gasRoom, leastRoomFor(charged, s))
+            sum += partialPressure(charged, s, hot, mine, VolumeField.FULL)
+                ?: idealPressure(charged, s, hot, mine)
         }
         sum
     }
