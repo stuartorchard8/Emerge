@@ -243,21 +243,13 @@ val REDUCTIONS: List<Reduction> = listOf(
         enthalpyPerKg = 750L * kJPerMolAt(140),
     ),
 
-    /**
-     * `C + CO₂ → 2 CO` — The Boudouard reaction.
-     * Solid carbon reduces carbon dioxide gas into flammable carbon monoxide.
-     * Strongly endothermic (+172.4 kJ/mol of carbon), acting as a natural thermal brake
-     * in high-temperature environments.
-     */
-    Reduction(
-        oxide = Species.CarbonDioxide, oxideUnits = 1,
-        reductant = Species.Carbon, reductantUnits = 1,
-        products = listOf(Species.CarbonMonoxide to 2),
-        // Becomes thermodynamically favorable around 973 Kelvin (700°C),
-        // and completely dominates above 1200 Kelvin.
-        onsetKelvin = 973,
-        enthalpyPerKg = 172L * kJPerMolAt(44),
-    ),
+    // ⛔ **The Boudouard reaction has moved to [REACTIONS]** (`PLAN_unified_reactions.md`,
+    // increment 4). `C + CO₂ → 2 CO` was here, and this table draws **both** reagents from one cargo
+    // layer — so it wanted carbon dioxide as cargo at 973 K, and CO₂ is evicted from a cargo layer
+    // above its critical point of 304 K. It never fired outside a sealed tile.
+    //
+    // It is the row that proved the new shape: its principal is in the room's air and its carbon is
+    // on a belt, which is a sentence no table here can express.
 
     /**
      * `100 C6H12O6 + 6 H₂O + 6 CO₂ → 101 C6H12O6 + 6 O₂` — photosynthesis, written as a reduction

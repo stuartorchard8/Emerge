@@ -181,35 +181,15 @@ class ReductionSweepTest {
         assertTrue(layer[tile, Species.Carbon] >= 0L, "the carbon went negative — it was oversubscribed")
     }
 
-    @Test
-    fun `the Boudouard reaction puts itself out`() {
-        // ⚠️ **The brake on the thing that changed when products stopped venting.** `CO2 + C -> 2 CO`
-        // has been in the table all along and could never reach a belt, because a burning lump's CO2
-        // was in the air before the carbon beside it could get to it. It stays in the layer now, so
-        // the row fires — and the question that raises is what stops it.
-        //
-        // Its own enthalpy does. +172 kJ/mol is endothermic, so every pass takes heat out of the
-        // tile it is happening in, and with no oxygen there is nothing putting any back. It cools
-        // itself under its own 973 K onset and stalls, with most of both reagents untouched. A fire
-        // is what overrides this — and a fire runs out of oxygen.
-        val layer = layerWith(Species.Carbon to 50L * kg, Species.CarbonDioxide to 50L * kg)
-        layer.heatTo(1400)
-
-        sweep(layer, passes = 400)
-        val kelvin = layer.kelvinAt(tile)
-        val dioxide = layer[tile, Species.CarbonDioxide]
-
-        assertTrue(kelvin < 973, "it did not cool below its own onset: ${kelvin}K")
-        assertTrue(
-            dioxide > 40L * kg,
-            "it consumed far more than a brake would allow: $dioxide of ${50L * kg} left",
-        )
-
-        // And it is stopped, not merely slow: another four hundred passes move nothing at all.
-        sweep(layer, passes = 400)
-        assertEquals(kelvin, layer.kelvinAt(tile), "it was still cooling, so it had not stalled")
-        assertEquals(dioxide, layer[tile, Species.CarbonDioxide], "it was still reacting")
-    }
+    // ⛔ **`the Boudouard reaction puts itself out` has moved to `BoudouardTest`**
+    // (`PLAN_unified_reactions.md`, increment 4). The row is no longer a [Reduction].
+    //
+    // ⚠️ **And the test it was is worth remembering.** It placed carbon dioxide *directly in a cargo
+    // layer* at 1400 K and proved a lovely property about it — that the row is its own brake. No
+    // vessel can ever be in that state: CO2 is evicted from a cargo layer above 304 K, so `offGas`
+    // empties it eleven hundred kelvin before the onset. A green test, about a real behaviour, in a
+    // configuration the simulation cannot reach. That is the exact pattern the plan exists to stop,
+    // and it was sitting inside the suite that was supposed to catch it.
 
     // ── Oxygen is what stops it ──────────────────────────────────────────────
 

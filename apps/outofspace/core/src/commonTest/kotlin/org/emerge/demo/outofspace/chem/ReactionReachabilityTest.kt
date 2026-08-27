@@ -92,12 +92,13 @@ class ReactionReachabilityTest {
             // ✅ Ammonia cracking was here and is gone — increment 1 moved it to [REACTIONS], which
             // is swept over the fluid field where the ammonia actually is.
             //
+            // ✅ The Boudouard reaction was here and is gone — increment 4 moved it too, and it is
+            // the row that proved the cross-store shape: its CO2 is in the room and its carbon is on
+            // a belt, which no single-store table could express.
+            //
             // Increment 2, ⛔ PARKED — it needs the fluid field to be able to hold carbon. Methane
             // critical at 191 K, pyrolysis at 1300 K.
             "HEAT Methane@1300K",
-            // Increment 3. CO₂ critical at 304 K, Boudouard at 973 K. `Combustion.kt` credits this
-            // row with filling the vessel's rooms with carbon monoxide; it has never fired.
-            "REAGENT CarbonDioxide@973K",
         )
         assertEquals(knownDead, dead)
     }
@@ -130,14 +131,20 @@ class ReactionReachabilityTest {
     }
 
     @Test
-    fun `every store-agnostic row has one reagent until contention exists`() {
-        // ⛔ `reactInFluid` allocates nothing between rows, so a row with a second reagent would take
-        // as much of it as it liked and no row would ever be starved. The list shape is the target
-        // shape and it is right that it is a list — but until increment 3 builds the Jacobi
-        // demand-then-apportion, a second entry is a reaction that quietly runs rich.
+    fun `every store-agnostic row consumes its own principal`() {
+        // The principal is what the rate is a fraction of and the enthalpy is per kilogram of, so a
+        // row that did not actually consume it would be quoting both against a bystander.
+        //
+        // ⚠️ This was "exactly one reagent" until increment 4, which was the guard standing in for a
+        // contention pass that did not exist yet. `reactInFluid` now settles a species between rows
+        // before either takes any, so a second reagent is expressible — and the Boudouard row is the
+        // one that needed it.
         for (r in REACTIONS) {
-            assertEquals(1, r.reagents.size, "${r.principal.name} has a reagent nothing allocates")
-            assertEquals(r.principal, r.reagents.single().first)
+            assertTrue(
+                r.reagents.any { it.first == r.principal },
+                "${r.principal.name} is the principal of a row that does not consume it",
+            )
+            assertTrue(r.principalIndex >= 0)
         }
     }
 

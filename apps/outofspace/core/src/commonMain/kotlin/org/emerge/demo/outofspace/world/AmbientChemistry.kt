@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.chem.COMBUSTION_COUNT
 import org.emerge.demo.outofspace.chem.LOWEST_REACTION_ONSET
 import org.emerge.demo.outofspace.chem.REACTIONS
 import org.emerge.demo.outofspace.chem.SCALE
+import org.emerge.demo.outofspace.chem.WIDEST_REACTION
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.LOWEST_COMBUSTION_ONSET
 import org.emerge.demo.outofspace.chem.Fluid
@@ -751,11 +752,29 @@ fun combust(
  * an argument was omitted would be a silent one. Read once per tile, before anything reacts, so no
  * row's rate depends on the heat an earlier row moved.
  */
-fun reactInFluid(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): ChemistryStep {
+fun reactInFluid(
+    air: MassArray,
+    airEnergy: EnergyArray,
+    kelvin: IntArray? = null,
+    layers: List<StuffLayer> = emptyList(),
+): ChemistryStep {
     val tiles = air.data.size / Fluid.COUNT
     val temperature = kelvin ?: gasKelvin(airEnergy, heatCapacity(tiles, air))
 
+    // Hoisted for the whole sweep rather than per tile — [oxidise]'s reason exactly.
+    val allowed = LongArray(WIDEST_REACTION)
+    val taken = LongArray(WIDEST_REACTION)
+    val parts = LongArray(REACTIONS.maxOf { it.products.size })
+    // The well, one entry per species. ⚠️ **Cleared by list rather than by `fill`** — a tile touches
+    // two or three species and there are 168 of them, so wiping the whole array per tile would be
+    // most of what this pass costs.
+    val wantedBySpecies = LongArray(Species.COUNT)
+    val scaleBySpecies = LongArray(Species.COUNT)
+    val touched = IntArray(WIDEST_REACTION * REACTIONS.size)
+
     var released = 0L
+    var toGasMass = 0L
+    var toGasEnergy = 0L
 
     for (i in 0 until tiles) {
         val tile = TileIndex(i)
@@ -764,19 +783,102 @@ fun reactInFluid(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = nul
         val hot = temperature[i]
         if (hot < LOWEST_REACTION_ONSET) continue
 
+        // ── Everybody's demand, against one snapshot ─────────────────────────
+        //
+        // ⛔ **Asked before anything is taken — the Jacobi rule, per species.** Two rows after the
+        // same carbon must not be settled by which comes first in [REACTIONS]; that is the
+        // pass-order bug increment 3 deleted for the oxygen, and it would walk straight back in
+        // here as soon as two rows share a reagent. `Reaction.kt`'s ⛔ on iteration order is the
+        // whole of the argument.
+        var marks = 0
+        for (r in REACTIONS.indices) {
+            val reaction = REACTIONS[r]
+            val principal = reaction.principal.fluid ?: continue
+            val consumed = reaction.consumed(air[tile, principal], hot)
+            if (consumed <= 0L) continue
+            for (n in reaction.reagents.indices) {
+                val ordinal = reaction.reagents[n].first.ordinal
+                if (wantedBySpecies[ordinal] == 0L) touched[marks++] = ordinal
+                wantedBySpecies[ordinal] += reaction.reagentFor(n, consumed)
+            }
+        }
+        if (marks == 0) continue
+
+        // What fraction of its own demand each row may have, per species — [oxygenScales]' scale,
+        // and safe for [oxygenScales]' reason: flooring every share means they cannot sum past the
+        // supply however the rounding falls.
+        for (m in 0 until marks) {
+            val ordinal = touched[m]
+            // ⛔ **Every store that holds it, pooled.** The Boudouard reaction's carbon is on a belt
+            // while its CO2 is in the room, so a lookup that asked only the air would find none and
+            // the row would never fire — which is the bug this whole plan is about, one level down.
+            val supply = supplyOf(Species.ALL[ordinal], tile, air, layers)
+            val want = wantedBySpecies[ordinal]
+            scaleBySpecies[ordinal] = if (want <= supply) SCALE else scaledRatio(supply, want, SCALE)
+        }
+
         for (r in REACTIONS.indices) {
             val reaction = REACTIONS[r]
             // A row is here because its principal is a fluid; a row whose principal is not belongs
             // to a cargo sweep and is skipped rather than guessed at.
             val principal = reaction.principal.fluid ?: continue
-            val consumed = reaction.consumed(air[tile, principal], hot)
+            val principalHere = air[tile, principal]
+            if (principalHere <= 0L) continue
+
+            val unconstrained = reaction.consumed(principalHere, hot)
+            if (unconstrained <= 0L) continue
+            for (n in reaction.reagents.indices) {
+                val ordinal = reaction.reagents[n].first.ordinal
+                val want = reaction.reagentFor(n, unconstrained)
+                val scale = scaleBySpecies[ordinal]
+                allowed[n] = if (scale >= SCALE) want else scaledRatio(want, SCALE, scale)
+            }
+            val consumed = reaction.react(principalHere, allowed, hot, taken)
             if (consumed <= 0L) continue
 
-            air.add(tile, principal, -consumed)
+            // ── Take it, from wherever it was ────────────────────────────────
+            var fromCargo = 0L
+            var cargoHeat = 0L
+            for (n in reaction.reagents.indices) {
+                val species = reaction.reagents[n].first
+                var owed = taken[n]
+                if (owed <= 0L) continue
+                // The air first, so a species that is in both is drawn down where the reaction is
+                // happening before anything crosses a ledger.
+                species.fluid?.let { f ->
+                    val here = air[tile, f]
+                    val drawn = if (here < owed) here else owed
+                    if (drawn > 0L) {
+                        air.add(tile, f, -drawn)
+                        owed -= drawn
+                    }
+                }
+                // Then the cargo layers, in order, which is a ledger crossing and is booked as one.
+                for (l in layers.indices) {
+                    if (owed <= 0L) break
+                    val layer = layers[l]
+                    val here = layer[tile, species]
+                    if (here <= 0L) continue
+                    val drawn = if (here < owed) here else owed
+                    val heldMass = layer.massAt(tile)
+                    // The heat rides along with the matter, as a share of what the layer held before
+                    // any of it left — [offGas]'s rule, and read before the subtraction for its
+                    // reason: a cold layer that shed warm matter would have mislaid its joules.
+                    val carried = scaledRatio(drawn, heldMass, layer.energyAt(tile))
+                    layer.add(tile, species, -drawn)
+                    if (carried != 0L) layer.addEnergy(tile, -carried)
+                    fromCargo += drawn
+                    cargoHeat += carried
+                    owed -= drawn
+                }
+            }
+            if (cargoHeat != 0L) airEnergy[tile] += cargoHeat
 
-            // The principal's whole mass is handed out across the products, so the tile's gas
-            // weighs what it did — see [org.emerge.demo.outofspace.chem.Reaction.split].
-            val parts = reaction.split(consumed)
+            // ── And what it becomes, in the principal's store ────────────────
+            //
+            // Every reagent's mass is handed out across the products, so nothing is lost whichever
+            // store it came from — see [org.emerge.demo.outofspace.chem.Reaction.split].
+            reaction.splitInto(reaction.totalConsumed(taken), parts)
             for (p in reaction.products.indices) {
                 val mass = parts[p]
                 if (mass <= 0L) continue
@@ -787,14 +889,40 @@ fun reactInFluid(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = nul
                 air.add(tile, product, mass)
             }
 
+            toGasMass += fromCargo
+            toGasEnergy += cargoHeat
+
             // Per kilogram of the **principal**, which is what the rate was a fraction of and what
             // the row's enthalpy is quoted against.
             released += applyAirEnthalpy(airEnergy, tile, -reaction.enthalpy(consumed))
         }
+
+        for (m in 0 until marks) {
+            wantedBySpecies[touched[m]] = 0L
+            scaleBySpecies[touched[m]] = 0L
+        }
     }
 
-    return if (released == 0L) ChemistryStep.NOTHING
-    else ChemistryStep(toGasMass = 0L, toGasEnergy = 0L, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = released)
+    return if (released == 0L && toGasMass == 0L) ChemistryStep.NOTHING
+    else ChemistryStep(toGasMass, toGasEnergy, toSolidMass = 0L, toSolidEnergy = 0L, releasedEnergy = released)
+}
+
+/**
+ * How much of [species] is at [tile] across every store a reaction may draw from.
+ *
+ * ⚠️ **The pooling is what makes a cross-store row expressible**, and it is also the thing that
+ * makes "which store is this reaction in?" stop being a question with an answer. A reagent is
+ * wherever it is; the row does not say and does not need to.
+ */
+private fun supplyOf(
+    species: Species,
+    tile: TileIndex,
+    air: MassArray,
+    layers: List<StuffLayer>,
+): Long {
+    var sum = species.fluid?.let { air[tile, it] } ?: 0L
+    for (l in layers.indices) sum += layers[l][tile, species]
+    return sum
 }
 
 /**

@@ -516,10 +516,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Ammonia cracking is the first; see `PLAN_unified_reactions.md`. Alongside `combust`
             // rather than folded into it because it settles no contention: every row has one
             // reagent, so nothing here can starve anything.
-            val crackedInAir = reactInFluid(w.masses, w.airEnergy, airKelvin)
+            // ⚠️ **The cargo layers are given to the room's pass and not to the pipes'.** A pipe
+            // has no cargo in it, so a reagent on a belt is not reachable from inside one — and
+            // handing the layers over anyway would let a pipe full of CO2 eat the carbon off a belt
+            // it merely happens to run past.
+            val crackedInAir = reactInFluid(w.masses, w.airEnergy, airKelvin, listOf(w.rail.stuff, w.buffers.stuff))
             val crackedInPipes = reactInFluid(w.pipeMass, w.pipeEnergy)
-            val toGasMass = offRails.toGasMass + offHoppers.toGasMass
-            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy
+            // ⚠️ The cross-store reactions are in this sum now. A row whose principal is in the air
+            // and whose other reagent is on a belt — the Boudouard reaction — moves cargo mass into
+            // the atmosphere as surely as an off-gassing lump does, and the two ledgers only close
+            // if it is told.
+            val toGasMass = offRails.toGasMass + offHoppers.toGasMass + crackedInAir.toGasMass
+            val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy + crackedInAir.toGasEnergy
             val toSolidMass = onRails.toSolidMass + inHoppers.toSolidMass
             val toSolidEnergy = onRails.toSolidEnergy + inHoppers.toSolidEnergy
             if (toGasMass != 0L || toGasEnergy != 0L) w.solidBecameGas(toGasMass, toGasEnergy)

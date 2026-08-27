@@ -3,7 +3,7 @@ package org.emerge.demo.outofspace.chem
 import org.emerge.demo.outofspace.num.scaledRatio
 
 /**
- * A reaction that does not claim to know where the matter is — increment 1 of
+ * A reaction that does not claim to know where the matter is — increments 1 and 4 of
  * `PLAN_unified_reactions.md`, and the shape the other four collapse into.
  *
  * [Decomposition], [Oxidation], [Reduction] and [Combustion] each state, by which table they live
@@ -38,23 +38,29 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * the row. It is parked until a row worth having needs it (plan, decision 4), and
  * `ReactionReachabilityTest` fails any row that would need it in the meantime.
  *
- * ### What is not here yet
+ * ### Reagents come from wherever they are
  *
- * ⛔ **One reagent only.** [reagents] is a list because the target shape has several and contention
- * between them is the whole of increment 3 — but nothing here allocates a scarce reagent between
- * competing rows, so a row with two would silently take as much of the second as it liked. Until
- * that pass exists, `UnifiedReactionTest` asserts every row has exactly one, which is a failure at
- * build time rather than a reaction that quietly runs rich.
+ * A reagent is drawn from **every store that holds it**, pooled. That is what makes the Boudouard
+ * reaction expressible: `CO₂ + C → 2 CO` has its principal in the room's air and its carbon on a
+ * belt, and until increment 4 there was no shape that could say so — it sat in [REDUCTIONS], which
+ * draws both reagents from one cargo layer, so it wanted CO₂ *as cargo* at 973 K and CO₂ is evicted
+ * from a cargo layer above 304 K.
+ *
+ * ⚠️ **The principal is a reagent like any other and is contended like any other.** It is not
+ * special in what it costs — only in what it decides: the temperature the rate is read at, and where
+ * the products land.
+ *
+ * ### What is not here yet
  *
  * ⚠️ **[baseRate] is still stated rather than derived.** A solid burns at its surface and a gas
  * burns throughout, which is why `COMBUSTION_BASE_RATE` is eight times [BASE_RATE] — a fact about
  * the *phase of the principal at this tile*, which this model can now derive and does not. Increment
- * 3, where it is a rate change and belongs with the pass that computes rates.
+ * 4f, where it is a rate change and belongs with the pass that computes rates.
  */
 class Reaction(
     /** What the rate is a fraction of, what the enthalpy is per kilogram of, and where products go. */
     val principal: Species,
-    /** Everything consumed, [principal] included. ⛔ Exactly one entry until increment 3. */
+    /** Everything consumed, [principal] included, as formula units. */
     val reagents: List<Pair<Species, Int>>,
     val products: List<Pair<Species, Int>>,
     val onsetKelvin: Int,
@@ -64,6 +70,84 @@ class Reaction(
 ) {
     /** Formula units of [principal], for the mass arithmetic and for what the reference prints. */
     val principalUnits: Int = reagents.first { it.first == principal }.second
+
+    /** Mass of one formula unit's worth of [principal] — the denominator of every ratio here. */
+    private val principalMass: Long = principalUnits.toLong() * principal.molarMass
+
+    /** Mass each reagent's formula units account for, in [reagents] order. */
+    private val reagentMasses: LongArray =
+        LongArray(reagents.size) { reagents[it].second.toLong() * reagents[it].first.molarMass }
+
+    /** Which entry of [reagents] is the principal, so the react path can skip its own ratio. */
+    val principalIndex: Int = reagents.indexOfFirst { it.first == principal }
+
+    /**
+     * How much of reagent [i] goes with [principalMass] of the principal, on the stoichiometric
+     * line.
+     *
+     * Exact ratios of formula-unit masses, as everywhere else in this package — ⚠️ **never a
+     * hand-written mass fraction**, which would be a second source of truth for a number the species
+     * table already answers and would be wrong silently.
+     */
+    fun reagentFor(i: Int, principalMass: Long): Long =
+        if (i == principalIndex) principalMass
+        else scaledRatio(reagentMasses[i], this.principalMass, principalMass)
+
+    /** The inverse: how much principal [mass] of reagent [i] would support. */
+    fun principalFor(i: Int, mass: Long): Long =
+        if (i == principalIndex) mass
+        else scaledRatio(this.principalMass, reagentMasses[i], mass)
+
+    /**
+     * What one pass consumes, given the principal present, how hot it is, and **how much of each
+     * reagent this row is allowed** — which in a contended tile is less than it asked for.
+     *
+     * Writes the mass of each reagent into [out] and returns the principal's own share, or zero if
+     * nothing happens.
+     *
+     * ### The starvation path
+     *
+     * [Oxidation.react]'s, generalised from one scarce reagent to all of them, and with its double
+     * flooring intact. Every reagent is proportional to the principal, so shrinking the principal to
+     * whatever the tightest allowance supports and then re-deriving *every* reagent from that
+     * shrunken figure puts the whole row exactly on the stoichiometric line.
+     *
+     * ⛔ **Re-derived, never the allowance itself.** Taking `allowed[i]` directly for a reagent that
+     * bound would leave that one reagent over-consumed relative to the rest — a reaction running
+     * rich, which breaks the atom balance in the direction where it still looks like it is working.
+     *
+     * ⚠️ **The shrink is a single left-to-right pass and that is sufficient**, because shrinking for
+     * one reagent can only reduce what every other reagent wants. Whichever allowance binds hardest
+     * is the one still binding at the end.
+     */
+    fun react(principalPresent: Long, allowed: LongArray, kelvin: Int, out: LongArray): Long {
+        var consumed = consumed(principalPresent, kelvin)
+        if (consumed <= 0L) return 0L
+
+        for (i in reagents.indices) {
+            val want = reagentFor(i, consumed)
+            if (want > allowed[i]) {
+                consumed = principalFor(i, allowed[i])
+                if (consumed <= 0L) return 0L
+            }
+        }
+
+        for (i in reagents.indices) {
+            val mass = reagentFor(i, consumed)
+            // Flooring twice can only shrink, never inflate — but a reagent that floors to nothing
+            // is a reaction that would take the others and give nothing back for them.
+            if (mass <= 0L) return 0L
+            out[i] = mass
+        }
+        return consumed
+    }
+
+    /** Everything [out] holds after a [react], which is the mass the products account for. */
+    fun totalConsumed(out: LongArray): Long {
+        var sum = 0L
+        for (i in reagents.indices) sum += out[i]
+        return sum
+    }
 
     /**
      * How much of [mass] reacts in one pass at [kelvin], and nothing below the onset.
@@ -85,6 +169,9 @@ class Reaction(
      * reason no arithmetic path here can invent or lose a gram.
      */
     fun split(totalMass: Long): LongArray = apportion(weights, totalMass)
+
+    /** [split] writing into a caller's array, for a sweep that must not allocate per tile. */
+    fun splitInto(totalMass: Long, out: LongArray) = apportionInto(weights, totalMass, out)
 
     /** The energy [mass] of the **principal** takes to react, or gives back if it is negative. */
     fun enthalpy(mass: Long): Long = perKilogram(mass, enthalpyPerKg)
@@ -131,7 +218,40 @@ val REACTIONS: List<Reaction> = listOf(
         enthalpyPerKg = 46L * kJPerMolAt(34),
         baseRate = COMBUSTION_BASE_RATE,
     ),
+
+    /**
+     * `CO₂ + C → 2 CO` — the Boudouard reaction, and **the row that could not be written down
+     * before**: its principal is in the room's air and its other reagent is on a belt.
+     *
+     * ⚠️ **The proving case for increment 4.** Every earlier shape draws its reagents from one
+     * store. [Reduction] takes two solids out of one cargo layer, which is where this row sat — so
+     * it wanted carbon dioxide *as cargo* at 973 K, and CO₂ is evicted from a cargo layer above its
+     * critical point of 304 K. `Combustion.kt` credits it with quietly filling the vessel's rooms
+     * with carbon monoxide since `14306ded`; it has never fired outside a bulkhead.
+     *
+     * ⛔ **It crosses a ledger, and that is the point.** The carbon leaves the cargo identity and
+     * comes back as part of the CO in the air identity, so a pass of it has to tell both. That is
+     * the crossing `oxidise` deliberately closed off in one direction and `offGas` owns in the
+     * other; here it is a consequence of where the reagents were, which is what the whole plan is
+     * for.
+     *
+     * Strongly endothermic — a natural thermal brake on a hot room, and the second half of the
+     * story a starved fire starts.
+     */
+    Reaction(
+        principal = Species.CarbonDioxide,
+        reagents = listOf(Species.CarbonDioxide to 1, Species.Carbon to 1),
+        products = listOf(Species.CarbonMonoxide to 2),
+        // Favourable around 973 K, dominant above 1200 K. Quoted per kg of CO2, the principal,
+        // exactly as the row was quoted in [REDUCTIONS] — the move changes no number.
+        onsetKelvin = 973,
+        enthalpyPerKg = 172L * kJPerMolAt(44),
+        baseRate = COMBUSTION_BASE_RATE,
+    ),
 )
+
+/** The widest [REACTIONS] gets, for the per-reagent scratch a sweep hoists once. */
+val WIDEST_REACTION: Int = REACTIONS.maxOf { it.reagents.size }
 
 /** The coldest row in [REACTIONS], so a cool tile is rejected without asking each one. */
 val LOWEST_REACTION_ONSET: Int = REACTIONS.minOf { it.onsetKelvin }
