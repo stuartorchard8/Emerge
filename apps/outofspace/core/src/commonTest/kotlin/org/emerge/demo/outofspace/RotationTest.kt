@@ -29,6 +29,9 @@ import org.emerge.demo.outofspace.world.tileCentre
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.demo.outofspace.world.torqueAbout
 import kotlin.test.Ignore
+import org.emerge.demo.outofspace.num.isqrt
+import org.emerge.demo.outofspace.world.spinSpeed
+import org.emerge.demo.outofspace.num.scaledRatio
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -335,6 +338,104 @@ class RotationTest {
         assertEquals(0, loaded.ang.raw)
         assertEquals(0L, loaded.angImpulse)
         assertEquals(0L, loaded.netTorque)
+    }
+
+    // ── Centrifugal, which nothing implements ────────────────────────────────
+
+    /**
+     * **A body aboard a spinning ship drifts outward, and there is no centrifugal force anywhere.**
+     *
+     * This is what artificial gravity by rotation costs to build: nothing. A body's position and
+     * momentum are both written in the **world**, and the world frame is inertial — so a rock that
+     * nothing is pushing travels in a straight line while the grid turns underneath it, and *that*
+     * is the outward spiral. Centrifugal and Coriolis are what you need when you insist on writing
+     * the motion in the rotating frame; written in the world they are not omitted, they never arise.
+     *
+     * ⛔ **So a centrifugal term must never be added for bodies.** It would double-count against the
+     * spiral this asserts, which is the same mistake as
+     * `PLAN_trig_free_rotation.md`'s rejected `platingGravity.rotateBy(forward)`. What genuinely
+     * does need one is the **gas**, because gas is addressed by tile and so really does live in the
+     * rotating frame.
+     *
+     * Freefall, so the plating cannot be what moves it.
+     */
+    @Test
+    fun `a body aboard a spinning ship drifts outward on its own`() {
+        val cfg = OutofspaceConfig()
+        val turning = box(cfg.initialGrid).copy(angImpulse = ONE_SPIN * 40L)
+        val axisX = turning.distribution.comX * (Flight.PER_TILE / Rotation.MILLI_TILE)
+        val axisY = turning.distribution.comY * (Flight.PER_TILE / Rotation.MILLI_TILE)
+        val placed = RigidBody.rockBlob(
+            radius = 1,
+            positionX = 24L * Flight.PER_TILE, positionY = 16L * Flight.PER_TILE,
+            composition = OutofspaceReducer.DEFAULT_ORE_BODY,
+        )
+        // ⚠️ **At rest relative to the DECK, not to the world**, and that is the whole setup. A body
+        // at rest in the *world* seen from a turning grid goes round the axis at a constant radius —
+        // it has no radial speed, so of course it does not climb. What falls outward in a centrifuge
+        // is what was already going round with it: give the rock the deck's own `ω × r` and then let
+        // go, and a straight line in the world is a line that leaves the circle it started on.
+        val armX = placed.centreX - axisX
+        val armY = placed.centreY - axisY
+        val spin = angularVelocity(turning.angImpulse, turning.distribution)
+        // ⚠️ Through [scaledRatio], not `v * mass / PER_TILE`. An 83-tonne rock at a hundredth of a
+        // tile a tick is 5.8e19 written the obvious way round and a `Long` stops at 9.2e18, so the
+        // product wraps and the body comes out barely moving — which reads as "the fixture is fine
+        // and the sim is broken". The rescale's standing lesson, met once more.
+        fun impulseFor(velocity: Long): Long {
+            val magnitude = scaledRatio(placed.mass, Flight.PER_TILE, if (velocity < 0L) -velocity else velocity)
+            return if (velocity < 0L) -magnitude else magnitude
+        }
+        val spun = turning.copy(
+            bodies = listOf(
+                placed.copy(
+                    impulseX = impulseFor(-spinSpeed(spin, armY)),
+                    impulseY = impulseFor(spinSpeed(spin, armX)),
+                ),
+            ),
+        )
+        val controller = OutofspaceController(cfg, spun)
+
+        // ⚠️ Reduced to millitiles before squaring. `localCentreX` is at [Flight.PER_TILE] to the
+        // tile, so an arm of four tiles squares to 1.6e19 and a `Long` stops at 9.2e18 — the trap
+        // `PLAN_rigid_bodies.md` §5 names, met here on the first attempt.
+        fun radius(): Long {
+            val s = controller.state
+            val body = s.bodies.single()
+            val perMilli = Flight.PER_TILE / Rotation.MILLI_TILE
+            val dx = body.localCentreX(s.pose) / perMilli - s.distribution.comX
+            val dy = body.localCentreY(s.pose) / perMilli - s.distribution.comY
+            return isqrt(dx * dx + dy * dy)
+        }
+
+        val started = radius()
+        assertTrue(controller.state.angVel != 0L, "the ship is not turning, so this proves nothing")
+        val perMilli = Flight.PER_TILE / Rotation.MILLI_TILE
+        repeat(200) { controller.stepOnce() }
+
+        assertTrue(
+            controller.state.bodies.size == 1,
+            "the body left the world, so the radius below means nothing",
+        )
+        // ⚠️ **Against the closed form, not against "bigger".** A body released from a circle
+        // travels a straight line, so after `t` ticks its radius is `r·√(1 + (ωt)²)` exactly — and
+        // that is worth asserting rather than a direction, because "it moved outward" also passes
+        // on a body being flung out by a bug. `ω` here is the ship's spin in radians per tick.
+        val turned = controller.state.ang.raw.toLong() - 0L
+        val omegaT = turned.toDouble() / Rotation.RAW_PER_RADIAN
+        val predicted = (started.toDouble() * kotlin.math.sqrt(1.0 + omegaT * omegaT)).toLong()
+        val ended = radius()
+        assertTrue(
+            ended > started,
+            "a body at rest on the deck of a spinning ship stayed at the same radius " +
+                "($started -> $ended) — nothing in this game will ever spin for gravity",
+        )
+        val slack = predicted / 100L
+        assertTrue(
+            ended > predicted - slack && ended < predicted + slack,
+            "the body climbed, but not the way a released one does: $started -> $ended against a " +
+                "predicted $predicted after $omegaT radians of ship rotation",
+        )
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────
