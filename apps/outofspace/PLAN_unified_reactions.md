@@ -280,6 +280,28 @@ principal is actually present. Scratch arrays hoisted per sweep, as now.
 ⚠️ **Measure the phase share, interleaved** — the chemistry phase runs on a stagger and the machine
 drifts ±25%. See `reference_oos_perf_levers`.
 
+### Measured after increments 0–3 (2026-08-27)
+
+`benchOutofspace 2000 1`, 41×26 = 1066 tiles, 168 species, against `4f90f88f`. Two runs each way,
+because the machine drifts ±25% and a single pair proves nothing:
+
+| | chemistry phase | share of tick |
+|---|---|---|
+| before | 0.013 / 0.015 ms | 0.6–0.7% |
+| after | 0.021 / 0.033 ms | 1.1–1.3% |
+
+**Roughly doubled, and it does not matter yet.** Twelve microseconds on a two-millisecond tick is
+below the noise on the whole-tick figure, which came out between 1.90 and 2.56 ms on *both* sides.
+
+The cost is two new dense per-tile walks: `oxygenScales` and `reactInFluid`. Both are one compare for
+nearly every tile — `oxygenScales` bails where there is no oxygen and skips the fire loop below
+505 K; `reactInFluid` bails below 1100 K — so what is being paid for is the walk itself, not the
+work.
+
+⚠️ **This is the number increment 4 has to beat, not a budget it may spend.** One pass replacing
+three walks should take it back down; if the collapse lands and chemistry is still at 0.03 ms with
+twenty-two rows, the sparse index is wrong and three hundred rows will find out.
+
 At three hundred rows the demand phase is the thing to watch: it is per present-principal per tile,
 and it is the half that cannot be short-circuited, because Jacobi means asking everybody before
 giving anybody anything.
