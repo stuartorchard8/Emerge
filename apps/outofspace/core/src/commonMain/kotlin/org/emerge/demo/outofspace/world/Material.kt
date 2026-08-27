@@ -377,8 +377,22 @@ val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_K
  * constant and is now the sum of these species, and the two must agree to the unit or the ship
  * changes weight the day the representation changes. Measured identical for every kind.
  */
-fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
-    kind.material.composition.scaledTo(kind.massPerTile)
+fun tileBillOfMaterials(kind: DeckMachineKind, species: Species = kind.material.species): Mixture =
+    tileBills.getOrPut(kind.ordinal * Species.COUNT + species.ordinal) {
+        // ⚠️ Scaled to what a tile of THIS material weighs, not what a tile of the kind's default
+        // one does. A copper machine and a titanium machine of the same kind are different masses,
+        // because they are different amounts of metal occupying the same fraction of a tile.
+        Mixture.of(species to 1_000L, energy = Budget.JOULE)
+            .scaledTo(species.solidMassPerTile * kind.fillPermille / 1_000L)
+    }
+
+/**
+ * Interned per (kind, species), for the two reasons [machineBills] is interned: a [Mixture] is a
+ * hundred and sixty-five longs and this is asked per ghost per tick, and — the one that is
+ * correctness rather than speed — `railAppetites` groups construction sites into classes by **bill
+ * identity**, so a fresh instance per call silently puts every tile in a class of its own.
+ */
+private val tileBills = HashMap<Int, Mixture>()
 
 /**
  * **What a whole machine of [kind] is made of** — its per-tile bill, [tiles] times over.
@@ -393,15 +407,20 @@ fun tileBillOfMaterials(kind: DeckMachineKind): Mixture =
  * on each tile. Scale the total instead and the target is a few units away from anything the world
  * can hold, so a finished machine reads as forever unfinished, or as finished a gram early.
  */
-fun machineBillOfMaterials(kind: DeckMachineKind, tiles: Int): Mixture {
+fun machineBillOfMaterials(
+    kind: DeckMachineKind,
+    tiles: Int,
+    species: Species = kind.material.species,
+): Mixture {
+    val key = (kind.ordinal * (MAX_CACHED_FOOTPRINT + 1) + tiles) * Species.COUNT + species.ordinal
     if (tiles in 1..MAX_CACHED_FOOTPRINT) {
-        machineBills[kind.ordinal][tiles]?.let { return it }
+        machineBills[key]?.let { return it }
     }
-    val each = tileBillOfMaterials(kind)
+    val each = tileBillOfMaterials(kind, species)
     val masses = LongArray(Species.COUNT)
     for (s in Species.ALL) masses[s.ordinal] = each[s] * tiles
     val bill = Mixture.of(masses, 0L)
-    if (tiles in 1..MAX_CACHED_FOOTPRINT) machineBills[kind.ordinal][tiles] = bill
+    if (tiles in 1..MAX_CACHED_FOOTPRINT) machineBills[key] = bill
     return bill
 }
 
@@ -414,8 +433,14 @@ fun machineBillOfMaterials(kind: DeckMachineKind, tiles: Int): Mixture {
  * so the whole table is a handful of entries.
  */
 private const val MAX_CACHED_FOOTPRINT = 32
-private val machineBills: Array<Array<Mixture?>> =
-    Array(DeckMachineKind.entries.size) { arrayOfNulls(MAX_CACHED_FOOTPRINT + 1) }
+
+/**
+ * ⚠️ **A map rather than the nested array it used to be**, because the key gained a third dimension
+ * when a machine stopped having one material. Kinds x footprints x species is seventy thousand
+ * slots, nearly all of which would stay null for ever — a player builds out of a handful of things,
+ * not out of a hundred and seventy — so the sparse structure is the honest one here.
+ */
+private val machineBills = HashMap<Int, Mixture>()
 
 /**
  * **The bill of materials for one tile of bare conduit** — the twin of [tileBillOfMaterials], and
@@ -427,10 +452,15 @@ private val machineBills: Array<Array<Mixture?>> =
  * [railAppetites] groups sites into classes by **bill identity**, so a fresh instance per call would
  * silently put every tile in a class of its own.
  */
-fun conduitBillOfMaterials(conduit: Conduit): Mixture = conduitBills[conduit.ordinal]
+fun conduitBillOfMaterials(
+    conduit: Conduit,
+    species: Species = conduit.material.species,
+): Mixture = conduitBills.getOrPut(conduit.ordinal * Species.COUNT + species.ordinal) {
+    Mixture.of(species to 1_000L, energy = Budget.JOULE)
+        .scaledTo(species.solidMassPerTile * conduit.fillPermille / 1_000L)
+}
 
-private val conduitBills: Array<Mixture> =
-    Array(Conduit.entries.size) { Conduit.entries[it].let { c -> c.material.composition.scaledTo(c.massPerTile) } }
+private val conduitBills = HashMap<Int, Mixture>()
 
 /**
  * How close to the recipe a delivery has to be, as a percentage — **asked of every species in the

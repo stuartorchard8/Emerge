@@ -126,6 +126,8 @@ import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.settleCondensate
 import org.emerge.demo.outofspace.world.heatCapacity
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
@@ -1422,6 +1424,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         fun conduitsSnapshot(): Conduits =
             Conduits.of(Array(layers.size) { layers[it].toList() }, tracks.copyOf())
+
+        /**
+         * What the segment at [tile] is to be built from — its own choice, or the conduit's default.
+         *
+         * ⚠️ Off the working [layers] rather than off a `Conduits` snapshot, because a tick that has
+         * already laid or re-materialled a segment must see what it did. The snapshot is a copy.
+         */
+        fun materialAt(conduit: Conduit, tile: TileIndex): Species =
+            layers[conduit.ordinal][tile.index]?.materialOrDefault ?: conduit.material.species
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
         var builtMass: Long = state.builtMass
@@ -2765,7 +2776,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * parked, so nothing here books it. Written down rather than papered over.
          */
         fun absorbIntoGhost(tile: TileIndex, conduit: Conduit = Conduit.Rail): Packet? {
-            val bill = conduitBillOfMaterials(conduit)
+            // The site's own material, not the conduit's default: a run being built out of copper
+            // admits copper and refuses iron, which is the same door it always was asked about a
+            // different bill.
+            val bill = conduitBillOfMaterials(conduit, materialAt(conduit, tile))
             val stuff = tracks[conduit]
             // ⛔ **The door, asked of what is standing here rather than of what is coming in.**
             //
@@ -3150,15 +3164,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             val accepts = HashMap<TileIndex, MutableList<Acceptance>>()
             if (ghosts.isNotEmpty()) {
-                val bill = conduitBillOfMaterials(Conduit.Rail)
                 val stuff = tracks[Conduit.Rail]
                 for (tile in ghosts) {
+                    // ⚠️ Per tile now rather than once for the whole set: two rail ghosts being
+                    // built out of different metals want different things, and one shared bill
+                    // cannot say so.
+                    val bill = conduitBillOfMaterials(Conduit.Rail, materialAt(Conduit.Rail, tile))
                     accepts.getOrPut(tile) { mutableListOf() }
                         .add(Acceptance.forBill(bill, bill.total - stuff.massAt(tile)))
                 }
             }
             for ((tile, conduit) in otherGhosts) {
-                val bill = conduitBillOfMaterials(conduit)
+                val bill = conduitBillOfMaterials(conduit, materialAt(conduit, tile))
                 // ⛔ **Not in the road either, and for the same reason as a machine site**: the rail
                 // under a pipe ghost is finished and paid for. Only unpaid *track* stops traffic.
                 accepts.getOrPut(tile) { mutableListOf() }.add(
@@ -3203,7 +3220,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             //
             // Derived in `RailNetwork` beside every other end of the network, so that the harness
             // and the reducer cannot form two opinions about it. See [Appetites].
-            val appetites = railAppetites(grid, ghosts, machineGhosts, otherGhosts) { rail.resourceAt(it) }
+            val appetites = railAppetites(
+                grid,
+                ghosts,
+                machineGhosts,
+                otherGhosts,
+                ::materialAt,
+            ) { rail.resourceAt(it) }
 
             var flow = FlowGraph.build(
                 tilesWithTrack,

@@ -1,6 +1,7 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 
@@ -208,17 +209,31 @@ fun railAppetites(
     ghosts: Set<TileIndex>,
     machineGhosts: Map<TileIndex, DeckMachine>,
     conduitGhosts: Map<TileIndex, Conduit> = emptyMap(),
+    /**
+     * What a construction site is to be built from, asked per tile.
+     *
+     * A lambda for the reason [lumpAt] is one: this function is given the *shape* of the problem and
+     * nothing about where the world keeps things. Defaulted so that every caller that predates
+     * material choice — and every fixture — still reads as it did.
+     */
+    materialAt: (Conduit, TileIndex) -> Species = { conduit, _ -> conduit.material.species },
     lumpAt: (TileIndex) -> Mixture?,
 ): Appetites {
     if (ghosts.isEmpty() && machineGhosts.isEmpty() && conduitGhosts.isEmpty()) return Appetites.BLIND
 
     val billsAt = HashMap<TileIndex, MutableList<Mixture>>()
-    if (ghosts.isNotEmpty()) {
-        val rail = conduitBillOfMaterials(Conduit.Rail)
-        for (tile in ghosts) billsAt.getOrPut(tile) { mutableListOf() }.add(rail)
+    // ⚠️ **Per tile, because two ghosts of the same conduit can now want different metals.** The
+    // grouping below is by bill *identity*, and bills are interned per (conduit, species) — so
+    // sites that agree still share one instance and land in one class, while sites that differ
+    // correctly do not. Hoisting one bill out of this loop, as it used to be, would have put every
+    // rail ghost in the same class whatever it was being built from.
+    for (tile in ghosts) {
+        billsAt.getOrPut(tile) { mutableListOf() }
+            .add(conduitBillOfMaterials(Conduit.Rail, materialAt(Conduit.Rail, tile)))
     }
     for ((tile, conduit) in conduitGhosts) {
-        billsAt.getOrPut(tile) { mutableListOf() }.add(conduitBillOfMaterials(conduit))
+        billsAt.getOrPut(tile) { mutableListOf() }
+            .add(conduitBillOfMaterials(conduit, materialAt(conduit, tile)))
     }
     for ((tile, m) in machineGhosts) {
         billsAt.getOrPut(tile) { mutableListOf() }.add(machineBillOfMaterials(m.kind, m.tiles(grid).size))

@@ -150,12 +150,20 @@ class GhostTest {
     private fun tankAndRun(
         ghostAt: Int?,
         stored: Mixture = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0),
+        /** What the ghost is to be built from. Null is the conduit's default, which is iron. */
+        ghostMaterial: Species? = null,
     ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
+        // Stated before the world is built, because `Conduits` hands out immutable segment lists —
+        // a choice is part of what the world *is* rather than something done to it afterwards.
+        if (ghostAt != null && ghostMaterial != null) {
+            val t = grid.tile(ghostAt, 3)
+            rails[t.index] = rails[t.index]!!.copy(material = ghostMaterial)
+        }
         val s = VesselState(
             grid,
             deck,
@@ -553,6 +561,62 @@ class GhostTest {
             grid.tiles.sumOf { s.rail.massAt(it) },
             "a residue was left standing once the job was done",
         )
+    }
+
+    // ── Built out of something other than the default ─────────────────────────
+
+    /**
+     * ⛔ **A run chooses what it is made of, and then means it.**
+     *
+     * The site's bill follows its chosen material, so a copper rail is finished by a tile's worth of
+     * copper and refuses iron — the same door asked about a different bill, which is the whole design:
+     * nothing about material choice needed a new rule, only a bill that was allowed to vary.
+     *
+     * ⚠️ **Both halves.** "Copper builds it" alone would pass against a site that admits anything;
+     * "iron does not" is what proves the choice is load-bearing rather than decorative.
+     */
+    @Test
+    fun `a run built of copper takes copper and refuses iron`() {
+        fun build(stored: Species): VesselState = run(
+            tankAndRun(
+                ghostAt = 7,
+                stored = Mixture.of(stored to 8 * Capacity.PACKET_MASS, energy = 0),
+                ghostMaterial = Species.Copper,
+            ),
+            RAIL_PERIOD * 30,
+        )
+
+        val withCopper = build(Species.Copper)
+        val ghost = withCopper.grid.tile(7, 3)
+        assertTrue(
+            withCopper.conduits.isComplete(Conduit.Rail, ghost),
+            "a copper rail was not finished by copper: ${withCopper.conduits.builtPermille(Conduit.Rail, ghost)} permille",
+        )
+        assertEquals(
+            Species.Copper,
+            withCopper.conduits.tracks.dominantAt(Conduit.Rail, ghost),
+            "it finished, but not out of copper",
+        )
+
+        val withIron = build(Species.Iron)
+        assertFalse(
+            withIron.conduits.isComplete(Conduit.Rail, withIron.grid.tile(7, 3)),
+            "iron built a rail that had chosen copper",
+        )
+        assertEquals(0L, withIron.conduits.massAt(Conduit.Rail, withIron.grid.tile(7, 3)), "and it took none of it")
+    }
+
+    /**
+     * ⚠️ A copper rail's bill is not an iron rail's, because a tile of copper is not a tile of iron.
+     * Copper is the denser, so it costs more — which is the kind of trade material choice is for.
+     */
+    @Test
+    fun `a bill weighs what its own material weighs`() {
+        val iron = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Iron)
+        val copper = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Copper)
+        assertEquals(iron.total, org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total, "iron is the default")
+        assertTrue(copper.total > iron.total, "copper is denser, so a tile of it should cost more")
+        assertEquals(copper[Species.Copper], copper.total, "a copper bill is copper and nothing else")
     }
 
     /**

@@ -106,9 +106,18 @@ class Conduits private constructor(
         return this
     }
 
-    /** Whether the segment at [tile] holds every gram its kind is made of — see [TrackLayers.holdsFullBill]. */
-    fun isComplete(conduit: Conduit, tile: TileIndex): Boolean =
-        at(conduit, tile) != null && tracks.holdsFullBill(conduit, tile)
+    /**
+     * Whether the segment at [tile] holds every gram it is made of — see [TrackLayers.holdsFullBill].
+     *
+     * ⚠️ **Against the segment's OWN material**, which is the whole reason this question is asked
+     * here rather than on the layer: a run being built out of copper is finished when it holds a
+     * tile of copper, and a tile of copper is not a tile of iron. [TrackLayers] holds matter and
+     * knows nothing about intent; the segment is where the choice lives.
+     */
+    fun isComplete(conduit: Conduit, tile: TileIndex): Boolean {
+        val segment = at(conduit, tile) ?: return false
+        return tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)
+    }
 
     /**
      * True for a segment that is laid but not yet made of everything it needs — see [isComplete].
@@ -120,8 +129,18 @@ class Conduits private constructor(
      */
     fun isGhost(conduit: Conduit, tile: TileIndex): Boolean {
         val segment = at(conduit, tile) ?: return false
-        return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile)
+        return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)
     }
+
+    /** How built the segment at [tile] is, against its own material. For readouts and the renderer. */
+    fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
+        val segment = at(conduit, tile) ?: return 0
+        return tracks.builtPermille(conduit, tile, segment.materialOrDefault)
+    }
+
+    /** What the segment at [tile] is to be built from, or the conduit's default if nobody chose. */
+    fun materialAt(conduit: Conduit, tile: TileIndex): Species =
+        at(conduit, tile)?.materialOrDefault ?: conduit.material.species
 
 
     /** What one tile of one network is holding — its heat, and the metal holding it. */

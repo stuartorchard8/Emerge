@@ -33,10 +33,10 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      * Returning it rather than having the caller ask [Conduit.ambientPerTile] keeps the number the
      * ledger sees and the number the world holds the same one.
      */
-    fun lay(conduit: Conduit, tile: TileIndex): Long {
+    fun lay(conduit: Conduit, tile: TileIndex, species: Species = conduit.material.species): Long {
         val stuff = layers[conduit.ordinal]
         require(!stuff.occupies(tile)) { "$conduit already holds stuff at $tile" }
-        val bill = conduitBillOfMaterials(conduit)
+        val bill = conduitBillOfMaterials(conduit, species)
         for (s in Species.ALL) stuff[tile, s] = bill[s]
         val energy = stuff.heatCapacityAt(tile) * Temperature.AMBIENT_KELVIN
         stuff.setEnergy(tile, energy)
@@ -61,9 +61,13 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      * The single place the question is answered, so the routing, the ledger and the renderer cannot
      * drift into three different opinions about which tiles are ghosts.
      */
-    fun holdsFullBill(conduit: Conduit, tile: TileIndex): Boolean {
+    fun holdsFullBill(
+        conduit: Conduit,
+        tile: TileIndex,
+        species: Species = conduit.material.species,
+    ): Boolean {
         val stuff = layers[conduit.ordinal]
-        return holdsFullBill(conduitBillOfMaterials(conduit), stuff.massAt(tile))
+        return holdsFullBill(conduitBillOfMaterials(conduit, species), stuff.massAt(tile))
     }
 
     /**
@@ -74,9 +78,13 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      * For readouts and the renderer. The sim asks [holdsFullBill], which is the same question
      * without the arithmetic.
      */
-    fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
+    fun builtPermille(
+        conduit: Conduit,
+        tile: TileIndex,
+        species: Species = conduit.material.species,
+    ): Int {
         val stuff = layers[conduit.ordinal]
-        return builtPermille(conduitBillOfMaterials(conduit), stuff.massAt(tile))
+        return builtPermille(conduitBillOfMaterials(conduit, species), stuff.massAt(tile))
     }
 
     fun occupies(conduit: Conduit, tile: TileIndex): Boolean = layers[conduit.ordinal].occupies(tile)

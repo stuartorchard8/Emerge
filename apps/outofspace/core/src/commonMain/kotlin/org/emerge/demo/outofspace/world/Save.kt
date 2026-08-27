@@ -489,6 +489,10 @@ object Save {
         // Absent reads as "not marked", which is what every file written before deconstruction
         // existed meant, so no version bump.
         if (s.deconstructing) f.append(" scrapping=1")
+        // Omitted for the default, which is what null means — so a world that has never used
+        // material choice writes exactly the file it always did and needs no version bump. By name,
+        // like every other species on disk, so the enum stays free to be reordered.
+        s.material?.let { f.append(" made=").append(it.name) }
         val energy = conduits.energyAt(s.conduit, tile)
         // Compared against what *this* tile would hold if freshly laid, not against
         // [Conduit.ambientPerTile]. The bill of materials apportions, so a multi-species conduit's
@@ -1470,7 +1474,14 @@ object Save {
             if (packet is SolidPacket) rail.put(tile, packet.contents)
             else fail("only a solid rides the track; tile $tile carries $held")
         }
-        return Segment(conduit = conduit, links = links, deconstructing = f["scrapping"] == "1")
+        return Segment(
+            conduit = conduit,
+            links = links,
+            deconstructing = f["scrapping"] == "1",
+            material = f["made"]?.let { name ->
+                Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
+            },
+        )
     }
 
     /**
