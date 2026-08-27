@@ -1,0 +1,261 @@
+# Unified reactions
+
+Status: **scoped, nothing built** (2026-08-27). Successor to `PLAN_ambient_chemistry.md`, which
+built four reaction shapes as four classes swept by two passes. This plan makes them **one shape
+swept by one pass**, before the table grows from twenty-two rows to a few hundred.
+
+> A reaction is a fact about matter and conditions. It should not also be a claim about which array
+> the matter is stored in — because that claim is made when the row is written and checked by
+> nobody, and matter moves between arrays on its own.
+
+The prompt for this is a row that cannot fire. `CH₄ → C + 2H₂` at 1300 K is in `DECOMPOSITIONS`,
+which is swept only over the cargo layers; methane above 191 K is evicted from a cargo layer by
+`offGas` on the same pass. The row is reachable **only inside a sealed tile**, where `holdsAirOut`
+blocks the eviction. Methane pyrolysis works if and only if it happens inside a wall.
+
+## The measured problem
+
+Every row whose principal reactant is a fluid, against that fluid's critical temperature:
+
+| Table | Row | Onset | Tc | Verdict |
+|---|---|---|---|---|
+| HEAT | `2 NH₃ → N₂ + 3 H₂` | 1100 K | 405 K | evicted before it can fire |
+| HEAT | `CH₄ → C + 2 H₂` | 1300 K | 191 K | evicted before it can fire |
+| REAGENT | `CO₂ + C → 2 CO` | 973 K | 304 K | evicted before it can fire |
+| REAGENT | `6 H₂O + 6 CO₂ → …` | 273 K | 647 K | survives, but needs water and CO₂ **as cargo in a hopper** |
+
+Three dead, one alive for the wrong reason — out of twenty-two. `Combustion.kt` credits the
+Boudouard row with "quietly filling the rooms with CO"; it has never fired outside a bulkhead.
+
+**Nothing in the code can tell you this.** The row balances atom-for-atom, its enthalpy is quoted
+correctly, `DecompositionTest` and `MineralTest` both pass, and the reference panel prints it as a
+route the player can plan around. The only signal is a reaction that never happens.
+
+At twenty-two rows this is four mistakes. At three hundred it is a coin flip on every row, and the
+rows that fail are exactly the interesting ones — anything involving a volatile, which is most of
+what a comet-mining vessel does.
+
+## What is already unified, and what is not
+
+Three of the six things a reaction does have one implementation already:
+
+- **Rate** — `reactionFraction(kelvin, onset, baseRate)`, one Arrhenius table in reduced
+  temperature, shared by all four classes.
+- **Enthalpy** — `perKilogram`, one sign convention, quoted per kg of one nominated reactant.
+- **Mass closure** — `apportion` over product formula-unit weights, telescoping so no path can
+  invent or lose a gram.
+
+What differs is one thing wearing three hats: **which store a species is drawn from and returned
+to.**
+
+| | Reagents | Contention well | Products |
+|---|---|---|---|
+| `Decomposition` | 1 × layer | none | layer |
+| `Oxidation` | 1 × layer + O₂ from air | the tile's oxygen | layer |
+| `Reduction` | 2 × layer (+ catalyst) | per reductant species | layer |
+| `Combustion` | 2 × air | the tile's oxygen | air |
+
+Contention is the same rule in both columns that have one — "one well per species per tile" —
+written twice because one well happened to be an array and the other a layer. Product placement is
+the same rule four times. Even the two base rates are the same rule: `COMBUSTION_BASE_RATE` is 8×
+`BASE_RATE` because a solid burns at a surface and a gas burns throughout, which is a fact about
+*phase at this tile*, not about the row.
+
+## There are exactly two stores
+
+Worth stating because it is smaller than it looks, and it is what makes this tractable:
+
+- **`StuffLayer`** — cargo. Rails and buffers. Any of the 168 species, row-allocated with a presence
+  bitmask, carrying its own energy per tile.
+- **`MassArray` over `Fluid`** — the fluid field. Air (`w.masses`) and pipes (`w.pipeMass`). The 23
+  species that can ever be a fluid.
+
+**Condensate is not a third store.** Frost and puddles live in the fluid field like everything else;
+"how much of this is condensed" is derived per tile per tick from the dome (`vapourMass`,
+`condensedFraction`). Nothing moves condensed matter into a cargo layer except an `Extractor`
+explicitly calling `liftFrost`. So a species in the fluid field can be gas, liquid or solid without
+moving, and the store axis has exactly two values.
+
+The deck's own `StuffLayer` is fabric, not cargo, and no chemistry pass touches it today — a hull
+plate does not corrode. That is a real gap and it is **out of scope here**; see *Not solved*.
+
+## Decisions taken (Stu, 2026-08-27)
+
+1. **Products go to the store the principal reactant came from.** The principal is the one the rate
+   is a fraction of and the enthalpy is quoted against, which every table already nominates. This
+   reproduces all four current behaviours exactly — mineral → layer, carbon → layer, oxide → layer,
+   fuel-in-air → air — from one rule.
+2. **`offGas` and condensation pick up the cases where that is not where the matter belongs.** A
+   reaction never decides phase. This is the property that fixed the sealed-tile bug and it is kept:
+   a calcining rock keeps its CO₂ until there is somewhere for it to go.
+3. **Consolidate before growing the table.** The few hundred rows come after this, not before.
+4. **The carbon problem is answered by widening the fluid field, and it is parked.** When a
+   gas-phase reaction makes something that is not currently a `Fluid`, the answer is to let the
+   atmosphere hold that species too — not to invent a third store and not to forbid the row.
+
+   ⚠️ **Deliberately a blurry target.** There is no strict definition of "a gas-only reaction" to
+   enforce, and trying to write one would be the fiction this codebase keeps refusing. The rule is
+   the direction of travel, applied per species as rows need it: *if a gaseous reaction produces it,
+   the atmosphere can hold it.* That is the smallest widening that does not compromise fidelity —
+   the alternatives either put cargo in a room with nothing to move it, or add a store.
+
+   ⛔ **Parked (Stu, 2026-08-27).** Methane pyrolysis is not load-bearing: carbon is already
+   reachable by methane burning → CO₂ → photosynthesis → algae → pyrolysis, which is a longer chain
+   and a more interesting one. So increment 2 waits, and the increments that are *known* correct go
+   first. Widening `Fluid` is cheap to do later — it is an entry in the enum and a wider array, and
+   `Fluid.kt` says in as many words that the door is held open on purpose.
+
+## The model
+
+One type. No kinds.
+
+```
+Reaction(
+    principal: Species,          // what the rate and the enthalpy are quoted against
+    reagents: List<(Species, Int)>,   // includes the principal
+    products: List<(Species, Int)>,
+    onsetKelvin: Int,
+    baseRate: Long,
+    enthalpyPerKg: Long,
+)
+```
+
+The store is not a field. At each tile the pass asks where each reagent *is* — cargo layer, fluid
+field, or split across both — and draws proportionally from what is actually there. Products go to
+the principal's store, per decision 1.
+
+`baseRate` stops encoding surface-vs-volume. Whether the principal is condensed at this tile is
+already derivable, so a frozen lump of methane burns at the surface rate and methane gas at the
+volume rate without a second row. **This is a behaviour change, not a refactor** — flagged as such
+in increment 3 rather than smuggled in.
+
+`ReactionKind` survives only as a *derived* label for the reference panel: what the player must
+arrange is still a real distinction ("heat alone" vs "heat and a reagent you supply"), it just is
+not a distinction the sim needs. Derive it from where the reagents live, and the methane article
+stops lying without anybody editing it.
+
+## Increments
+
+Ordered so the case that decides the design comes first. **Each increment is one commit on `main`**,
+green before it lands.
+
+### Increment 0 — pin the problem
+
+A test that walks every row of every table and asserts its principal can actually exist, in the
+store that row is swept over, at that row's onset temperature. Red on three rows on the day it
+lands, so they get `@Ignore` with a pointer here rather than quietly staying wrong.
+
+This is the guard that has to survive to the end: at three hundred rows it is the only thing
+standing between a plausible row and a dead one. Cheap — the audit that produced the table above
+was twenty lines.
+
+### Increment 1 — one reaction, end to end: ammonia cracking
+
+`2 NH₃ → N₂ + 3 H₂`, dead today, becomes live in the air.
+
+The *awkward* case on purpose, exactly as `CARBON_BURN` was for the last plan: the principal is in
+the fluid field, so products go to the fluid field, and the row currently lives in the table that
+sweeps the other store. It forces the whole shape — reagent lookup across stores, principal-store
+placement, energy from the right ledger — while every product is a fluid, so it does **not** force
+the soot question. That is increment 2's job, isolated on purpose.
+
+Ammonia rather than methane for exactly that reason.
+
+What must be true at the end: ammonia in a hot room cracks; ammonia in a hopper below 405 K does
+not (it is cargo, and the row's principal is not there); the air ledger closes; `GasFireTest`'s
+"total mass of a tile's gas is unchanged, exactly" still holds for the fires.
+
+### Increment 2 — the soot question ⛔ PARKED
+
+Parked on 2026-08-27, before increment 0 was built — see decision 4. The direction is settled (widen
+the fluid field); the trigger for doing it is a row worth having that needs it, and methane pyrolysis
+is not that row. Everything below is the scoping as it stood, kept because the constraint is real
+and the next gaseous reaction with a solid product will meet it.
+
+
+`CH₄ → C + 2 H₂`. Air principal, **non-fluid product**, and the one place decision 1 has a genuine
+hole: `offGas` moves matter layer → air and condensation handles phase within the air, but nothing
+moves a non-fluid *out of* the air, because a non-fluid cannot be in the air to begin with —
+`MassIndex(tile, Species.Carbon)` does not compile, by `Fluid.kt`'s design.
+
+**This does not exist today**: every current gas fire's products are fluids. So the cheapest
+correct answer is to make that a rule rather than an accident —
+
+> a reaction whose principal is in the fluid field may only have fluid products
+
+— enforced at table construction, costing nothing now and rejecting methane pyrolysis as written.
+Then the row is either dropped or the game accepts soot and needs a home for it. Three candidates,
+in increasing order of how much they change:
+
+- **Forbid it.** Pyrolysis becomes a machine reaction, not an ambient one.
+- **Falls into the cargo layer at that tile.** Precedent exists in reverse (`liftFrost`), but carbon
+  as cargo on a tile with no belt is a pile nothing can move, and it puts mass into the cargo ledger
+  from the air side, which is a crossing `oxidise` deliberately closed.
+- **A third store for settled solids.** Real, and the largest thing on this page.
+
+**Decided (Stu, 2026-08-27): none of the three.** The answer is the fourth option — widen the fluid
+field so the atmosphere can hold the product. See decision 4 for why, and for why it waits.
+
+### Increment 3 — one pass, one well per species
+
+The pass that replaces `oxidise` and `combust`.
+
+This is where the order-dependence bug dies. `Reaction.kt` says *"⛔ Never resolve contention by
+iteration order. Whoever ran first would get the whole supply."* That rule is enforced between rows
+and violated between passes: `OutofspaceSim` runs `oxidise(rails)` → `oxidise(hoppers)` → `offGas` →
+`combust`, all against the same `w.masses`. At one tile, rail matter gets first refusal on the
+oxygen, then hopper matter, and gas fires get what is left. Burning carbon on a belt structurally
+starves a methane fire in the same room, by a rule nobody wrote and no player can see.
+
+One pass, one demand phase across every row and every store, one apportionment per species. The
+Jacobi argument is the file's own; only the well changes.
+
+Also where the derived `baseRate` lands, since that is a rate change and belongs with the pass that
+computes rates.
+
+### Increment 4 — the four classes become rows
+
+`Decomposition`, `Oxidation`, `Reduction` and `Combustion` collapse into `Reaction`. Mechanical once
+3 is in: the tables become data and `SpeciesInfo.kt`'s flattening becomes the identity function.
+
+The reference panel's `ALL_REACTIONS` stops being a place a table can be forgotten — which is the
+bug fixed by hand on 2026-08-27 and worth deleting the possibility of.
+
+### Increment 5 — the table grows
+
+The few hundred rows. Not before 0, 1, 3 and 4 — increment 2 is parked and is not a dependency.
+
+## Perf
+
+The current sweeps are cheap for reasons that are load-bearing and easy to lose:
+
+- `forEachOccupiedTile` walks rows, so an empty vessel costs nothing.
+- One compare against `LOWEST_ONSET` is where nearly every tile stops.
+- The presence bitmask means a tile costs the handful of species it holds, not 168.
+- `DECOMPOSITION_OF` is indexed by species ordinal; `REDUCTION_GROUPS` is pre-grouped.
+
+A unified pass must keep all four. The shape that does: `rowsByPrincipal: Array<List<Reaction>?>`
+indexed by species ordinal, reached from the presence bitmask, so a tile considers only rows whose
+principal is actually present. Scratch arrays hoisted per sweep, as now.
+
+⚠️ **Measure the phase share, interleaved** — the chemistry phase runs on a stagger and the machine
+drifts ±25%. See `reference_oos_perf_levers`.
+
+At three hundred rows the demand phase is the thing to watch: it is per present-principal per tile,
+and it is the half that cannot be short-circuited, because Jacobi means asking everybody before
+giving anybody anything.
+
+## Not solved, deliberately
+
+- **Hull corrosion.** No pass touches the deck's `StuffLayer`. A unified pass would naturally
+  include it, which is a behaviour change — a titanium hull in a hot oxygen atmosphere would start
+  to scale. Wanted eventually (`PLAN_ambient_chemistry.md` decision 1 says chemistry happens across
+  all layers including the deck); not smuggled in here.
+- **Cargo in pipes.** `combust` runs on `w.pipeMass` but nothing sweeps a cargo layer there, because
+  there is not one. Unchanged.
+- **Reversibility.** Every row is one-directional. Equilibrium, and a reaction that runs backwards
+  when the products pile up, is a different model and not this one.
+- **The catalyst field.** `Reduction.catalyst` stays a rate gate in the sim. The reference already
+  presents it correctly as a reactant on both sides (2026-08-27); making the *sim* express it that
+  way means algae flowing through `apportion` and is a microgram-residue risk
+  (`reference_oos_microgram_deadlock`). Separate work.
