@@ -8,9 +8,17 @@ import org.emerge.demo.outofspace.world.EdgeGrid
 import org.emerge.demo.outofspace.world.EnergyArray
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
+import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.diffuseFluid
+import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.heatCapacityAt
+import org.emerge.demo.outofspace.world.settleCondensate
+import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.Rotation
+import org.emerge.demo.outofspace.world.gasKelvin
+import org.emerge.sim.core.physics.primitives.Frac
+import org.emerge.sim.core.physics.primitives.Frac2
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -166,6 +174,144 @@ class PhaseTransportTest {
         assertEquals(
             packedTile + puff, total(masses, Species.Hydrogen),
             "refusing the gas lost it — it is supposed to stay where it was",
+        )
+    }
+
+    // ── But it falls, if there is a down for it to fall ─────────────────────
+
+    private fun kelvinOf(masses: MassArray, energies: EnergyArray): IntArray =
+        gasKelvin(energies, heatCapacity(grid.size, masses))
+
+    private fun settle(masses: MassArray, energies: EnergyArray, down: Frac2, passes: Int, spin: Long = 0L) {
+        repeat(passes) {
+            settleCondensate(
+                edges, sealed(), masses, energies, kelvinOf(masses, energies),
+                down, spin, MassDistribution(mass = 1L, comX = 3_500L, comY = 500L, gyrationSq = 1L),
+            )
+        }
+    }
+
+    /**
+     * **"Does not diffuse" is not "does not move."**
+     *
+     * Everything above says frost stays where it froze, and that is a statement about *diffusion* —
+     * Fick's law across a phase interface dissolves a pool, so the vapour moves and the ice does
+     * not. But a block of ice in a ship under thrust slides to the back of the room, and this is the
+     * pass that lets it. See [settleCondensate].
+     */
+    @Test
+    fun `frost falls when there is a down for it to fall`() {
+        val (masses, energies) = world(Species.Water, 10L * kg, 100)
+        settle(masses, energies, Frac2(Frac(1L, 1), Frac(0L)), passes = 30)
+
+        assertTrue(
+            at(masses, 4, Species.Water) > 0L,
+            "the ice sat where it froze under a full gravity — nothing in this game will ever pour",
+        )
+        assertEquals(10L * kg, total(masses, Species.Water), "settling did not conserve the ice")
+    }
+
+    /**
+     * ⛔ **In freefall nothing settles, and that is the point rather than a limitation.**
+     *
+     * Every scrap of motion in [settleCondensate] is subjective gravity; there is no term that acts
+     * without one. A ship with no plating, no burn and no spin has no down, so its frost hangs where
+     * it formed — which is also what makes this pass safe to run every tick on a coasting vessel.
+     */
+    @Test
+    fun `in freefall nothing settles at all`() {
+        val (masses, energies) = world(Species.Water, 10L * kg, 100)
+        settle(masses, energies, Frac2(Frac(0L), Frac(0L)), passes = 30)
+
+        assertEquals(
+            10L * kg, at(masses, 3, Species.Water),
+            "frost slid downhill on a ship that has no downhill",
+        )
+    }
+
+    /**
+     * **A spun ring holds its frost against the rim** — the centrifugal half, and Stu's reason for
+     * wanting it: rotation as non-locomotive artificial gravity.
+     *
+     * ⚠️ Nothing else is pushing: the uniform field is zero, so every unit of motion here is `ω²r`
+     * about the axis. The lump starts inboard of the axis and has to end further out, which is a
+     * different claim from "it moved" — a bug that slid everything one way would fail it.
+     */
+    @Test
+    fun `a spinning ship holds its frost out against the rim`() {
+        val (masses, energies) = world(Species.Water, 10L * kg, 100)
+        // Axis at x = 2.5 tiles, so the lump at x = 3 is outboard of it and should climb away.
+        val axis = MassDistribution(mass = 1L, comX = 2_500L, comY = 500L, gyrationSq = 1L)
+        repeat(30) {
+            settleCondensate(
+                edges, sealed(), masses, energies, kelvinOf(masses, energies),
+                Frac2(Frac(0L), Frac(0L)), spin = Rotation.RAW_PER_RADIAN / 8L, about = axis,
+            )
+        }
+
+        assertTrue(
+            at(masses, 4, Species.Water) > 0L,
+            "a spun ring did not throw its frost outward: nothing left tile 3",
+        )
+        assertEquals(0L, at(masses, 2, Species.Water), "frost fell *toward* the axis of rotation")
+        assertEquals(10L * kg, total(masses, Species.Water), "spinning did not conserve the ice")
+    }
+
+    /**
+     * **A liquid that cannot go down goes sideways; a solid stays put and piles.**
+     *
+     * The one difference between the two in [settleCondensate], and it is what makes a liquid read
+     * as *filling its container* while frost reads as a heap. Both still respect the cell they move
+     * into — neither may over-pack one.
+     *
+     * The fixture is the same water twice, at two temperatures either side of its triple point, with
+     * downhill already full. Same species, same mass, same gravity, same blocked road: the only
+     * thing that differs is whether it is ice or a puddle.
+     *
+     * ⚠️ Told apart by the **triple point**, not by `phaseAt`. The dome is a vapour-liquid
+     * construction with no solid branch, so below the triple point it is extrapolating the wrong
+     * curve — see [org.emerge.demo.outofspace.world.settleCondensate].
+     */
+    @Test
+    fun `a blocked liquid spreads sideways and blocked frost does not`() {
+        // A two-row world, so there is a sideways to go: gravity points +x, and the cell downhill
+        // of the lump is packed solid with the same species.
+        val tall = Grid(5, 3)
+        val tallEdges = EdgeGrid(tall)
+        fun sealedTall(): ApertureField {
+            val x = IntArray(tallEdges.xEdgeCount) { if (tallEdges.isXBoundary(it)) ApertureField.CLOSED else ApertureField.OPEN }
+            val y = IntArray(tallEdges.yEdgeCount) { if (tallEdges.isYBoundary(it)) ApertureField.CLOSED else ApertureField.OPEN }
+            return ApertureField(tallEdges, x, y)
+        }
+        fun spread(kelvin: Int): Long {
+            val masses = MassArray(tall.size)
+            val start = tall.tile(2, 1)
+            masses.add(start, Fluid.Water, 8L * kg)
+            // Downhill is already full to its condensed density, so the fall is refused.
+            masses.add(tall.tile(3, 1), Fluid.Water, 4_000L * kg)
+            val energies = EnergyArray(tall.size)
+            for (t in tall.tiles) energies[t] = heatCapacityAt(masses, t) * kelvin
+            repeat(20) {
+                settleCondensate(
+                    tallEdges, sealedTall(), masses, energies,
+                    gasKelvin(energies, heatCapacity(tall.size, masses)),
+                    Frac2(Frac(1L, 1), Frac(0L)), spin = 0L,
+                    about = MassDistribution(1L, 2_500L, 1_500L, 1L),
+                )
+            }
+            // How much left the starting cell sideways, into the two rows either side of it.
+            return masses[MassIndex(tall.tile(2, 0), Fluid.Water)] +
+                masses[MassIndex(tall.tile(2, 2), Fluid.Water)]
+        }
+
+        // Water's triple point is 273 K, so 200 K is ice and 300 K is a puddle.
+        val ice = spread(200)
+        val puddle = spread(300)
+
+        assertEquals(0L, ice, "frost went round the obstruction instead of piling against it")
+        assertTrue(
+            puddle > 0L,
+            "a blocked puddle sat still instead of spreading: it will never fill a container",
         )
     }
 

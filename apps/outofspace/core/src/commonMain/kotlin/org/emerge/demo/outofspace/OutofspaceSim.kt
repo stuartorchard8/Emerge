@@ -128,6 +128,7 @@ import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
+import org.emerge.demo.outofspace.world.settleCondensate
 import org.emerge.demo.outofspace.world.oxidise
 import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -635,9 +636,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 edges, roomApertures, w.masses, w.airEnergy, roomKelvin,
                 ventSpeed = ventSpeed, about = w.about, feltGravity = down, spin = spin,
             )
+            // ── And then the part that does not diffuse ───────────────────────
+            //
+            // Frost and puddles are left exactly where they froze by the pass above, which is right
+            // — but "does not diffuse" is not "does not move". Under thrust a puddle runs to the
+            // back of the room; in a spun ring it lies against the rim. See [settleCondensate].
+            //
+            // ⚠️ **What slides over the rim carries no momentum, and that is not an omission.** A
+            // puddle leaves the grid at the speed it was creeping, which is nothing next to gas
+            // going out of a hole at three hundred metres a second. It is booked to the air ledger
+            // and to no impulse.
+            val settled = settleCondensate(
+                edges, roomApertures, w.masses, w.airEnergy, roomKelvin, down, spin, w.about,
+            )
             fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
-            fluidVentedMass = result.ventedMass
-            fluidVentedEnergy = result.ventedEnergy
+            fluidVentedMass = result.ventedMass + settled.ventedMass
+            fluidVentedEnergy = result.ventedEnergy + settled.ventedEnergy
             ventImpulseX += result.ventImpulseX
             ventImpulseY += result.ventImpulseY
             ventTorque += result.ventTorque
