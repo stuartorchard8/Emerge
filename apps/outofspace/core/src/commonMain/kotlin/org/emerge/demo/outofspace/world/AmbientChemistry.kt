@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.chem.COMBUSTIONS
 import org.emerge.demo.outofspace.chem.COMBUSTION_COUNT
 import org.emerge.demo.outofspace.chem.LOWEST_REACTION_ONSET
 import org.emerge.demo.outofspace.chem.REACTIONS
+import org.emerge.demo.outofspace.chem.SCALE
 import org.emerge.demo.outofspace.chem.DECOMPOSITIONS
 import org.emerge.demo.outofspace.chem.LOWEST_COMBUSTION_ONSET
 import org.emerge.demo.outofspace.chem.Fluid
@@ -68,6 +69,98 @@ class ChemistryStep(
     companion object {
         val NOTHING = ChemistryStep(0L, 0L, 0L, 0L, 0L)
     }
+}
+
+/**
+ * How much of what everybody wants they may actually have, per tile, in [SCALE] — increment 3 of
+ * `PLAN_unified_reactions.md`, and **the tile's oxygen as one well**.
+ *
+ * ### The bug this exists to kill
+ *
+ * `Reaction.kt` states the rule plainly: *"⛔ Never resolve contention by iteration order. Whoever
+ * ran first would get the whole supply, which is a rule nobody can predict."* It is enforced between
+ * the rows of a table and it was **violated between the passes**. `OutofspaceSim` ran
+ * `oxidise(rails)`, then `oxidise(hoppers)`, then [combust], all against the same array, each
+ * apportioning whatever the one before it had left. So at a tile holding both, rail matter had first
+ * refusal on the oxygen, hoppers second, and gas fires got the remainder — and burning carbon on a
+ * belt structurally starved a methane fire in the same room. Nobody wrote that rule and no player
+ * could see it.
+ *
+ * The three passes each obeyed Jacobi internally. The well was the thing that was not shared.
+ *
+ * ### A scale rather than an allowance per consumer
+ *
+ * Apportionment is proportional, so the whole allocation is one number per tile: the fraction of its
+ * own demand each consumer gets. Every consumer already knows its own demand — it computed one to be
+ * counted here — so it needs nothing from this but the fraction.
+ *
+ * ⚠️ **This cannot over-draw, and the flooring is why.** Each consumer takes `floor(demand × scale)`
+ * and the scale is at most `supply / wanted`, so the shares sum to no more than the supply however
+ * the rounding falls. It can under-draw by up to a gram per consumer, which is the same crumb
+ * [apportionInto]'s telescoping leaves and is beneath the resolution of anything that reads it.
+ *
+ * ⚠️ **Two temperatures, and they are not interchangeable.** An oxidation's rate is a fraction of
+ * matter in a cargo layer and climbs with *that matter's* temperature; a fire's is a fraction of gas
+ * and climbs with the room's. A hot lump in a cold room and a cold lump in a hot one are different
+ * situations, and reading one temperature for both would quietly make them the same.
+ */
+fun oxygenScales(
+    layers: List<StuffLayer>,
+    air: MassArray,
+    airKelvin: IntArray,
+    out: LongArray,
+) {
+    for (i in out.indices) {
+        val tile = TileIndex(i)
+        val oxygenHere = air[tile, Fluid.Oxygen]
+        // No oxygen is not "nobody gets any" — it is "there is nothing to divide", and a consumer
+        // that asks will be told zero by its own arithmetic. A full scale here costs nothing and
+        // keeps the empty case off the interesting path.
+        if (oxygenHere <= 0L) {
+            out[i] = SCALE
+            continue
+        }
+
+        var wanted = 0L
+        // Cargo first: every oxidation in every layer that shares this tile, each against its own
+        // layer's temperature.
+        for (l in layers.indices) {
+            val layer = layers[l]
+            if (!layer.occupies(tile)) continue
+            val kelvin = layer.kelvinAt(tile)
+            if (kelvin < LOWEST_ONSET) continue
+            for (r in OXIDATIONS.indices) {
+                wanted += OXIDATIONS[r].demand(layer[tile, OXIDATIONS[r].reactant], kelvin)
+            }
+        }
+        // Then the room's own fires, against the room's own temperature.
+        val hot = airKelvin[i]
+        if (hot >= LOWEST_COMBUSTION_ONSET) {
+            for (r in COMBUSTIONS.indices) {
+                val fuel = COMBUSTIONS[r].fuel.fluid ?: continue
+                wanted += COMBUSTIONS[r].demand(air[tile, fuel], hot)
+            }
+        }
+
+        out[i] = if (wanted <= oxygenHere) SCALE else scaledRatio(oxygenHere, wanted, SCALE)
+    }
+}
+
+/**
+ * What [demand] is allowed to take, given the tile's [scale] — or all of it where no scale was
+ * computed.
+ *
+ * ⚠️ **A null scale means "you are the only consumer", and it is a test convenience, not a
+ * default.** The simulation always passes one; a unit test with a single layer and no fires does not
+ * have to build one to ask a question about one reaction. [combust]'s `kelvin` argument is null for
+ * the same reason and with the same risk — a caller that forgets it gets the old, order-dependent
+ * behaviour rather than an error.
+ */
+private fun allowanceOf(demand: Long, scale: LongArray?, tile: TileIndex): Long {
+    if (demand <= 0L) return 0L
+    val s = scale?.get(tile.index) ?: return demand
+    if (s >= SCALE) return demand
+    return scaledRatio(demand, SCALE, s)
 }
 
 /**
@@ -143,7 +236,12 @@ class ChemistryStep(
  * layer rather than sweeping all of them: which ledger the matter belongs to is the caller's
  * knowledge, not this function's.
  */
-fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): ChemistryStep {
+fun oxidise(
+    layer: StuffLayer,
+    air: MassArray,
+    airEnergy: EnergyArray?,
+    oxygenScale: LongArray? = null,
+): ChemistryStep {
     var toSolidMass = 0L
     var toSolidEnergy = 0L
     var released = 0L
@@ -182,7 +280,17 @@ fun oxidise(layer: StuffLayer, air: MassArray, airEnergy: EnergyArray?): Chemist
                 wanted += want
             }
             if (wanted > 0L) {
-                if (wanted <= oxygenHere) demands.copyInto(allowed) else apportionInto(demands, oxygenHere, allowed)
+                // ⚠️ **The share comes from [oxygenScales], not from what is in the array now.**
+                // What is in the array now is whatever the pass before this one left, and taking
+                // that would be the pass-order rule this increment exists to delete. With no scale
+                // there is no other consumer to consider and the old local apportionment is right.
+                if (oxygenScale != null) {
+                    for (i in OXIDATIONS.indices) allowed[i] = allowanceOf(demands[i], oxygenScale, tile)
+                } else if (wanted <= oxygenHere) {
+                    demands.copyInto(allowed)
+                } else {
+                    apportionInto(demands, oxygenHere, allowed)
+                }
 
                 for (i in OXIDATIONS.indices) {
                     if (allowed[i] <= 0L) continue
@@ -533,7 +641,12 @@ private fun vapourHeadroom(species: Species, kelvin: Int, inAir: Long): Long {
  * because an argument was omitted would be a silent one. Read once per tile, before anything
  * reacts, so no row's rate depends on the heat an earlier row released.
  */
-fun combust(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): ChemistryStep {
+fun combust(
+    air: MassArray,
+    airEnergy: EnergyArray,
+    kelvin: IntArray? = null,
+    oxygenScale: LongArray? = null,
+): ChemistryStep {
     val tiles = air.data.size / Fluid.COUNT
     val temperature = kelvin ?: gasKelvin(airEnergy, heatCapacity(tiles, air))
 
@@ -562,7 +675,15 @@ fun combust(air: MassArray, airEnergy: EnergyArray, kelvin: IntArray? = null): C
             wanted += want
         }
         if (wanted <= 0L) continue
-        if (wanted <= oxygenHere) demands.copyInto(allowed) else apportionInto(demands, oxygenHere, allowed)
+        // The same share the cargo layers were given, from the same well — see [oxygenScales]. A
+        // fire in a room with a burning belt in it no longer waits its turn.
+        if (oxygenScale != null) {
+            for (r in COMBUSTIONS.indices) allowed[r] = allowanceOf(demands[r], oxygenScale, tile)
+        } else if (wanted <= oxygenHere) {
+            demands.copyInto(allowed)
+        } else {
+            apportionInto(demands, oxygenHere, allowed)
+        }
 
         for (r in COMBUSTIONS.indices) {
             if (allowed[r] <= 0L) continue

@@ -1,6 +1,7 @@
 # Unified reactions
 
-Status: **scoped, nothing built** (2026-08-27). Successor to `PLAN_ambient_chemistry.md`, which
+Status: **increments 0, 1 and 3 built** (2026-08-27). Increment 2 is parked by decision; 4 and 5
+remain. Successor to `PLAN_ambient_chemistry.md`, which
 built four reaction shapes as four classes swept by two passes. This plan makes them **one shape
 swept by one pass**, before the table grows from twenty-two rows to a few hundred.
 
@@ -139,7 +140,7 @@ stops lying without anybody editing it.
 Ordered so the case that decides the design comes first. **Each increment is one commit on `main`**,
 green before it lands.
 
-### Increment 0 — pin the problem
+### Increment 0 — pin the problem ✅ BUILT
 
 A test that walks every row of every table and asserts its principal can actually exist, in the
 store that row is swept over, at that row's onset temperature. Red on three rows on the day it
@@ -149,7 +150,7 @@ This is the guard that has to survive to the end: at three hundred rows it is th
 standing between a plausible row and a dead one. Cheap — the audit that produced the table above
 was twenty lines.
 
-### Increment 1 — one reaction, end to end: ammonia cracking
+### Increment 1 — one reaction, end to end: ammonia cracking ✅ BUILT
 
 `2 NH₃ → N₂ + 3 H₂`, dead today, becomes live in the air.
 
@@ -196,7 +197,7 @@ in increasing order of how much they change:
 **Decided (Stu, 2026-08-27): none of the three.** The answer is the fourth option — widen the fluid
 field so the atmosphere can hold the product. See decision 4 for why, and for why it waits.
 
-### Increment 3 — one pass, one well per species
+### Increment 3 — one well for the tile's oxygen ✅ BUILT
 
 The pass that replaces `oxidise` and `combust`.
 
@@ -207,16 +208,54 @@ and violated between passes: `OutofspaceSim` runs `oxidise(rails)` → `oxidise(
 oxygen, then hopper matter, and gas fires get what is left. Burning carbon on a belt structurally
 starves a methane fire in the same room, by a rule nobody wrote and no player can see.
 
-One pass, one demand phase across every row and every store, one apportionment per species. The
-Jacobi argument is the file's own; only the well changes.
+One demand phase across every consumer, one division, and each pass then takes its own share of its
+own demand. The Jacobi argument is the file's own; only the well changes.
 
-Also where the derived `baseRate` lands, since that is a rate change and belongs with the pass that
-computes rates.
+## ⚠️ Scope changed during the build (2026-08-27)
+
+**As scoped this was "one pass, one well per species". As built it is "one well for the oxygen", and
+the passes stayed separate.**
+
+The reason is ordering, not difficulty. A single well *per species* means a demand function that can
+apportion N reagents at once — and there is no way to write one while there are four row classes with
+four different demand signatures. That generalisation belongs with the collapse, so it moved to
+increment 4, where there is one row type to generalise over.
+
+What is built is the whole of the actual defect: oxygen is the only species contended *across*
+tables, and it is now divided once, before anybody takes any. The remaining contention (a reductant
+between two reductions in one layer) was already per-species and already Jacobi.
+
+⚠️ **The Boudouard row therefore does not move here.** It needs a reagent in each store, which needs
+the N-reagent path. It stays pinned in `ReactionReachabilityTest` until increment 4.
+
+### The well was necessary and not sufficient
+
+Found by the test rather than reasoned out. With the oxygen shared, running the fire before the belt
+still gave a different answer from running the belt before the fire — the two agreed on the carbon
+and disagreed on the CO₂. `combust` derives the room's temperature from `airEnergy` when it is not
+given one, and an oxidation has already moved heat into the air by the time it looks. **The fire's
+rate was reading a room the belt had warmed.**
+
+So a snapshot is two things, not one: the oxygen *and* the temperature, both taken before anything
+reacts. `OutofspaceSim` now derives the air temperature once and hands it to every pass. ⛔ A caller
+that omits it gets the old behaviour rather than an error, which is the same shape of trap the
+`oxygenScale` argument has and is called out at both.
+
+### Not here
+
+The derived `baseRate` — surface-vs-volume from the principal's phase at this tile — was scoped into
+this increment and moves to 4 with the rest of the generalisation. It is a rate change and it belongs
+with the pass that computes rates, which is the one increment 4 builds.
 
 ### Increment 4 — the four classes become rows
 
-`Decomposition`, `Oxidation`, `Reduction` and `Combustion` collapse into `Reaction`. Mechanical once
-3 is in: the tables become data and `SpeciesInfo.kt`'s flattening becomes the identity function.
+`Decomposition`, `Oxidation`, `Reduction` and `Combustion` collapse into `Reaction`. The tables
+become data and `SpeciesInfo.kt`'s flattening becomes the identity function.
+
+⚠️ **Larger than "mechanical", because increment 3 handed it two things.** The N-reagent demand and
+apportionment lands here, since it is only writable once there is one row type; so does the derived
+`baseRate`. And the Boudouard row — a reagent in each store — is the case that proves both, so it is
+the one to do first within this increment.
 
 The reference panel's `ALL_REACTIONS` stops being a place a table can be forgotten — which is the
 bug fixed by hand on 2026-08-27 and worth deleting the possibility of.

@@ -126,6 +126,7 @@ import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.combust
 import org.emerge.demo.outofspace.world.offGas
+import org.emerge.demo.outofspace.world.oxygenScales
 import org.emerge.demo.outofspace.world.reactInFluid
 import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
@@ -474,8 +475,22 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // chemistry that follows is the same chemistry, by the same arithmetic, that would happen to
         // the same matter on a belt. The machine controls the conditions and nothing else.
         if (shouldRun(state.tick, CHEM_PERIOD, CHEM_OFFSET, frozen)) {
-            val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy)
-            val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy)
+            // ⚠️ **Who gets the oxygen is settled before anybody takes any.** Every consumer at a
+            // tile — both cargo layers and every gas fire — is asked what it wants against one
+            // snapshot, and the well is divided once. Until this existed the three passes below ran
+            // in order against a dwindling array, so rail matter had first refusal, then hoppers,
+            // then fires: burning carbon on a belt structurally starved a methane fire in the same
+            // room, by a rule nobody wrote. See `oxygenScales`, and `Reaction.kt`'s ⛔ on iteration
+            // order, which this is the pass-level version of.
+            //
+            // ⚠️ Derived once and handed to all four calls below. `combust` would otherwise derive
+            // it again, and a temperature taken after a pass has already burned some of the air is
+            // an answer about a different room.
+            val airKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
+            val oxygen = LongArray(state.grid.size)
+            oxygenScales(listOf(w.rail.stuff, w.buffers.stuff), w.masses, airKelvin, oxygen)
+            val onRails = oxidise(w.rail.stuff, w.masses, w.airEnergy, oxygen)
+            val inHoppers = oxidise(w.buffers.stuff, w.masses, w.airEnergy, oxygen)
             // Then what the matter will no longer hold on to, which is the only pass of the two
             // that can put anything into the air — and the only one that is told where the walls
             // are. Reactions first, so a volatile made this tick can leave in the tick it was made
@@ -494,14 +509,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // are taken later in the tick and *after* this pass has changed the air, so they answer
             // about a room this one has already burned; and the two run on different periods, so
             // there are ticks where they do not exist at all.
-            val inTheAir = combust(w.masses, w.airEnergy)
+            val inTheAir = combust(w.masses, w.airEnergy, airKelvin, oxygen)
             val inThePipes = combust(w.pipeMass, w.pipeEnergy)
             // And the reactions that are neither cargo chemistry nor fires — the ones whose
             // principal simply happens to be a fluid, so the fluid field is where they are swept.
             // Ammonia cracking is the first; see `PLAN_unified_reactions.md`. Alongside `combust`
             // rather than folded into it because it settles no contention: every row has one
             // reagent, so nothing here can starve anything.
-            val crackedInAir = reactInFluid(w.masses, w.airEnergy)
+            val crackedInAir = reactInFluid(w.masses, w.airEnergy, airKelvin)
             val crackedInPipes = reactInFluid(w.pipeMass, w.pipeEnergy)
             val toGasMass = offRails.toGasMass + offHoppers.toGasMass
             val toGasEnergy = offRails.toGasEnergy + offHoppers.toGasEnergy
