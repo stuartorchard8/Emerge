@@ -1,5 +1,6 @@
 package org.emerge.demo.outofspace
 
+import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 
@@ -20,13 +21,28 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 sealed interface Brush {
     val label: String
 
+    /**
+     * What the thing this brush lays is to be **built out of**, or null for its kind's default.
+     *
+     * ⛔ **On the brush and not on the [Edit], because it is a standing choice rather than an act.**
+     * A player picks a material once and then draws for a while, exactly as they pick a conduit once
+     * and then draw; putting it on the edit would make it something re-decided per click, which is
+     * neither how the tool behaves nor how the menu would present it.
+     *
+     * ⚠️ **Nothing sets it yet.** The plumbing beneath is complete — a site stores its choice, its
+     * bill follows it, and the door admits only what it asked for — so what is missing is the menu
+     * and nothing else. Until there is one this is null everywhere and every brush lays its kind's
+     * default, which is why the whole suite is unchanged by the feature existing.
+     */
+    val material: Species?
+
     /** A length of conduit, laid into [conduit]'s own layer. */
-    data class Run(val conduit: Conduit) : Brush {
+    data class Run(val conduit: Conduit, override val material: Species? = null) : Brush {
         override val label: String get() = conduit.label
     }
 
     /** A building, standing on the deck. */
-    data class Building(val kind: DeckMachineKind) : Brush {
+    data class Building(val kind: DeckMachineKind, override val material: Species? = null) : Brush {
         override val label: String get() = kind.label
     }
 

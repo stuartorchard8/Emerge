@@ -1746,14 +1746,20 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             val c = brush.conduit
                             if (spokenFor(c, edit.tile)) return
                             if (layer(c)[edit.tile.index] == null) {
-                                layer(c)[edit.tile.index] = Segment(c)
+                                // The brush's material rides onto the segment, so the site knows what
+                                // it is asking for before the first gram arrives. Null is the
+                                // conduit's default and writes nothing to disk.
+                                layer(c)[edit.tile.index] = Segment(c, material = brush.material)
                                 // In creative the metal arrives from off-world with its heat in it,
                                 // and `built` books it. Otherwise it does not arrive at all: what is
                                 // laid is a ghost, and it fills itself off the network.
-                                if (creative) built(tracks.lay(c, edit.tile))
+                                if (creative) {
+                                    built(tracks.lay(c, edit.tile, brush.material ?: c.material.species))
+                                }
                             }
                         }
-                        is Brush.Building -> placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck)
+                        is Brush.Building ->
+                            placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, brush.material)
                     }
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
@@ -2154,7 +2160,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * every shape gives — and this is where a motor's bell is checked for room, so an engine
          * cannot be nosed into a wall or off the rim.
          */
-        private fun placeDeckBuilding(tile: TileIndex, kind: DeckMachineKind, facing: Direction, deck: DeckArray) {
+        private fun placeDeckBuilding(
+            tile: TileIndex,
+            kind: DeckMachineKind,
+            facing: Direction,
+            deck: DeckArray,
+            material: Species? = null,
+        ) {
             val built = newDeckMachine(kind, tile, facing) ?: return
             // Null means it hangs off the grid — half a bridge, or a smelter over the rim.
             val covered = (kind.footprint(tile, grid, facing) ?: return).toList()
@@ -2176,7 +2188,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Outside creative the machine arrives as a ghost: standing there, made of nothing, and
             // nothing is booked because nothing came from off-world. See [DeckArray.stand].
-            deck.stand(built, withCasing = creative)
+            deck.stand(built, withCasing = creative, material = material)
             if (creative) built(built.energy(grid, deck.stuff).sum())
             // The stores go up with the building: an empty tank is a tank and not an absence, and a
             // bridge's three slots have to exist before anything can be set down in one.

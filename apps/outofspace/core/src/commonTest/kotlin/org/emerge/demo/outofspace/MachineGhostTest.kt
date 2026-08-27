@@ -539,6 +539,48 @@ class MachineGhostTest {
         assertTrue("made=" !in Save.write(s), "a default material was written to disk")
     }
 
+    /**
+     * ⛔ **The player's end of it: a brush carries the choice onto the tile it draws.**
+     *
+     * The last link, and the only one a player can see. Everything under it was proved separately —
+     * the site stores a material, the bill follows it, the door admits only what it asked for — and
+     * none of that is reachable until an *edit* can express the choice. This asserts the whole path
+     * from `Edit.Place` down to what the site is standing there wanting.
+     *
+     * ⚠️ **The brush is where the material lives rather than the edit**, because it is a standing
+     * choice and not an act: a player picks a material once and then draws for a while, exactly as
+     * they pick a conduit once and then draw.
+     */
+    @Test
+    fun `a brush carrying a material puts it on what it draws`() {
+        val at = grid.tile(8, 5)
+        val empty = VesselState.empty(grid).copy(creative = false)
+
+        val chosen = edit(empty, Edit.Place(at, Brush.Building(DeckMachineKind.Storage, Species.Copper), Direction.Right))
+        assertEquals(Species.Copper, chosen.deck.chosenMaterialAt(at), "the brush's material did not reach the deck")
+        assertEquals(
+            machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, Species.Copper),
+            machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, chosen.deck.materialOf(chosen.deck[at]!!)),
+            "and so its bill is not a copper one",
+        )
+
+        // A run, the same way, on its own layer.
+        val railAt = grid.tile(3, 6)
+        val laid = edit(empty, Edit.Place(railAt, Brush.Run(Conduit.Rail, Species.Steel), Direction.Right))
+        assertEquals(
+            Species.Steel,
+            laid.conduits.at(Conduit.Rail, railAt)?.material,
+            "the brush's material did not reach the segment",
+        )
+
+        // ⚠️ And the default brush still records nothing, so an ordinary world is untouched.
+        val plain = edit(empty, Edit.Place(grid.tile(5, 6), Brush.Run(Conduit.Rail), Direction.Right))
+        assertNull(
+            plain.conduits.at(Conduit.Rail, grid.tile(5, 6))?.material,
+            "a brush nobody set a material on recorded one anyway",
+        )
+    }
+
     /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */
     @Test
     fun `building a machine conserves mass`() {
