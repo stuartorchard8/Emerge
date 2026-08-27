@@ -161,6 +161,30 @@ class StuffLayer private constructor(
     }
 
     /**
+     * The species at [tile] **if it is the only one there**, and null otherwise.
+     *
+     * ⛔ **Not [dominantAt] with a comparison bolted on, because it is a different question.** That
+     * one asks what a tile is *made of* and always answers if there is anything there; this asks
+     * whether the tile is a usable *stock* of one material, and a tile that is 99% iron is not. At
+     * `BUILD_PURITY_PERCENT` of 100 a construction site refuses anything off its recipe, so a lump
+     * or a casing carrying so much as a microgram of anything else can build nothing at all — and an
+     * inventory that counted it would be promising material the network will refuse.
+     *
+     * ⚠️ Costs what the tile holds and allocates nothing, like everything else on this loop.
+     */
+    fun pureSpeciesAt(tile: TileIndex): Species? {
+        var only: Species? = null
+        var count = 0
+        forEachSpecies(tile) { species, mass ->
+            if (mass > 0L) {
+                only = species
+                count++
+            }
+        }
+        return if (count == 1) only else null
+    }
+
+    /**
      * How hot the stuff at [tile] is, in kelvin. Matterless tiles read as ambient, for the reason
      * [org.emerge.demo.outofspace.world.gasKelvin] documents.
      */

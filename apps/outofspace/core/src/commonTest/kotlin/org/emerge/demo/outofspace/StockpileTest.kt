@@ -87,7 +87,30 @@ class StockpileTest {
 
         assertTrue(stock.totalMass > 0L, "the matter is still aboard")
         assertEquals(0L, stock.buildable(Species.Iron), "a contaminated tank was offered as iron")
-        assertTrue(stock.buildableSpecies.isEmpty(), "nothing in this vessel can build anything")
+        assertEquals(0L, stock.inFabric(Species.Iron), "and none of it is in the fabric either")
+    }
+
+    /**
+     * ⛔ **The tank itself is made of something, and that counts.** A storage is a titanium casing,
+     * so a vessel that holds nothing whatsoever still has titanium aboard — recoverable by taking
+     * the tank apart, and reported as fabric rather than as loose so nobody is promised a build the
+     * network cannot start.
+     *
+     * ⚠️ Three tests in this class asserted the *shortlist was empty* before the sweep widened, and
+     * all three were wrong for this reason rather than by a rounding: the vessel they described was
+     * standing on metal the whole time.
+     */
+    @Test
+    fun `a vessel is made of something, and that is stock too`() {
+        val stock = vesselHolding(pure(Species.Iron, 1)).stockpile
+
+        assertEquals(0L, stock.inFabric(Species.Iron), "loose iron is not fabric")
+        assertTrue(stock.buildable(Species.Iron) > 0L, "and it is loose")
+        assertTrue(
+            stock.inFabric(Species.Titanium) > 0L,
+            "a tank is made of titanium, so there is titanium in the fabric",
+        )
+        assertEquals(0L, stock.buildable(Species.Titanium), "but none of it is loose")
     }
 
     /** Two tanks of the same thing add up, because a site can draw from either. */
@@ -95,7 +118,7 @@ class StockpileTest {
     fun `tanks holding the same species pool`() {
         val stock = vesselHolding(pure(Species.Iron, 3), pure(Species.Iron, 5)).stockpile
         assertEquals(8 * Capacity.PACKET_MASS, stock.buildable(Species.Iron), "iron should pool")
-        assertEquals(listOf(Species.Iron), stock.buildableSpecies, "and read as one entry")
+        assertEquals(1, stock.buildableSpecies.count { it == Species.Iron }, "and read as one entry")
     }
 
     /** Heaviest first: a picker's shortlist is ordered by what you have most of, as ONI's is. */
@@ -106,9 +129,12 @@ class StockpileTest {
             pure(Species.Iron, 9),
             pure(Species.Titanium, 4),
         ).stockpile
+        // ⚠️ Only the metals put in the tanks, because the tanks themselves are titanium and their
+        // casings are legitimately in the list too — see `a vessel is made of something`.
+        val stored = stock.buildableSpecies.filter { stock.buildable(it) > 0L }
         assertEquals(
             listOf(Species.Iron, Species.Titanium, Species.Copper),
-            stock.buildableSpecies,
+            stored,
             "the shortlist is not in descending order of mass",
         )
     }

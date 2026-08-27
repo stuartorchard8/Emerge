@@ -93,6 +93,10 @@ class OutofspaceHud {
      */
     fun build(ui: Ui, controller: OutofspaceController, fps: Float, hovered: TileIndex = TileIndex.NONE) {
         val s = controller.state
+        // ⚠️ **Once per frame, and it used to be twice.** `VesselState.stockpile` is a `get()` that
+        // sweeps every buffer, every belt, the whole deck and every conduit layer; two panels asking
+        // for it independently walked the world twice for one number apiece.
+        val stock = s.stockpile
         ui.frame {
             // Drawn first (occludes everything).
             navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
@@ -119,7 +123,7 @@ class OutofspaceHud {
                 title("MASS BALANCE")
                 keyValue("Extracted", mass(s.extractedMass))
                 keyValue("Aboard", mass(s.inTransitMass))
-                keyValue("- in storage", mass(s.stockpile.totalMass))
+                keyValue("- in storage", mass(stock.totalMass))
                 keyValue("Built in", mass(s.builtMass))
                 keyValue("Vented", mass(s.ventedMass))
                 // ⛔ **`builtMass` and `baselineCargoMass` were missing from this sum, and their
@@ -192,9 +196,8 @@ class OutofspaceHud {
                 // "53% WATER" across 187 machines and said nothing about iron, titanium or steel.
                 // Summing is what destroys the information: a storage can supply a species only if
                 // it holds nothing else, so buildability is a per-tank fact — see [Stockpile].
-                val stock = s.stockpile
                 title("STOCKPILE")
-                row("(what a site could be built from)", 0x7A8A9AFFL)
+                row("(pure material aboard)", 0x7A8A9AFFL)
                 val held = stock.held
                 if (held.isEmpty) {
                     row("(no storage holding anything)", 0x9A9A9AFFL)
@@ -207,11 +210,17 @@ class OutofspaceHud {
                         // not being fed is usually this.
                         row("nothing pure enough to build with", 0xC8A44AFFL)
                     } else {
+                        // ⚠️ **Two figures, never their sum.** Loose metal the network can deliver
+                        // now, and metal built into the ship that a deconstruction order would free.
+                        // Adding them would have the panel promise a build that cannot start;
+                        // omitting the second told a player laying spare track that he had no iron
+                        // while he was standing on tonnes of it.
+                        row("loose · in fabric", 0x7A8A9AFFL)
                         // Heaviest first, capped: a picker's shortlist, not an inventory dump.
                         for (species in buildable.take(STOCKPILE_LINES)) {
                             keyValue(
                                 "  ${species.name}",
-                                mass(stock.buildable(species)),
+                                "${mass(stock.buildable(species))} · ${mass(stock.inFabric(species))}",
                                 0x9A9A9AFFL,
                                 speciesColor(species),
                             )

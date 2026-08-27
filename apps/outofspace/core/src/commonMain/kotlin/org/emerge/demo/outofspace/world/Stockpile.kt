@@ -45,8 +45,10 @@ import org.emerge.demo.outofspace.world.machine.Storage
 class Stockpile private constructor(
     /** Everything in every storage aboard, in one heap. How much is aboard, not what it can become. */
     val held: Mixture,
-    /** Per [Species.ordinal]: mass held in storages that hold **only** that species. */
-    private val pure: LongArray,
+    /** Per [Species.ordinal]: pure mass the network can already deliver — tanks, buffers, belts. */
+    private val loose: LongArray,
+    /** Per [Species.ordinal]: pure mass built into the vessel, recoverable only by taking it apart. */
+    private val fabric: LongArray,
 ) {
 
     val totalMass: Long get() = held.total
@@ -56,56 +58,122 @@ class Stockpile private constructor(
     operator fun get(species: Species): Long = held[species]
 
     /**
-     * How much of [species] is sitting somewhere a construction site could actually draw it from.
+     * How much of [species] the network could deliver to a site **right now** — what is in tanks, in
+     * machine buffers, and riding on belts.
      *
-     * ⛔ **Counts only storages holding nothing but [species]**, which is not a conservatism — it is
+     * ⛔ **Counts only stores holding nothing but [species]**, which is not a conservatism — it is
      * what [buildableFrom] will do at the tile. A tank of 99% iron emits 99% iron packets, because a
      * packet is a proportional sample and not the good bits skimmed off, and every one of them is
      * refused. Reporting that tank as iron the player can build with would be the inventory lying
      * about the only thing it is being asked.
      */
-    fun buildable(species: Species): Long = pure[species.ordinal]
+    fun buildable(species: Species): Long = loose[species.ordinal]
 
-    /** Every species there is a buildable quantity of, heaviest first — what a picker offers. */
+    /**
+     * How much of [species] is **built into the vessel** — casings and laid conduit — and so is
+     * recoverable only by marking something for deconstruction.
+     *
+     * ⛔ **Counted, and counted separately, and both halves of that matter.** Stu stores his iron by
+     * laying track he is not using yet, which is a perfectly good warehouse and one the old view was
+     * blind to: it would have told him he had no iron while he was standing on tonnes of it. But it
+     * is not the same as iron in a tank, and adding the two would have the panel promise a build the
+     * network cannot start — so they are two numbers and the player is told which is which.
+     */
+    fun inFabric(species: Species): Long = fabric[species.ordinal]
+
+    /**
+     * Every species there is any pure quantity of at all — what a picker offers.
+     *
+     * ⛔ **Ordered by [buildable] first and [inFabric] only as a tie-break, not by their sum.** The
+     * question a picker asks is "what can I build with", and that is answered by what the network
+     * can deliver; a vessel's own casings are heavier than anything in its tanks almost by
+     * definition, so ranking on the total puts whatever the ship is *made of* at the top of every
+     * list and buries what the player actually has. Fabric-only species still appear, below the
+     * loose ones, because "you have tonnes of this if you take something apart" is worth knowing.
+     */
     val buildableSpecies: List<Species>
-        get() = Species.ALL.filter { pure[it.ordinal] > 0L }.sortedByDescending { pure[it.ordinal] }
+        get() = Species.ALL
+            .filter { loose[it.ordinal] > 0L || fabric[it.ordinal] > 0L }
+            .sortedWith(compareByDescending<Species> { loose[it.ordinal] }.thenByDescending { fabric[it.ordinal] })
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Stockpile && held == other.held && pure.contentEquals(other.pure))
+        this === other || (
+            other is Stockpile && held == other.held &&
+                loose.contentEquals(other.loose) && fabric.contentEquals(other.fabric)
+            )
 
-    override fun hashCode(): Int = 31 * held.hashCode() + pure.contentHashCode()
+    override fun hashCode(): Int =
+        31 * (31 * held.hashCode() + loose.contentHashCode()) + fabric.contentHashCode()
 
     override fun toString(): String = "Stockpile(${held.total}g $held)"
 
     companion object {
-        val EMPTY: Stockpile = Stockpile(Mixture.EMPTY, LongArray(Species.COUNT))
+        val EMPTY: Stockpile =
+            Stockpile(Mixture.EMPTY, LongArray(Species.COUNT), LongArray(Species.COUNT))
 
-        /** Everything sitting in every storage aboard: one heap, and the per-species pure tally. */
-        fun of(grid: Grid, deck: DeckArray, buffers: BufferLayer): Stockpile {
+        /**
+         * Everything aboard, sorted into what the network can move and what is built into the ship.
+         *
+         * ⛔ **Four stores, because the vessel keeps material in four places** and a player uses all
+         * of them. Tanks and machine buffers and belts are *loose* — the network can pick them up
+         * and take them somewhere. Casings and laid conduit are *fabric* — the same metal, and it
+         * takes a deconstruction order to get at it.
+         *
+         * ⚠️ **A storage's contents are a buffer**, so walking the buffer layer already covers every
+         * tank; [held] is measured on its own pass because "how much is in storage" is a different
+         * question and `stockpileMass` has always answered it.
+         */
+        fun of(
+            grid: Grid,
+            deck: DeckArray,
+            buffers: BufferLayer,
+            rail: RailLayer,
+            conduits: Conduits,
+        ): Stockpile {
             var any = false
-            var total = Mixture.EMPTY
-            val pure = LongArray(Species.COUNT)
-            // Off the deck, which is where warehouses live now. Walked by centre: a tank is three
-            // tiles across and stored once, and adding its contents per covered tile would have the
-            // inventory report nine times what is aboard.
+            var stored = Mixture.EMPTY
+            val loose = LongArray(Species.COUNT)
+            val fabric = LongArray(Species.COUNT)
+
+            // ── What is in storage, for [held] ──
+            //
+            // Walked by centre: a tank is three tiles across and stored once, and adding its
+            // contents per covered tile would have the inventory report nine times what is aboard.
             for (i in 0 until deck.size) {
                 val tile = TileIndex(i)
                 val m = deck[tile]
                 if (m !is Storage || m.center != tile) continue
                 val store = bufferTile(grid, m, tile, BufferRole.Inside) ?: continue
-                val held = buffers.resourceAt(store) ?: continue
-                if (held.isEmpty) continue
-                total += held
-                // ⚠️ **Per storage, and this is the whole reason the loop cannot just sum.** Purity
-                // is a fact about one tank; once two are added together it is gone and cannot be
-                // recovered from the sum.
-                val dominant = held.dominant
-                if (dominant != null && held[dominant] == held.total) {
-                    pure[dominant.ordinal] += held.total
-                }
+                val inside = buffers.resourceAt(store) ?: continue
+                if (inside.isEmpty) continue
+                stored += inside
                 any = true
             }
-            return if (any) Stockpile(total, pure) else EMPTY
+
+            // ── Loose: every machine store aboard, tanks included, and everything on a belt ──
+            for (layer in listOf(buffers.stuff, rail.stuff)) {
+                layer.forEachOccupiedTile { tile ->
+                    layer.pureSpeciesAt(tile)?.let { loose[it.ordinal] += layer.massAt(tile) }
+                }
+            }
+
+            // ── Fabric: casings, and the metal in every length of conduit ──
+            //
+            // ⚠️ Per *tile* and not per machine, unlike the storage walk above: a casing is spread
+            // across a footprint rather than held at one address, so every covered tile carries its
+            // own share and all of them count.
+            deck.stuff.forEachOccupiedTile { tile ->
+                deck.stuff.pureSpeciesAt(tile)?.let { fabric[it.ordinal] += deck.stuff.massAt(tile) }
+            }
+            for (conduit in Conduit.entries) {
+                val layer = conduits.tracks[conduit]
+                layer.forEachOccupiedTile { tile ->
+                    layer.pureSpeciesAt(tile)?.let { fabric[it.ordinal] += layer.massAt(tile) }
+                }
+            }
+
+            val anything = any || loose.any { it > 0L } || fabric.any { it > 0L }
+            return if (anything) Stockpile(stored, loose, fabric) else EMPTY
         }
     }
 }
