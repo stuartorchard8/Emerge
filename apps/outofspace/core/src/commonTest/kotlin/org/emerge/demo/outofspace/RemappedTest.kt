@@ -330,6 +330,33 @@ class RemappedTest {
         assertEquals(massBalance(s0), massBalance(s1), "massBalance must be preserved")
     }
 
+    /**
+     * The ledger with a **ghost aboard** — the case `massBalance is preserved across remap` cannot
+     * see, because everything in `populatedWorld` is finished and a remap that re-seeds a finished
+     * machine puts back exactly what it took away.
+     *
+     * A machine's casing is real matter that [VesselState.mass] counts, so a deck carried across by
+     * *standing* each machine again mints the difference: a ghost came back holding a full bill it
+     * had never been delivered, and a hull part eaten by a reaction came back pristine. Kept as a
+     * ledger assertion rather than a per-tile one so that any future variant of "the remap conjured
+     * something" fails here too.
+     */
+    @Test
+    fun `a resize mints no matter for the machines it moves`() {
+        val s0 = populatedWorld()
+        // Made of nothing and standing there: a construction site, which is the ordinary state of
+        // anything the player has just placed.
+        s0.deck.stand(Hull(s0.grid.tile(8, 8)), withCasing = false)
+        // And a finished hull with some of its iron gone — a composition nothing can re-derive.
+        val eaten = s0.grid.tile(5, 5)
+        s0.deck.stuff[eaten, Species.Iron] = s0.deck.stuff[eaten, Species.Iron] / 3
+
+        val s1 = s0.remapped(Grid(s0.grid.width + 3, s0.grid.height + 2), 3, 2)
+
+        assertEquals(s0.mass, s1.mass, "the resize changed what the ship is made of")
+        assertEquals(s0.deck.totalEnergy, s1.deck.totalEnergy, "and how hot it is")
+    }
+
     @Test
     fun `a length of track keeps what it is made of across a remap`() {
         // The remap used to copy a segment's heat by hand and let `Conduits.with` re-derive its

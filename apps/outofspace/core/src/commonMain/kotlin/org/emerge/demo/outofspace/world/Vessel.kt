@@ -1112,14 +1112,22 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
 
     // ── 1. The deck ──────────────────────────────────────────────────────
     // The deck is three things on one lattice — the machines, their matter and their energy — so it
-    // is remapped in two passes rather than one. `+=` seeds a freshly placed machine at ambient, and
-    // this machine is not freshly placed: the stores are copied over the seed afterwards, which is
-    // also the only order in which `+=`'s "nothing here yet" requirement can hold.
+    // is remapped in two passes rather than one: the machines stand first, then what they are made
+    // of is copied on top. That order is also the only one in which `stand`'s "nothing here yet"
+    // requirement can hold.
+    //
+    // ⚠️ **`withCasing = false`, exactly as the conduit layers below carry their own metal.** `+=`
+    // is *placement*, and placement lays a full bill of casing at ambient; this machine is not
+    // freshly placed. The copy that follows only runs where the old deck actually held something,
+    // and a **ghost holds nothing** — so it kept the casing the remap had conjured for it and stood
+    // up finished. Place a thruster near an edge, the grid grows to fit it, and every construction
+    // site aboard is built for free out of nothing. A part-built site had the same seed fill in
+    // every species it had not yet been delivered. `MachineGhostTest` pins both.
     val newDeck = DeckArray(newGrid)
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val m = deck[grid.tile(ox, oy)] ?: continue
         val ni = remapTile(ox, oy) ?: continue
-        newDeck += m.movedTo(ni)
+        newDeck.stand(m.movedTo(ni), withCasing = false)
     }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue

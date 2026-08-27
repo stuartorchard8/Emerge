@@ -842,6 +842,62 @@ class MachineGhostTest {
     }
 
     /**
+     * ⛔ **A resize must not build the ship for you.**
+     *
+     * The deck was carried across a remap by standing every machine on the new lattice with `+=`,
+     * which is *placement*: it lays a full bill of casing at ambient. The old stores were then
+     * copied over the top — but only at tiles the old deck actually held something at, and a
+     * **ghost** by definition holds nothing. So every construction site aboard kept the casing the
+     * remap had just conjured for it: place a thruster near an edge, the grid grows to fit it, and
+     * the whole ship finishes itself out of nothing.
+     *
+     * The fix is the one the track already had for the same reason — stand the machine **without**
+     * casing and carry what is actually there. See `RemappedTest`'s "a length of track keeps what it
+     * is made of across a remap"; this is that bug at the deck layer.
+     */
+    @Test
+    fun `a ghost machine is still a ghost after the grid grows`() {
+        val at = grid.tile(10, 4)
+        val bell = grid.tile(11, 4)
+        val start = tankAndGhost(Thruster(at, Direction.Right))
+        assertTrue(start.deck.isGhost(at), "fixture")
+
+        val wider = Grid(grid.width + 6, grid.height + 4)
+        val moved = start.remapped(wider, dx = 3, dy = 2)
+        val now = wider.tile(grid.xOf(at) + 3, grid.yOf(at) + 2)
+        val nowBell = wider.tile(grid.xOf(bell) + 3, grid.yOf(bell) + 2)
+
+        assertNotNull(moved.deck[now], "the motor itself moved")
+        assertEquals(0L, moved.deck.stuff.massAt(now), "the resize built its chamber out of nothing")
+        assertEquals(0L, moved.deck.stuff.massAt(nowBell), "the resize built its bell out of nothing")
+        assertEquals(0L, moved.deck.stuff.energyAt(now), "and warmed what it built")
+        assertTrue(moved.deck.isGhost(now), "a construction site came back finished")
+    }
+
+    /**
+     * The same gap, seen from the other side: a site part way through its bill kept the seed for
+     * every species it had **not** yet been delivered. A hull half fed on iron came back one grid
+     * over holding all the carbon steel asks for, which nothing put there.
+     */
+    @Test
+    fun `a half-built machine keeps exactly what it is made of across a remap`() {
+        val at = grid.tile(10, 4)
+        val start = tankAndGhost(Hull(at))
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        assertTrue(bill[Species.Carbon] > 0L, "fixture: a hull is an alloy, or this proves nothing")
+        // Part fed, and only in iron: the carbon is still on its way.
+        start.deck.stuff[at, Species.Iron] = bill[Species.Iron] / 2
+
+        val wider = Grid(grid.width + 6, grid.height + 4)
+        val moved = start.remapped(wider, dx = 3, dy = 2)
+        val now = wider.tile(grid.xOf(at) + 3, grid.yOf(at) + 2)
+
+        assertEquals(bill[Species.Iron] / 2, moved.deck.stuff[now, Species.Iron], "iron at $now")
+        assertEquals(0L, moved.deck.stuff[now, Species.Carbon], "the resize delivered the carbon")
+        assertTrue(moved.deck.isGhost(now), "a construction site came back finished")
+    }
+
+    /**
      * The mark is the only thing about any of this that is new on disk. Ghost-ness is derived from
      * the casing and saves for free; being condemned is a decision and has to be written down.
      */
@@ -853,6 +909,23 @@ class MachineGhostTest {
 
         val after = Save.read(Save.write(before))
         assertTrue(at in after.scrapping, "the machine came back from the save reprieved")
+    }
+
+    /**
+     * The other place a machine is stood on a fresh deck. `deckstuff` states a casing that is not
+     * its kind's bill, and a ghost's — nothing at all — is the extreme of that, so the loader
+     * replacing what `+=` laid is what keeps a construction site a construction site.
+     */
+    @Test
+    fun `a ghost machine comes back from a save still a ghost`() {
+        val at = grid.tile(10, 4)
+        val before = tankAndGhost(Thruster(at, Direction.Right))
+        assertTrue(before.deck.isGhost(at), "fixture")
+
+        val after = Save.read(Save.write(before))
+        assertTrue(after.deck.isGhost(at), "the save built the motor")
+        assertEquals(0L, after.deck.stuff.massAt(at), "its chamber came back made of something")
+        assertEquals(0L, after.deck.stuff.massAt(grid.tile(11, 4)), "its bell came back made of something")
     }
 
     @Test
