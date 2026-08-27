@@ -217,6 +217,8 @@ fun railAppetites(
      * material choice — and every fixture — still reads as it did.
      */
     materialAt: (Conduit, TileIndex) -> Species = { conduit, _ -> conduit.material.species },
+    /** The same question for a machine site, which keeps its choice on the deck rather than a segment. */
+    machineMaterialAt: (DeckMachine) -> Species = { it.kind.material.species },
     lumpAt: (TileIndex) -> Mixture?,
 ): Appetites {
     if (ghosts.isEmpty() && machineGhosts.isEmpty() && conduitGhosts.isEmpty()) return Appetites.BLIND
@@ -236,7 +238,8 @@ fun railAppetites(
             .add(conduitBillOfMaterials(conduit, materialAt(conduit, tile)))
     }
     for ((tile, m) in machineGhosts) {
-        billsAt.getOrPut(tile) { mutableListOf() }.add(machineBillOfMaterials(m.kind, m.tiles(grid).size))
+        billsAt.getOrPut(tile) { mutableListOf() }
+            .add(machineBillOfMaterials(m.kind, m.tiles(grid).size, machineMaterialAt(m)))
     }
 
     // Class 0 is the boundless appetite and owns no bills.

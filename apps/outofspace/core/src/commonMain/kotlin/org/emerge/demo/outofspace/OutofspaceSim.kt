@@ -2854,7 +2854,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun machineShortfall(m: DeckMachine): Long {
             val tiles = m.tiles(grid)
-            val bill = machineBillOfMaterials(m.kind, tiles.size)
+            val bill = machineBillOfMaterials(m.kind, tiles.size, deck.materialOf(m))
             var held = 0L
             for (t in tiles) held += deck.stuff.massAt(t)
             return bill.total - held
@@ -2910,7 +2910,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // The deck's half of the same door — see [absorbIntoGhost]. A machine footprint is a
             // far easier place to strand somebody's cargo than a single rail tile.
             val standing = rail.resourceAt(tile) ?: return null
-            if (!buildableFrom(machineBillOfMaterials(m.kind, m.tiles(grid).size), standing)) return null
+            if (!buildableFrom(machineBillOfMaterials(m.kind, m.tiles(grid).size, deck.materialOf(m)), standing)) return null
             val need = machineShortfall(m)
             if (need <= 0L) return null
             val have = rail.massAt(tile)
@@ -3183,7 +3183,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 )
             }
             for ((tile, m) in machineGhosts) {
-                val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size)
+                val bill = machineBillOfMaterials(m.kind, m.tiles(grid).size, deck.materialOf(m))
                 // ⛔ **A machine site does not stand in the road.** The track under it is finished
                 // and paid for; the anti-exploit is about unpaid *track*. See [Acceptance.stopsTraffic].
                 accepts.getOrPut(tile) { mutableListOf() }
@@ -3226,6 +3226,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 machineGhosts,
                 otherGhosts,
                 ::materialAt,
+                deck::materialOf,
             ) { rail.resourceAt(it) }
 
             var flow = FlowGraph.build(
@@ -3396,7 +3397,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // machine pays for the extra read.
                 val machineSite = machineGhosts[tile]
                 if (machineSite != null &&
-                    canBeBuiltFromLumpAt(tile, machineBillOfMaterials(machineSite.kind, machineSite.tiles(grid).size))
+                    canBeBuiltFromLumpAt(tile, machineBillOfMaterials(machineSite.kind, machineSite.tiles(grid).size, deck.materialOf(machineSite)))
                 ) {
                     return@advanceSegments absorbIntoMachineGhost(tile, machineSite)
                 }

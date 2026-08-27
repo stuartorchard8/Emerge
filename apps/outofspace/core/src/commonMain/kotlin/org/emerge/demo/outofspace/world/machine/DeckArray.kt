@@ -8,6 +8,8 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.builtPermille
 import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 
 /**
@@ -38,6 +40,26 @@ class DeckArray(
     val grid: Grid,
     private val machines: Array<DeckMachine?>,
     val stuff: StuffLayer,
+    /**
+     * **What each machine is to be built out of**, keyed by the tile it is anchored at, or null for
+     * its kind's default.
+     *
+     * ⛔ **Per machine and not per covered tile**, which is the same rule [machines] itself follows:
+     * a furnace is three tiles across and stored once, and a material spread over its footprint
+     * could be edited into disagreeing with itself. The centre is the machine's address for
+     * everything else and it is its address for this.
+     *
+     * ⚠️ **A parallel array and not a field on [DeckMachine]**, which is the arrangement this class'
+     * own header warns about — a parallel array keyed by tile is not re-seated by `copy(...)`. It is
+     * held off the same way [stuff] is: [minusAssign] clears it and [set] leaves it alone, which is
+     * exactly the distinction between demolishing a machine and replacing it with the next tick's
+     * version of itself. Putting it on the machine instead would mean threading it through every
+     * subclass constructor and every branch of the save reader, for a value only construction reads.
+     *
+     * Null is the default rather than "unknown", so a world that has never chosen writes the file it
+     * always did — see `Segment.material`, which carries the identical argument for track.
+     */
+    private val materials: Array<Species?>,
 ) {
 
     operator fun get(key: TileIndex): DeckMachine? = if (key == TileIndex.NONE) null else machines[key.index]
@@ -54,6 +76,9 @@ class DeckArray(
         val previous = machines[tile.index] ?: return
         for (part in previous.tiles(grid)) stuff.release(part)
         machines[tile.index] = null
+        // Cleared with the machine: the choice belonged to the thing that stood here, and leaving it
+        // would hand the next machine on this tile a material nobody picked for it.
+        materials[tile.index] = null
     }
 
     /**
@@ -85,10 +110,11 @@ class DeckArray(
      * layer. Creative mode is what still takes the `true` branch, and there the metal genuinely does
      * arrive from off-world, which is why the caller books it.
      */
-    fun stand(m: DeckMachine, withCasing: Boolean) {
+    fun stand(m: DeckMachine, withCasing: Boolean, material: Species? = null) {
         require(machines[m.center.index] == null) { "already a machine at ${m.center}" }
         machines[m.center.index] = m
-        val bill = tileBillOfMaterials(m.kind)
+        materials[m.center.index] = material
+        val bill = tileBillOfMaterials(m.kind, material ?: m.kind.material.species)
         for (tile in m.tiles(grid)) {
             require(!stuff.occupies(tile)) { "deck already holds stuff at $tile" }
             if (!withCasing) continue
@@ -126,7 +152,7 @@ class DeckArray(
 
     fun holdsFullBill(m: DeckMachine): Boolean {
         val tiles = m.tiles(grid)
-        val bill = machineBillOfMaterials(m.kind, tiles.size)
+        val bill = machineBillOfMaterials(m.kind, tiles.size, materialOf(m))
         return holdsFullBill(bill, tiles.sumOf { stuff.massAt(it) })
     }
 
@@ -140,11 +166,18 @@ class DeckArray(
      */
     fun builtPermille(m: DeckMachine): Int {
         val tiles = m.tiles(grid)
-        val bill = machineBillOfMaterials(m.kind, tiles.size)
+        val bill = machineBillOfMaterials(m.kind, tiles.size, materialOf(m))
         return builtPermille(bill, tiles.sumOf { stuff.massAt(it) })
     }
 
-    fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf())
+    /** What [m] is to be built from: its own choice if one was made, its kind's default if not. */
+    fun materialOf(m: DeckMachine): Species =
+        materials[m.center.index] ?: m.kind.material.species
+
+    /** The choice as it was made, or null for "nobody chose" — what the save writes. */
+    fun chosenMaterialAt(tile: TileIndex): Species? = materials[tile.index]
+
+    fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf(), materials.copyOf())
 
     val size get() = machines.size
 
@@ -155,4 +188,5 @@ class DeckArray(
     fun setEnergy(tile: TileIndex, energy: Long) = stuff.setEnergy(tile, energy)
 }
 
-fun DeckArray(grid: Grid): DeckArray = DeckArray(grid, arrayOfNulls(grid.size), StuffLayer.empty(grid.size))
+fun DeckArray(grid: Grid): DeckArray =
+    DeckArray(grid, arrayOfNulls(grid.size), StuffLayer.empty(grid.size), arrayOfNulls(grid.size))

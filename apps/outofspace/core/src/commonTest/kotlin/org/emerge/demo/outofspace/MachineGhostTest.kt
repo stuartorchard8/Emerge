@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.PortKind
@@ -84,11 +85,11 @@ class MachineGhostTest {
      * states its rail ghosts: a fixture says what the world is, and what a placement puts down is
      * the same thing by a longer road.
      */
-    private fun tankAndGhost(machine: DeckMachine): VesselState {
+    private fun tankAndGhost(machine: DeckMachine, material: Species? = null): VesselState {
         val at = machine.center
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 4), Direction.Right)
-        deck.stand(machine, withCasing = false)
+        deck.stand(machine, withCasing = false, material = material)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, grid.xOf(at), 4)
         return VesselState(
@@ -105,9 +106,10 @@ class MachineGhostTest {
             // Several times what the machine costs: a run of track holds packets of its own while
             // they travel, so a tank stocked to the bill exactly would leave the last of it strung
             // out along the belt. A fixture should never be the reason a build stalls.
-            machine.kind.material.composition.scaledTo(
-                    machineBillOfMaterials(machine.kind, machine.tiles(grid).size).total * 4,
-                ),
+            // Whatever the site actually chose, in the quantity that site's own bill asks for — a
+            // copper machine costs more than a titanium one because copper is denser.
+            machineBillOfMaterials(machine.kind, machine.tiles(grid).size, material ?: machine.kind.material.species)
+                .let { it.scaledTo(it.total * 4) },
         ).copy(creative = false)
     }
 
@@ -461,6 +463,80 @@ class MachineGhostTest {
             OutofspaceReducer.RAIL_PERIOD * 60,
         )
         assertFalse(alloyed.deck.isGhost(at), "a tank of steel did not build a steel hull")
+    }
+
+    /**
+     * ⛔ **A machine site chooses what it is made of, the same way a length of track does.**
+     *
+     * The deck's twin of `GhostTest.a run built of copper takes copper and refuses iron`, and it has
+     * to be stated separately because the choice lives somewhere else: a segment carries its own,
+     * while a machine's sits on `DeckArray`'s parallel column, keyed by the tile it is anchored at.
+     * A rule proved on one of those says nothing about the other.
+     */
+    @Test
+    fun `a machine site built of copper takes copper and refuses titanium`() {
+        val at = grid.tile(10, 4)
+
+        fun build(stored: Species): VesselState {
+            val start = tankAndGhost(Hull(at), material = Species.Copper)
+                .stocked(
+                    grid.tile(3, 4),
+                    Mixture.of(stored to machineBillOfMaterials(DeckMachineKind.Hull, 1, Species.Copper).total * 4, energy = 0),
+                    BufferRole.Inside,
+                )
+            return run(start, OutofspaceReducer.RAIL_PERIOD * 60)
+        }
+
+        val withCopper = build(Species.Copper)
+        assertFalse(withCopper.deck.isGhost(at), "a copper hull was not finished by copper")
+        assertEquals(
+            Species.Copper,
+            withCopper.deck.stuff.dominantAt(at),
+            "it finished, but not out of copper",
+        )
+
+        val withTitanium = build(Species.Titanium)
+        assertTrue(withTitanium.deck.isGhost(at), "titanium built a machine that had chosen copper")
+        assertEquals(0L, withTitanium.deck.stuff.massAt(at), "and it took none of it")
+    }
+
+    /** The choice is on disk, or it is lost the first time the player saves. */
+    @Test
+    fun `a chosen material survives a save`() {
+        val at = grid.tile(10, 4)
+        val deck = DeckArray(grid)
+        deck.stand(Extractor(at, facing = Direction.Right), withCasing = true, material = Species.Copper)
+        val s = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+        assertEquals(Species.Copper, s.deck.chosenMaterialAt(at), "fixture")
+
+        val reloaded = Save.read(Save.write(s))
+        assertEquals(Species.Copper, reloaded.deck.chosenMaterialAt(at), "the choice did not survive")
+        assertEquals(
+            Species.Copper,
+            reloaded.deck.stuff.dominantAt(at),
+            "and its casing should still be copper",
+        )
+    }
+
+    /** ⚠️ And a world that never chose writes exactly the file it always did. */
+    @Test
+    fun `an unchosen machine writes no material at all`() {
+        val at = grid.tile(10, 4)
+        val deck = DeckArray(grid)
+        deck += Extractor(at, facing = Direction.Right)
+        val s = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+        assertNull(s.deck.chosenMaterialAt(at), "nobody chose, so nothing should be recorded")
+        assertTrue("made=" !in Save.write(s), "a default material was written to disk")
     }
 
     /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */

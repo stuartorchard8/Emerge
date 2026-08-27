@@ -137,6 +137,9 @@ object Save {
             // The same spelling a segment being taken apart uses, for the same fact. Absent reads as
             // "not marked", so no version bump and no migration.
             if (tile in state.scrapping) out.append(" scrapping=1")
+            // Omitted for the default — see `Segment.material`, which carries the same argument for
+            // track: null means "nobody chose", so an untouched world writes the file it always did.
+            state.deck.chosenMaterialAt(tile)?.let { out.append(" made=").append(it.name) }
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
@@ -275,7 +278,7 @@ object Save {
     private fun writeDeckStuff(out: StringBuilder, deck: DeckArray) {
         for (tile in deck.grid.tiles) {
             val m = deck[tile] ?: continue
-            val bill = tileBillOfMaterials(m.kind)
+            val bill = tileBillOfMaterials(m.kind, deck.materialOf(m))
             for (part in m.tiles(deck.grid)) {
                 if (Species.ALL.all { deck.stuff[part, it] == bill[it] }) continue
                 out.append("deckstuff ").append(part.index).append(' ')
@@ -799,11 +802,17 @@ object Save {
                     // Read off the raw tokens rather than through the machine, because the mark is a
                     // fact about the vessel and not about the machine — see [VesselState.scrapping].
                     val marked = tokens.any { it == "scrapping=1" }
+                    // Likewise a fact about the *site* rather than about the machine, which is why
+                    // it lives on the deck's own column and is read off the raw tokens here.
+                    val made = tokens.firstOrNull { it.startsWith("made=") }?.removePrefix("made=")
+                        ?.let { name ->
+                            Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
+                        }
                     if (dm is Thruster && version < THRUSTER_BELL_VERSION) {
                         legacyThrusters[t] = dm
                         if (marked) legacyThrusterScrapping.add(t)
                     } else {
-                        deck += dm
+                        deck.stand(dm, withCasing = true, material = made)
                         if (marked) scrapping.add(t)
                     }
                 }
