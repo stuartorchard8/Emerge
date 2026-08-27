@@ -244,12 +244,20 @@ class AmbientChemistryTest {
         assertTrue(railMass(after, Species.Carbon) > 0L, "the whole lump went, so nothing was starved")
         assertTrue(airMass(after, Fluid.Oxygen) < trace / 2L, "the fire did not use the air it had")
 
-        // Out, and staying out: another run of the same length takes no more carbon, because there
-        // is no more oxygen to take it with.
+        // Out, and staying out: once it has settled, a further run of the same length takes no more
+        // carbon at all, because there is no more oxygen to take it with.
+        //
+        // ⚠️ **Settled first, and then compared — not compared against the moment the fire stopped
+        // being interesting.** Asked the other way round this pins *which tick* the last microgram
+        // of a 20 kg lump lands on, and that moved by one round when the materials' time constants
+        // became physical (`MaterialThermalTest`): the fire took 7.5 g, then one further microgram,
+        // then nothing, for ever. Measured. So the exact equality is kept — it is a stronger claim
+        // than a tolerance would be — and it is asked of two rounds that are both after the end.
         val settled = run(after, TICKS * 4)
+        val later = run(settled, TICKS * 4)
         assertEquals(
-            railMass(after, Species.Carbon),
             railMass(settled, Species.Carbon),
+            railMass(later, Species.Carbon),
             "carbon kept burning in a room with no oxygen left in it",
         )
     }

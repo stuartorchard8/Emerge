@@ -194,3 +194,106 @@ private fun meanSpecificHeatMilli(mixture: Mixture): Long {
     }
     return mean
 }
+
+/**
+ * The face of one tile, in **thousandths of a square metre** — the area heat crosses between two
+ * neighbouring tiles, and the geometry in [conductanceCentiTicksOf].
+ *
+ * Derived, not chosen: a tile is [TILE_LITRES] of room, so it is a cube `0.830^(1/3)` = 0.9398 m on
+ * a side and its face is `0.830^(2/3)` = 0.8832 m². Stated here as an integer because a cube root is
+ * not something to compute in fixed point for a constant, and checked by `MaterialThermalTest`.
+ */
+private const val TILE_FACE_MILLI_SQUARE_METRES = 883L
+
+/**
+ * How many seconds of world time one tick is **worth to the heat solver** — the single calibration
+ * that turns real thermal conductivities into the game's time constants.
+ *
+ * ### Why this number and not another
+ *
+ * The physics fixes everything except the scale. Two adjacent cubes of side `L` share a face of area
+ * `L²` at a centre distance of `L`, so their joint conducts `G = k·L` and each holds `C = ρ·c·L³`;
+ * the time constant of the pair is `τ = C/G = ρ·c·L²/k`. That is a number of *seconds*, and
+ * [Material.conductanceCentiTicks] wants a number of *ticks*, so exactly one constant is free.
+ *
+ * ⛔ **Choosing it is the whole of the re-tune, because the five materials it replaces did not agree
+ * on it.** Measured against their own densities and conductivities, `Material`'s five hand-written
+ * time constants implied anywhere from 1,025 s/tick (firebrick) to 13,110 s/tick (copper) — a spread
+ * of **12.8×**, which is what it means for those numbers to have been tuned rather than derived.
+ * There is no value here that keeps all five where they were; there is only a choice of which way
+ * each one moves.
+ *
+ * **An hour is that choice**, and it is two things at once: it is the round number nearest the
+ * *geometric mean* of the five (3,661 s), which is the unique anchor that minimises the largest
+ * change any one material sees — no material moves by more than 3.6× — and it is a duration a person
+ * can hold in their head. Within 1.7% of the optimum and infinitely easier to reason about.
+ *
+ * ⚠️ **This is the heat solver's tick and nothing else's, and the game is not consistent about it.**
+ * A thruster exhausts at 3 km/s and a rock crossing one tile in a tick is moving at 0.94 m per tick;
+ * at an hour a tick that rock is doing a quarter of a millimetre a second. The motion sim and the
+ * heat sim disagree about what a tick is by about four orders of magnitude. That disagreement is
+ * older than this constant — `PLAN_ambient_chemistry.md` records the same complaint about the
+ * furnace element — and naming it here is not fixing it. It is where anyone who goes looking for it
+ * should find it written down.
+ */
+private const val HEAT_SECONDS_PER_TICK = 3_600L
+
+/**
+ * How long heat takes to cross a contact of [mixture], in **hundredths of a tick** — the time
+ * constant [org.emerge.demo.outofspace.world.Material.conductanceCentiTicks] used to state by hand.
+ *
+ * `τ = ρ·c·L²/k`, in the units above. ⛔ **Derived rather than stated, which is the point**: a
+ * material is a species now, any species can in principle be one, and 170 hand-tuned time constants
+ * is not a table anybody could keep honest. The five that were hand-written disagreed with physics
+ * by 12.8× amongst themselves — see [HEAT_SECONDS_PER_TICK], which is where that is measured.
+ *
+ * ⚠️ **A mixture's conductivity is the mass-weighted HARMONIC mean, not the arithmetic one.** Heat
+ * crossing a composite passes through all of it, so the poor conductor governs — the same rule
+ * [org.emerge.demo.outofspace.world.seriesConductance] applies to a joint between two things, for
+ * the same reason, and the same rule [massPerTileOf] applies to density. An arithmetic mean would
+ * let one thread of copper make a brick conduct like metal.
+ *
+ * ⚠️ Every `Material` in the game is a single species today, so the mean is exercised only by
+ * `MaterialThermalTest`. It is written out anyway because a rock is a mixture and asking this of one
+ * is the obvious next thing somebody does.
+ */
+fun conductanceCentiTicksOf(mixture: Mixture): Long {
+    val total = mixture.total
+    if (total <= 0L) return 0L
+    val k = conductivityOf(mixture)
+    if (k <= 0L) return 0L
+    // `100 x rho x c x face` peaks around 3.5e11 for the densest, most heat-hungry species in the
+    // table, against `Long`'s 9.2e18 — the two divisors are applied after, together, because each on
+    // its own would floor a thin material's time constant toward nothing.
+    val density = massPerTileOf(mixture) / (TILE_LITRES * Budget.GRAM)
+    val specificHeat = specificHeatOf(mixture)
+    return 100L * density * specificHeat * TILE_FACE_MILLI_SQUARE_METRES / (k * HEAT_SECONDS_PER_TICK)
+}
+
+/**
+ * The thermal conductivity of [mixture] in milliwatts per metre per kelvin — the harmonic mean over
+ * mass fractions, for the reason [conductanceCentiTicksOf] gives.
+ *
+ * Built the way [massPerTileOf] builds its density: each conductivity is expressed against the
+ * *largest* in the table first, so the ratio is unit-free and order one, and the physical unit
+ * enters exactly once at the end. Stating it as `Σ fᵢ/kᵢ` directly would floor to nothing, since a
+ * mass fraction is a few hundred and a conductivity is hundreds of thousands.
+ */
+fun conductivityOf(mixture: Mixture): Long {
+    val total = mixture.total
+    if (total <= 0L) return 0L
+    mixture.dominant?.let { if (mixture[it] == total) return it.milliWattsPerMetreKelvin.toLong() }
+    var weighted = 0L
+    for (species in Species.ALL) {
+        val mass = mixture[species]
+        if (mass <= 0L) continue
+        val k = species.milliWattsPerMetreKelvin.toLong()
+        if (k <= 0L) return 0L
+        val relative = scaledRatio(REFERENCE_CONDUCTIVITY, k, VOLUME_UNIT)
+        weighted += scaledRatio(mass, total, relative)
+    }
+    return if (weighted <= 0L) 0L else scaledRatio(VOLUME_UNIT, weighted, REFERENCE_CONDUCTIVITY)
+}
+
+/** The best conductor there is, and so the reference every other is measured against. Silver. */
+private val REFERENCE_CONDUCTIVITY: Long get() = Species.Silver.milliWattsPerMetreKelvin.toLong()

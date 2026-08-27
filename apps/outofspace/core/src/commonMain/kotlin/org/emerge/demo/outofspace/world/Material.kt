@@ -73,7 +73,6 @@ object Temperature {
 enum class Material(
     val label: String,
     val composition: Mixture,
-    val conductanceCentiTicks: Long,
     /**
      * How much a surface of this stuff grips one it is sliding across — Coulomb's `μ`, in parts per
      * thousand, and the third physical property a material has here.
@@ -90,16 +89,16 @@ enum class Material(
     val roughness: Long,
 ) {
     /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 2_450L, roughness = 400L),
+    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE), roughness = 400L),
 
     /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
-    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 400L, roughness = 450L),
+    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE), roughness = 450L),
 
     /** Pipe and cable. Barely any thermal mass and enormous conductance — a heat pipe by accident. */
-    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 58L, roughness = 500L),
+    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE), roughness = 500L),
 
     /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
-    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 5_200L, roughness = 400L),
+    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE), roughness = 400L),
 
     /**
      * Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot.
@@ -125,7 +124,7 @@ enum class Material(
      * moisture and CaO–SiO₂ forms low-melting eutectics — a quartz-lime lining is a furnace wall that
      * dissolves itself. Periclase costs the same to reach and is a real brick.
      */
-    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE), roughness = 700L),
     ;
 
     /**
@@ -139,6 +138,9 @@ enum class Material(
      * heat solver asks per contact per tick. Same for the two below.
      */
     val massPerTile: Long = massPerTileOf(composition)
+
+    /** How long heat takes to cross a contact of it, in hundredths of a tick. See the class doc. */
+    val conductanceCentiTicks: Long = conductanceCentiTicksOf(composition)
 
     /** Millijoules per kelvin for a full tile of it. */
     val capacityPerTile: Long = capacityPerTileOf(composition)
