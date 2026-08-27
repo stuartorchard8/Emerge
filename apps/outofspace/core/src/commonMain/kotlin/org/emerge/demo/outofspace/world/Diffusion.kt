@@ -24,7 +24,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * room drains to a few units a tile and stops. **Reverted 2026-08-12 (Stu), because it flew the
  * ship.** The rotation moved a gram or two per tile per tick, and since every tile shared one offset
  * it moved them *in step*: a grid-wide ripple in the pressure field, on a five-tick cycle, with no
- * reason to average to nothing on a hull that is not symmetric. [applyPressureForce] reads that
+ * reason to average to nothing on a hull that is not symmetric. the pressure field reads that
  * field, so the ripple became a small standing shove and a sealed vessel slowly departed.
  *
  * What is given up is stated plainly, because it is a real effect: a trace below the divisor **stays
@@ -52,6 +52,21 @@ class DiffusionStep(
     val air: Stuff,
     val ventedMass: Long,
     val ventedEnergy: Long,
+    /**
+     * The momentum [ventedMass] carried off the grid with it, in the **grid's** axes, and the twist
+     * it took about the centre of mass.
+     *
+     * ⛔ **This is the only way the atmosphere may push the hull.** Everything a gas does to a wall
+     * it is sealed behind is internal to ship-plus-air and cancels; what does not cancel is mass
+     * that genuinely leaves. So the reaction is booked from the same number the mass ledger books,
+     * once, and the two cannot disagree. See `PLAN_grid_vs_continuous.md`.
+     *
+     * ⚠️ Zero unless a `ventSpeed` was given — a caller that only wants gas moved is not made to
+     * care what it weighs or where the ship's centre is.
+     */
+    val ventImpulseX: Long,
+    val ventImpulseY: Long,
+    val ventTorque: Long,
     /**
      * What actually crossed each face this pass, and the mass it came out of — the raw material for
      * [flow], kept separate so a caller that never asks the question never pays for the answer.
@@ -172,7 +187,7 @@ fun diffuseFluid(
  *
  * **Venting to the rim stays.** A face with no tile on the far side sheds its share into space and
  * books it, which is what keeps breaches and the vent ledger working. It no longer produces thrust —
- * that is [applyPressureForce]'s job, wired up separately.
+ * that is the pressure field's job, wired up separately.
  */
 fun diffuseFluid(
     edges: EdgeGrid,
@@ -181,6 +196,14 @@ fun diffuseFluid(
     energies: EnergyArray? = null,
     kelvin: IntArray? = null,
     subSteps: Int = SUB_STEPS,
+    /**
+     * How fast gas leaves through a hole, in tiles per tick — a multiplier on a mass to get an
+     * impulse, exactly as [org.emerge.demo.outofspace.world.machine.Thruster.tilesPerTick] is, and
+     * like it nothing is ever integrated at this speed. Zero books no reaction at all.
+     */
+    ventSpeed: Long = 0L,
+    /** The point the vented gas's torque is taken about — the vessel's centre of mass. */
+    about: MassDistribution = MassDistribution.EMPTY,
 ): DiffusionStep {
     val grid = edges.grid
     val tiles = grid.size
@@ -204,6 +227,9 @@ fun diffuseFluid(
 
     var ventedMass = 0L
     var ventedEnergy = 0L
+    var ventImpulseX = 0L
+    var ventImpulseY = 0L
+    var ventTorque = 0L
 
     // Net mass across each face, signed toward +x / +y. Both ends of a face add into the same slot,
     // so gas crossing in both directions cancels and what is left is the net movement — which is the
@@ -285,7 +311,27 @@ fun diffuseFluid(
                 ) continue
 
                 deltaMass.add(tile, fluid, -out)
-                if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass.add(neighbour, fluid, out)
+                if (neighbour == TileIndex.NONE) {
+                    ventedMass += out
+                    if (ventSpeed > 0L) {
+                        // Out through this face, at [ventSpeed]. The faces are ordered up, down,
+                        // left, right — see where [faceAperture] is filled.
+                        val p = out * ventSpeed
+                        val px = if (f == 2) -p else if (f == 3) p else 0L
+                        val py = if (f == 0) -p else if (f == 1) p else 0L
+                        ventImpulseX += px
+                        ventImpulseY += py
+                        // ⚠️ Taken about the **cell's centre** rather than the face it left by, and
+                        // that is exact rather than close enough: the face is offset from the centre
+                        // along its own normal, the impulse is along that same normal, and moving
+                        // the arm parallel to the force does not change `r × F` at all.
+                        ventTorque += torqueAbout(
+                            about, tileCentre(grid.xOf(tile)), tileCentre(grid.yOf(tile)), px, py,
+                        )
+                    }
+                } else {
+                    deltaMass.add(neighbour, fluid, out)
+                }
                 faceOut[f] += out
                 outMass += out
             }
@@ -353,6 +399,9 @@ fun diffuseFluid(
         air = if (energies == null) Stuff.gas(masses) else Stuff.from(masses, energies),
         ventedMass = ventedMass,
         ventedEnergy = ventedEnergy,
+        ventImpulseX = ventImpulseX,
+        ventImpulseY = ventImpulseY,
+        ventTorque = ventTorque,
         edges = edges,
         fluxX = fluxX,
         fluxY = fluxY,

@@ -117,7 +117,6 @@ import org.emerge.demo.outofspace.world.applyPumps
 import org.emerge.demo.outofspace.world.exchangeLayers
 import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
-import org.emerge.demo.outofspace.world.applyPressureForce
 import org.emerge.demo.outofspace.world.diffuseFluid
 import org.emerge.demo.outofspace.world.gasKelvin
 import org.emerge.demo.outofspace.world.tileMass
@@ -558,46 +557,32 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // field, and *then* let the field answer.
         //
         // ⚠️ **Zero on a skipped tick, and emphatically not the last tick's push carried forward.**
-        // [applyPressureForce] books both halves of one exchange: the gas takes `+J` on a face it
-        // can cross and the hull takes the complement, and inside a sealed vessel those telescope
-        // to nothing. Carrying the hull's half forward while the gas's half fires once mints
-        // momentum on seven ticks in eight — `momentumBalance` catches it within a few ticks, which
-        // is what that instrument is for. The push is per firing, so it lands per firing.
+        // The vent reaction is booked from the mass that actually crossed the rim on the tick it
+        // crossed, so carrying it forward would charge the ship twice for one departure — and
+        // `momentumBalance` catches that within a few ticks, which is what that instrument is for.
+        // The push is per firing, so it lands per firing.
         //
         // This does change the impulse the hull feels per second, and deliberately so — it is the
         // same "each subsystem moves its full amount when it fires" rule the rest of the periods
         // follow. Against the pre-64 Hz sim it is a *doubling*, not a cut: this fires 8 times a
         // second where the old 4 TPS loop fired 4.
-        val pressureImpulseX: Long
-        val pressureImpulseY: Long
-        val pressureTorque: Long
-        val _p0 = _prof0; val _p = if (_p0) TimeSource.Monotonic.markNow() else null
-        if (shouldRun(state.tick, PRESSURE_PERIOD, PRESSURE_OFFSET, frozen)) {
-            val roomKelvin = gasKelvin(w.airEnergy, heatCapacity(state.grid.size, w.masses))
-            val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
-            // The pre-diffusion field, deliberately: the gradient that pushes the hull is the one
-            // that exists before the gas has been allowed to answer it. Still true with the two a
-            // tick apart — this is the tick *before* the diffusion, so the field it pushes on is
-            // the one that diffusion is about to flatten.
-            val roomPressure = tilePressure(state.grid.size, w.masses, roomKelvin)
-            val pushed = applyPressureForce(
-                edges, roomApertures, w.momentumX, w.momentumY, tileMass(state.grid.size, w.masses), roomPressure,
-                w.about,
-            )
-            val pipePressure = tilePressure(state.grid.size, w.pipeMass, pipeKelvin, volumes)
-            val pipePushed = applyPressureForce(
-                edges, plumbing, w.pipeMomentumX, w.pipeMomentumY,
-                tileMass(state.grid.size, w.pipeMass), pipePressure, w.about,
-            )
-            pressureImpulseX = pushed.vesselX + pipePushed.vesselX
-            pressureImpulseY = pushed.vesselY + pipePushed.vesselY
-            pressureTorque = pushed.torque + pipePushed.torque
-        } else {
-            pressureImpulseX = 0L
-            pressureImpulseY = 0L
-            pressureTorque = 0L
-        }
-        if (_p0) profiler.recordPhase("pressure", _p!!.elapsedNow().inWholeNanoseconds)
+        // ⛔ **The atmosphere no longer pushes the hull from the inside, and that is the fix.**
+        //
+        // `applyPressureForce` used to hand the vessel its share of the pressure drop across every
+        // *blocked* face — a wall, a shut door, a machine casing. Those shares telescope to zero as
+        // a **force**, which is why a sealed ship looked right and why the linear ledger stayed at
+        // zero, and they do **not** telescope as a **torque**: equal pushes on opposite bulkheads
+        // cancel when summed and add when crossed with where they act. So a sealed, unpowered ship
+        // wound itself up for free. Found at 3.75 rev/s on a live save with empty tanks.
+        //
+        // It was never a real force to begin with. Gas pressing on a bulkhead it is sealed behind
+        // pushes on ship-plus-air, and the reaction lands on the gas, which the ship is carrying —
+        // internal, and internal forces cannot move a centre of mass. The old model kept the hull's
+        // half and posted the gas's half to `momentum`, a field no physics ever spent.
+        //
+        // What is left is the honest half: **mass that genuinely leaves the vessel**, booked in
+        // [diffuseFluid] from the same number the air ledger books it from. See
+        // `PLAN_grid_vs_continuous.md` and [VesselState.angularBalance].
 
         // ── Fluid ─────────────────────────────────────────────────────────────────
         val _f0 = _prof0; val _f = if (_f0) TimeSource.Monotonic.markNow() else null
@@ -613,6 +598,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var pipeAirResult = Stuff(w.pipeMass, w.pipeEnergy, w.pipeCohesion)
         var fluidVentedMass = 0L
         var fluidVentedEnergy = 0L
+        // The reaction the vessel takes for the gas that left it — the *only* way the atmosphere is
+        // permitted to push the hull now. Grid axes; turned into the world with everything else at
+        // the one frame boundary below.
+        var ventImpulseX = 0L
+        var ventImpulseY = 0L
+        var ventTorque = 0L
         if (shouldRun(state.tick, FLUID_PERIOD, FLUID_OFFSET, frozen)) {
             cadences = cadences.copy(fluid = Cadence(state.tick, FLUID_PERIOD))
             // The temperatures this pass moves the vapour by, taken here rather than shared with the
@@ -623,12 +614,26 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             val pipeKelvin = gasKelvin(w.pipeEnergy, heatCapacity(state.grid.size, w.pipeMass))
             // With the temperatures, so the pass moves the vapour and leaves the frost and the
             // puddles where they are — see [diffuseFluid] and `PhaseTransportTest`.
-            val result = diffuseFluid(edges, roomApertures, w.masses, w.airEnergy, roomKelvin)
+            val ventSpeed = Flight.ventTilesPerTick(cfg.ticksPerSecond)
+            val result = diffuseFluid(
+                edges, roomApertures, w.masses, w.airEnergy, roomKelvin,
+                ventSpeed = ventSpeed, about = w.about,
+            )
             fluidAir = Stuff(w.masses, w.airEnergy, w.airCohesion)
             fluidVentedMass = result.ventedMass
             fluidVentedEnergy = result.ventedEnergy
+            ventImpulseX += result.ventImpulseX
+            ventImpulseY += result.ventImpulseY
+            ventTorque += result.ventTorque
             // Pipes: same model, connectivity from player-drawn layout.
-            val pipes = diffuseFluid(edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin)
+            // A pipe that reaches the rim vents like a hole in the hull, and pushes like one.
+            val pipes = diffuseFluid(
+                edges, plumbing, w.pipeMass, w.pipeEnergy, pipeKelvin,
+                ventSpeed = ventSpeed, about = w.about,
+            )
+            ventImpulseX += pipes.ventImpulseX
+            ventImpulseY += pipes.ventImpulseY
+            ventTorque += pipes.ventTorque
 
             // ── Latent heat ───────────────────────────────────────────────────
             //
@@ -773,8 +778,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // to the overboard store below, which is what makes the pair impossible to unbalance.
         val exhaustX = state.pose.turnedX(w.exhaustMomentumX, w.exhaustMomentumY)
         val exhaustY = state.pose.turnedY(w.exhaustMomentumX, w.exhaustMomentumY)
-        val netImpulseX = state.pose.turnedX(pressureImpulseX, pressureImpulseY) + thrustX - handedX - exhaustX
-        val netImpulseY = state.pose.turnedY(pressureImpulseX, pressureImpulseY) + thrustY - handedY - exhaustY
+        // The gas that left took `+p` with it and the ship keeps `−p`, exactly as the exhaust does
+        // a line above — and turned on its own for the same reason: `turn(a − b)` is not
+        // `turn(a) − turn(b)` under truncation, and the store below has to be the same number this
+        // subtracts or the ledger drifts by a gram a tick.
+        val ventX = state.pose.turnedX(ventImpulseX, ventImpulseY)
+        val ventY = state.pose.turnedY(ventImpulseX, ventImpulseY)
+        val netImpulseX = thrustX - handedX - exhaustX - ventX
+        val netImpulseY = thrustY - handedY - exhaustY - ventY
 
         // The same five contributions crossed with the point each one is applied at — see
         // [torqueAbout] for why this is summed term by term and not derived from `netImpulse`.
@@ -784,7 +795,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // nozzle bolted anywhere, so the honest place to apply it is the centre of mass, where its
         // lever arm is zero. When a real engine retires it the term goes with it.
         val handedTorque = w.bodyHandedTorque + bodiesDrifted.handedTorque
-        val netTorque = pressureTorque - handedTorque - w.exhaustTorque
+        val netTorque = -ventTorque - handedTorque - w.exhaustTorque
 
         return state.copy(
             deck = w.deck,
@@ -817,11 +828,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Debug bellows (non-physics, booked like the debug engine — see [Edit.Inject]).
             injectedAirMass = w.injectedAirMass,
             injectedAirEnergy = w.injectedAirEnergy,
-            // Written by [applyPressureForce] and read by nobody: diffusion has no momentum to carry,
-            // so what lands here is an impulse total that is never spent. Kept because the save format
-            // is unchanged and a model that closes the ledger again will want somewhere to put it.
-            // ⚠️ Not a velocity field — the flow overlay measures [diffuseFluid] instead (see
-            // [VesselState.flow]). See the extraction plan §3.
+            // ⛔ **Dead: no writer and no reader.** `applyPressureForce` was the only thing that
+            // ever filled this, and it is gone — the hull's reaction moved to the vessel boundary,
+            // where only mass that genuinely leaves may push. It is left in place for one release so
+            // that a save written before the change still round-trips; it carries whatever it loaded
+            // and contributes to no identity. Delete it, `pipeMomentum` and `undeliveredImpulse`
+            // together with the `momx`/`momy` keywords.
+            // ⚠️ Never was a velocity field — the flow overlay measures [diffuseFluid] (see
+            // [VesselState.flow]).
             momentum = MomentumField.of(edges, w.momentumX, w.momentumY),
             // Momentum that is genuinely somewhere else now: astern of the ship at 3 km/s.
             //
@@ -858,35 +872,28 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // total accumulated at attitudes that have since changed.
             exhaustAngImpulse = state.exhaustAngImpulse + w.exhaustTorque,
             bodyAngImpulse = state.bodyAngImpulse + handedTorque,
+            // Momentum and twist that are genuinely overboard: astern of a breach, not aboard.
+            // Written from the same two numbers the ship just took the negative of.
+            ventMomentumX = state.ventMomentumX + ventX,
+            ventMomentumY = state.ventMomentumY + ventY,
+            ventAngImpulse = state.ventAngImpulse + ventTorque,
             motion = motion,
             impacts = bodiesDrifted.impacts,
             cadences = cadences,
-        ).bookedFrameTurn(state.pose).resized(w.fitRequested).also {
+        ).resized(w.fitRequested).also {
         if (_g0) profiler.recordPhase("motion", _g!!.elapsedNow().inWholeNanoseconds)
     }
     }
 
-    /**
-     * Charge the ledger for the momentum the gas appears to gain by being carried round with the
-     * hull — see [VesselState.frameTurnImpulseX] for what it is and why it is not physics.
-     *
-     * Applied to the finished state and against [was], the pose the tick started at, because the
-     * term the algebra asks for is the **end-of-tick** gas vector turned through the tick's change
-     * of attitude. Working it through: the gas gave the hull `P` this tick and was turned by the
-     * start-of-tick pose when it did (see `netImpulse`), so the balance moves by
-     * `[R(θₜ) − R(θₜ₋₁)]·(G − P)` — and `G − P` is what the gas is holding when the tick ends, which
-     * is what this reads. Nothing to do if the ship did not turn, which is the overwhelmingly common
-     * case and worth not paying four multiplies for.
-     */
-    private fun VesselState.bookedFrameTurn(was: Pose): VesselState {
-        if (pose.ang == was.ang) return this
-        val gasX = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX
-        val gasY = momentum.totalY + pipeMomentum.totalY + undeliveredImpulseY
-        return copy(
-            frameTurnImpulseX = frameTurnImpulseX + pose.turnedX(gasX, gasY) - was.turnedX(gasX, gasY),
-            frameTurnImpulseY = frameTurnImpulseY + pose.turnedY(gasX, gasY) - was.turnedY(gasX, gasY),
-        )
-    }
+    // ⛔ `bookedFrameTurn` stood here. It charged the ledger for the momentum the gas *appeared*
+    // to gain by being carried round with the hull — a correction that existed only because the
+    // gas's per-edge momentum was a ledger quantity. It is not one any more, so the correction is
+    // correcting for nothing.
+    //
+    // ⚠️ And it was not harmlessly inert: on a save written before the change the gas field still
+    // holds its old values, and a rotating ship turned that stale vector every tick. Measured on a
+    // live save, `momentumBalance` swung between −3.98e9 and +10.0e9 with the term still in, and
+    // sits exactly still without it. A dead store is only quiet while it is also empty.
 
     /**
      * The grid keeps the clearance the world says it keeps — [VesselState.gridPad] — between the
@@ -1147,7 +1154,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      *
      * ⚠️ A blocked motor produces no impulse here and that is not an omission. Its exhaust pushes
      * the ship's own hull, so the pair cancels exactly; what the ship feels is whatever
-     * [applyPressureForce] makes of a tile that now holds a jet's worth of very hot gas, which is
+     * `applyPressureForce` makes of a tile that now holds a jet's worth of very hot gas, which is
      * a real force arrived at honestly rather than a fraction of the thrust picked to look right.
      */
     private fun Work.fire(

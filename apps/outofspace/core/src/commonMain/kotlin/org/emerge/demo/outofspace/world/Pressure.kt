@@ -42,7 +42,7 @@ private const val MILLI = 1000L
 private val MOLAR_DIVISOR: Long = MILLI * Budget.GRAM
 
 /**
- * What a tile of ordinary air weighs at one atmosphere — the mass [applyPressureForce] scales the
+ * What a tile of ordinary air weighs at one atmosphere — the mass `applyPressureForce` scales the
  * speed of sound against, and the reference an overlay reads a tile's density against.
  *
  * It lived beside buoyancy until the momentum solver left, which is the only reason it is here now.

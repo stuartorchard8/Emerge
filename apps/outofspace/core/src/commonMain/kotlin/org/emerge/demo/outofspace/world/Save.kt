@@ -209,6 +209,12 @@ object Save {
         // nothing. Both carry the mass unit, so both are rescaled on the way in.
         out.append("angularstores ").append(state.exhaustAngImpulse)
             .append(' ').append(state.bodyAngImpulse)
+            .append(' ').append(state.ventAngImpulse)
+            .append('\n')
+        // What the atmosphere carried overboard, in the world. Appended like the rest: absent reads
+        // as zero, which is a ship that has never been holed.
+        out.append("ventmomentum ").append(state.ventMomentumX)
+            .append(' ').append(state.ventMomentumY)
             .append('\n')
         return out.toString()
     }
@@ -671,6 +677,9 @@ object Save {
         var netTorque = 0L
         var exhaustAngImpulse = 0L
         var bodyAngImpulse = 0L
+        var ventAngImpulse = 0L
+        var ventMomentumX = 0L
+        var ventMomentumY = 0L
         var netImpulseX = 0L
         var netImpulseY = 0L
         var tick = 0L
@@ -719,7 +728,11 @@ object Save {
                     ang = Coord(tokens.getOrNull(1)?.toIntOrNull() ?: fail("expected an angle"))
                     angImpulse = scaled(2); netTorque = scaled(3)
                 }
-                "angularstores" -> { exhaustAngImpulse = scaled(1); bodyAngImpulse = scaled(2) }
+                "angularstores" -> {
+                    exhaustAngImpulse = scaled(1); bodyAngImpulse = scaled(2)
+                    if (tokens.size > 3) ventAngImpulse = scaled(3)
+                }
+                "ventmomentum" -> { ventMomentumX = scaled(1); ventMomentumY = scaled(2) }
                 "tick" -> tick = long(1)
                 // `mined` is v9's name for it: the same quantity, counted at the miner instead.
                 "mined", "extracted" -> extracted = scaled(1)
@@ -1000,6 +1013,9 @@ object Save {
             netTorque = netTorque,
             exhaustAngImpulse = exhaustAngImpulse,
             bodyAngImpulse = bodyAngImpulse,
+            ventAngImpulse = ventAngImpulse,
+            ventMomentumX = ventMomentumX,
+            ventMomentumY = ventMomentumY,
             tick = tick,
             extractedMass = extracted,
             ventedMass = vented,

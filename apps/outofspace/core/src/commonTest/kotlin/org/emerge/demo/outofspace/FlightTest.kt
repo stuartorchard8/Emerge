@@ -47,12 +47,11 @@ class FlightTest {
      * that the envelope does not grow — measured over two halves of a long run, because a slow
      * divergence is exactly what a short one would miss.
      */
-    // PARKED, and much closer than it was. Dropping the remainder rotation (2026-08-12) cut the
-    // drift about two hundredfold — 1,120,999 → 2.2M before, 5,350 → 17,350 after, against a tile of
-    // 1e9 — and brought the momentum ledger back into balance. What is left still *grows*, which is
-    // what this asserts, so it stays red: the residue is the share of each face's pressure drop that
-    // applyPressureForce hands the gas and diffusion never hands back. Kept live as the target.
-    @Ignore
+    // ✅ **UN-PARKED.** It was red because the residue it measures was the share of each face's
+    // pressure drop that `applyPressureForce` handed the gas and diffusion never handed back — the
+    // ship keeping half of an exchange whose other half went into a field no physics spent. With
+    // the hull's reaction moved to the vessel boundary there is no such share: a sealed ship is
+    // pushed by nothing at all, so it rings and stays put, which is what this always claimed.
     @Test
     fun `a sealed vessel rings and does not depart`() {
         val cfg = OutofspaceConfig()
@@ -149,22 +148,26 @@ class FlightTest {
      * a ship moving.
      */
     @Test
-    fun `thrust arrives before the exhaust does`() {
+    fun `thrust arrives with the exhaust, not before it`() {
+        // ⛔ **This asserted the opposite until the hull reaction moved to the vessel boundary**, and
+        // the old behaviour was the bug rather than a feature: the ship was pushed by the pressure
+        // drop across a wall the moment a hole appeared, before a single gram had gone anywhere. A
+        // pressure difference across a bulkhead is internal to ship-plus-air; what pushes a ship is
+        // mass leaving it. So the push now arrives *with* the gas, which is what a rocket is.
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, bareHull(cfg.initialGrid))
         controller.removeAt(cfg.initialGrid.tile(HULL_LEFT, BREACH_Y))
-        // Up to and including the pressure step's tick, and no further. That is the whole assertion:
-        // the pressure step fires on [OutofspaceReducer.PRESSURE_OFFSET] and the fluid step on the
-        // tick *after*, so this stops in the gap between them — the hull is open, the push has
-        // landed, and not a molecule has crossed the breach yet. It used to be one tick because the
-        // two fired together and the ordering lived inside a single tick instead of across two.
         repeat(OutofspaceReducer.PRESSURE_OFFSET + 1) { controller.stepOnce() }
 
-        val s = controller.state
-        assertEquals(0L, s.exhaustMomentumX, "gas had already left, so this proved nothing")
-        assertEquals(s.baselineAirMass, s.atmosphereMass, "and not a gram of it had gone overboard")
-        assertTrue(s.netImpulseX > 0L, "the ship felt nothing on the tick the hull opened")
-        assertTrue(s.velocityX > 0L, "and so it was already moving")
+        val opened = controller.state
+        assertEquals(opened.baselineAirMass, opened.atmosphereMass, "gas had already left, so this proves nothing")
+        assertEquals(0L, opened.netImpulseX, "the ship was pushed before anything left it")
+
+        // And then it does arrive, once the gas actually starts crossing the rim.
+        repeat(400) { controller.stepOnce() }
+        val flying = controller.state
+        assertTrue(flying.atmosphereMass < flying.baselineAirMass, "nothing ever vented")
+        assertTrue(flying.velocityX > 0L, "the breach never pushed the ship at all: ${flying.velocityX}")
     }
 
     @Test

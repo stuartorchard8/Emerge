@@ -43,7 +43,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * ⚠️ **A blocked motor produces no direct impulse at all**, and that is the physics and not a
  * simplification: exhaust that hits your own ship pushes your own ship, so the two halves cancel
  * exactly. What is left is a tile full of very hot, very fast gas, which pushes on the hull around
- * it through [org.emerge.demo.outofspace.world.applyPressureForce] like any other pressure — so a badly placed thruster is not
+ * it through the pressure field like any other pressure — so a badly placed thruster is not
  * *nothing*, it is a wildly inefficient one. See [exhaustPath] for how "blocked" is decided.
  *
  * A motor bolted bell-first against a wall is that case taken to its limit rather than a fourth

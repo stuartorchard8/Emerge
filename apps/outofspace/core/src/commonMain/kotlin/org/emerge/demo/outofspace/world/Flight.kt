@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.DeckArray
+import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
 
@@ -15,6 +16,27 @@ object Flight {
 
     /** Fixed-point: 1e9 units/tile. Overflow threshold ~9.2e9 gram·tiles/tick (40M ticks on bare hull). */
     const val PER_TILE: Long = 1_000_000_000L
+
+    /**
+     * **The dial.** How fast gas leaves a hole in the hull, in metres per second.
+     *
+     * Roughly sonic, which is what escaping gas does: a hole into vacuum chokes, and the exit speed
+     * stops depending on how hard you push. Stated in metres per second and converted in one place
+     * for the reason [org.emerge.demo.outofspace.world.machine.Thruster.EXHAUST_METRES_PER_SECOND]
+     * is — it is the number worth arguing about, and the conversion should not be scattered where
+     * the next change of tick rate can miss one.
+     *
+     * ⚠️ **Not the quarter-tile-per-tick the old pressure solver used.** That figure was pinned by
+     * the CFL limit because gas was being *integrated* across the grid at it. Nothing is integrated
+     * here: this is a multiplier on a mass to get an impulse, exactly as the thruster's is, so the
+     * real number is both available and correct. Using the CFL one would make every breach about
+     * twenty times too feeble.
+     */
+    const val VENT_METRES_PER_SECOND: Long = 340L
+
+    /** [VENT_METRES_PER_SECOND] in the unit momentum is counted in: tiles per tick. */
+    fun ventTilesPerTick(ticksPerSecond: Int): Long =
+        VENT_METRES_PER_SECOND * 1_000L / (Thruster.TILE_MILLIMETRES * ticksPerSecond)
 
     /** [Frac]'s unit: 1 tile/tick² = one whole Frac. Shared to prevent copies. */
     const val FRAC_ONE: Long = Int.MAX_VALUE.toLong()

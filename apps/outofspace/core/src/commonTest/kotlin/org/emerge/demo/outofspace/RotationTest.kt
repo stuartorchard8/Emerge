@@ -257,7 +257,7 @@ class RotationTest {
      * ⛔ **PARKED, and red on today's code — this is the bug the ledger above was built to see.**
      *
      * A ship with air aboard and **no way out for any of it** spins itself up, for free, for ever.
-     * [org.emerge.demo.outofspace.world.applyPressureForce] hands the hull its share of every
+     * `applyPressureForce` hands the hull its share of every
      * blocked face and writes the gas's share into `momentum`, a field spent by no physics. The
      * hull's shares telescope to zero as a *force* and do **not** as a torque — equal pushes on
      * opposite bulkheads cancel as force and add as twist, because they act at different points.
@@ -270,7 +270,6 @@ class RotationTest {
      * reaction only where mass genuinely crosses the vessel boundary. See `PLAN_grid_vs_
      * continuous.md` and [VesselState.angularBalance].
      */
-    @Ignore
     @Test
     fun `a sealed ship does not spin itself up on its own air`() {
         val cfg = OutofspaceConfig()

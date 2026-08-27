@@ -154,7 +154,7 @@ class ThrusterTest {
      *
      * The exhaust pushes the ship's own wall, so the pair cancels and `exhaustMomentum` stays at
      * zero — the ship still moves, because a tile holding a jet leans on everything around it, but
-     * it moves through [org.emerge.demo.outofspace.world.applyPressureForce] like any other
+     * it moves through the pressure field like any other
      * pressure rather than by being handed an impulse.
      */
     @Test

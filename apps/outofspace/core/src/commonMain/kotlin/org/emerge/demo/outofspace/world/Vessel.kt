@@ -479,6 +479,19 @@ data class VesselState(
      */
     val exhaustAngImpulse: Long = 0L,
     /**
+     * Momentum the vented atmosphere carried off the vessel, in the **world** — the twin of
+     * [exhaustMomentumX], and a store for the same reason: it is genuinely somewhere else now.
+     *
+     * ⛔ This is the whole of what the atmosphere may do to the ship. Gas pressing on a bulkhead it
+     * is sealed behind is internal to ship-plus-air; only mass that leaves can move a centre of
+     * mass. Booked in [org.emerge.demo.outofspace.world.diffuseFluid] from the same number the air
+     * ledger books, so the pair cannot be minted.
+     */
+    val ventMomentumX: Long = 0L,
+    val ventMomentumY: Long = 0L,
+    /** The angular half of [ventMomentumX], about the centre of mass. */
+    val ventAngImpulse: Long = 0L,
+    /**
      * Cumulative angular momentum the vessel has handed the bodies — the angular twin of
      * [bodyImpulseX], and the same kind of store for the same reason: `+τ` to the body and `−τ` to
      * the ship conserve by construction, but only the ship's half is inside the ledger.
@@ -848,15 +861,11 @@ data class VesselState(
      * because the term is tiny and non-accumulating (see its own note). If it ever grows, it needs
      * turning where it is booked, exactly as the exhaust does.
      */
-    val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX -
-        debugImpulseX - frameTurnImpulseX + pose.turnedX(gasMomentumX, gasMomentumY)
+    val momentumBalanceX: Long get() = vesselImpulseX + exhaustMomentumX + bodyImpulseX +
+        ventMomentumX - debugImpulseX - frameTurnImpulseX
 
-    val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY -
-        debugImpulseY - frameTurnImpulseY + pose.turnedY(gasMomentumX, gasMomentumY)
-
-    /** Everything the gas is holding, in the grid's axes — the un-turned half of [momentumBalanceX]. */
-    private val gasMomentumX: Long get() = momentum.totalX + pipeMomentum.totalX + undeliveredImpulseX
-    private val gasMomentumY: Long get() = momentum.totalY + pipeMomentum.totalY + undeliveredImpulseY
+    val momentumBalanceY: Long get() = vesselImpulseY + exhaustMomentumY + bodyImpulseY +
+        ventMomentumY - debugImpulseY - frameTurnImpulseY
 
     /**
      * The angular identity as one number: `angImpulse + exhaust + bodies == 0`, or the ship has been
@@ -869,7 +878,7 @@ data class VesselState(
      *
      * ⛔ **There is deliberately no term here for the gas aboard, and that is the entire point of
      * the instrument.** [momentumBalanceX] carries one — `momentum.totalX`, the per-edge field
-     * [org.emerge.demo.outofspace.world.applyPressureForce] writes the gas's half of every push
+     * `applyPressureForce` writes the gas's half of every push
      * into — and because that field is read by no physics, counting it as a store lets the linear
      * ledger close over momentum that can never move anything. Measured: a sealed starter vessel
      * with a pressure pocket and nothing vented accelerates from 0.0058 to 0.0142 tiles/tick over
@@ -885,7 +894,8 @@ data class VesselState(
      * two ways out — book the hull only where mass genuinely crosses the vessel boundary, or give
      * the gas back a momentum that something spends.
      */
-    val angularBalance: Long get() = angImpulse + exhaustAngImpulse + bodyAngImpulse
+    val angularBalance: Long get() =
+        angImpulse + exhaustAngImpulse + bodyAngImpulse + ventAngImpulse
 
     /**
      * What everything loose aboard is actually falling toward: the plating, plus the engine.
@@ -1308,8 +1318,6 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     // with no edge index to get wrong. Zero on a grow, so that needs no special case.
     val ventedGas    = (air.totalMass + pipeAir.totalMass) - (newAir.totalMass + newPipeAir.totalMass)
     val ventedEnergy = (air.totalEnergy + pipeAir.totalEnergy) - (newAir.totalEnergy + newPipeAir.totalEnergy)
-    val ventedMomX   = (momentum.totalX + pipeMomentum.totalX) - (newMomentum.totalX + newPipeMomentum.totalX)
-    val ventedMomY   = (momentum.totalY + pipeMomentum.totalY) - (newMomentum.totalY + newPipeMomentum.totalY)
 
     // ── 8. Motion: dropped on resize (renderer will re-animate from zero)
     //    Baselines: passed through unchanged — they are conservation constants
@@ -1352,8 +1360,11 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         // vented quantities — grow: difference is zero, no special case needed
         airVentedMass = airVentedMass + ventedGas,
         airVentedEnergy = airVentedEnergy + ventedEnergy,
-        exhaustMomentumX = exhaustMomentumX + ventedMomX,
-        exhaustMomentumY = exhaustMomentumY + ventedMomY,
+        // ⛔ **The discarded per-edge momentum is no longer booked anywhere, because it is no
+        // longer momentum.** That field was the gas's half of a pressure exchange no physics ever
+        // spent; with the hull reaction moved to the vessel boundary it has no writer and no reader,
+        // and paying the exhaust store for throwing it away would mint momentum out of a number that
+        // means nothing. See [VesselState.ventMomentumX].
         // ⚠️ **Remapped, not carried.** It is a set of tile *indexes*, and a tile index means a
         // different place the moment the lattice changes shape — so a world that grew came back with
         // its condemned machines reprieved and some innocent tile marked instead. Silent both ways:

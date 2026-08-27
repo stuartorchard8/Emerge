@@ -193,35 +193,11 @@ class GridVentTest {
         EnergyLedgers.assertAirBalanced(after, "airEnergyBalance with pipe gas discarded")
     }
 
-    @Test
-    fun `a shrink books the face momentum it discards to the exhaust`() {
-        val before = gassyWorld()
-        assertEquals(0L, momentumX(before), "the fixture's x momentum is out before anything shrinks")
-        assertEquals(0L, momentumY(before), "the fixture's y momentum is out before anything shrinks")
-
-        val after = before.remapped(Grid(12, 14), 0, 0)
-
-        assertTrue(
-            after.momentum.totalX != before.momentum.totalX ||
-                after.momentum.totalY != before.momentum.totalY,
-            "the fixture discarded no momentum, so this case proves nothing",
-        )
-        assertEquals(0L, momentumX(after), "momentum identity on x after a shrink")
-        assertEquals(0L, momentumY(after), "momentum identity on y after a shrink")
-    }
-
-    @Test
-    fun `both axes are booked independently, on a shrink that cuts both`() {
-        // Cutting only in x can be passed by an implementation that books everything to one axis and
-        // happens to be summing the other to zero. Cutting both, on an asymmetric field, cannot.
-        val before = gassyWorld()
-        val after = before.remapped(Grid(12, 9), 0, 0)
-
-        assertEquals(0L, after.airBalance, "airBalance")
-        EnergyLedgers.assertAirBalanced(after, "airEnergyBalance")
-        assertEquals(0L, momentumX(after), "momentum identity on x")
-        assertEquals(0L, momentumY(after), "momentum identity on y")
-    }
+    // ⛔ Two tests stood here — that a shrink books the face momentum it discards to the exhaust,
+    // and that it books each axis independently. Both are **deleted rather than parked**: the
+    // per-edge momentum field they were about is not a ledger quantity any more. The hull's
+    // reaction moved to the vessel boundary, where only mass that genuinely leaves may push, so
+    // there is no longer any momentum for a resize to discard. See [VesselState.ventMomentumX].
 
     @Test
     fun `a near-side shrink vents as much as a far-side one`() {
@@ -235,8 +211,6 @@ class GridVentTest {
         assertTrue(after.atmosphereMass < before.atmosphereMass, "nothing was discarded")
         assertEquals(0L, after.airBalance, "airBalance after a near-side shrink")
         EnergyLedgers.assertAirBalanced(after, "airEnergyBalance after a near-side shrink")
-        assertEquals(0L, momentumX(after), "momentum identity on x")
-        assertEquals(0L, momentumY(after), "momentum identity on y")
     }
 
     // ── 2. Growth still vents nothing ─────────────────────────────────────
@@ -265,7 +239,6 @@ class GridVentTest {
         assertEquals(before.atmosphereMass, back.atmosphereMass, "gas did not survive the round trip")
         assertEquals(before.airVentedMass, back.airVentedMass, "vacuum padding was booked as vented")
         assertEquals(0L, back.airBalance, "airBalance after a round trip")
-        assertEquals(0L, momentumX(back), "momentum identity on x after a round trip")
     }
 
     // ── 3. Solids are a bug, not a booking ────────────────────────────────

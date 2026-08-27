@@ -235,16 +235,21 @@ class PumpTest {
     }
 
     @Test
-    fun `the momentum a pump takes out of the room is booked to the vessel`() {
+    fun `a pump does not push the ship, because both ends of it are aboard`() {
+        // ⛔ **The inverse of what stood here**, and deliberately. A pump used to shift the vessel's
+        // impulse, via the hull reaction the pressure solver booked on the pipe field. That was
+        // never a real force: a pump moves gas from a room into a pipe and both are inside the same
+        // hull, so it is an internal exchange and internal forces cannot move a centre of mass.
+        // Believing otherwise is the same mistake that let a sealed ship spin itself up — see
+        // [VesselState.angularBalance]. What a pump may do is push the ship *transiently* while it
+        // accelerates the gas, and give it back when the gas stops; with the atmosphere carrying no
+        // momentum of its own, that transient is exactly zero.
         val idle = run(VesselState(grid, hulled(), gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.empty(grid.size), rail = RailLayer.empty(grid.size)), 300)
-        // Drawing sideways, so the intake removes momentum along x, where a still room has least of
-        // its own and the pump's contribution is not buried under the settling of the air column.
         val working = run(pumped(facing = Direction.Left), 300)
 
-        assertTrue(
-            working.vesselImpulseX != idle.vesselImpulseX,
-            "a running pump left the vessel's x impulse exactly as an empty hull did — the momentum " +
-                "of the gas it drew in went nowhere, which is a leak out of the ledger",
+        assertEquals(
+            idle.vesselImpulseX, working.vesselImpulseX,
+            "a running pump pushed the ship, which would be a reactionless drive",
         )
         assertBalanced(working, "a pump pushing on the ship")
     }
