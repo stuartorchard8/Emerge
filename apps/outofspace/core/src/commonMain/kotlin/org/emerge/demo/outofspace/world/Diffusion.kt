@@ -1,5 +1,8 @@
 package org.emerge.demo.outofspace.world
 
+import org.emerge.demo.outofspace.chem.Fluid
+import org.emerge.demo.outofspace.chem.condensedDensityAt
+import org.emerge.demo.outofspace.chem.reducedDensity
 import org.emerge.demo.outofspace.chem.vapourMass
 import org.emerge.demo.outofspace.num.scaledRatio
 
@@ -123,6 +126,24 @@ const val SUB_STEPS = 1
 private const val FACES = 4
 
 /** Convenience overload deriving the face connectivity from [structure]. */
+/**
+ * Is [tile] already holding as much of [fluid] as that species can be at [kelvin]?
+ *
+ * ⚠️ **Not [condensedVolumeFraction], which cannot answer this** — it is the lever rule and so
+ * saturates at 1.0, reading "completely condensed" and "nineteen times over-packed" as the same
+ * number. The density and the dome have to be compared directly.
+ *
+ * False for a species with no critical point on file: nothing on record says how dense it can get,
+ * so nothing here may refuse it.
+ */
+private fun isPacked(masses: MassArray, tile: TileIndex, fluid: Fluid, kelvin: Int): Boolean {
+    val held = masses[MassIndex(tile, fluid)]
+    if (held <= 0L) return false
+    val limit = condensedDensityAt(kelvin, fluid.species) ?: return false
+    val density = reducedDensity(held, fluid.species, VolumeField.FULL, VolumeField.FULL) ?: return false
+    return density >= limit
+}
+
 fun diffuseFluid(
     grid: Grid,
     structure: StructureMap,
@@ -237,8 +258,33 @@ fun diffuseFluid(
                     else share * aperture / ApertureField.OPEN
                 if (out <= 0L) continue
 
-                deltaMass.add(tile, fluid, -out)
                 val neighbour = faceNeighbour[f]
+                // ⛔ **A cell already at its own condensed density for this species takes no more of
+                // it.** Without this the pass is a *one-way valve*: only [vapourMass] may leave a
+                // tile, so anything that condenses on arrival can never go back out, and nothing in
+                // the game moves a puddle except an extractor standing on it (`liftFrost`). A cold
+                // dead end therefore ratchets — measured on a live save, a sealed nose cone at 25 K
+                // had collected 241 kg into one tile, half of it hydrogen at **19.3x its own liquid
+                // density**, still climbing monotonically at +630 g per 10,000 ticks after 17M ticks
+                // of it, and reading 3,025 atm on Peng-Robinson's compressed branch.
+                //
+                // The refused mass **stays home** — the same thing a shut face does, and the same
+                // rule the partial aperture above already follows. Gas then banks up in the tile
+                // *outside* the cold one, which is how a cold trap really behaves: frost grows
+                // outward from the cold surface rather than compressing into a single cell.
+                //
+                // ⚠️ Per species, not per tile: this asks whether there is room for *this* gas, and
+                // says nothing about the cell being physically full of everything together. That is
+                // a volume-competition model and it is deliberately not being invented here.
+                //
+                // ⚠️ Asked of [masses], which is this pass's *starting* state — [deltaMass] is not
+                // applied until the loop ends. So every tile is judged against the same world and
+                // the pass stays order-independent, as the rest of it already is.
+                if (neighbour != TileIndex.NONE && temperature != null &&
+                    isPacked(masses, neighbour, fluid, temperature[neighbour.index])
+                ) continue
+
+                deltaMass.add(tile, fluid, -out)
                 if (neighbour == TileIndex.NONE) ventedMass += out else deltaMass.add(neighbour, fluid, out)
                 faceOut[f] += out
                 outMass += out

@@ -115,6 +115,60 @@ class PhaseTransportTest {
         )
     }
 
+    // ── And nothing may pile into a cell that is already full of it ─────────
+
+    /**
+     * **A cold cell that is already at its own condensed density takes no more.**
+     *
+     * The other half of "frost stays where it froze", and without it the pass is a **one-way
+     * valve**: vapour walks into a cold cell, condenses, and can never leave again, because the
+     * only thing in the game that moves a puddle is an extractor standing on it. A cold dead end
+     * therefore ratchets without limit.
+     *
+     * Measured on a live save before this existed: a sealed nose cone at 25 K had collected 241 kg
+     * into a single tile, half of it hydrogen at **19.3x its own liquid density**, still climbing
+     * monotonically at +630 g per 10,000 ticks after seventeen million ticks of it — and reading
+     * 3,025 atm, because at that density the equation of state is on its compressed-liquid branch.
+     * That one tile was 99.87% of the entire pressure field of the ship.
+     *
+     * Hydrogen because it has the lowest condensed density on file and so overfills a cell first,
+     * which is exactly why it was hydrogen that did it on the real ship.
+     */
+    @Test
+    fun `gas does not pile into a cell already at its condensed density`() {
+        val h2 = Fluid.of(Species.Hydrogen)!!
+        val masses = MassArray(grid.size)
+        val energies = EnergyArray(grid.size)
+
+        // A tile of liquid hydrogen at 25 K is about 6.4 kg, so 100 kg is some fifteen times over.
+        val packedTile = 100L * kg
+        masses.add(middle, h2, packedTile)
+        energies[middle] = heatCapacityAt(masses, middle) * 25
+
+        // And a warm puff of the same gas two cells away, with a clear run at it.
+        val source = grid.tile(1, 0)
+        val puff = 1L * kg
+        masses.add(source, h2, puff)
+        energies[source] = heatCapacityAt(masses, source) * 300
+
+        run(masses, energies, 40)
+
+        assertEquals(
+            packedTile, at(masses, 3, Species.Hydrogen),
+            "the full cell took more hydrogen on top of what it could already not get rid of",
+        )
+        // Not merely frozen in place: the puff has to have gone somewhere, or this would pass on a
+        // pass that had stopped moving anything at all.
+        assertTrue(
+            at(masses, 0, Species.Hydrogen) > 0L,
+            "the puff never moved, so the assertion above proves nothing",
+        )
+        assertEquals(
+            packedTile + puff, total(masses, Species.Hydrogen),
+            "refusing the gas lost it — it is supposed to stay where it was",
+        )
+    }
+
     @Test
     fun `what the frost does not hold, the room still carries away`() {
         // The frost is not a wall. Nitrogen poured into the same tile is a gas at 200 K and has to
