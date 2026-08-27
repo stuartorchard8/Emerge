@@ -1,7 +1,6 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.world.machine.*
-import org.emerge.demo.outofspace.world.SpeciesFilter
 
 /**
  * A single setting that may or may not be present in a [MachineSettings].
@@ -83,19 +82,19 @@ fun DeckMachine.toMachineSettings(): MachineSettings = MachineSettings(
         else -> Setting.Absent
     },
     setTemperature = when (this) {
-        is ThermalDecomposer -> Setting.Present(setTemperature)
+        is Furnace -> Setting.Present(setTemperature)
         else -> Setting.Absent
     },
     dwellTicks = when (this) {
-        is ThermalDecomposer -> Setting.Present(dwellTicks)
+        is Furnace -> Setting.Present(dwellTicks)
         else -> Setting.Absent
     },
     ticksPerAction = when (this) {
-        is Processor -> Setting.Present(ticksPerAction)
+        is Concentrator -> Setting.Present(ticksPerAction)
         else -> Setting.Absent
     },
     efficiencyPermille = when (this) {
-        is Processor -> Setting.Present(efficiencyPermille)
+        is Concentrator -> Setting.Present(efficiencyPermille)
         else -> Setting.Absent
     },
     massPerTick = when (this) {
@@ -131,8 +130,8 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.filter is Setting.Empty) result = result.copy(filter = null)
             result
         }
-        DeckMachineKind.Processor -> {
-            base as Processor
+        DeckMachineKind.Concentrator -> {
+            base as Concentrator
             var result = base
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)
@@ -140,8 +139,8 @@ fun DeckMachine.withSettings(settings: MachineSettings): DeckMachine {
             if (settings.efficiencyPermille is Setting.Present) result = result.copy(efficiencyPermille = settings.efficiencyPermille.value)
             result
         }
-        DeckMachineKind.ThermalDecomposer -> {
-            base as ThermalDecomposer
+        DeckMachineKind.Furnace -> {
+            base as Furnace
             var result = base
             if (settings.wiring is Setting.Present) result = result.copy(wiring = settings.wiring.value)
             if (settings.facing is Setting.Present) result = result.copy(facing = settings.facing.value)

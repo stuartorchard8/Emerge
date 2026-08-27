@@ -660,7 +660,7 @@ tripwire built from the same assumptions as the code cannot see a mistake in the
 ### Not fixed, and not caused by this
 
 Six tests fail with the knob turned, all in the free-body gravity and contact area, plus
-`ProcessorChainTest`. Eight failed at one gram per unit. The set is not a subset: `RockContactTest ::
+`ConcentratorChainTest`. Eight failed at one gram per unit. The set is not a subset: `RockContactTest ::
 the ship feels the body and the momentum ledger closes` newly fails, while three others newly pass.
 The area is known-broken and is being carried separately; the count moving is not evidence either
 way about the rescale.

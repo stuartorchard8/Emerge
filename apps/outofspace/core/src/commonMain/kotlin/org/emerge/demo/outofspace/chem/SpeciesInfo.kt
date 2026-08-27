@@ -26,7 +26,7 @@ package org.emerge.demo.outofspace.chem
 
 /** Which of the three mechanisms a [ReactionInfo] came from — what the player must arrange for it. */
 enum class ReactionKind(val label: String) {
-    /** Heat alone, in a [org.emerge.demo.outofspace.world.machine.ThermalDecomposer] or anywhere hot enough. */
+    /** Heat alone, in a [org.emerge.demo.outofspace.world.machine.Furnace] or anywhere hot enough. */
     Heat("HEAT"),
 
     /** Heat and the oxygen in the room's air. */

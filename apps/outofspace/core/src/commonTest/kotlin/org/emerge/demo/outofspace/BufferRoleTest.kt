@@ -9,12 +9,11 @@ import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.bufferRolesOf
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.reach
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.portsOf
 import kotlin.test.Test
@@ -36,7 +35,7 @@ class BufferRoleTest {
 
     private fun kinds(facing: Direction): List<DeckMachine> = listOf(
         Extractor(centre, facing), Thruster(centre, facing),
-        Processor(centre, facing), ThermalDecomposer(centre, facing),
+        Concentrator(centre, facing), Furnace(centre, facing),
         Storage(centre, facing),
     )
 

@@ -556,37 +556,50 @@ class GhostTest {
     }
 
     /**
-     * ⛔ **Building with impure material does not precipitate the impurity.**
+     * ⛔ **A rail refuses hull salvage outright rather than picking the iron out of it.**
      *
-     * From Stu's save: 181g of **pure carbon** parked on a rail at (12, 28), refusing to take any
-     * part in building the ghost at (12, 29). The track had been built out of hull salvage, and a
-     * hull is steel — 99 parts iron to 1 part carbon.
+     * ⚠️ **This test used to assert the opposite, and the behaviour it asserted was a bug fix.**
+     * From Stu's save: 181g of *pure carbon* parked on a rail at (12, 28), taking no part in
+     * building the ghost at (12, 29). The track was being built out of hull salvage, a hull was
+     * steel — 99 parts iron to one of carbon — and a rail's bill is iron and nothing else, so each
+     * top-up took the iron and left every gram of the carbon behind. The residue concentrated until
+     * it was too far off any bill for anything on the network to use: a lump that can never move
+     * again, on a tile that reads as ordinary track. Building with 99% pure material left a 0% pure
+     * residue. The fix was to make a top-up take the junk at the same rate as the metal.
      *
-     * A rail's bill is iron and nothing else, so the final top-up, which takes each species up to
-     * its own shortfall, took the iron and **left every gram of the carbon behind**. Each top-up
-     * therefore concentrated what it did not want, until what was standing there was too far off any
-     * bill for anything on the network to use — a lump that can never move again, on a tile that
-     * reads as ordinary track. Building with 99% pure material left a 0% pure residue.
+     * ⛔ **Steel being a species deletes the situation instead of managing it.** Hull salvage is
+     * `Species.Steel`, a rail's bill is `Species.Iron`, and steel is not iron by any fraction — so
+     * the door refuses the whole lump at the tile and there is no partial absorption to leave a
+     * residue behind. Nothing can concentrate what was never taken apart.
      *
-     * A top-up now takes the junk that came in with the metal at the same rate it takes the metal,
-     * so what rides on is the blend that arrived. The tile ends up with a little carbon in its
-     * fabric, which is exactly what the swallow-it-whole branch does for every delivery before the
-     * last one — the last one was the odd man out.
+     * ⚠️ **The consequence is a real restriction and is asserted here rather than left implied: you
+     * can no longer build track out of hull plate.** Salvaged steel is steel, and nothing in
+     * `REACTIONS` runs the alloying backwards. What the lump must not do is *rot* — it stays whole,
+     * on the run, still exactly what it was, for whatever does want steel.
      */
     @Test
-    fun `building a rail out of steel does not leave the carbon behind`() {
+    fun `a rail refuses hull salvage and leaves it whole`() {
         val steel = Material.Steel.composition.scaledTo(8 * Capacity.PACKET_MASS)
         val start = tankAndRun(ghostAt = 7, stored = steel)
-        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        val ghost = start.grid.tile(7, 3)
 
         val s = run(start, RAIL_PERIOD * 30)
 
-        assertTrue(s.conduits.isComplete(Conduit.Rail, s.grid.tile(7, 3)), "the ghost never finished")
+        assertFalse(s.conduits.isComplete(Conduit.Rail, ghost), "a rail was built out of steel")
+        assertEquals(0L, s.rail.massAt(ghost), "steel was absorbed into an iron bill")
+        // Whatever came out of the tank is still steel and still one piece: a refusal must not
+        // strand a part-lump that has had its iron picked out of it.
         for (x in 4..7) {
             val standing = s.rail.resourceAt(s.grid.tile(x, 3)) ?: continue
-            assertTrue(
-                buildableFrom(bill, standing),
-                "a residue nothing can use was left at ($x, 3): ${composition(standing)}",
+            assertEquals(
+                Species.Steel,
+                standing.dominant,
+                "a lump at ($x, 3) is no longer steel: ${composition(standing)}",
+            )
+            assertEquals(
+                standing.total,
+                standing[Species.Steel],
+                "a residue was picked out of the steel at ($x, 3): ${composition(standing)}",
             )
         }
     }
@@ -733,37 +746,46 @@ class GhostTest {
         assertEquals(0L, s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)), "a ghost built itself out of slag")
     }
 
+    /**
+     * ⛔ **There is no "nearly", and this test used to assert that there was.**
+     *
+     * At `BUILD_PURITY_PERCENT = 95` a 95% delivery went in whole and its 5% of junk was baked into
+     * the tile's fabric — the slack that stopped a rail demanding perfectly separated iron *while
+     * perfectly separated iron was unreachable*. `Chemistry.PURE_ENOUGH_PERMILLE` made it reachable,
+     * so the slack bought nothing and went on charging for itself: junk in a fabric is junk that
+     * off-gasses out of the salvage when the thing is taken apart, leaving a site that reads 99%
+     * built for ever.
+     *
+     * ⚠️ **The distances are the assertion.** One part in a million is refused for the same reason
+     * five parts in a hundred are, and stating both is what stops this being read as a bar that
+     * merely moved up.
+     */
     @Test
-    fun `a mostly-pure delivery is admitted whole`() {
-        // 95% iron, 5% something else. The slack is what stops a rail demanding perfectly separated
-        // material before there is anything aboard that can separate it — and what comes with the
-        // iron is baked into the tile rather than picked out of the lump.
-        val nearly = Mixture.of(
-                Species.Iron to 95 * Capacity.PACKET_MASS / 100,
-                Species.Silicon to 5 * Capacity.PACKET_MASS / 100,
-                energy = 0,
-            )
-        val s = run(tankAndRun(ghostAt = 7, stored = nearly), RAIL_PERIOD * 8)
-        assertTrue(
-            s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)) > 0L,
-            "a 95% delivery was turned away",
-        )
-        // And what came with the iron is in the tile, not picked out of the lump and discarded.
-        assertTrue(
-            s.conduits.tracks[Conduit.Rail][s.grid.tile(7, 3), Species.Silicon] > 0L,
-            "the silicon that came with the iron went nowhere",
-        )
+    fun `a delivery that is not the recipe is refused, however close`() {
+        fun ironWith(junk: Long) = run(
+            tankAndRun(
+                ghostAt = 7,
+                stored = Mixture.of(
+                    Species.Iron to Capacity.PACKET_MASS - junk,
+                    Species.Silicon to junk,
+                    energy = 0,
+                ),
+            ),
+            RAIL_PERIOD * 8,
+        ).conduits.massAt(Conduit.Rail, grid.tile(7, 3))
+
+        assertEquals(0L, ironWith(Capacity.PACKET_MASS / 20), "a 95% delivery got in")
+        assertEquals(0L, ironWith(Capacity.PACKET_MASS / 1_000_000), "a delivery one part per million off got in")
     }
 
+    /** And the recipe itself still goes in, which is the half that makes the above a rule and not a wall. */
     @Test
-    fun `a delivery just under the bar is refused`() {
-        val dirty = Mixture.of(
-                Species.Iron to 90 * Capacity.PACKET_MASS / 100,
-                Species.Silicon to 10 * Capacity.PACKET_MASS / 100,
-                energy = 0,
-            )
-        val s = run(tankAndRun(ghostAt = 7, stored = dirty), RAIL_PERIOD * 8)
-        assertEquals(0L, s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)), "a 90% delivery got in")
+    fun `a delivery that is exactly the recipe is admitted whole`() {
+        val s = run(tankAndRun(ghostAt = 7), RAIL_PERIOD * 8)
+        assertTrue(
+            s.conduits.massAt(Conduit.Rail, s.grid.tile(7, 3)) > 0L,
+            "pure iron was turned away from an iron bill",
+        )
     }
 
     private fun slag(): Mixture =

@@ -12,7 +12,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  * is the same as no dial, and it fails silently: the machine works perfectly at whatever it was
  * built with.
  */
-class ThermalDecomposerUiTest {
+class FurnaceUiTest {
 
     private val grid = Grid(9, 9)
     private val cfg = OutofspaceConfig(initialGrid = grid)
@@ -42,7 +42,7 @@ class ThermalDecomposerUiTest {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }
-        deck += ThermalDecomposer(centre, Direction.Right)
+        deck += Furnace(centre, Direction.Right)
         return VesselState(
             grid,
             deck,
@@ -55,7 +55,7 @@ class ThermalDecomposerUiTest {
 
     private fun controller() = OutofspaceController(cfg, world())
 
-    private fun machine(c: OutofspaceController) = c.state.deck[centre] as ThermalDecomposer
+    private fun machine(c: OutofspaceController) = c.state.deck[centre] as Furnace
 
     /** Push whatever the controller has queued through the reducer, the way a frame does. */
     private fun OutofspaceController.settle() = repeat(2) { stepOnce() }
@@ -68,7 +68,7 @@ class ThermalDecomposerUiTest {
         // unreachable through the UI and perfectly fine in every other test — the table would balance,
         // the sweep would run it, and no player could ever get there. Strictly above, not at: a
         // reaction *at* its onset runs at the base rate and essentially nothing happens.
-        val hottest = ThermalDecomposer.SETPOINTS.max()
+        val hottest = Furnace.SETPOINTS.max()
 
         for (reaction in DECOMPOSITIONS) {
             assertTrue(
@@ -89,7 +89,7 @@ class ThermalDecomposerUiTest {
     fun `the coldest setpoint runs nothing at all`() {
         // The off switch. It is only an off switch if it is below every onset in the game, and that
         // is a fact about the tables rather than about the number 300.
-        val coldest = ThermalDecomposer.SETPOINTS.min()
+        val coldest = Furnace.SETPOINTS.min()
         val lowestOnset = minOf(
             DECOMPOSITIONS.minOf { it.onsetKelvin },
             REDUCTIONS.minOf { it.onsetKelvin },
@@ -101,7 +101,7 @@ class ThermalDecomposerUiTest {
     fun `the default dwell is the first rung, so the dial starts where the machine does`() {
         // Otherwise the first tap moves the setting to somewhere it already was, or skips a rung —
         // both of which read as the control being broken.
-        assertEquals(ThermalDecomposer.DWELLS.first(), ThermalDecomposer(centre, Direction.Right).dwellTicks)
+        assertEquals(Furnace.DWELLS.first(), Furnace(centre, Direction.Right).dwellTicks)
     }
 
     // ── Turning them ─────────────────────────────────────────────────────────
@@ -115,7 +115,7 @@ class ThermalDecomposerUiTest {
 
         val after = machine(c).setTemperature
         assertTrue(after != before, "the setpoint did not move")
-        assertTrue(after in ThermalDecomposer.SETPOINTS, "$after is not a rung on the ladder")
+        assertTrue(after in Furnace.SETPOINTS, "$after is not a rung on the ladder")
     }
 
     @Test
@@ -124,21 +124,21 @@ class ThermalDecomposerUiTest {
         c.cycleDecomposerDwell(centre, 1)
         c.settle()
 
-        assertEquals(ThermalDecomposer.DWELLS[1], machine(c).dwellTicks, "the dwell did not step to the next rung")
+        assertEquals(Furnace.DWELLS[1], machine(c).dwellTicks, "the dwell did not step to the next rung")
     }
 
     @Test
     fun `both dials wrap all the way round`() {
         val c = controller()
         val startTemp = machine(c).setTemperature
-        repeat(ThermalDecomposer.SETPOINTS.size) {
+        repeat(Furnace.SETPOINTS.size) {
             c.cycleDecomposerTemperature(centre, 1)
             c.settle()
         }
         assertEquals(startTemp, machine(c).setTemperature, "a full lap of the temperature dial did not come home")
 
         val startDwell = machine(c).dwellTicks
-        repeat(ThermalDecomposer.DWELLS.size) {
+        repeat(Furnace.DWELLS.size) {
             c.cycleDecomposerDwell(centre, 1)
             c.settle()
         }
@@ -166,13 +166,13 @@ class ThermalDecomposerUiTest {
         // `indexOf` misses both, and the tempting fallback — start at index 0 — makes the first tap on
         // a 2000 K furnace turn it off.
         val deck = DeckArray(grid)
-        deck += ThermalDecomposer(centre, Direction.Right, setTemperature = 1300)
+        deck += Furnace(centre, Direction.Right, setTemperature = 1300)
         val c = OutofspaceController(cfg, world().copy(deck = deck))
 
         c.cycleDecomposerTemperature(centre, 1)
         c.settle()
 
-        val after = (c.state.deck[centre] as ThermalDecomposer).setTemperature
+        val after = (c.state.deck[centre] as Furnace).setTemperature
         assertTrue(
             after > 1300,
             "an off-ladder setpoint of 1300 K stepped to $after — it should climb to the next rung",
@@ -185,13 +185,13 @@ class ThermalDecomposerUiTest {
         // and carrying its progress across would make the first charge after every adjustment come
         // out to a setting nobody chose.
         val deck = DeckArray(grid)
-        deck += ThermalDecomposer(centre, Direction.Right, dwellTicks = 500, heldTicks = 300)
+        deck += Furnace(centre, Direction.Right, dwellTicks = 500, heldTicks = 300)
         val c = OutofspaceController(cfg, world().copy(deck = deck))
 
         c.cycleDecomposerDwell(centre, 1)
         c.settle()
 
-        assertEquals(0, (c.state.deck[centre] as ThermalDecomposer).heldTicks, "the part-served hold carried over")
+        assertEquals(0, (c.state.deck[centre] as Furnace).heldTicks, "the part-served hold carried over")
     }
 
     @Test

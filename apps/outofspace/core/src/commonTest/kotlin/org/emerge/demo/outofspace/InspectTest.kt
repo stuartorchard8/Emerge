@@ -11,7 +11,7 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -42,7 +42,7 @@ class InspectTest {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }
-        deck += ThermalDecomposer(centre, Direction.Right)
+        deck += Furnace(centre, Direction.Right)
         val layer = arrayOfNulls<Segment>(grid.size)
         for (tile in rails) layer[tile.index] = Segment(Conduit.Rail)
         return VesselState(

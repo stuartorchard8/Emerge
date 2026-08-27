@@ -14,7 +14,7 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
@@ -138,8 +138,8 @@ class GaugeTest {
         // by luck. What the test means is "concentrate came past here at some point", and that is a
         // question about the whole run.
         //
-        // ⚠️ **And long enough for the concentrate to arrive.** A processor takes two whole packets
-        // before it starts (`Processor.CHARGE_MASS`), so the mill has to be fed twice over before it
+        // ⚠️ **And long enough for the concentrate to arrive.** A concentrator takes two whole packets
+        // before it starts (`Concentrator.CHARGE_MASS`), so the mill has to be fed twice over before it
         // ships anything at all and the first concentrate reaches the second gauge around t=1000.
         // At 600 ticks the plant is working perfectly and the gauge has simply not seen it yet.
         var s = workingVessel(Grid(40, 28))
@@ -184,10 +184,10 @@ class GaugeTest {
     // ── The inspector's data ──────────────────────────────────────────────────
 
     @Test
-    fun `a processor names each of its buffers separately`() {
+    fun `a concentrator names each of its buffers separately`() {
         val grid = Grid(5, 5)
         val centre = grid.tile(2, 2)
-        val p = Processor(centre, Direction.Right)
+        val p = Concentrator(centre, Direction.Right)
         val buffers = BufferLayer.empty(grid.size)
         buffers.claimRoles(grid, p, centre)
         for ((role, resource) in listOf(
@@ -206,7 +206,7 @@ class GaugeTest {
         val grid = Grid(9, 9)
         val centre = grid.tile(4, 4)
         assertEquals(emptyList(), contentsBreakdown(Storage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
-        assertEquals(emptyList(), contentsBreakdown(Processor(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(Concentrator(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 
     @Test

@@ -152,13 +152,19 @@ class ReductionTest {
         // The stronger form, and the one that would have caught the aluminium problem on the day
         // Firebrick was written: every species in every buildable material has to be reachable, or
         // there is a machine in the build menu that the vessel can never replace.
+        // ⚠️ **Closed over `REACTIONS`, not over the two tables it is derived from.** The old form
+        // walked `DECOMPOSITIONS` and `REDUCTIONS`, which covered every row for as long as every row
+        // arrived through one of them. A row written straight into the unified table — which is
+        // where steel and firebrick are — was invisible to it, so the test would have called both
+        // unreachable while the sim made them. Reachability is a question about the chemistry the
+        // game actually runs, and `REACTIONS` is the whole of that.
+        //
+        // A row fires when every one of its reagents is reachable, which subsumes both old cases:
+        // a decomposition has one reagent and a reduction has two.
         val reachable = Species.NATURAL.toMutableSet()
-        repeat(REDUCTIONS.size + DECOMPOSITIONS.size) {
-            for (row in DECOMPOSITIONS) {
-                if (row.reactant in reachable) reachable += row.products.map { it.first }
-            }
-            for (row in REDUCTIONS) {
-                if (row.oxide in reachable && row.reductant in reachable) reachable += row.products.map { it.first }
+        repeat(REACTIONS.size) {
+            for (row in REACTIONS) {
+                if (row.reagents.all { it.first in reachable }) reachable += row.products.map { it.first }
             }
         }
 

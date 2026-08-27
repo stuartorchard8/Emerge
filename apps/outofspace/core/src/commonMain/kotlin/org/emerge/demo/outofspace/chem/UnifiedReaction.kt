@@ -404,6 +404,51 @@ private val WRITTEN: List<Reaction> = listOf(
         // gets it. There is no priority list; it is a consequence of two rates meeting.
         baseRate = IRON_BASE_RATE,
     ),
+
+    // ══ MAKING THINGS THE VESSEL IS BUILT OF ══════════════════════════════════════════════════
+    //
+    // The two rows that turn a *recipe* into a *reaction*. Steel and firebrick used to be
+    // `Material` compositions — mixtures a construction site had to be fed in the right ratio, tile
+    // by tile, from the ore field onwards — and the tolerance that made routing them survivable is
+    // the same tolerance that let a microgram of water ice into a hull plate. Here the ratio is
+    // arranged once, hot, in one place, and what comes out is one species that a belt, a filter and
+    // a ghost can each say a single thing about.
+    //
+    // ⛔ **Both are quoted at zero enthalpy, and that is a statement rather than a gap.** Forming a
+    // solid solution or a two-phase ceramic from its ingredients releases essentially nothing; the
+    // energy a foundry and a brick kiln actually spend is spent *getting the charge to temperature*,
+    // which is what [onsetKelvin] already makes the player pay for. ⚠️ What is genuinely not charged
+    // is iron's heat of fusion — you cannot alloy steel without melting the iron, and the game has
+    // no melting model to take it out of. Charging it here would be putting a melting cost inside a
+    // reaction that is not melting, so it is left out and named instead.
+
+    // 99 Fe + C -> Fe99C. Onset is iron's melting point, 1811 K: below it there is no liquid for the
+    // carbon to dissolve into, and above it a furnace holding the charge there makes steel.
+    Reaction(
+        principal = Species.Iron,
+        reagents = listOf(Species.Iron to 99, Species.Carbon to 1),
+        products = listOf(Species.Steel to 1),
+        onsetKelvin = 1811,
+        enthalpyPerKg = 0L,
+        baseRate = BASE_RATE,
+    ),
+    // 11 MgO + 6 SiO2 -> (MgO)11(SiO2)6. Refractories are fired somewhat above the temperature they
+    // are then asked to survive, and 1700 K is the low end of a real magnesia-silica firing.
+    //
+    // ⚠️ **The onset is chosen to sit under what a carbon fire reaches** (~2300 K), because a
+    // furnace lined with firebrick is otherwise the one machine you need heat to build. That the
+    // temperature is reachable is a fact; that lighting a carbon fire in a charge of periclase and
+    // quartz actually fires it **has not been played through** and is intent rather than a measured
+    // bootstrap. The starter vessel ships no furnace today, so until it does (or until this path is
+    // demonstrated) a fresh world cannot reach firebrick at all.
+    Reaction(
+        principal = Species.Periclase,
+        reagents = listOf(Species.Periclase to 11, Species.Quartz to 6),
+        products = listOf(Species.Firebrick to 1),
+        onsetKelvin = 1700,
+        enthalpyPerKg = 0L,
+        baseRate = BASE_RATE,
+    ),
 )
 
 /**

@@ -26,7 +26,7 @@ import org.emerge.demo.outofspace.world.Wiring
  *
  * Two things about it are unlike every other deck machine, and both are the same choice:
  *
- *  - **It is five tiles across**, which is a smelter's footprint rather than a processor's, because
+ *  - **It is five tiles across**, which is a smelter's footprint rather than a concentrator's, because
  *    it is a floor to land a rock on and a rock is five tiles across.
  *  - **It is permeable.** Air crosses it and a rock does not bounce off it — see [org.emerge.demo.outofspace.world.StructureMap] and
  *    [org.emerge.demo.outofspace.world.overlapsHull]. A solid deck machine would be a wall a rock could never get on top of, so an

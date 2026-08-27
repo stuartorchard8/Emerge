@@ -7,13 +7,13 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
 
 /**
- * Starting world: complete refinery line (extractor→processor→smelter→storage, waste vents).
+ * Starting world: complete refinery line (extractor→concentrator→smelter→storage, waste vents).
  */
 fun starterVessel(
     grid: Grid,
@@ -110,13 +110,13 @@ fun starterVessel(
     val y = STARTER_PLATE_Y
 
     put(STARTER_PLATE_X, y) { Extractor(it, Direction.Right) }   // covers x 3..7
-    put(13, y) { Processor(it, Direction.Right) }                           // covers x 12..14
+    put(13, y) { Concentrator(it, Direction.Right) }                           // covers x 12..14
     put(29, y) { Storage(it, Direction.Right) }   // the inventory: what you can build with
 
-    // Extractor→Processor: a gauge reads raw ore. What it reports on is whatever wire runs under
+    // Extractor→Concentrator: a gauge reads raw ore. What it reports on is whatever wire runs under
     // it — nothing, here, until the player lays one.
     rail(7, 12, y, setOf(9))
-    // Processor→tank: a gauge reads concentrate on the way.
+    // Concentrator→tank: a gauge reads concentrate on the way.
     rail(14, 28, y, setOf(17))
 
     // Waste: vertical drops to vents.

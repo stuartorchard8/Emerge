@@ -21,7 +21,7 @@ import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.constructionTileOf
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
@@ -99,7 +99,7 @@ class MachineGhostTest {
             rail = RailLayer.empty(grid.size),
         ).stocked(
             grid.tile(3, 4),
-            // What the machine is *made of*, not simply iron. A hull is steel and a processor is
+            // What the machine is *made of*, not simply iron. A hull is steel and a concentrator is
             // titanium, and a ghost is finished only when every species in its bill is there —
             // so a tank of pure iron builds neither. See the plan's note on alloys.
             // Several times what the machine costs: a run of track holds packets of its own while
@@ -146,29 +146,36 @@ class MachineGhostTest {
     }
 
     /**
-     * ⛔ **A site fed dirty stock finishes, and leaves nothing standing.**
+     * ⛔ **A site finishes, and leaves nothing standing.**
      *
-     * The end of a transfer is where every one of these bugs has lived, and impurity is what makes
-     * it hard: the site's appetite, the mass on the belt and the mass in the tank all have to close
-     * on the same number, and for as long as the appetite was counted in bill species while the
-     * traffic was counted in matter they could not. Stu's extractor asked for four more packets when
-     * it was one packet from its bill, took them, and left the surplus standing on the track with
-     * nothing downstream that wanted it — an immovable plug in front of the next delivery.
+     * The end of a transfer is where every one of these bugs has lived: the site's appetite, the mass
+     * on the belt and the mass in the tank all have to close on the same number, and for as long as
+     * the appetite was counted in bill species while the traffic was counted in matter they could
+     * not. Stu's extractor asked for four more packets when it was one packet from its bill, took
+     * them, and left the surplus standing on the track with nothing downstream that wanted it — an
+     * immovable plug in front of the next delivery.
      *
      * So this asserts the whole close-out at once: the machine finishes, and the network is empty
-     * afterwards. ⚠️ **Both halves.** "It finished" was true before this change too — it finished
-     * by over-ordering.
+     * afterwards. ⚠️ **Both halves.** "It finished" was true before that fix too — it finished by
+     * over-ordering, and the surplus is what the second assertion is looking for.
+     *
+     * ⚠️ **The stock used to be deliberately dirty and can no longer be.** Steel cut with 4% quartz
+     * was the sharpest statement of the bug — junk arriving on every delivery that the site is not
+     * short of and cannot refuse — and at `BUILD_PURITY_PERCENT = 100` it does not get through the
+     * door to make the point with. That is the fix acting one layer earlier rather than the case
+     * going away: the two counts can no longer *diverge*, because nothing enters a site that is not
+     * in its bill, so bill species and matter are the same quantity by construction. The close-out
+     * is still worth asserting, because packet granularity can still over-order on its own.
      */
     @Test
-    fun `a ghost machine fed impure stock finishes with nothing left standing`() {
+    fun `a ghost machine finishes with nothing left standing`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
         val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
 
-        // Steel, cut with 4% quartz: through the door — the bar is 95% of each species' own share —
-        // and every delivery carries junk the site is not short of and cannot refuse.
-        val dirty = (bill.scaledTo(bill.total * 96L / 100L) + Mixture.of(Species.Quartz to bill.total * 4L / 100L, energy = 0))
-        start.stocked(grid.tile(3, 4), dirty.scaledTo(bill.total * 4L))
+        // Deliberately not a whole number of packets, so the last delivery is a part-packet and the
+        // site has something to round.
+        start.stocked(grid.tile(3, 4), Mixture.of(Species.Steel to bill.total * 4L + 7L, energy = 0))
         assertTrue(start.deck.isGhost(at), "the fixture stood a finished machine")
 
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
@@ -215,24 +222,31 @@ class MachineGhostTest {
     }
 
     /**
-     * ⛔ **A ghost rail finished off an alloy never quite finishes.** Found while covering the case
-     * above; parked rather than fixed, because it is nothing to do with the whitelist and Stu has not
-     * been asked.
+     * ⛔ **A ghost rail whose last top-up is a part-packet still finishes.**
      *
-     * [absorbIntoGhost] takes a proportional share of **every** species in the lump, including ones
-     * the bill does not want. While the shortfall is bigger than a packet the whole lump goes in and
-     * all is well. Once the shortfall drops below a packet the proportional branch takes over, and a
-     * rail wanting only iron gets `need × ironFraction` of iron per pass — always a shade under what
-     * it asked for. It converges on the bill and never reaches it: 999 permille for ever, with the
-     * run jammed solid behind it.
+     * [absorbIntoGhost] takes a proportional share of every species in the lump. While the shortfall
+     * is bigger than a packet the whole lump goes in and all is well; once it drops below a packet
+     * the proportional branch takes over, and a rail getting `need × fraction` per pass is always a
+     * shade under what it asked for. It converges on the bill and never reaches it: 999 permille for
+     * ever, with the run jammed solid behind it.
      *
      * Fixed 2026-08-19 by giving the conduit path the deck path's rule: the final top-up is capped
      * **per species** at that species' own shortfall, so the last gram of iron is actually taken.
+     *
+     * ⚠️ **This was written as "finished off an alloy" and could not stay that way.** The lump that
+     * exposed the convergence was hull salvage — 99 parts iron to one of carbon — against a rail's
+     * iron-only bill, and there is no such lump any more: steel is a species, so hull salvage is
+     * `Species.Steel` and a rail refuses it outright rather than converging on it. The cap is still
+     * live code and still the thing under test, so what feeds it here is the iron the rail actually
+     * wants, delivered so that the last pass is a part-packet.
      */
     @Test
-    fun `a ghost rail finished off an alloy finishes`() {
+    fun `a ghost rail finished off a part packet finishes`() {
         val at = grid.tile(10, 4)
-        val start = tankAndGhost(Hull(at))
+        val start = tankAndGhost(Hull(at)).stocked(
+            grid.tile(3, 4),
+            Mixture.of(Species.Iron to 8 * Capacity.PACKET_MASS, energy = 0),
+        )
         start.conduits.tracks[Conduit.Rail].release(at)
 
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 120)
@@ -357,10 +371,10 @@ class MachineGhostTest {
     @Test
     fun `a big machine builds evenly across its footprint`() {
         val at = grid.tile(10, 4)
-        val start = tankAndGhost(Processor(at, Direction.Right))
+        val start = tankAndGhost(Concentrator(at, Direction.Right))
         val machine = start.deck[at]!!
         val tiles = machine.tiles(grid)
-        assertTrue(tiles.size > 1, "a processor is supposed to cover more than one tile")
+        assertTrue(tiles.size > 1, "a concentrator is supposed to cover more than one tile")
 
         // Part-way through, not finished: the question is how the metal is distributed while it is
         // still arriving.
@@ -407,28 +421,46 @@ class MachineGhostTest {
     }
 
     /**
-     * The intended path: mixing is a **logistics** problem, not a refining one. A storage blended to
-     * the recipe emits packets that are proportional slices of what it holds, so keeping a tank
-     * inside the tolerance is what makes steel machines buildable.
+     * ⛔ **Mixing is a *chemistry* problem now, not a logistics one — and this is the test that says
+     * which.**
      *
-     * The blend here is deliberately *not* the exact recipe — 95:5 against steel's 99:1 — because
-     * the tolerance is the point: a player has to hold a ratio, not hit a number.
+     * It used to assert the opposite. A storage held to 95:5 against steel's 99:1 built a hull,
+     * because a bill was a recipe the transport network had to keep in proportion over its whole
+     * length and the tolerance was the slack that made that humanly possible. Steel is a species, so
+     * there is no proportion left to hold: iron and carbon in a tank are iron and carbon, however
+     * carefully blended, and the thing that turns them into hull plate is a furnace at 1811 K.
+     *
+     * ⚠️ **Both halves are asserted, because only the pair is the claim.** That pure steel builds a
+     * hull is half of it; that a blend which used to build one now builds nothing is the half a
+     * player will actually meet, and it is the whole reason the alloying reaction has to exist.
      */
     @Test
-    fun `a storage blended within tolerance builds a steel machine`() {
+    fun `only steel builds a steel machine, however well a tank is blended`() {
         val at = grid.tile(10, 4)
         val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
-        val start = tankAndGhost(Hull(at)).stocked(
-            grid.tile(3, 4),
-            Mixture.of(
-                    Species.Iron to 95 * bill.total * 4 / 100,
-                    Species.Carbon to 5 * bill.total * 4 / 100,
+
+        val blended = run(
+            tankAndGhost(Hull(at)).stocked(
+                grid.tile(3, 4),
+                Mixture.of(
+                    Species.Iron to 99 * bill.total * 4 / 100,
+                    Species.Carbon to 1 * bill.total * 4 / 100,
                     energy = 0,
                 ),
+            ),
+            OutofspaceReducer.RAIL_PERIOD * 60,
         )
-        val s = run(start, OutofspaceReducer.RAIL_PERIOD * 60)
-        val run = (4..10).joinToString(",") { x -> "${s.rail.resourceAt(grid.tile(x, 4))}" }
-        assertFalse(s.deck.isGhost(at), "a blend inside the tolerance did not build the hull: casing=${s.deck.stuff.massAt(at)} of ${bill.total}; run=$run; tank=${s.buffers.massAt(grid.tile(3,4))}")
+        assertTrue(blended.deck.isGhost(at), "a tank of loose iron and carbon built a steel hull")
+        assertEquals(0L, blended.deck.stuff.massAt(at), "ingredients went into a site that can never finish")
+
+        val alloyed = run(
+            tankAndGhost(Hull(at)).stocked(
+                grid.tile(3, 4),
+                Mixture.of(Species.Steel to bill.total * 4, energy = 0),
+            ),
+            OutofspaceReducer.RAIL_PERIOD * 60,
+        )
+        assertFalse(alloyed.deck.isGhost(at), "a tank of steel did not build a steel hull")
     }
 
     /** Building it is a transfer, not an arrival: the world gains nothing from off-world. */
@@ -450,7 +482,7 @@ class MachineGhostTest {
     @Test
     fun `a finished machine gets its ports back`() {
         val at = grid.tile(10, 4)
-        val start = tankAndGhost(Processor(at, Direction.Right))
+        val start = tankAndGhost(Concentrator(at, Direction.Right))
         assertTrue(start.deck.isGhost(at), "fixture")
 
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 200)
@@ -585,7 +617,7 @@ class MachineGhostTest {
      * ⛔ A **processing buffer goes back out through the input port**, not the output and not the
      * centre it is stored at.
      *
-     * A processor holds a lump in the middle of being worked. That lump is not finished goods, so it
+     * A concentrator holds a lump in the middle of being worked. That lump is not finished goods, so it
      * has no business leaving by the output — the way it came in is the honest way back out. The
      * store itself lives at the machine's centre, so this is the one place where where a store *is*
      * and where its contents are handed back deliberately differ.
@@ -593,14 +625,14 @@ class MachineGhostTest {
     @Test
     fun `a processing buffer is handed back through the input port`() {
         val at = grid.tile(9, 4)
-        val processor = Processor(at, Direction.Right)
-        val inside = bufferTile(grid, processor, at, BufferRole.Inside)!!
-        val input = bufferTile(grid, processor, at, BufferRole.Input)!!
-        assertEquals(at, inside, "a processor's working store is supposed to sit at its centre")
+        val concentrator = Concentrator(at, Direction.Right)
+        val inside = bufferTile(grid, concentrator, at, BufferRole.Inside)!!
+        val input = bufferTile(grid, concentrator, at, BufferRole.Input)!!
+        assertEquals(at, inside, "a concentrator's working store is supposed to sit at its centre")
         assertTrue(input != at, "and its input port is supposed to be somewhere else")
 
         val half = Mixture.of(Species.Iron to Capacity.PACKET_MASS / 2, energy = 0)
-        val before = builtMachine(processor).stocked(at, half, BufferRole.Inside)
+        val before = builtMachine(concentrator).stocked(at, half, BufferRole.Inside)
 
         // ⚠️ Asserted as **which side of the machine it is on**, not as which tile it is standing on.
         // The fixture has a ghost drawing to the left, so the moment the lump is handed back it
@@ -792,7 +824,7 @@ class MachineGhostTest {
     @Test
     fun `cancelling a machine short of its bill leaves a construction site that rebuilds`() {
         val at = grid.tile(10, 4)
-        val start = run(tankAndGhost(Processor(at, Direction.Right)), OutofspaceReducer.RAIL_PERIOD * 8)
+        val start = run(tankAndGhost(Concentrator(at, Direction.Right)), OutofspaceReducer.RAIL_PERIOD * 8)
         assertTrue(start.deck.isGhost(at), "fixture: it should still be short of its bill")
         assertTrue(start.deck.stuff.massAt(at) > 0L, "fixture: and hold some casing already")
 
@@ -875,25 +907,28 @@ class MachineGhostTest {
     }
 
     /**
-     * The same gap, seen from the other side: a site part way through its bill kept the seed for
-     * every species it had **not** yet been delivered. A hull half fed on iron came back one grid
-     * over holding all the carbon steel asks for, which nothing put there.
+     * The same gap, seen from the other side: a site part way through its bill came back over the
+     * wider grid holding **what its bill says**, rather than what it had actually been delivered.
+     *
+     * ⚠️ **The fixture used to lean on a hull being an alloy** — half fed on iron, and the resize
+     * conjured all the carbon steel asks for — which was the sharpest possible statement of the bug
+     * and is not available now that a hull's bill is one species. The claim is the same one and it
+     * still has teeth: a half-fed site is half full afterwards, not full.
      */
     @Test
     fun `a half-built machine keeps exactly what it is made of across a remap`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
         val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
-        assertTrue(bill[Species.Carbon] > 0L, "fixture: a hull is an alloy, or this proves nothing")
-        // Part fed, and only in iron: the carbon is still on its way.
-        start.deck.stuff[at, Species.Iron] = bill[Species.Iron] / 2
+        assertTrue(bill[Species.Steel] > 0L, "fixture: a hull is made of steel, or this proves nothing")
+        start.deck.stuff[at, Species.Steel] = bill[Species.Steel] / 2
 
         val wider = Grid(grid.width + 6, grid.height + 4)
         val moved = start.remapped(wider, dx = 3, dy = 2)
         val now = wider.tile(grid.xOf(at) + 3, grid.yOf(at) + 2)
 
-        assertEquals(bill[Species.Iron] / 2, moved.deck.stuff[now, Species.Iron], "iron at $now")
-        assertEquals(0L, moved.deck.stuff[now, Species.Carbon], "the resize delivered the carbon")
+        assertEquals(bill[Species.Steel] / 2, moved.deck.stuff[now, Species.Steel], "steel at $now")
+        assertEquals(bill[Species.Steel] / 2, moved.deck.stuff.massAt(now), "the resize topped the site up")
         assertTrue(moved.deck.isGhost(now), "a construction site came back finished")
     }
 
@@ -937,12 +972,12 @@ class MachineGhostTest {
     @Test
     fun `a machine placed outside creative mode arrives with no metal in it`() {
         val at = grid.tile(8, 5)
-        val s = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Processor)
+        val s = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Concentrator)
 
         val m = s.deck[at]
-        assertNotNull(m, "the processor did not go down at all")
-        assertTrue(m is Processor)
-        assertTrue(s.deck.isGhost(at), "the processor arrived with its casing")
+        assertNotNull(m, "the concentrator did not go down at all")
+        assertTrue(m is Concentrator)
+        assertTrue(s.deck.isGhost(at), "the concentrator arrived with its casing")
         for (tile in m.tiles(grid)) {
             assertEquals(0L, s.deck.stuff.massAt(tile), "casing at $tile")
         }
@@ -951,7 +986,7 @@ class MachineGhostTest {
     @Test
     fun `a machine placed in creative mode is finished`() {
         val at = grid.tile(8, 5)
-        val s = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Processor)
+        val s = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Concentrator)
 
         assertFalse(s.deck.isGhost(at), "creative placement is supposed to conjure the whole machine")
         assertTrue(s.deck.stuff.massAt(at) > 0L, "and its casing is real matter")
@@ -961,10 +996,10 @@ class MachineGhostTest {
     @Test
     fun `a ghost machine costs the world nothing`() {
         val at = grid.tile(8, 5)
-        val ghost = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Processor)
+        val ghost = place(VesselState.empty(grid).copy(creative = false), at, DeckMachineKind.Concentrator)
         assertEquals(0L, ghost.insertedEnergy, "a ghost brought heat into the world from nowhere")
 
-        val real = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Processor)
+        val real = place(VesselState.empty(grid).copy(creative = true), at, DeckMachineKind.Concentrator)
         assertTrue(real.insertedEnergy > 0L, "creative placement is an insertion and is booked as one")
     }
 
@@ -996,7 +1031,7 @@ class MachineGhostTest {
     @Test
     fun `a ghost machine weighs nothing`() {
         val empty = VesselState.empty(grid).copy(creative = false)
-        val withGhost = place(empty, grid.tile(8, 5), DeckMachineKind.Processor)
+        val withGhost = place(empty, grid.tile(8, 5), DeckMachineKind.Concentrator)
         assertEquals(
             empty.deck.stuff.totalMass,
             withGhost.deck.stuff.totalMass,

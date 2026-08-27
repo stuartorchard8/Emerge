@@ -28,7 +28,7 @@ enum class DeckMachineKind(
     /**
      * Whether this machine will only ever put a **whole packet** on the track.
      *
-     * A machine that produces in packets — a processor works a charge and hands out one packet of
+     * A machine that produces in packets — a concentrator works a charge and hands out one packet of
      * concentrate and one of tailings — never has a part-packet to offer in the first place. An
      * [Extractor] does: it takes rock a whole *cell* at a time and frost by whatever happens to be
      * lying on its plate, neither of which is a round number, so its store is nearly always some
@@ -59,8 +59,8 @@ enum class DeckMachineKind(
      * that held the air out could not exhaust into anything.
      */
     Thruster("THRUSTER", preventThoroughfare = true),
-    Processor("PROCESSOR", preventThoroughfare = true, gatesOutput = true),
-    ThermalDecomposer("THERMAL DECOMPOSER", preventThoroughfare = true, gatesOutput = true),
+    Concentrator("CONCENTRATOR", preventThoroughfare = true, gatesOutput = true),
+    Furnace("FURNACE", preventThoroughfare = true, gatesOutput = true),
     Extractor("EXTRACTOR", gatesOutput = true, shipsWholePackets = true),
 
     /**

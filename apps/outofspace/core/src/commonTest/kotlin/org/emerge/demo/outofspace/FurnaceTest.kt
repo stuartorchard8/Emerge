@@ -20,7 +20,7 @@ import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -41,7 +41,7 @@ import kotlin.test.assertTrue
  * the same arithmetic, that burns a lump on a belt. If any test here starts asserting that a
  * decomposer turns X into Y, the inversion has been undone.
  */
-class ThermalDecomposerTest {
+class FurnaceTest {
 
     private val grid = Grid(12, 8)
     private val cfg = OutofspaceConfig(initialGrid = grid)
@@ -110,7 +110,7 @@ class ThermalDecomposerTest {
             deck += Hull(grid.tile(0, y))
             deck += Hull(grid.tile(grid.width - 1, y))
         }
-        val machine = ThermalDecomposer(centre, Direction.Right, setTemperature = setTemperature, dwellTicks = dwellTicks)
+        val machine = Furnace(centre, Direction.Right, setTemperature = setTemperature, dwellTicks = dwellTicks)
         deck += machine
 
         val buffers = BufferLayer.forDeck(grid, deck)
@@ -302,7 +302,7 @@ class ThermalDecomposerTest {
         // player actually chose.
         val saved = Save.read(Save.write(withCharge(cold(Species.Calcite), setTemperature = 1150)))
         val machine = saved.deck[centre]
-        assertTrue(machine is ThermalDecomposer, "the machine did not survive the round trip")
+        assertTrue(machine is Furnace, "the machine did not survive the round trip")
         assertEquals(1150, machine.setTemperature, "the setpoint did not survive the round trip")
     }
 
@@ -407,7 +407,7 @@ class ThermalDecomposerTest {
         // slow machine would serve its whole dwell on the way up and leave the instant it arrived.
         val ticks = 400
         val cool = run(withCharge(cold(Species.Calcite, CHARGE), setTemperature = 3000, dwellTicks = 50), ticks)
-        val machine = cool.deck[centre] as ThermalDecomposer
+        val machine = cool.deck[centre] as Furnace
 
         assertTrue(
             cool.buffers.stuff.kelvinAt(chamber()) < 3000,
@@ -421,7 +421,7 @@ class ThermalDecomposerTest {
         val saved = Save.read(
             Save.write(withCharge(cold(Species.Calcite), setTemperature = 1150, dwellTicks = 250)),
         )
-        val machine = saved.deck[centre] as ThermalDecomposer
+        val machine = saved.deck[centre] as Furnace
         assertEquals(1150, machine.setTemperature, "the setpoint did not survive the round trip")
         assertEquals(250, machine.dwellTicks, "the dwell did not survive the round trip")
     }
@@ -435,12 +435,12 @@ class ThermalDecomposerTest {
         var held = 0
         repeat(2_000) {
             s = OutofspaceReducer.reduce(cfg, s, emptyMap())
-            held = (s.deck[centre] as ThermalDecomposer).heldTicks
+            held = (s.deck[centre] as Furnace).heldTicks
         }
         assertTrue(held > 0, "the charge never started its dwell, so there is nothing to round trip")
 
         val saved = Save.read(Save.write(s))
-        assertEquals(held, (saved.deck[centre] as ThermalDecomposer).heldTicks, "the dwell restarted on load")
+        assertEquals(held, (saved.deck[centre] as Furnace).heldTicks, "the dwell restarted on load")
     }
 
     @Test

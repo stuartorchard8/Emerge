@@ -183,6 +183,22 @@ val MINERALS: Map<Species, Map<Species, Int>> = mapOf(
 
     // ── Biology ──
     Species.Algae to mapOf(Species.Carbon to 6, Species.Hydrogen to 12, Species.Oxygen to 6),
+
+    // ── The manufactured materials, which are ratios rather than molecules ──
+    //
+    // ⛔ **Neither of these is a compound and the table knows it.** Steel is a solid solution and
+    // firebrick is a two-phase ceramic; what is written here is the integer formula unit whose mass
+    // split *is* the recipe, so that an alloying reaction closes atom by atom against the same
+    // oracle every real mineral answers to. Fe₉₉C is 0.216% carbon by mass and (MgO)₁₁(SiO₂)₆ is
+    // 55.0% magnesia — the two recipes, with no second place to state them and no rounding rule
+    // standing between the recipe and what conserves.
+    //
+    // ⚠️ They are keys here for that arithmetic and for nothing else. Both take
+    // [Species.relativeAbundance] of zero, so no rock rolls either, and `everyMineralIsMinedOrMade`
+    // holds them to the same standard as lime and periclase: something in `REACTIONS` has to make
+    // them or they are dead weight.
+    Species.Steel to mapOf(Species.Iron to 99, Species.Carbon to 1),
+    Species.Firebrick to mapOf(Species.Magnesium to 11, Species.Silicon to 6, Species.Oxygen to 23),
 )
 
 /**

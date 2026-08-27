@@ -32,7 +32,7 @@ happened anywhere else at that temperature.
 
 Consequences:
 
-- `ThermalDecomposer` keeps its footprint, its `Firebrick` casing (`Material.kt:194`) and its
+- `Furnace` keeps its footprint, its `Firebrick` casing (`Material.kt:194`) and its
   buffers, and stops being special. It earns its place by controlling conditions.
 - `chem/Chemistry.kt` loses `cook` and gains the reaction table.
 - Reactions become **cross-layer and cross-phase**, which is where all the risk is.
@@ -390,7 +390,7 @@ the physics produces rather than a special case.
 # Increment 3 — `cook` becomes a heater ✅ BUILT
 
 Per decision 3. `cook` is deleted — it returned its input unchanged for its entire life — and with it
-the chemistry, the recipe, the tick counter and the throttle carry. `ThermalDecomposer` is now four
+the chemistry, the recipe, the tick counter and the throttle carry. `Furnace` is now four
 fields: where it is, which way it faces, its setpoint and its wiring.
 
 What it does: pull a charge in, run an element until the charge is at [setTemperature], hand on
@@ -398,7 +398,7 @@ whatever the charge has *become*. What happened to it on the way is the ambient 
 now sweeps the **buffer layer** as well as the rail — the same pass, the same arithmetic, the same
 ledger. The machine contributes conditions and nothing else.
 
-`BufferRole.kt` gives `ThermalDecomposer` a `Waste` role of `NO_OFFSET` — one output port — and with
+`BufferRole.kt` gives `Furnace` a `Waste` role of `NO_OFFSET` — one output port — and with
 gaseous products venting to the tile's air that is correct and needs no second port: solids leave by
 the belt, gases leave by the room. Which is also the argument for putting the decomposer somewhere
 you have thought about the ventilation.
@@ -460,7 +460,7 @@ you have thought about the ventilation.
 
 `chem/Decomposition.kt`: seven reactions that need nothing but heat, plus the two species that were
 missing to make them possible — **Lime (CaO)** and **Periclase (MgO)**, both named in `Minerals.kt`
-and in `ThermalDecomposer`'s own kdoc and both impossible until now.
+and in `Furnace`'s own kdoc and both impossible until now.
 
 | | | onset |
 |---|---|---|
@@ -655,7 +655,7 @@ itself. Periclase costs the same to reach and is a real brick.
   panels cannot share the bottom-right corner. So the storage lock — built, saved and tested one
   commit earlier — could never appear on screen. Found while trying to photograph the decomposer's
   dials, which had inherited the same defect. `apply` now selects whatever the tool, and
-  `ThermalDecomposerUiTest` guards it. **The lesson is the one the observability memory already
+  `FurnaceUiTest` guards it. **The lesson is the one the observability memory already
   states**: a control that cannot be reached fails silently and passes every unit test, so a panel is
   not done until it has been looked at.
 - **`RigidBody.MATERIAL` is dead** — declared, documented at length, referenced nowhere. Found while
@@ -668,7 +668,7 @@ itself. Periclase costs the same to reach and is a real brick.
 `SETPOINTS` is a ladder of round numbers from 300 K (off — below every onset in the game) to 2400 K
 (above every onset, including silicon carbothermy at 2000 K). ⚠️ **Not the onsets themselves**: a
 reaction *at* its onset runs at the base rate and essentially nothing happens, so a dial made of
-onsets would offer only the slowest possible setting for each thing it named. `ThermalDecomposerUiTest`
+onsets would offer only the slowest possible setting for each thing it named. `FurnaceUiTest`
 asserts every row in both tables has a rung strictly above it, so a hotter reaction added later is a
 test failure rather than a reaction no player can reach.
 

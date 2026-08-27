@@ -12,7 +12,7 @@ val DeckMachineKind.diameter: Int
         -> 1
         // One tile wide. Its *length* is two, and that is not this number — see [FootprintShape.Nose].
         DeckMachineKind.Thruster -> 1
-        DeckMachineKind.Processor, DeckMachineKind.ThermalDecomposer -> 3
+        DeckMachineKind.Concentrator, DeckMachineKind.Furnace -> 3
         // Five: it should dominate the deck it sits on, and its heat should have somewhere to be.
         DeckMachineKind.Extractor -> 5
         // Three tiles end to end. Only ever three *along* its facing — see [FootprintShape.Span].

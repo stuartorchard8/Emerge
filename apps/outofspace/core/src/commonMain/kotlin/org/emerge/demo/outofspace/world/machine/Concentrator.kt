@@ -6,13 +6,13 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 
 /**
- * Mineral processor: concentrate out facing side, tailings out clockwise-side.
+ * Mineral concentrator: concentrate out facing side, tailings out clockwise-side.
  *
  * Chain: purity climbs, wastefully (tailings = lost material). Fed the standard ore body at the
  * default efficiency the ladder runs **41% → 65% → 86% → 94% → 97% → 100%** — five machines, and
  * half the mass lost at every one of them, so a pure packet costs about 32 packets of ore.
  */
-data class Processor(
+data class Concentrator(
     override val center: TileIndex,
     override val facing: Direction,
     val carry: Long = 0L,
@@ -32,7 +32,7 @@ data class Processor(
     val efficiencyPermille: Int = 600,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
-    override val kind: DeckMachineKind get() = DeckMachineKind.Processor
+    override val kind: DeckMachineKind get() = DeckMachineKind.Concentrator
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)

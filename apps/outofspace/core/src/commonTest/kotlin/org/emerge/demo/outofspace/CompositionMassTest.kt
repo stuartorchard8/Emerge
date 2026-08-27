@@ -15,7 +15,6 @@ import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.Conduit
-import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.chem.TILE_LITRES
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.TileEnergy
@@ -172,11 +171,11 @@ class CompositionMassTest {
             kind = BodyKind.FRAGMENT,
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
-            machineKind = DeckMachineKind.ThermalDecomposer,
+            machineKind = DeckMachineKind.Furnace,
             energy = TileEnergy.uniform(1, 0L),
         )
-        assertEquals(DeckMachineKind.ThermalDecomposer.massPerTile, fragment.mass)
-        assertEquals(DeckMachineKind.ThermalDecomposer.capacityPerTile, fragment.capacity)
+        assertEquals(DeckMachineKind.Furnace.massPerTile, fragment.mass)
+        assertEquals(DeckMachineKind.Furnace.capacityPerTile, fragment.capacity)
     }
 
     /**
@@ -214,7 +213,7 @@ class CompositionMassTest {
         // A building and a length of conduit: the two things the vessel is made of, and the claim
         // is about the fabric rather than about either of them in particular.
         for ((label, perTile) in listOf(
-            DeckMachineKind.ThermalDecomposer.label to DeckMachineKind.ThermalDecomposer.massPerTile,
+            DeckMachineKind.Furnace.label to DeckMachineKind.Furnace.massPerTile,
             Conduit.Rail.label to Conduit.Rail.massPerTile,
         )) {
             assertTrue(

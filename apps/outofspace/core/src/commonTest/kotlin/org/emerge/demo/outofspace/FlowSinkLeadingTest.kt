@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
  * already marked — and the mark is read as "this route is justified, do not re-litigate it", which
  * is exactly the wrong thing to say about the one walk in which that consumer asks to be fed.
  *
- * Stu's save, 2026-08-22: a storage input at `(18,28)` with a processor's tailings output at
+ * Stu's save, 2026-08-22: a storage input at `(18,28)` with a concentrator's tailings output at
  * `(17,28)` beside it, its feed tile at `(18,29)` and a corridor running east to a storage output
  * away at `(23,19)`. An unrelated construction site's walk had claimed the corridor eastward; the
  * tailings then made the storage leading; and the storage was thereafter unable to say a word about

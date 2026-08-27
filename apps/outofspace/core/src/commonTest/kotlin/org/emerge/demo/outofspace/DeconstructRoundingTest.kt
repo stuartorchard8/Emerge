@@ -27,12 +27,26 @@ class DeconstructRoundingTest {
     private val ghost = grid.tile(3, 3)
 
     /**
-     * A marked rail holding a whole rail's worth of **contaminated** metal, and a part-built ghost
-     * next to it that is short of rather less than that.
+     * A marked rail holding a whole rail's worth of metal, and a part-built ghost next to it that is
+     * short of rather less than that.
      *
      * ⚠️ **The source must hold more than the site is short of**, which is Stu's shape exactly: a
      * full marked rail beside a ghost already 23% built. Give it less and the draw takes the lot by
      * the `take >= held` path, which is exact, and the rounding never shows.
+     *
+     * ⚠️⚠️ **This fixture used to be a three-species blend and cannot be one any longer.** Stu's belt
+     * read iron 98%, titanium 1%, carbon the rest, and the blend was the point: a proportional draw
+     * rounds each species down on its own, so with one species there is nothing to round and the bug
+     * could not be reproduced. At `BUILD_PURITY_PERCENT = 100` that lump is refused at the ghost's
+     * door outright, so the multi-species draw into a construction site is unreachable and there is
+     * no way to state the old fixture at all.
+     *
+     * ⛔ **Which means the rounding this test was written for is now guarded by the door instead**,
+     * and that is a weaker guard in one specific way worth writing down: it prevents contaminated
+     * salvage from *entering* a site rather than making the arithmetic exact once it has. Track
+     * built under the new rule is pure iron and stays pure, so nothing in a fresh world can produce
+     * the old fixture — but a **save written before the change** has contaminated track on it, and
+     * that track can no longer be recycled into anything. See the note in `Material.kt`.
      */
     private fun world(shortBy: Long = Capacity.PACKET_MASS): VesselState {
         val rails = arrayOfNulls<Segment>(grid.size)
@@ -48,22 +62,12 @@ class DeconstructRoundingTest {
 
         val stuff = s.conduits.tracks[Conduit.Rail]
 
-        // ⚠️ **Three species, because with one the arithmetic cannot go wrong.** A proportional draw
-        // taken species by species rounds each one down on its own; with a single species there is
-        // nothing to round. Track that has been built and rebuilt out of ordinary salvage is never
-        // one species — Stu's belt reads iron 98%, titanium 1%, carbon the rest.
+        // One species, because a rail's bill names one species and the door admits nothing else. See
+        // the fixture's own note: the three-species blend this used to carry is unstateable now.
         val total = conduitBillOfMaterials(Conduit.Rail).total
-        // ⚠️ **The shares must not divide the total exactly.** A blend of clean percentages scales
-        // to a clean answer and truncates nothing, which is how a first attempt at this test passed
-        // against the bug. Salvage is never clean — Stu's belt reads iron 98%, titanium 1%, carbon
-        // the remainder, and none of those is a round number of micrograms.
         fun blend(tile: TileIndex, mass: Long) {
-            val titanium = mass / 97 + 13
-            val carbon = mass / 811 + 7
             stuff.release(tile)
-            stuff[tile, Species.Iron] = mass - titanium - carbon
-            stuff[tile, Species.Titanium] = titanium
-            stuff[tile, Species.Carbon] = carbon
+            stuff[tile, Species.Iron] = mass
         }
         blend(marked, total)
         // ⚠️ **Short of exactly one packet**, which is Stu's save to the microgram: a full marked

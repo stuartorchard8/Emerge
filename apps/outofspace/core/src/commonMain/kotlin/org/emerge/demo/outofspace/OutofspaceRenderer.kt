@@ -26,7 +26,7 @@ import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -47,7 +47,7 @@ import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.render.torus.GPU
 import org.emerge.render.torus.Mat4
 import org.emerge.render.torus.shader.StarscapeShader
@@ -806,12 +806,12 @@ class OutofspaceRenderer {
                     .toFloat() / Extractor.BUFFER_CAP)
             }
 
-            is Processor -> {
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Processor))
+            is Concentrator -> {
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Concentrator))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
-            is ThermalDecomposer -> {
-                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.ThermalDecomposer))
+            is Furnace -> {
+                footprintRect(state, m, Visual.MACHINE_INSET, kindColor(DeckMachineKind.Furnace))
                 fillBar(x, y, n, massIn(m, tile, state.grid, state.buffers).toFloat() / BUFFER_BAR_FULL)
             }
             // Two tiles: the chamber it is stored at and the bell in front of it, drawn as one
@@ -1792,8 +1792,8 @@ fun kindColor(kind: DeckMachineKind): Long = when (kind) {
     DeckMachineKind.KeyInput -> 0x2E3A4AFFL
     DeckMachineKind.Pump -> 0xB07840FFL
     DeckMachineKind.Thruster -> 0xC04A30FFL
-    DeckMachineKind.Processor -> 0x2E5A6BFFL
-    DeckMachineKind.ThermalDecomposer -> 0x5E5A3BFFL
+    DeckMachineKind.Concentrator -> 0x2E5A6BFFL
+    DeckMachineKind.Furnace -> 0x5E5A3BFFL
     DeckMachineKind.Extractor -> 0x6B4A2AFFL
 }
 

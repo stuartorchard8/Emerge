@@ -1,28 +1,21 @@
 package org.emerge.demo.outofspace.world.machine
 
-import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.footprint
-import org.emerge.demo.outofspace.world.EnergyArray
-import org.emerge.demo.outofspace.world.MassArray
-import org.emerge.demo.outofspace.world.MassIndex
-import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.StuffLayer
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.reach
-import org.emerge.demo.outofspace.world.diameter
 import org.emerge.demo.outofspace.world.capacityPerTile
-import kotlin.jvm.JvmInline
 
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
  * of the world is a snapshot of the world.
  *
  * Every machine that produces something has a **facing**: its product leaves that side. The two with
- * a waste stream ([Processor], [Smelter]) put waste out the side *clockwise* of facing, which
+ * a waste stream ([Concentrator], [Smelter]) put waste out the side *clockwise* of facing, which
  * mirrors the separate out/slag ports on the Godot originals and makes a refinery line read as a
  * spine with waste coming off it.
  *

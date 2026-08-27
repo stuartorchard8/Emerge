@@ -47,7 +47,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * around, and that is also the argument for putting it somewhere the ventilation has been thought
  * about: its gaseous products leave by the room, not by a belt.
  */
-data class ThermalDecomposer(
+data class Furnace(
     override val center: TileIndex,
     override val facing: Direction,
     val setTemperature: Int = 900,
@@ -64,7 +64,7 @@ data class ThermalDecomposer(
     val heldTicks: Int = 0,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
-    override val kind: DeckMachineKind get() = DeckMachineKind.ThermalDecomposer
+    override val kind: DeckMachineKind get() = DeckMachineKind.Furnace
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)
     override fun withWiring(wiring: Wiring): DeckMachine = copy(wiring = wiring)
     override fun movedTo(center: TileIndex): DeckMachine = copy(center = center)

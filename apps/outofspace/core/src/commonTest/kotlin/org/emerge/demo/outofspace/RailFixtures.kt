@@ -241,7 +241,7 @@ fun VesselState.stocked(tile: TileIndex, resource: Mixture?, role: BufferRole? =
  * of ore that way holds two tonnes of 0 K iron, and its tile reads colder than the room it stands
  * in whatever its element is doing.
  *
- * It hid a real stall for a while. A processor takes a fixed charge off its input now rather than
+ * It hid a real stall for a while. A concentrator takes a fixed charge off its input now rather than
  * swallowing the whole buffer, so the ballast is no longer immediately consumed by the one bite that
  * used to carry a huge slug of working heat with it — and `HeatTest`'s mill read 291 K and falling.
  * That looked like the machine having stopped, and the machine *had* stopped, but the cold was the

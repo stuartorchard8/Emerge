@@ -58,7 +58,7 @@ object Capacity {
  *
  * A machine's throughput is stated per *tick*, so the clock never enters this: an extractor is
  * 250 kg/tick and that is a whole number by construction. What is not whole is a **throttle**. A
- * processor run at 45% of 125 kg/tick owes 56.25 kg, and there is no honest integer for that. Rounding it away every
+ * concentrator run at 45% of 125 kg/tick owes 56.25 kg, and there is no honest integer for that. Rounding it away every
  * tick either leaks mass or silently runs the machine at the wrong speed — over an hour, either is
  * a lot. So the fraction is carried in state: each tick adds the scaled numerator to a carry, takes
  * out whole mass, and keeps the remainder for next time. Over any run of ticks the delivered total

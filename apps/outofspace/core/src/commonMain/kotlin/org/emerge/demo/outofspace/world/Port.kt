@@ -9,11 +9,11 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Valve
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -84,7 +84,7 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
 
 
         // In at the back, concentrate out the front, tailings out of the floor.
-        is Processor -> listOf(
+        is Concentrator -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output, Stream.Product),
             LocalPort(0, r, Direction.Down, PortKind.Output, Stream.Waste),
@@ -94,7 +94,7 @@ private fun localPorts(machine: DeckMachine): List<LocalPort> {
         // bought nothing: two lines arriving at one tank is a merge, and a merge is something the
         // player should have to build out of track where they can see it, not something a building
         // does for them out of sight.
-        is ThermalDecomposer -> listOf(
+        is Furnace -> listOf(
             LocalPort(-r, 0, Direction.Left, PortKind.Input),
             LocalPort(r, 0, Direction.Right, PortKind.Output),
         )

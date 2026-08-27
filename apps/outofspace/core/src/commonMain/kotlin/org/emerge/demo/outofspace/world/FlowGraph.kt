@@ -489,7 +489,7 @@ class FlowGraph internal constructor(
                         // and the edges it holds are its own business — including the ones it has
                         // to be able to take back in order to be fed from the other side.
                         //
-                        // Stu's save, 2026-08-22: a storage input at (18,28) with the processor
+                        // Stu's save, 2026-08-22: a storage input at (18,28) with the concentrator
                         // tailings output at (17,28) beside it. An earlier walk — a construction
                         // site away to the east, hunting upstream — had granted the storage an
                         // outgoing edge *down* into its own feed tile, and the tailings then made
@@ -752,7 +752,7 @@ class FlowGraph internal constructor(
              * a walk may claim past a producer, and the cul-de-sac it used to rob.
              *
              * Without this a tapped belt splits: the walk from the tank could no longer take back
-             * the claim the full processor behind the lump had made, the lump found itself at a fork
+             * the claim the full concentrator behind the lump had made, the lump found itself at a fork
              * with a road back to a machine that had already said no, took it, and stopped there for
              * good. The same failure that retired the nearest-consumer tie-break.
              */

@@ -65,7 +65,7 @@ import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.reach
 import org.emerge.demo.outofspace.world.machine.reachableCell
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -100,8 +100,6 @@ import org.emerge.demo.outofspace.world.TrackLayers
 import org.emerge.demo.outofspace.world.FlightIntent
 import org.emerge.demo.outofspace.world.Motor
 import org.emerge.demo.outofspace.world.flightActivations
-import org.emerge.demo.outofspace.world.angularVelocity
-import org.emerge.demo.outofspace.world.thrusterActivation
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.exhaustPath
@@ -120,8 +118,6 @@ import org.emerge.demo.outofspace.world.pipeApertures
 import org.emerge.demo.outofspace.world.pipeVolumes
 import org.emerge.demo.outofspace.world.diffuseFluid
 import org.emerge.demo.outofspace.world.gasKelvin
-import org.emerge.demo.outofspace.world.tileMass
-import org.emerge.demo.outofspace.world.tilePressure
 import org.emerge.demo.outofspace.world.valveOpenings
 import org.emerge.demo.outofspace.world.stepSolidHeat
 import org.emerge.demo.outofspace.world.offGas
@@ -133,7 +129,7 @@ import org.emerge.demo.outofspace.world.heatCapacity
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
@@ -370,8 +366,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
                     // points, so the ship needs no allocation of engines to axes anywhere.
                     is Thruster -> w.fire(cfg, m, flight[tile.index].takeIf { m.control == ThrusterControl.Flight } ?: activation, tile, structure)
-                    is Processor -> w.refine(cfg, m, activation, tile)
-                    is ThermalDecomposer -> w.refine(cfg, m, activation, tile)
+                    is Concentrator -> w.refine(cfg, m, activation, tile)
+                    is Furnace -> w.refine(cfg, m, activation, tile)
                     is Extractor -> w.leech(m, activation, tile)
                 }
             }
@@ -1048,12 +1044,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
-    private fun Work.refine(cfg: OutofspaceConfig, m: Processor, activation: Int, tile: TileIndex): Processor {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, activation: Int, tile: TileIndex): Concentrator {
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
         val inProgress = store(m, tile, BufferRole.Inside) ?: run {
             val available = store(m, tile, BufferRole.Input) ?: return m // Nothing to do if there's no input
-            val charge = available.takeAtLeast(Processor.CHARGE_MASS) ?: return m
+            val charge = available.takeAtLeast(Concentrator.CHARGE_MASS) ?: return m
 
             putStore(m, tile, BufferRole.Input, available-charge)
             putStore(m, tile, BufferRole.Inside, charge)
@@ -1064,7 +1060,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val (actionProgress, carry) = throttled(1, activation, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
             // ⛔ **Any packet in either output blocks the machine — not a *full* output.** A
-            // processor works in whole packets: two in, one packet of concentrate and one of
+            // concentrator works in whole packets: two in, one packet of concentrate and one of
             // tailings out. Finishing a charge on top of an output that has not been collected yet
             // would blend two packets inside the buffer, and a buffer is not a hopper. So the lump
             // stays where it is until both mouths are clear, which also sizes the outputs at one
@@ -1082,7 +1078,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     }
 
     /**
-     * One tick of a [ThermalDecomposer], which since increment 3 of `PLAN_ambient_chemistry.md` is
+     * One tick of a [Furnace], which since increment 3 of `PLAN_ambient_chemistry.md` is
      * **a thermostat and nothing else**.
      *
      * It used to hold a charge for [128] ticks and then call `cook`, which returned its input
@@ -1112,7 +1108,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * ramp does not finish before the charge is handed on. Increment 4 may want "and has stopped
      * reacting" as the release condition once there is a reaction table to ask.
      */
-    private fun Work.refine(cfg: OutofspaceConfig, m: ThermalDecomposer, activation: Int, tile: TileIndex): ThermalDecomposer {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Furnace, activation: Int, tile: TileIndex): Furnace {
         val chamber = bufferTile(grid, m, tile, BufferRole.Inside)!!
 
         // An empty chamber takes the next charge. Nothing is charged for the loading itself — the
@@ -1355,7 +1351,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
     /**
      * The orebody a new extractor draws from, per kilogram. Mostly iron and far too dirty to smelt
      * straight — 410g of iron against 590g of everything else — so a line that runs ore directly into
-     * a smelter yields nothing but slag. Learning to put a processor in front is the first thing this
+     * a smelter yields nothing but slag. Learning to put a concentrator in front is the first thing this
      * world teaches, and it teaches it without a tutorial.
      *
      * ⚠️ These four numbers are the same as those species' [Species.relativeAbundance], and they are
@@ -1863,7 +1859,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Edit.TuneDecomposer -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
-                    if (m is ThermalDecomposer) {
+                    if (m is Furnace) {
                         // ⚠️ **Retuning restarts the dwell.** A charge part-way through a hold that
                         // the player has just changed has not served the new time, and carrying its
                         // progress across would make the first charge after every adjustment come out
@@ -2542,7 +2538,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Where a store's contents are put down when the machine is being taken apart.
          *
          * ⛔ **A processing buffer goes back out through the input port** — Stu, 2026-08-19. A
-         * `Processor` or a `ThermalDecomposer` holds a lump *in the middle of being worked*, and that
+         * `Concentrator` or a `Furnace` holds a lump *in the middle of being worked*, and that
          * lump has no business leaving by an output: the output is for finished goods, and what is
          * in there is not finished. The way it came in is the honest way back out.
          *
@@ -2551,7 +2547,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * and it is the only one.
          *
          * Every machine that keeps a working store has an input port to give it back through: a
-         * `Processor` and a `ThermalDecomposer` are the two, and an `Extractor` used to be a third
+         * `Concentrator` and a `Furnace` are the two, and an `Extractor` used to be a third
          * until its two stores became one. A `Storage` never reaches here at all — its `Inside` is
          * what its own output port drains, so the tank empties itself the way it always did.
          */
@@ -2985,7 +2981,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // — see [depositFromBridge].
             if (m is Bridge) return
             // Machines that gate output hold their product when RUN activation is zero — a storage
-            // becomes a valve when wired; extractors/processors/thermal decomposers do the same.
+            // becomes a valve when wired; extractors/concentrators/furnaces do the same.
             // (Bridges are excluded above; thrusters/vents have no output port.)
             if (m.kind.gatesOutput && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
 
@@ -3502,7 +3498,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 is Sensor, is WireButton, is Pump, is Gauge, is Valve -> false
                 // Both take a feed, and both take it the way every buffered kind does — by role
                 // tile, kind-blind. See the machine-list twin above.
-                is Thruster, is Processor, is ThermalDecomposer,
+                is Thruster, is Concentrator, is Furnace,
                 is Extractor -> {
                     val role = inputBufferRole(destination) ?: return false
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
@@ -3545,8 +3541,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)
             DeckMachineKind.Thruster -> Thruster(tile, facing)
-            DeckMachineKind.Processor -> Processor(tile, facing)
-            DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(tile, facing)
+            DeckMachineKind.Concentrator -> Concentrator(tile, facing)
+            DeckMachineKind.Furnace -> Furnace(tile, facing)
             DeckMachineKind.Extractor -> Extractor(tile, facing)
             DeckMachineKind.Bridge -> Bridge(tile, facing)
             DeckMachineKind.Gauge -> Gauge(tile)

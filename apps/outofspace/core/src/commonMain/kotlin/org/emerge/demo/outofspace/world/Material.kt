@@ -20,9 +20,19 @@ object Temperature {
  * A solid material: **what it is made of**, and how well it passes heat.
  *
  * [composition] is the whole of the first half, and it is a bill of materials as much as it is a
- * physical property — steel is iron with a little carbon in it, firebrick is silica and alumina —
- * so it is simultaneously what a thing weighs, what it costs to warm, what it costs to build and
- * what it yields when broken up. Density and specific heat are **derived** from it and are not
+ * physical property — so it is simultaneously what a thing weighs, what it costs to warm, what it
+ * costs to build and what it yields when broken up.
+ *
+ * ⚠️ **Every composition here names exactly one species now**, and that is a deliberate narrowing
+ * rather than a coincidence of which materials exist. Steel used to be `Iron 990 : Carbon 10` and
+ * firebrick `Periclase 550 : Quartz 450`, which made a *recipe* into something the transport network
+ * had to hold together over its whole length: a construction site could only be finished by
+ * deliveries that were already in proportion, tile by tile, from the ore field onwards. The
+ * proportions now live in `REACTIONS`, where they are arranged once in a hot box, and what travels
+ * is [org.emerge.demo.outofspace.chem.Species.Steel] or
+ * [org.emerge.demo.outofspace.chem.Species.Firebrick]. ⛔ **That is what makes
+ * [BUILD_PURITY_PERCENT] able to be 100** — a per-species tolerance is only survivable while a bill
+ * has more than one species in it to be out of proportion between. Density and specific heat are **derived** from it and are not
  * declared anywhere: see [massPerTileOf] and [specificHeatOf]. The species table reproduces every
  * one of the specific heats this enum used to state by hand, to within a few per cent, which is the
  * evidence that the decomposition is the real one and not a fit.
@@ -33,11 +43,32 @@ object Temperature {
  * fact about the machine and not about the steel.
  *
  * [conductanceCentiTicks] is the second half: how long heat takes to cross a contact of this stuff,
- * stated as a **time constant** (in hundredths of a tick — copper's is under one) rather than as a
- * conductance. That way round because a conductance
- * is only meaningful against a capacity, and the capacity now follows from real densities — stating
- * the ticks keeps every thermal behaviour in the game exactly where it was tuned while the masses
- * underneath it become real. These five numbers are the ones the old conductances worked out to.
+ * as a **time constant** in hundredths of a tick. ⛔ **It is DERIVED now, and it used to be five
+ * hand-written numbers.**
+ *
+ * `τ = ρ·c·L²/k` — see [conductanceCentiTicksOf], which is where the geometry and the one free
+ * constant live. What made it possible is that [Species] carries a real thermal conductivity for
+ * every one of its 170 entries; what made it *necessary* is that a material is a species now, and
+ * nobody was ever going to keep 170 hand-tuned time constants honest.
+ *
+ * ⚠️⚠️ **This re-tuned the game's heat, and by design rather than accident.** The five numbers it
+ * replaces did not agree with physics or with each other: measured against their own densities and
+ * conductivities they implied tick durations spanning **12.8×**, because they were back-derived from
+ * conductances tuned before densities were real. There was no calibration that kept all five where
+ * they were. What the chosen one does is move each of them the least it can:
+ *
+ * | | was | is | change |
+ * |---|---|---|---|
+ * | Copper | 58 | 211 | 3.6× slower |
+ * | Iron | 400 | 1086 | 2.7× slower |
+ * | Steel | 2450 | 1887 | 1.3× faster |
+ * | Titanium | 5200 | 2615 | 2.0× faster |
+ * | Firebrick | 88000 | 24997 | 3.5× faster |
+ *
+ * ⚠️ The spread **compresses**: the old numbers exaggerated the difference between an insulator and
+ * a conductor by more than an order of magnitude over what the materials actually do. So copper is
+ * less of a heat superhighway than it was and a furnace lining leaks more than it did, and both of
+ * those are the physics rather than a nerf.
  */
 enum class Material(
     val label: String,
@@ -59,7 +90,7 @@ enum class Material(
     val roughness: Long,
 ) {
     /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Iron to 990L, Species.Carbon to 10L, energy = Budget.JOULE), conductanceCentiTicks = 2_450L, roughness = 400L),
+    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 2_450L, roughness = 400L),
 
     /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
     Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 400L, roughness = 450L),
@@ -75,19 +106,26 @@ enum class Material(
      *
      * ⚠️ **Magnesia and silica, because aluminium cannot be made.** This was quartz and aluminium,
      * which made the one machine that refines things the one machine that could not be built: Al₂O₃
-     * yields to neither heat nor any reductant in `REDUCTIONS`, and winning aluminium for real means
-     * electrolysis, which means a power network that does not exist yet. Magnesia-silica is what a
-     * basic refractory brick actually is, and both halves are reachable today — quartz is native, and
-     * periclase is the *cheapest* reaction in the game, `Magnesite -> Periclase + CO₂` at 810 K.
+     * yields to neither heat nor any reductant, and winning aluminium for real means electrolysis,
+     * which means a power network that does not exist yet. Magnesia-silica is what a basic refractory
+     * brick actually is, and both halves are reachable today — quartz is native, and periclase is the
+     * *cheapest* reaction in the game, `Magnesite -> Periclase + CO₂` at 810 K.
      *
      * That is the nicer bootstrap as well as the honest one: the first thing a vessel calcines is the
      * thing that lets it build the calciner.
+     *
+     * ⚠️ **The 55:45 is now inside a species and not inside this composition.** `11 MgO + 6 SiO₂ ->
+     * Firebrick` at 1700 K states the identical split — same mass per tile, same capacity — so the
+     * furnace weighs and warms exactly what it always did; what changed is that its lining is one
+     * thing to route instead of two to keep in step. ⛔ The onset is deliberately under what a carbon
+     * fire reaches, or the only machine that makes heat would be the only machine you need heat to
+     * build.
      *
      * ⛔ **Lime would have been the wrong pick** even though calcite is commoner. CaO slakes in any
      * moisture and CaO–SiO₂ forms low-melting eutectics — a quartz-lime lining is a furnace wall that
      * dissolves itself. Periclase costs the same to reach and is a real brick.
      */
-    Firebrick("FIREBRICK", Mixture.of(Species.Periclase to 550L, Species.Quartz to 450L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE), conductanceCentiTicks = 88_000L, roughness = 700L),
     ;
 
     /**
@@ -204,10 +242,10 @@ val DeckMachineKind.material: Material
         // anything — which is why it keeps the instrument's fill rather than the plate's.
         DeckMachineKind.Vent, DeckMachineKind.Storage,
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
-        DeckMachineKind.Thruster, DeckMachineKind.Processor,
+        DeckMachineKind.Thruster, DeckMachineKind.Concentrator,
         DeckMachineKind.Extractor,
         -> Material.Titanium
-        DeckMachineKind.ThermalDecomposer -> Material.Firebrick
+        DeckMachineKind.Furnace -> Material.Firebrick
         // Iron, like the track it holds up.
         DeckMachineKind.Bridge, DeckMachineKind.Gauge -> Conduit.Rail.material
         // Copper, like the plumbing it opens.
@@ -233,9 +271,9 @@ val DeckMachineKind.fillPermille: Int
         // A bell, a throat and the plumbing behind them: thicker than an instrument housing and
         // nowhere near a furnace lining, because the hot part of a rocket is deliberately thin.
         DeckMachineKind.Thruster -> 120
-        DeckMachineKind.Processor, DeckMachineKind.Extractor -> 150
+        DeckMachineKind.Concentrator, DeckMachineKind.Extractor -> 150
         // A lining thick enough to hold a furnace's heat in, around the space the ore occupies.
-        DeckMachineKind.ThermalDecomposer -> 250
+        DeckMachineKind.Furnace -> 250
         // Instruments and fittings: mostly a housing. Carried across unchanged.
         DeckMachineKind.Sensor, DeckMachineKind.KeyInput -> 40
         // A gantry: the same fill as the track it carries, because that is what it is — a length of
@@ -359,32 +397,45 @@ private val conduitBills: Array<Mixture> =
  * How close to the recipe a delivery has to be, as a percentage — **asked of every species in the
  * bill separately**.
  *
- * A ghost takes a packet whole or refuses it whole, so this is the standard a player has to hit, and
- * the slack is what stops a rail demanding perfectly separated iron.
+ * A ghost takes a packet whole or refuses it whole, so this is the standard a player has to hit.
  *
- * ### Per species, because an alloy is not one thing
+ * ### It is 100, and the slack it used to carry was buying nothing
  *
- * Read as a single figure — "95% of the delivery must be species the bill names" — this admits pure
- * iron for a steel hull, since iron is 100% of a bill species. The hull then never finishes, because
- * its carbon never arrives, and it goes on swallowing iron for ever: a matter sink reachable in
- * ordinary play.
+ * At 95 this was the tolerance that let a rail be built out of ordinary iron rather than out of
+ * perfectly separated iron, which mattered while perfectly separated iron was **unreachable**: the
+ * concentrator's ladder converged on purity asymptotically and a player watched nine stages all
+ * render as "99%". `Chemistry.PURE_ENOUGH_PERMILLE` ended that in `fe1d57e8` — a chain now
+ * terminates in genuinely 100% packets — so the slack stopped paying for anything and went on
+ * charging its price.
  *
- * So the question is asked of each species the bill names, against **its own share** of the recipe.
- * Steel is 990:10, so a delivery must be at least 94.05% iron *and* at least 0.95% carbon. Pure iron
- * fails the second and is turned away at the tile.
+ * ⛔ **The price was a machine that could not be moved.** Five per cent of anything was admitted
+ * into a casing, including volatiles, and a casing is inert only while it stands: deconstruct it and
+ * its matter lands on a rail, where `offGas` is entitled to take the water back out of it. What is
+ * left is a pile that no longer sums to the bill it came from, on a site that reads 99% built for
+ * ever — [holdsFullBill] counts matter, and the matter is genuinely gone. A microgram of ice went in
+ * and a machine that will not rebuild came out.
  *
- * Two properties make this the right generalisation rather than a new rule bolted on:
+ * At 100 nothing enters a casing that the recipe does not name, so a casing holds only metal and
+ * refractory, and there is nothing in one that off-gassing can take.
  *
- * - For a **single-species** bill it is exactly the old test — a rail's threshold is 95% of 100%,
- *   which is 95% — so nothing about track changes.
- * - The thresholds **sum to this percentage**, so anything that passes is automatically ≥95% bill
- *   species by mass. The aggregate test it replaces is implied rather than dropped.
+ * ⚠️ **The cost is the mirror of the benefit**, and it is real: a lump that is one microgram off its
+ * recipe is now construction-inert for ever, where before it would have been swallowed. That is
+ * survivable exactly because the concentrator can hit the number — and it would *not* have been
+ * before `fe1d57e8`.
  *
- * ⚠️ The tolerance is *proportional*, so it is generous for a trace component and tight for a
- * balanced mix: steel's carbon may be anywhere in 0.95%–5.95%, while firebrick's 550:450 pins each
- * of its species to about ±2.5 points. That is the intended pressure — see the plan.
+ * ### Still per species, though nothing in the game now needs it to be
+ *
+ * The question is asked of each species the bill names against **its own share** of the recipe,
+ * which for a single-species bill — and since steel and firebrick became species, that is every bill
+ * — reduces to "the delivery is bill species and nothing else". The general form is kept because it
+ * is the [buildableFrom] anti-exploit's real statement, and because material selection would
+ * reintroduce multi-species bills; it costs one comparison per bill species.
+ *
+ * ⛔ **Read as a single aggregate figure it would be wrong even at 100**: "the delivery is 100% bill
+ * species" admits pure iron for a bill of iron *and* carbon, and the site then swallows iron for
+ * ever waiting on carbon that is already, by that rule, unnecessary.
  */
-const val BUILD_PURITY_PERCENT = 95
+const val BUILD_PURITY_PERCENT = 100
 
 /**
  * Whether [mixture] is something a tile of [conduit] may be built from.
@@ -446,9 +497,11 @@ fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
  * arrives are one number in one unit, and no purity correction appears anywhere between them.
  *
  * ⚠️ **The cost is that a thing can finish slightly off its own recipe** — up to the door's
- * tolerance, and no further. A titanium machine built from 95% titanium is 95% titanium when it is
- * done. That is the deal the tolerance already offered on every individual delivery; this makes it
- * the deal for the finished article too.
+ * tolerance, and no further. That deal is now free: at [BUILD_PURITY_PERCENT] of 100 the door admits
+ * only material that is on the recipe, so "up to the tolerance" is zero and a finished machine is
+ * exactly what its bill says. The argument above is left standing because it is the reason these two
+ * questions must be asked in the same unit, which does not depend on what the tolerance happens to
+ * be.
  */
 fun holdsFullBill(bill: Mixture, heldMass: Long): Boolean = heldMass >= bill.total
 
@@ -472,9 +525,10 @@ fun builtPermille(bill: Mixture, heldMass: Long): Int {
  * measures every species in it proportionally; a filter states one species and one threshold, and
  * says nothing at all about what the other 10% is. They coincide only for a single-species bill at
  * exactly [BUILD_PURITY_PERCENT], which is why the temptation to reuse the bill machinery is worth
- * naming and refusing: a 60% filter expressed as a one-species bill would be read by
- * [buildableFrom] as 60% of 100% *scaled by* [BUILD_PURITY_PERCENT], which is 57%, and the panel
- * would be lying about its own number.
+ * naming and refusing. ⚠️ The two coincide *more* often now that the tolerance is 100 and every bill
+ * is one species, which makes the temptation stronger rather than weaker: they still say different
+ * things about the other 40% of a 60% filter, and a filter is a player's dial while a bill is the
+ * game's rule.
  *
  * ⚠️ **[species] is captured, never derived.** The player locks a warehouse onto whatever it
  * happens to hold, and from then on that is what it holds — a filter that re-read the dominant

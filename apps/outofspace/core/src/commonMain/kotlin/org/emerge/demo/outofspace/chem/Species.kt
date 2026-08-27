@@ -91,7 +91,7 @@ enum class Species(
 
     // ── The structural metals ──
     Iron(56, 450, solidKgPerCubicMetre = 7870, relativeAbundance = 7000000),   // kamacite/taenite
-    Nickel(59, 444, solidKgPerCubicMetre = 8908, relativeAbundance = 1200000),  // alloyed with the above
+    Nickel(59, 444, solidKgPerCubicMetre = 8908, relativeAbundance = 1200000),   // alloyed with the above
     Cobalt(59, 421, solidKgPerCubicMetre = 8900),
     Aluminum(27, 900, solidKgPerCubicMetre = 2700),
     Titanium(48, 520, solidKgPerCubicMetre = 4510),
@@ -106,11 +106,11 @@ enum class Species(
     Tin(119, 228, solidKgPerCubicMetre = 7310),
 
     // ── Non-metals and metalloids ──
-    Carbon(12, 710, solidKgPerCubicMetre = 2260, relativeAbundance = 500000),  // graphite
+    Carbon(12, 710, solidKgPerCubicMetre = 2260, relativeAbundance = 500000),   // graphite, which sublimes -- no liquid at one atmosphere
     Sulfur(32, 710, solidKgPerCubicMetre = 2070, relativeAbundance = 200000),   // native sulfur
     Phosphorus(31, 769, solidKgPerCubicMetre = 1820),
     Boron(11, 1026, solidKgPerCubicMetre = 2340),
-    Arsenic(75, 329, solidKgPerCubicMetre = 5727),
+    Arsenic(75, 329, solidKgPerCubicMetre = 5727),   // sublimes
     Antimony(122, 207, solidKgPerCubicMetre = 6697),
     Bismuth(209, 122, solidKgPerCubicMetre = 9780),
     Selenium(79, 321, solidKgPerCubicMetre = 4810),
@@ -143,7 +143,6 @@ enum class Species(
     Molybdenum(96, 251, solidKgPerCubicMetre = 10280),
     Tungsten(184, 132, solidKgPerCubicMetre = 19250),
     Rhenium(186, 137, solidKgPerCubicMetre = 21020),
-
     /**
      * The noble metals, which occur native for the same reason they are noble — nothing oxidises
      * them, so they sit in the rock as metal. That is why [relativeAbundance] is non-zero here and
@@ -155,10 +154,8 @@ enum class Species(
     Palladium(106, 244, solidKgPerCubicMetre = 12020, relativeAbundance = 55),
     Rhodium(103, 243, solidKgPerCubicMetre = 12410),
     Ruthenium(101, 238, solidKgPerCubicMetre = 12450),
-
     /** Native, as osmiridium grains alongside [Osmium] — the two do not occur apart. */
     Iridium(192, 131, solidKgPerCubicMetre = 22560, relativeAbundance = 47),
-
     /**
      * The densest solid there is, and the ceiling of the world's mass range.
      *
@@ -212,16 +209,15 @@ enum class Species(
     // extraction needs the common case to be genuinely common.
 
     Forsterite(140, 840, solidKgPerCubicMetre = 3270, relativeAbundance = 28000000),   // Mg2SiO4, olivine
-    Fayalite(204, 700, solidKgPerCubicMetre = 4390, relativeAbundance = 12000000),     // Fe2SiO4, olivine
-    Enstatite(100, 800, solidKgPerCubicMetre = 3200, relativeAbundance = 18000000),    // MgSiO3, pyroxene
+    Fayalite(204, 700, solidKgPerCubicMetre = 4390, relativeAbundance = 12000000),   // Fe2SiO4, olivine
+    Enstatite(100, 800, solidKgPerCubicMetre = 3200, relativeAbundance = 18000000),   // MgSiO3, pyroxene
     Ferrosilite(132, 690, solidKgPerCubicMetre = 4000, relativeAbundance = 7000000),   // FeSiO3, pyroxene
-    Anorthite(278, 800, solidKgPerCubicMetre = 2730, relativeAbundance = 3500000),     // plagioclase, Ca
-    Albite(262, 800, solidKgPerCubicMetre = 2620, relativeAbundance = 2500000),        // plagioclase, Na
-    Orthoclase(278, 790, solidKgPerCubicMetre = 2560, relativeAbundance = 800000),    // feldspar, K
+    Anorthite(278, 800, solidKgPerCubicMetre = 2730, relativeAbundance = 3500000),   // plagioclase, Ca
+    Albite(262, 800, solidKgPerCubicMetre = 2620, relativeAbundance = 2500000),   // plagioclase, Na
+    Orthoclase(278, 790, solidKgPerCubicMetre = 2560, relativeAbundance = 800000),   // feldspar, K
 
     /** SiO₂. Was called `Silica` — same numbers, a mineral's name instead of an oxide's. */
     Quartz(60, 700, solidKgPerCubicMetre = 2650, relativeAbundance = 1500000),
-
     /**
      * Mg₃Si₂O₅(OH)₄ — and the most quietly important mineral on this list.
      *
@@ -230,63 +226,62 @@ enum class Species(
      * ago, and so the difference between a dry inner-system rock and a wet one. It is 13% water by
      * mass and gives it up when heated.
      */
-    Serpentine(276, 1000, solidKgPerCubicMetre = 2550, relativeAbundance = 6000000),
-
-    Zircon(183, 610, solidKgPerCubicMetre = 4650, relativeAbundance = 780),         // Zr, and Hf with it
-    Thortveitite(258, 620, solidKgPerCubicMetre = 3450, relativeAbundance = 1700),   // Sc2Si2O7
-    Beryl(537, 830, solidKgPerCubicMetre = 2760, relativeAbundance = 50),          // Be3Al2Si6O18
-    Spodumene(186, 900, solidKgPerCubicMetre = 3150, relativeAbundance = 3900),      // LiAlSi2O6
-    Pollucite(312, 700, solidKgPerCubicMetre = 2900, relativeAbundance = 44),      // CsAlSi2O6
+    Serpentine(276, 1000, solidKgPerCubicMetre = 2550, relativeAbundance = 6000000),   // dehydrates rather than melts
+    Zircon(183, 610, solidKgPerCubicMetre = 4650, relativeAbundance = 780),   // Zr, and Hf with it
+    Thortveitite(258, 620, solidKgPerCubicMetre = 3450, relativeAbundance = 1700),   // Sc2Si2O7 -- estimate
+    Beryl(537, 830, solidKgPerCubicMetre = 2760, relativeAbundance = 50),   // Be3Al2Si6O18
+    Spodumene(186, 900, solidKgPerCubicMetre = 3150, relativeAbundance = 3900),   // LiAlSi2O6 -- estimate
+    Pollucite(312, 700, solidKgPerCubicMetre = 2900, relativeAbundance = 44),   // CsAlSi2O6 -- estimate
 
     // ══ THE OXIDES ════════════════════════════════════════════════════════════════════════════
 
-    Magnetite(232, 620, solidKgPerCubicMetre = 5150, relativeAbundance = 1200000),     // Fe3O4
-    Hematite(160, 650, solidKgPerCubicMetre = 5260, relativeAbundance = 800000),      // Fe2O3, iron(III)
-    Wustite(72, 700, solidKgPerCubicMetre = 5745, relativeAbundance = 150000),        // FeO, iron(II)
-    Chromite(224, 590, solidKgPerCubicMetre = 4790, relativeAbundance = 350000),      // FeCr2O4
-    Ilmenite(152, 620, solidKgPerCubicMetre = 4720, relativeAbundance = 120000),      // FeTiO3
-    Rutile(80, 690, solidKgPerCubicMetre = 4230, relativeAbundance = 20000),          // TiO2
-    Spinel(142, 820, solidKgPerCubicMetre = 3580, relativeAbundance = 250000),        // MgAl2O4
+    Magnetite(232, 620, solidKgPerCubicMetre = 5150, relativeAbundance = 1200000),   // Fe3O4
+    Hematite(160, 650, solidKgPerCubicMetre = 5260, relativeAbundance = 800000),   // Fe2O3, iron(III)
+    Wustite(72, 700, solidKgPerCubicMetre = 5745, relativeAbundance = 150000),   // FeO, iron(II)
+    Chromite(224, 590, solidKgPerCubicMetre = 4790, relativeAbundance = 350000),   // FeCr2O4
+    Ilmenite(152, 620, solidKgPerCubicMetre = 4720, relativeAbundance = 120000),   // FeTiO3
+    Rutile(80, 690, solidKgPerCubicMetre = 4230, relativeAbundance = 20000),   // TiO2
+    Spinel(142, 820, solidKgPerCubicMetre = 3580, relativeAbundance = 250000),   // MgAl2O4
 
     // ⚠️ **Made, never found.** Both are what a carbonate leaves behind when it is calcined, and
     // neither survives in a rock that has ever met water or carbon dioxide — so both take the
     // default [relativeAbundance] of zero and no asteroid will ever contain either. They exist
     // because `Calcite -> lime + CO2` was named in this table's own documentation and in the
-    // thermal decomposer's, and was impossible until now.
-    Lime(56, 750, solidKgPerCubicMetre = 3340),                                     // CaO, quicklime
-    Periclase(40, 925, solidKgPerCubicMetre = 3580),                                // MgO
-    Corundum(102, 775, solidKgPerCubicMetre = 3980, relativeAbundance = 50000),       // Al2O3
-    Pyrolusite(87, 620, solidKgPerCubicMetre = 5060, relativeAbundance = 30000),      // MnO2
-    Cassiterite(151, 350, solidKgPerCubicMetre = 6990, relativeAbundance = 215),    // SnO2
-    Baddeleyite(123, 460, solidKgPerCubicMetre = 5680, relativeAbundance = 100),    // ZrO2, the Hf carrier
-    Columbite(338, 330, solidKgPerCubicMetre = 5300, relativeAbundance = 45),      // FeNb2O6
-    Tantalite(514, 240, solidKgPerCubicMetre = 8000, relativeAbundance = 2),      // FeTa2O6
-    Uraninite(270, 240, solidKgPerCubicMetre = 10970, relativeAbundance = 1),     // UO2
-    Thorianite(264, 230, solidKgPerCubicMetre = 9860, relativeAbundance = 3),     // ThO2
+    // furnace's, and was impossible until now.
+    Lime(56, 750, solidKgPerCubicMetre = 3340),   // CaO, quicklime
+    Periclase(40, 925, solidKgPerCubicMetre = 3580),   // MgO
+    Corundum(102, 775, solidKgPerCubicMetre = 3980, relativeAbundance = 50000),   // Al2O3
+    Pyrolusite(87, 620, solidKgPerCubicMetre = 5060, relativeAbundance = 30000),   // MnO2 -- decomposes
+    Cassiterite(151, 350, solidKgPerCubicMetre = 6990, relativeAbundance = 215),   // SnO2
+    Baddeleyite(123, 460, solidKgPerCubicMetre = 5680, relativeAbundance = 100),   // ZrO2, the Hf carrier
+    Columbite(338, 330, solidKgPerCubicMetre = 5300, relativeAbundance = 45),   // FeNb2O6 -- estimate
+    Tantalite(514, 240, solidKgPerCubicMetre = 8000, relativeAbundance = 2),   // FeTa2O6 -- estimate
+    Uraninite(270, 240, solidKgPerCubicMetre = 10970, relativeAbundance = 1),   // UO2
+    Thorianite(264, 230, solidKgPerCubicMetre = 9860, relativeAbundance = 3),   // ThO2
 
     // ══ THE SULFIDES ══════════════════════════════════════════════════════════════════════════
     //
     // Where most of the interesting metals actually live. Troilite is abundant enough to be a real
     // sulfur source; the rest are the ore minerals a mining game is about.
 
-    Troilite(88, 570, solidKgPerCubicMetre = 4740, relativeAbundance = 5000000),       // FeS
-    Pyrite(120, 517, solidKgPerCubicMetre = 5010, relativeAbundance = 400000),        // FeS2
-    Pentlandite(775, 550, solidKgPerCubicMetre = 4800, relativeAbundance = 250000),   // Fe4Ni5S8, the nickel ore
-    Chalcopyrite(184, 540, solidKgPerCubicMetre = 4200, relativeAbundance = 60000),  // CuFeS2, the copper ore
-    Sphalerite(97, 470, solidKgPerCubicMetre = 4090, relativeAbundance = 46300),      // ZnS, and Ga/Ge/Cd/In with it
-    Galena(239, 210, solidKgPerCubicMetre = 7600, relativeAbundance = 290),         // PbS, and Ag/Se/Tl with it
-    Molybdenite(160, 380, solidKgPerCubicMetre = 5060, relativeAbundance = 150),    // MoS2, and Re with it
-    Arsenopyrite(163, 400, solidKgPerCubicMetre = 6070, relativeAbundance = 390),   // FeAsS
-    Cobaltite(166, 430, solidKgPerCubicMetre = 6330, relativeAbundance = 500),      // CoAsS
-    Niccolite(134, 380, solidKgPerCubicMetre = 7770, relativeAbundance = 200),      // NiAs
-    Stibnite(340, 210, solidKgPerCubicMetre = 4640, relativeAbundance = 19),       // Sb2S3
+    Troilite(88, 570, solidKgPerCubicMetre = 4740, relativeAbundance = 5000000),   // FeS
+    Pyrite(120, 517, solidKgPerCubicMetre = 5010, relativeAbundance = 400000),   // FeS2 -- decomposes
+    Pentlandite(775, 550, solidKgPerCubicMetre = 4800, relativeAbundance = 250000),   // Fe4Ni5S8, the nickel ore -- estimate
+    Chalcopyrite(184, 540, solidKgPerCubicMetre = 4200, relativeAbundance = 60000),   // CuFeS2, the copper ore
+    Sphalerite(97, 470, solidKgPerCubicMetre = 4090, relativeAbundance = 46300),   // ZnS, and Ga/Ge/Cd/In with it
+    Galena(239, 210, solidKgPerCubicMetre = 7600, relativeAbundance = 290),   // PbS, and Ag/Se/Tl with it
+    Molybdenite(160, 380, solidKgPerCubicMetre = 5060, relativeAbundance = 150),   // MoS2, and Re with it
+    Arsenopyrite(163, 400, solidKgPerCubicMetre = 6070, relativeAbundance = 390),   // FeAsS -- estimate
+    Cobaltite(166, 430, solidKgPerCubicMetre = 6330, relativeAbundance = 500),   // CoAsS -- estimate
+    Niccolite(134, 380, solidKgPerCubicMetre = 7770, relativeAbundance = 200),   // NiAs
+    Stibnite(340, 210, solidKgPerCubicMetre = 4640, relativeAbundance = 19),   // Sb2S3
     Bismuthinite(514, 190, solidKgPerCubicMetre = 6780, relativeAbundance = 14),   // Bi2S3
-    Cinnabar(233, 150, solidKgPerCubicMetre = 8100, relativeAbundance = 35),       // HgS
-    Argentite(248, 240, solidKgPerCubicMetre = 7230, relativeAbundance = 23),      // Ag2S
+    Cinnabar(233, 150, solidKgPerCubicMetre = 8100, relativeAbundance = 35),   // HgS -- sublimes
+    Argentite(248, 240, solidKgPerCubicMetre = 7230, relativeAbundance = 23),   // Ag2S
     Clausthalite(286, 190, solidKgPerCubicMetre = 8100, relativeAbundance = 800),   // PbSe
-    Calaverite(453, 180, solidKgPerCubicMetre = 9240, relativeAbundance = 33),     // AuTe2
-    Sperrylite(345, 250, solidKgPerCubicMetre = 10600, relativeAbundance = 170),    // PtAs2
-    Laurite(165, 300, solidKgPerCubicMetre = 6990, relativeAbundance = 110),        // RuS2
+    Calaverite(453, 180, solidKgPerCubicMetre = 9240, relativeAbundance = 33),   // AuTe2
+    Sperrylite(345, 250, solidKgPerCubicMetre = 10600, relativeAbundance = 170),   // PtAs2 -- estimate
+    Laurite(165, 300, solidKgPerCubicMetre = 6990, relativeAbundance = 110),   // RuS2 -- estimate
 
     // ══ THE TRACE MINERALS ════════════════════════════════════════════════════════════════════
     //
@@ -302,37 +297,102 @@ enum class Species(
     // by-product recovery ever becomes a mechanic, these become the concentrated form rather than
     // the only form.
 
-    Scheelite(288, 240, solidKgPerCubicMetre = 6010, relativeAbundance = 14),      // CaWO4 — tungsten
-    Rheniite(250, 200, solidKgPerCubicMetre = 7500, relativeAbundance = 5),       // ReS2 — rhenium
-    Hafnon(270, 300, solidKgPerCubicMetre = 7200, relativeAbundance = 17),         // HfSiO4 — hafnium
-    Boracite(392, 900, solidKgPerCubicMetre = 2910, relativeAbundance = 370),       // Mg3B7O13Cl — boron
-    Gallite(198, 420, solidKgPerCubicMetre = 4200, relativeAbundance = 2700),        // CuGaS2 — gallium
-    Argyrodite(1129, 250, solidKgPerCubicMetre = 6270, relativeAbundance = 300),    // Ag8GeS6 — germanium
-    Roquesite(243, 350, solidKgPerCubicMetre = 4700, relativeAbundance = 17),      // CuInS2 — indium
-    Greenockite(144, 340, solidKgPerCubicMetre = 4820, relativeAbundance = 90),    // CdS — cadmium
-    Bowieite(302, 280, solidKgPerCubicMetre = 6500, relativeAbundance = 19),       // Rh2S3 — rhodium
-    Lorandite(343, 240, solidKgPerCubicMetre = 5530, relativeAbundance = 24),      // TlAsS2 — thallium
+    Scheelite(288, 240, solidKgPerCubicMetre = 6010, relativeAbundance = 14),   // CaWO4 — tungsten
+    Rheniite(250, 200, solidKgPerCubicMetre = 7500, relativeAbundance = 5),   // ReS2 — rhenium -- estimate
+    Hafnon(270, 300, solidKgPerCubicMetre = 7200, relativeAbundance = 17),   // HfSiO4 — hafnium
+    Boracite(392, 900, solidKgPerCubicMetre = 2910, relativeAbundance = 370),   // Mg3B7O13Cl — boron
+    Gallite(198, 420, solidKgPerCubicMetre = 4200, relativeAbundance = 2700),   // CuGaS2 — gallium -- estimate
+    Argyrodite(1129, 250, solidKgPerCubicMetre = 6270, relativeAbundance = 300),   // Ag8GeS6 — germanium -- estimate
+    Roquesite(243, 350, solidKgPerCubicMetre = 4700, relativeAbundance = 17),   // CuInS2 — indium -- estimate
+    Greenockite(144, 340, solidKgPerCubicMetre = 4820, relativeAbundance = 90),   // CdS — cadmium
+    Bowieite(302, 280, solidKgPerCubicMetre = 6500, relativeAbundance = 19),   // Rh2S3 — rhodium -- estimate
+    Lorandite(343, 240, solidKgPerCubicMetre = 5530, relativeAbundance = 24),   // TlAsS2 — thallium
     Bromargyrite(188, 270, solidKgPerCubicMetre = 6470, relativeAbundance = 200),   // AgBr — bromine
-    Iodargyrite(235, 230, solidKgPerCubicMetre = 5680, relativeAbundance = 60),    // AgI — iodine
-    Rubicline(324, 620, solidKgPerCubicMetre = 2860, relativeAbundance = 880),      // RbAlSi3O8 — rubidium
+    Iodargyrite(235, 230, solidKgPerCubicMetre = 5680, relativeAbundance = 60),   // AgI — iodine
+    Rubicline(324, 620, solidKgPerCubicMetre = 2860, relativeAbundance = 880),   // RbAlSi3O8 — rubidium -- estimate
 
     // ══ CARBONATES, PHOSPHATES, SULFATES AND SALTS ════════════════════════════════════════════
 
-    Calcite(100, 830, solidKgPerCubicMetre = 2710, relativeAbundance = 500000),       // CaCO3
-    Dolomite(184, 900, solidKgPerCubicMetre = 2840, relativeAbundance = 200000),       // CaMg(CO3)2
-    Magnesite(84, 900, solidKgPerCubicMetre = 3000, relativeAbundance = 250000),      // MgCO3
-    Rhodochrosite(115, 780, solidKgPerCubicMetre = 3700, relativeAbundance = 20000),  // MnCO3
-    Apatite(504, 770, solidKgPerCubicMetre = 3190, relativeAbundance = 300000),       // Ca5(PO4)3F — the P source
-    Monazite(235, 380, solidKgPerCubicMetre = 5150, relativeAbundance = 270),       // CePO4 — light rare earths
-    Xenotime(184, 480, solidKgPerCubicMetre = 4450, relativeAbundance = 250),       // YPO4 — heavy rare earths
-    Bastnasite(219, 420, solidKgPerCubicMetre = 4950, relativeAbundance = 150),     // CeCO3F
-    Gypsum(172, 1070, solidKgPerCubicMetre = 2310, relativeAbundance = 100000),        // CaSO4·2H2O
-    Celestine(184, 570, solidKgPerCubicMetre = 3970, relativeAbundance = 1600),      // SrSO4
-    Barite(233, 450, solidKgPerCubicMetre = 4480, relativeAbundance = 390),         // BaSO4
-    Vanadinite(1415, 200, solidKgPerCubicMetre = 6880, relativeAbundance = 30),    // Pb5(VO4)3Cl
-    Halite(58, 880, solidKgPerCubicMetre = 2170, relativeAbundance = 100000),          // NaCl
-    Sylvite(74, 690, solidKgPerCubicMetre = 1990, relativeAbundance = 20000),         // KCl, and Rb with it
-    Fluorite(78, 850, solidKgPerCubicMetre = 3180, relativeAbundance = 20000),        // CaF2
+    Calcite(100, 830, solidKgPerCubicMetre = 2710, relativeAbundance = 500000),   // CaCO3 -- decomposes
+    Dolomite(184, 900, solidKgPerCubicMetre = 2840, relativeAbundance = 200000),   // CaMg(CO3)2 -- decomposes
+    Magnesite(84, 900, solidKgPerCubicMetre = 3000, relativeAbundance = 250000),   // MgCO3 -- decomposes
+    Rhodochrosite(115, 780, solidKgPerCubicMetre = 3700, relativeAbundance = 20000),   // MnCO3 -- decomposes
+    Apatite(504, 770, solidKgPerCubicMetre = 3190, relativeAbundance = 300000),   // Ca5(PO4)3F — the P source
+    Monazite(235, 380, solidKgPerCubicMetre = 5150, relativeAbundance = 270),   // CePO4 — light rare earths
+    Xenotime(184, 480, solidKgPerCubicMetre = 4450, relativeAbundance = 250),   // YPO4 — heavy rare earths -- estimate
+    Bastnasite(219, 420, solidKgPerCubicMetre = 4950, relativeAbundance = 150),   // CeCO3F -- decomposes
+    Gypsum(172, 1070, solidKgPerCubicMetre = 2310, relativeAbundance = 100000),   // CaSO4·2H2O -- dehydrates
+    Celestine(184, 570, solidKgPerCubicMetre = 3970, relativeAbundance = 1600),   // SrSO4
+    Barite(233, 450, solidKgPerCubicMetre = 4480, relativeAbundance = 390),   // BaSO4
+    Vanadinite(1415, 200, solidKgPerCubicMetre = 6880, relativeAbundance = 30),   // Pb5(VO4)3Cl -- estimate
+    Halite(58, 880, solidKgPerCubicMetre = 2170, relativeAbundance = 100000),   // NaCl
+    Sylvite(74, 690, solidKgPerCubicMetre = 1990, relativeAbundance = 20000),   // KCl, and Rb with it
+    Fluorite(78, 850, solidKgPerCubicMetre = 3180, relativeAbundance = 20000),   // CaF2
+
+    // ══ THE MANUFACTURED MATERIALS ════════════════════════════════════════════════════════════
+    //
+    // ⛔ **Made, never found, and neither of them is a compound.** Steel is a solid solution and a
+    // magnesia-silica refractory is a two-phase ceramic; a rock contains neither, so both take the
+    // default [relativeAbundance] of zero and no asteroid will ever hold one.
+    //
+    // They are species rather than [org.emerge.demo.outofspace.world.Material] compositions because
+    // a *recipe* is a thing the player should have to arrange once, in a furnace, rather than for
+    // ever, on every belt. As a mixture, steel obliged a construction site to be fed iron and carbon
+    // in the right ratio all the way from the ore field — nine hundred and ninety to ten, held
+    // across a network that has no way to say so — and the tolerance that made that survivable is
+    // exactly the tolerance that let a microgram of water ice into a hull plate. One species, one
+    // reaction, one thing to route.
+    //
+    // ⚠️ **Their formulae in [MINERALS] state a ratio, not a molecule**, and that is the whole
+    // licence being taken here. Fe₉₉C is not a phase anybody has ever isolated; it is the integer
+    // pair that makes 0.22% carbon by mass come out exactly, so the alloying reaction closes atom by
+    // atom against the same oracle every real mineral does. The alternative was a mass-fraction row
+    // type, which would have put the one table in the game whose conservation is *structural*
+    // alongside one whose conservation is a rounding rule.
+
+    /**
+     * Carbon steel: [Iron] with about a fifth of a per cent of [Carbon] dissolved in it.
+     *
+     * ⚠️ **The recipe moved, slightly and on purpose.** As a [Mixture] this was 990:10 by mass — one
+     * per cent carbon, which is a high-carbon tool steel rather than the structural stuff a hull is
+     * plate of. Stated as formula units it is 99 iron atoms to one of carbon, which is 0.216% by
+     * mass: mild steel, and the integer pair closest to what the old recipe was reaching for.
+     *
+     * ⚠️ [specificHeat] and [solidKgPerCubicMetre] are **the textbook values for carbon steel, not
+     * the mass-weighted average of its two components**, and the difference is real rather than a
+     * rounding: 490 against iron-and-carbon's 451, and 7850 against their 7828. An alloy is not a
+     * pile of its ingredients — that is what makes it worth having a name. The cost is that a hull
+     * plate now holds about 11% more heat and weighs about 2% more than it did while steel was a
+     * mixture, which is a change to the ship and is meant to be one.
+     *
+     * ⛔ **Steel does not oxidise, and nothing has been lost by that.** Iron scales to hematite at
+     * [org.emerge.demo.outofspace.chem.IRON_OXIDATION_KELVIN] and the hull was 99% `Iron`, so it
+     * looks as though a rusting hull is being retired here. It is not: the ambient sweep is given
+     * `rail.stuff` and `buffers.stuff` and never the deck layer (`OutofspaceSim`), so a hull plate's
+     * own metal has never been offered to a reaction and hull oxidation has never once fired.
+     */
+    Steel(5556, 490, solidKgPerCubicMetre = 7850),
+    /**
+     * Refractory brick: [Periclase] and [Quartz] fired together, 55:45 by mass.
+     *
+     * The same 550:450 the [org.emerge.demo.outofspace.world.Material] mixture stated, and the same
+     * numbers underneath it — 11 MgO to 6 SiO₂ is 55.0% to 45.0%, [specificHeat] is their
+     * mass-weighted mean (823.75, rounded) and [solidKgPerCubicMetre] their harmonic one (3091.7,
+     * rounded), so a furnace lining weighs and warms what it did before to within about a part in
+     * ten thousand. ⚠️ **Not to the unit**, because both figures are integers and neither of those
+     * means is one; the residual is a rounding and is named here rather than claimed away. Nothing
+     * else about this machine moved except what has to be routed to build one.
+     *
+     * ⚠️ **A mass-weighted specific heat is the right answer here and a wrong one for [Steel]**, and
+     * the asymmetry is not an inconsistency. Two oxides sharing a tile are two oxides sharing a tile
+     * — Neumann-Kopp, and their heat capacities add. Carbon dissolved in iron changes the lattice it
+     * is dissolved in, which is why steel's own measured value is 9% off the average of its parts.
+     *
+     * ⚠️ 3092 kg/m³ is the **fully dense** solid, not what a brick off a shelf weighs. A real
+     * refractory is 20–30% porosity, and the game already says so somewhere else:
+     * `DeckMachineKind.fillPermille` puts a quarter of a tile of this in a furnace wall.
+     */
+    Firebrick(800, 824, solidKgPerCubicMetre = 3092),   // softening point of a forsterite refractory, NOT a melting point
 
     // ══ THE VOLATILES ═════════════════════════════════════════════════════════════════════════
     //
@@ -351,10 +411,8 @@ enum class Species(
     SulfurDioxide(64, 640, solidKgPerCubicMetre = 1920, relativeAbundance = 80000),
     Nitrogen(28, 1040, solidKgPerCubicMetre = 1030, relativeAbundance = 300000),
     Hydrogen(2, 14300, solidKgPerCubicMetre = 88, relativeAbundance = 100000),
-
     /** No abundance: free oxygen does not occur in nature. Every gram of it is refined out of a rock. */
     Oxygen(32, 918, solidKgPerCubicMetre = 1300),
-
     /**
      * The third gas in air, and the one whose absence was quietly distorting the atmosphere.
      *
@@ -367,19 +425,16 @@ enum class Species(
      * 1040): there are no rotational modes to store energy in. Argon warms twice as fast as the air
      * around it, and that is a real behavioural difference rather than a rounding.
      */
-    Argon(40, 520, solidKgPerCubicMetre = 1616, relativeAbundance = 100),
-
-    // The other noble gases, trapped in ice in trace amounts. Individually near-worthless and
+    Argon(40, 520, solidKgPerCubicMetre = 1616, relativeAbundance = 100),   // The other noble gases, trapped in ice in trace amounts. Individually near-worthless and
     // collectively the reason a gas-rich comet is worth visiting twice.
-    Helium(4, 5193, solidKgPerCubicMetre = 145, relativeAbundance = 10),
+    Helium(4, 5193, solidKgPerCubicMetre = 145, relativeAbundance = 10),   // does not solidify at any temperature at one atmosphere
     Neon(20, 1030, solidKgPerCubicMetre = 1440, relativeAbundance = 5),
     Krypton(84, 248, solidKgPerCubicMetre = 2900, relativeAbundance = 2),
     Xenon(131, 158, solidKgPerCubicMetre = 3100, relativeAbundance = 1),
-
     /**
      * Biologically active species. Set to low abundance for now - will make accessible via economy in the future
      */
-    Algae(180, 1250, solidKgPerCubicMetre = 1540, relativeAbundance = 1),
+    Algae(180, 1250, solidKgPerCubicMetre = 1540, relativeAbundance = 1),   // denatures
     ;
 
     companion object {

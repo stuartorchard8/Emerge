@@ -80,8 +80,13 @@ class MineralTest {
      */
     @Test
     fun everyMineralIsMinedOrMade() {
-        val made = DECOMPOSITIONS.flatMap { d -> d.products.map { it.first } }.toSet() +
-            REACTIONS.filter { r -> r.reagents.any { it.first == Species.Oxygen } }.flatMap { r -> r.products.map { it.first } }
+        // ⚠️ **Asked of `REACTIONS`, not of the tables it derives from.** This used to union the
+        // decompositions with the oxidations, which was the whole truth while every row reached the
+        // sweep through one of those two — and stopped being it the moment a row was written
+        // directly in the unified table. Steel and firebrick are both made by such a row, and under
+        // the old form both would have been reported as dead weight while the game manufactured them
+        // every tick. The unified list is where a reaction *is* now, so it is what this asks.
+        val made = REACTIONS.flatMap { r -> r.products.map { it.first } }.toSet()
         val unreachable = MINERALS.keys
             .filter { it.relativeAbundance == 0 && it !in made }
             .map { it.name }

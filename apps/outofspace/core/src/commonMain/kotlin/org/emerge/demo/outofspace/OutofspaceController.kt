@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.WireButton
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
@@ -471,14 +471,14 @@ class OutofspaceController(
     }
 
     /**
-     * Steps a decomposer's setpoint through [ThermalDecomposer.SETPOINTS], wrapping.
+     * Steps a decomposer's setpoint through [Furnace.SETPOINTS], wrapping.
      *
      * Wrapping, and one direction per tap, because that is what the storage threshold does and a
      * second interaction idiom for the same shape of choice would be one to learn for no reason.
      */
     fun cycleDecomposerTemperature(tile: TileIndex, delta: Int) {
-        val m = state.machineCovering(tile) as? ThermalDecomposer ?: return
-        val all = ThermalDecomposer.SETPOINTS
+        val m = state.machineCovering(tile) as? Furnace ?: return
+        val all = Furnace.SETPOINTS
         // `indexOf` misses a setpoint that came from a save written before this ladder existed, or
         // by hand. Falling to the nearest rung at or below it keeps the tap meaningful instead of
         // silently jumping to the coldest.
@@ -500,10 +500,10 @@ class OutofspaceController(
         pending.add(Edit.SetThrusterControl(tile, m.control.next))
     }
 
-    /** Steps a decomposer's residence time through [ThermalDecomposer.DWELLS], wrapping. */
+    /** Steps a decomposer's residence time through [Furnace.DWELLS], wrapping. */
     fun cycleDecomposerDwell(tile: TileIndex, delta: Int) {
-        val m = state.machineCovering(tile) as? ThermalDecomposer ?: return
-        val all = ThermalDecomposer.DWELLS
+        val m = state.machineCovering(tile) as? Furnace ?: return
+        val all = Furnace.DWELLS
         val at = all.indexOf(m.dwellTicks).let { if (it >= 0) it else all.indexOfLast { rung -> rung <= m.dwellTicks }.coerceAtLeast(0) }
         pending.add(Edit.TuneDecomposer(tile, m.setTemperature, all[wrap(at + delta, all.size)]))
     }

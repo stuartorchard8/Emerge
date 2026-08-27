@@ -19,7 +19,7 @@ data class OutofspaceConfig(
      *
      * That is deliberate, and it is the second answer to the question. The first was to make every
      * subsystem invariant to this number, which cost a carry, a sub-stepping loop, a stability
-     * constant and a test-clock helper, and *still* leaked: processor purity moved with the tick
+     * constant and a test-clock helper, and *still* leaked: concentrator purity moved with the tick
      * rate because the chunk it rounds is a chunk-per-tick. Making the tick the unit costs nothing
      * and cannot leak, because there is no second unit to disagree with.
      *

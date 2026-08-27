@@ -3,7 +3,6 @@ package org.emerge.demo.outofspace.world
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Fluid
-import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.machine.Gauge
@@ -14,11 +13,11 @@ import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -1003,8 +1002,8 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
     // dwarfs the ground ore, so counting it would peg the sensor the moment the machine took a bite.
     is Extractor -> (buffers.massAt(bufferTile(grid, machine, centre, BufferRole.Product)!!) *
         SignalField.FULL / Extractor.BUFFER_CAP).toInt()
-    is Processor -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
-    is ThermalDecomposer -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
+    is Concentrator -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP * 2)).toInt()
+    is Furnace -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / (MACHINE_BUFFER_CAP + MACHINE_OUTPUT_CAP)).toInt()
     is Thruster -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / MACHINE_BUFFER_CAP).toInt()
     is Storage -> (massIn(machine, centre, grid, buffers) * SignalField.FULL / Storage.CAP).toInt()
     is Sensor, is WireButton -> 0
@@ -1017,7 +1016,7 @@ fun fullness(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: Buff
  * What the inspector calls each of a machine's stores.
  *
  * The role says where a thing is in the machine; this says what the machine calls it there. A
- * thruster's [BufferRole.Input] is propellant and a processor's is feed, and telling the player
+ * thruster's [BufferRole.Input] is propellant and a concentrator's is feed, and telling the player
  * "INPUT" for both would throw away the only word that says which machine they are looking at.
  */
 private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (machine) {
@@ -1042,7 +1041,7 @@ private fun labelOf(machine: DeckMachine, role: BufferRole): String = when (mach
 /**
  * A machine's contents broken out by the buffer they sit in, for the inspector.
  *
- * Named buffers rather than one lump, because "this processor holds 6kg" is far less useful than
+ * Named buffers rather than one lump, because "this concentrator holds 6kg" is far less useful than
  * "3kg waiting, 2kg of concentrate, 1kg of tailings" — the second tells you which side is stuck.
  */
 fun contentsBreakdown(machine: DeckMachine?, centre: TileIndex, grid: Grid, buffers: BufferLayer): List<Pair<String, Mixture>> = when (machine) {

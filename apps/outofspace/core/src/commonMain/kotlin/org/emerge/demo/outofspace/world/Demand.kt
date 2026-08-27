@@ -15,7 +15,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * is not fussiness but **whether the appetite ever ends**:
  *
  *  - [ANYTHING] — takes any matter, for ever. Every machine is this. A storage fills up and a
- *    processor's buffer backs up, but those are *momentary*: drain them and they take more. Over its
+ *    concentrator's buffer backs up, but those are *momentary*: drain them and they take more. Over its
  *    life a machine will accept an unbounded amount, which is what makes it useless as a thing to
  *    ration a network by.
  *  - [forBill] — takes only what it can be built from, and only until it is built. A construction
@@ -405,8 +405,8 @@ class Whitelist private constructor(
                 //
                 // ⛔ **Found before anything is added, because a plug is in the way of its
                 // neighbours on its OWN tile.** A ghost machine stands at the tile it is fed at, and
-                // that tile may be unpaid track — Stu's save, 2026-08-22: a Processor site at
-                // (16,28) over a ghost rail, with a Processor deconstructing at (19,28) three tiles
+                // that tile may be unpaid track — Stu's save, 2026-08-22: a Concentrator site at
+                // (16,28) over a ghost rail, with a Concentrator deconstructing at (19,28) three tiles
                 // to the right. The site's titanium appetite propagated up the corridor with a clear
                 // road, because "a site is never in its own way" was read as a fact about the
                 // *tile*; the door then refused the titanium at the ghost rail (which admits iron

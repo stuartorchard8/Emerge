@@ -17,7 +17,6 @@ import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.Structure
-import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.WireButton
@@ -28,7 +27,7 @@ import org.emerge.demo.outofspace.world.RockSpawner
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.SpeciesFilter
@@ -39,7 +38,6 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.contentsBreakdown
 import org.emerge.demo.outofspace.world.machine.DeckMachine
-import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Segment
@@ -531,7 +529,7 @@ class OutofspaceHud {
         if (storage != null) {
             section("storage", "FILTER", open = true) { storageControls(controller, tile, storage) }
         }
-        val decomposer = machine as? ThermalDecomposer
+        val decomposer = machine as? Furnace
         if (decomposer != null) {
             section("furnace", "FURNACE", open = true) { decomposerControls(controller, tile, decomposer) }
         }
@@ -966,7 +964,7 @@ class OutofspaceHud {
     }
 
     /**
-     * The two dials on a thermal decomposer: how hot, and how long.
+     * The two dials on a furnace: how hot, and how long.
      *
      * ⚠️ **Two dials because conversion is asymptotic.** There is no moment at which a charge is
      * finished — a reaction approaches completion and never arrives — so the machine cannot decide
@@ -974,12 +972,12 @@ class OutofspaceHud {
      * leaks more heat into the room; longer converts more of each charge but throttles throughput.
      *
      * ⚠️ **"TICKS" is provisional.** This is the first duration the game shows anybody, and what a
-     * tick should be called in front of a player is not decided — see [ThermalDecomposer.DWELLS].
+     * tick should be called in front of a player is not decided — see [Furnace.DWELLS].
      */
     private fun PanelBuilder.decomposerControls(
         controller: OutofspaceController,
         tile: TileIndex,
-        machine: ThermalDecomposer,
+        machine: Furnace,
     ) {
         val grid = controller.state.grid
         val chamber = bufferTile(grid, machine, machine.center, BufferRole.Inside)

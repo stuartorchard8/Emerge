@@ -15,7 +15,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.TileIndex
@@ -113,22 +113,22 @@ class FootprintTest {
     fun `rotating leaves the footprint where it was and moves only the ports`() {
         val grid = Grid(12, 12)
         val tile = grid.tile(5, 5)
-        var s = placeDeck(grid, tile, DeckMachineKind.Processor)
+        var s = placeDeck(grid, tile, DeckMachineKind.Concentrator)
         val before = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
 
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(6, 6)))))
         val after = grid.tiles.filter { !s.occupancy.isFree(it) }.toSet()
         assertEquals(before, after, "anchoring at the centre is what makes a rotate not also a move")
-        assertEquals(Direction.Down, (s.deck[tile] as? Processor)?.facing)
+        assertEquals(Direction.Down, (s.deck[tile] as? Concentrator)?.facing)
     }
 
     // ── Ports ─────────────────────────────────────────────────────────────────
 
     @Test
-    fun `a processor's three ports are three different tiles`() {
+    fun `a concentrator's three ports are three different tiles`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        val ports = portsOf(grid, Processor(at, Direction.Right), at)
+        val ports = portsOf(grid, Concentrator(at, Direction.Right), at)
 
         val input = ports.single { it.kind == PortKind.Input }
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
@@ -144,7 +144,7 @@ class FootprintTest {
     fun `rotating a machine carries its ports round with it`() {
         val grid = Grid(12, 12)
         val at = grid.tile(5, 5)
-        val ports = portsOf(grid, Processor(at, Direction.Down), at)
+        val ports = portsOf(grid, Concentrator(at, Direction.Down), at)
 
         val product = ports.single { it.kind == PortKind.Output && it.stream == Stream.Product }
         val waste = ports.single { it.kind == PortKind.Output && it.stream == Stream.Waste }
@@ -294,13 +294,13 @@ class FootprintTest {
                 deck += Hull(grid.tile(14, i))
             }
             deck += when (kind) {
-                DeckMachineKind.Processor -> Processor(grid.tile(8, 8), Direction.Right)
+                DeckMachineKind.Concentrator -> Concentrator(grid.tile(8, 8), Direction.Right)
                 else -> Extractor(grid.tile(8, 8), Direction.Right)
             }
             return VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
                 .copy(creative = true)
         }
-        val small = room(DeckMachineKind.Processor).storedEnergy
+        val small = room(DeckMachineKind.Concentrator).storedEnergy
         val large = room(DeckMachineKind.Extractor).storedEnergy
         assertTrue(
             large > small,

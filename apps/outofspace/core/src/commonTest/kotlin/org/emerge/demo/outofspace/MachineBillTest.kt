@@ -5,7 +5,6 @@ import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.buildableFrom
 import org.emerge.demo.outofspace.world.builtPermille
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
@@ -13,7 +12,7 @@ import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Hull
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import kotlin.test.Test
@@ -62,7 +61,7 @@ class MachineBillTest {
     fun aFullyStockedMachineHoldsItsBill() {
         val deck = DeckArray(grid)
         val centre = grid.tile(5, 4)
-        val mill = Processor(center = centre, facing = Direction.Right)
+        val mill = Concentrator(center = centre, facing = Direction.Right)
         deck += mill
         assertTrue(deck.holdsFullBill(mill), "a machine laid whole holds its whole bill")
     }
@@ -75,7 +74,7 @@ class MachineBillTest {
     fun aMachineShortOnOneTileIsNotFinished() {
         val deck = DeckArray(grid)
         val centre = grid.tile(5, 4)
-        val mill = Processor(center = centre, facing = Direction.Right)
+        val mill = Concentrator(center = centre, facing = Direction.Right)
         deck += mill
         val corner = mill.tiles(grid).first { it != centre }
         for (s in Species.ALL) deck.stuff[corner, s] = 0L
@@ -148,49 +147,107 @@ class MachineBillTest {
     }
 
     /**
-     * The thresholds are 95% of each species' *own* share: steel is 990:10, so iron must clear
-     * 94.05% and carbon 0.95%. Those are the numbers a player keeps a storage at.
+     * The per-species rule, stated against a **synthetic** two-species bill.
+     *
+     * ⚠️ **No machine in the game has a bill like this any more**, and the test is written this way
+     * on purpose rather than borrowed from a machine that happens to suit it. Steel and firebrick
+     * became species, so every real bill is one species and the loop in [buildableFrom] degenerates
+     * to "bill species and nothing else" — which is a *consequence* of the recipes, not a change to
+     * the rule. Material selection would reintroduce multi-species bills, and the day it does this
+     * rule has to already be the general one. So the bill is constructed here.
+     *
+     * At [org.emerge.demo.outofspace.world.BUILD_PURITY_PERCENT] of 100 each species must be at
+     * least its exact proportional share, and the shares sum to the whole — so the only mixture that
+     * passes is the recipe itself. Any surplus of one species is necessarily a shortfall of another.
      */
     @Test
     fun `each species is judged against its own share of the recipe`() {
-        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1)
-        fun blend(ironPpm: Long, carbonPpm: Long) = buildableFrom(
-            steel,
-            Mixture.of(Species.Iron to ironPpm, Species.Carbon to carbonPpm, energy = 0L),
+        val bill = Mixture.of(Species.Iron to 990L, Species.Carbon to 10L, energy = 0L)
+        fun blend(iron: Long, carbon: Long) = buildableFrom(
+            bill,
+            Mixture.of(Species.Iron to iron, Species.Carbon to carbon, energy = 0L),
         )
-        // Carbon just under its 0.95% floor, with iron in abundance: refused.
-        assertFalse(blend(990_600L, 9_400L), "carbon below its share was admitted")
-        // Carbon just over it: admitted.
-        assertTrue(blend(990_400L, 9_600L), "carbon above its share was refused")
-        // Iron below its 94.05% floor, however much carbon there is: refused.
-        assertFalse(blend(940_000L, 60_000L), "iron below its share was admitted")
-        // A carbon-rich but legal blend — the window is six-fold wide for a trace component.
-        assertTrue(blend(945_000L, 55_000L), "a legal carbon-rich blend was refused")
+        assertTrue(blend(990_000L, 10_000L), "the recipe itself was refused")
+        // A gram of carbon short. Under the old 95% tolerance this was comfortably inside the
+        // window; the point of the change is that it no longer is.
+        assertFalse(blend(990_001L, 9_999L), "a delivery under its carbon share was admitted")
+        // And the mirror: iron short, carbon over. Refused on the iron.
+        assertFalse(blend(989_999L, 10_001L), "a delivery under its iron share was admitted")
+        // ⛔ The anti-exploit the per-species form exists for: 100% of *a* bill species is not the
+        // bill. An aggregate reading of the same percentage would wave this through and the site
+        // would swallow iron for ever.
+        assertFalse(blend(1_000_000L, 0L), "pure iron was admitted against an alloy bill")
     }
 
     /**
-     * ⚠️ The generalisation has to leave track exactly as it was: a rail is made of one species, so
-     * its threshold is 95% of 100%, which is the aggregate test it replaces.
+     * ⚠️ A single-species bill — which, since steel and firebrick became species, is every bill in
+     * the game — admits exactly its own species and nothing else.
+     *
+     * This used to assert a 95% bar with a 94% delivery under it. There is no bar now: the junk is
+     * what is refused, however little of it there is.
      */
     @Test
-    fun `a single-species bill is the old aggregate rule`() {
+    fun `a single-species bill admits its species and no junk at all`() {
         val rail = conduitBillOfMaterials(Conduit.Rail)
-        fun ironWith(junkPercent: Long) = buildableFrom(
+        fun ironWith(junk: Long) = buildableFrom(
             rail,
-            Mixture.of(
-                Species.Iron to (100L - junkPercent) * 1_000_000L,
-                Species.Silicon to junkPercent * 1_000_000L,
-                energy = 0L,
-            ),
+            Mixture.of(Species.Iron to 1_000_000L - junk, Species.Silicon to junk, energy = 0L),
         )
-        assertTrue(ironWith(5L), "a 95% delivery is exactly at the bar and is admitted")
-        assertFalse(ironWith(6L), "a 94% delivery is under the bar")
+        assertTrue(ironWith(0L), "pure iron was refused for an iron bill")
+        assertFalse(ironWith(1L), "one unit of silicon in a million was admitted")
+        assertFalse(ironWith(50_000L), "a 95% delivery is no longer at the bar")
+    }
+
+    /**
+     * ⛔ **A volatile cannot get into a casing, which is the bug this whole change was for.**
+     *
+     * Stu's report: a machine incorporated a microgram of water ice at build time, the ice melted at
+     * some temperature later on, and when the machine was deconstructed to be rebuilt elsewhere
+     * there was no longer enough material to finish it.
+     *
+     * ⚠️ **The chain is worth stating, because none of its links looks wrong on its own.** A casing
+     * is inert while it stands — `OutofspaceSim` gives the ambient sweep `rail.stuff` and
+     * `buffers.stuff` and never the deck layer — so nothing happens to the ice in place. Taking the
+     * machine apart puts its matter on a **rail**, which `offGas` does sweep, and the water leaves
+     * as vapour. What lands at the new site is now short of the bill by exactly the water, and
+     * [holdsFullBill] counts *matter*, so the site is short of a number no delivery is coming to
+     * make up: 99% built, for ever.
+     *
+     * At `BUILD_PURITY_PERCENT = 100` the first link cannot form. There is nothing in a casing that
+     * off-gassing can take, because there is nothing in a casing but the recipe.
+     *
+     * ⚠️ Asserted at the door rather than by playing the whole chain out, because the door is where
+     * the guarantee is: the loop above is what makes every later link unreachable, and a test that
+     * ran the chain would be pinning the absence of a symptom rather than the presence of a rule.
+     */
+    @Test
+    fun `a volatile cannot get into a machine casing`() {
+        val bill = machineBillOfMaterials(DeckMachineKind.Extractor, 1)
+        val titanium = bill[Species.Titanium]
+        assertTrue(titanium > 0L, "fixture: an extractor is made of titanium, or this proves nothing")
+
+        assertTrue(
+            buildableFrom(bill, Mixture.of(Species.Titanium to titanium, energy = 0L)),
+            "clean titanium was refused for a titanium bill",
+        )
+        // One part in a million of water — a microgram in a kilogram, which is Stu's case.
+        assertFalse(
+            buildableFrom(
+                bill,
+                Mixture.of(
+                    Species.Titanium to titanium - titanium / 1_000_000L,
+                    Species.Water to titanium / 1_000_000L,
+                    energy = 0L,
+                ),
+            ),
+            "a trace of water ice was admitted into a casing",
+        )
     }
 
     /** Permille is matter held over matter wanted, so it reaches 1000 exactly when the bill is. */
     @Test
     fun permilleIsMatterHeldOverMatterWanted() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Processor, 9)
+        val bill = machineBillOfMaterials(DeckMachineKind.Concentrator, 9)
         assertEquals(1000, builtPermille(bill, bill.total), "the whole bill is finished")
         assertEquals(0, builtPermille(bill, 0L), "nothing is nothing")
         assertEquals(500, builtPermille(bill, bill.total / 2L), "half the matter is half built")

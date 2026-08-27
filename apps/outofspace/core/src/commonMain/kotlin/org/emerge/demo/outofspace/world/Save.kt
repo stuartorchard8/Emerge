@@ -22,17 +22,16 @@ import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.DirectedDeckMachine
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Pump
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.machine.TileEnergy
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.machine.WireButton
-import org.emerge.demo.outofspace.world.machine.ambientEnergy
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Frac
 import org.emerge.sim.core.physics.primitives.Frac2
@@ -369,7 +368,7 @@ object Save {
             is Vent -> put("vented", m.ventedMass.toString())
             // A warehouse holds nothing itself: its contents are a tile of the buffer layer, and
             // the store loop below writes them under the key the record has always used.
-            is Processor -> {
+            is Concentrator -> {
                 put("carry", m.carry.toString())
                 put("progress", m.progress.toString())
                 put("eff", m.efficiencyPermille.toString())
@@ -377,7 +376,7 @@ object Save {
             // A thermostat and nothing else: the setpoint is its whole state. An older file's
             // `carry` and `progress` are simply not read — they belonged to a tick counter that no
             // longer decides anything, the same disposal the `Extractor` note below describes.
-            is ThermalDecomposer -> {
+            is Furnace -> {
                 put("temp", m.setTemperature.toString())
                 // Both halves of the dwell, because a charge part-way through its residence time is
                 // a real state: dropping `held` would silently restart every hold on every load.
@@ -1242,13 +1241,37 @@ object Save {
         // same place in the line. Its `ore` field is dropped on purpose — an extractor has no ore
         // body of its own, because the rock it is standing on is the ore body now. The rename is
         // applied here rather than in the deck reader so that both spellings land on one path.
-        val deckName = if (version < 10 && kindName == "Miner") "Extractor" else kindName
+        val deckName = canonicalKindName(if (version < 10 && kindName == "Miner") "Extractor" else kindName)
         if (deckName !in DeckMachineKind.ALL.map { it.toString() }) {
             fail("$kindName is a conduit, not a machine")
         }
         return readDeckMachine(
             listOf(deckName) + tokens.drop(1), version, tile, grid, buffers, scale, energyScale, fail,
         )
+    }
+
+    /**
+     * A machine kind's name on disk, mapped to what [DeckMachineKind] calls it today.
+     *
+     * ⛔ **A kind is written to disk by [DeckMachineKind.name]**, so renaming a constant renames the
+     * format — silently, and only for people who already have a save. `Processor` became
+     * `Concentrator` and `ThermalDecomposer` became `Furnace` because neither old name said what the
+     * machine does; without this, every world containing either simply stops loading, with
+     * "unknown machine 'Processor'" as the whole of the explanation.
+     *
+     * ⚠️ **Not keyed on the save version, unlike `Miner`.** A rename that changes no field and no
+     * meaning does not earn a version bump — nothing about the record differs — so there is no
+     * version at which the old spelling stops being possible and the mapping is unconditional. The
+     * cost is that these two strings are reserved for ever, which is the right price: they are two
+     * entries in a `when`, and the alternative is a save file that cannot say what it is.
+     *
+     * Applied at both readers rather than at one, because [readMachine] checks membership before it
+     * delegates and would reject the old spelling before [readDeckMachine] ever saw it.
+     */
+    private fun canonicalKindName(name: String): String = when (name) {
+        "Processor" -> DeckMachineKind.Concentrator.name
+        "ThermalDecomposer" -> DeckMachineKind.Furnace.name
+        else -> name
     }
 
     private fun readDeckMachine(
@@ -1267,7 +1290,7 @@ object Save {
         // name rather than dropped, because a machine holds cargo and dropping it would take that
         // mass out of the ledger without saying so — a silent loss is the worse of the two failures.
         if (kindName == "VAPORIZER") fail("the mineral vaporizer no longer exists")
-        val kind = DeckMachineKind.ALL.firstOrNull { it.name == kindName }
+        val kind = DeckMachineKind.ALL.firstOrNull { it.name == canonicalKindName(kindName) }
             ?: fail("unknown machine '$kindName'")
         val f = fields(tokens.drop(1), fail)
 
@@ -1337,14 +1360,14 @@ object Save {
                 } ?: InputKey.Up,
             )
             DeckMachineKind.Pump -> Pump(tile, facing())
-            DeckMachineKind.Processor -> Processor(
+            DeckMachineKind.Concentrator -> Concentrator(
                 tile,
                 facing = facing(),
                 carry = massNum("carry", 0L),
                 progress = num("actionProgress", 0L).toInt(),
                 efficiencyPermille = num("eff", 900L).toInt(),
             )
-            DeckMachineKind.ThermalDecomposer -> ThermalDecomposer(
+            DeckMachineKind.Furnace -> Furnace(
                 tile,
                 facing = facing(),
                 setTemperature = num("temp", 900L).toInt(),

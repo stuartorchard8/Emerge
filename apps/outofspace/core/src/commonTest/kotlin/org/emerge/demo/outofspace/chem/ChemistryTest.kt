@@ -1,7 +1,5 @@
 package org.emerge.demo.outofspace.chem
 
-import org.emerge.demo.outofspace.chem.Mixture
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -259,9 +257,9 @@ class ChemistryTest {
 
     // ── "close enough is pure": the threshold that ends the chain ───────────────
 
-    /** One charge of the standard ore body, which is what a real processor always works on. */
+    /** One charge of the standard ore body, which is what a real concentrator always works on. */
     private fun charge() = org.emerge.demo.outofspace.OutofspaceReducer.DEFAULT_ORE_BODY
-        .scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS)
+        .scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS)
 
     /**
      * The ladder a player climbs, pinned end to end.
@@ -273,7 +271,7 @@ class ChemistryTest {
      */
     @Test
     fun `the standard chain reaches exactly pure in five stages`() {
-        val eff = org.emerge.demo.outofspace.world.machine.Processor(
+        val eff = org.emerge.demo.outofspace.world.machine.Concentrator(
             org.emerge.demo.outofspace.world.TileIndex(0),
             org.emerge.demo.outofspace.world.Direction.Right,
         ).efficiencyPermille
@@ -282,7 +280,7 @@ class ChemistryTest {
         val shown = mutableListOf<Long>()
         repeat(5) {
             // Every stage works a full charge, as `refine` does via takeAtLeast(CHARGE_MASS).
-            m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS), eff).product
+            m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS), eff).product
             shown += m[m.dominant!!] * 100L / m.total
         }
         assertEquals(listOf(65L, 86L, 94L, 97L, 100L), shown, "the displayed purity ladder")
@@ -293,9 +291,9 @@ class ChemistryTest {
     fun `the snap moves impurity to the tailings rather than destroying it`() {
         var m = charge()
         val eff = 600
-        repeat(4) { m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS), eff).product }
+        repeat(4) { m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS), eff).product }
         // Stage 5 is the one that snaps: 97.77% in, exactly pure out.
-        val fed = m.scaledTo(org.emerge.demo.outofspace.world.machine.Processor.CHARGE_MASS)
+        val fed = m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS)
         val r = process(fed, eff)
         assertEquals(0L, r.product.total - r.product[r.product.dominant!!], "the snap fired")
         assertConserved(listOf(fed), listOf(r.product, r.tailings), "the snapping stage")

@@ -64,7 +64,7 @@ sealed interface Edit {
     data class LockStorageSpecies(val tile: TileIndex, val species: Species?) : Edit
 
     /**
-     * Retunes a thermal decomposer: how hot to hold a charge, and how long to hold it there.
+     * Retunes a furnace: how hot to hold a charge, and how long to hold it there.
      *
      * Both dials in one edit because they are one decision — the pair is the recipe, and a player
      * moving one while the other is mid-flight would be applying half a setting. It carries absolute

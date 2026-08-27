@@ -1,8 +1,6 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.RailLayer
-import org.emerge.demo.outofspace.world.BufferRole
-import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_OFFSET
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
@@ -18,7 +16,7 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.setTemperature
 import org.emerge.demo.outofspace.world.Structure
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -162,7 +160,7 @@ class HeatTest {
             if (it % 83 == 0) assertEnergyBalanced(s, "tick ${s.tick}")
         }
         assertEnergyBalanced(s, "final")
-        assertTrue(s.generatedEnergy > 0L, "the processor should have produced waste heat")
+        assertTrue(s.generatedEnergy > 0L, "the concentrator should have produced waste heat")
     }
 
 //    @Test
@@ -186,7 +184,7 @@ class HeatTest {
     // ── Behaviour ─────────────────────────────────────────────────────────────
 
     @Test
-    fun `a processor warms its own tile first and its neighbours after`() {
+    fun `a concentrator warms its own tile first and its neighbours after`() {
         // It needs somewhere to put both output streams or it stalls on the output cap after four
         // kilograms and never produces enough heat to measure -- which is what happened first time.
         val ore = Mixture.of(Species.Iron to 200 * Capacity.PACKET_MASS, energy = 0)
@@ -203,7 +201,7 @@ class HeatTest {
             track = { row(6, 7, 5); col(5, 6, 7) },
             deckFill = { x, y, tile ->
                 when {
-                    x == 5 && y == 5 -> Processor(tile, Direction.Right)
+                    x == 5 && y == 5 -> Concentrator(tile, Direction.Right)
                     x == 7 && y == 5 -> Vent(tile)      // concentrate leaves forward
                     x == 5 && y == 7 -> Vent(tile)      // tailings leave through the floor
                     else -> null
@@ -218,7 +216,7 @@ class HeatTest {
         val farCorner = s.kelvinAt(g.tile(2, 9))
 
         // ⚠️ **The shape, not the size.** This asked for `AMBIENT + 15` until 2026-08-26, which was
-        // calibrated against a processor shedding 40,000 mJ/g; `4c6d76f9` took that to 2,000 and the
+        // calibrated against a concentrator shedding 40,000 mJ/g; `4c6d76f9` took that to 2,000 and the
         // mill has read 296 K ever since. The magnitude was never what the test is called after —
         // "warms its own tile first and its neighbours after" is a statement about *order*, and an
         // absolute threshold beside it is a second, unstated claim about the heat constant that goes
@@ -284,7 +282,7 @@ class HeatTest {
             val grid = Grid(11, 11)
             val ore = Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0)
             val deck = DeckArray(grid)
-            deck += Processor(grid.tile(5, 5), Direction.Right)
+            deck += Concentrator(grid.tile(5, 5), Direction.Right)
             var s: VesselState =
                 VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             s = run(s, idle)
@@ -319,7 +317,7 @@ class HeatTest {
         val grid = Grid(11, 11)
         val ore = Mixture.of(Species.Iron to 20 * Capacity.PACKET_MASS, energy = 0)
         val deck = DeckArray(grid)
-        deck += Processor(grid.tile(5, 5), Direction.Right)
+        deck += Concentrator(grid.tile(5, 5), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(5, 5), ore.atAmbient())
         s = run(s, 40*HEAT_PERIOD)
@@ -334,7 +332,7 @@ class HeatTest {
         //
         // ⛔ **It does not have to get hotter, and it does not.** This asked for that until
         // 2026-08-26, on the strength of a comment calling the thing a furnace full of firebrick.
-        // A [Processor] is a mill: it crushes and grinds, at 2,000 mJ/g since `4c6d76f9`, and there
+        // A [Concentrator] is a mill: it crushes and grinds, at 2,000 mJ/g since `4c6d76f9`, and there
         // is no reason grinding heat should outrun radiation to space. It reads 292 K against a
         // 293 K room and that is a mill doing what a mill does. The furnace this was written for was
         // the smelter, and the smelter was deleted in `0d9a9c2d`.
@@ -354,12 +352,12 @@ class HeatTest {
         // every reading below was the same number. See [StructureMap.openToSpace].
         val grid = Grid(11, 11)
         val deck = DeckArray(grid)
-        deck += Processor(grid.tile(5, 5), Direction.Right)
+        deck += Concentrator(grid.tile(5, 5), Direction.Right)
         deck[grid.tile(5, 5)]!!.setTemperature(2_000, grid, deck.stuff)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         s = run(s, 20 * HEAT_PERIOD)
 
-        // Where the skin is. A processor stops a body, so space stops at it — and it is *not* the
+        // Where the skin is. A concentrator stops a body, so space stops at it — and it is *not* the
         // air map saying so: this machine lets the air straight through.
         assertFalse(s.structure.openToSpace(grid.tile(5, 5)), "the middle of a machine is not sky")
         assertFalse(s.structure.openToSpace(grid.tile(4, 4)), "and neither is its corner")

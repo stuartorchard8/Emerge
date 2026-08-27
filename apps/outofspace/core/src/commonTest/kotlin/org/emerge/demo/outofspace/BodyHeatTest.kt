@@ -18,8 +18,8 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Processor
-import org.emerge.demo.outofspace.world.machine.ThermalDecomposer
+import org.emerge.demo.outofspace.world.machine.Concentrator
+import org.emerge.demo.outofspace.world.machine.Furnace
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Temperature
@@ -29,9 +29,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
-import org.emerge.demo.outofspace.world.machine.ambientEnergy
 import org.emerge.demo.outofspace.world.machine.setTemperature
-import org.emerge.demo.outofspace.world.material
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -98,7 +96,7 @@ class BodyHeatTest {
      * the old model rather than to describe the new one — under a lump, *every* assertion below is
      * impossible, because a machine had exactly one number and no inside for heat to be uneven in.
      *
-     * A processor is three tiles across, so the far corner is two tiles of casing away from the near
+     * A concentrator is three tiles across, so the far corner is two tiles of casing away from the near
      * one.
      *
      * ⚠️ **An impermeable machine, and that is not an arbitrary choice.** Body-to-body contact across
@@ -109,11 +107,11 @@ class BodyHeatTest {
      * what is certain is that this test cannot be the one to ask it.
      */
     @Test
-    fun `heat one face of a processor and the far face lags behind`() {
+    fun `heat one face of a concentrator and the far face lags behind`() {
         val g = Grid(14, 14)
         val tile = g.tile(6, 6)
         val world = room(12, 12, deckFill = { x, y, at ->
-            if (x == 6 && y == 6) Processor(at, Direction.Right) else null
+            if (x == 6 && y == 6) Concentrator(at, Direction.Right) else null
         })
 
         // The whole machine cold, then one corner tile of it made very hot. The first tile of the
@@ -129,7 +127,7 @@ class BodyHeatTest {
         // machine keeps them.
         fun tiles(s: VesselState) = s.deck[tile]!!.energy(s.grid, s.deck.stuff)
         val start = tiles(seeded)
-        assertEquals(9, start.size, "a three-by-three processor stores nine figures, not one")
+        assertEquals(9, start.size, "a three-by-three concentrator stores nine figures, not one")
 
         val settled = run(seeded, 20*HEAT_PERIOD)
         val end = tiles(settled)
@@ -186,7 +184,7 @@ class BodyHeatTest {
         val world = room(
             10, 10,
             rails = { grid -> grid.tiles.map { if (it == under) Segment(Conduit.Rail) else null } },
-            deckFill = { x, y, at -> if (x == 5 && y == 5) ThermalDecomposer(at, Direction.Right) else null },
+            deckFill = { x, y, at -> if (x == 5 && y == 5) Furnace(at, Direction.Right) else null },
         )
             .heatDeckMachine(g.tile(5, 5), 900)
 
@@ -270,7 +268,7 @@ class BodyHeatTest {
     fun `a hot machine warms what it is holding`() {
         // The point of putting buffers in a layer: a store is a body like any other, so the heat
         // solver's existing "bodies sharing a tile touch" rule couples it to the casing around it
-        // with no contact logic written for it. This is the ThermalDecomposer's whole story in
+        // with no contact logic written for it. This is the Furnace's whole story in
         // miniature — heat the machine, and the charge inside comes up with it.
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
@@ -327,7 +325,7 @@ class BodyHeatTest {
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
         val furnace = room(10, 10, deckFill = { x, y, at ->
-            if (x == 5 && y == 5) ThermalDecomposer(at, Direction.Right) else null
+            if (x == 5 && y == 5) Furnace(at, Direction.Right) else null
         })
         val tank = room(10, 10, deckFill = { x, y, tile ->
             if (x == 5 && y == 5) Storage(tile, Direction.Right) else null

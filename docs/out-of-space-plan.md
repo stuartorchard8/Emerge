@@ -1453,7 +1453,7 @@ has the warning written into it. **A fix that works is not evidence of a diagnos
 
 ### What is not pinned any more
 
-`ProcessorChainTest` used to assert exact purities. It has read `75/100/100`, then `66/88/100`, and
+`ConcentratorChainTest` used to assert exact purities. It has read `75/100/100`, then `66/88/100`, and
 now wobbles between 66 and 64 on the first stage depending where in a bite it is sampled — ore is
 apportioned once per 3 kg cell where the miner apportioned it afresh every tick, so what is *standing
 in* a buffer moves about even though what is separated does not. Every one of those figures was a

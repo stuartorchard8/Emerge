@@ -78,7 +78,7 @@ class ChemistryStep(
  * In practice the clamp is nearly unreachable and is a guard rather than a mechanism — a pass
  * converts a fraction of a per cent of the matter, so the energy it draws is a fraction of a per
  * cent of what the matter holds, and a reaction that cools its own feed simply drops below its onset
- * and stops. That is the whole loop a thermal decomposer exists to fight: calcining takes more
+ * and stops. That is the whole loop a furnace exists to fight: calcining takes more
  * energy per kilogram than the rock holds at its own calcining temperature, so the element has to
  * keep supplying it or the reaction stalls.
  */

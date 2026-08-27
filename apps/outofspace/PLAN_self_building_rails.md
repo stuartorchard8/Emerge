@@ -498,7 +498,7 @@ because carrying is not producing.)
 
 ### Where each store hands itself back — Stu, 2026-08-19
 
-- **A processing buffer goes back out through the input port.** A `Processor` or `ThermalDecomposer`
+- **A processing buffer goes back out through the input port.** A `Concentrator` or `Furnace`
   holds a lump *in the middle of being worked*, and that is not finished goods — it has no business
   leaving by an output. The way it came in is the honest way back out. ⚠️ The store itself sits at
   the machine's **centre**, so this is the one place where where a store *is* and where its contents

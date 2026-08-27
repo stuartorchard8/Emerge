@@ -4,7 +4,7 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.Extractor
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Thruster
 
 /** Result of one solid conduction tick. [energy]: new energy per body. [radiated]: energy lost to space. [toAir]: net energy into atmosphere (negative = air heated solid). */
@@ -378,7 +378,7 @@ fun heatOfWorking(mass: Long, machine: DeckMachine?): Long =
 /** Heat dumped into the machine per gram worked (millijoules per gram). Tied to work done, not time. */
 fun heatPerGram(machine: DeckMachine?): Long = when (machine) {
     // 400 kJ/g. Smelting costs ~1 MJ/kg.
-    is Processor -> 2_000L    // crushing and grinding
+    is Concentrator -> 2_000L    // crushing and grinding
     is Extractor -> 2_000L
     // A rocket's waste heat is what the bell does not throw away. The exhaust's own energy is not
     // this: it leaves with the exhaust, or lands where the exhaust lands. See [Thruster].

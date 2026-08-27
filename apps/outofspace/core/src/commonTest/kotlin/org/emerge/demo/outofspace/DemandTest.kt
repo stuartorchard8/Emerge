@@ -233,15 +233,29 @@ class DemandTest {
      * the gate that would have topped it up had already shut.
      *
      * Both are matter now, so the composition of the lump is not allowed to change either answer.
-     * That is what this asserts: the same two tiles, the same demand, one clean blend and one dirty
-     * one, and all four readings agree.
+     *
+     * ⚠️ **The dirty lump no longer gets through the door, and the claim moved with it rather than
+     * being dropped.** At `BUILD_PURITY_PERCENT = 95` a 96:4 blend was admitted, and the point was
+     * that its four grams of quartz must not make the two readings disagree about a shortfall they
+     * both now measure in matter. At 100 the site does not want that lump at all, so `wants` is
+     * false for every route and both readings have to say so **together**: `permits` refuses and
+     * `room` answers nought, whatever is or is not already standing on the track.
+     *
+     * ⛔ **The pairing is still the whole assertion, and the refusal has simply moved upstream.**
+     * A lump that cannot be used is now turned away at the *source*, before it is committed, rather
+     * than travelling the length of the run to be turned away at the site — which is strictly the
+     * better place for it, because a lump refused at a site is a lump standing on a tile that
+     * packets can never merge into. What must not happen, in either régime, is one reading saying
+     * "yes" while the other says "nought grams": that is a network that stalls with material in the
+     * tank, and it is what this test exists to catch.
      */
     @Test
-    fun `permits and room agree however dirty the material is`() {
+    fun `permits and room agree whether the material can be used or not`() {
         val grid = cfg.initialGrid
         val bill = conduitBillOfMaterials(Conduit.Rail)
         val gap = 98_000_000_000L
-        // Both are through the door — a rail's threshold is 95% iron — and both are 100g of matter.
+        // 100g of matter each. The first is the recipe and goes through; the second is 4% quartz,
+        // which the door now refuses outright.
         val clean = iron(100_000_000_000L)
         val dirty = Mixture.of(Species.Iron to 96_000_000_000L, Species.Quartz to 4_000_000_000L, energy = 0)
 
@@ -272,15 +286,23 @@ class DemandTest {
             return whitelist.permits(source, lump, rationed = true) to whitelist.room(source, lump)
         }
 
-        for ((what, lump) in listOf("clean" to clean, "dirty" to dirty)) {
-            val (openEmpty, roomEmpty) = readings(lump, carrying = null)
-            assertTrue(openEmpty, "$what: nothing is coming and the gate was shut")
-            assertEquals(gap, roomEmpty, "$what: with the road clear the whole shortfall is worth sending")
+        // The clean lump: usable, so the road being clear or covered is what decides, and the two
+        // readings track each other through both.
+        val (openClear, roomClear) = readings(clean, carrying = null)
+        assertTrue(openClear, "clean: nothing is coming and the gate was shut")
+        assertEquals(gap, roomClear, "clean: with the road clear the whole shortfall is worth sending")
 
-            // 100g of matter standing on the route covers a 98g shortfall — whatever it is made of.
-            val (openFull, roomFull) = readings(lump, carrying = grid.tile(6, 3))
-            assertFalse(openFull, "$what: the shortfall is covered and the gate stayed open")
-            assertEquals(0L, roomFull, "$what: the shortfall is covered and room still wanted more")
+        val (openCovered, roomCovered) = readings(clean, carrying = grid.tile(6, 3))
+        assertFalse(openCovered, "clean: the shortfall is covered and the gate stayed open")
+        assertEquals(0L, roomCovered, "clean: the shortfall is covered and room still wanted more")
+
+        // ⛔ The dirty lump: refused at the source, and refused the same way by both readings
+        // whatever is on the route. A "yes" from one and "nought grams" from the other is the stall
+        // this test exists to catch, and it would be that failure in either direction.
+        for (carrying in listOf(null, grid.tile(6, 3))) {
+            val (open, room) = readings(dirty, carrying)
+            assertFalse(open, "dirty: a lump nothing can be built from was committed (carrying=$carrying)")
+            assertEquals(0L, room, "dirty: room offered to send a lump nothing can use (carrying=$carrying)")
         }
     }
 
@@ -396,8 +418,8 @@ class DemandTest {
      * exists so that material can reach the obstruction that is blocking it — was reading that as a
      * fact about the *tile* rather than about the one appetite it is true of.
      *
-     * Stu's save, 2026-08-22: a Processor construction site at (16,28) over a ghost rail, and a
-     * Processor at (19,28) three tiles to the right marked for deconstruction. The site's
+     * Stu's save, 2026-08-22: a Concentrator construction site at (16,28) over a ghost rail, and a
+     * Concentrator at (19,28) three tiles to the right marked for deconstruction. The site's
      * **titanium** appetite propagated up the corridor with a clear road, so the marked machine was
      * allowed to come apart; the door then refused the titanium at the ghost rail, which admits iron
      * and nothing else, and 300kg of casing sat in a corridor it could never leave — in front of the
@@ -407,7 +429,7 @@ class DemandTest {
      * Being on the plug's tile is being **behind** it: the material has still got to cross that door.
      *
      * ```
-     *  [S] - . - . - g      g is a ghost RAIL with a Processor site standing on it
+     *  [S] - . - . - g      g is a ghost RAIL with a Concentrator site standing on it
      *   ^ titanium          the site wants titanium; the rail admits iron and nothing else
      * ```
      */
@@ -415,7 +437,7 @@ class DemandTest {
     fun `a machine site on unpaid track does not draw what the track will not admit`() {
         val grid = cfg.initialGrid
         val railBill = conduitBillOfMaterials(Conduit.Rail)
-        val siteBill = machineBillOfMaterials(DeckMachineKind.Processor, 2)
+        val siteBill = machineBillOfMaterials(DeckMachineKind.Concentrator, 2)
 
         val source = grid.tile(2, 3)
         val ghost = grid.tile(5, 3)

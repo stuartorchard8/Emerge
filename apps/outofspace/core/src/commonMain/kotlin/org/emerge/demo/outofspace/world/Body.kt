@@ -271,7 +271,7 @@ fun solidEnergy(
  *
  * ⚠️ **A dial, not a measurement.** Unlike the densities and specific heats — which are real numbers
  * about real substances — nothing physical pins this. It is set by how long a machine ought to take
- * to heat its contents, and it is the number to reach for when the [ThermalDecomposer] feels wrong.
+ * to heat its contents, and it is the number to reach for when the [Furnace] feels wrong.
  */
 val BUFFER_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 30L
 

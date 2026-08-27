@@ -8,7 +8,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  *
  * A carbonate gives up its CO₂, a hydrate gives up its water, a sulfide gives up its sulfur. No
  * reagent, nothing to compete for, nothing to allocate: heat alone, which is why these are the
- * tier-1 refining reactions and why the thermal decomposer is a box with a temperature dial and no
+ * tier-1 refining reactions and why the furnace is a box with a temperature dial and no
  * recipe. Everything here would happen just as readily on a belt that got too hot, and does.
  *
  * ### The formula is what is written down
@@ -96,7 +96,7 @@ class Decomposition(
 val DECOMPOSITIONS: List<Decomposition> = listOf(
     // ── The carbonates: calcining, and the reason Lime and Periclase exist ──
     //
-    // CaCO₃ → CaO + CO₂. The marquee tier-1 reaction, named in `ThermalDecomposer`'s own
+    // CaCO₃ → CaO + CO₂. The marquee tier-1 reaction, named in `Furnace`'s own
     // documentation for as long as it has been impossible.
     Decomposition(
         reactant = Species.Calcite, reactantUnits = 1,

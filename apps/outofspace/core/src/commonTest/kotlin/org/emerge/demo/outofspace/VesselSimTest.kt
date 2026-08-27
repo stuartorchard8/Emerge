@@ -7,7 +7,6 @@ import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.massIn
-import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.RAIL_PERIOD
 import org.emerge.demo.outofspace.world.Conduits
@@ -25,7 +24,7 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Storage
-import org.emerge.demo.outofspace.world.machine.Processor
+import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.VesselState
@@ -37,7 +36,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -434,7 +432,7 @@ class VesselSimTest {
      * that just refused it.
      *
      * What is being tested is the split between the two halves of the rework. The flow graph does not
-     * know what a processor eats — it says only which way material may travel, and the belt runs
+     * know what a concentrator eats — it says only which way material may travel, and the belt runs
      * left to right whatever is standing beside it. Whether *this* packet is taken is settled at the
      * tile, when it is offered. So ore is lifted off in passing and an ingot rides straight past to
      * the tank at the end, on the same belt, with nothing in the topology distinguishing them.
@@ -447,7 +445,7 @@ class VesselSimTest {
          * refuse it.
          *
          * ⚠️ **The processing chamber is filled too, and it has to be.** `refine` moves Input into
-         * Inside *before* it consults activation, so a processor with an empty chamber swallows its
+         * Inside *before* it consults activation, so a concentrator with an empty chamber swallows its
          * own input on the very first tick however hard it is wired shut — and then has room again.
          * A full chamber is what makes "full" a state rather than a moment.
          */
@@ -480,8 +478,8 @@ class VesselSimTest {
     /**
      * ⛔ **On a belt nothing feeds, a lump stops at the first consumer it reaches.** This fixture has
      * no producer at all — no extractor, no output port, just a lump set down on the track — so the
-     * flow graph orients it by distance to the nearest consumer, and the processor tapping the line
-     * at `(4,2)` is nearer than the tank at the end. The processor is full and refuses it, so there
+     * flow graph orients it by distance to the nearest consumer, and the concentrator tapping the line
+     * at `(4,2)` is nearer than the tank at the end. The concentrator is full and refuses it, so there
      * it stays.
      *
      * ⚠️ **This used to assert the opposite**, that the lump rode past the full machine to the tank,
@@ -494,13 +492,13 @@ class VesselSimTest {
      * sink, even when the closest sink happens to be full.
      *
      * ⚠️ **Its sibling below is unaffected** and is the one that still shows a machine taking
-     * material off the line, since an *empty* processor at `(4,2)` absorbs the lump either way.
+     * material off the line, since an *empty* concentrator at `(4,2)` absorbs the lump either way.
      */
     @Test
-    fun `a lump a full processor will not take waits on a belt nothing feeds`() {
+    fun `a lump a full concentrator will not take waits on a belt nothing feeds`() {
         val lump = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
         val s = tappedBelt(
-            { tile -> Processor(tile, Direction.Down).withWiring(Wiring(mapOf(Action.Run to emptyList()))) },
+            { tile -> Concentrator(tile, Direction.Down).withWiring(Wiring(mapOf(Action.Run to emptyList()))) },
             lump,
             stuffed = true,
         )
@@ -508,7 +506,7 @@ class VesselSimTest {
         assertEquals(
             MACHINE_BUFFER_CAP,
             s.inStore(grid43(s), BufferRole.Input)?.total,
-            "the processor was full and took nothing more",
+            "the concentrator was full and took nothing more",
         )
         assertNull(
             s.buffers.resourceAt(s.grid.tile(9, 2))?.total,
@@ -526,13 +524,13 @@ class VesselSimTest {
         // The other half, on the identical layout: the belt has not changed shape, so the only thing
         // that decided this packet's fate is what the machine was willing to take.
         val ore = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
-        val s = tappedBelt({ tile -> Processor(tile, Direction.Down) }, ore)
+        val s = tappedBelt({ tile -> Concentrator(tile, Direction.Down) }, ore)
         // Asserted as conservation rather than as "the input buffer is not empty", which is a moment
-        // and not a fact: the processor grinds at 125 g a tick, so whether the ore is still in the
+        // and not a fact: the concentrator grinds at 125 g a tick, so whether the ore is still in the
         // mouth, half separated, or wholly turned into concentrate and tailings depends only on when
         // you happen to look. What must hold at any tick is that all of it is accounted for.
         val taken = massIn(s.deck[grid43(s)], grid43(s), s.grid, s.buffers)
-        assertEquals(1_000L, taken, "the processor should have taken the ore off the belt")
+        assertEquals(1_000L, taken, "the concentrator should have taken the ore off the belt")
         assertNull(
             s.buffers.resourceAt(s.grid.tile(9, 2)),
             "so nothing should have reached the tank",
@@ -606,7 +604,7 @@ class VesselSimTest {
      *
      * This is the test the previous design could not pass. It spent a fractional carry, a
      * sub-stepping loop and a whole test-clock helper trying to make the world come out the same per
-     * *second* at any rate, and still leaked — processor purity moved from 65% to 79% across the
+     * *second* at any rate, and still leaked — concentrator purity moved from 65% to 79% across the
      * range, because the chunk it rounds is a chunk per tick. Stating every rate per tick makes the
      * question disappear rather than answering it: there is no second unit left to disagree with.
      *
@@ -648,7 +646,7 @@ class VesselSimTest {
         // Everything on the track counts too -- it is a separate list, and forgetting it here once
         // made a perfectly healthy world look 5kg short.
         val onTrack = s.rails.indices.fold(Mixture.EMPTY) { acc, i -> acc + (s.onRail(TileIndex(i)) ?: Mixture.EMPTY) }
-        // Both lists: what a warehouse holds is as much "in the world" as what a processor holds, and
+        // Both lists: what a warehouse holds is as much "in the world" as what a concentrator holds, and
         // warehouses stand on the deck. Walking a second list left the tanks out and the world
         // looked short by exactly what was banked in them.
         val inWorld = s.grid.tiles.fold(onTrack) { acc, tile ->

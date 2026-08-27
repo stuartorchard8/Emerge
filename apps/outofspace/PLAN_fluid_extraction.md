@@ -162,7 +162,7 @@ Each step ends at a green gate; commit directly to main, one focused commit per 
    `chem` was severed from the renderer by inlining `speciesColor`'s 13 palette constants into
    `chem/SpeciesColor.kt` — cheaper than carrying a 1,000-line renderer across for one colour lookup.
    ⚠️ Out of Space had **pre-existing** test failures before this work began (`RockTest`, `FlightTest`,
-   `RockContactTest`, `PumpTest`, `ProcessorChainTest` — bodies "hung in the air", a gravity fault).
+   `RockContactTest`, `PumpTest`, `ConcentratorChainTest` — bodies "hung in the air", a gravity fault).
    Confirmed by Stu as predating the extraction. **Not caused by, and not in scope for, this work** —
    but it means "Out of Space is green" is not available as a gate for steps 5–7.
 3. **Give fluidlab a harness.** A minimal driver (headless tick + the existing overlays) so it is a

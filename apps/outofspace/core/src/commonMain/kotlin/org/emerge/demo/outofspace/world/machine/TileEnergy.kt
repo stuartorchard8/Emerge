@@ -1,10 +1,6 @@
 package org.emerge.demo.outofspace.world.machine
 
 import org.emerge.demo.outofspace.num.Budget
-import org.emerge.demo.outofspace.world.Direction
-import org.emerge.demo.outofspace.world.Temperature
-import org.emerge.demo.outofspace.world.Wiring
-import org.emerge.demo.outofspace.world.capacityPerTile
 
 /**
  * Thermal energy stored **per tile** of something that occupies several.
@@ -113,7 +109,7 @@ val MACHINE_BUFFER_CAP = 4L * Budget.TONNE
 /**
  * And output buffers hold this much before the machine stops *running*.
  *
- * Without this a processor whose waste side is blocked keeps working and hoards its tailings
+ * Without this a concentrator whose waste side is blocked keeps working and hoards its tailings
  * indefinitely — tens of tonnes inside one tile, invisibly. Capping it makes a blocked output
  * back up into the input and then up the belt behind it, which is the same way every other blockage
  * in the game behaves: visibly, and starting at the thing that is actually stuck.
@@ -124,7 +120,7 @@ val MACHINE_BUFFER_CAP = 4L * Budget.TONNE
 val MACHINE_OUTPUT_CAP = 4L * Budget.TONNE
 
 /**
- * How much energy a [org.emerge.demo.outofspace.world.machine.ThermalDecomposer]'s element puts into
+ * How much energy a [org.emerge.demo.outofspace.world.machine.Furnace]'s element puts into
  * its tile in one tick at full activation.
  *
  * **Derived from what it is for**: a *full* chamber — [MACHINE_BUFFER_CAP] of rock at a

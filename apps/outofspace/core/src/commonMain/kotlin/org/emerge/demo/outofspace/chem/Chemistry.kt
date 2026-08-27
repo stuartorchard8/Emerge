@@ -14,7 +14,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
  * [conservationOf] exists so tests can say so out loud.
  */
 
-/** The two streams out of a species processor: a concentrated product and its tailings. */
+/** The two streams out of a species concentrator: a concentrated product and its tailings. */
 data class ProcessResult(val product: Mixture, val tailings: Mixture) {
     val totalMass: Long get() = product.total + tailings.total
 }
