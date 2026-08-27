@@ -1006,7 +1006,12 @@ object OutofspaceAgentHarness {
             // Grams that have stopped being cargo and become fabric: up while a ghost builds
             // itself, down while a marked segment hands its metal back.
             "builtMass" -> grams(state.builtMass)
-            "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass)
+            // ⚠️ `reconciledMass` is a term here too. It is only ever non-zero for a world loaded
+            // from a file written before the ledger was anchored, so every script that starts from
+            // `new` is unaffected -- but a script that loads a save and asserts `massBalance = 0`
+            // would otherwise be asserting the absence of a scar rather than the absence of a leak.
+            "massBalance" -> grams(state.inTransitMass + state.ventedMass + state.builtMass - state.extractedMass - state.baselineCargoMass - state.reconciledMass)
+            "reconciledMass" -> grams(state.reconciledMass)
             // The two terms `massBalance` is made of that had no readout of their own. Diagnosing a
             // drift means asking which term moved, and a field that is only ever *inside* a sum
             // cannot answer that — this was found while proving that 7.8 t of a "leak" on a real
@@ -1094,7 +1099,7 @@ object OutofspaceAgentHarness {
         private val FIELDS = listOf(
             "tick", "machines", "gridWidth", "gridHeight", "originX", "originY",
             "airMass", "pipeMass", "airVented", "airBalance", "extractedMass",
-            "ventedMass", "inTransitMass", "stockpileMass", "baselineCargoMass", "storedEnergy", "generatedEnergy",
+            "ventedMass", "inTransitMass", "stockpileMass", "baselineCargoMass", "reconciledMass", "storedEnergy", "generatedEnergy",
             "radiatedEnergy", "solidToAirEnergy", "heatBalance", "airHeatBalance",
             "massBalance", "builtMass", "rockCount", "rockMass",
             "rockX", "rockY", "rockVX", "rockVY",

@@ -48,7 +48,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 18
+    const val VERSION = 19
 
     /**
      * The first version whose thrusters have a bell — see [ThrusterMigration].
@@ -96,6 +96,10 @@ object Save {
         // The solids the world started with. Absent reads as zero, which is what every world
         // written before a ship had to build its own track began with.
         out.append("baselinecargo ").append(state.baselineCargoMass).append('\n')
+        // Appended rather than versioned in the usual sense: absent reads as zero, which is right
+        // for every world that has never needed a write-off. What the VERSION bump buys is the
+        // *migration* below — telling "no drift" apart from "written before anybody looked".
+        out.append("reconciled ").append(state.reconciledMass).append('\n')
         // Absent reads as creative, which is what every world written before the switch existed was
         // — and what every world still is until a ghost can finish building itself.
         out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
@@ -639,6 +643,7 @@ object Save {
         var sas = false
         val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
+        var reconciled: Long? = null
         var baselineCargo: Long? = null
         val segmentEnergy = HashMap<Pair<Int, Int>, Long>()
         // Held aside for the same reason [segmentEnergy] is: the layers do not exist until every
@@ -879,6 +884,7 @@ object Save {
                 // what a world where nothing has ever been built out of its own stores has.
                 "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
                 "built" -> built = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable built mass"))
+                "reconciled" -> reconciled = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable reconciled mass"))
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
                 "body", "rock" -> {
@@ -996,7 +1002,7 @@ object Save {
                 )
             }
         }
-        return VesselState(
+        val state = VesselState(
             grid = grid,
             gridPad = GRID_PAD,
             deck = deck,
@@ -1041,6 +1047,8 @@ object Save {
             // [ThrusterMigration]. Zero for every file that has no such motor, which is all of them
             // from [THRUSTER_BELL_VERSION] on.
             baselineCargoMass = (baselineCargo ?: 0L) - thrusters.cargo,
+            // Whatever the file said; a file that predates the field gets the migration below.
+            reconciledMass = reconciled ?: 0L,
             insertedEnergy = inserted,
             acquiredEnergy = acquired,
             solidToAirEnergy = solidToAir,
@@ -1070,6 +1078,26 @@ object Save {
             bodyImpulseY = bodyImpulseY,
             bodies = loaded,
         )
+        // ⛔ **The one-time write-off, and it is gated on the file never having stated the term.**
+        //
+        // A world saved before `reconciled` existed may carry a drift in the mass ledger from some
+        // forgotten tick, and a tripwire that has been tripped since before anybody was looking is
+        // worse than no tripwire: the next real leak arrives as a slightly larger number nobody
+        // reads. Stu's save carried 1.0 t. So the drift is measured once, here, and recorded as
+        // something that was written off rather than something that never happened.
+        //
+        // ⚠️ **`reconciled == null` and not `version < N`.** The question is whether this file has
+        // ever had its ledger anchored, and the field's own absence is the exact answer; a version
+        // test would additionally re-anchor any *future* file that happened to be old, which is the
+        // laundering `baselinecargo` above is careful to avoid.
+        //
+        // ⛔ **It must be computed from the finished state**, because `inTransitMass` is derived from
+        // the world rather than stored — which is the whole reason this cannot happen up in the
+        // field list with the others.
+        if (reconciled != null) return state
+        val drift = state.inTransitMass + state.ventedMass + state.builtMass -
+            state.extractedMass - state.baselineCargoMass
+        return if (drift == 0L) state else state.copy(reconciledMass = drift)
     }
 
     /**

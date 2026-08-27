@@ -242,6 +242,28 @@ data class VesselState(
     val builtMass: Long = 0L,
 
     /**
+     * A drift in the mass ledger that has been **written off**, once, because the matter it stands
+     * for went missing before anything could see it go.
+     *
+     * ⛔ **This is not a licence to lose mass; it is what makes losing mass visible again.** The
+     * balance is a tripwire, and a tripwire that has been tripped since some forgotten tick is worse
+     * than no tripwire at all — the next real leak arrives as a slightly larger number nobody is
+     * looking at. Stu's save carried 1.0 t of such a scar. Measured frozen across a thousand ticks,
+     * so the sim conserves mass *today*; what it does not have is a clean starting point.
+     *
+     * So this term absorbs the historical difference and the check subtracts it, which re-arms the
+     * alarm without pretending the loss never happened — the figure stays on the panel for as long
+     * as it is non-zero. ⚠️ **Set only by [org.emerge.demo.outofspace.world.Save]'s migration, once,
+     * for a file written before the term existed.** Nothing in a tick may touch it; a running world
+     * that starts to drift is supposed to say so.
+     *
+     * ⛔ **It could not have been done by adjusting [extractedMass] instead**, which is the obvious
+     * cheaper fix. That number is a term in the *rock* ledger as well — it is mass that came off a
+     * rock — so moving it to close one balance opens another, and silently.
+     */
+    val reconciledMass: Long = 0L,
+
+    /**
      * Cumulative energy put into the world by machines doing work, and cumulative energy radiated
      * away to space. The thermal counterpart of [extractedMass] and [ventedMass], and they buy the
      * same thing: `stored + radiated − generated` must never move, so an energy leak is one

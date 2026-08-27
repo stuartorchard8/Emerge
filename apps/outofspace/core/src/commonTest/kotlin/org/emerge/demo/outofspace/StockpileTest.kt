@@ -9,7 +9,9 @@ import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.RailLayer
+import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.demo.outofspace.world.starterVessel
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
@@ -117,5 +119,93 @@ class StockpileTest {
         assertTrue(Stockpile.EMPTY.isEmpty, "the empty stockpile is empty")
         assertTrue(Stockpile.EMPTY.buildableSpecies.isEmpty(), "and offers nothing")
         assertEquals(0L, Stockpile.EMPTY.buildable(Species.Iron), "including iron")
+    }
+}
+
+/**
+ * The mass ledger's write-off: a drift recorded once so the tripwire can be trusted again.
+ *
+ * ⛔ **The dangerous version of this feature is one that keeps writing off.** The whole value of the
+ * balance is that it is zero until something is wrong; a mechanism that re-anchors on every load
+ * would turn every future leak into a silent correction, which is strictly worse than the permanent
+ * red light it replaces. So the gate is what these mostly test.
+ */
+class ReconciledLedgerTest {
+
+    private val cfg = OutofspaceConfig()
+
+    private fun drift(s: VesselState): Long =
+        s.inTransitMass + s.ventedMass + s.builtMass -
+            s.extractedMass - s.baselineCargoMass - s.reconciledMass
+
+    /** A world that has lost a tonne without saying so — a save written before anybody was looking. */
+    private fun scarred(): VesselState =
+        starterVessel(cfg.initialGrid).copy(extractedMass = 1_000_000L * org.emerge.demo.outofspace.num.Budget.GRAM)
+
+    /**
+     * A file that never stated the term gets its drift written off, once, and the balance closes.
+     *
+     * Measured on the real save this was built for: 1.0 t, frozen across a thousand ticks, so the
+     * sim conserves mass today and only lacked a clean starting point.
+     */
+    @Test
+    fun `a save written before the term existed is anchored on load`() {
+        val before = scarred()
+        assertTrue(drift(before) != 0L, "fixture: the world is supposed to be out of balance")
+
+        val loaded = Save.read(Save.write(before).lines().filterNot { it.startsWith("reconciled ") }.joinToString("\n"))
+
+        assertEquals(0L, drift(loaded), "loading did not anchor the ledger")
+        assertEquals(
+            before.inTransitMass + before.ventedMass + before.builtMass -
+                before.extractedMass - before.baselineCargoMass,
+            loaded.reconciledMass,
+            "the write-off is not the drift it was standing in for",
+        )
+    }
+
+    /**
+     * ⛔ **The one that matters: a file that HAS stated the term is never re-anchored**, so a leak
+     * that develops after the write-off is reported rather than absorbed.
+     *
+     * Gated on the field's own absence rather than on a version number, because the question is
+     * whether this file has ever had its ledger anchored and the absence is the exact answer.
+     */
+    @Test
+    fun `a leak after the write-off is still reported`() {
+        val anchored = Save.read(
+            Save.write(scarred()).lines().filterNot { it.startsWith("reconciled ") }.joinToString("\n"),
+        )
+        assertEquals(0L, drift(anchored), "fixture: it should be balanced after anchoring")
+
+        // Now lose a further tonne, the way a real leak would arrive, and save and reload it.
+        val leaked = anchored.copy(
+            extractedMass = anchored.extractedMass + 1_000_000L * org.emerge.demo.outofspace.num.Budget.GRAM,
+        )
+        val reloaded = Save.read(Save.write(leaked))
+
+        assertEquals(
+            anchored.reconciledMass,
+            reloaded.reconciledMass,
+            "the write-off moved, so the new leak was laundered into it",
+        )
+        assertTrue(drift(reloaded) != 0L, "a leak arriving after the write-off went unreported")
+    }
+
+    /** And a world that never drifted is written with a zero and stays at zero. */
+    @Test
+    fun `a clean world is not given a write-off`() {
+        val clean = starterVessel(cfg.initialGrid)
+        assertEquals(0L, drift(clean), "fixture: the starter vessel balances")
+        val reloaded = Save.read(Save.write(clean))
+        assertEquals(0L, reloaded.reconciledMass, "a clean world was written off anyway")
+        assertEquals(0L, drift(reloaded), "and it should still balance")
+    }
+
+    /** It survives a round trip like any other ledger term. */
+    @Test
+    fun `the write-off round-trips`() {
+        val s = starterVessel(cfg.initialGrid).copy(reconciledMass = -12_345L)
+        assertEquals(-12_345L, Save.read(Save.write(s)).reconciledMass, "the write-off did not survive")
     }
 }

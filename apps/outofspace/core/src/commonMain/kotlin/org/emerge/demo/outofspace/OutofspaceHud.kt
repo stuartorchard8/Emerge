@@ -134,8 +134,15 @@ class OutofspaceHud {
                 // the instrument have always used the four-term form; only the panel disagreed, so
                 // this is the panel being brought into line rather than a new rule. If they ever
                 // diverge again the harness is the one that is right.
+                //
+                // ⚠️ `reconciledMass` is subtracted, and it is shown on its own line whenever it is
+                // non-zero. A write-off that did not appear anywhere would be the panel lying by a
+                // measured amount, which is precisely the failure the write-off exists to end.
                 val drift = s.inTransitMass + s.ventedMass + s.builtMass -
-                    s.extractedMass - s.baselineCargoMass
+                    s.extractedMass - s.baselineCargoMass - s.reconciledMass
+                if (s.reconciledMass != 0L) {
+                    keyValue("Written off", mass(s.reconciledMass), 0x9A9A9AFFL, 0xC8A44AFFL)
+                }
                 row(
                     if (drift == 0L) "balanced" else "LEAK ${mass(drift)}",
                     if (drift == 0L) 0x6ED09AFFL else 0xE05A4AFFL,
