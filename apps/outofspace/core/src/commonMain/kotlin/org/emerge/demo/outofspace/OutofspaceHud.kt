@@ -57,14 +57,14 @@ import org.emerge.demo.outofspace.world.Stockpile
  */
 private const val STOCKPILE_LINES = 6
 
-/**
- * How many materials the picker offers before it stops counting.
- *
- * Shorter than [STOCKPILE_LINES] because this list sits inside the build menu, under a brush list
- * that is already a dozen rows — and because a player picking a material is choosing between the
- * two or three they have a useful quantity of, not browsing an inventory.
+/*
+ * ⛔ **`MATERIAL_LINES = 4` stood here and its removal is the point of the picker moving.** It capped
+ * the list because it sat inside a panel that auto-sizes to its content, under a brush list already
+ * a dozen rows long. The justification was that a player chooses between the two or three materials
+ * they have a useful quantity of — which is the *stockpile* panel's argument and wrong here: the
+ * things a player has least of are exactly the ones they are choosing deliberately, and those were
+ * the entries the cap hid. The list scrolls now and shows everything.
  */
-private const val MATERIAL_LINES = 4
 
 /** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
@@ -322,54 +322,14 @@ class OutofspaceHud {
                     // building rather than about one click, so it survives changing brush, changing
                     // facing, and switching between clicking and dragging.
                     gap()
-                    val offer = stock.buildableSpecies
+                    // ⛔ **The picker itself is a column of its own now** — see [materialColumn].
+                    // What stays here is the one thing the build panel has to say: which substance
+                    // the next click will use. The list outgrew a panel that auto-sizes to its
+                    // content the moment the answer stopped being four entries long, and a build
+                    // menu that pushes the tool buttons off the bottom of the screen is worse than
+                    // one that names its material and points sideways.
                     val chosen = controller.buildMaterial
-                    // ⛔ **There is no "default" entry any more, because there is no default.** It
-                    // used to be the top of this list and the state a new game started in; nothing
-                    // is normally made of anything now, so an unchosen material is not a neutral
-                    // setting, it is the reason nothing can be placed.
-                    title("MATERIAL  ·  ${chosen?.name ?: "NONE PICKED"}")
-                    for (species in offer.take(MATERIAL_LINES)) {
-                        val selected = species == chosen
-                        button(
-                            "${if (selected) ">" else " "} ${species.name}  ${mass(stock.buildable(species))}",
-                            if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
-                        ) { controller.buildMaterial = species }
-                    }
-                    val rest = offer.size - MATERIAL_LINES
-                    if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
-                    // ⚠️ **A section of its own, below the hold, and not merged into it.** The
-                    // creative allowance is not stock — see [Stockpile.CREATIVE_MATERIALS] — and
-                    // appending it to the list above would both lie about where it comes from and
-                    // push it off the end behind "and N more" the moment the ship carried five
-                    // things. Same reasoning the stockpile panel keeps loose and fabric apart.
-                    if (s.creative) {
-                        val free = Stockpile.CREATIVE_MATERIALS.filter { it !in offer }
-                        if (free.isNotEmpty()) {
-                            row("creative · always available", 0x7A8A9AFFL)
-                            for (species in free) {
-                                val selected = species == chosen
-                                button(
-                                    "${if (selected) ">" else " "} ${species.name}",
-                                    if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
-                                ) { controller.buildMaterial = species }
-                            }
-                        }
-                    }
-                    // ⛔ **Nothing to build from is a real state now**, and the one thing a player
-                    // must not have to deduce from a tool that silently does nothing.
-                    if (chosen == null) {
-                        row(
-                            if (offer.isEmpty()) "nothing loose aboard · mine first" else "pick a material to build",
-                            0xE05A4AFFL,
-                        )
-                    } else if (stock.buildable(chosen) <= 0L && !(s.creative && chosen in Stockpile.CREATIVE_MATERIALS)) {
-                        // ⚠️ **The choice outlives its stock.** Picking a material and then running
-                        // out leaves the selection standing, because it is an intent — but a site
-                        // laid under it will sit unfed, and that is worth saying where the decision
-                        // is made rather than leaving the player to work it out from a stalled belt.
-                        row("none loose · sites will wait", 0xE05A4AFFL)
-                    }
+                    title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
                 } else if (controller.tool == Tool.Delete) {
                     title("DELETE  ·  ${controller.deleteLayer.label}")
                     actionRow(
@@ -419,6 +379,11 @@ class OutofspaceHud {
                 row("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
+
+            // ⚠️ **Immediately after the build panel and before anything else**, because it is
+            // positioned off [lastPanelRect] and that is only the build panel until the next panel
+            // is emitted. Same arrangement the wiki has with the inspector, for the same reason.
+            if (controller.tool == Tool.Build) materialColumn(controller, stock, s.creative)
 
             inspectPanel(controller)
             wikiPanel(controller)
@@ -876,6 +841,155 @@ class OutofspaceHud {
     }
 
     /** One species, drawn as the thing you click to read about it. */
+    /**
+     * **What you are building out of** — the properties that decide it, and every choice available.
+     *
+     * ⛔ **A column of its own rather than a section of the build menu**, and the list had to move
+     * for the reason the wiki's body did: a panel auto-sizes to its content, and the number of
+     * things a ship can be built from is set by what the player has mined rather than by anything
+     * this file knows. It was capped at four entries with "and N more" underneath — which is to say
+     * the materials a player had least of were the ones they could pick, and the rest were
+     * unreachable. Here the list scrolls and the cap is gone.
+     *
+     * ⚠️ **Two rectangles and not one**, which is the same lesson the wiki head taught: with the
+     * properties inside the scroll area, reading down a long list scrolled away the numbers you were
+     * reading the list *against*. What is pinned is what stays true however far down you are — what
+     * you have currently chosen, what it is like, and the way to read more about it.
+     *
+     * ⚠️ **Positioned off [lastPanelRect]**, which is the build panel as it actually came out this
+     * frame. A hand-written offset would be the height of a menu whose length depends on the tool,
+     * the mode and whether the ship can be saved, copied into a second place and wrong immediately.
+     */
+    private fun UiBuilder.materialColumn(
+        controller: OutofspaceController,
+        stock: Stockpile,
+        creative: Boolean,
+    ) {
+        val build = lastPanelRect ?: return
+        val margin = 12f * density
+        val width = MATERIAL_COLUMN_WIDTH_DP * density
+        val x = build.x + build.w + margin
+        // Off the top of the build panel, not off the bottom of the screen: the two are one control
+        // read together, so they share a top edge whatever the menu's length happens to be.
+        //
+        // ⛔ **Clamped into the window, because the build panel is not.** It is bottom-anchored and
+        // auto-sized, so on a short window its top edge is *negative* — and sharing that edge put the
+        // pinned properties and the way into the wiki above the top of the screen, which is the one
+        // thing this column is arranged in two rectangles to prevent. Seen at 440px.
+        val top = maxOf(build.y, margin)
+        val bottom = maxOf(build.y + build.h, top)
+        val rowH = 20f
+        val chosen = controller.buildMaterial
+
+        // ── Pinned: what is chosen, and what it is like ───────────────────────────────────────
+        val infoRows = if (chosen == null) 3 else 7
+        val infoHeight = infoRows * rowH * density + 16f * density
+        scrollArea("material-head", x, top, width, infoHeight, rowHeight = rowH, background = 0x000000C0L) {
+            title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
+            if (chosen == null) {
+                row("pick one below", 0xE05A4AFFL)
+                row("nothing places until you do", 0x9A9A9AFFL)
+            } else {
+                materialFacts(chosen)
+                // ⚠️ **The way into the article, and it is a button rather than the name being
+                // clickable** — the name is up in the title where a click would compete with
+                // nothing, but a player who has just chosen a material is not looking at the title,
+                // they are looking at the numbers. The button sits under them.
+                button("READ ABOUT ${chosen.name.uppercase()}", 0x2E5A6BFFL) { controller.openWiki(chosen) }
+            }
+        }
+
+        // ── The list, as long as the hold makes it ────────────────────────────────────────────
+        val listTop = top + infoHeight + margin
+        val height = bottom - listTop
+        // Nothing left to show it in — a short window, or a build menu that has eaten the screen.
+        // Better no list than a scroll area of negative height, which draws as a sliver of nothing.
+        if (height < MIN_REFERENCE_HEIGHT_DP * density) return
+        val offer = stock.buildableSpecies
+        scrollArea("material-list", x, listTop, width, height, rowHeight = rowH, background = 0x000000C0L) {
+            title("LOOSE ABOARD")
+            if (offer.isEmpty()) row("nothing the network can deliver", 0xC8A44AFFL)
+            for (species in offer) materialChoice(controller, species, mass(stock.buildable(species)))
+            // ⚠️ A section of its own, below the hold and never merged into it — the allowance is a
+            // property of the mode rather than something aboard. See [Stockpile.CREATIVE_MATERIALS].
+            if (creative) {
+                val free = Stockpile.CREATIVE_MATERIALS.filter { it !in offer }
+                if (free.isNotEmpty()) {
+                    gap()
+                    title("CREATIVE")
+                    row("always available", 0x7A7A7AFFL)
+                    for (species in free) materialChoice(controller, species, "")
+                }
+            }
+        }
+    }
+
+    /**
+     * One material a player may choose, and how much of it there is.
+     *
+     * ⚠️ **The whole row selects; there is no separate "info" affordance.** The properties panel
+     * above already follows the selection, so choosing a material *is* how you read about it, and a
+     * second click target per row would be two ways to do one thing on a list that can be a hundred
+     * entries long.
+     */
+    private fun PanelBuilder.materialChoice(
+        controller: OutofspaceController,
+        species: Species,
+        held: String,
+    ) {
+        val selected = species == controller.buildMaterial
+        button(
+            "${if (selected) ">" else " "} ${species.name}${if (held.isEmpty()) "" else "  $held"}",
+            if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
+        ) { controller.buildMaterial = species }
+    }
+
+    /**
+     * The numbers that decide what to build a thing out of.
+     *
+     * ⛔ **Four properties, and each of them is a reason to choose differently.** Density is what a
+     * hull *weighs*, and rock is 0.42x steel, so a stone ship accelerates better. Melting point is
+     * what survives a furnace next door — a structure past it is told to come apart. Conductivity
+     * decides whether a run of track is a heat leak between two rooms or an insulator. Specific heat
+     * is how much a wall buffers before it changes temperature at all.
+     *
+     * ⚠️ **Stated in real units and not in game ones**, deliberately: every one of these is a number
+     * a player can look up, and printing millidegrees or Budget units would make a table anyone can
+     * check into a table only this codebase can. Strength lands here when it exists.
+     */
+    private fun PanelBuilder.materialFacts(species: Species) {
+        keyValue("DENSITY", "${species.solidKgPerCubicMetre} kg/m3", 0x9A9A9AFFL, 0x9AA4B4FFL)
+        keyValue("MELTS AT", "${species.meltingKelvin} K", 0x9A9A9AFFL, meltingColor(species))
+        keyValue("CONDUCTS", wattsPerMetreKelvin(species), 0x9A9A9AFFL, 0x9AA4B4FFL)
+        keyValue("HOLDS HEAT", "${species.specificHeat} J/kg/K", 0x9A9A9AFFL, 0x9AA4B4FFL)
+    }
+
+    /**
+     * A melting point read as a warning where it is one.
+     *
+     * ⚠️ **Against water's boiling point and the ambient, not against a tuned threshold.** Anything
+     * that gives up below the temperature of boiling water is a material a fire in the next room
+     * will destroy, and that is worth colouring; the rest is a number.
+     */
+    private fun meltingColor(species: Species): Long = when {
+        species.meltingKelvin < 373 -> 0xE05A4AFFL
+        species.meltingKelvin < 1_000 -> 0xE0A93AFFL
+        else -> 0x9AA4B4FFL
+    }
+
+    /**
+     * Milliwatts per metre per kelvin, printed as watts with one decimal.
+     *
+     * ⚠️ **One decimal because the insulators are the interesting end.** Firebrick is 2.5 W/m/K and
+     * forsterite 5.0; rounded to whole watts they and every ice and salt in the table would read as
+     * the same number, which is exactly the distinction the column exists to show. See
+     * [Species.milliWattsPerMetreKelvin], which is stated in milliwatts for the same reason.
+     */
+    private fun wattsPerMetreKelvin(species: Species): String {
+        val milli = species.milliWattsPerMetreKelvin
+        return "${milli / 1_000}.${(milli % 1_000) / 100} W/m/K"
+    }
+
     private fun PanelBuilder.speciesRow(controller: OutofspaceController, label: String, species: Species) =
         button(label, 0x1E2634FFL) { controller.openWiki(species) }
 
@@ -927,7 +1041,11 @@ class OutofspaceHud {
             )
             keyValue("KIND", if (species.isElement) "ELEMENT" else "COMPOUND", 0x9A9A9AFFL, speciesColor(species))
             keyValue("MOLAR MASS", "${species.molarMass} g/mol", 0x9A9A9AFFL, 0x9AA4B4FFL)
-            keyValue("DENSITY", "${species.solidKgPerCubicMetre} kg/m3", 0x9A9A9AFFL, 0x9AA4B4FFL)
+            // ⚠️ **The same four the picker shows, and they have to be here too.** The picker's
+            // panel is the short form and this is the long one, so a player who clicks "read about
+            // this" and finds fewer numbers than they came from has been sent the wrong way. Stated
+            // once, in [materialFacts], so the two can never disagree.
+            materialFacts(species)
             // Said only where it is true. "Solid only" on a hundred and forty-five rocks is a line
             // that teaches nobody anything; "can be a gas" on the twenty that can is the fact.
             if (species.fluid != null) row("can be a gas", 0x9AC0E0FFL)
@@ -1351,6 +1469,15 @@ class OutofspaceHud {
         const val NAV_FULL_SCALE_SPEED: Float = 2f
 
         /** The narrowest the reference is allowed to be, in dp — the widest reaction row, three chips. */
+        /**
+         * How wide the material column is.
+         *
+         * Narrower than [MIN_REFERENCE_WIDTH_DP] because nothing in it is a sentence: the widest
+         * row is a species name and a mass, and a column sized for prose would take a quarter of the
+         * screen to show a list of single words.
+         */
+        const val MATERIAL_COLUMN_WIDTH_DP: Float = 300f
+
         const val MIN_REFERENCE_WIDTH_DP: Float = 460f
 
         /** Below this much room under the head, in dp, the article's body is not drawn at all. */
