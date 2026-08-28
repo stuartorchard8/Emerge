@@ -448,6 +448,11 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             conductedRadiated = result.radiated
             conductedToAir = result.toAir
             w.applyBodyHeat(bodies, result.energy)
+            // Inside the heat block and after the conduction is applied, so it reads the
+            // temperatures this tick actually produced rather than last tick's. No new period and
+            // no new offset: the stagger is delicate and this question has no schedule of its own —
+            // it is a thing to ask whenever a temperature has just moved.
+            w.meltStructures()
         }
         if (_h0) profiler.recordPhase("heat", _h!!.elapsedNow().inWholeNanoseconds)
 
@@ -1692,6 +1697,60 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Books energy inserted by the player via debug features. */
         fun built(energy: Long) { insertedEnergy += energy }
+
+        /**
+         * **Anything hotter than what it is made of can survive is told to come apart.**
+         *
+         * ⛔ **A structure is not a thing the sim may quietly delete**, so melting is expressed as
+         * the order a player would have given: mark it. Everything after that is machinery that
+         * already works — a marked machine grows an output port, hands its casing back to the
+         * network, and ceases to be once it is holding nothing; a volatile among what it hands back
+         * is off-gassed by the ambient pass the moment it reaches a belt. Nothing about a melting
+         * ice hull needed writing except the sentence that notices.
+         *
+         * ⚠️ **[Species.meltingKelvin] means "stops being a solid" and not "melts"** — graphite and
+         * cinnabar sublime, calcite decomposes, gypsum dehydrates. All of those are equally good
+         * reasons for a wall to stop being a wall, which is why one number covers them.
+         *
+         * ⚠️ **[StuffLayer.dominantAt] and not `pureSpeciesAt`.** A legacy blend still has to be able
+         * to fail, and what a mixed tile is *made of* is its largest constituent. Strictly the
+         * lowest-melting component should go first and take the rest with it; that is a refinement
+         * worth having only once a mixed structure is something a player can still make, and after
+         * `purifyFabric` it is not.
+         *
+         * ⛔ **The exploit is known and accepted** (Stu's call): a marked machine whose buffers have
+         * nowhere to empty never finishes coming apart, so a cut-off ice furnace stands hot for ever.
+         * It is a deadlock in the deconstruction path rather than a hole in this rule, and it is the
+         * same one an ordinary marked machine with no route already has.
+         */
+        fun meltStructures() {
+            // ⚠️ **Walked over the occupied tiles and resolved to an anchor through [originOf]**,
+            // rather than over the machines asking each for `tiles(grid)`. That call allocates an
+            // array per machine, and this runs every heat tick over every machine aboard — it put
+            // the test suite from under two minutes to over three on its own. Any tile of a
+            // footprint being past it condemns the machine, so the two forms agree: a furnace whose
+            // near wall has gone is not a furnace, and the casing is one object.
+            deck.stuff.forEachOccupiedTile { part ->
+                val species = deck.stuff.dominantAt(part)
+                if (species != null && deck.stuff.kelvinAt(part) >= species.meltingKelvin) {
+                    val anchor = originOf[part]
+                    if (anchor != TileIndex.NONE) scrapping.add(anchor)
+                }
+            }
+            for (conduit in Conduit.entries) {
+                val line = layer(conduit)
+                val stuff = tracks[conduit]
+                for (index in line.indices) {
+                    val segment = line[index] ?: continue
+                    if (segment.deconstructing) continue
+                    val tile = TileIndex(index)
+                    val species = stuff.dominantAt(tile) ?: continue
+                    if (stuff.kelvinAt(tile) >= species.meltingKelvin) {
+                        line[index] = segment.copy(deconstructing = true)
+                    }
+                }
+            }
+        }
 
         /** Books energy removed by scrapping debug-placed things. */
         fun scrapped(energy: Long) { insertedEnergy -= energy }
