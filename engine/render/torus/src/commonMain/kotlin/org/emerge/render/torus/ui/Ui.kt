@@ -1490,11 +1490,18 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     class TextSpan(val key: String, val from: Int, val to: Int)
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
-    fun button(label: String, color: Long, dropTargetId: String? = null, enabled: Boolean = true, onClick: () -> Unit) =
-        items.add(ButtonItem(label, color, rowHeight, dropTargetId, enabled, onClick))
+    /**
+     * A button. [widthEm] pins its width to that many multiples of the text height instead of letting it
+     * size to its label — what a *deliberately narrow* control in a [row] needs, so that the items
+     * sharing the row with it don't lose room every time its text grows a character.
+     */
+    fun button(
+        label: String, color: Long, dropTargetId: String? = null, enabled: Boolean = true,
+        widthEm: Float = 0f, onClick: () -> Unit,
+    ) = items.add(ButtonItem(label, color, rowHeight, dropTargetId, enabled, widthEm, onClick))
 
     /** Place a prepared [ActionButton] — the same button, described as data rather than as arguments. */
-    fun button(b: ActionButton) = items.add(ButtonItem(b.label, b.color, rowHeight, null, b.enabled, b.onClick))
+    fun button(b: ActionButton) = items.add(ButtonItem(b.label, b.color, rowHeight, null, b.enabled, 0f, b.onClick))
 
     /** A button whose label is coloured **per segment**: each pair is (text, colour-or-null); a null
      *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
@@ -1574,20 +1581,28 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      * computes its children (`actionRow(buttons)`) legitimately produces none, and a row of nothing
      * has no height to report.
      */
-    fun row(block: PanelBuilder.() -> Unit) {
+    fun row(gapPx: Float? = null, block: PanelBuilder.() -> Unit) {
         val nested = PanelBuilder(rowHeight, scale)
         nested.block()
         if (nested.items.isEmpty()) return
-        items.add(RowItem(nested.items, nested.items.maxOf { it.height }))
+        items.add(RowItem(nested.items, nested.items.maxOf { it.height }, gapPx?.let { it * scale }))
     }
 
-    /** Blank, flexible width: measures **zero**, so it never widens the panel, then absorbs whatever
-     *  slack the panel turned out to have. Two of them centre what's between; one pushes the rest right. */
-    fun spacer() = items.add(SpacerItem())
+    /**
+     * Blank, flexible width: measures [minEm] characters — **zero** by default, so it never widens the
+     * panel — then absorbs whatever slack the panel turned out to have. Two of them centre what's
+     * between; one pushes the rest right.
+     *
+     * [minEm] is the *guaranteed* separation, in multiples of the text height: a label and the control
+     * it names must not touch when the panel happens to size itself exactly to that row, and only the
+     * gap itself knows how much room that needs.
+     */
+    fun spacer(minEm: Float = 0f) = items.add(SpacerItem(minEm))
 
-    private class SpacerItem : Item {
+    private class SpacerItem(val minEm: Float) : Item {
         override val height = 0f          // never inflates the row's height
-        override fun measureWidth(textH: Float) = 0f
+        override val weight = 1f          // a spacer is simply the emptiest weighted item there is
+        override fun measureWidth(textH: Float) = minEm * textH
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) = Unit
     }
 
@@ -1596,8 +1611,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      * the value and *opens* the editor for it (`apps/cyto/UI_REDESIGN.md` §3). An empty [label] makes it
      * full-width (`[ DIVIDE (MITOSIS) v ]`); otherwise it's `LABEL        [ value v ]`.
      */
-    fun chip(label: String, value: String, color: Long = 0x2A3550FFL, onTap: () -> Unit) =
-        items.add(ChipItem(label, value, color, rowHeight, onTap))
+    fun chip(label: String, value: String, color: Long = 0x2A3550FFL, weight: Float = 0f, onTap: () -> Unit) =
+        items.add(ChipItem(label, value, color, rowHeight, weight, onTap))
 
     /**
      * A **segmented control** — 2–3 exclusive options, chosen inline with no drill-down (`> / <`,
@@ -1605,7 +1620,18 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      * longer labels ("DAUGHTER"), which the design mock caught.
      */
     fun segmented(label: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) =
-        items.add(SegmentedItem(label, options, selected, onSelect, rowHeight))
+        // 2px rather than the row's usual half-character: segments touching is what makes a set of
+        // them read as one control instead of as loose buttons.
+        row(gapPx = 2f) {
+            if (label.isNotEmpty()) row(label, 0x9A9A9AFFL)
+            spacer(minEm = 1f)
+            for ((i, opt) in options.withIndex()) segment(opt, options, i == selected) { onSelect(i) }
+        }
+
+    /** One segment of a [segmented] set. It carries the whole [set] because its width is a property of
+     *  the *set*, not of its own text — every segment is as wide as the longest option. */
+    private fun segment(opt: String, set: List<String>, on: Boolean, onSelect: () -> Unit) =
+        items.add(SegmentItem(opt, set, on, rowHeight, onSelect))
 
     /**
      * A **list row** — full-width, for a picker sheet: a title plus an optional one-line description, so
@@ -1622,7 +1648,13 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      * operands split the rest. Each chip taps into its own picker.
      */
     fun clauseRow(lhs: String, cmp: String, rhs: String, onLhs: () -> Unit, onCmp: () -> Unit, onRhs: () -> Unit) =
-        items.add(ClauseRowItem(lhs, cmp, rhs, onLhs, onCmp, onRhs, rowHeight))
+        row {
+            // Weight 1 apiece: the operands stay equal and the comparator stays put, however long the
+            // chosen species' name happens to be.
+            chip("", lhs, 0x2A3550FFL, weight = 1f, onTap = onLhs)
+            button(cmp, 0x35507AFFL, widthEm = 3f, onClick = onCmp)
+            chip("", rhs, 0x2A3550FFL, weight = 1f, onTap = onRhs)
+        }
 
     /** A **grab handle** — a centred pill that resizes its container by dragging: [onDrag] gets the vertical
      *  pixel delta per move, [onRelease] fires once the gesture ends (snap to a detent there), and a mere tap
@@ -1639,6 +1671,18 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     internal interface Item {
         val height: Float
+
+        /**
+         * How much of a [row]'s **leftover** width this item claims, `0` meaning "just my natural width".
+         *
+         * ⚠️ A weight *replaces* the natural width rather than adding to it: two weight-1 chips come out
+         * the same size whatever their text, which is the whole point of [clauseRow] — an operand that
+         * resized as you picked a longer species would slide the comparator out from under your finger.
+         * The natural width still counts toward [measureWidth], so a panel is never sized smaller than
+         * the words it has to show.
+         */
+        val weight: Float get() = 0f
+
         fun measureWidth(textH: Float): Float
         fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float)
     }
@@ -1679,9 +1723,10 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     private class ButtonItem(
         val label: String, val color: Long, override val height: Float, val dropTargetId: String?,
-        val enabled: Boolean, val onClick: () -> Unit,
+        val enabled: Boolean, val widthEm: Float, val onClick: () -> Unit,
     ) : Item {
-        override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
+        override fun measureWidth(textH: Float) =
+            if (widthEm > 0f) widthEm * textH else UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
             // A drop target (drag-and-drop): register the button's rect and, when the drag pointer is over it,
@@ -1982,24 +2027,49 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         }
     }
 
-    private class RowItem(val items: List<Item>, override val height: Float) : Item {
-        private val spacers = items.count { it is SpacerItem }
-        // A spacer claims no inter-item gap either, so `[A, spacer, B]` measures exactly `[A, B]`.
-        private val gaps = (items.size - spacers - 1).coerceAtLeast(0)
+    private class RowItem(val items: List<Item>, override val height: Float, val gapPx: Float?) : Item {
+        // A gap goes *between two adjacent visible items*. A spacer already separates what it sits
+        // between, so it neither claims a gap nor earns one on either side — `[A, spacer, B]` is spaced
+        // by the spacer alone, which is the only thing that knows how wide that separation must be.
+        private val gaps = (1 until items.size).count { items[it] !is SpacerItem && items[it - 1] !is SpacerItem }
+        private val totalWeight = items.fold(0f) { a, i -> a + i.weight }
 
-        override fun measureWidth(textH: Float) =
-            items.sumOf { it.measureWidth(textH).toDouble() }.toFloat() + gaps * textH * 0.5f
+        private fun gap(textH: Float) = gapPx ?: textH * 0.5f
+
+        /**
+         * Natural width — what the panel sizes itself to.
+         *
+         * ⚠️ The weighted items are **not** summed. A weight-`w` item ends up with `leftover · w / W`, so
+         * for *every* weighted item to still fit its own text the leftover must be at least
+         * `max(natural · W / w)` — for two equal operands, twice the longer one, not the two added
+         * together. Summing them under-reserves, and the shortfall comes out of the widest child: the
+         * long operand's dropdown arrow ends up sitting on top of its own text.
+         */
+        override fun measureWidth(textH: Float): Float {
+            var fixed = gaps * gap(textH)
+            var weighted = 0f
+            for (i in items) {
+                if (i.weight == 0f) fixed += i.measureWidth(textH)
+                else weighted = maxOf(weighted, i.measureWidth(textH) * totalWeight / i.weight)
+            }
+            return fixed + weighted
+        }
 
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
-            // Slack is what the panel gave us over our natural width — never negative: a row clipped by
-            // the screen has nothing to hand out.
-            val each = if (spacers == 0) 0f else (contentW - measureWidth(textH)).coerceAtLeast(0f) / spacers
+            // Never negative: a row clipped by the screen has no leftover to hand out.
+            val fixedW = items.fold(gaps * gap(textH)) { a, i -> if (i.weight == 0f) a + i.measureWidth(textH) else a }
+            val leftover = (contentW - fixedW).coerceAtLeast(0f)
             var bx = x
             var placed = false
             for (b in items) {
-                if (b is SpacerItem) { bx += each; continue }
-                if (placed) bx += textH * 0.5f      // gap *before* each subsequent item, so none trails
-                val w = b.measureWidth(textH)
+                // ⚠️ Exactly the share — never `maxOf` this against the natural width. A weighted item
+                // that could claim its own text back is not weighted at all: the long operand would keep
+                // its length, the short one would take what remained, and the two would come out uneven,
+                // which is the single thing [clauseRow] exists to prevent. A minimum belongs in
+                // [measureWidth] (where it sizes the panel), not here.
+                val w = if (b.weight == 0f) b.measureWidth(textH) else leftover * b.weight / totalWeight
+                if (b is SpacerItem) { bx += w; placed = false; continue }   // the spacer *is* the gap
+                if (placed) bx += gap(textH)      // gap *before* each subsequent item, so none trails
                 b.emit(ui, bx, topY, w, textH)
                 bx += w
                 placed = true
@@ -2025,7 +2095,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     /** See [chip]. */
     private class ChipItem(
-        val label: String, val value: String, val color: Long, override val height: Float, val onTap: () -> Unit,
+        val label: String, val value: String, val color: Long, override val height: Float,
+        override val weight: Float, val onTap: () -> Unit,
     ) : Item {
         private fun chipW(textH: Float) = UiTextRenderer.measureWidthPx(value, textH) + textH * 3f  // padding + arrow
         override fun measureWidth(textH: Float): Float =
@@ -2088,27 +2159,16 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     }
 
     /** See [segmented]. */
-    private class SegmentedItem(
-        val label: String, val options: List<String>, val selected: Int,
-        val onSelect: (Int) -> Unit, override val height: Float,
+    private class SegmentItem(
+        val opt: String, val set: List<String>, val on: Boolean, override val height: Float,
+        val onSelect: () -> Unit,
     ) : Item {
-        private fun segW(textH: Float) =
-            (options.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 1.2f
         override fun measureWidth(textH: Float) =
-            (if (label.isEmpty()) 0f else UiTextRenderer.measureWidthPx(label, textH) + textH) + segW(textH) * options.size
-
+            (set.maxOfOrNull { UiTextRenderer.measureWidthPx(it, textH) } ?: 0f) + textH * 1.2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
-            val ty = topY + (height - textH) * 0.5f
-            if (label.isNotEmpty()) ui.emitTextLeft(label, x, ty, textH, 0x9A9A9AFFL)
-            val sw = segW(textH)
-            var sx = x + contentW - sw * options.size
-            for ((i, opt) in options.withIndex()) {
-                val on = i == selected
-                ui.emitRect(sx, topY + 1f, sw - 2f, height - 2f, if (on) 0x3A6EA5FFL else 0x252C3AFFL)
-                ui.emitTextCentered(opt, sx + (sw - 2f) * 0.5f, ty, textH, if (on) 0xFFFFFFFFL else 0x9A9A9AFFL)
-                ui.emitClick(sx, topY + 1f, sw - 2f, height - 2f, label = opt) { onSelect(i) }
-                sx += sw
-            }
+            ui.emitRect(x, topY + 1f, contentW, height - 2f, if (on) 0x3A6EA5FFL else 0x252C3AFFL)
+            ui.emitTextCentered(opt, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, if (on) 0xFFFFFFFFL else 0x9A9A9AFFL)
+            ui.emitClick(x, topY + 1f, contentW, height - 2f, label = opt, onClick = onSelect)
         }
     }
 
@@ -2132,35 +2192,6 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
                 ui.emitTextLeft(description, x + textH * 0.5f, topY + height * 0.55f, textH * DESC_RATIO, 0x9A9A9AFFL)
             }
             ui.emitClick(x, topY + 1f, contentW, height - 2f, label = title, onClick = onClick)
-        }
-    }
-
-    /** See [clauseRow]. */
-    private class ClauseRowItem(
-        val lhs: String, val cmp: String, val rhs: String,
-        val onLhs: () -> Unit, val onCmp: () -> Unit, val onRhs: () -> Unit, override val height: Float,
-    ) : Item {
-        override fun measureWidth(textH: Float): Float {
-            val side = maxOf(UiTextRenderer.measureWidthPx(lhs, textH), UiTextRenderer.measureWidthPx(rhs, textH)) + textH * 3f
-            return side * 2f + UiTextRenderer.measureWidthPx(cmp, textH) + textH * 2f
-        }
-        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
-            val ty = topY + (height - textH) * 0.5f
-            val gap = textH * 0.5f
-            val cmpW = textH * 3f
-            val sideW = (contentW - cmpW - gap * 2f) * 0.5f
-            fun opChip(cx: Float, value: String, onTap: () -> Unit) {
-                ui.emitRect(cx, topY + 1f, sideW, height - 2f, 0x2A3550FFL)
-                ui.emitTextCentered(value, cx + sideW * 0.5f, ty, textH, 0xFFFFFFFFL)
-                ui.emitTextLeft("V", cx + sideW - textH * 0.9f, ty, textH, 0xAACCFFFFL)
-                ui.emitClick(cx, topY + 1f, sideW, height - 2f, label = value, onClick = onTap)
-            }
-            opChip(x, lhs, onLhs)
-            val mx = x + sideW + gap
-            ui.emitRect(mx, topY + 1f, cmpW, height - 2f, 0x35507AFFL)
-            ui.emitTextCentered(cmp, mx + cmpW * 0.5f, ty, textH, 0xFFFFFFFFL)
-            ui.emitClick(mx, topY + 1f, cmpW, height - 2f, label = "cmp", onClick = onCmp)
-            opChip(mx + cmpW + gap, rhs, onRhs)
         }
     }
 
