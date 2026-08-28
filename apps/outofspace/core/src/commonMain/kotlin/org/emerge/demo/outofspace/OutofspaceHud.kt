@@ -48,20 +48,6 @@ import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
 
 /**
- * A full-screen picker spawned from the bar under the nav map — see `OutofspaceHud.bottomBar`.
- *
- * ⛔ **One at a time, and that is the point of an enum rather than a set of flags.** A sheet dims the
- * world behind it, so two open at once is two scrims and a player who cannot tell which of them a
- * click will reach.
- *
- * ⚠️ **A sheet is modal, so the bar is unreachable while one is up** — the way out is the sheet's own
- * dismiss or the scrim, never the button that opened it. The bar's toggle is therefore an *open* in
- * practice; it is written as a toggle because that is what the gesture means, not because the second
- * half of it can currently be reached.
- */
-enum class Sheet { None, Tool, Brush, Material, View, Menu }
-
-/**
  * How many buildable species the stockpile panel names before it stops counting.
  *
  * A shortlist and not an inventory: the question the panel answers is "what could I build with right
@@ -109,14 +95,14 @@ class OutofspaceHud {
      * with it for every player who never touched it.
      */
     /**
-     * Which full-screen picker is open, if any.
+     * Whether the game menu is showing.
      *
      * ⛔ **View state, so it lives on the HUD and not on the controller.** Nothing in the sim or in a
-     * save has an opinion about whether a menu is showing, and putting it on the controller would
-     * make "the player has the material list open" a fact about the vessel. Same argument the
-     * collapse sets below are held here by.
+     * save has an opinion about whether a menu is open, and putting it on the controller would make
+     * "the player is looking at the save button" a fact about the vessel. Same argument the collapse
+     * sets below are held here by.
      */
-    private var openSheet: Sheet = Sheet.None
+    private var menuOpen = false
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -132,6 +118,8 @@ class OutofspaceHud {
         // for it independently walked the world twice for one number apiece.
         val stock = s.stockpile
         ui.frame {
+            // Drawn first (occludes everything).
+            navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
             panel(Anchor.TopLeft) {
                 title("OUT OF SPACE")
                 // The controller's count, not the state's: `state.tick` counts frozen ticks too and
@@ -275,13 +263,6 @@ class OutofspaceHud {
                 }
             }
 
-            // ⛔ **What is left of the build menu**, and what is left is the rule the rest of it
-            // was drowning: a panel that auto-sizes to its content cannot hold a list whose length
-            // the *player* decides. Twenty-five rows of tools, views, brushes and materials took a
-            // third of the screen and pushed their own bottom rows off it. The lists are sheets now
-            // and the bar names what is chosen — see [bottomBar]. What stays here is the two things
-            // that have to be legible while you are clicking: which mode owns the keyboard, and
-            // what this particular tool does with a click.
             panel(Anchor.BottomLeft) {
                 // Which mode owns the keyboard, and how to change it — said first and loudly,
                 // because a player whose WASD has stopped panning needs the answer immediately.
@@ -309,61 +290,198 @@ class OutofspaceHud {
                         if (held.isEmpty()) 0x9A9A9AFFL else 0x6EE08AFFL,
                     )
                 }
+                // ⚠️ Beside the mode toggle, which is the other control here that is about the
+                // *session* rather than about a tile — and above the tool rows, so it does not move
+                // when the panel below it changes length with the tool.
+                button("MENU  ·  save, load, fit, reset", 0x2A3550FFL) { menuOpen = true }
                 gap()
-                // ⚠️ **The current tool's own instructions, and only the current tool's.** These are
-                // what a click is about to do, so they are the one thing here that must never be a
-                // tap away — a player mid-drag cannot open a sheet to find out that a click alone
-                // joins nothing. Every *choice* went to a sheet; every *consequence* stayed.
-                title("${controller.tool.label}  ·  ${toolSubject(controller)}")
-                for ((text, color) in toolHints(controller)) row(text, color)
+                title("TOOL  ·  ${controller.tool.label}   VIEW  ·  ${controller.overlay.label}")
+                controlRowOfTools(controller)
+                actionRow(
+                    Overlay.entries.map { view ->
+                        Triple(
+                            if (view == controller.overlay) "> ${view.label}" else view.label,
+                            if (view == controller.overlay) 0x8A5A2AFFL else 0x232A38FFL,
+                        ) { controller.overlay = view }
+                    },
+                )
+                gap()
+                if (controller.tool == Tool.Build) {
+                    title("BUILD  ·  ${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}")
+                    for (option in Brush.ALL) {
+                        val selected = option == controller.brush
+                        button(
+                            if (selected) "> ${option.label}" else "  ${option.label}",
+                            if (selected) brushColor(option) or 0xFFL else 0x232A38FFL,
+                        ) { controller.brush = option }
+                    }
+                    gap()
+                    row("click or drag to place", 0x9A9A9AFFL)
+                    // Track: drag to connect (not by touching).
+                    if (controller.brush is Brush.Run) {
+                        row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
+                    }
+                    row("R rotate brush", 0x9A9A9AFFL)
+
+                    // ── What it is to be made of ──────────────────────────────
+                    //
+                    // ⛔ **Offers what the network can deliver, and nothing else.** Every entry here
+                    // is a material a site built from it will actually finish on: `buildable` counts
+                    // tanks, buffers, belts, and anything already marked for deconstruction, which
+                    // is what makes "mark that furnace, then build in titanium" a thing the picker
+                    // can honestly offer. Fabric nobody has ordered taken apart is deliberately
+                    // absent — it would be promising a build that cannot start.
+                    //
+                    // ⚠️ **Sticky, and it says so.** A material is a decision about a batch of
+                    // building rather than about one click, so it survives changing brush, changing
+                    // facing, and switching between clicking and dragging.
+                    gap()
+                    // ⛔ **The picker itself is a column of its own now** — see [materialColumn].
+                    // What stays here is the one thing the build panel has to say: which substance
+                    // the next click will use. The list outgrew a panel that auto-sizes to its
+                    // content the moment the answer stopped being four entries long, and a build
+                    // menu that pushes the tool buttons off the bottom of the screen is worse than
+                    // one that names its material and points sideways.
+                    val chosen = controller.buildMaterial
+                    title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
+                } else if (controller.tool == Tool.Delete) {
+                    title("DELETE  ·  ${controller.deleteLayer.label}")
+                    actionRow(
+                        DeleteLayer.entries.map { layer ->
+                            Triple(
+                                if (layer == controller.deleteLayer) "> ${layer.label}" else layer.label,
+                                if (layer == controller.deleteLayer) 0xA5453AFFL else 0x232A38FFL,
+                            ) { controller.deleteLayer = layer }
+                        },
+                    )
+                    gap()
+                    row("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
+                    row("TOP takes one layer at a time", 0x9A9A9AFFL)
+                } else if (controller.tool == Tool.Cut) {
+                    title("CUT  ·  ${controller.cutConduit.label}")
+                    actionRow(
+                        Tool.CUTTABLE.map { conduit ->
+                            Triple(
+                                if (conduit == controller.cutConduit) "> ${conduit.label}" else conduit.label,
+                                if (conduit == controller.cutConduit) 0xA5453AFFL else 0x232A38FFL,
+                            ) { controller.cutConduit = conduit }
+                        },
+                    )
+                    gap()
+                    row("drag ALONG a run to sever · E cycles conduit", 0x9A9A9AFFL)
+                    row("cuts the joins you draw · other joins stay", 0xE8B84AFFL)
+                } else if (controller.tool == Tool.Inject) {
+                    title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
+                    row("hold over a permeable tile", 0x9A9A9AFFL)
+                    // Named as debug in the same yellow the engine row uses, because it is the same
+                    // kind of lie: it makes matter, and says so in the atmosphere panel.
+                    row("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                } else if (controller.tool == Tool.InjectWater) {
+                    title("WATER  ·  ${Edit.WATER_INJECT_MASS}G / TICK")
+                    row("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
+                    row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  room temperature", 0x9A9A9AFFL)
+                } else {
+                    title("INSPECT  ·  ${controller.inspectLayer.label}")
+                    row("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
+                    row("machine settings live on the DECK layer", 0x9A9A9AFFL)
+                }
+                row("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
+                row("space pause", 0x9A9A9AFFL)
+                // Debug engine row (yellow, named).
+                row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
+                row("F8 fit grid", 0x9A9A9AFFL)
+                if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
-            // ── The bar, and the nav map sitting on it ────────────────────────────────────────
-            //
-            // ⛔ **Both centre on the space they can actually be seen in, not on the screen**, which
-            // is the arrangement `CytoHud.renderBar` describes and it is not cosmetic: the panel
-            // above is as wide as the current tool's longest sentence, and a screen-centred bar ran
-            // its first button underneath that panel where nothing could be read or clicked. The two
-            // must agree on the offset or they read as two instruments on different grids.
-            //
-            // ⚠️ **Measured this frame rather than guessed**, which is why the order here is panel,
-            // then bar, then map: an auto-sized panel's width is not knowable until it is emitted,
-            // and a hand-written figure would be the length of a sentence copied into a second place
-            // and wrong the day it changed. Nothing else claims [Anchor.BottomCenter], so the bar
-            // being late costs it nothing.
-            val menuRight = lastPanelRect?.let { it.x + it.w } ?: 0f
-            bottomBar(controller, s, stock, offsetX = menuRight / 2f / density)
-            val bar = lastPanelRect
-            // Sat on the bar rather than on the bottom of the screen: it is a canvas with
-            // hand-written coordinates, so the anchor stacking that keeps panels apart cannot do
-            // this for it.
-            navView(
-                s,
-                controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 },
-                bottom = bar?.y ?: screenH,
-                centreX = (menuRight + screenW) / 2f,
-            )
+            // ⚠️ **Immediately after the build panel and before anything else**, because it is
+            // positioned off [lastPanelRect] and that is only the build panel until the next panel
+            // is emitted. Same arrangement the wiki has with the inspector, for the same reason.
+            if (controller.tool == Tool.Build) materialColumn(controller, stock, s.creative)
 
             inspectPanel(controller)
             wikiPanel(controller)
 
             /*
-             * ⛔ **SAVE, LOAD, FIT, PAUSE and RESET stood here and are in the MENU sheet now.**
+             * ⛔ **SAVE, LOAD, FIT, PAUSE and RESET stood here, always open, and are a sheet now.**
              *
-             * They were the corner Stu said reads like cyto's bar, which is the reason this whole
-             * change exists — but two bars saying different halves of "the game itself" is one bar
-             * too many, and a red RESET permanently in shot beside the storage readouts is a hazard
-             * rather than a control. Every one of them has a key, and the sheet says which.
+             * They are about the *game* rather than about the vessel — the only controls in the HUD
+             * that are — and a corner permanently holding a red RESET is a hazard sitting beside the
+             * storage readouts rather than a control anybody is reaching for. The button that opens
+             * them lives in the build menu, because that panel is already where "things you do
+             * rather than things you look at" collect. See [menuSheet].
              */
 
-            // ⛔ **Last in the frame.** A sheet is the topmost layer — it dims everything under it
-            // and takes every click inside its box — so anything drawn after it would sit on top of
-            // a scrim that is supposed to be covering the screen.
-            sheets(controller, stock, s)
+            // ⛔ **Last in the frame.** A sheet dims everything under it and takes every click
+            // inside its box, so anything drawn after it would sit on top of a scrim that is
+            // supposed to be covering the screen.
+            if (menuOpen) menuSheet(controller)
         }
         // Clear one-shot status messages after they've been displayed.
         saveStatus = ""
         clipboardStatus = ""
+    }
+
+    /**
+     * The game itself rather than the world: saving it, framing it, stopping it, throwing it away.
+     *
+     * ⛔ **Centred, and over everything.** These were an always-open cluster in the bottom-right
+     * corner, which is the one place in this HUD where a control was competing for space with a
+     * readout — and losing, since the storage panel shares that corner. They are also the rarest
+     * things here: a player saves once in a session and resets once in a while. Rare, deliberate and
+     * dangerous is exactly the shape a modal is for.
+     *
+     * ⚠️ **Every one of them has a key, and the sheet says which**, so the fast path never goes
+     * through here at all.
+     *
+     * Uses the shared [org.emerge.render.torus.ui.UiBuilder.sheet], which is the same primitive
+     * cyto's overlays are built from — a centred popover where there is room for one and a
+     * full-width panel off the bottom edge where there is not.
+     */
+    private fun UiBuilder.menuSheet(controller: OutofspaceController) {
+        val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
+            if (canSave) {
+                if (saveStatus.isNotEmpty()) row(saveStatus, 0x9AA4B4FFL)
+                if (clipboardStatus.isNotEmpty()) row(clipboardStatus, 0x9AA4B4FFL)
+                actionRow(
+                    listOf(
+                        Triple("SAVE  ·  F9", 0x2E5A6BFFL) { onSave() },
+                        Triple("LOAD  ·  F10", 0x2E5A6BFFL) { onLoad() },
+                    ),
+                )
+            }
+            actionRow(
+                listOf(
+                    Triple("FIT  ·  F8", 0x2E5A6BFFL) { onFit(); menuOpen = false },
+                    Triple(if (controller.paused) "PLAY  ·  SPACE" else "PAUSE  ·  SPACE", 0x3A6EA5FFL) {
+                        onTogglePause()
+                    },
+                ),
+            )
+            gap()
+            // Last, alone, and the only red thing in here: it throws the vessel away.
+            button("RESET", 0xCC3333FFL) { onReset(); menuOpen = false }
+        }
+        val dismiss = { menuOpen = false }
+        // ⛔ A centred popover where there is room and a bottom sheet where there is not: a
+        // full-width sheet on a desktop monitor is a metre of empty table with six words on it, and
+        // a centred box on a phone is a postage stamp you cannot hit.
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(SHEET_WIDTH_DP * density, screenW * 0.5f)
+            // ⚠️ **Sized to what is in it**, because a popover does not auto-size the way a panel
+            // does — it is given a box. Left at a round number it was a third of the screen holding
+            // three buttons, which reads as a menu that has lost its contents. Two rows of controls,
+            // a gap and RESET, plus room for the one-shot status line a save leaves behind.
+            val rows = (if (canSave) 2 else 1) + 1
+            val h = minOf(screenH * 0.5f, (SHEET_TITLE_DP + rows * SHEET_ROW_DP + 30f) * density)
+            sheet(
+                "oos-menu", "MENU", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-menu", "MENU", onDismiss = dismiss, heightFraction = 0.4f, rowHeight = 40f, textSize = 15f, body = body)
+        }
     }
 
     /**
@@ -373,19 +491,12 @@ class OutofspaceHud {
      *   whatever the reference is open on, so reading about a mineral is itself the act of going
      *   looking for it — the map answers the question the article raised.
      */
-    private fun org.emerge.render.torus.ui.UiBuilder.navView(
-        s: VesselState,
-        prospecting: Species?,
-        bottom: Float,
-        centreX: Float,
-    ) = canvas {
+    private fun org.emerge.render.torus.ui.UiBuilder.navView(s: VesselState, prospecting: Species?) = canvas {
         RockSpawner.highlight = prospecting
         val size = 190f * density
         val pad = 10f * density
-        val x0 = centreX - size / 2f
-        // ⚠️ Off the bar's top edge and not off the screen's bottom, so the two never overlap
-        // however many chips the bar happens to be showing.
-        val y0 = bottom - size - pad
+        val x0 = (screenW - size) / 2f
+        val y0 = screenH - size - pad
         val cx = x0 + size / 2f
         val cy = y0 + size / 2f
 
@@ -805,337 +916,108 @@ class OutofspaceHud {
     }
 
     /** One species, drawn as the thing you click to read about it. */
-    // ══ The bar, and the sheets it opens ══════════════════════════════════════════════════════
-
     /**
-     * The bar under the nav map: **what is currently chosen, and a way to change it.**
+     * **What you are building out of** — the properties that decide it, and every choice available.
      *
-     * ⛔ **Every button names a value, and that is the difference from cyto's bar.** Cyto's says
-     * BRUSH and LAYERS, which works because a cyto brush is a thing you set once and forget. This is
-     * a placement game: the tool, the shape and the substance all decide what the *next click* does,
-     * so a bar of verbs would make a player open three sheets to find out what they were about to
-     * build. Naming the value keeps the answer on screen while the lists live behind it — which is
-     * the whole trade, and the reason the panel this replaced could be deleted rather than moved.
+     * ⛔ **A column of its own rather than a section of the build menu**, and the list had to move
+     * for the reason the wiki's body did: a panel auto-sizes to its content, and the number of
+     * things a ship can be built from is set by what the player has mined rather than by anything
+     * this file knows. It was capped at four entries with "and N more" underneath — which is to say
+     * the materials a player had least of were the ones they could pick, and the rest were
+     * unreachable. Here the list scrolls and the cap is gone.
      *
-     * ⚠️ **The build chips appear only under the build tool**, for the same reason the sheets do:
-     * a brush and a material decide nothing while you are inspecting, and a bar that shows five
-     * buttons whatever you are doing teaches nobody which of them matter.
+     * ⚠️ **Two rectangles and not one**, which is the same lesson the wiki head taught: with the
+     * properties inside the scroll area, reading down a long list scrolled away the numbers you were
+     * reading the list *against*. What is pinned is what stays true however far down you are — what
+     * you have currently chosen, what it is like, and the way to read more about it.
+     *
+     * ⚠️ **Positioned off [lastPanelRect]**, which is the build panel as it actually came out this
+     * frame. A hand-written offset would be the height of a menu whose length depends on the tool,
+     * the mode and whether the ship can be saved, copied into a second place and wrong immediately.
      */
-    private fun UiBuilder.bottomBar(
+    private fun UiBuilder.materialColumn(
         controller: OutofspaceController,
-        s: VesselState,
         stock: Stockpile,
-        offsetX: Float,
+        creative: Boolean,
     ) {
-        panel(
-            Anchor.BottomCenter,
-            margin = 8f, padding = 6f, background = 0x11182AF2L, rowHeight = 30f, textSize = 13f,
-            offsetX = offsetX,
-        ) {
-            val buttons = buildList<Triple<String, Long, () -> Unit>> {
-                add(Triple("TOOL  ·  ${controller.tool.label}", sheetColor(Sheet.Tool, 0x2E5A6BFFL)) {
-                    toggleSheet(Sheet.Tool)
-                })
-                if (controller.tool == Tool.Build) {
-                    add(Triple("BUILD  ·  ${controller.brush.label}", sheetColor(Sheet.Brush, 0x3A6EA5FFL)) {
-                        toggleSheet(Sheet.Brush)
-                    })
-                    val chosen = controller.buildMaterial
-                    // ⚠️ **Red when nothing is picked**, because that is not a neutral setting — it
-                    // is the reason clicking does nothing at all. See `OutofspaceController.buildMaterial`.
-                    add(
-                        Triple(
-                            "MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE"}",
-                            if (chosen == null) 0xA5453AFFL else sheetColor(Sheet.Material, 0x2E6E5EFFL),
-                        ) { toggleSheet(Sheet.Material) },
-                    )
-                }
-                add(Triple("VIEW  ·  ${controller.overlay.label}", sheetColor(Sheet.View, 0x5A4A8AFFL)) {
-                    toggleSheet(Sheet.View)
-                })
-                add(Triple("MENU", sheetColor(Sheet.Menu, 0x2A3550FFL)) { toggleSheet(Sheet.Menu) })
-            }
-            actionRow(buttons)
-        }
-    }
+        val build = lastPanelRect ?: return
+        val margin = 12f * density
+        val width = MATERIAL_COLUMN_WIDTH_DP * density
+        val x = build.x + build.w + margin
+        // Off the top of the build panel, not off the bottom of the screen: the two are one control
+        // read together, so they share a top edge whatever the menu's length happens to be.
+        //
+        // ⛔ **Clamped into the window, because the build panel is not.** It is bottom-anchored and
+        // auto-sized, so on a short window its top edge is *negative* — and sharing that edge put the
+        // pinned properties and the way into the wiki above the top of the screen, which is the one
+        // thing this column is arranged in two rectangles to prevent. Seen at 440px.
+        val top = maxOf(build.y, margin)
+        val bottom = maxOf(build.y + build.h, top)
+        val rowH = 20f
+        val chosen = controller.buildMaterial
 
-    /** A bar button lit while its own sheet is the one open, so the bar says where you are. */
-    private fun sheetColor(sheet: Sheet, base: Long): Long = if (openSheet == sheet) 0x8A5A2AFFL else base
-
-    private fun toggleSheet(sheet: Sheet) { openSheet = if (openSheet == sheet) Sheet.None else sheet }
-
-    private fun closeSheet() { openSheet = Sheet.None }
-
-    /** Whichever sheet is open, or nothing. */
-    private fun UiBuilder.sheets(controller: OutofspaceController, stock: Stockpile, s: VesselState) {
-        // A sheet whose subject has gone shuts itself: switching tools with BUILD open would
-        // otherwise leave a brush picker floating over a tool that has no brush.
-        if ((openSheet == Sheet.Brush || openSheet == Sheet.Material) && controller.tool != Tool.Build) {
-            closeSheet()
-        }
-        when (openSheet) {
-            Sheet.None -> {}
-            Sheet.Tool -> toolSheet(controller)
-            Sheet.Brush -> brushSheet(controller)
-            Sheet.Material -> materialSheet(controller, stock, s.creative)
-            Sheet.View -> viewSheet(controller)
-            Sheet.Menu -> menuSheet(controller)
-        }
-    }
-
-    /**
-     * The container a sheet lives in, chosen by how much room there is.
-     *
-     * ⛔ **A bottom sheet on a narrow screen and a centred popover on a wide one**, which is cyto's
-     * rule and is not a style choice: a full-width sheet on a desktop monitor is a metre of empty
-     * table with six words on it, and a centred box on a phone is a postage stamp you cannot hit.
-     * The threshold is the width at which a popover stops being narrower than the screen.
-     */
-    private fun UiBuilder.sheetHost(
-        id: String,
-        title: String,
-        heightFraction: Float,
-        body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit,
-    ) {
-        if (screenW > NARROW_MAX_DP * density) {
-            val w = minOf(SHEET_WIDTH_DP * density, screenW * 0.5f)
-            val h = minOf(screenH * 0.85f, screenH * maxOf(heightFraction, 0.35f))
-            sheet(
-                id, title, onDismiss = ::closeSheet,
-                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
-                rowHeight = 24f, textSize = 13f, body = body,
-            )
-        } else {
-            sheet(id, title, onDismiss = ::closeSheet, heightFraction = heightFraction, rowHeight = 40f, textSize = 15f, body = body)
-        }
-    }
-
-    /**
-     * Every tool, and — underneath — whatever the *current* one has to be pointed at.
-     *
-     * ⚠️ **The sub-choice belongs with the tool rather than in a sheet of its own.** Which layer
-     * DELETE takes off and which conduit CUT severs are not separate concepts a player goes looking
-     * for; they are the second half of choosing that tool, and a bar button apiece for them would be
-     * two buttons that are dark five sixths of the time.
-     */
-    private fun UiBuilder.toolSheet(controller: OutofspaceController) {
-        sheetHost("oos-tool", "TOOL", heightFraction = 0.7f) {
-            for (tool in Tool.entries) {
-                listRow(tool.label, toolBlurb(tool), selected = tool == controller.tool) {
-                    controller.tool = tool
-                    closeSheet()
-                }
-            }
-            when (controller.tool) {
-                Tool.Delete -> {
-                    gap()
-                    row("TAKES OFF  ·  E cycles", 0x7A8699FFL)
-                    for (layer in DeleteLayer.entries) {
-                        listRow(layer.label, selected = layer == controller.deleteLayer) {
-                            controller.deleteLayer = layer
-                        }
-                    }
-                }
-                Tool.Cut -> {
-                    gap()
-                    row("SEVERS  ·  E cycles", 0x7A8699FFL)
-                    for (conduit in Tool.CUTTABLE) {
-                        listRow(conduit.label, selected = conduit == controller.cutConduit) {
-                            controller.cutConduit = conduit
-                        }
-                    }
-                }
-                else -> {}
-            }
-        }
-    }
-
-    /** Every shape a click can put down. Rotation stays on `R`: it is a modifier, not a choice. */
-    private fun UiBuilder.brushSheet(controller: OutofspaceController) {
-        sheetHost("oos-brush", "BUILD", heightFraction = 0.8f) {
-            row("facing ${controller.brushFacing.name.uppercase()}  ·  R rotates", 0x7A8699FFL)
-            for (option in Brush.ALL) {
-                listRow(option.label, selected = option == controller.brush) {
-                    controller.brush = option
-                    closeSheet()
-                }
-            }
-        }
-    }
-
-    /**
-     * What you are building out of: the properties that decide it, then every choice available.
-     *
-     * ⛔ **The properties are above the list and inside the same sheet**, which is a change from the
-     * column this replaced, where they had to be a separate rectangle so a long list could not
-     * scroll them away. A sheet has one scroll and the facts are four rows at the top of it, so the
-     * split stopped buying anything — and a header pinned inside a modal that is itself dismissible
-     * would be a second way to lose the thing you are reading.
-     *
-     * ⚠️ **Picking does not close it.** Choosing a material is the one decision here a player makes
-     * by *comparing* — tapping three in turn to read their melting points is the sheet working, not
-     * a player failing to find the exit. The brush sheet closes on pick because a shape needs no
-     * comparison.
-     */
-    private fun UiBuilder.materialSheet(controller: OutofspaceController, stock: Stockpile, creative: Boolean) {
-        sheetHost("oos-material", "MATERIAL", heightFraction = 0.8f) {
-            val chosen = controller.buildMaterial
+        // ── Pinned: what is chosen, and what it is like ───────────────────────────────────────
+        val infoRows = if (chosen == null) 3 else 7
+        val infoHeight = infoRows * rowH * density + 16f * density
+        scrollArea("material-head", x, top, width, infoHeight, rowHeight = rowH, background = 0x000000C0L) {
+            title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
             if (chosen == null) {
-                // ⚠️ Short enough for the narrow form: a row is clipped at the box, and the long
-                // version ran off a 520px phone sheet mid-word.
-                row("nothing picked  ·  nothing places", 0xE05A4AFFL)
+                row("pick one below", 0xE05A4AFFL)
+                row("nothing places until you do", 0x9A9A9AFFL)
             } else {
                 materialFacts(chosen)
-                button("READ ABOUT ${chosen.name.uppercase()}", 0x2E5A6BFFL) {
-                    controller.openWiki(chosen)
-                    closeSheet()
-                }
+                // ⚠️ **The way into the article, and it is a button rather than the name being
+                // clickable** — the name is up in the title where a click would compete with
+                // nothing, but a player who has just chosen a material is not looking at the title,
+                // they are looking at the numbers. The button sits under them.
+                button("READ ABOUT ${chosen.name.uppercase()}", 0x2E5A6BFFL) { controller.openWiki(chosen) }
             }
-            gap()
-            val offer = stock.buildableSpecies
-            row("LOOSE ABOARD", 0x7A8699FFL)
+        }
+
+        // ── The list, as long as the hold makes it ────────────────────────────────────────────
+        val listTop = top + infoHeight + margin
+        val height = bottom - listTop
+        // Nothing left to show it in — a short window, or a build menu that has eaten the screen.
+        // Better no list than a scroll area of negative height, which draws as a sliver of nothing.
+        if (height < MIN_REFERENCE_HEIGHT_DP * density) return
+        val offer = stock.buildableSpecies
+        scrollArea("material-list", x, listTop, width, height, rowHeight = rowH, background = 0x000000C0L) {
+            title("LOOSE ABOARD")
             if (offer.isEmpty()) row("nothing the network can deliver", 0xC8A44AFFL)
-            for (species in offer) {
-                listRow(species.name.uppercase(), mass(stock.buildable(species)), selected = species == chosen) {
-                    controller.buildMaterial = species
-                }
-            }
+            for (species in offer) materialChoice(controller, species, mass(stock.buildable(species)))
             // ⚠️ A section of its own, below the hold and never merged into it — the allowance is a
             // property of the mode rather than something aboard. See [Stockpile.CREATIVE_MATERIALS].
             if (creative) {
                 val free = Stockpile.CREATIVE_MATERIALS.filter { it !in offer }
                 if (free.isNotEmpty()) {
                     gap()
-                    row("CREATIVE  ·  ALWAYS AVAILABLE", 0x7A8699FFL)
-                    for (species in free) {
-                        listRow(species.name.uppercase(), selected = species == chosen) {
-                            controller.buildMaterial = species
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    /** Which field the world is painted by. */
-    private fun UiBuilder.viewSheet(controller: OutofspaceController) {
-        sheetHost("oos-view", "VIEW", heightFraction = 0.55f) {
-            row("H cycles", 0x7A8699FFL)
-            for (view in Overlay.entries) {
-                listRow(view.label, selected = view == controller.overlay) {
-                    controller.overlay = view
-                    closeSheet()
+                    title("CREATIVE")
+                    row("always available", 0x7A7A7AFFL)
+                    for (species in free) materialChoice(controller, species, "")
                 }
             }
         }
     }
 
     /**
-     * The game itself rather than the world: saving it, framing it, stopping it, throwing it away.
+     * One material a player may choose, and how much of it there is.
      *
-     * ⚠️ **The keyboard shortcuts live here too.** They were a block of grey rows at the foot of the
-     * build menu, read once and then scrolled past for ever while taking six rows of a panel that
-     * had none to spare. A player who has forgotten which key fits the grid is already looking for
-     * a menu.
+     * ⚠️ **The whole row selects; there is no separate "info" affordance.** The properties panel
+     * above already follows the selection, so choosing a material *is* how you read about it, and a
+     * second click target per row would be two ways to do one thing on a list that can be a hundred
+     * entries long.
      */
-    private fun UiBuilder.menuSheet(controller: OutofspaceController) {
-        sheetHost("oos-menu", "MENU", heightFraction = 0.7f) {
-            if (canSave) {
-                if (saveStatus.isNotEmpty()) row(saveStatus, 0x9AA4B4FFL)
-                if (clipboardStatus.isNotEmpty()) row(clipboardStatus, 0x9AA4B4FFL)
-                actionRow(
-                    listOf(
-                        Triple("SAVE  ·  F9", 0x2E5A6BFFL) { onSave() },
-                        Triple("LOAD  ·  F10", 0x2E5A6BFFL) { onLoad() },
-                    ),
-                )
-            }
-            actionRow(
-                listOf(
-                    Triple("FIT  ·  F8", 0x2E5A6BFFL) { onFit(); closeSheet() },
-                    Triple(if (controller.paused) "PLAY  ·  SPACE" else "PAUSE  ·  SPACE", 0x3A6EA5FFL) {
-                        onTogglePause()
-                    },
-                ),
-            )
-            gap()
-            // ⚠️ Kept short enough to fit the popover: a row is clipped at the box, not wrapped,
-            // and "E cycles a tool's target" ran off the edge at [SHEET_WIDTH_DP].
-            row("Q tool  ·  WASD or right-drag pan", 0x9A9A9AFFL)
-            row("wheel zoom  ·  F build / fly  ·  H view", 0x9A9A9AFFL)
-            row("E cycles what a tool is aimed at", 0x9A9A9AFFL)
-            row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
-            gap()
-            // Last, alone, and the only red thing in here: it throws the vessel away.
-            button("RESET", 0xCC3333FFL) { onReset(); closeSheet() }
-        }
+    private fun PanelBuilder.materialChoice(
+        controller: OutofspaceController,
+        species: Species,
+        held: String,
+    ) {
+        val selected = species == controller.buildMaterial
+        button(
+            "${if (selected) ">" else " "} ${species.name}${if (held.isEmpty()) "" else "  $held"}",
+            if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
+        ) { controller.buildMaterial = species }
     }
-
-    /** One line on what a tool is for, shown beside its name in the picker. */
-    private fun toolBlurb(tool: Tool): String = when (tool) {
-        Tool.Inspect -> "read a tile · click again for the next layer"
-        Tool.Build -> "put down conduit and buildings"
-        Tool.Delete -> "take a tile apart, one layer at a time"
-        Tool.Cancel -> "call off a deconstruction"
-        Tool.Cut -> "sever joins without taking anything up"
-        Tool.Inject -> "debug · gas from nowhere"
-        Tool.InjectWater -> "debug · water from nowhere"
-    }
-
-    /** What the current tool is currently pointed at — the second half of its own name. */
-    private fun toolSubject(controller: OutofspaceController): String = when (controller.tool) {
-        Tool.Build -> "${controller.brush.label} facing ${controller.brushFacing.name.uppercase()}"
-        Tool.Delete -> controller.deleteLayer.label
-        Tool.Cut -> controller.cutConduit.label
-        Tool.Inspect -> controller.inspectLayer.label
-        Tool.Inject -> "${Edit.INJECT_MASS}G / TICK"
-        Tool.InjectWater -> "${Edit.WATER_INJECT_MASS}G / TICK"
-        Tool.Cancel -> "click a marked tile"
-    }
-
-    /** What a click with the current tool actually does. Stays on screen; see the build panel. */
-    private fun toolHints(controller: OutofspaceController): List<Pair<String, Long>> = when (controller.tool) {
-        Tool.Build -> buildList {
-            add("click or drag to place" to 0x9A9A9AFFL)
-            if (controller.brush is Brush.Run) {
-                add("DRAG to connect · a click alone joins nothing" to 0xE8B84AFFL)
-            }
-            if (controller.buildMaterial == null) add("no material picked · nothing places" to 0xE05A4AFFL)
-        }
-        Tool.Delete -> listOf(
-            "click or drag to remove · E cycles layer" to 0x9A9A9AFFL,
-            "TOP takes one layer at a time" to 0x9A9A9AFFL,
-        )
-        Tool.Cut -> listOf(
-            "drag ALONG a run to sever · E cycles conduit" to 0x9A9A9AFFL,
-            "cuts the joins you draw · other joins stay" to 0xE8B84AFFL,
-        )
-        Tool.Inject -> listOf(
-            "hold over a permeable tile" to 0x9A9A9AFFL,
-            "debug tool · gas from nowhere, booked as INJECTED" to 0xC8A44AFFL,
-        )
-        Tool.InjectWater -> listOf(
-            "hold over a permeable tile · ~1s fills a tile" to 0x9A9A9AFFL,
-            "debug tool · water from nowhere, booked as INJECTED" to 0xC8A44AFFL,
-            "arrives at ${Edit.WATER_INJECT_KELVIN}K · room temperature" to 0x9A9A9AFFL,
-        )
-        Tool.Inspect -> listOf(
-            "click a tile to read it · click again for the next layer" to 0x9A9A9AFFL,
-            "machine settings live on the DECK layer" to 0x9A9A9AFFL,
-        )
-        Tool.Cancel -> listOf("click a tile marked for deconstruction" to 0x9A9A9AFFL)
-    }
-
-    /*
-     * ⛔ **`materialColumn` stood here and the MATERIAL sheet replaced it.**
-     *
-     * It was two rectangles beside the build panel — pinned properties above a scrolling list —
-     * which was the right shape while the picker had to live *next to* a menu that was already
-     * eating a third of the screen. A sheet has the room the column was working around: one scroll,
-     * the facts at the top of it, and nothing competing for the width. What the column taught and
-     * the sheet keeps is that the properties come before the list, because they are what the list
-     * is read against.
-     */
 
     /**
      * The numbers that decide what to build a thing out of.
@@ -1591,11 +1473,16 @@ class OutofspaceHud {
         row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0  ·  no wire under this tile", 0x7A7A7AFFL)
     }
 
-    /*
-     * ⛔ **`controlRowOfTools` stood here — seven buttons in a row, all lit at once.** The TOOL sheet
-     * is the same choice with room to say what each of them is *for*, which a row of seven labels
-     * never had. It went unused the moment the row did.
-     */
+    private fun org.emerge.render.torus.ui.PanelBuilder.controlRowOfTools(controller: OutofspaceController) {
+        actionRow(
+            Tool.entries.map { tool ->
+                Triple(
+                    if (tool == controller.tool) "> ${tool.label}" else tool.label,
+                    if (tool == controller.tool) 0x3A6EA5FFL else 0x232A38FFL,
+                ) { controller.tool = tool }
+            },
+        )
+    }
 
     private fun signed(percent: Int): String = if (percent >= 0) "+$percent%" else "$percent%"
 
@@ -1665,14 +1552,18 @@ class OutofspaceHud {
          * screen to show a list of single words.
          */
         /**
-         * Below this width a sheet is a full-width panel off the bottom edge; above it, a centred
-         * popover — see `OutofspaceHud.sheetHost`. It is the width at which a popover stops being
-         * meaningfully narrower than the screen it floats on.
+         * Below this width the menu is a full-width panel off the bottom edge; above it, a centred
+         * popover. It is the width at which a popover stops being meaningfully narrower than the
+         * screen it floats on.
          */
         const val NARROW_MAX_DP: Float = 900f
 
-        /** How wide a popover sheet is on a screen with room for one. */
-        const val SHEET_WIDTH_DP: Float = 520f
+        /** How wide the menu popover is on a screen with room for one. */
+        const val SHEET_WIDTH_DP: Float = 460f
+
+        /** One row of it, and the title bar above them — the two figures its height is built from. */
+        const val SHEET_ROW_DP: Float = 26f
+        const val SHEET_TITLE_DP: Float = 56f
 
         const val MATERIAL_COLUMN_WIDTH_DP: Float = 300f
 
