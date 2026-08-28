@@ -1397,11 +1397,55 @@ class UiBuilder internal constructor(private val ui: Ui) {
         block: PanelBuilder.() -> Unit,
     ) {
         val s = ui.scale
+        val pb = PanelBuilder(rowHeight * s, s).apply(block)
+        drawScroll(id, pb, x, y, w, h, padding * s, textSize * s, background)
+    }
+
+    /**
+     * A [scrollArea] that **hangs from its bottom edge and is only as tall as it needs to be**, up to
+     * [maxH]. Returns the top edge it settled on, so a caller can stack something directly above it.
+     *
+     * A panel auto-sizes to its content and cannot scroll; a scroll area scrolls and must be told a
+     * rectangle. This is the case in between, and it is the one a reference panel wants: an article
+     * two lines long should be two lines tall sitting on whatever is below it, and one twenty lines
+     * long should fill the space it has and scroll inside it. Given a fixed rectangle the short
+     * article is two lines of text in a tall empty box, which reads as a panel that has failed to
+     * load rather than as a short answer.
+     *
+     * ⚠️ **Upward is the whole point.** Anchoring the top and shrinking the bottom is [scrollArea]
+     * with a smaller `h`, which any caller can already do; what cannot be done from outside is
+     * *growing away from a fixed edge*, because that needs the content measured before the rectangle
+     * is known and the measurement is this module's business.
+     */
+    fun scrollAreaAbove(
+        id: String,
+        x: Float, bottom: Float, w: Float, maxH: Float,
+        padding: Float = 8f,
+        rowHeight: Float = 18f,
+        textSize: Float = rowHeight * TEXT_TO_ROW_RATIO,
+        background: Long = 0x00000000,
+        block: PanelBuilder.() -> Unit,
+    ): Float {
+        val s = ui.scale
         val paddingPx = padding * s
-        val textH = textSize * s
         val pb = PanelBuilder(rowHeight * s, s).apply(block)
         val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat() + paddingPx * 2
+        val h = minOf(contentH, maxOf(maxH, 0f))
+        val y = bottom - h
+        drawScroll(id, pb, x, y, w, h, paddingPx, textSize * s, background)
+        return y
+    }
 
+    /** The half of [scrollArea] that draws, once the rectangle is settled. */
+    private fun drawScroll(
+        id: String,
+        pb: PanelBuilder,
+        x: Float, y: Float, w: Float, h: Float,
+        paddingPx: Float,
+        textH: Float,
+        background: Long,
+    ) {
+        val contentH = pb.items.sumOf { it.height.toDouble() }.toFloat() + paddingPx * 2
         val offset = ui.beginScroll(id, x, y, w, h)
         if (background != 0x00000000L) ui.emitRect(x, y, w, h, background)
         // Catches presses on empty space so they arm a scroll drag instead of falling through to the world.

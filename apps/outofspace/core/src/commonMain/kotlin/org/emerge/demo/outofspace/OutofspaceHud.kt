@@ -399,8 +399,11 @@ class OutofspaceHud {
             // is emitted. Same arrangement the wiki has with the inspector, for the same reason.
             if (controller.tool == Tool.Build) materialColumn(controller, stock, s.creative)
 
-            inspectPanel(controller)
-            wikiPanel(controller)
+            // ⚠️ **In this order and coupled by that rect**, because the reference hangs off the
+            // top of the inspector: the two are read together, and the one a player is holding the
+            // pointer over is the one that must not move.
+            val inspector = inspectPanel(controller)
+            wikiPanel(controller, inspector)
 
             /*
              * ⛔ **SAVE, LOAD, FIT, PAUSE and RESET stood here, always open, and are a sheet now.**
@@ -599,18 +602,23 @@ class OutofspaceHud {
      * lock came to ship unreachable. A setting is a fact about a building, so it is in the place
      * that describes buildings.
      */
-    private fun UiBuilder.inspectPanel(controller: OutofspaceController) {
+    private fun UiBuilder.inspectPanel(controller: OutofspaceController): Ui.UiElement? {
         val s = controller.state
         val tile = controller.inspectTile
-        if (tile == TileIndex.NONE || tile.index < 0 || tile.index >= s.grid.size) return
+        if (tile == TileIndex.NONE || tile.index < 0 || tile.index >= s.grid.size) return null
         val layers = inspectableLayers(s, tile)
-        if (layers.isEmpty()) return
+        if (layers.isEmpty()) return null
         // A pinned layer that has since stopped existing — the belt was deleted, the room was
         // sealed — falls back to the top of the list rather than showing an empty panel.
         val layer = controller.inspectLayer
         val grid = s.grid
 
-        panel(Anchor.TopRight, rowHeight = 20f) {
+        // ⛔ **Bottom-right, not top-right.** It used to stack under the stockpile, which put the
+        // thing a player is *reading right now* below a thing they check twice a session — and made
+        // its length the stockpile's problem, since a busy machine pushed the column down the
+        // screen. Anchored to the bottom it grows upward into space nothing else claims, and the
+        // reference then hangs above it. See [wikiPanel].
+        panel(Anchor.BottomRight, rowHeight = 20f) {
             title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
             placeRow(s, tile)
             // The tabs are the cycle made visible. A player who never notices that clicking again
@@ -633,6 +641,7 @@ class OutofspaceHud {
                 InspectLayer.Atmosphere -> atmosphereLayer(controller, tile)
             }
         }
+        return lastPanelRect
     }
 
     /** Where this tile is, in the one sense every layer shares: inside, outside, hull or machine. */
@@ -1094,18 +1103,32 @@ class OutofspaceHud {
      * a rectangle, not a corner), and a hand-written offset would be the height of the inspector
      * copied into a second place and wrong the moment a row was added to it.
      */
-    private fun UiBuilder.wikiPanel(controller: OutofspaceController) {
+    private fun UiBuilder.wikiPanel(controller: OutofspaceController, inspector: Ui.UiElement?) {
         val species = controller.wikiSpecies ?: return
+        val margin = 12f * density
+        val rowH = 20f
+        val width = MIN_REFERENCE_WIDTH_DP * density
+        // Right edges flush with the inspector's, so the two read as one column rather than as two
+        // boxes that happen to be near each other. With no inspector open it takes the screen's.
+        val right = inspector?.let { it.x + it.w } ?: (screenW - margin)
+        val x = right - width
+        // It hangs off the top of the inspector, or off the bottom of the screen when there is none.
+        val bottom = (inspector?.y ?: screenH) - margin
 
         // ── The head: pinned, and everything in it is a reason to pin it ──────────────────────
         //
         // ⚠️ **The way out must not scroll away.** With the title and CLOSE inside the scroll area,
         // reading to the bottom of carbon left a player looking at a list with no name on it and no
         // button to shut it. What is up here is what stays true however far down the article you
-        // are: which species this is, how to leave, and the three numbers that are one line each.
-        // It is a normal panel, so it takes its place in the right-hand column like any other —
-        // held to the body's width, so the two read as one thing rather than a tab above a box.
-        panel(Anchor.TopRight, rowHeight = 20f, minWidth = MIN_REFERENCE_WIDTH_DP) {
+        // are: which species this is, how to leave, and the numbers that are one line each.
+        //
+        // ⚠️ **Its height is counted rather than measured**, because it has to be known before the
+        // body's rectangle can be: a fixed number of rows, plus the one that is only true of a
+        // fluid. A panel would size itself and cannot be placed here — the whole column is built
+        // upward from an edge, and an anchored panel does not know about edges.
+        val headRows = if (species.fluid != null) 9 else 8
+        val headH = headRows * rowH * density + 16f * density
+        val head: PanelBuilder.() -> Unit = {
             title(species.name.uppercase())
             actionRow(
                 listOf(
@@ -1126,19 +1149,27 @@ class OutofspaceHud {
             if (species.fluid != null) row("can be a gas", 0x9AC0E0FFL)
         }
 
-        // ── The body: as long as the chemistry makes it ───────────────────────────────────────
-        val head = lastPanelRect ?: return
-        val margin = 12f * density
-        // Aligned to the head, and never narrower than a reaction's chips: the head is five short
-        // rows and would otherwise set a width the sections cannot live in.
-        val width = maxOf(head.w, MIN_REFERENCE_WIDTH_DP * density)
-        val x = head.x + head.w - width
-        val top = head.y + head.h
-        val height = screenH - top - margin
+        // ── The body: as long as the chemistry makes it, and no longer ────────────────────────
+        //
+        // ⛔ **It grows upward from the inspector and takes only the height it needs**, which is
+        // what [scrollAreaAbove] exists for. Given a fixed rectangle instead, a two-line article on
+        // iron was two lines of text adrift in a box the height of the screen — which reads as a
+        // panel that failed to load rather than as a short answer. Carbon takes part in three
+        // reactions and comes out of a fourth, so the same box has to be able to fill the column.
+        //
+        // ⚠️ **A long article covers the stockpile, deliberately** (Stu). The reference is a thing
+        // you opened on purpose and the stockpile is a thing you glance at; when the two want the
+        // same pixels the one being read wins. It is drawn after, so it simply does.
+        val maxBody = bottom - margin - headH
         // Nothing left to show it in — a very short window, or an inspector reading a busy machine.
-        // Better no body than a scroll area of negative height, which draws as a sliver of nothing.
-        if (height < MIN_REFERENCE_HEIGHT_DP * density) return
-        scrollArea("wiki", x, top, width, height, rowHeight = 20f, background = 0x000000C0L) {
+        // Better no reference than a scroll area of negative height, which draws as a sliver.
+        if (maxBody < MIN_REFERENCE_HEIGHT_DP * density) return
+        // ⚠️ **Opaque, both halves.** The body used to be `0x000000C0` because it only ever had the
+        // starfield behind it; over the stockpile that translucency put two columns of numbers on
+        // the same pixels and neither could be read.
+        val bodyTop = scrollAreaAbove(
+            "wiki", x, bottom, width, maxBody, rowHeight = rowH, background = 0x0B0E14FFL,
+        ) {
             val parts = compositionOf(species)
             if (parts.isNotEmpty()) {
                 section("wiki-made-of", "MADE OF", open = true) {
@@ -1158,6 +1189,12 @@ class OutofspaceHud {
             reactionSection(controller, "wiki-uses", "TAKES PART IN", reactionsConsuming(species))
             reactionSection(controller, "wiki-from", "MADE BY", reactionsProducing(species))
         }
+        // Drawn after the body because it is placed against it: an area that sizes itself cannot say
+        // where its top is until it has drawn. Nothing overlaps, so the order is only an order.
+        scrollArea(
+            "wiki-head", x, bodyTop - headH, width, headH,
+            rowHeight = rowH, background = 0x121722FFL, block = head,
+        )
     }
 
     /**
