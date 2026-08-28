@@ -33,7 +33,21 @@ sealed interface Edit {
     data class Remove(val tile: TileIndex, val layer: DeleteLayer = DeleteLayer.Top) : Edit
 
     /** Lay conduit between adjacent tiles [from]→[to] (one drag step). Missing track laid at ends. Non-adjacent = ignored (no pathfind). */
-    data class Lay(val from: TileIndex, val to: TileIndex, val conduit: Conduit = Conduit.Rail) : Edit
+    /**
+     * Draws a run from [from] to [to].
+     *
+     * ⚠️ **[material] is here as well as on [Brush], because dragging does not go through a brush.**
+     * A click places through `Place`, which carries one; a drag is its own edit and was silently
+     * laying the conduit's default however the player had set the picker. Null is the default, and
+     * only tiles the drag actually *raises* take it — an existing segment keeps whatever it is,
+     * ghost or finished, so changing a run's material means removing it first.
+     */
+    data class Lay(
+        val from: TileIndex,
+        val to: TileIndex,
+        val conduit: Conduit = Conduit.Rail,
+        val material: Species? = null,
+    ) : Edit
 
     /**
      * Calls off a deconstruction, on whatever layers of [tile] have been told to go.

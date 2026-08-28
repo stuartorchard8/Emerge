@@ -39,16 +39,29 @@ class GhostTest {
     private val grid = Grid(12, 6)
     private val cfg = OutofspaceConfig(initialGrid = grid)
 
-    private fun lay(state: VesselState, conduit: Conduit, from: TileIndex, to: TileIndex): VesselState =
+    private fun lay(
+        state: VesselState,
+        conduit: Conduit,
+        from: TileIndex,
+        to: TileIndex,
+        material: Species? = null,
+    ): VesselState =
         OutofspaceReducer.reduce(
             cfg,
             state,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Lay(from, to, conduit)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Lay(from, to, conduit, material)))),
         )
 
-    private fun drag(state: VesselState, conduit: Conduit, y: Int, fromX: Int, toX: Int): VesselState {
+    private fun drag(
+        state: VesselState,
+        conduit: Conduit,
+        y: Int,
+        fromX: Int,
+        toX: Int,
+        material: Species? = null,
+    ): VesselState {
         var s = state
-        for (x in fromX until toX) s = lay(s, conduit, grid.tile(x, y), grid.tile(x + 1, y))
+        for (x in fromX until toX) s = lay(s, conduit, grid.tile(x, y), grid.tile(x + 1, y), material)
         return s
     }
 
@@ -617,6 +630,56 @@ class GhostTest {
         assertEquals(iron.total, org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total, "iron is the default")
         assertTrue(copper.total > iron.total, "copper is denser, so a tile of it should cost more")
         assertEquals(copper[Species.Copper], copper.total, "a copper bill is copper and nothing else")
+    }
+
+    /**
+     * ⛔ **Dragging a run carries the material, and it did not.**
+     *
+     * `Edit.Place` had one from the start; `Edit.Lay` is a different edit and had none, so
+     * `layConduit` raised every dragged tile as a bare segment. Clicking honoured the picker and
+     * dragging silently did not — and dragging is how a run is actually laid, so the feature was
+     * unreachable by the path a player uses.
+     *
+     * ⚠️ **The test that missed it used `Edit.Place`.** One edit proving a rule says nothing about
+     * the other one, which is the same lesson the deck and the conduit needed separately.
+     */
+    @Test
+    fun `dragging a run lays it in the chosen material`() {
+        val s = drag(
+            VesselState.empty(grid).copy(creative = false),
+            Conduit.Rail,
+            y = 3,
+            fromX = 2,
+            toX = 6,
+            material = Species.Copper,
+        )
+        for (x in 2..6) {
+            assertEquals(
+                Species.Copper,
+                s.conduits.at(Conduit.Rail, grid.tile(x, 3))?.material,
+                "the tile at ($x, 3) was dragged out in the wrong material",
+            )
+        }
+    }
+
+    /**
+     * ⛔ **And a drag across track that is already there changes nothing about it.**
+     *
+     * Stu's question, and the answer is that both edit paths only ever *raise* a tile that is empty
+     * — `layConduit` keeps an existing segment by an elvis and `Edit.Place` guards on null. So
+     * changing a run's material means removing it first, which is what you want: a drag across a
+     * finished line must not silently re-specify a hundred tiles of it.
+     */
+    @Test
+    fun `a drag over existing track leaves its material alone`() {
+        val iron = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 6)
+        assertNull(iron.conduits.at(Conduit.Rail, grid.tile(4, 3))?.material, "fixture: laid at the default")
+
+        val again = drag(iron, Conduit.Rail, y = 3, fromX = 2, toX = 6, material = Species.Copper)
+        assertNull(
+            again.conduits.at(Conduit.Rail, grid.tile(4, 3))?.material,
+            "dragging copper over existing track re-specified it",
+        )
     }
 
     /**

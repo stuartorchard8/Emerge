@@ -94,6 +94,22 @@ class OutofspaceController(
     var brushFacing: Direction = Direction.Right
 
     /**
+     * What everything placed from now on is to be built out of, or null for each kind's default.
+     *
+     * ⛔ **On the controller and not on [brush], though [Brush] can carry one.** `Brush.ALL` is a
+     * list of prototypes with no material, and both the build menu's selected-highlight
+     * (`option == brush`) and [cycleBrush]'s `indexOf` compare against them — so storing a
+     * materialled brush here would drop out of its own menu and cycling would silently discard the
+     * choice. The brush stays a prototype and the material is stamped on at the point of use.
+     *
+     * ⚠️ **Sticky until changed, deliberately.** A material is a decision about a batch of building,
+     * not about one click; it survives changing brush, changing facing and switching between
+     * clicking and dragging. It is *not* saved, because it is a state of the player rather than of
+     * the vessel.
+     */
+    var buildMaterial: Species? = null
+
+    /**
      * What a left-click does — see [Tool].
      *
      * Defaults to [Tool.Inspect]: the tool that changes nothing is the one a player should be
@@ -184,7 +200,7 @@ class OutofspaceController(
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
-    fun place(tile: TileIndex) { pending.add(Edit.Place(tile, brush, brushFacing)) }
+    fun place(tile: TileIndex) { pending.add(Edit.Place(tile, brush.withMaterial(buildMaterial), brushFacing)) }
 
     /**
      * The tile the current drag last reached, or -1 when nothing is being dragged.
@@ -366,7 +382,9 @@ class OutofspaceController(
                 cutAt(at, dir)
             } else {
                 place(next)
-                pending.add(Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail))
+                pending.add(
+                    Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail, buildMaterial),
+                )
             }
             at = next
         }

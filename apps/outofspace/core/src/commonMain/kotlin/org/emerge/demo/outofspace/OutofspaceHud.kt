@@ -56,6 +56,15 @@ import org.emerge.render.torus.ui.UiBuilder
  */
 private const val STOCKPILE_LINES = 6
 
+/**
+ * How many materials the picker offers before it stops counting.
+ *
+ * Shorter than [STOCKPILE_LINES] because this list sits inside the build menu, under a brush list
+ * that is already a dozen rows — and because a player picking a material is choosing between the
+ * two or three they have a useful quantity of, not browsing an inventory.
+ */
+private const val MATERIAL_LINES = 4
+
 /** In-game UI panel (flight data, stockpile, tool/wiring). */
 class OutofspaceHud {
 
@@ -298,6 +307,47 @@ class OutofspaceHud {
                         row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
                     }
                     row("R rotate brush", 0x9A9A9AFFL)
+
+                    // ── What it is to be made of ──────────────────────────────
+                    //
+                    // ⛔ **Offers what the network can deliver, and nothing else.** Every entry here
+                    // is a material a site built from it will actually finish on: `buildable` counts
+                    // tanks, buffers, belts, and anything already marked for deconstruction, which
+                    // is what makes "mark that furnace, then build in titanium" a thing the picker
+                    // can honestly offer. Fabric nobody has ordered taken apart is deliberately
+                    // absent — it would be promising a build that cannot start.
+                    //
+                    // ⚠️ **Sticky, and it says so.** A material is a decision about a batch of
+                    // building rather than about one click, so it survives changing brush, changing
+                    // facing, and switching between clicking and dragging.
+                    gap()
+                    val offer = stock.buildableSpecies
+                    val chosen = controller.buildMaterial
+                    title("MATERIAL  ·  ${chosen?.name ?: "DEFAULT"}")
+                    button(
+                        if (chosen == null) "> DEFAULT PER BUILDING" else "  DEFAULT PER BUILDING",
+                        if (chosen == null) 0x4A6A8AFFL else 0x232A38FFL,
+                    ) { controller.buildMaterial = null }
+                    for (species in offer.take(MATERIAL_LINES)) {
+                        val selected = species == chosen
+                        button(
+                            "${if (selected) ">" else " "} ${species.name}  ${mass(stock.buildable(species))}",
+                            if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
+                        ) { controller.buildMaterial = species }
+                    }
+                    if (offer.isEmpty()) {
+                        row("nothing loose to build from", 0xC8A44AFFL)
+                    } else {
+                        val rest = offer.size - MATERIAL_LINES
+                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                    }
+                    // ⚠️ **The choice outlives its stock.** Picking a material and then running out
+                    // leaves the selection standing, because it is an intent — but a site laid under
+                    // it will sit unfed, and that is worth saying where the decision is made rather
+                    // than leaving the player to work it out from a stalled belt.
+                    if (chosen != null && stock.buildable(chosen) <= 0L) {
+                        row("none loose · sites will wait", 0xE05A4AFFL)
+                    }
                 } else if (controller.tool == Tool.Delete) {
                     title("DELETE  ·  ${controller.deleteLayer.label}")
                     actionRow(

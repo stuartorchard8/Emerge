@@ -584,7 +584,7 @@ data class VesselState(
      * Derived rather than stored, for the same reason [structure] is — a cached copy is one more
      * thing that can disagree with the world, and this is cheap to fold.
      */
-    val stockpile: Stockpile get() = Stockpile.of(grid, deck, buffers, rail, conduits)
+    val stockpile: Stockpile get() = Stockpile.of(grid, deck, buffers, rail, conduits, scrapping)
 
     /**
      * Where the air is going, tile by tile — see [FlowField].

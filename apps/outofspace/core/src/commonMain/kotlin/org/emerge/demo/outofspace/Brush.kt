@@ -46,6 +46,12 @@ sealed interface Brush {
         override val label: String get() = kind.label
     }
 
+    /** This brush, laying [material] instead of its kind's default. */
+    fun withMaterial(material: Species?): Brush = when (this) {
+        is Run -> if (material == this.material) this else copy(material = material)
+        is Building -> if (material == this.material) this else copy(material = material)
+    }
+
     companion object {
         /**
          * Everything offered in the build menu, runs first.

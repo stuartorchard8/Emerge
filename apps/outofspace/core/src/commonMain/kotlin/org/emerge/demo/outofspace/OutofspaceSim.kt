@@ -1762,7 +1762,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, brush.material)
                     }
                 }
-                is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit)
+                is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit, edit.material)
                 is Edit.Cut -> {
                     val dir = adjacency(edit.from, edit.to) ?: return
                     val line = layer(edit.conduit)
@@ -2209,7 +2209,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Draw a conduit line (both halves linked symmetrically; gauges keep channel). */
-        private fun layConduit(from: TileIndex, to: TileIndex, conduit: Conduit) {
+        private fun layConduit(
+            from: TileIndex,
+            to: TileIndex,
+            conduit: Conduit,
+            material: Species? = null,
+        ) {
             val dir = adjacency(from, to) ?: return
             // Track and plumbing compete for the floor, so a drag that would cross the other one
             // lays nothing across that step and joins nothing. The run stops at the obstacle rather
@@ -2225,8 +2230,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // ambient and nothing had to ask for it, so the drag tool quietly minted the heat of
             // every tile it laid. Outside creative nothing arrives and the drag lays ghosts.
             fun raise(tile: TileIndex): Segment {
-                if (creative) built(tracks.lay(conduit, tile))
-                return Segment(conduit)
+                // ⚠️ Only reached for a tile with nothing on it — an existing segment is kept by the
+                // elvis below, so a drag across finished track never re-materials it.
+                if (creative) built(tracks.lay(conduit, tile, material ?: conduit.material.species))
+                return Segment(conduit, material = material)
             }
             val a = line[from.index] ?: raise(from)
             val b = line[to.index] ?: raise(to)

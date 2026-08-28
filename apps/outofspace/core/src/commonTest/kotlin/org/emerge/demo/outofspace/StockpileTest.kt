@@ -12,6 +12,8 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.TileIndex
 import kotlin.test.assertNull
+import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.demo.outofspace.world.starterVessel
@@ -140,6 +142,66 @@ class StockpileTest {
             stored,
             "the shortlist is not in descending order of mass",
         )
+    }
+
+    /**
+     * ⛔ **Marking something for deconstruction moves its metal from fabric to loose**, without it
+     * moving an inch.
+     *
+     * Stu's rule, and a better one than counting all fabric alike: a machine told to come apart
+     * *will* hand its metal to the network as soon as there is demand for it, so a site built from
+     * that metal is a site that will finish. What separates loose from fabric is not where the
+     * matter is but whether the network has been told it may have it.
+     */
+    @Test
+    fun `metal marked to come apart is loose, not fabric`() {
+        val grid = Grid(16, 8)
+        val deck = DeckArray(grid)
+        val tank = grid.tile(2, 4)
+        deck += Storage(tank, Direction.Right)
+        val world = VesselState(
+            grid, deck,
+            conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),
+            buffers = BufferLayer.forDeck(grid, deck),
+            rail = RailLayer.empty(grid.size),
+        )
+
+        val standing = world.stockpile
+        assertTrue(standing.inFabric(Species.Titanium) > 0L, "a tank is titanium and it is standing")
+        assertEquals(0L, standing.buildable(Species.Titanium), "and nothing has been ordered")
+
+        val marked = world.copy(scrapping = setOf(tank)).stockpile
+        assertEquals(
+            standing.inFabric(Species.Titanium),
+            marked.buildable(Species.Titanium),
+            "marking the tank did not make its titanium available",
+        )
+        assertEquals(0L, marked.inFabric(Species.Titanium), "and it should no longer read as fabric")
+    }
+
+    /** ⚠️ The same for a length of track, which carries its own mark rather than being named in a set. */
+    @Test
+    fun `track marked to come apart is loose too`() {
+        val grid = Grid(8, 6)
+        val at = grid.tile(3, 3)
+        fun world(marked: Boolean): VesselState {
+            val rails = arrayOfNulls<Segment>(grid.size)
+            rails[at.index] = Segment(Conduit.Rail, deconstructing = marked)
+            val deck = DeckArray(grid)
+            return VesselState(
+                grid, deck,
+                conduits = Conduits.ofRails(rails.toList()),
+                buffers = BufferLayer.forDeck(grid, deck),
+                rail = RailLayer.empty(grid.size),
+            )
+        }
+        val standing = world(marked = false).stockpile
+        assertTrue(standing.inFabric(Species.Iron) > 0L, "laid track is iron in the fabric")
+        assertEquals(0L, standing.buildable(Species.Iron), "and not loose while it is wanted")
+
+        val going = world(marked = true).stockpile
+        assertEquals(standing.inFabric(Species.Iron), going.buildable(Species.Iron), "marked track is loose")
+        assertEquals(0L, going.inFabric(Species.Iron), "and not both")
     }
 
     /** An empty vessel offers nothing and does not pretend otherwise. */

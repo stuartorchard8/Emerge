@@ -45,9 +45,12 @@ import org.emerge.demo.outofspace.world.machine.Storage
 class Stockpile private constructor(
     /** Everything in every storage aboard, in one heap. How much is aboard, not what it can become. */
     val held: Mixture,
-    /** Per [Species.ordinal]: pure mass the network can already deliver — tanks, buffers, belts. */
+    /**
+     * Per [Species.ordinal]: pure mass the network can deliver **without being asked to do anything
+     * first** — tanks, buffers, belts, and anything already marked to come apart.
+     */
     private val loose: LongArray,
-    /** Per [Species.ordinal]: pure mass built into the vessel, recoverable only by taking it apart. */
+    /** Per [Species.ordinal]: pure mass built into the vessel, needing a deconstruction order first. */
     private val fabric: LongArray,
 ) {
 
@@ -58,8 +61,15 @@ class Stockpile private constructor(
     operator fun get(species: Species): Long = held[species]
 
     /**
-     * How much of [species] the network could deliver to a site **right now** — what is in tanks, in
-     * machine buffers, and riding on belts.
+     * How much of [species] the network could deliver to a site **without further instruction** —
+     * what is in tanks, in machine buffers, riding on belts, or standing in something the player has
+     * already marked for deconstruction.
+     *
+     * ⛔ **Marked fabric belongs here and not below**, which is Stu's correction and a better rule
+     * than the one it replaces: a machine told to come apart *will* hand its metal to the network as
+     * soon as there is demand for it, so it is honestly available and a site built from it is a site
+     * that will finish. Counting it as fabric would have the picker refuse a material the player has
+     * already done the work of freeing.
      *
      * ⛔ **Counts only stores holding nothing but [species]**, which is not a conservatism — it is
      * what [buildableFrom] will do at the tile. A tank of 99% iron emits 99% iron packets, because a
@@ -78,6 +88,10 @@ class Stockpile private constructor(
      * blind to: it would have told him he had no iron while he was standing on tonnes of it. But it
      * is not the same as iron in a tank, and adding the two would have the panel promise a build the
      * network cannot start — so they are two numbers and the player is told which is which.
+     *
+     * ⚠️ **The line between the two is an *order*, not a location.** Mark a machine for
+     * deconstruction and its metal moves from here to [buildable] without moving an inch, because
+     * what separates them is whether the network has been told it may have it.
      */
     fun inFabric(species: Species): Long = fabric[species.ordinal]
 
@@ -131,6 +145,8 @@ class Stockpile private constructor(
             buffers: BufferLayer,
             rail: RailLayer,
             conduits: Conduits,
+            /** Machines told to come apart: their casings count as loose, not as fabric. */
+            scrapping: Set<TileIndex> = emptySet(),
         ): Stockpile {
             var any = false
             var stored = Mixture.EMPTY
@@ -164,13 +180,30 @@ class Stockpile private constructor(
             // ⚠️ Per *tile* and not per machine, unlike the storage walk above: a casing is spread
             // across a footprint rather than held at one address, so every covered tile carries its
             // own share and all of them count.
-            deck.stuff.forEachOccupiedTile { tile ->
-                deck.stuff.pureSpeciesAt(tile)?.let { fabric[it.ordinal] += deck.stuff.massAt(tile) }
+            // ⛔ **Walked by MACHINE and not by occupied tile**, which is the one thing this loop
+            // cannot be talked out of. A machine is marked at its *centre* while its casing is
+            // spread across its footprint, and `deck[tile]` answers only for the centre — so
+            // classifying tile by tile put one ninth of every three-by-three tank in the right
+            // column and eight ninths in the wrong one. Asking the machine for `tiles(grid)` is the
+            // only form where the mark and the matter are looked up by the same key.
+            for (i in 0 until deck.size) {
+                val tile = TileIndex(i)
+                val m = deck[tile] ?: continue
+                if (m.center != tile) continue
+                val bound = if (tile in scrapping) loose else fabric
+                for (part in m.tiles(grid)) {
+                    val species = deck.stuff.pureSpeciesAt(part) ?: continue
+                    bound[species.ordinal] += deck.stuff.massAt(part)
+                }
             }
             for (conduit in Conduit.entries) {
                 val layer = conduits.tracks[conduit]
                 layer.forEachOccupiedTile { tile ->
-                    layer.pureSpeciesAt(tile)?.let { fabric[it.ordinal] += layer.massAt(tile) }
+                    val species = layer.pureSpeciesAt(tile) ?: return@forEachOccupiedTile
+                    // A segment carries its own mark rather than being named in a set.
+                    val marked = conduits.at(conduit, tile)?.deconstructing == true
+                    val bound = if (marked) loose else fabric
+                    bound[species.ordinal] += layer.massAt(tile)
                 }
             }
 
