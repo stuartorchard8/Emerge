@@ -124,6 +124,27 @@ class Stockpile private constructor(
     override fun toString(): String = "Stockpile(${held.total}g $held)"
 
     companion object {
+        /**
+         * **What creative mode lets you build from whatever the ship is actually carrying.**
+         *
+         * ⛔ **Not stock, and deliberately not modelled as stock.** Nothing in this game is made of
+         * anything by default — see `Segment.material` — so with the defaults gone a creative player
+         * with an empty hold could not put down so much as one tile of track, which is the opposite
+         * of what creative mode is for. The answer is not to give building a fallback substance but
+         * to give the *player* a small standing allowance, and to say so where they can see it: it
+         * is a property of the mode, not a property of a rail.
+         *
+         * Three, one of each thing a ship is made of and one that is not a metal at all: a structural
+         * metal, a conductor, and a rock. Enough to build anything and to feel the difference between
+         * the choices, without being a materials catalogue.
+         *
+         * ⚠️ **Offered below whatever is actually aboard** (Stu), and only where it is not aboard
+         * already — a creative player with forty tonnes of titanium should be choosing from that
+         * first, and should not see the same species listed twice.
+         */
+        val CREATIVE_MATERIALS: List<Species> =
+            listOf(Species.Steel, Species.Copper, Species.Forsterite)
+
         val EMPTY: Stockpile =
             Stockpile(Mixture.EMPTY, LongArray(Species.COUNT), LongArray(Species.COUNT))
 

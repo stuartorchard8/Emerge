@@ -36,6 +36,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The contact rules: **who touches whom**, which is the whole content of the body model.
@@ -185,7 +186,7 @@ class BodyHeatTest {
         val under = g.tile(5, 5)
         val world = room(
             10, 10,
-            rails = { grid -> grid.tiles.map { if (it == under) Segment(Conduit.Rail) else null } },
+            rails = { grid -> grid.tiles.map { if (it == under) Segment(Conduit.Rail, material = materialBefore(Conduit.Rail)) else null } },
             deckFill = { x, y, at -> if (x == 5 && y == 5) Furnace(at, Direction.Right) else null },
         )
             .heatDeckMachine(g.tile(5, 5), 900)
@@ -217,7 +218,7 @@ class BodyHeatTest {
         val nextRow = 4
         fun line(grid: Grid, y: Int): List<Pair<TileIndex, Segment>> =
             (2..8).map { x ->
-                var s = Segment(Conduit.Rail)
+                var s = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
                 if (x > 2) s = s.joinedTo(Direction.Left)
                 if (x < 8) s = s.joinedTo(Direction.Right)
                 grid.tile(x, y) to s
@@ -361,7 +362,7 @@ class BodyHeatTest {
 
         s = OutofspaceReducer.reduce(
             cfg, s,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Hull), Direction.Right)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(fixturePlace(at, Brush.Building(DeckMachineKind.Hull), Direction.Right)))),
         )
         // Derived from what a tile of hull is *made of*, not from a per-kind capacity constant. Those
         // two used to be one expression and are now two: since a casing became real matter, its
@@ -416,7 +417,7 @@ class BodyHeatTest {
             val grid = world.grid
 
             val wires = MutableList<Segment?>(grid.size) { null }
-            for (x in xs) wires[grid.tile(x, row).index] = Segment(Conduit.Signal)
+            for (x in xs) wires[grid.tile(x, row).index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
             for (x in xs.first until xs.last) {
                 val a = grid.tile(x, row)
                 val b = grid.tile(x + 1, row)

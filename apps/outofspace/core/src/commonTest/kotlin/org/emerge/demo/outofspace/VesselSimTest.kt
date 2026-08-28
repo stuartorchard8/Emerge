@@ -38,6 +38,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The tile world: belts, machines, jams and the whole-world conservation invariant.
@@ -306,7 +307,7 @@ class VesselSimTest {
         // anything, so the line drains from the front — the tile nearest the consumer moves first.
         s = run(s, 40, OutofspaceInput(listOf(
             Edit.Remove(grid.tile(8, 2)),
-            Edit.Place(grid.tile(7, 2), Brush.Building(DeckMachineKind.Vent), Direction.Right),
+            fixturePlace(grid.tile(7, 2), Brush.Building(DeckMachineKind.Vent), Direction.Right),
         )))
         assertTrue(s.ventedMass > 0L, "material should have gone overboard")
         assertBalanced(s, "drained line")
@@ -405,7 +406,7 @@ class VesselSimTest {
         // The tank faces open deck beyond it, so it fills rather than draining.
         deck += Storage(grid.tile(4, 2), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
-        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail)                 // its input port
+        rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))                 // its input port
         // Creative: the point is that the stockpile is *where things are*, shown by taking the tank
         // away. Outside creative a delete marks the tank and it stands there, still holding the
         // ingot, which would be a different question.
@@ -553,7 +554,7 @@ class VesselSimTest {
         val held = Mixture.of(Species.Iron to 999L, energy = 0)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(at, held)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(at, Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
         // Compared as the machine itself: its heat lives in the deck layer now, so a tick of
         // conduction moves the layer rather than the object and the object is unchanged.
         assertEquals(
@@ -583,12 +584,12 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val base = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         val a = mapOf(
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), Brush.Building(DeckMachineKind.Sensor), Direction.Right))),
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), Brush.Building(DeckMachineKind.Pump), Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(fixturePlace(TileIndex(0), Brush.Building(DeckMachineKind.Sensor), Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(fixturePlace(TileIndex(0), Brush.Building(DeckMachineKind.Pump), Direction.Right))),
         )
         val b = mapOf(
-            PlayerId(1) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), Brush.Building(DeckMachineKind.Pump), Direction.Right))),
-            PlayerId(0) to OutofspaceInput(listOf(Edit.Place(TileIndex(0), Brush.Building(DeckMachineKind.Sensor), Direction.Right))),
+            PlayerId(1) to OutofspaceInput(listOf(fixturePlace(TileIndex(0), Brush.Building(DeckMachineKind.Pump), Direction.Right))),
+            PlayerId(0) to OutofspaceInput(listOf(fixturePlace(TileIndex(0), Brush.Building(DeckMachineKind.Sensor), Direction.Right))),
         )
         assertEquals(
             OutofspaceReducer.reduce(cfg, base, a)[TileIndex(0)],

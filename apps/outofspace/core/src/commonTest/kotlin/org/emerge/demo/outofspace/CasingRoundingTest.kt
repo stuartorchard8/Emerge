@@ -55,7 +55,7 @@ class CasingRoundingTest {
     private fun world(shortBy: Long = Capacity.PACKET_MASS / 4): VesselState {
         val deck = DeckArray(grid)
         deck += Storage(marked, Direction.Right)
-        deck.stand(Sensor(ghost, Direction.Right), withCasing = false)
+        deck.standGhost(Sensor(ghost, Direction.Right))
 
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, grid.xOf(marked), grid.xOf(ghost), 2)

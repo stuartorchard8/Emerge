@@ -25,6 +25,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * **Pipes and wires build themselves too**, by the mechanism `GhostTest` pins for rails.
@@ -56,7 +57,7 @@ class ConduitGhostTest {
      * different thing to measure.
      */
     /**
-     * ⚠️ `joinRow` lays `Segment(Conduit.Rail)` whatever array it is handed — it is a rail fixture —
+     * ⚠️ `joinRow` lays `Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))` whatever array it is handed — it is a rail fixture —
      * so a pipe row has to be built here. A layer full of rail-typed segments looks right to
      * everything that indexes by layer and wrong to everything that reads `Segment.conduit`.
      */
@@ -65,7 +66,7 @@ class ConduitGhostTest {
             var links = 0
             if (x > fromX) links = links or (1 shl Direction.Left.ordinal)
             if (x < toX) links = links or (1 shl Direction.Right.ordinal)
-            pipes[grid.tile(x, y).index] = Segment(Conduit.Pipe, links = links)
+            pipes[grid.tile(x, y).index] = Segment(Conduit.Pipe, links = links, material = materialBefore(Conduit.Pipe))
         }
     }
 
@@ -226,7 +227,7 @@ class ConduitGhostTest {
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 3), Direction.Right)
         deck += Storage(grid.tile(9, 3), Direction.Right)
-        deck.stand(Sensor(grid.tile(5, 3), Direction.Right), withCasing = false)
+        deck.standGhost(Sensor(grid.tile(5, 3), Direction.Right))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 8, 3)
         val wires = arrayOfNulls<Segment>(grid.size)
@@ -234,7 +235,7 @@ class ConduitGhostTest {
             var links = 0
             if (x > 4) links = links or (1 shl Direction.Left.ordinal)
             if (x < 7) links = links or (1 shl Direction.Right.ordinal)
-            wires[grid.tile(x, 3).index] = Segment(Conduit.Signal, links = links)
+            wires[grid.tile(x, 3).index] = Segment(Conduit.Signal, links = links, material = materialBefore(Conduit.Signal))
         }
         val s = VesselState(
             grid,

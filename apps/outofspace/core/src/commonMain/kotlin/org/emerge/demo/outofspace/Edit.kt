@@ -22,7 +22,21 @@ sealed interface Edit {
      * Put something on a tile. One case for both a run and a building — see [Brush] for why the
      * difference belongs where the edit is applied rather than in the edit itself.
      */
-    data class Place(val tile: TileIndex, val brush: Brush, val facing: Direction) : Edit
+    /**
+     * Puts what [brush] describes on [tile], **made of [material]**.
+     *
+     * ⛔ **The substance is on the edit, and is not optional.** A brush says what shape goes down; it
+     * cannot say what the shape is made of, because nothing in this game is made of anything by
+     * default — see [Brush], which used to carry it and explains why it stopped. An edit with no
+     * material is not an under-specified placement, it is not a placement: the controller declines
+     * to raise one, which is what "you have nothing to build with" looks like from the inside.
+     */
+    data class Place(
+        val tile: TileIndex,
+        val brush: Brush,
+        val facing: Direction,
+        val material: Species,
+    ) : Edit
     data class Rotate(val tile: TileIndex) : Edit
     /**
      * Takes something off a tile — one layer of it, or a named one, or all of it.
@@ -36,17 +50,16 @@ sealed interface Edit {
     /**
      * Draws a run from [from] to [to].
      *
-     * ⚠️ **[material] is here as well as on [Brush], because dragging does not go through a brush.**
-     * A click places through `Place`, which carries one; a drag is its own edit and was silently
-     * laying the conduit's default however the player had set the picker. Null is the default, and
-     * only tiles the drag actually *raises* take it — an existing segment keeps whatever it is,
-     * ghost or finished, so changing a run's material means removing it first.
+     * ⚠️ **Only tiles the drag actually *raises* take [material]** — an existing segment keeps
+     * whatever it is, ghost or finished, so changing a run's material means removing it first.
+     *
+     * ⛔ Required, for the reason [Place]'s is.
      */
     data class Lay(
         val from: TileIndex,
         val to: TileIndex,
-        val conduit: Conduit = Conduit.Rail,
-        val material: Species? = null,
+        val conduit: Conduit,
+        val material: Species,
     ) : Edit
 
     /**

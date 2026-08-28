@@ -28,6 +28,7 @@ import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * A ghost is track with a representation and no mass — see `apps/outofspace/PLAN_self_building_rails.md`.
@@ -47,7 +48,7 @@ class GhostTest {
         conduit: Conduit,
         from: TileIndex,
         to: TileIndex,
-        material: Species? = null,
+        material: Species = materialBefore(conduit),
     ): VesselState =
         OutofspaceReducer.reduce(
             cfg,
@@ -61,7 +62,7 @@ class GhostTest {
         y: Int,
         fromX: Int,
         toX: Int,
-        material: Species? = null,
+        material: Species = materialBefore(conduit),
     ): VesselState {
         var s = state
         for (x in fromX until toX) s = lay(s, conduit, grid.tile(x, y), grid.tile(x + 1, y), material)
@@ -748,10 +749,15 @@ class GhostTest {
     @Test
     fun `a drag over existing track leaves its material alone`() {
         val iron = drag(VesselState.empty(grid).copy(creative = false), Conduit.Rail, y = 3, fromX = 2, toX = 6)
-        assertNull(iron.conduits.at(Conduit.Rail, grid.tile(4, 3))?.material, "fixture: laid at the default")
+        assertEquals(
+            Species.Iron,
+            iron.conduits.at(Conduit.Rail, grid.tile(4, 3))?.material,
+            "fixture: the first drag did not lay iron",
+        )
 
         val again = drag(iron, Conduit.Rail, y = 3, fromX = 2, toX = 6, material = Species.Copper)
-        assertNull(
+        assertEquals(
+            Species.Iron,
             again.conduits.at(Conduit.Rail, grid.tile(4, 3))?.material,
             "dragging copper over existing track re-specified it",
         )

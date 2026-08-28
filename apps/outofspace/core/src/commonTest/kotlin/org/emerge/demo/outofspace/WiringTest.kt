@@ -36,6 +36,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The trigger grammar: sensors, signals, and machines throttled by `Σ(signal × weight)`.
@@ -67,7 +68,7 @@ class WiringTest {
     private fun signalRow(grid: Grid, wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
         val lo = minOf(fromX, toX)
         val hi = maxOf(fromX, toX)
-        for (x in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
+        for (x in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         for (x in lo until hi) {
             val a = grid.tile(x, y)
             val b = grid.tile(x + 1, y)
@@ -79,7 +80,7 @@ class WiringTest {
     private fun signalCol(grid: Grid, wires: Array<Segment?>, x: Int, fromY: Int, toY: Int) {
         val lo = minOf(fromY, toY)
         val hi = maxOf(fromY, toY)
-        for (y in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
+        for (y in lo..hi) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         for (y in lo until hi) {
             val a = grid.tile(x, y)
             val b = grid.tile(x, y + 1)
@@ -151,7 +152,7 @@ class WiringTest {
         val eye = grid.tile(4, 2)
         val stored = Mixture.of(Species.Iron to fill, energy = 0)
         val wires = arrayOfNulls<Segment>(grid.size)
-        if (wired) wires[eye.index] = Segment(Conduit.Signal)
+        if (wired) wires[eye.index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         val deck = DeckArray(grid)
         deck += Storage(tank, Direction.Right)
         deck += Sensor(eye, Direction.Left)
@@ -173,7 +174,7 @@ class WiringTest {
     fun `a sensor facing nothing reports nothing`() {
         val grid = Grid(2, 1)
         val wires = arrayOfNulls<Segment>(grid.size)
-        wires[1] = Segment(Conduit.Signal)
+        wires[1] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         val deck = DeckArray(grid)
         deck += Sensor(TileIndex(1), Direction.Left)
         var s = VesselState(
@@ -403,7 +404,7 @@ class WiringTest {
         val grid = Grid(8, 6)
         val at = grid.tile(3, 3)
         var s = VesselState.empty(grid)
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(at, Brush.Building(DeckMachineKind.Extractor), Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(at, Brush.Building(DeckMachineKind.Extractor), Direction.Right))))
         assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 

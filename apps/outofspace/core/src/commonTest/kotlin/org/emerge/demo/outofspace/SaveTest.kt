@@ -35,6 +35,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Saving and loading.
@@ -301,7 +302,7 @@ class SaveTest {
         val grid = Grid(8, 8)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        fun lay(x: Int, y: Int) { rails[grid.tile(x, y).index] = rails[grid.tile(x, y).index] ?: Segment(org.emerge.demo.outofspace.world.Conduit.Rail) }
+        fun lay(x: Int, y: Int) { rails[grid.tile(x, y).index] = rails[grid.tile(x, y).index] ?: Segment(org.emerge.demo.outofspace.world.Conduit.Rail, material = materialBefore(org.emerge.demo.outofspace.world.Conduit.Rail)) }
         fun join(a: TileIndex, b: TileIndex, dir: Direction) {
             rails[a.index] = rails[a.index]!!.joinedTo(dir)
             rails[b.index] = rails[b.index]!!.joinedTo(dir.opposite)
@@ -327,8 +328,8 @@ class SaveTest {
         val crossing = grid.tile(4, 3)
         // A wire under the rail, not a pipe: track and plumbing compete for the floor and cannot
         // share a tile at all now, so the crossing that has to round-trip is rail over wire.
-        for (x in 2..6) rails[grid.tile(x, 3).index] = Segment(Conduit.Rail, links = 1 shl Direction.Right.ordinal)
-        for (y in 1..5) wires[grid.tile(4, y).index] = Segment(Conduit.Signal, links = 1 shl Direction.Down.ordinal)
+        for (x in 2..6) rails[grid.tile(x, 3).index] = Segment(Conduit.Rail, links = 1 shl Direction.Right.ordinal, material = materialBefore(Conduit.Rail))
+        for (y in 1..5) wires[grid.tile(4, y).index] = Segment(Conduit.Signal, links = 1 shl Direction.Down.ordinal, material = materialBefore(Conduit.Signal))
 
         val state = VesselState(
             grid,
@@ -534,7 +535,7 @@ class SaveTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val ore = Mixture.of(Species.Iron to 410L, Species.Quartz to 590L, energy = 0)
-        rails[grid.tile(2, 2).index] = Segment(Conduit.Rail)
+        rails[grid.tile(2, 2).index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
         deck += Gauge(grid.tile(2, 2)).reading(SolidPacket(ore))
 
         val state = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))

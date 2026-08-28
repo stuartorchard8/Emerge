@@ -422,7 +422,7 @@ class ThrusterTest {
     )
 
     private fun build(state: VesselState, tile: TileIndex, kind: DeckMachineKind, facing: Direction): VesselState =
-        run(state, 1, OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(kind), facing))))
+        run(state, 1, OutofspaceInput(listOf(fixturePlace(tile, Brush.Building(kind), facing))))
 
     private fun run(state: VesselState, ticks: Int, input: OutofspaceInput = OutofspaceInput.EMPTY): VesselState {
         var s = state

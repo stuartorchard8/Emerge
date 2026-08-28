@@ -253,7 +253,7 @@ class AtmosphereTest {
         val aboard = s.atmosphereMass
         assertTrue(s.air.pressureAt(wall) > 0L, "the tile we are about to wall off had air in it")
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(wall, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(wall, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
         assertEquals(0L, s.air.pressureAt(wall), "a hull tile is not part of the atmosphere")
         assertEquals(aboard, s.atmosphereMass, "and not a gram of it was lost")
         assertAirBalanced(s, "after walling")
@@ -271,7 +271,7 @@ class AtmosphereTest {
         val trapped = s.air.pressureAt(pocket)
         assertTrue(trapped > 0L, "the pocket has air in it to begin with")
 
-        s = run(s, 2, OutofspaceInput(listOf(Edit.Place(pocket, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
+        s = run(s, 2, OutofspaceInput(listOf(fixturePlace(pocket, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
         assertEquals(null, s.deck[pocket], "the build had nowhere to put the air, so it did not happen")
         assertEquals(trapped, s.air.pressureAt(pocket), "and the air is untouched")
         assertAirBalanced(s, "after the refusal")
@@ -287,7 +287,7 @@ class AtmosphereTest {
         var s = run(room, 20)
         val aboard = s.atmosphereMass
 
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(DeckMachineKind.Storage), Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(tile, Brush.Building(DeckMachineKind.Storage), Direction.Right))))
         val m: DeckMachine? = s.deck[tile]
         assertTrue(m != null, "the storage went down")
         for (x in 4..6) for (y in 2..4) {
@@ -341,7 +341,7 @@ class AtmosphereTest {
         val room = sealedRoom(8, 4)
         val g = room.grid
         val wall = g.tile(4, 3)
-        var s = run(room, 1, OutofspaceInput(listOf(Edit.Place(wall, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
+        var s = run(room, 1, OutofspaceInput(listOf(fixturePlace(wall, Brush.Building(DeckMachineKind.Hull), Direction.Up))))
         s = run(s, 20)
         val aboard = s.atmosphereMass
 

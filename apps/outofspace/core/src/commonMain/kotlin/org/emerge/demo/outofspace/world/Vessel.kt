@@ -1148,7 +1148,10 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val m = deck[grid.tile(ox, oy)] ?: continue
         val ni = remapTile(ox, oy) ?: continue
-        newDeck.stand(m.movedTo(ni), withCasing = false)
+        // ⛔ **The material moves with the machine**, and it did not: `stand` took no material here,
+        // so growing the ship quietly rebuilt every machine aboard out of its kind's default. A
+        // copper storage came back titanium. Unwritable now that the parameter is required.
+        newDeck.stand(m.movedTo(ni), withCasing = false, material = deck.materialOf(m))
     }
     for (ox in 0 until oldW) for (oy in 0 until oldH) {
         val ni = remapTile(ox, oy) ?: continue

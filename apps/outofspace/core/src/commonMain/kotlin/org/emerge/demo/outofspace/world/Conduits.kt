@@ -108,7 +108,7 @@ class Conduits private constructor(
             for (i in layer.indices) {
                 val segment = layer[i] ?: continue
                 val tile = TileIndex(i)
-                if (!tracks.occupies(conduit, tile)) tracks.lay(conduit, tile, segment.materialOrDefault)
+                if (!tracks.occupies(conduit, tile)) tracks.lay(conduit, tile, segment.material)
             }
         }
         return this
@@ -124,7 +124,7 @@ class Conduits private constructor(
      */
     fun isComplete(conduit: Conduit, tile: TileIndex): Boolean {
         val segment = at(conduit, tile) ?: return false
-        return tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)
+        return tracks.holdsFullBill(conduit, tile, segment.material)
     }
 
     /**
@@ -137,18 +137,22 @@ class Conduits private constructor(
      */
     fun isGhost(conduit: Conduit, tile: TileIndex): Boolean {
         val segment = at(conduit, tile) ?: return false
-        return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)
+        return !segment.deconstructing && !tracks.holdsFullBill(conduit, tile, segment.material)
     }
 
     /** How built the segment at [tile] is, against its own material. For readouts and the renderer. */
     fun builtPermille(conduit: Conduit, tile: TileIndex): Int {
         val segment = at(conduit, tile) ?: return 0
-        return tracks.builtPermille(conduit, tile, segment.materialOrDefault)
+        return tracks.builtPermille(conduit, tile, segment.material)
     }
 
-    /** What the segment at [tile] is to be built from, or the conduit's default if nobody chose. */
-    fun materialAt(conduit: Conduit, tile: TileIndex): Species =
-        at(conduit, tile)?.materialOrDefault ?: conduit.material.species
+    /**
+     * What the segment at [tile] is made of, or null where there is no segment.
+     *
+     * ⚠️ **Null means "there is nothing here", never "nobody chose".** A conduit has no substance of
+     * its own to fall back on — see [Segment.material].
+     */
+    fun materialAt(conduit: Conduit, tile: TileIndex): Species? = at(conduit, tile)?.material
 
 
     /** What one tile of one network is holding — its heat, and the metal holding it. */

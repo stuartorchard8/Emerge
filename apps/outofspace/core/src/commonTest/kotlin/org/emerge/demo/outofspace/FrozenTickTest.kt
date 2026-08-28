@@ -159,7 +159,7 @@ class FrozenTickTest {
         val busy = live(workingVessel(cfg.initialGrid), 300)
         val empty = beside(busy)
 
-        val edited = frozen(busy, input = OutofspaceInput(listOf(Edit.Place(empty, Brush.Run(Conduit.Rail), Direction.Right))))
+        val edited = frozen(busy, input = OutofspaceInput(listOf(fixturePlace(empty, Brush.Run(Conduit.Rail), Direction.Right))))
 
         assertTrue(edited.railAt(empty) != null, "the track the player laid while paused is not there")
     }
@@ -175,7 +175,7 @@ class FrozenTickTest {
     fun `an edit on a frozen tick moves nothing else`() {
         val busy = live(workingVessel(cfg.initialGrid), 300)
         val empty = beside(busy)
-        val edited = frozen(busy, input = OutofspaceInput(listOf(Edit.Place(empty, Brush.Run(Conduit.Rail), Direction.Right))))
+        val edited = frozen(busy, input = OutofspaceInput(listOf(fixturePlace(empty, Brush.Run(Conduit.Rail), Direction.Right))))
 
         assertEquals(busy.extractedMass, edited.extractedMass, "the extractor ran while the game was stopped")
         assertEquals(busy.ventedMass, edited.ventedMass, "a vent breathed")

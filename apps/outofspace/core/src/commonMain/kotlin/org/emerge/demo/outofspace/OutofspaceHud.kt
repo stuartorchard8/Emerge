@@ -45,6 +45,7 @@ import org.emerge.render.torus.ui.Anchor
 import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
+import org.emerge.demo.outofspace.world.Stockpile
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -323,11 +324,11 @@ class OutofspaceHud {
                     gap()
                     val offer = stock.buildableSpecies
                     val chosen = controller.buildMaterial
-                    title("MATERIAL  ·  ${chosen?.name ?: "DEFAULT"}")
-                    button(
-                        if (chosen == null) "> DEFAULT PER BUILDING" else "  DEFAULT PER BUILDING",
-                        if (chosen == null) 0x4A6A8AFFL else 0x232A38FFL,
-                    ) { controller.buildMaterial = null }
+                    // ⛔ **There is no "default" entry any more, because there is no default.** It
+                    // used to be the top of this list and the state a new game started in; nothing
+                    // is normally made of anything now, so an unchosen material is not a neutral
+                    // setting, it is the reason nothing can be placed.
+                    title("MATERIAL  ·  ${chosen?.name ?: "NONE PICKED"}")
                     for (species in offer.take(MATERIAL_LINES)) {
                         val selected = species == chosen
                         button(
@@ -335,17 +336,38 @@ class OutofspaceHud {
                             if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
                         ) { controller.buildMaterial = species }
                     }
-                    if (offer.isEmpty()) {
-                        row("nothing loose to build from", 0xC8A44AFFL)
-                    } else {
-                        val rest = offer.size - MATERIAL_LINES
-                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                    val rest = offer.size - MATERIAL_LINES
+                    if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                    // ⚠️ **A section of its own, below the hold, and not merged into it.** The
+                    // creative allowance is not stock — see [Stockpile.CREATIVE_MATERIALS] — and
+                    // appending it to the list above would both lie about where it comes from and
+                    // push it off the end behind "and N more" the moment the ship carried five
+                    // things. Same reasoning the stockpile panel keeps loose and fabric apart.
+                    if (s.creative) {
+                        val free = Stockpile.CREATIVE_MATERIALS.filter { it !in offer }
+                        if (free.isNotEmpty()) {
+                            row("creative · always available", 0x7A8A9AFFL)
+                            for (species in free) {
+                                val selected = species == chosen
+                                button(
+                                    "${if (selected) ">" else " "} ${species.name}",
+                                    if (selected) speciesColor(species) or 0xFFL else 0x232A38FFL,
+                                ) { controller.buildMaterial = species }
+                            }
+                        }
                     }
-                    // ⚠️ **The choice outlives its stock.** Picking a material and then running out
-                    // leaves the selection standing, because it is an intent — but a site laid under
-                    // it will sit unfed, and that is worth saying where the decision is made rather
-                    // than leaving the player to work it out from a stalled belt.
-                    if (chosen != null && stock.buildable(chosen) <= 0L) {
+                    // ⛔ **Nothing to build from is a real state now**, and the one thing a player
+                    // must not have to deduce from a tool that silently does nothing.
+                    if (chosen == null) {
+                        row(
+                            if (offer.isEmpty()) "nothing loose aboard · mine first" else "pick a material to build",
+                            0xE05A4AFFL,
+                        )
+                    } else if (stock.buildable(chosen) <= 0L && !(s.creative && chosen in Stockpile.CREATIVE_MATERIALS)) {
+                        // ⚠️ **The choice outlives its stock.** Picking a material and then running
+                        // out leaves the selection standing, because it is an intent — but a site
+                        // laid under it will sit unfed, and that is worth saying where the decision
+                        // is made rather than leaving the player to work it out from a stalled belt.
                         row("none loose · sites will wait", 0xE05A4AFFL)
                     }
                 } else if (controller.tool == Tool.Delete) {

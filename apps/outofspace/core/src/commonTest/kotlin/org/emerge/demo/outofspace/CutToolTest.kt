@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The cut tool: severing joins without taking anything up.
@@ -47,7 +48,7 @@ class CutToolTest {
             cfg, s,
             mapOf(
                 org.emerge.sim.core.PlayerId(0) to OutofspaceInput(
-                    (2 until 11).map { Edit.Lay(grid.tile(it, 4), grid.tile(it + 1, 4), Conduit.Signal) },
+                    (2 until 11).map { fixtureLay(grid.tile(it, 4), grid.tile(it + 1, 4), Conduit.Signal) },
                 ),
             ),
         )
@@ -55,7 +56,7 @@ class CutToolTest {
     }
 
     private fun controller(state: VesselState = world()): OutofspaceController =
-        OutofspaceController(cfg, state)
+        OutofspaceController(cfg, state).also { it.buildMaterial = materialBefore(Conduit.Rail) }
 
     private fun joined(s: VesselState, conduit: Conduit, x: Int): Boolean =
         s.conduits.at(conduit, grid.tile(x, 4))?.linkedTo(Direction.Right) == true
@@ -125,7 +126,7 @@ class CutToolTest {
                 cfg, world(),
                 mapOf(
                     org.emerge.sim.core.PlayerId(0) to OutofspaceInput(
-                        listOf(Edit.Lay(grid.tile(6, 4), grid.tile(6, 3), Conduit.Rail)),
+                        listOf(fixtureLay(grid.tile(6, 4), grid.tile(6, 3), Conduit.Rail)),
                     ),
                 ),
             ),

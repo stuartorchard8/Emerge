@@ -29,7 +29,7 @@ class SignalNetworkTest {
     private fun drag(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
         for (x in fromX until toX) {
-            s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
+            s = edit(s, fixtureLay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
         }
         return s
     }
@@ -71,8 +71,8 @@ class SignalNetworkTest {
         assertEquals(2, networks(s).count)
 
         // The link that makes them one circuit, laid down the gap between them.
-        s = edit(s, Edit.Lay(grid.tile(1, 2), grid.tile(1, 3), Conduit.Signal))
-        s = edit(s, Edit.Lay(grid.tile(1, 3), grid.tile(1, 4), Conduit.Signal))
+        s = edit(s, fixtureLay(grid.tile(1, 2), grid.tile(1, 3), Conduit.Signal))
+        s = edit(s, fixtureLay(grid.tile(1, 3), grid.tile(1, 4), Conduit.Signal))
 
         val n = networks(s)
         assertEquals(1, n.count)
@@ -93,7 +93,7 @@ class SignalNetworkTest {
 
     @Test
     fun `an isolated tile is a network of one`() {
-        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(5, 5), Brush.Run(Conduit.Signal), org.emerge.demo.outofspace.world.Direction.Right))
+        val s = edit(VesselState.empty(grid), fixturePlace(grid.tile(5, 5), Brush.Run(Conduit.Signal), org.emerge.demo.outofspace.world.Direction.Right))
         val n = networks(s)
 
         assertEquals(1, n.count)

@@ -23,6 +23,7 @@ import kotlin.math.pow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * `Material.conductanceCentiTicks` is derived from real thermal conductivities now — these are the
@@ -146,7 +147,7 @@ class MaterialThermalTest {
 
         fun conductanceMadeOf(species: Species): Long {
             val rails = arrayOfNulls<Segment>(grid.size)
-            rails[tile.index] = Segment(Conduit.Rail)
+            rails[tile.index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
             val conduits = Conduits.ofRails(rails.toList())
             // Replace the metal with the same *mass* of something else, so the only thing that can
             // move the answer is which species it is.
@@ -184,7 +185,7 @@ class MaterialThermalTest {
         val grid = Grid(6, 4)
         val tile = grid.tile(2, 2)
         val rails = arrayOfNulls<Segment>(grid.size)
-        rails[tile.index] = Segment(Conduit.Rail)
+        rails[tile.index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
         val conduits = Conduits.ofRails(rails.toList())
         conduits.tracks[Conduit.Rail].release(tile)
 

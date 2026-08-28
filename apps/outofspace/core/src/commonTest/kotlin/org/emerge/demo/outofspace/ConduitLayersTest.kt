@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Four networks on one tile grid, which is what [Conduit] always claimed and the storage never was.
@@ -43,7 +44,7 @@ class ConduitLayersTest {
         OutofspaceReducer.reduce(
             cfg,
             state,
-            mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Lay(from, to, conduit)))),
+            mapOf(PlayerId(0) to OutofspaceInput(listOf(fixtureLay(from, to, conduit)))),
         )
 
     /** Drag a straight run, one step at a time, the way the controller emits it. */
@@ -130,8 +131,8 @@ class ConduitLayersTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val wires = arrayOfNulls<Segment>(grid.size)
         val tile = grid.tile(5, 3)
-        rails[tile.index] = Segment(Conduit.Rail)
-        wires[tile.index] = Segment(Conduit.Signal)
+        rails[tile.index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
+        wires[tile.index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         val conduits = Conduits.of(
             grid.size,
             Conduit.Rail to rails.toList(),

@@ -1401,9 +1401,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         operator fun set(tile: TileIndex, value: DeckMachine) {
             deck[tile] = value
         }
-        operator fun plusAssign(value: DeckMachine) {
-            deck += value
-        }
         var extractedMass: Long = state.extractedMass
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
@@ -1437,7 +1434,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * already laid or re-materialled a segment must see what it did. The snapshot is a copy.
          */
         fun materialAt(conduit: Conduit, tile: TileIndex): Species =
-            layers[conduit.ordinal][tile.index]?.materialOrDefault ?: conduit.material.species
+            layers[conduit.ordinal][tile.index]?.material
+                ?: error("no $conduit at $tile to have a material")
         val diverters: FlowCursors = FlowCursors(state.diverters.snapshot(), state.diverters.mergeSnapshot())
         var ventedMass: Long = state.ventedMass
         var builtMass: Long = state.builtMass
@@ -1808,17 +1806,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 // The brush's material rides onto the segment, so the site knows what
                                 // it is asking for before the first gram arrives. Null is the
                                 // conduit's default and writes nothing to disk.
-                                layer(c)[edit.tile.index] = Segment(c, material = brush.material)
+                                layer(c)[edit.tile.index] = Segment(c, material = edit.material)
                                 // In creative the metal arrives from off-world with its heat in it,
                                 // and `built` books it. Otherwise it does not arrive at all: what is
                                 // laid is a ghost, and it fills itself off the network.
-                                if (creative) {
-                                    built(tracks.lay(c, edit.tile, brush.material ?: c.material.species))
-                                }
+                                if (creative) built(tracks.lay(c, edit.tile, edit.material))
                             }
                         }
                         is Brush.Building ->
-                            placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, brush.material)
+                            placeDeckBuilding(edit.tile, brush.kind, edit.facing, deck, edit.material)
                     }
                 }
                 is Edit.Lay -> layConduit(edit.from, edit.to, edit.conduit, edit.material)
@@ -2112,6 +2108,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          */
         private fun rebuildInPlace(centre: TileIndex, before: DeckMachine, turned: DeckMachine) {
             val carried = before.tiles(grid).sumOf { deck.stuff.energyAt(it) }
+            // ⚠️ **Read before the demolish**, which clears it: turning a bridge round does not
+            // change what it is made of, and `-=` then `stand` is the one shape in the game that
+            // could lose that. It is the same bridge — see this function's own header.
+            val madeOf = deck.materialOf(before)
             for (t in before.tiles(grid)) originOf[t] = TileIndex.NONE
             val held = BufferRole.entries.mapNotNull { role ->
                 val tile = bufferTile(grid, before, centre, role) ?: return@mapNotNull null
@@ -2119,7 +2119,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             }
             buffers.releaseRoles(grid, before, centre)
             deck -= centre
-            deck += turned
+            deck.stand(turned, withCasing = true, material = madeOf)
             buffers.claimRoles(grid, turned, centre)
             for (t in turned.tiles(grid)) originOf[t] = centre
             for ((role, held1) in held) {
@@ -2224,7 +2224,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             kind: DeckMachineKind,
             facing: Direction,
             deck: DeckArray,
-            material: Species? = null,
+            material: Species,
         ) {
             val built = newDeckMachine(kind, tile, facing) ?: return
             // Null means it hangs off the grid — half a bridge, or a smelter over the rim.
@@ -2272,7 +2272,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             from: TileIndex,
             to: TileIndex,
             conduit: Conduit,
-            material: Species? = null,
+            material: Species,
         ) {
             val dir = adjacency(from, to) ?: return
             // Track and plumbing compete for the floor, so a drag that would cross the other one
@@ -2291,7 +2291,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             fun raise(tile: TileIndex): Segment {
                 // ⚠️ Only reached for a tile with nothing on it — an existing segment is kept by the
                 // elvis below, so a drag across finished track never re-materials it.
-                if (creative) built(tracks.lay(conduit, tile, material ?: conduit.material.species))
+                if (creative) built(tracks.lay(conduit, tile, material))
                 return Segment(conduit, material = material)
             }
             val a = line[from.index] ?: raise(from)

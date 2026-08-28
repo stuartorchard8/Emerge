@@ -56,7 +56,7 @@ class PipeFluidTest {
 
     private fun lay(state: VesselState, from: TileIndex, to: TileIndex): VesselState =
         OutofspaceReducer.reduce(
-            cfg, state, mapOf(PlayerId(0) to OutofspaceInput(listOf(Edit.Lay(from, to, Conduit.Pipe)))),
+            cfg, state, mapOf(PlayerId(0) to OutofspaceInput(listOf(fixtureLay(from, to, Conduit.Pipe)))),
         )
 
     private fun run(state: VesselState, ticks: Int): VesselState {

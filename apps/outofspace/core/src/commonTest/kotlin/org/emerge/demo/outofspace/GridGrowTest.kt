@@ -19,6 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The acceptance tests for P3 — grow on demand — written before the implementation, as P1 and P2
@@ -238,7 +239,7 @@ class GridGrowTest {
 
             val grown = edit(
                 before,
-                Edit.Place(before.grid.tile(at.first, at.second), Brush.Building(DeckMachineKind.Hull), Direction.Right),
+                fixturePlace(before.grid.tile(at.first, at.second), Brush.Building(DeckMachineKind.Hull), Direction.Right),
             )
             assertNotEquals(before.grid, grown.grid, "$name: the reducer did not grow the grid")
             assertBalanced(grown, "straight after growing $name")
@@ -379,6 +380,9 @@ class GridGrowTest {
     @Test
     fun `the selection survives a near-side growth through the controller`() {
         val controller = OutofspaceController(cfg, fitted())
+        // ⚠️ A controller with no material picked places nothing — see `buildMaterial`. That is the
+        // rule under test elsewhere; here it is just something a player would have done first.
+        controller.buildMaterial = materialBefore(Conduit.Rail)
         // One tick first: `occupancy` is derived by the reducer, so a freshly built world has none
         // and the wiring tool would select nothing.
         controller.stepOnce()
@@ -416,7 +420,7 @@ class GridGrowTest {
             // A: grows during the tick the edit lands.
             val a0 = fitted()
             val target = a0.grid.tile(at.first, at.second)
-            val a1 = edit(a0, Edit.Place(target, Brush.Building(DeckMachineKind.Hull), Direction.Right))
+            val a1 = edit(a0, fixturePlace(target, Brush.Building(DeckMachineKind.Hull), Direction.Right))
 
             // B: the same world, already the size A will grow to, with the same edit at the tile it
             // will have ended up at. `remapped` is P1's, tested in isolation, so B leans on nothing
@@ -425,7 +429,7 @@ class GridGrowTest {
             val b0 = a0.remapped(shape.state.grid, shape.dx, shape.dy)
             val b1 = edit(
                 b0,
-                Edit.Place(b0.grid.tile(at.first + shape.dx, at.second + shape.dy), Brush.Building(DeckMachineKind.Hull), Direction.Right),
+                fixturePlace(b0.grid.tile(at.first + shape.dx, at.second + shape.dy), Brush.Building(DeckMachineKind.Hull), Direction.Right),
             )
 
             assertEquals(a1.grid, b1.grid, "$name: A did not reach B's shape")

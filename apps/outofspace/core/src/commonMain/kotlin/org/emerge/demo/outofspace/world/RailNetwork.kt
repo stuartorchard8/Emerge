@@ -34,7 +34,7 @@ fun railGhosts(rails: List<Segment?>, tracks: TrackLayers): Set<TileIndex> {
         val segment = rails[i] ?: continue
         if (segment.deconstructing) continue
         val tile = TileIndex(i)
-        if (!tracks.holdsFullBill(Conduit.Rail, tile, segment.materialOrDefault)) out.add(tile)
+        if (!tracks.holdsFullBill(Conduit.Rail, tile, segment.material)) out.add(tile)
     }
     return out
 }
@@ -77,7 +77,7 @@ fun conduitGhosts(
             if (rails[i] == null) continue
             val tile = TileIndex(i)
             if (tile in out) continue
-            if (!tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)) out[tile] = conduit
+            if (!tracks.holdsFullBill(conduit, tile, segment.material)) out[tile] = conduit
         }
     }
     return out
@@ -314,7 +314,11 @@ fun VesselState.railFlow(): FlowGraph {
             ghosts,
             machineGhosts,
             otherGhosts,
-            conduits::materialAt,
+            { conduit, tile ->
+                // Only ever asked of a tile that carries a construction site, so the segment is
+                // there by construction; a null here is a corrupt world, not a case.
+                conduits.materialAt(conduit, tile) ?: error("no $conduit at $tile to have a material")
+            },
             deck::materialOf,
         ) { rail.resourceAt(it) },
         // ⛔ Unpaid track, and nothing else: a ghost rail is a wall to the graph — see

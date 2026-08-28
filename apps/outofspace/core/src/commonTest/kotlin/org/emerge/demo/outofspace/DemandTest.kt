@@ -181,8 +181,8 @@ class DemandTest {
             .stocked(grid.tile(2, 3), Mixture.of(Species.Quartz to 10L * Capacity.PACKET_MASS, energy = 0))
 
         // Draw two more tiles of track: unbuilt, and wanting iron they will never see.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Lay(grid.tile(9, 3), grid.tile(10, 3), Conduit.Rail))))
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Lay(grid.tile(10, 3), grid.tile(11, 3), Conduit.Rail))))
+        s = run(s, 1, OutofspaceInput(listOf(fixtureLay(grid.tile(9, 3), grid.tile(10, 3), Conduit.Rail))))
+        s = run(s, 1, OutofspaceInput(listOf(fixtureLay(grid.tile(10, 3), grid.tile(11, 3), Conduit.Rail))))
         s = run(s, 30 * RAIL_PERIOD)
 
         assertEquals(0L, onTrack(s), "quartz was drawn toward a site that can never use it")

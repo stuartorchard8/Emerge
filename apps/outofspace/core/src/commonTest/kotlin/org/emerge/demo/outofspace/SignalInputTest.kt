@@ -23,6 +23,7 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Increment E of `PLAN_signal_network.md`: a person's finger on the wire.
@@ -44,7 +45,7 @@ class SignalInputTest {
     }
 
     private fun signalRow(wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
-        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
+        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         for (x in fromX until toX) {
             val a = grid.tile(x, y)
             val b = grid.tile(x + 1, y)

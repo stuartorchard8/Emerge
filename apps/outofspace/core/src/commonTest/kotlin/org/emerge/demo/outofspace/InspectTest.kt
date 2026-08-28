@@ -15,6 +15,7 @@ import org.emerge.demo.outofspace.world.machine.Furnace
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The inspector, as the player reaches it: click a tile, click again, see the next layer.
@@ -44,7 +45,7 @@ class InspectTest {
         }
         deck += Furnace(centre, Direction.Right)
         val layer = arrayOfNulls<Segment>(grid.size)
-        for (tile in rails) layer[tile.index] = Segment(Conduit.Rail)
+        for (tile in rails) layer[tile.index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
         return VesselState(
             grid,
             deck,

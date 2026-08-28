@@ -39,6 +39,44 @@ import org.emerge.sim.core.physics.primitives.Frac2
 /** A save that could not be read, with the line that stopped it. */
 class SaveError(message: String) : Exception(message)
 
+
+/**
+ * **What a machine of [kind] was made of in a file written before [Save.VERSION] 21.**
+ *
+ * ⛔ **This is a statement about old FILES, not about the game.** It is the table that used to be
+ * `DeckMachineKind.material` and answer "what is a Storage normally made of" for every Storage that
+ * would ever be built. Deleting that answer is the whole point of the change it belongs to — but a
+ * save written under it recorded no substance for anything the player had not explicitly chosen, and
+ * a *ghost holds no matter to read one back from*, so the file genuinely does not say. What the file
+ * meant is a historical fact, and a historical fact has one honest home: the reader.
+ *
+ * ⚠️ **It is faithful, not a guess**, and that is checkable rather than hopeful: the metal the old
+ * reader laid under a thing the file did not describe came from *this table*, through
+ * `Conduits.finished` and `DeckArray.stand`. Anything whose matter differed from it — a chosen
+ * material, contaminated track, a part-built ghost — has a `trackstuff` or `deckstuff` line of its
+ * own that still overrides. So a version 20 file loads to the same world it always did.
+ *
+ * Not `when`-exhaustive by accident: every branch is a kind that existed at version 20, and a kind
+ * added later cannot appear in a file that old.
+ */
+fun materialBefore(kind: DeckMachineKind): Species = when (kind) {
+    DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
+    DeckMachineKind.Vent, DeckMachineKind.Storage,
+    DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
+    DeckMachineKind.Thruster, DeckMachineKind.Concentrator,
+    DeckMachineKind.Extractor,
+    -> Species.Titanium
+    DeckMachineKind.Furnace -> Species.Firebrick
+    DeckMachineKind.Bridge, DeckMachineKind.Gauge -> materialBefore(Conduit.Rail)
+    DeckMachineKind.Valve -> materialBefore(Conduit.Pipe)
+}
+
+/** The same, for a length of conduit — see the overload above for what it is and is not. */
+fun materialBefore(conduit: Conduit): Species = when (conduit) {
+    Conduit.Rail -> Species.Iron
+    Conduit.Pipe, Conduit.Power, Conduit.Signal -> Species.Copper
+}
+
 /**
  * Save/load: the whole world as text. Format is line-oriented, greppable, diffable, and hand-editable.
  *
@@ -48,7 +86,7 @@ class SaveError(message: String) : Exception(message)
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 20
+    const val VERSION = 21
 
     /**
      * The first version whose thrusters have a bell — see [ThrusterMigration].
@@ -63,6 +101,16 @@ object Save {
      * The first version whose casings and conduit metal are **one species** — see [purifyFabric].
      */
     private const val PURE_FABRIC_VERSION = 20
+
+    /**
+     * From this version on, **every** built thing writes what it is made of.
+     *
+     * Before it, `made=` was written only where a player had chosen and its absence meant "the
+     * kind's default" — and the game held a table saying what that was. That table is gone: nothing
+     * is normally made of anything now, so a file below this version is a file with a hole in it,
+     * and [materialBefore] is how the hole is filled. See [Segment.material].
+     */
+    private const val STATED_MATERIAL_VERSION = 21
 
     /**
      * The tick rate version 1 saves were written at, and so the number that converts their
@@ -142,9 +190,9 @@ object Save {
             // The same spelling a segment being taken apart uses, for the same fact. Absent reads as
             // "not marked", so no version bump and no migration.
             if (tile in state.scrapping) out.append(" scrapping=1")
-            // Omitted for the default — see `Segment.material`, which carries the same argument for
-            // track: null means "nobody chose", so an untouched world writes the file it always did.
-            state.deck.chosenMaterialAt(tile)?.let { out.append(" made=").append(it.name) }
+            // Always written, never omitted: there is no default for its absence to mean. By name,
+            // like every other species on disk, so the enum stays free to be reordered.
+            out.append(" made=").append(state.deck.materialOf(m).name)
             out.append("   # ").append(where(state.grid, tile)).append('\n')
         }
         // One line per segment per layer, keyed `conduit` rather than `rail` since version 6 — the
@@ -315,7 +363,7 @@ object Save {
                 // line is absent — see [Conduits.finished]. Weighed against the conduit's default
                 // instead, a whole run built of something else would be written out tile by tile and
                 // — worse — a file that omitted the line would come back made of the wrong metal.
-                val bill = conduitBillOfMaterials(conduit, segment.materialOrDefault)
+                val bill = conduitBillOfMaterials(conduit, segment.material)
                 if (Species.ALL.all { stuff[t, it] == bill[it] }) continue
                 out.append("trackstuff ").append(conduit.name).append(' ').append(tile).append(' ')
                     .append(writeMixture(stuff.mixtureAt(t))).append('\n')
@@ -501,10 +549,10 @@ object Save {
         // Absent reads as "not marked", which is what every file written before deconstruction
         // existed meant, so no version bump.
         if (s.deconstructing) f.append(" scrapping=1")
-        // Omitted for the default, which is what null means — so a world that has never used
-        // material choice writes exactly the file it always did and needs no version bump. By name,
-        // like every other species on disk, so the enum stays free to be reordered.
-        s.material?.let { f.append(" made=").append(it.name) }
+        // Always written, never omitted: a length of track with no substance is not a thing the
+        // game can represent, so there is no default for an absent field to mean. By name, like
+        // every other species on disk, so the enum stays free to be reordered.
+        f.append(" made=").append(s.material.name)
         val energy = conduits.energyAt(s.conduit, tile)
         // Compared against what *this* tile would hold if freshly laid, not against
         // [Conduit.ambientPerTile]. The bill of materials apportions, so a multi-species conduit's
@@ -792,7 +840,9 @@ object Save {
                         readMigratedDeckHeat(tokens.drop(2), energyScale, ::fail)
                             ?.let { legacyThrusterEnergy[t] = it }
                     } else {
-                        deck += dm
+                        // A `machine` record predates stated materials by many versions, so what it
+                        // is made of is what a file that old meant — see [materialBefore].
+                        deck.stand(dm, withCasing = true, material = materialBefore(dm.kind))
                         // Its heat rode that record in `k=`, and `deckheat` was not written for it,
                         // so without this the machine comes back at ambient and the thermal ledger
                         // reports the difference on the first tick after the load.
@@ -817,6 +867,9 @@ object Save {
                         ?.let { name ->
                             Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
                         }
+                        // See [readSegment]: absent is an old file, not an under-specified one.
+                        ?: if (version < STATED_MATERIAL_VERSION) materialBefore(dm.kind)
+                        else fail("a machine at $t does not say what it is made of")
                     if (dm is Thruster && version < THRUSTER_BELL_VERSION) {
                         legacyThrusters[t] = dm
                         if (marked) legacyThrusterScrapping.add(t)
@@ -828,7 +881,7 @@ object Save {
                 // `rail` = v5 spelling; record carries conduit name, so old files land on the right layer.
                 "rail", "conduit" -> {
                     val t = tile(1)
-                    val segment = readSegment(tokens.drop(2), t, rail, scale, energyScale, ::fail)
+                    val segment = readSegment(tokens.drop(2), t, rail, version, scale, energyScale, ::fail)
                     // The heat is the layer's, and the layer does not exist until every segment has
                     // been read — so it is held aside by (conduit, tile) and applied below, once
                     // [Conduits.of] has laid the metal that carries it.
@@ -844,7 +897,7 @@ object Save {
                     // hand-edited file can say and the game cannot represent.
                     readMigratedFitting(tokens.drop(2), t, scale, ::fail)?.let { fitting ->
                         if (deck[t] != null) fail("a fitting and a machine both stand at tile $t")
-                        deck += fitting
+                        deck.stand(fitting, withCasing = true, material = materialBefore(fitting.kind))
                     }
                 }
                 // A `bridge` record is how every file up to this one spelled it, back when a bridge
@@ -855,7 +908,8 @@ object Save {
                 "bridge" -> {
                     val t = tile(1)
                     if (deck[t] != null) fail("two machines at tile $t")
-                    deck += readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    val dm = readDeckMachine(tokens.drop(2), version, t, grid, buffers, scale, energyScale, ::fail)
+                    deck.stand(dm, withCasing = true, material = materialBefore(dm.kind))
                 }
                 "diverter" -> diverters[tile(1)] = long(2).toInt()
                 "merge" -> merges[tile(1)] = long(2).toInt()
@@ -1260,7 +1314,7 @@ object Save {
                 minted -= energies[tile] ?: 0L
                 continue
             }
-            deck.stand(m, withCasing = true)
+            deck.stand(m, withCasing = true, material = materialBefore(m.kind))
             // The chamber goes back to exactly what the file said it was; the bell keeps the bill
             // `stand` just laid, which is the metal this migration is minting.
             casing[tile]?.let { mix -> for (sp in Species.ALL) deck.stuff[tile, sp] = mix[sp] }
@@ -1382,7 +1436,7 @@ object Save {
             val layer = state.conduits.tracks[conduit]
             for (tile in state.grid.tiles) {
                 if (state.conduits.at(conduit, tile) == null) continue
-                purify(layer, tile, state.conduits.materialAt(conduit, tile))
+                purify(layer, tile, state.conduits.materialAt(conduit, tile) ?: continue)
             }
         }
     }
@@ -1545,6 +1599,7 @@ object Save {
         tokens: List<String>,
         tile: TileIndex,
         rail: RailLayer,
+        version: Int,
         scale: Rescale,
         energyScale: Rescale,
         fail: (String) -> Nothing,
@@ -1565,9 +1620,13 @@ object Save {
             conduit = conduit,
             links = links,
             deconstructing = f["scrapping"] == "1",
+            // Absent means the file predates [STATED_MATERIAL_VERSION] and simply does not say —
+            // see [materialBefore]. From that version on every segment states it, so an absence is
+            // a corrupt record rather than an old one.
             material = f["made"]?.let { name ->
                 Species.ALL.firstOrNull { it.name == name } ?: fail("unknown material '$name'")
-            },
+            } ?: if (version < STATED_MATERIAL_VERSION) materialBefore(conduit)
+            else fail("a segment at $tile does not say what it is made of"),
         )
     }
 

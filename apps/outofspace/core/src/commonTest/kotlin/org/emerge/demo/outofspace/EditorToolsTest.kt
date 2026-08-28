@@ -16,6 +16,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The aimed delete and the debug bellows — the editor tools.
@@ -52,6 +53,9 @@ class EditorToolsTest {
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
         deck += Storage(grid.tile(6, 5), Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size), creative=true))
+        // ⚠️ A controller with no material picked places nothing — see `buildMaterial`. That is the
+        // rule under test elsewhere; here it is just something a player would have done first.
+        c.buildMaterial = materialBefore(Conduit.Rail)
         c.tool = Tool.Build
         c.brush = Brush.Run(Conduit.Rail)
         c.dragTo(grid.tile(5, 5))

@@ -45,6 +45,7 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * A deck machine placed outside creative mode is a **ghost**: standing there, made of nothing, doing
@@ -63,7 +64,7 @@ class MachineGhostTest {
         OutofspaceReducer.reduce(
             cfg, state,
             mapOf(PlayerId(0) to OutofspaceInput(listOf(
-                Edit.Place(tile, Brush.Building(kind), Direction.Right),
+                fixturePlace(tile, Brush.Building(kind), Direction.Right),
             ))),
         )
 
@@ -85,7 +86,7 @@ class MachineGhostTest {
      * states its rail ghosts: a fixture says what the world is, and what a placement puts down is
      * the same thing by a longer road.
      */
-    private fun tankAndGhost(machine: DeckMachine, material: Species? = null): VesselState {
+    private fun tankAndGhost(machine: DeckMachine, material: Species = materialBefore(machine.kind)): VesselState {
         val at = machine.center
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 4), Direction.Right)
@@ -284,7 +285,7 @@ class MachineGhostTest {
         deck += Storage(grid.tile(2, 4), Direction.Right)
         deck += Storage(grid.tile(5, 3), Direction.Down)
         val target = Storage(grid.tile(13, 4), Direction.Right)
-        deck.stand(target, withCasing = false)
+        deck.standGhost(target)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 13, 4)
         val start = VesselState(
@@ -339,7 +340,7 @@ class MachineGhostTest {
         deck += Storage(grid.tile(1, 4), Direction.Right)
         // Titanium, and 3x3, so its construction port sits on the run at its centre.
         val blocking = Storage(grid.tile(7, 4), Direction.Right)
-        deck.stand(blocking, withCasing = false)
+        deck.standGhost(blocking)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, 12, 4)
         val start = VesselState(
@@ -512,10 +513,10 @@ class MachineGhostTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         )
-        assertEquals(Species.Copper, s.deck.chosenMaterialAt(at), "fixture")
+        assertEquals(Species.Copper, s.deck.materialAt(at), "fixture")
 
         val reloaded = Save.read(Save.write(s))
-        assertEquals(Species.Copper, reloaded.deck.chosenMaterialAt(at), "the choice did not survive")
+        assertEquals(Species.Copper, reloaded.deck.materialAt(at), "the choice did not survive")
         assertEquals(
             Species.Copper,
             reloaded.deck.stuff.dominantAt(at),
@@ -523,9 +524,16 @@ class MachineGhostTest {
         )
     }
 
-    /** ⚠️ And a world that never chose writes exactly the file it always did. */
+    /**
+      * ⚠️ **A machine on the deck always knows what it is made of.**
+      *
+      * This used to assert the opposite — that a world nobody had chosen in recorded nothing, so an
+      * untouched save was byte-identical. That was true while a kind had a substance of its own to
+      * fall back on. It has none now, so "nobody chose" is not a state a standing machine can be in:
+      * the only way onto the deck requires a substance, and the file states it for every machine.
+      */
     @Test
-    fun `an unchosen machine writes no material at all`() {
+    fun `a machine on the deck always says what it is made of`() {
         val at = grid.tile(10, 4)
         val deck = DeckArray(grid)
         deck += Extractor(at, facing = Direction.Right)
@@ -535,8 +543,19 @@ class MachineGhostTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         )
-        assertNull(s.deck.chosenMaterialAt(at), "nobody chose, so nothing should be recorded")
-        assertTrue("made=" !in Save.write(s), "a default material was written to disk")
+        assertEquals(
+            Species.Titanium,
+            s.deck.materialAt(at),
+            "a machine standing on the deck did not say what it is made of",
+        )
+        // ⛔ And the file says so for every machine, always — there is no absence left for a
+        // reader to interpret, which is the whole reason the format needed a version of its own.
+        val written = Save.write(s).lineSequence().filter { it.startsWith("deckmachine ") }.toList()
+        assertTrue(written.isNotEmpty(), "fixture: nothing was written to check")
+        assertTrue(
+            written.all { "made=" in it },
+            "a machine went to disk without saying what it is made of: $written",
+        )
     }
 
     /**
@@ -556,8 +575,11 @@ class MachineGhostTest {
         val at = grid.tile(8, 5)
         val empty = VesselState.empty(grid).copy(creative = false)
 
-        val chosen = edit(empty, Edit.Place(at, Brush.Building(DeckMachineKind.Storage, Species.Copper), Direction.Right))
-        assertEquals(Species.Copper, chosen.deck.chosenMaterialAt(at), "the brush's material did not reach the deck")
+        val chosen = edit(
+            empty,
+            Edit.Place(at, Brush.Building(DeckMachineKind.Storage), Direction.Right, Species.Copper),
+        )
+        assertEquals(Species.Copper, chosen.deck.materialAt(at), "the brush's material did not reach the deck")
         assertEquals(
             machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, Species.Copper),
             machineBillOfMaterials(DeckMachineKind.Storage, chosen.deck[at]!!.tiles(grid).size, chosen.deck.materialOf(chosen.deck[at]!!)),
@@ -566,18 +588,26 @@ class MachineGhostTest {
 
         // A run, the same way, on its own layer.
         val railAt = grid.tile(3, 6)
-        val laid = edit(empty, Edit.Place(railAt, Brush.Run(Conduit.Rail, Species.Steel), Direction.Right))
+        val laid = edit(
+            empty,
+            Edit.Place(railAt, Brush.Run(Conduit.Rail), Direction.Right, Species.Steel),
+        )
         assertEquals(
             Species.Steel,
             laid.conduits.at(Conduit.Rail, railAt)?.material,
             "the brush's material did not reach the segment",
         )
 
-        // ⚠️ And the default brush still records nothing, so an ordinary world is untouched.
-        val plain = edit(empty, Edit.Place(grid.tile(5, 6), Brush.Run(Conduit.Rail), Direction.Right))
-        assertNull(
+        // ⚠️ And a placement carrying a different substance lands on it, so the value is read
+        // off the edit rather than guessed from the conduit.
+        val plain = edit(
+            empty,
+            Edit.Place(grid.tile(5, 6), Brush.Run(Conduit.Rail), Direction.Right, Species.Iron),
+        )
+        assertEquals(
+            Species.Iron,
             plain.conduits.at(Conduit.Rail, grid.tile(5, 6))?.material,
-            "a brush nobody set a material on recorded one anyway",
+            "the edit's material did not reach the segment",
         )
     }
 
@@ -819,7 +849,7 @@ class MachineGhostTest {
         val fed = constructionTileOf(grid, bridge)
         val deck = DeckArray(grid)
         deck += Storage(grid.tile(3, 4), Direction.Right)
-        deck.stand(bridge, withCasing = false)
+        deck.standGhost(bridge)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Stops at the end it is fed at. The span itself carries no track — that is what a bridge is.
         joinRow(grid, rails, 4, grid.xOf(fed), 4)
@@ -1178,7 +1208,7 @@ class MachineGhostTest {
         val after = OutofspaceReducer.reduce(
             cfg, sealed,
             mapOf(PlayerId(0) to OutofspaceInput(listOf(
-                Edit.Place(pocket, Brush.Building(DeckMachineKind.Hull), Direction.Right),
+                fixturePlace(pocket, Brush.Building(DeckMachineKind.Hull), Direction.Right),
             ))),
         )
         assertNull(after.deck[pocket], "a ghost went down in a pocket the air cannot leave")
@@ -1198,7 +1228,7 @@ class MachineGhostTest {
         val after = OutofspaceReducer.reduce(
             cfg, start.copy(creative = false),
             mapOf(PlayerId(0) to OutofspaceInput(listOf(
-                Edit.Place(open, Brush.Building(DeckMachineKind.Hull), Direction.Right),
+                fixturePlace(open, Brush.Building(DeckMachineKind.Hull), Direction.Right),
             ))),
         )
         assertTrue(after.deck.isGhost(open), "it went down as a ghost")

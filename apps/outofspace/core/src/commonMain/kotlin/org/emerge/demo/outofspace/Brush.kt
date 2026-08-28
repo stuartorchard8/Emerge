@@ -21,35 +21,25 @@ import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 sealed interface Brush {
     val label: String
 
-    /**
-     * What the thing this brush lays is to be **built out of**, or null for its kind's default.
-     *
-     * ⛔ **On the brush and not on the [Edit], because it is a standing choice rather than an act.**
-     * A player picks a material once and then draws for a while, exactly as they pick a conduit once
-     * and then draw; putting it on the edit would make it something re-decided per click, which is
-     * neither how the tool behaves nor how the menu would present it.
-     *
-     * ⚠️ **Nothing sets it yet.** The plumbing beneath is complete — a site stores its choice, its
-     * bill follows it, and the door admits only what it asked for — so what is missing is the menu
-     * and nothing else. Until there is one this is null everywhere and every brush lays its kind's
-     * default, which is why the whole suite is unchanged by the feature existing.
+    /*
+     * ⛔ **A brush carries no material, and used to.** It was put here rather than on the [Edit] on
+     * the grounds that a material is a standing choice rather than an act — which is true, and the
+     * standing choice is `OutofspaceController.buildMaterial`, where it always actually lived. What
+     * the field bought was a `withMaterial` copy stamped on at the point of use, which then had to
+     * be kept *out* of [ALL] because both the menu highlight and `cycleBrush` compare against these
+     * prototypes by equality: a materialled brush dropped out of its own menu. The value was on the
+     * edit in all but name, so it is on the edit in name now, and a brush is a prototype again —
+     * which is all [ALL] ever wanted it to be.
      */
-    val material: Species?
 
     /** A length of conduit, laid into [conduit]'s own layer. */
-    data class Run(val conduit: Conduit, override val material: Species? = null) : Brush {
+    data class Run(val conduit: Conduit) : Brush {
         override val label: String get() = conduit.label
     }
 
     /** A building, standing on the deck. */
-    data class Building(val kind: DeckMachineKind, override val material: Species? = null) : Brush {
+    data class Building(val kind: DeckMachineKind) : Brush {
         override val label: String get() = kind.label
-    }
-
-    /** This brush, laying [material] instead of its kind's default. */
-    fun withMaterial(material: Species?): Brush = when (this) {
-        is Run -> if (material == this.material) this else copy(material = material)
-        is Building -> if (material == this.material) this else copy(material = material)
     }
 
     companion object {

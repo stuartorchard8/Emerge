@@ -26,6 +26,7 @@ import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Tests for [VesselState.remapped] — the function that moves the entire world onto a different
@@ -346,7 +347,7 @@ class RemappedTest {
         val s0 = populatedWorld()
         // Made of nothing and standing there: a construction site, which is the ordinary state of
         // anything the player has just placed.
-        s0.deck.stand(Hull(s0.grid.tile(8, 8)), withCasing = false)
+        s0.deck.standGhost(Hull(s0.grid.tile(8, 8)))
         // And a finished hull with some of its iron gone — a composition nothing can re-derive.
         val eaten = s0.grid.tile(5, 5)
         s0.deck.stuff[eaten, Species.Iron] = s0.deck.stuff[eaten, Species.Iron] / 3
@@ -366,7 +367,7 @@ class RemappedTest {
         val base = populatedWorld()
         // `populatedWorld` lays no track, so state some: three tiles of rail across the room.
         val rails = MutableList<Segment?>(base.grid.size) { null }
-        for (x in 4..6) rails[base.grid.tile(x, 7).index] = Segment(Conduit.Rail)
+        for (x in 4..6) rails[base.grid.tile(x, 7).index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
         val s0 = base.copy(conduits = Conduits.ofRails(rails))
         val laid = base.grid.tile(5, 7)
         val stuff = s0.conduits.tracks[Conduit.Rail]

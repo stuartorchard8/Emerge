@@ -33,6 +33,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Machines that occupy real space, and connect through named ports.
@@ -60,7 +61,7 @@ class FootprintTest {
     private fun placeDeck(grid: Grid, tile: TileIndex, kind: DeckMachineKind, facing: Direction = Direction.Right): VesselState =
         run(
             VesselState.empty(grid).copy(creative = true), 1,
-            OutofspaceInput(listOf(Edit.Place(tile, Brush.Building(kind), facing))),
+            OutofspaceInput(listOf(fixturePlace(tile, Brush.Building(kind), facing))),
         )
 
     // ── Occupancy ─────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ class FootprintTest {
         val grid = Grid(12, 12)
         var s = placeDeck(grid, grid.tile(5, 5), DeckMachineKind.Extractor)
         // Two tiles away: outside the *centre* but well inside the footprint.
-        s = run(s, 1, OutofspaceInput(listOf(Edit.Place(grid.tile(7, 5), Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
+        s = run(s, 1, OutofspaceInput(listOf(fixturePlace(grid.tile(7, 5), Brush.Building(DeckMachineKind.Sensor), Direction.Right))))
         assertNull(s.deck[grid.tile(7, 5)], "a sensor cannot be dropped inside an extractor")
     }
 
@@ -263,7 +264,7 @@ class FootprintTest {
         deck += Sensor(grid.tile(7, 8), Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
         val wires = arrayOfNulls<Segment>(grid.size)
-        wires[grid.tile(7, 8).index] = Segment(org.emerge.demo.outofspace.world.Conduit.Signal)
+        wires[grid.tile(7, 8).index] = Segment(org.emerge.demo.outofspace.world.Conduit.Signal, material = materialBefore(org.emerge.demo.outofspace.world.Conduit.Signal))
         val s = run(
             VesselState(
                 grid,

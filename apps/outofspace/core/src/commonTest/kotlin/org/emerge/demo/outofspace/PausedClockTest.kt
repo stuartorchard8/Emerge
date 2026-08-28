@@ -8,6 +8,7 @@ import org.emerge.demo.outofspace.world.VesselState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * What a stopped game does — the controller's half of [FrozenTickTest].
@@ -24,7 +25,12 @@ class PausedClockTest {
 
     private val cfg = OutofspaceConfig(initialGrid = Grid(40, 28))
 
-    private fun controller() = OutofspaceController(cfg, workingVessel(cfg.initialGrid))
+    private fun controller() =
+        OutofspaceController(cfg, workingVessel(cfg.initialGrid))
+            // ⚠️ A controller with no material picked places nothing — see `buildMaterial`. That is the
+            // rule under test elsewhere; here it is just something a player would have done first.
+            
+            .also { it.buildMaterial = materialBefore(Conduit.Rail) }
 
     /** One frame at 60 Hz, which is not the tick rate — that mismatch is the whole job of `tick`. */
     private fun frame(c: OutofspaceController, frames: Int = 1) = repeat(frames) { c.tick(1f / 60f) }

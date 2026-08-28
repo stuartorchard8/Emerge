@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The inventory answers two different questions and must not confuse them: **how much is aboard**,
@@ -186,7 +187,7 @@ class StockpileTest {
         val at = grid.tile(3, 3)
         fun world(marked: Boolean): VesselState {
             val rails = arrayOfNulls<Segment>(grid.size)
-            rails[at.index] = Segment(Conduit.Rail, deconstructing = marked)
+            rails[at.index] = Segment(Conduit.Rail, deconstructing = marked, material = materialBefore(Conduit.Rail))
             val deck = DeckArray(grid)
             return VesselState(
                 grid, deck,
@@ -313,11 +314,19 @@ class PureFabricMigrationTest {
 
     private val cfg = OutofspaceConfig()
 
-    /** [world], written out and read back as though the file were one version older. */
+    /**
+     * [world], written out and read back as though the file predated the pure-fabric migration.
+     *
+     * ⚠️ **Pinned at 19, not at "one less than current".** It was the latter, which was only ever
+     * right by coincidence: the migration this test is about fires below version 20, and the moment
+     * the format moved on for an unrelated reason "one older" stopped reaching it and the test
+     * started asserting that a migration which had not run had not done anything. A test about a
+     * *particular* migration names the version that migration is about.
+     */
     private fun reloadedAsLegacy(world: VesselState): VesselState {
         val native = Save.write(world)
         val header = native.lineSequence().first().split(" ")
-        val older = header.toMutableList().also { it[1] = (it[1].toInt() - 1).toString() }
+        val older = header.toMutableList().also { it[1] = "19" }
         return Save.read(native.replaceFirst(header.joinToString(" "), older.joinToString(" ")))
     }
 

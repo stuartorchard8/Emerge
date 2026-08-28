@@ -36,29 +36,27 @@ data class Segment(
      */
     val deconstructing: Boolean = false,
     /**
-     * **What this length is to be built out of**, or null for the conduit's own default.
+     * **What this length is made of** — required, because a length of track that nobody has decided
+     * the substance of is not a thing this game can represent.
      *
-     * ⛔ **The one thing about material choice that cannot be derived and so has to be stored.** A
-     * *finished* tile's material is recoverable from the matter in it — see `StuffLayer.dominantAt`,
-     * and that is why material and [Species] being in bijection matters — but a **ghost holds
-     * nothing**, and a site that does not yet know what it is asking for cannot ask for it. The bill
-     * is the thing that decides which deliveries a tile admits, so the choice has to exist before the
-     * first gram arrives or the site simply takes whatever turns up.
+     * ⛔ **There is no answer to "what is a rail normally made of".** This was `Species?`, where null
+     * meant the conduit's default, and the default was a `when` in one place answering for every
+     * length of track ever laid. That answer is deleted: a conduit is a *shape* — how it joins, what
+     * it carries, how much of a tile it fills — and a shape is not a substance. Stu's call, and it
+     * closes off a whole family of bug in which one half of the tick asked a segment what it was and
+     * the other half asked its kind.
      *
-     * It lives here for the same reason [deconstructing] does, and the argument is that field's:
-     * being a ghost is a fact about the *matter*, wanting to be taken apart is an *instruction* and
-     * has nowhere else to live. Choosing a material is an instruction of exactly that shape.
+     * ⚠️ **A ghost is why it has to be stored rather than derived.** A *finished* tile's material is
+     * recoverable from the matter in it — see `StuffLayer.dominantAt` — but a ghost holds nothing,
+     * and a site that does not yet know what it is asking for cannot ask for it. The bill decides
+     * which deliveries a tile admits, so the choice exists before the first gram arrives.
      *
-     * ⚠️ **Null is not "unknown", it is "the default"**, so a world that has never used the feature
-     * is byte-identical on disk and every existing save loads with no migration. It also means the
-     * default can be changed later and old track follows it, which is the behaviour you want from a
-     * value nobody chose.
+     * It lives here for the reason [deconstructing] does, and the argument is that field's: being a
+     * ghost is a fact about the *matter*; wanting to be taken apart is an *instruction* and has
+     * nowhere else to live. Choosing a substance is an instruction of exactly that shape.
      */
-    val material: Species? = null,
+    val material: Species,
 ) {
-    /** What this is to be built from: the choice if one was made, the conduit's default if not. */
-    val materialOrDefault: Species get() = material ?: conduit.material.species
-
     /** Whether this tile is joined to its neighbour in [dir]. */
     fun linkedTo(dir: Direction): Boolean = links and (1 shl dir.ordinal) != 0
 

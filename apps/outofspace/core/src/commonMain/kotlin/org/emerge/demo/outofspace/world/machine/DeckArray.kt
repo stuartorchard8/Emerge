@@ -56,8 +56,9 @@ class DeckArray(
      * version of itself. Putting it on the machine instead would mean threading it through every
      * subclass constructor and every branch of the save reader, for a value only construction reads.
      *
-     * Null is the default rather than "unknown", so a world that has never chosen writes the file it
-     * always did — see `Segment.material`, which carries the identical argument for track.
+     * ⚠️ **Null means "no machine is anchored here", never "nobody chose".** A kind has no substance
+     * of its own to fall back on — a machine is a *shape and a behaviour*, and neither is a
+     * substance. See `Segment.material`, which carries the identical argument for track.
      */
     private val materials: Array<Species?>,
 ) {
@@ -95,7 +96,13 @@ class DeckArray(
         machines[key.index] = m
     }
 
-    operator fun plusAssign(m: DeckMachine) = stand(m, withCasing = true)
+    /*
+     * ⛔ **There is no `deck += m` any more, and its absence is the point.** It stood a machine made
+     * of its kind's material, which was the game's answer to "what is a Storage normally made of" —
+     * the answer Stu asked to have deleted. Every caller now says [stand] and names a substance.
+     * The test suite keeps a `+=` of its own (`FixtureDeck.kt`), which is a convention of the
+     * fixtures rather than a rule of the game, and says so.
+     */
 
     /**
      * Stands [m] on the deck, with or without the metal it is made of.
@@ -110,11 +117,11 @@ class DeckArray(
      * layer. Creative mode is what still takes the `true` branch, and there the metal genuinely does
      * arrive from off-world, which is why the caller books it.
      */
-    fun stand(m: DeckMachine, withCasing: Boolean, material: Species? = null) {
+    fun stand(m: DeckMachine, withCasing: Boolean, material: Species) {
         require(machines[m.center.index] == null) { "already a machine at ${m.center}" }
         machines[m.center.index] = m
         materials[m.center.index] = material
-        val bill = tileBillOfMaterials(m.kind, material ?: m.kind.material.species)
+        val bill = tileBillOfMaterials(m.kind, material)
         for (tile in m.tiles(grid)) {
             require(!stuff.occupies(tile)) { "deck already holds stuff at $tile" }
             if (!withCasing) continue
@@ -170,12 +177,17 @@ class DeckArray(
         return builtPermille(bill, tiles.sumOf { stuff.massAt(it) })
     }
 
-    /** What [m] is to be built from: its own choice if one was made, its kind's default if not. */
+    /**
+     * What [m] is made of.
+     *
+     * ⛔ **A machine standing on the deck without a substance is a corrupt world, not a defaulted
+     * one** — [stand] is the only way onto the deck and it requires one.
+     */
     fun materialOf(m: DeckMachine): Species =
-        materials[m.center.index] ?: m.kind.material.species
+        materials[m.center.index] ?: error("machine at ${m.center} stands on the deck made of nothing")
 
-    /** The choice as it was made, or null for "nobody chose" — what the save writes. */
-    fun chosenMaterialAt(tile: TileIndex): Species? = materials[tile.index]
+    /** What the machine anchored at [tile] is made of, or null where nothing is anchored there. */
+    fun materialAt(tile: TileIndex): Species? = materials[tile.index]
 
     fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf(), materials.copyOf())
 

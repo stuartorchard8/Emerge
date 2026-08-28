@@ -61,12 +61,12 @@ class ValveTest {
 
     private fun pipeRun(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
-        for (x in fromX until toX) s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Pipe))
+        for (x in fromX until toX) s = edit(s, fixtureLay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Pipe))
         return s
     }
 
     private fun valveAt(state: VesselState, tile: TileIndex): VesselState =
-        edit(state, Edit.Place(tile, Brush.Building(DeckMachineKind.Valve), Direction.Right))
+        edit(state, fixturePlace(tile, Brush.Building(DeckMachineKind.Valve), Direction.Right))
 
     /** Whether the pipe at [tile] is open to the room — a valve standing on a length of pipe. */
     private fun isOpen(s: VesselState, tile: TileIndex): Boolean =

@@ -7,10 +7,41 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.DeckMachine
+import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machine.Vent
+
+/**
+ * **What the starting ship is built out of**, kind by kind.
+ *
+ * ⛔ **A fact about this vessel, not about the kinds.** Nothing in the game is normally made of
+ * anything — see [Segment.material] — so a *stated* world has to state its substances, exactly as it
+ * states where its walls are. This is the shipwright's specification for one ship. Another starting
+ * ship, or one the player builds, answers differently and is no less a ship for it.
+ *
+ * It is deliberately not [materialBefore], which looks identical and means something else: that one
+ * says what an old *save file* meant and belongs to the reader.
+ */
+private fun madeOf(kind: DeckMachineKind): Species = when (kind) {
+    // The skin: cheap, stiff, and the only thing that touches space.
+    DeckMachineKind.Hull, DeckMachineKind.Airlock -> Species.Steel
+    // A furnace is lined with refractory or it takes itself apart the first time it is lit.
+    DeckMachineKind.Furnace -> Species.Firebrick
+    // Fittings that sit on a run are the run's metal, so a joint is one substance throughout.
+    DeckMachineKind.Bridge, DeckMachineKind.Gauge -> RAIL_METAL
+    DeckMachineKind.Valve -> WIRE_METAL
+    // Everything else is machinery: light, strong and expensive, which is the trade the ship was
+    // launched having already made.
+    else -> Species.Titanium
+}
+
+/** The track the ship is launched with. Iron: cheap, and a decent conductor. */
+private val RAIL_METAL = Species.Iron
+
+/** Its wiring. Copper, for the reason anything is wired in copper. */
+private val WIRE_METAL = Species.Copper
 
 /**
  * Starting world: complete refinery line (extractor→concentrator→smelter→storage, waste vents).
@@ -26,7 +57,10 @@ fun starterVessel(
         // Buildings anchored at centre. Clipped at the rim exactly as the machine `put` is: the
         // hull loops below run past the grid, and `grid.tile` of an off-grid (x, y) is not "no
         // tile" — it is row-major arithmetic landing on somebody else's tile.
-        if (grid.inBounds(x, y)) deck += m(grid.tile(x, y))
+        if (grid.inBounds(x, y)) {
+            val machine = m(grid.tile(x, y))
+            deck.stand(machine, withCasing = true, material = madeOf(machine.kind))
+        }
     }
 
     /**
@@ -37,8 +71,8 @@ fun starterVessel(
      * played, and it never goes through the edit path that would otherwise pair them.
      */
     fun lay(tile: TileIndex, gauge: Boolean = false) {
-        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
-        if (gauge && deck[tile] == null) deck += Gauge(tile)
+        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail, material = RAIL_METAL)
+        if (gauge && deck[tile] == null) deck.stand(Gauge(tile), withCasing = true, material = RAIL_METAL)
     }
 
     /** Joins two adjacent tiles of track, both halves, exactly as a drag would. */
@@ -62,7 +96,7 @@ fun starterVessel(
     }
 
     fun layWire(tile: TileIndex) {
-        if (wires[tile.index] == null) wires[tile.index] = Segment(Conduit.Signal)
+        if (wires[tile.index] == null) wires[tile.index] = Segment(Conduit.Signal, material = WIRE_METAL)
     }
 
     fun joinWire(a: TileIndex, b: TileIndex, dir: Direction) {

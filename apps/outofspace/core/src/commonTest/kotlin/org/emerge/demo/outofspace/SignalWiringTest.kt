@@ -28,6 +28,7 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Increment D of `PLAN_signal_network.md`: a value comes off the wire and drives something.
@@ -50,7 +51,7 @@ class SignalWiringTest {
     }
 
     private fun signalRow(wires: Array<Segment?>, fromX: Int, toX: Int, y: Int) {
-        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal)
+        for (x in fromX..toX) if (wires[grid.tile(x, y).index] == null) wires[grid.tile(x, y).index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         for (x in fromX until toX) {
             val a = grid.tile(x, y)
             val b = grid.tile(x + 1, y)

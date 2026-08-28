@@ -97,15 +97,21 @@ class OutofspaceController(
      * What everything placed from now on is to be built out of, or null for each kind's default.
      *
      * ⛔ **On the controller and not on [brush], though [Brush] can carry one.** `Brush.ALL` is a
-     * list of prototypes with no material, and both the build menu's selected-highlight
-     * (`option == brush`) and [cycleBrush]'s `indexOf` compare against them — so storing a
-     * materialled brush here would drop out of its own menu and cycling would silently discard the
-     * choice. The brush stays a prototype and the material is stamped on at the point of use.
+     * list of prototypes and both the build menu's selected-highlight (`option == brush`) and
+     * [cycleBrush]'s `indexOf` compare against them, so a brush cannot carry one — it is a shape and
+     * the shape is what the menu is a menu of. The substance is stamped onto the [Edit] at the point
+     * of use.
      *
      * ⚠️ **Sticky until changed, deliberately.** A material is a decision about a batch of building,
      * not about one click; it survives changing brush, changing facing and switching between
      * clicking and dragging. It is *not* saved, because it is a state of the player rather than of
      * the vessel.
+     *
+     * ⛔ **Null means the player has not chosen and so cannot build** — it does not mean "whatever
+     * the game thinks a rail is usually made of", because there is no such thing. Every path that
+     * raises an edit checks it, and declining is the honest answer: with nothing loose aboard there
+     * is nothing to build *out of*, and a ghost laid anyway would be a site no delivery could ever
+     * satisfy.
      */
     var buildMaterial: Species? = null
 
@@ -200,7 +206,16 @@ class OutofspaceController(
     val state: VesselState get() = stepper.state
     val tick: Long get() = stepper.state.tick
 
-    fun place(tile: TileIndex) { pending.add(Edit.Place(tile, brush.withMaterial(buildMaterial), brushFacing)) }
+    /**
+     * Puts the current brush on [tile], out of the current material.
+     *
+     * ⛔ **Does nothing at all when no material is chosen.** See [buildMaterial]: an edit with no
+     * substance is not a placement.
+     */
+    fun place(tile: TileIndex) {
+        val material = buildMaterial ?: return
+        pending.add(Edit.Place(tile, brush, brushFacing, material))
+    }
 
     /**
      * The tile the current drag last reached, or -1 when nothing is being dragged.
@@ -381,9 +396,12 @@ class OutofspaceController(
             if (tool == Tool.Cut) {
                 cutAt(at, dir)
             } else {
+                // Same refusal as [place], and it has to be here too: a drag is its own edit and
+                // does not go through the brush.
+                val material = buildMaterial ?: return
                 place(next)
                 pending.add(
-                    Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail, buildMaterial),
+                    Edit.Lay(at, next, (brush as? Brush.Run)?.conduit ?: Conduit.Rail, material),
                 )
             }
             at = next

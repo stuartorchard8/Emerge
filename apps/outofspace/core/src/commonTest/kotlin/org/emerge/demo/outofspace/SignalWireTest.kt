@@ -37,7 +37,7 @@ class SignalWireTest {
     private fun drag(state: VesselState, y: Int, fromX: Int, toX: Int): VesselState {
         var s = state
         for (x in fromX until toX) {
-            s = edit(s, Edit.Lay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
+            s = edit(s, fixtureLay(grid.tile(x, y), grid.tile(x + 1, y), Conduit.Signal))
         }
         return s
     }
@@ -74,7 +74,7 @@ class SignalWireTest {
 
     @Test
     fun `a single tile can be placed on its own`() {
-        val s = edit(VesselState.empty(grid), Edit.Place(grid.tile(6, 2), Brush.Run(Conduit.Signal), Direction.Right))
+        val s = edit(VesselState.empty(grid), fixturePlace(grid.tile(6, 2), Brush.Run(Conduit.Signal), Direction.Right))
         val stub = wireAt(s, 6, 2)
 
         assertNotNull(stub, "placing the wire brush on one tile should leave a stub")

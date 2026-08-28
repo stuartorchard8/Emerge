@@ -24,6 +24,7 @@ import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.inputBufferRole
 import org.emerge.demo.outofspace.world.TileIndex
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * Track for a test world, laid **and joined**, the way a drag lays it.
@@ -50,7 +51,7 @@ class RailPlan(private val grid: Grid) {
     fun lay(x: Int, y: Int): RailPlan = apply {
         if (!grid.inBounds(x, y)) return@apply
         val tile = grid.tile(x, y)
-        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
+        rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
     }
 
     /** Joins two adjacent tiles, both halves, exactly as [Edit.Lay] does. */
@@ -58,8 +59,8 @@ class RailPlan(private val grid: Grid) {
         val a = grid.tile(x, y)
         val b = grid.neighbour(a, dir)
         if (b == TileIndex.NONE) return@apply
-        rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail)).joinedTo(dir)
-        rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
+        rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))).joinedTo(dir)
+        rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))).joinedTo(dir.opposite)
     }
 
     /** A horizontal run on row [y], inclusive. */
@@ -107,14 +108,14 @@ fun joinCol(grid: Grid, rails: Array<Segment?>, x: Int, fromY: Int, toY: Int) {
 private fun layInto(grid: Grid, rails: Array<Segment?>, x: Int, y: Int) {
     if (!grid.inBounds(x, y)) return
     val tile = grid.tile(x, y)
-    rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail)
+    rails[tile.index] = rails[tile.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))
 }
 
 private fun linkPair(grid: Grid, rails: Array<Segment?>, a: TileIndex, dir: Direction) {
     val b = grid.neighbour(a, dir)
     if (b == TileIndex.NONE) return
-    rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail)).joinedTo(dir)
-    rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail)).joinedTo(dir.opposite)
+    rails[a.index] = (rails[a.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))).joinedTo(dir)
+    rails[b.index] = (rails[b.index] ?: Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))).joinedTo(dir.opposite)
 }
 
 // ── Ore, since there is no longer anywhere it comes from for free ─────────────

@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The **gauge**: a length of track that reports what goes over it.
@@ -59,7 +60,7 @@ class GaugeTest {
         // A stub of wire under the gauge, which is what its reading now goes onto. One tile is a
         // whole circuit — see [SignalNetworks] — so this is the least a gauge needs to be readable.
         val wires = arrayOfNulls<Segment>(grid.size)
-        wires[gaugeTileX + 2 * grid.width] = Segment(Conduit.Signal)
+        wires[gaugeTileX + 2 * grid.width] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         return VesselState(
             grid,
             deck,

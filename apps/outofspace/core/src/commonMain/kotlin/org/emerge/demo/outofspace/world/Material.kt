@@ -404,7 +404,7 @@ val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_K
  * ⛔ **[species] has no default, and must not get one back.** Every bill in the game now takes the
  * material it is a bill *for*, and a default here is a question the caller was never made to ask —
  * which is how a finished steel run came to be weighed against iron and turned into a wall that
- * wanted nothing. A caller always knows: a segment has [Segment.materialOrDefault], a machine has
+ * wanted nothing. A caller always knows: a segment has [Segment.material], a machine has
  * [org.emerge.demo.outofspace.world.machine.DeckArray.materialOf], a brush has the player's choice.
  * Where the answer really is "the kind's own", say `kind.material.species` and mean it.
  */
