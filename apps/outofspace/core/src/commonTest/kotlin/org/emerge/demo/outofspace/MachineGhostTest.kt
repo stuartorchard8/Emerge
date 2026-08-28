@@ -11,9 +11,6 @@ import org.emerge.demo.outofspace.world.bufferRolesOf
 import org.emerge.demo.outofspace.world.outputBufferRole
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
-import org.emerge.demo.outofspace.world.Material
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.PortKind
@@ -109,7 +106,7 @@ class MachineGhostTest {
             // out along the belt. A fixture should never be the reason a build stalls.
             // Whatever the site actually chose, in the quantity that site's own bill asks for — a
             // copper machine costs more than a titanium one because copper is denser.
-            machineBillOfMaterials(machine.kind, machine.tiles(grid).size, material ?: machine.kind.material.species)
+            machineBillOfMaterials(machine.kind, machine.tiles(grid).size, material ?: materialBefore(machine.kind))
                 .let { it.scaledTo(it.total * 4) },
         ).copy(creative = false)
     }
@@ -174,7 +171,7 @@ class MachineGhostTest {
     fun `a ghost machine finishes with nothing left standing`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, materialBefore(DeckMachineKind.Hull))
 
         // Deliberately not a whole number of packets, so the last delivery is a part-packet and the
         // site has something to round.
@@ -295,10 +292,10 @@ class MachineGhostTest {
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
         )
-            .stocked(grid.tile(2, 4), Material.Iron.composition.scaledTo(20 * Capacity.PACKET_MASS))
+            .stocked(grid.tile(2, 4), Mixture.of(Species.Iron to 1_000L, energy = 0L).scaledTo(20 * Capacity.PACKET_MASS))
             // Enough to finish a storage several times over: a fixture should never be the
             // reason a build stalls, and a storage is some fifty packets of titanium.
-            .stocked(grid.tile(5, 3), Material.Titanium.composition.scaledTo(120 * Capacity.PACKET_MASS))
+            .stocked(grid.tile(5, 3), Mixture.of(Species.Titanium to 1_000L, energy = 0L).scaledTo(120 * Capacity.PACKET_MASS))
             .copy(creative = false)
         val plugs = listOf(grid.tile(7, 4), grid.tile(8, 4))
         for (t in plugs) start.conduits.tracks[Conduit.Rail].release(t)
@@ -351,7 +348,7 @@ class MachineGhostTest {
             rail = RailLayer.empty(grid.size),
         ).stocked(
             grid.tile(1, 4),
-            Material.Iron.composition.scaledTo(20 * Capacity.PACKET_MASS),
+            Mixture.of(Species.Iron to 1_000L, energy = 0L).scaledTo(20 * Capacity.PACKET_MASS),
         ).copy(creative = false)
         val target = grid.tile(12, 4)
         start.conduits.tracks[Conduit.Rail].release(target)
@@ -440,7 +437,7 @@ class MachineGhostTest {
     @Test
     fun `only steel builds a steel machine, however well a tank is blended`() {
         val at = grid.tile(10, 4)
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, materialBefore(DeckMachineKind.Hull))
 
         val blended = run(
             tankAndGhost(Hull(at)).stocked(
@@ -861,8 +858,8 @@ class MachineGhostTest {
             rail = RailLayer.empty(grid.size),
         ).stocked(
             grid.tile(3, 4),
-            bridge.kind.material.composition.scaledTo(
-                machineBillOfMaterials(bridge.kind, bridge.tiles(grid).size, bridge.kind.material.species).total * 4,
+            Mixture.of(materialBefore(bridge.kind) to 1_000L, energy = 0L).scaledTo(
+                machineBillOfMaterials(bridge.kind, bridge.tiles(grid).size, materialBefore(bridge.kind)).total * 4,
             ),
         ).copy(creative = false)
 
@@ -1067,7 +1064,7 @@ class MachineGhostTest {
     fun `a half-built machine keeps exactly what it is made of across a remap`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, materialBefore(DeckMachineKind.Hull))
         assertTrue(bill[Species.Steel] > 0L, "fixture: a hull is made of steel, or this proves nothing")
         start.deck.stuff[at, Species.Steel] = bill[Species.Steel] / 2
 

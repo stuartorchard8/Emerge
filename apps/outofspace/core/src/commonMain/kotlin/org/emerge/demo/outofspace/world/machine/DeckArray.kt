@@ -8,8 +8,6 @@ import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.builtPermille
 import org.emerge.demo.outofspace.world.holdsFullBill
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 
 /**

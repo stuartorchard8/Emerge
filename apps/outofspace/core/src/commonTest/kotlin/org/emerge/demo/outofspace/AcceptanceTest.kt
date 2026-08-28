@@ -8,8 +8,7 @@ import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * What a sink says it will take.
@@ -20,7 +19,7 @@ import org.emerge.demo.outofspace.world.species
  */
 class AcceptanceTest {
 
-    private val railBill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+    private val railBill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
 
     private fun iron(mass: Long) = Mixture.of(Species.Iron to mass, energy = 0)
 

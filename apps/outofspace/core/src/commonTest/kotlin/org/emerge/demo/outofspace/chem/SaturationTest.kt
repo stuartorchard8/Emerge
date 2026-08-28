@@ -7,6 +7,7 @@ import kotlin.math.ln
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * The saturation dome, and the property the solver's stability rests on.

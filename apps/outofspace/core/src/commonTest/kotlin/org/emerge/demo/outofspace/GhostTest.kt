@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.buildableFrom
-import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
@@ -26,8 +25,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
-import org.emerge.demo.outofspace.world.species
-import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.materialBefore
 
 /**
@@ -243,7 +240,7 @@ class GhostTest {
      */
     @Test
     fun `a source stops pouring once the site has enough on its way`() {
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total
         var s = tankAndRun(ghostAt = 7, stored = Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0))
         var peak = 0L
         repeat(RAIL_PERIOD * 20) {
@@ -345,7 +342,7 @@ class GhostTest {
             rail = RailLayer.empty(grid.size),
         ).copy(creative = false)
         // Ghosts at the top of the column, iron standing below them on finished track.
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
         for (y in 2..4) start.conduits.tracks[Conduit.Rail].release(grid.tile(4, y))
         for (y in 9..12) start.rail.loadOnto(grid.tile(4, y), bill.scaledTo(Capacity.PACKET_MASS))
 
@@ -398,7 +395,7 @@ class GhostTest {
         ).copy(creative = false)
 
         val stuff = start.conduits.tracks[Conduit.Rail]
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
         // ⚠️ **Neither shortfall is a round number of packets, and together they are exactly one.**
         // A quarter and three quarters, so the packet covers both ghosts and neither can swallow it
         // whole — which makes the outcome independent of which branch the fork's turn falls on, and
@@ -468,7 +465,7 @@ class GhostTest {
         // empty so it reads as a run waiting its turn, and it can never take one. Assert only that
         // some iron arrived and the bug is invisible.
         for (x in 2..4) {
-            start.rail.loadOnto(grid.tile(x, 4), Material.Iron.composition.scaledTo(Capacity.PACKET_MASS))
+            start.rail.loadOnto(grid.tile(x, 4), Mixture.of(Species.Iron to 1_000L, energy = 0L).scaledTo(Capacity.PACKET_MASS))
         }
         start.rail.loadOnto(
             grid.tile(5, 5),
@@ -663,7 +660,7 @@ class GhostTest {
         )
         assertTrue(
             conduitBillOfMaterials(Conduit.Rail, Species.Steel).total <
-                conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total,
+                conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total,
             "the fixture needs a material lighter than the default, or it proves nothing",
         )
         for (x in 4..6) {
@@ -703,7 +700,7 @@ class GhostTest {
     fun `a bill weighs what its own material weighs`() {
         val iron = conduitBillOfMaterials(Conduit.Rail, Species.Iron)
         val copper = conduitBillOfMaterials(Conduit.Rail, Species.Copper)
-        assertEquals(iron.total, conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total, "iron is the default")
+        assertEquals(iron.total, conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total, "iron is the default")
         assertTrue(copper.total > iron.total, "copper is denser, so a tile of it should cost more")
         assertEquals(copper[Species.Copper], copper.total, "a copper bill is copper and nothing else")
     }
@@ -787,7 +784,7 @@ class GhostTest {
      */
     @Test
     fun `a rail refuses hull salvage and leaves it whole`() {
-        val steel = Material.Steel.composition.scaledTo(8 * Capacity.PACKET_MASS)
+        val steel = Mixture.of(Species.Steel to 1_000L, energy = 0L).scaledTo(8 * Capacity.PACKET_MASS)
         val start = tankAndRun(ghostAt = 7, stored = steel)
         val ghost = start.grid.tile(7, 3)
 
@@ -1253,7 +1250,7 @@ class GhostTest {
         val ghost = before.grid.tile(7, 3)
         // Half of every gram of the bill: a ghost caught midway through building itself.
         val stuff = before.conduits.tracks[Conduit.Rail]
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
         for (sp in Species.ALL) if (bill[sp] > 0L) stuff[ghost, sp] = bill[sp] / 2
         assertTrue(before.conduits.isGhost(Conduit.Rail, ghost), "the fixture finished building")
         assertTrue(before.conduits.massAt(Conduit.Rail, ghost) > 0L, "the fixture never started building")

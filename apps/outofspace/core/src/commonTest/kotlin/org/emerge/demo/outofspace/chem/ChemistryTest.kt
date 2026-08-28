@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.chem.Mixture
 
 /**
  * The chemistry layer's whole test suite. It runs headlessly in milliseconds because none of the

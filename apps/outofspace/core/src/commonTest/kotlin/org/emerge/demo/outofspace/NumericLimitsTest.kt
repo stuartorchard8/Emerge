@@ -10,18 +10,18 @@ import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.VolumeField
-import org.emerge.demo.outofspace.world.capacityPerTile
-import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.Negligible
 import org.emerge.demo.outofspace.world.SLOTS
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 import org.emerge.demo.outofspace.world.solidMassPerTile
-import org.emerge.demo.outofspace.world.material
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.world.massPerTileOf
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * The overflow budget, as a tripwire.
@@ -174,8 +174,8 @@ class NumericLimitsTest {
      * get wrong — the machine list this used to walk kept a whole-machine total that had to be
      * divided by a footprint, and a bridge was the exception that made the divisor worth stating.
      */
-    private val densestTileMass: Long = DeckMachineKind.ALL.maxOf { it.massPerTile }
-    private val densestTileCapacity: Long = DeckMachineKind.ALL.maxOf { it.capacityPerTile }
+    private val densestTileMass: Long = DeckMachineKind.ALL.maxOf { fixtureMassPerTile(it) }
+    private val densestTileCapacity: Long = DeckMachineKind.ALL.maxOf { fixtureCapacityPerTile(it) }
 
     /**
      * A ship the game actually flies, rather than the heaviest one that could be drawn.
@@ -183,7 +183,7 @@ class NumericLimitsTest {
      * An eighth of the grid in hull, which is roughly what a hull enclosing a usable interior comes
      * to and is within a factor of three of the 110 tonnes measured on the standard bare hull.
      */
-    private val referenceShipMass: Long = DeckMachineKind.Hull.material.massPerTile * gridTiles / 8L
+    private val referenceShipMass: Long = massPerTileOf(Mixture.of(materialBefore(DeckMachineKind.Hull) to 1_000L, energy = 0L)) * gridTiles / 8L
 
     /**
      * An integer count out of [Budget]'s current mass unit and into plain grams.
@@ -447,7 +447,7 @@ class NumericLimitsTest {
         // way steps 4 and 4b did, so the row keeps its slope and goes red again a little past 1e7.
         budget(
             "machine joules: hottest single tile of the heaviest machine",
-            DeckMachineKind.ALL.maxOf { it.capacityPerTile } * designMaxKelvin,
+            DeckMachineKind.ALL.maxOf { fixtureCapacityPerTile(it) } * designMaxKelvin,
             1, Dim.ENERGY,
         )
         // The densest a tile can be, machine and air together — the true per-tile energy ceiling,

@@ -17,158 +17,51 @@ object Temperature {
 }
 
 /**
- * A solid material: **what it is made of**, and how well it passes heat.
+ * Constants of a **contact**, rather than of any substance.
  *
- * [composition] is the whole of the first half, and it is a bill of materials as much as it is a
- * physical property — so it is simultaneously what a thing weighs, what it costs to warm, what it
- * costs to build and what it yields when broken up.
+ * ⚠️ They lived on `Material`'s companion, which was where they were reachable from and not where
+ * they belonged: neither is a property of steel or of firebrick, so neither moved when that enum was
+ * deleted — only their address did.
  *
- * ⚠️ **Every composition here names exactly one species now**, and that is a deliberate narrowing
- * rather than a coincidence of which materials exist. Steel used to be `Iron 990 : Carbon 10` and
- * firebrick `Periclase 550 : Quartz 450`, which made a *recipe* into something the transport network
- * had to hold together over its whole length: a construction site could only be finished by
- * deliveries that were already in proportion, tile by tile, from the ore field onwards. The
- * proportions now live in `REACTIONS`, where they are arranged once in a hot box, and what travels
- * is [org.emerge.demo.outofspace.chem.Species.Steel] or
- * [org.emerge.demo.outofspace.chem.Species.Firebrick]. ⛔ **That is what makes
- * [BUILD_PURITY_PERCENT] able to be 100** — a per-species tolerance is only survivable while a bill
- * has more than one species in it to be out of proportion between. Density and specific heat are **derived** from it and are not
- * declared anywhere: see [massPerTileOf] and [specificHeatOf]. The species table reproduces every
- * one of the specific heats this enum used to state by hand, to within a few per cent, which is the
- * evidence that the decomposition is the real one and not a fit.
- *
- * A tile of any of this is a full [org.emerge.demo.outofspace.chem.TILE_LITRES] of the solid — six
- * and a half tonnes of steel. Nothing is built out of full tiles of metal; what fraction of a tile
- * a given machine actually is lives on the machine, as [DeckMachineKind.fillPermille], because that is a
- * fact about the machine and not about the steel.
- *
- * [conductanceCentiTicks] is the second half: how long heat takes to cross a contact of this stuff,
- * as a **time constant** in hundredths of a tick. ⛔ **It is DERIVED now, and it used to be five
- * hand-written numbers.**
- *
- * `τ = ρ·c·L²/k` — see [conductanceCentiTicksOf], which is where the geometry and the one free
- * constant live. What made it possible is that [Species] carries a real thermal conductivity for
- * every one of its 170 entries; what made it *necessary* is that a material is a species now, and
- * nobody was ever going to keep 170 hand-tuned time constants honest.
- *
- * ⚠️⚠️ **This re-tuned the game's heat, and by design rather than accident.** The five numbers it
- * replaces did not agree with physics or with each other: measured against their own densities and
- * conductivities they implied tick durations spanning **12.8×**, because they were back-derived from
- * conductances tuned before densities were real. There was no calibration that kept all five where
- * they were. What the chosen one does is move each of them the least it can:
- *
- * | | was | is | change |
- * |---|---|---|---|
- * | Copper | 58 | 211 | 3.6× slower |
- * | Iron | 400 | 1086 | 2.7× slower |
- * | Steel | 2450 | 1887 | 1.3× faster |
- * | Titanium | 5200 | 2615 | 2.0× faster |
- * | Firebrick | 88000 | 24997 | 3.5× faster |
- *
- * ⚠️ The spread **compresses**: the old numbers exaggerated the difference between an insulator and
- * a conductor by more than an order of magnitude over what the materials actually do. So copper is
- * less of a heat superhighway than it was and a furnace lining leaks more than it did, and both of
- * those are the physics rather than a nerf.
+ * ⚠️ Named for the thing it is about rather than for the file it came out of: `Contact` was already
+ * taken by the collision type, which is a different sense of the word entirely.
  */
-enum class Material(
-    val label: String,
-    val composition: Mixture,
-) {
-    /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE)),
-
-    /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
-    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE)),
-
-    /** Pipe and cable. Barely any thermal mass and enormous conductance — a heat pipe by accident. */
-    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE)),
-
-    /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
-    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE)),
+object Joint {
 
     /**
-     * Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot.
+     * Solid-to-air contact gas-side conductance (film coefficient; prevents instant
+     * wall-to-room equalisation).
      *
-     * ⚠️ **Magnesia and silica, because aluminium cannot be made.** This was quartz and aluminium,
-     * which made the one machine that refines things the one machine that could not be built: Al₂O₃
-     * yields to neither heat nor any reductant, and winning aluminium for real means electrolysis,
-     * which means a power network that does not exist yet. Magnesia-silica is what a basic refractory
-     * brick actually is, and both halves are reachable today — quartz is native, and periclase is the
-     * *cheapest* reaction in the game, `Magnesite -> Periclase + CO₂` at 810 K.
+     * ⚠️ **Unchanged by the move to real densities, and it must stay that way.** This is the
+     * *gas* side of the joint — the film of still air against the wall — and the gas was always
+     * at real scale: [Stuff.AMBIENT_AIR] is a real kilogram of air in a tile. Only the solids
+     * moved. Scaling this with them made every wall equalise with its room inside a tick, which
+     * showed up as gas tests failing rather than heat ones.
      *
-     * That is the nicer bootstrap as well as the honest one: the first thing a vessel calcines is the
-     * thing that lets it build the calciner.
-     *
-     * ⚠️ **The 55:45 is now inside a species and not inside this composition.** `11 MgO + 6 SiO₂ ->
-     * Firebrick` at 1700 K states the identical split — same mass per tile, same capacity — so the
-     * furnace weighs and warms exactly what it always did; what changed is that its lining is one
-     * thing to route instead of two to keep in step. ⛔ The onset is deliberately under what a carbon
-     * fire reaches, or the only machine that makes heat would be the only machine you need heat to
-     * build.
-     *
-     * ⛔ **Lime would have been the wrong pick** even though calcite is commoner. CaO slakes in any
-     * moisture and CaO–SiO₂ forms low-melting eutectics — a quartz-lime lining is a furnace wall that
-     * dissolves itself. Periclase costs the same to reach and is a real brick.
+     * **Derivation**: 20 J/K/tick, stated in [Budget]'s energy units. It is **energy**-dimensioned
+     * — millijoules per kelvin per tick — so it moves with `Budget.MILLIJOULE` and not with
+     * `Budget.GRAM`. Those two travel together by the `ENERGY_PER_MASS` relation, so writing it
+     * this way costs nothing today and keeps it correct if the relation is ever revisited.
      */
-    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE)),
-    ;
+    val AIR_FILM: Long = 20L * Budget.JOULE
 
     /**
-     * What a full tile of this stuff weighs, at its real density.
+     * Exposed-face radiance: mJ/K/tick per face (linear gap, not T⁴; vacuum = excellent
+     * insulator).
      *
-     * ⚠️ **A field, not a `get()`, and that is a performance fact rather than a style one.**
-     * [massPerTileOf] walks every one of [Species]' entries doing two [scaledRatio]s apiece, and a
-     * material's [composition] is a compile-time constant — so every evaluation after the first
-     * returns the identical number for identical work. As a getter it measured at roughly a quarter
-     * of the whole sim tick, because [conductance] reaches it through [capacityPerTile] and the
-     * heat solver asks per contact per tick. Same for the two below.
-     */
-    val massPerTile: Long = massPerTileOf(composition)
-
-    /** How long heat takes to cross a contact of it, in hundredths of a tick. See the class doc. */
-    val conductanceCentiTicks: Long = conductanceCentiTicksOf(composition)
-
-    /** Millijoules per kelvin for a full tile of it. */
-    val capacityPerTile: Long = capacityPerTileOf(composition)
-
-    /**
-     * How much heat crosses a contact of this material per kelvin per tick.
+     * This one *does* scale, because it is the solid side: it sets how fast a hull plate sheds
+     * its own heat to space.
      *
-     * Derived from [conductanceCentiTicks] against a full tile's capacity, so the material's thermal
-     * behaviour is stated once, in the unit anyone can check against the game — "a firebrick joint
-     * takes the better part of a thousand ticks" — and cannot drift when a density changes.
+     * ⛔ **The reference plate is a calibration anchor, not a claim about hulls.** The figure has
+     * to be expressed against *some* plate or it has no units, and it used to be expressed
+     * against whatever a hull was assumed to be made of. It is a steel plate at a hull's fill
+     * fraction, named as such — the same number as before, and now one that stays put whatever
+     * the player builds their ship out of, which is what a calibration constant should do. A
+     * titanium hull sheds heat more slowly per kelvin because it holds more of it, and that
+     * falls out of the solver rather than out of this constant moving underneath it.
      */
-    val conductance: Long = capacityPerTile * 100L / conductanceCentiTicks
-
-    companion object {
-        /**
-         * Solid-to-air contact gas-side conductance (film coefficient; prevents instant
-         * wall-to-room equalisation).
-         *
-         * ⚠️ **Unchanged by the move to real densities, and it must stay that way.** This is the
-         * *gas* side of the joint — the film of still air against the wall — and the gas was always
-         * at real scale: [Stuff.AMBIENT_AIR] is a real kilogram of air in a tile. Only the solids
-         * moved. Scaling this with them made every wall equalise with its room inside a tick, which
-         * showed up as gas tests failing rather than heat ones.
-         *
-         * **Derivation**: 20 J/K/tick, stated in [Budget]'s energy units. It is **energy**-dimensioned
-         * — millijoules per kelvin per tick — so it moves with `Budget.MILLIJOULE` and not with
-         * `Budget.GRAM`. Those two travel together by the `ENERGY_PER_MASS` relation, so writing it
-         * this way costs nothing today and keeps it correct if the relation is ever revisited.
-         */
-        val AIR_FILM: Long = 20L * Budget.JOULE
-
-        /**
-         * Exposed-face radiance: mJ/K/tick per face (linear gap, not T⁴; vacuum = excellent
-         * insulator).
-         *
-         * This one *does* scale, because it is the solid side: it sets how fast a hull plate sheds
-         * its own heat to space. Anchored against the plate that actually does the radiating —
-         * [DeckMachineKind.Hull]'s capacity, fill fraction and all, not a full tile of steel — so a
-         * ship cools to space on the timescale it always did.
-         */
-        val RADIANCE: Long get() = DeckMachineKind.Hull.capacityPerTile / 6_533L
-    }
+    val RADIANCE: Long get() =
+        heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull, Species.Steel)) / 6_533L
 }
 
 /**
@@ -282,45 +175,32 @@ private val SOLID_CONDUCTANCE: LongArray = LongArray(Species.COUNT) { i ->
 
 /**
  * What a tile made of [species] conducts at [fillPermille] — the per-species twin of
- * [Material.conductance], and identical to it for the five species a [Material] names.
+ * the deleted `Material` enum's `conductance`, and identical to it for the five it named.
  */
 fun conductanceOf(species: Species, fillPermille: Int): Long =
     SOLID_CONDUCTANCE[species.ordinal] * fillPermille / 1_000L
 
-/**
- * The species a thing of this material is made of.
+/*
+ * ⛔ **`Material.species`, `DeckMachineKind.material` and `Conduit.material` stood here.**
  *
- * ⚠️ **Total, because every [Material] is exactly one species** — and that is not a coincidence to
- * lean on quietly but the property that makes material choice possible at all: material and species
- * are in bijection, so a *built* tile's material is recoverable from what it is made of and needs no
- * storage of its own. Steel and firebrick were the last two mixtures and became species; if one ever
- * goes back to being a blend, this is the call site that stops compiling.
+ * The last two were the game's answer to "what is a Storage normally made of" and "what is a rail
+ * normally made of" — one `when` apiece, answering for every Storage and every rail that would ever
+ * exist. There is no such answer now (Stu): a kind is a *shape and a behaviour*, a conduit is a
+ * *shape and what it carries*, and neither of those is a substance. Everything that is built states
+ * its own — see [Segment.material] and `DeckArray.materialOf` — and every physical question is asked
+ * of the matter actually present.
+ *
+ * ⚠️ The `Material` enum went with them, and `Material.species` was the seam it was pulled out
+ * through. Its five entries were five substances that happened to have names; every number it
+ * carried — density, capacity, conductance, grip — has a per-[Species] twin that answers for all
+ * hundred and seventy: [massPerTileOf], [capacityPerTileOf], [conductanceOf], [roughnessOf]. What
+ * was left of it was a shortlist, and a shortlist of materials is the one thing a game with no
+ * default material must not have.
+ *
+ * Two tables that look like these survive and are not them, and each says so in its own doc:
+ * `Save.materialBefore` states what a file written before version 21 *meant*, and
+ * `StarterVessel.madeOf` states what one particular ship was built out of. Neither is a rule.
  */
-val Material.species: Species get() = composition.dominant!!
-
-val DeckMachineKind.material: Material
-    get() = when (this) {
-        DeckMachineKind.Hull, DeckMachineKind.Airlock -> Material.Steel
-        // A hole in the hull with a housing around it, and the housing is the part that is made of
-        // anything — which is why it keeps the instrument's fill rather than the plate's.
-        DeckMachineKind.Vent, DeckMachineKind.Storage,
-        DeckMachineKind.Sensor, DeckMachineKind.KeyInput, DeckMachineKind.Pump,
-        DeckMachineKind.Thruster, DeckMachineKind.Concentrator,
-        DeckMachineKind.Extractor,
-        -> Material.Titanium
-        DeckMachineKind.Furnace -> Material.Firebrick
-        // Iron, like the track it holds up.
-        DeckMachineKind.Bridge, DeckMachineKind.Gauge -> Conduit.Rail.material
-        // Copper, like the plumbing it opens.
-        DeckMachineKind.Valve -> Conduit.Pipe.material
-    }
-
-/** Conduit → Material (rail=iron; pipe/power/signal=copper; low thermal mass + high conductance = heat wire). */
-val Conduit.material: Material
-    get() = when (this) {
-        Conduit.Rail -> Material.Iron
-        Conduit.Pipe, Conduit.Power, Conduit.Signal -> Material.Copper
-    }
 
 val DeckMachineKind.fillPermille: Int
     get() = when (this) {
@@ -359,34 +239,23 @@ val Conduit.fillPermille: Int
         Conduit.Power, Conduit.Signal -> 2
     }
 
-/** What one tile of this kind weighs: its material's real density, at the fraction it fills. */
-val DeckMachineKind.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
-
-/** Millijoules per kelvin for one tile of it — the same fill, the same fact. */
-val DeckMachineKind.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
-
-/** What crosses a contact of it: the material's conductance through the metal actually present. */
-val DeckMachineKind.conductance: Long get() = material.conductance * fillPermille / 1_000L
-
-/** What one tile of bare conduit weighs. */
-val Conduit.massPerTile: Long get() = material.massPerTile * fillPermille / 1_000L
-
-/** Millijoules per kelvin for one tile of bare conduit. */
-val Conduit.capacityPerTile: Long get() = material.capacityPerTile * fillPermille / 1_000L
-
-/** What crosses a contact of bare conduit. */
-val Conduit.conductance: Long get() = material.conductance * fillPermille / 1_000L
-
-/**
- * What one tile of bare conduit holds at room temperature — what a freshly laid length starts at.
+/*
+ * ⛔ **`massPerTile`, `capacityPerTile` and `conductance`, per kind and per conduit, are gone too.**
  *
- * ⚠️ Deliberately **not** on [Material], where it used to live. A material's ambient energy is a
- * full tile of solid metal at room temperature, and nothing in the vessel is that; a segment
- * initialised from it and then read against its own fill-scaled capacity came out at fourteen
- * thousand kelvin. Ambient energy only means anything once you know how much of a tile is there,
- * so it lives with the things that know.
+ * Every one of them was `material.<x> * fillPermille / 1000` — a kind's fill fraction applied to the
+ * substance it was *assumed* to be — so every one was the deleted answer wearing a different hat.
+ * What a tile weighs and how it conducts come from the matter in it, which the deck and track layers
+ * have held for some time: `StuffLayer.massAt`, `tileBillOfMaterials(kind, species).total`,
+ * `conduitBillOfMaterials(conduit, species).total`, `conductanceOf(species, fillPermille)`.
+ *
+ * ⚠️ [DeckMachineKind.fillPermille] and [Conduit.fillPermille] stay, and the distinction is the
+ * point: *how much of a tile a thing occupies* is genuinely a fact about the kind. A rail is a strip
+ * across a tile and a hull plate is most of one, whatever either is made of.
+ *
+ * `Conduit.ambientPerTile` went with them, unread: `TrackLayers.lay` answers the same question off
+ * the metal it actually laid, which is the number the ledger needs, and a bill that apportions is
+ * the only thing that can answer it to the unit.
  */
-val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_KELVIN
 
 /**
  * **What one tile of a deck machine is made of** — the species, at the masses a tile of it weighs.

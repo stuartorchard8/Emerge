@@ -19,8 +19,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
 
 /**
  * A bill of materials is one question however big the thing is — increment 5a of
@@ -43,8 +42,8 @@ class MachineBillTest {
     fun machineBillIsTheTileBillOnceEachTile() {
         for (kind in DeckMachineKind.entries) {
             val tiles = 5
-            val each = tileBillOfMaterials(kind, kind.material.species)
-            val whole = machineBillOfMaterials(kind, tiles, kind.material.species)
+            val each = tileBillOfMaterials(kind, materialBefore(kind))
+            val whole = machineBillOfMaterials(kind, tiles, materialBefore(kind))
             for (s in Species.ALL) {
                 assertEquals(each[s] * tiles, whole[s], "${kind.label} wants ${s.name} x $tiles")
             }
@@ -55,7 +54,7 @@ class MachineBillTest {
     @Test
     fun oneTileMachineCostsOneTile() {
         val kind = DeckMachineKind.Hull
-        assertEquals(tileBillOfMaterials(kind, kind.material.species).total, machineBillOfMaterials(kind, 1, kind.material.species).total)
+        assertEquals(tileBillOfMaterials(kind, materialBefore(kind)).total, machineBillOfMaterials(kind, 1, materialBefore(kind)).total)
     }
 
     /** The deck answers "is this finished" over the whole footprint, summed, not tile by tile. */
@@ -101,7 +100,7 @@ class MachineBillTest {
         val centre = grid.tile(5, 4)
         val hull = Hull(center = centre)
         deck += hull
-        val bill = machineBillOfMaterials(hull.kind, hull.tiles(grid).size, hull.kind.material.species)
+        val bill = machineBillOfMaterials(hull.kind, hull.tiles(grid).size, materialBefore(hull.kind))
         val junk = Species.ALL.first { bill[it] == 0L }
 
         // Ten times the bill in the wrong species, poured straight into the fabric: finished, by
@@ -147,7 +146,7 @@ class MachineBillTest {
      */
     @Test
     fun `a steel bill refuses pure iron`() {
-        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
+        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1, materialBefore(DeckMachineKind.Hull))
         assertFalse(
             buildableFrom(steel, Mixture.of(Species.Iron to 1_000_000L, energy = 0L)),
             "a hull accepted a delivery with none of its carbon in it",
@@ -197,7 +196,7 @@ class MachineBillTest {
      */
     @Test
     fun `a single-species bill admits its species and no junk at all`() {
-        val rail = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val rail = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
         fun ironWith(junk: Long) = buildableFrom(
             rail,
             Mixture.of(Species.Iron to 1_000_000L - junk, Species.Silicon to junk, energy = 0L),
@@ -231,7 +230,7 @@ class MachineBillTest {
      */
     @Test
     fun `a volatile cannot get into a machine casing`() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Extractor, 1, DeckMachineKind.Extractor.material.species)
+        val bill = machineBillOfMaterials(DeckMachineKind.Extractor, 1, materialBefore(DeckMachineKind.Extractor))
         val titanium = bill[Species.Titanium]
         assertTrue(titanium > 0L, "fixture: an extractor is made of titanium, or this proves nothing")
 
@@ -256,7 +255,7 @@ class MachineBillTest {
     /** Permille is matter held over matter wanted, so it reaches 1000 exactly when the bill is. */
     @Test
     fun permilleIsMatterHeldOverMatterWanted() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Concentrator, 9, DeckMachineKind.Concentrator.material.species)
+        val bill = machineBillOfMaterials(DeckMachineKind.Concentrator, 9, materialBefore(DeckMachineKind.Concentrator))
         assertEquals(1000, builtPermille(bill, bill.total), "the whole bill is finished")
         assertEquals(0, builtPermille(bill, 0L), "nothing is nothing")
         assertEquals(500, builtPermille(bill, bill.total / 2L), "half the matter is half built")

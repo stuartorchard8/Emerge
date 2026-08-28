@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.OutofspaceReducer.HEAT_PERIOD
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
-import org.emerge.demo.outofspace.world.capacityPerTile
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
@@ -185,7 +184,7 @@ class ConduitLayersTest {
             repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
             val probe = grid.tile(5, wireFromY)
-            return (s.conduits.energyAt(Conduit.Signal, probe) / Conduit.Signal.capacityPerTile).toInt()
+            return (s.conduits.energyAt(Conduit.Signal, probe) / fixtureCapacityPerTile(Conduit.Signal)).toInt()
         }
 
         // Crossing the rail at (5,3): the two share that tile, so heat gets across.
@@ -212,7 +211,7 @@ class ConduitLayersTest {
         repeat(20*HEAT_PERIOD) { s = OutofspaceReducer.reduce(cfg, s, emptyMap()) }
 
         val far = grid.tile(7, 3)
-        val kelvin = (s.conduits.energyAt(Conduit.Rail, far) / Conduit.Rail.capacityPerTile).toInt()
+        val kelvin = (s.conduits.energyAt(Conduit.Rail, far) / fixtureCapacityPerTile(Conduit.Rail)).toInt()
         assertTrue(kelvin > Temperature.AMBIENT_KELVIN, "heat did not travel along the run (${kelvin}K)")
     }
 }

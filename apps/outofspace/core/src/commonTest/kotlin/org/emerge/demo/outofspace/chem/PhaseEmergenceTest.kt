@@ -11,6 +11,7 @@ import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Is a species' phase actually emergent, or is it being smuggled in?

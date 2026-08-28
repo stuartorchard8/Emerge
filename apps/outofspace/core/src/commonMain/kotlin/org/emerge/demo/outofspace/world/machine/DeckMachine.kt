@@ -8,7 +8,6 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.reach
-import org.emerge.demo.outofspace.world.capacityPerTile
 
 /**
  * A machine on a tile. Immutable — the reducer builds new ones rather than mutating, so a snapshot
@@ -125,8 +124,12 @@ fun DeckMachine.setTemperature(kelvin: Int, grid: Grid, deck: StuffLayer) {
     setEnergy(LongArray(tiles.size) { deck.heatCapacityAt(tiles[it]) * kelvin }, grid, deck)
 }
 
-/** What a freshly built machine of this kind holds: every tile of it, at room temperature. */
-val DeckMachine.ambientEnergy : Long get() = kind.capacityPerTile * Temperature.AMBIENT_KELVIN
+/*
+ * ⛔ **`DeckMachine.ambientEnergy` stood here and was read by nothing.** It answered "what a freshly
+ * built machine of this kind holds at room temperature" off the kind's assumed substance — a
+ * question that has no answer now, and one every live caller had already stopped asking: heat comes
+ * from `deck.heatCapacityAt`, off the matter actually standing on the tiles.
+ */
 
 /** A machine that faces somewhere. Its ports are laid out relative to that direction. */
 sealed interface DirectedDeckMachine : DeckMachine {

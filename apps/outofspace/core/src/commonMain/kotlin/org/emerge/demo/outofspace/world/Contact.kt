@@ -5,6 +5,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * One touch: **a point, a normal, and a depth** — step 2 of `PLAN_rigid_bodies.md`.
@@ -166,7 +167,7 @@ fun collectHullContacts(
                         bx = shipPose.toWorldX(tileX, tileY), by = shipPose.toWorldY(tileX, tileY),
                         body = index,
                         restingSpeedX = restingSpeedX, restingSpeedY = restingSpeedY,
-                        friction = frictionBetween(body, cell, deck?.get(tile)),
+                        friction = frictionBetween(body, cell, deck?.get(tile)?.let { deck.materialOf(it) }),
                         into = into,
                         bFrame = shipPose,
                     )
@@ -294,13 +295,17 @@ fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
  * gripping hardest. A rock that lands on a steel deck settles; the same rock landing on a furnace's
  * firebrick lining stops sooner — because firebrick is a ceramic and does not conduct.
  *
- * ⚠️ [machine] is the machine occupying the tile, and `null` means bare hull. It is threaded down
- * here from the vessel for this one question, because [StructureMap] deliberately does not carry it
- * — it knows a tile is solid and not what kind of solid, which is all every other reader of it
- * needs.
+ * ⚠️ [surface] is **what the tile is made of**, threaded down here from the vessel's deck for this
+ * one question — [StructureMap] deliberately does not carry it, knowing that a tile is solid and not
+ * what kind of solid, which is all every other reader of it needs.
+ *
+ * ⛔ **Null is "the caller did not say", and only a fixture can say it.** Every solid tile of a real
+ * vessel is a machine and every machine is made of something; the deck is optional only so that a
+ * contact test can be written without one. Answered as though the ship were the same stuff as the
+ * body, which is the reading that adds no information rather than inventing a hull out of steel.
  */
-fun frictionBetween(body: RigidBody, cell: Int, machine: DeckMachine?): Long =
-    pairRoughness(roughnessOfBody(body), roughnessOf((machine?.kind ?: DeckMachineKind.Hull).material.species))
+fun frictionBetween(body: RigidBody, cell: Int, surface: Species?): Long =
+    pairRoughness(roughnessOfBody(body), surface?.let { roughnessOf(it) } ?: roughnessOfBody(body))
 
 /**
  * The friction of one body's cell against **another body's** cell — the same lookup, both sides now
@@ -318,11 +323,14 @@ fun frictionBetween(body: RigidBody, cell: Int, machine: DeckMachine?): Long =
 fun frictionBetween(a: RigidBody, aCell: Int, b: RigidBody, bCell: Int): Long =
     pairRoughness(roughnessOfBody(a), roughnessOfBody(b))
 
-/** What a body's surface is like, from what it is made of. */
-private fun roughnessOfBody(body: RigidBody): Long = when (body.kind) {
-    BodyKind.ROCK -> roughnessOf(body.oreComposition ?: Mixture.EMPTY)
-    BodyKind.FRAGMENT -> roughnessOf(body.machineKind!!.material.species)
-}
+/**
+ * What a body's surface is like, from what it is made of.
+ *
+ * ⚠️ **One branch now, not two.** A fragment used to answer from its machine's kind — what a machine
+ * of that sort is *normally* made of — and a body carries its own composition either way now, so the
+ * two kinds ask the identical question of the identical field.
+ */
+private fun roughnessOfBody(body: RigidBody): Long = roughnessOf(body.oreComposition ?: Mixture.EMPTY)
 
 /**
  * Are two circles of combined radius [reach], [dx] and [dy] apart, close enough to be worth a narrow

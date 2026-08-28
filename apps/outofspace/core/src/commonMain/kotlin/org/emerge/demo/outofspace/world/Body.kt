@@ -97,7 +97,7 @@ class Body(
      * therefore takes the same [DeckMachineKind.fillPermille] its [capacity] does, and the pair of them
      * moving together is what holds every thermal time constant in the game still while the masses
      * underneath them become real. Divide one by the other and you get the number
-     * [Material.conductanceCentiTicks] states.
+     * [conductanceCentiTicksOf] derives from what the tile is made of.
      */
     val conductance: Long,
     /** Fitting's conduit layer; null for non-fittings. Third key component (slot+at+conduit). */
@@ -168,11 +168,12 @@ fun bodiesOf(
                     // of". Identical to the old constant for anything built from its default
                     // material, which is everything until a player is given the choice.
                     //
-                    // ⚠️ Falls back to the kind's default while the site is still a ghost: it is
-                    // not made of anything yet, and answering zero would put a conductanceless node
-                    // in the solve rather than a cold one.
+                    // ⚠️ Falls back to what the site is *to be* built from while it is still a
+                    // ghost: it holds nothing yet, and answering zero would put a conductanceless
+                    // node in the solve rather than a cold one. Its own chosen substance, not its
+                    // kind's — a kind has none.
                     conductance = conductanceOf(
-                        deck.stuff.dominantAt(part) ?: m.kind.material.species,
+                        deck.stuff.dominantAt(part) ?: deck.materialOf(m),
                         m.kind.fillPermille,
                     ),
                 )
@@ -236,7 +237,7 @@ fun bodiesOf(
                 capacity = conduits.heatCapacityAt(conduit, tile),
                 // The same rule for track: a run built out of steel salvage conducts as steel.
                 conductance = conductanceOf(
-                    conduits.dominantAt(conduit, tile) ?: conduit.material.species,
+                    conduits.dominantAt(conduit, tile) ?: s.material,
                     conduit.fillPermille,
                 ),
                 conduit = conduit,
@@ -270,7 +271,7 @@ fun solidEnergy(
  * **Derivation**: a **400 kg** charge — a few belt-loads, the size a machine actually works on —
  * comes up to its casing's temperature over **a few seconds**. That charge holds about 1.8e7 per
  * kelvin, so a time constant of a couple of hundred ticks wants a conductance around 6e4, which is
- * thirty times [Material.AIR_FILM]. Larger than the air film because solid touching solid carries
+ * thirty times [Joint.AIR_FILM]. Larger than the air film because solid touching solid carries
  * heat better than a film of still air against a wall; finite because a furnace that heated its
  * charge instantly would leave the player nothing to watch and nothing to plan around.
  *
@@ -282,7 +283,7 @@ fun solidEnergy(
  * about real substances — nothing physical pins this. It is set by how long a machine ought to take
  * to heat its contents, and it is the number to reach for when the [Furnace] feels wrong.
  */
-val BUFFER_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 30L
+val BUFFER_CONTACT_CONDUCTANCE: Long get() = Joint.AIR_FILM * 30L
 
 /**
  * How fast a lump on a belt equalises with the track under it and the air around it.
@@ -301,4 +302,4 @@ val BUFFER_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 30L
  * ⚠️ **A dial, not a measurement**, exactly as its twin is. Nothing physical pins the contact area
  * between a heap of ore and a belt. Set it by how far a hot lump should travel before it goes cold.
  */
-val CARGO_CONTACT_CONDUCTANCE: Long get() = Material.AIR_FILM * 10L
+val CARGO_CONTACT_CONDUCTANCE: Long get() = Joint.AIR_FILM * 10L

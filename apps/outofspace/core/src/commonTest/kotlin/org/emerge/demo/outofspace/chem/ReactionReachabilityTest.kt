@@ -2,6 +2,7 @@ package org.emerge.demo.outofspace.chem
 
 import kotlin.test.Test
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Whether a reaction can happen **at all**, and whether what it makes has anywhere to go —

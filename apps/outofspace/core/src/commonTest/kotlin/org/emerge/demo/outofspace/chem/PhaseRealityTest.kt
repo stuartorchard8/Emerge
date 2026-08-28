@@ -5,6 +5,7 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * **The equation of state against measured reality, which nothing else here checks.**

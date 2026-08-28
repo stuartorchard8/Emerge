@@ -2,8 +2,6 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.num.Budget
 import org.emerge.demo.outofspace.chem.Mixture
-import org.emerge.demo.outofspace.world.capacityPerTile
-import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.RigidBody
@@ -11,7 +9,6 @@ import org.emerge.demo.outofspace.world.Temperature
 import org.emerge.demo.outofspace.world.machine.biteCell
 import org.emerge.demo.outofspace.world.capacityPerTileOf
 import org.emerge.demo.outofspace.world.massPerTileOf
-import org.emerge.demo.outofspace.world.material
 import org.emerge.demo.outofspace.world.solidMassPerTile
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.Conduit
@@ -21,7 +18,9 @@ import org.emerge.demo.outofspace.world.machine.TileEnergy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.world.tileBillOfMaterials
+import org.emerge.demo.outofspace.world.fillPermille
 
 /**
  * A body weighs what it is made of, tile by tile.
@@ -165,18 +164,33 @@ class CompositionMassTest {
         assertEquals(whole, taken, "the rock and the ore ledger disagree")
     }
 
-    /** A fragment is its casing, not ore — the same tile weight the machine had on the deck. */
+    /**
+     * A fragment is its casing, not ore — the same tile weight the machine had on the deck.
+     *
+     * ⛔ **It weighs what it is made of, and no longer what its machine's kind implies.** The body
+     * used to answer `machineKind.massPerTile`, which was the kind's *assumed* substance; a fragment
+     * carries its own composition now, so debris off a copper storage weighs copper. [machineKind]
+     * survives as provenance only. What is asserted is that a fragment of a firebrick furnace still
+     * weighs a firebrick furnace tile — the old number, reached honestly.
+     */
     @Test
-    fun `a fragment weighs its machine's material`() {
+    fun `a fragment weighs what it is made of`() {
+        val casing = Mixture.of(materialBefore(DeckMachineKind.Furnace) to 1_000L, energy = 0L)
         val fragment = RigidBody(
             kind = BodyKind.FRAGMENT,
             width = 1, height = 1, cells = booleanArrayOf(true),
             positionX = 0L, positionY = 0L, impulseX = 0L, impulseY = 0L,
+            oreComposition = casing,
             machineKind = DeckMachineKind.Furnace,
+            fillPermille = DeckMachineKind.Furnace.fillPermille,
             energy = TileEnergy.uniform(1, 0L),
         )
-        assertEquals(DeckMachineKind.Furnace.massPerTile, fragment.mass)
-        assertEquals(DeckMachineKind.Furnace.capacityPerTile, fragment.capacity)
+        assertEquals(fixtureMassPerTile(DeckMachineKind.Furnace), fragment.mass)
+        assertEquals(fixtureCapacityPerTile(DeckMachineKind.Furnace), fragment.capacity)
+
+        // And a copper one is copper: the kind decides nothing about the substance.
+        val copper = fragment.copy(oreComposition = Mixture.of(Species.Copper to 1_000L, energy = 0L))
+        assertTrue(copper.mass > fragment.mass, "copper debris did not outweigh firebrick debris")
     }
 
     /**
@@ -214,8 +228,8 @@ class CompositionMassTest {
         // A building and a length of conduit: the two things the vessel is made of, and the claim
         // is about the fabric rather than about either of them in particular.
         for ((label, perTile) in listOf(
-            DeckMachineKind.Furnace.label to DeckMachineKind.Furnace.massPerTile,
-            Conduit.Rail.label to Conduit.Rail.massPerTile,
+            DeckMachineKind.Furnace.label to fixtureMassPerTile(DeckMachineKind.Furnace),
+            Conduit.Rail.label to fixtureMassPerTile(Conduit.Rail),
         )) {
             assertTrue(
                 oreTile > perTile * 4,
@@ -224,8 +238,8 @@ class CompositionMassTest {
         }
         for (kind in listOf(DeckMachineKind.Hull)) {
             assertTrue(
-                oreTile > kind.massPerTile * 4,
-                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${kind.material.massPerTile} g)",
+                oreTile > fixtureMassPerTile(kind) * 4,
+                "a tile of ore ($oreTile g) should dwarf a tile of ${kind.label} (${massPerTileOf(Mixture.of(materialBefore(kind) to 1_000L, energy = 0L))} g)",
             )
         }
     }
@@ -241,10 +255,10 @@ class CompositionMassTest {
     @Test
     fun `a length of conduit's bill of materials weighs that conduit`() {
         for (conduit in Conduit.entries) {
-            val bom = conduitBillOfMaterials(conduit, conduit.material.species)
-            assertEquals(conduit.massPerTile, bom.total, "${conduit.label} bill of materials")
+            val bom = conduitBillOfMaterials(conduit, materialBefore(conduit))
+            assertEquals(fixtureMassPerTile(conduit), bom.total, "${conduit.label} bill of materials")
             for (species in Species.ALL) {
-                if (conduit.material.composition[species] == 0L) {
+                if (Mixture.of(materialBefore(conduit) to 1_000L, energy = 0L)[species] == 0L) {
                     assertEquals(0L, bom[species], "${conduit.label} should contain no $species")
                 }
             }

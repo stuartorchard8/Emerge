@@ -17,8 +17,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
 
 class DeconstructRoundingTest {
 
@@ -66,7 +65,7 @@ class DeconstructRoundingTest {
 
         // One species, because a rail's bill names one species and the door admits nothing else. See
         // the fixture's own note: the three-species blend this used to carry is unstateable now.
-        val total = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total
+        val total = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total
         fun blend(tile: TileIndex, mass: Long) {
             stuff.release(tile)
             stuff[tile, Species.Iron] = mass
@@ -103,9 +102,9 @@ class DeconstructRoundingTest {
 
         assertTrue(
             s.conduits.isComplete(Conduit.Rail, ghost),
-            "the ghost is short by ${conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total - s.conduits.massAt(Conduit.Rail, ghost)}ug",
+            "the ghost is short by ${conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total - s.conduits.massAt(Conduit.Rail, ghost)}ug",
         )
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail)).total
         assertEquals(
             bill - Capacity.PACKET_MASS,
             s.conduits.massAt(Conduit.Rail, marked),
@@ -141,7 +140,7 @@ class DeconstructRoundingTest {
      */
     @Test
     fun `a rail hands back nothing rather than a speck nothing can use`() {
-        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val bill = conduitBillOfMaterials(Conduit.Rail, materialBefore(Conduit.Rail))
         val s = run(world(shortBy = 1L), RAIL_PERIOD * 20)
 
         for (t in grid.tiles) {

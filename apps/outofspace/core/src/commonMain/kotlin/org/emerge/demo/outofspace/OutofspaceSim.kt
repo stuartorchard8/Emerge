@@ -126,8 +126,6 @@ import org.emerge.demo.outofspace.world.liftFrost
 import org.emerge.demo.outofspace.world.settleCohesion
 import org.emerge.demo.outofspace.world.settleCondensate
 import org.emerge.demo.outofspace.world.heatCapacity
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind

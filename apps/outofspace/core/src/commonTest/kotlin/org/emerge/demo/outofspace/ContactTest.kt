@@ -13,7 +13,6 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.MassDistribution
-import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.Operand
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.pairRoughness

@@ -70,7 +70,7 @@ fun stepSolidHeat(
 
         if (!body.preventAirflow) {
             // Air shares this tile, so that is where the body meets it.
-            contacts.join(b, bodyCount + body.tile.index, seriesConductance(k, Material.AIR_FILM))
+            contacts.join(b, bodyCount + body.tile.index, seriesConductance(k, Joint.AIR_FILM))
         }
         // Casings reach across their tile faces, whether or not they hold the air out — that is
         // what the airflow/thoroughfare split bought. A smelter standing in a room is bolted to the
@@ -100,7 +100,7 @@ fun stepSolidHeat(
             // way to the atmosphere. Drop this and a hot wall warms nothing but its neighbours and
             // space — see `BodyHeatTest.a hot wall warms the air in the room`.
             if (body.preventAirflow && structure.isContained(next)) {
-                contacts.join(b, bodyCount + next.index, seriesConductance(k, Material.AIR_FILM))
+                contacts.join(b, bodyCount + next.index, seriesConductance(k, Joint.AIR_FILM))
             }
         }
 
@@ -186,7 +186,7 @@ fun stepSolidHeat(
         if (exposure == 0) continue
         val gap = kelvin[b] - Temperature.SPACE_KELVIN
         if (gap <= 0) continue
-        val wanted = Material.RADIANCE * exposure * gap
+        val wanted = Joint.RADIANCE * exposure * gap
         // Never radiate past the temperature of space.
         transfers.add(b, SPACE, minOf(wanted, gap.toLong() * capacity[b]))
     }
@@ -259,7 +259,7 @@ private const val SPACE = -1
  * reads slow.
  *
  * ⚠️ **Radiation is deliberately outside the budget.** It is capped against the gap to space and
- * scaled again against the energy the body has above space, and [Material.RADIANCE] is one part in
+ * scaled again against the energy the body has above space, and [Joint.RADIANCE] is one part in
  * six and a half thousand of a hull plate's capacity — far too small to destabilise anything, and
  * folding it in would change how fast every ship in every save cools.
  */

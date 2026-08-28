@@ -12,13 +12,13 @@ import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.machine.MACHINE_BUFFER_CAP
 import org.emerge.demo.outofspace.world.machine.MACHINE_OUTPUT_CAP
-import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.millimolesOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.Joint
 
 /**
  * Every rescaled constant still means the same **physical** quantity.
@@ -90,7 +90,7 @@ class BudgetParityTest {
         assertEquals(1_000L, Edit.INJECT_MASS.grams, "the injector delivers a kilogram a tick")
 
         // ── Energy-dimensioned, so measured against the energy unit and not the mass one ──
-        assertEquals(20L, Material.AIR_FILM.joules, "the air film is 20 J/K/tick")
+        assertEquals(20L, Joint.AIR_FILM.joules, "the air film is 20 J/K/tick")
 
         // ── chem: the critical densities, audited in step 8 ──
         //

@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.world.VolumeField
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Does a phase transition actually fall out of the equation of state, in integers, at this scale?

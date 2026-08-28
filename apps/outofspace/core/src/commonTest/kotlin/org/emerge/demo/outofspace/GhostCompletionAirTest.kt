@@ -12,12 +12,12 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.Hull
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.machineBillOfMaterials
-import org.emerge.demo.outofspace.world.material
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.chem.Mixture
 
 /**
  * A hull that finishes building displaces the air it now stands in — and nothing may put any back.
@@ -49,8 +49,8 @@ class GhostCompletionAirTest {
             rail = RailLayer.empty(grid.size),
         ).stocked(
             grid.tile(3, 4),
-            Hull(at).kind.material.composition
-                .scaledTo(machineBillOfMaterials(Hull(at).kind, 1, Hull(at).kind.material.species).total * 4)
+            Mixture.of(materialBefore(Hull(at).kind) to 1_000L, energy = 0L)
+                .scaledTo(machineBillOfMaterials(Hull(at).kind, 1, materialBefore(Hull(at).kind)).total * 4)
                 .atAmbient(),
         ).copy(creative = false)
     }

@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.chem
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * The species table's internal consistency, checked rather than trusted.

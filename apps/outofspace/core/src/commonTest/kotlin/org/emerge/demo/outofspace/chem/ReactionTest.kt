@@ -6,6 +6,7 @@ import kotlin.math.exp
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * The first reaction, as arithmetic — increment 1 of `PLAN_ambient_chemistry.md`.

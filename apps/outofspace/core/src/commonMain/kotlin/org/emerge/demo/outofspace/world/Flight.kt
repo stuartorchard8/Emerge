@@ -94,13 +94,13 @@ fun frameAcceleration(netImpulseX: Long, netImpulseY: Long, mass: Long): Frac2 =
 /**
  * Everything the hull is made of, in mass.
  *
- * From [Material.massPerTile] and [thermalTiles] — the same two numbers the heat model
+ * From a tile's own matter and [thermalTiles] — the same two numbers the heat model
  * already uses to work out what a thing costs to warm, because they are the same fact about the same
  * object. A furnace is twenty-five tiles of firebrick whether you are asking what it weighs or what
  * it holds, and deriving both from one place is what stops a vessel that is heavy for heat and light
  * for thrust.
  *
- * ⚠️ These are real masses now: a real density from [Material.composition], at the fraction of a
+ * ⚠️ These are real masses now: a real density from what a tile is actually made of, at the fraction of a
  * tile the machine actually is ([DeckMachineKind.fillPermille]). The dial that sets how briskly a given
  * thrust moves a given ship is that fill fraction, and it is the only dial left — the densities are
  * measurements.

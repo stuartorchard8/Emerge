@@ -7,15 +7,12 @@ import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Conduits
 import org.emerge.demo.outofspace.world.Grid
-import org.emerge.demo.outofspace.world.Material
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.bodiesOf
 import org.emerge.demo.outofspace.world.conductanceOf
 import org.emerge.demo.outofspace.world.fillPermille
 import org.emerge.demo.outofspace.world.machine.DeckArray
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.conductanceCentiTicksOf
 import org.emerge.demo.outofspace.world.conductivityOf
 import kotlin.math.abs
@@ -24,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.FORMER_MATERIALS
 
 /**
  * `Material.conductanceCentiTicks` is derived from real thermal conductivities now — these are the
@@ -50,14 +48,16 @@ class MaterialThermalTest {
     fun `every material's time constant is its own physics`() {
         val secondsPerTick = 3_600L
         val faceMilliSquareMetres = 883L
-        for (m in Material.entries) {
-            val species = m.composition.dominant!!
+        // ⚠️ Swept over the five species the deleted `Material` enum used to name, and over
+        // nothing wider: the point is unchanged, but the game no longer has a shortlist of
+        // substances to iterate — see [FORMER_MATERIALS].
+        for (species in FORMER_MATERIALS) {
             val expected = 100L * species.solidKgPerCubicMetre * species.specificHeat *
                 faceMilliSquareMetres / (species.milliWattsPerMetreKelvin * secondsPerTick)
             assertEquals(
                 expected,
-                m.conductanceCentiTicks,
-                "${m.label} does not conduct as ρ·c·L²/k says it should",
+                conductanceCentiTicksOf(Mixture.of(species to 1_000L, energy = 0L)),
+                "$species does not conduct as ρ·c·L²/k says it should",
             )
         }
     }
@@ -86,14 +86,15 @@ class MaterialThermalTest {
      */
     @Test
     fun `a firebrick joint is slow and a copper one is quick`() {
+        fun centiTicks(species: Species) = conductanceCentiTicksOf(Mixture.of(species to 1_000L, energy = 0L))
         assertTrue(
-            Material.Firebrick.conductanceCentiTicks > Material.Copper.conductanceCentiTicks * 100L,
-            "firebrick (${Material.Firebrick.conductanceCentiTicks}) is supposed to be far slower " +
-                "than copper (${Material.Copper.conductanceCentiTicks})",
+            centiTicks(Species.Firebrick) > centiTicks(Species.Copper) * 100L,
+            "firebrick (${centiTicks(Species.Firebrick)}) is supposed to be far slower " +
+                "than copper (${centiTicks(Species.Copper)})",
         )
-        for (m in Material.entries) {
-            assertTrue(m.conductanceCentiTicks > 0L, "${m.label} has no time constant at all")
-            assertTrue(m.conductance > 0L, "${m.label} conducts nothing")
+        for (species in FORMER_MATERIALS) {
+            assertTrue(centiTicks(species) > 0L, "$species has no time constant at all")
+            assertTrue(conductanceOf(species, 1_000) > 0L, "$species conducts nothing")
         }
     }
 
@@ -195,7 +196,7 @@ class MaterialThermalTest {
 
         assertEquals(0L, conduits.massAt(Conduit.Rail, tile), "fixture: it is supposed to be a ghost")
         assertEquals(
-            conductanceOf(Conduit.Rail.material.species, Conduit.Rail.fillPermille),
+            conductanceOf(materialBefore(Conduit.Rail), Conduit.Rail.fillPermille),
             body.conductance,
             "a ghost rail lost its conductance instead of falling back to iron",
         )

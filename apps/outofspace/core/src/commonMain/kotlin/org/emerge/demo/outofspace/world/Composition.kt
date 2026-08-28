@@ -214,10 +214,10 @@ private const val TILE_FACE_MILLI_SQUARE_METRES = 883L
  * The physics fixes everything except the scale. Two adjacent cubes of side `L` share a face of area
  * `L²` at a centre distance of `L`, so their joint conducts `G = k·L` and each holds `C = ρ·c·L³`;
  * the time constant of the pair is `τ = C/G = ρ·c·L²/k`. That is a number of *seconds*, and
- * [Material.conductanceCentiTicks] wants a number of *ticks*, so exactly one constant is free.
+ * A conductance wants a number of *ticks*, so exactly one constant is free.
  *
  * ⛔ **Choosing it is the whole of the re-tune, because the five materials it replaces did not agree
- * on it.** Measured against their own densities and conductivities, `Material`'s five hand-written
+ * on it.** Measured against their own densities and conductivities, the five hand-written
  * time constants implied anywhere from 1,025 s/tick (firebrick) to 13,110 s/tick (copper) — a spread
  * of **12.8×**, which is what it means for those numbers to have been tuned rather than derived.
  * There is no value here that keeps all five where they were; there is only a choice of which way
@@ -240,7 +240,7 @@ private const val HEAT_SECONDS_PER_TICK = 3_600L
 
 /**
  * How long heat takes to cross a contact of [mixture], in **hundredths of a tick** — the time
- * constant [org.emerge.demo.outofspace.world.Material.conductanceCentiTicks] used to state by hand.
+ * constant the deleted `Material` enum used to state by hand.
  *
  * `τ = ρ·c·L²/k`, in the units above. ⛔ **Derived rather than stated, which is the point**: a
  * material is a species now, any species can in principle be one, and 170 hand-tuned time constants
@@ -253,7 +253,7 @@ private const val HEAT_SECONDS_PER_TICK = 3_600L
  * the same reason, and the same rule [massPerTileOf] applies to density. An arithmetic mean would
  * let one thread of copper make a brick conduct like metal.
  *
- * ⚠️ Every `Material` in the game is a single species today, so the mean is exercised only by
+ * ⚠️ Every material a thing is built from is a single species today, so the mean is exercised only by
  * `MaterialThermalTest`. It is written out anyway because a rock is a mixture and asking this of one
  * is the obvious next thing somebody does.
  */

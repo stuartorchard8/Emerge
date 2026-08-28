@@ -23,8 +23,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import org.emerge.demo.outofspace.world.material
-import org.emerge.demo.outofspace.world.species
 import org.emerge.demo.outofspace.world.materialBefore
 
 /**
@@ -115,7 +113,7 @@ class ConduitGhostTest {
             "the pipe never finished: " + (4..7).joinToString { "$it=${pipeMass(s, it)}g" },
         )
         assertEquals(
-            conduitBillOfMaterials(Conduit.Pipe, Conduit.Pipe.material.species).total,
+            conduitBillOfMaterials(Conduit.Pipe, materialBefore(Conduit.Pipe)).total,
             pipeMass(s, 5),
             "a finished pipe tile does not weigh a pipe tile",
         )
@@ -177,7 +175,7 @@ class ConduitGhostTest {
         s = run(s, RAIL_PERIOD * 200)
 
         assertEquals(
-            conduitBillOfMaterials(Conduit.Signal, Conduit.Signal.material.species).total,
+            conduitBillOfMaterials(Conduit.Signal, materialBefore(Conduit.Signal)).total,
             wireMass(s, 5),
             "the wire under the Sensor ghost never finished",
         )
@@ -197,7 +195,7 @@ class ConduitGhostTest {
     fun `a marked pipe with no rail under it waits rather than vanishing`() {
         var s = tankAndPipedRun(railUnder = false)
         // State it finished, since nothing can build it without track to deliver on.
-        for (x in 4..7) s.conduits.tracks.lay(Conduit.Pipe, grid.tile(x, 3), Conduit.Pipe.material.species)
+        for (x in 4..7) s.conduits.tracks.lay(Conduit.Pipe, grid.tile(x, 3), materialBefore(Conduit.Pipe))
         val before = pipeMass(s, 5)
         assertTrue(before > 0L, "the fixture did not fill the pipe")
 

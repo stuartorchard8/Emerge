@@ -4,6 +4,7 @@ import org.emerge.demo.outofspace.num.Budget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * **The whole of the game's chemistry, checked once** — increment 4 of

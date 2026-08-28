@@ -4,6 +4,8 @@ import org.emerge.demo.outofspace.num.Budget
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
+import org.emerge.demo.outofspace.FORMER_MATERIALS
 
 /**
  * The reduction table, checked the way `DecompositionTest` checks the decomposition table —
@@ -168,14 +170,13 @@ class ReductionTest {
             }
         }
 
-        for (material in org.emerge.demo.outofspace.world.Material.entries) {
-            for (species in Species.ALL) {
-                if (material.composition[species] <= 0L) continue
-                assertTrue(
-                    species in reachable,
-                    "${material.label} needs $species and nothing in the game can produce it",
-                )
-            }
+        // ⚠️ The five the ship used to be buildable from. There is no enum of materials any
+        // more, so the sweep names them — see [FORMER_MATERIALS].
+        for (species in FORMER_MATERIALS) {
+            assertTrue(
+                species in reachable,
+                "$species is something a ship is built from and nothing in the game can produce it",
+            )
         }
     }
 

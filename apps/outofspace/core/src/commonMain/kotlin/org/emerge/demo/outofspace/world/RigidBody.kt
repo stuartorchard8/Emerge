@@ -62,15 +62,37 @@ class RigidBody(
      * that stays right without anybody having to remember to fix it up.
      */
     val angImpulse: Long = 0L,
-    /** What a rock is made of, as proportions. Null for fragments (they carry [machineKind] instead). */
+    /**
+     * **What this body is made of**, as proportions — a rock's ore, a fragment's casing.
+     *
+     * ⛔ **Both kinds carry one now.** A fragment used to answer from [machineKind] instead, which
+     * meant its mass, its heat capacity and its grip all came from what a machine of that kind is
+     * *normally* made of — and there is no such thing any more: a copper storage's debris is copper.
+     * A body is a heap of matter, and every physical question asked of it is asked of the matter.
+     */
     val oreComposition: Mixture? = null,
     /**
-     * Machine type for fragments. Null for rocks. Needed for rendering and future grinder interaction.
+     * Which machine a fragment came off, or null for a rock. **Provenance, and nothing physical.**
      *
-     * A [DeckMachineKind], because debris comes off the things that take up floor space — and that
-     * is every building there is now. A length of conduit produces no fragment.
+     * ⚠️ It answered for the fragment's substance until the line above took that over. What it is
+     * left holding is where the debris came from, which is what rendering and the planned grinder
+     * interaction want — see `PLAN_rigid_debris.md`. A length of conduit produces no fragment.
      */
     val machineKind: DeckMachineKind? = null,
+    /**
+     * **How much of a tile the body's matter actually fills**, in parts per thousand.
+     *
+     * A rock is solid through, so it is a full tile. A fragment is a machine's casing — a few
+     * centimetres of plate over a metre of face — so it is whatever [DeckMachineKind.fillPermille]
+     * says that kind occupies.
+     *
+     * ⚠️ **The second half of "what does this weigh", and it has to be separate from
+     * [oreComposition].** A composition is *proportions*; how much of a tile there is of it is a
+     * different fact, and the two were folded together while a fragment answered from its kind — the
+     * kind knew both, so nobody had to say which was which. Splitting them is what lets a fragment
+     * of a copper storage be copper, at a storage's fill, without a table saying what a storage is.
+     */
+    val fillPermille: Int = 1_000,
     /**
      * Thermal energy, **per filled cell**, in the energy unit [org.emerge.demo.outofspace.num.Budget]
      * states — indexed by a cell's ordinal among the filled ones, not by its position in [cells].
@@ -90,8 +112,10 @@ class RigidBody(
 ) {
     init {
         require(cells.size == width * height) { "a ${width}x$height body cannot have ${cells.size} cells" }
-        require(kind == BodyKind.ROCK && oreComposition != null || kind == BodyKind.FRAGMENT && machineKind != null || kind == BodyKind.ROCK && machineKind == null || kind == BodyKind.FRAGMENT && oreComposition == null) {
-            "kind $kind must have oreComposition for ROCK, machineKind for FRAGMENT"
+        // Every body says what it is made of; only a fragment says where it came from.
+        require(oreComposition != null) { "a $kind body must say what it is made of" }
+        require(kind == BodyKind.FRAGMENT || machineKind == null) {
+            "a $kind body cannot have come off a ${machineKind?.label}"
         }
     }
 
@@ -103,16 +127,12 @@ class RigidBody(
      * fragment's casing. Held rather than recomputed because [mass] is read every tick by
      * every body, and a mixture's density is a loop over the species table.
      */
-    val massPerTile: Long = when (kind) {
-        BodyKind.ROCK -> massPerTileOf(oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> machineKind!!.massPerTile
-    }
+    val massPerTile: Long =
+        massPerTileOf(oreComposition ?: Mixture.EMPTY) * fillPermille / 1_000L
 
-    /** Millijoules per kelvin for one of its tiles, from that same composition. */
-    val capacityPerTile: Long = when (kind) {
-        BodyKind.ROCK -> capacityPerTileOf(oreComposition ?: Mixture.EMPTY)
-        BodyKind.FRAGMENT -> machineKind!!.capacityPerTile
-    }
+    /** Millijoules per kelvin for one of its tiles, from that same composition and the same fill. */
+    val capacityPerTile: Long =
+        capacityPerTileOf(oreComposition ?: Mixture.EMPTY) * fillPermille / 1_000L
 
     val mass: Long get() = filled * massPerTile
 
@@ -242,13 +262,17 @@ class RigidBody(
         angImpulse: Long = this.angImpulse,
         oreComposition: Mixture? = this.oreComposition,
         machineKind: DeckMachineKind? = this.machineKind,
+        // ⚠️ Carried explicitly, like every other field here: this `copy` is hand-written, so a new
+        // field that is not listed silently reverts to its default on every copy — which for a
+        // fragment would mean it filled a whole tile the first time anything touched it.
+        fillPermille: Int = this.fillPermille,
         energy: TileEnergy = this.energy,
     ): RigidBody = RigidBody(
         kind = kind, width = width, height = height, cells = cells,
         positionX = positionX, positionY = positionY,
         impulseX = impulseX, impulseY = impulseY,
         ang = ang, angImpulse = angImpulse,
-        oreComposition = oreComposition, machineKind = machineKind,
+        oreComposition = oreComposition, machineKind = machineKind, fillPermille = fillPermille,
         energy = energy,
     )
 
@@ -259,7 +283,8 @@ class RigidBody(
             positionX == other.positionX && positionY == other.positionY &&
             impulseX == other.impulseX && impulseY == other.impulseY &&
             ang == other.ang && angImpulse == other.angImpulse &&
-            oreComposition == other.oreComposition && machineKind == other.machineKind && energy == other.energy)
+            oreComposition == other.oreComposition && machineKind == other.machineKind &&
+            fillPermille == other.fillPermille && energy == other.energy)
 
     override fun hashCode(): Int = (kind.ordinal * 31 + (positionX * 31 + positionY).toInt()) * 31 + cells.contentHashCode()
 

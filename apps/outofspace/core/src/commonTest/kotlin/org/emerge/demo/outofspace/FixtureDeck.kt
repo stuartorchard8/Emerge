@@ -8,7 +8,13 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.world.conductanceOf
+import org.emerge.demo.outofspace.world.fillPermille
+import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.materialBefore
+import org.emerge.demo.outofspace.world.tileBillOfMaterials
+import org.emerge.demo.outofspace.FORMER_MATERIALS
 
 /**
  * **What the fixtures build out of** — a convention of this test suite, and not a rule of the game.
@@ -64,3 +70,48 @@ fun fixturePlace(tile: TileIndex, brush: Brush, facing: Direction): Edit.Place =
 /** [Edit.Lay] for the same fixtures — a drag that lays what a drag used to lay. */
 fun fixtureLay(from: TileIndex, to: TileIndex, conduit: Conduit = Conduit.Rail): Edit.Lay =
     Edit.Lay(from, to, conduit, materialBefore(conduit))
+
+/*
+ * ── Reference figures ─────────────────────────────────────────────────────────
+ *
+ * `DeckMachineKind.massPerTile`, `.capacityPerTile` and `.conductance` — and their `Conduit` twins —
+ * were deleted with the table that told them what a kind was made of. A good many tests used them
+ * not as a rule but as *a number to measure against*: how heavy is a tile of machinery, how much
+ * heat does a length of rail hold, is a rock heavier than a hull plate. That is a legitimate thing
+ * for a test to want and an illegitimate thing for the game to answer, so it is answered here, out
+ * of the same historical table the rest of these fixtures use.
+ */
+
+/** What one tile of [kind] weighs, made of what a fixture assumes it is made of. */
+fun fixtureMassPerTile(kind: DeckMachineKind): Long =
+    tileBillOfMaterials(kind, materialBefore(kind)).total
+
+/** Millijoules per kelvin for one such tile. */
+fun fixtureCapacityPerTile(kind: DeckMachineKind): Long =
+    heatCapacityOf(tileBillOfMaterials(kind, materialBefore(kind)))
+
+/** What crosses a contact of one. */
+fun fixtureConductance(kind: DeckMachineKind): Long =
+    conductanceOf(materialBefore(kind), kind.fillPermille)
+
+/** The same three for a length of bare conduit. */
+fun fixtureMassPerTile(conduit: Conduit): Long =
+    conduitBillOfMaterials(conduit, materialBefore(conduit)).total
+
+fun fixtureCapacityPerTile(conduit: Conduit): Long =
+    heatCapacityOf(conduitBillOfMaterials(conduit, materialBefore(conduit)))
+
+fun fixtureConductance(conduit: Conduit): Long =
+    conductanceOf(materialBefore(conduit), conduit.fillPermille)
+
+/**
+ * The five substances the deleted `Material` enum named.
+ *
+ * ⚠️ **A list of what the ship used to be able to be made of, kept for the tests that swept it.**
+ * The game has no such shortlist and must not grow one back — see `Material.kt`'s note where the
+ * enum stood. Anything asserted over this is asserted about five species that happen to be
+ * interesting, not about a category the game recognises.
+ */
+val FORMER_MATERIALS: List<Species> = listOf(
+    Species.Steel, Species.Iron, Species.Copper, Species.Titanium, Species.Firebrick,
+)

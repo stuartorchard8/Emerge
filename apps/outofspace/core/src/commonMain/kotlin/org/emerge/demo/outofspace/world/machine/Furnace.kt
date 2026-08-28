@@ -40,7 +40,7 @@ import org.emerge.demo.outofspace.world.Wiring
  * ⚠️ **Zero is the default and it is the old behaviour exactly** — hand on the moment the charge is at
  * temperature. So the dial is opt-in, and a decomposer nobody has tuned behaves as it always did.
  *
- * Its [org.emerge.demo.outofspace.world.Material.Firebrick] casing stops being decoration at the
+ * Its firebrick casing -- if the player builds it in firebrick -- stops being decoration at the
  * same moment. The element is modelled as being *in* the chamber, so the charge is what gets hot and
  * the casing is what the heat then bleeds into — slowly, at the buffer's own contact conductance —
  * and from there into the room. A decomposer working steadily is a heat source you have to plan

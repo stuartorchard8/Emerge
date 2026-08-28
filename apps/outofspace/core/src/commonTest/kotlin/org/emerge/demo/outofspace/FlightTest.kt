@@ -120,7 +120,7 @@ class FlightTest {
         // This used to read `> PER_TILE`, and a whole tile is simply not a distance this ship covers
         // in 120 ticks: the hull weighs forty tonnes of real steel and vents seven kilos of air over
         // the run, so it gets about a twelfth of a tile. That figure was calibrated when hull plate
-        // was a made-up density rather than [Material.composition] at [MachineKind.fillPermille], and
+        // was a made-up density rather than a real one at [DeckMachineKind.fillPermille], and
         // pinning a distance re-pins it every time that dial moves. What does not move is the shape:
         // a constant thrust integrates to v·t/2 whatever the ship weighs, so check the integrator
         // against the kinematics and let the magnitude be whatever the masses make it.

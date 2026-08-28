@@ -3,6 +3,7 @@ package org.emerge.demo.outofspace.chem
 import kotlin.test.Test
 import kotlin.test.assertTrue
 import kotlin.test.assertEquals
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * The two properties added so that a building can be made of **anything** — thermal conductivity and

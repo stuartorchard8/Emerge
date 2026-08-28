@@ -139,7 +139,7 @@ enum class Species(
      * ⚠️ **A bare integer here is measured; a `K_*` constant is a class estimate** — see the
      * constants at the top of this file, which is where that convention is stated and counted.
      *
-     * ⛔ **Nothing reads this yet**, and that is deliberate. `Material.conductanceCentiTicks` is five
+     * ⛔ **Nothing reads this yet**, and that is deliberate. A material's time constant was five
      * hand-tuned game numbers that do *not* follow from physics — they span a factor of thirteen
      * against `(ρ·c)/k`, because they were back-derived from conductances tuned before densities were
      * real. Wiring this in therefore re-tunes every thermal behaviour in the game, which is a
@@ -419,7 +419,7 @@ enum class Species(
     // magnesia-silica refractory is a two-phase ceramic; a rock contains neither, so both take the
     // default [relativeAbundance] of zero and no asteroid will ever hold one.
     //
-    // They are species rather than [org.emerge.demo.outofspace.world.Material] compositions because
+    // They are species rather than named-material compositions because
     // a *recipe* is a thing the player should have to arrange once, in a furnace, rather than for
     // ever, on every belt. As a mixture, steel obliged a construction site to be fed iron and carbon
     // in the right ratio all the way from the ore field — nine hundred and ninety to ten, held
@@ -459,7 +459,7 @@ enum class Species(
     /**
      * Refractory brick: [Periclase] and [Quartz] fired together, 55:45 by mass.
      *
-     * The same 550:450 the [org.emerge.demo.outofspace.world.Material] mixture stated, and the same
+     * The same 550:450 the old `Material` mixture stated, and the same
      * numbers underneath it — 11 MgO to 6 SiO₂ is 55.0% to 45.0%, [specificHeat] is their
      * mass-weighted mean (823.75, rounded) and [solidKgPerCubicMetre] their harmonic one (3091.7,
      * rounded), so a furnace lining weighs and warms what it did before to within about a part in
