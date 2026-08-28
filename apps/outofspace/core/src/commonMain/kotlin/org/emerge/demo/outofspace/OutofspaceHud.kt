@@ -47,6 +47,9 @@ import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
 
+/** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
+enum class Sheet { None, Menu, Readouts }
+
 /**
  * How many buildable species the stockpile panel names before it stops counting.
  *
@@ -95,14 +98,17 @@ class OutofspaceHud {
      * with it for every player who never touched it.
      */
     /**
-     * Whether the game menu is showing.
+     * Which sheet is showing, if any.
      *
      * ⛔ **View state, so it lives on the HUD and not on the controller.** Nothing in the sim or in a
      * save has an opinion about whether a menu is open, and putting it on the controller would make
      * "the player is looking at the save button" a fact about the vessel. Same argument the collapse
      * sets below are held here by.
+     *
+     * ⚠️ **An enum rather than a flag apiece**, now there are two: a sheet dims the world behind it,
+     * so two open at once is two scrims and a player who cannot tell which of them a click reaches.
      */
-    private var menuOpen = false
+    private var openSheet: Sheet = Sheet.None
 
     private val collapsed = mutableSetOf<String>()
     private val expanded = mutableSetOf<String>()
@@ -120,95 +126,15 @@ class OutofspaceHud {
         ui.frame {
             // Drawn first (occludes everything).
             navView(s, controller.wikiSpecies?.takeIf { it.relativeAbundance > 0 })
-            panel(Anchor.TopLeft) {
-                title("OUT OF SPACE")
-                // The controller's count, not the state's: `state.tick` counts frozen ticks too and
-                // would climb while the game was stopped. See [OutofspaceController.livedTicks].
-                keyValue("Tick", controller.livedTicks.toString())
-                keyValue("FPS", fps.toInt().toString())
-                keyValue("Speed", "${controller.speed}x")
-                gap()
-                title("FLIGHT")
-                keyValue("Mass", mass(s.mass))
-                keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
-                keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
-                keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
-                // Felt gravity (milli-g for breach sensitivity).
-                keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
-                // Debug engine (hidden when zero).
-                if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
-                    keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
-                }
-                gap()
-                title("MASS BALANCE")
-                keyValue("Extracted", mass(s.extractedMass))
-                keyValue("Aboard", mass(s.inTransitMass))
-                keyValue("- in storage", mass(stock.totalMass))
-                keyValue("Built in", mass(s.builtMass))
-                keyValue("Vented", mass(s.ventedMass))
-                // ⛔ **`builtMass` and `baselineCargoMass` were missing from this sum, and their
-                // absence is what made the indicator useless.** `builtMass`'s own doc says why it
-                // has to be here — "without this term the conservation check would read a completed
-                // length of track as a leak of exactly its bill of materials" — and that is exactly
-                // what this panel did: on a real save it showed 8.8 t of LEAK, of which 7.8 t was
-                // simply the ship the player had built. An alarm that is always on is not an alarm,
-                // and it is worse than none because it hides the 1.0 t that was real.
-                //
-                // ⚠️ **The expression is the harness's `massBalance`, to the term.** The suite and
-                // the instrument have always used the four-term form; only the panel disagreed, so
-                // this is the panel being brought into line rather than a new rule. If they ever
-                // diverge again the harness is the one that is right.
-                //
-                // ⚠️ `reconciledMass` is subtracted, and it is shown on its own line whenever it is
-                // non-zero. A write-off that did not appear anywhere would be the panel lying by a
-                // measured amount, which is precisely the failure the write-off exists to end.
-                val drift = s.inTransitMass + s.ventedMass + s.builtMass -
-                    s.extractedMass - s.baselineCargoMass - s.reconciledMass
-                if (s.reconciledMass != 0L) {
-                    keyValue("Written off", mass(s.reconciledMass), 0x9A9A9AFFL, 0xC8A44AFFL)
-                }
-                row(
-                    if (drift == 0L) "balanced" else "LEAK ${mass(drift)}",
-                    if (drift == 0L) 0x6ED09AFFL else 0xE05A4AFFL,
-                )
-                gap()
-                title("ATMOSPHERE")
-                keyValue("Aboard", mass(s.atmosphereMass))
-                keyValue("Lost", mass(s.airVentedMass))
-                // Only shown once it is non-zero: the bellows is a debug tool, and a row reading
-                // "injected 0g" on every world that never touched it is a row nobody reads.
-                if (s.injectedAirMass != 0L) keyValue("Injected", mass(s.injectedAirMass))
-                val airBalanced = s.airBalance == 0L
-                row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
-                gap()
-                title("ENERGY")
-                keyValue("Generated", energy(s.generatedEnergy))
-                keyValue("Radiated", energy(s.radiatedEnergy))
-                keyValue("Stored", energy(s.storedEnergy))
-                keyValue("To air", energy(s.solidToAirEnergy))
-                keyValue("Air heat vented", energy(s.airVentedEnergy))
-                // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
-                // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
-                // overflow at the target mass unit and that is accepted for the duration, so a LEAK
-                // lamp here would be lit by the plan rather than by a bug, and a lamp that is always
-                // on is one nobody looks at again. The readouts above stay: they are still the
-                // numbers, it is only the verdict on them that is suspended. Mass balance, which
-                // survives the rescale, keeps its lamp and is the tripwire that matters.
-                row("(energy ledgers parked  ·  unit rescale step 3)", 0x8A8A8AFFL)
-                gap()
-                // One row per circuit the player has actually laid, rather than six fixed colours
-                // most of which read zero. An empty list here means no wire aboard, which is the
-                // honest thing to say.
-                title("SIGNALS")
-                if (s.signals.networkCount == 0) {
-                    row("(no wire laid)", 0x5A5A5AFFL)
-                } else {
-                    for (id in 0 until s.signals.networkCount) {
-                        val value = s.signals.ofNetwork(id)
-                        keyValue("circuit $id", "${value / 10}%", 0x9A9A9AFFL, if (value > 0) 0x6EE08AFFL else 0x5A5A5AFFL)
-                    }
-                }
-            }
+            /*
+             * ⛔ **The readouts panel stood here and is behind MENU > READOUTS now.**
+             *
+             * Ledgers, drift lamps, circuit percentages and a tick counter: instruments for finding
+             * out whether the sim is lying, and every one of them permanently in the top-left corner
+             * of a game about looking at a ship. Stu does not want to see them in normal play, and
+             * they lose nothing by being a click away — a leak is not a thing you catch by noticing
+             * it in your peripheral vision, it is a thing you go and check.
+             */
 
             panel(Anchor.TopRight) {
                 // ⛔ **What you can BUILD with, not what you happen to own.** This used to print
@@ -293,7 +219,7 @@ class OutofspaceHud {
                 // ⚠️ Beside the mode toggle, which is the other control here that is about the
                 // *session* rather than about a tile — and above the tool rows, so it does not move
                 // when the panel below it changes length with the tool.
-                button("MENU  ·  save, load, fit, reset", 0x2A3550FFL) { menuOpen = true }
+                button("MENU  ·  save, fit, readouts, reset", 0x2A3550FFL) { openSheet = Sheet.Menu }
                 gap()
                 title("TOOL  ·  ${controller.tool.label}   VIEW  ·  ${controller.overlay.label}")
                 controlRowOfTools(controller)
@@ -418,11 +344,138 @@ class OutofspaceHud {
             // ⛔ **Last in the frame.** A sheet dims everything under it and takes every click
             // inside its box, so anything drawn after it would sit on top of a scrim that is
             // supposed to be covering the screen.
-            if (menuOpen) menuSheet(controller)
+            when (openSheet) {
+                Sheet.None -> {}
+                Sheet.Menu -> menuSheet(controller)
+                Sheet.Readouts -> readoutsSheet(controller, fps, stock)
+            }
         }
         // Clear one-shot status messages after they've been displayed.
         saveStatus = ""
         clipboardStatus = ""
+    }
+
+    /**
+     * Every number the sim will tell you about itself: ledgers, drift lamps and circuits.
+     *
+     * ⛔ **Instruments, not gameplay.** Each of these exists to answer "is the simulation lying to
+     * me" — the mass balance is the conservation tripwire, the atmosphere lamp catches a hull
+     * breach's bookkeeping, the energy rows are parked mid-rescale and say so. None of them is a
+     * thing a player *does* anything with, and all of them together were the top-left corner of the
+     * screen in every frame of a game about looking at a ship.
+     *
+     * ⚠️ **Nothing was dropped in the move.** It is the same block, in the same order, with the same
+     * comments on why each figure is the figure — including FLIGHT and SIGNALS, which are arguably
+     * play rather than diagnosis. They are here because they were in the panel; if either wants to
+     * come back out it should come back out on its own account and not by being overlooked.
+     */
+    private fun UiBuilder.readoutsSheet(controller: OutofspaceController, fps: Float, stock: Stockpile) {
+        val s = controller.state
+        val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
+                // ⚠️ The panel's "OUT OF SPACE" heading went with the panel: the sheet has a title
+                // bar of its own, and a heading naming the game inside a window inside the game says
+                // nothing to anybody.
+                // The controller's count, not the state's: `state.tick` counts frozen ticks too and
+                // would climb while the game was stopped. See [OutofspaceController.livedTicks].
+                keyValue("Tick", controller.livedTicks.toString())
+                keyValue("FPS", fps.toInt().toString())
+                keyValue("Speed", "${controller.speed}x")
+                gap()
+                title("FLIGHT")
+                keyValue("Mass", mass(s.mass))
+                keyValue("Thrust", "${s.netImpulseX}, ${s.netImpulseY}")
+                keyValue("Speed", tiles(s.velocityX) + ", " + tiles(s.velocityY) + " /tick")
+                keyValue("Position", tiles(s.positionX) + ", " + tiles(s.positionY))
+                // Felt gravity (milli-g for breach sensitivity).
+                keyValue("Felt gravity", "${milliG(s.feltGravity.x.raw)}, ${milliG(s.feltGravity.y.raw)} mg")
+                // Debug engine (hidden when zero).
+                if (s.debugImpulseX != 0L || s.debugImpulseY != 0L) {
+                    keyValue("Debug engine", "${s.debugImpulseX}, ${s.debugImpulseY}", 0xC8A44AFFL, 0xC8A44AFFL)
+                }
+                gap()
+                title("MASS BALANCE")
+                keyValue("Extracted", mass(s.extractedMass))
+                keyValue("Aboard", mass(s.inTransitMass))
+                keyValue("- in storage", mass(stock.totalMass))
+                keyValue("Built in", mass(s.builtMass))
+                keyValue("Vented", mass(s.ventedMass))
+                // ⛔ **`builtMass` and `baselineCargoMass` were missing from this sum, and their
+                // absence is what made the indicator useless.** `builtMass`'s own doc says why it
+                // has to be here — "without this term the conservation check would read a completed
+                // length of track as a leak of exactly its bill of materials" — and that is exactly
+                // what this panel did: on a real save it showed 8.8 t of LEAK, of which 7.8 t was
+                // simply the ship the player had built. An alarm that is always on is not an alarm,
+                // and it is worse than none because it hides the 1.0 t that was real.
+                //
+                // ⚠️ **The expression is the harness's `massBalance`, to the term.** The suite and
+                // the instrument have always used the four-term form; only the panel disagreed, so
+                // this is the panel being brought into line rather than a new rule. If they ever
+                // diverge again the harness is the one that is right.
+                //
+                // ⚠️ `reconciledMass` is subtracted, and it is shown on its own line whenever it is
+                // non-zero. A write-off that did not appear anywhere would be the panel lying by a
+                // measured amount, which is precisely the failure the write-off exists to end.
+                val drift = s.inTransitMass + s.ventedMass + s.builtMass -
+                    s.extractedMass - s.baselineCargoMass - s.reconciledMass
+                if (s.reconciledMass != 0L) {
+                    keyValue("Written off", mass(s.reconciledMass), 0x9A9A9AFFL, 0xC8A44AFFL)
+                }
+                row(
+                    if (drift == 0L) "balanced" else "LEAK ${mass(drift)}",
+                    if (drift == 0L) 0x6ED09AFFL else 0xE05A4AFFL,
+                )
+                gap()
+                title("ATMOSPHERE")
+                keyValue("Aboard", mass(s.atmosphereMass))
+                keyValue("Lost", mass(s.airVentedMass))
+                // Only shown once it is non-zero: the bellows is a debug tool, and a row reading
+                // "injected 0g" on every world that never touched it is a row nobody reads.
+                if (s.injectedAirMass != 0L) keyValue("Injected", mass(s.injectedAirMass))
+                val airBalanced = s.airBalance == 0L
+                row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                gap()
+                title("ENERGY")
+                keyValue("Generated", energy(s.generatedEnergy))
+                keyValue("Radiated", energy(s.radiatedEnergy))
+                keyValue("Stored", energy(s.storedEnergy))
+                keyValue("To air", energy(s.solidToAirEnergy))
+                keyValue("Air heat vented", energy(s.airVentedEnergy))
+                // ⚠️ The two `balanced` rows that stood here — solid heat and air heat — are PARKED,
+                // per step 3 of apps/outofspace/PLAN_unit_rescale.md. The energy accumulators
+                // overflow at the target mass unit and that is accepted for the duration, so a LEAK
+                // lamp here would be lit by the plan rather than by a bug, and a lamp that is always
+                // on is one nobody looks at again. The readouts above stay: they are still the
+                // numbers, it is only the verdict on them that is suspended. Mass balance, which
+                // survives the rescale, keeps its lamp and is the tripwire that matters.
+                row("(energy ledgers parked  ·  unit rescale step 3)", 0x8A8A8AFFL)
+                gap()
+                // One row per circuit the player has actually laid, rather than six fixed colours
+                // most of which read zero. An empty list here means no wire aboard, which is the
+                // honest thing to say.
+                title("SIGNALS")
+                if (s.signals.networkCount == 0) {
+                    row("(no wire laid)", 0x5A5A5AFFL)
+                } else {
+                    for (id in 0 until s.signals.networkCount) {
+                        val value = s.signals.ofNetwork(id)
+                        keyValue("circuit $id", "${value / 10}%", 0x9A9A9AFFL, if (value > 0) 0x6EE08AFFL else 0x5A5A5AFFL)
+                    }
+                }
+        }
+        val dismiss = { openSheet = Sheet.None }
+        // Taller and wider than the menu: it is a column of readouts rather than four buttons, and
+        // it scrolls, which is what lets the circuit list be as long as the wiring is.
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(READOUTS_WIDTH_DP * density, screenW * 0.6f)
+            val h = screenH * 0.85f
+            sheet(
+                "oos-readouts", "READOUTS", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-readouts", "READOUTS", onDismiss = dismiss, heightFraction = 0.85f, rowHeight = 34f, textSize = 15f, body = body)
+        }
     }
 
     /**
@@ -455,17 +508,19 @@ class OutofspaceHud {
             }
             actionRow(
                 listOf(
-                    Triple("FIT  ·  F8", 0x2E5A6BFFL) { onFit(); menuOpen = false },
+                    Triple("FIT  ·  F8", 0x2E5A6BFFL) { onFit(); openSheet = Sheet.None },
                     Triple(if (controller.paused) "PLAY  ·  SPACE" else "PAUSE  ·  SPACE", 0x3A6EA5FFL) {
                         onTogglePause()
                     },
                 ),
             )
+            // ⚠️ The way to the instruments, and the only way: they are not on screen otherwise.
+            button("READOUTS  ·  ledgers, drift, circuits", 0x2A3550FFL) { openSheet = Sheet.Readouts }
             gap()
             // Last, alone, and the only red thing in here: it throws the vessel away.
-            button("RESET", 0xCC3333FFL) { onReset(); menuOpen = false }
+            button("RESET", 0xCC3333FFL) { onReset(); openSheet = Sheet.None }
         }
-        val dismiss = { menuOpen = false }
+        val dismiss = { openSheet = Sheet.None }
         // ⛔ A centred popover where there is room and a bottom sheet where there is not: a
         // full-width sheet on a desktop monitor is a metre of empty table with six words on it, and
         // a centred box on a phone is a postage stamp you cannot hit.
@@ -475,7 +530,7 @@ class OutofspaceHud {
             // does — it is given a box. Left at a round number it was a third of the screen holding
             // three buttons, which reads as a menu that has lost its contents. Two rows of controls,
             // a gap and RESET, plus room for the one-shot status line a save leaves behind.
-            val rows = (if (canSave) 2 else 1) + 1
+            val rows = (if (canSave) 2 else 1) + 2
             val h = minOf(screenH * 0.5f, (SHEET_TITLE_DP + rows * SHEET_ROW_DP + 30f) * density)
             sheet(
                 "oos-menu", "MENU", onDismiss = dismiss,
@@ -1597,6 +1652,9 @@ class OutofspaceHud {
 
         /** How wide the menu popover is on a screen with room for one. */
         const val SHEET_WIDTH_DP: Float = 460f
+
+        /** How wide the readouts popover is: a column of key/value rows, not a row of buttons. */
+        const val READOUTS_WIDTH_DP: Float = 560f
 
         /** One row of it, and the title bar above them — the two figures its height is built from. */
         const val SHEET_ROW_DP: Float = 26f
