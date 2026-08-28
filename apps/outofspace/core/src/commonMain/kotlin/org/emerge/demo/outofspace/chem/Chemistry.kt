@@ -118,7 +118,16 @@ fun process(input: Mixture, efficiencyPermille: Int = 1000): ProcessResult {
         productMass[dominant.ordinal] = productTotal
     }
 
-    val productMixture = Mixture.of(productMass, input.energy)
+    // Split thermal energy by heat capacity, not by mass. Both streams leave at the same
+    // temperature, so the product takes energy proportional to its heat capacity and the
+    // tailings takes the rest — which is exactly what `input - product` computes.
+    var inputCapacity = 0L
+    for (s in Species.ALL) inputCapacity += input[s] * s.specificHeat
+    var productCapacity = 0L
+    for (i in productMass.indices) productCapacity += productMass[i] * Species.ALL[i].specificHeat
+    val productEnergy = if (inputCapacity > 0L) scaledRatio(productCapacity, inputCapacity, input.energy) else 0L
+
+    val productMixture = Mixture.of(productMass, productEnergy)
     return ProcessResult(product = productMixture, tailings = input - productMixture)
 }
 

@@ -257,6 +257,36 @@ class ChemistryTest {
         assertTrue(r.product.isEmpty && r.tailings.isEmpty)
     }
 
+    @Test
+    fun `processing splits thermal energy by heat capacity, not half-and-half`() {
+        // 90% pure iron feed. With 1000 permille efficiency the effective efficiency is capped
+        // at 900, so 5 units of quartz leak into the product and 95 stay in the tailings.
+        //
+        // product-specific-heat ≈ 452 (iron-dominant, low c_p)
+        // tailings-specific-heat ≈ 515 (more quartz, higher c_p)
+        //
+        // Both streams weigh 500g but the tailings must carry more thermal energy because its
+        // heat capacity per gram is higher.
+        val input = Mixture.of(Species.Iron to 900L, Species.Quartz to 100L, energy = 5_250_000L)
+        val r = process(input, 1000)
+
+        assertConserved(listOf(input), listOf(r.product, r.tailings), "energy-conserving process")
+
+        // Both outputs must be non-zero energy (not 0 and not the full input).
+        assertTrue(r.product.energy > 0L, "product must hold thermal energy: ${r.product.energy}")
+        assertTrue(r.tailings.energy > 0L, "tailings must hold thermal energy: ${r.tailings.energy}")
+
+        // The product carries LESS than half because its iron-heavy composition has lower
+        // specific heat than the tailings. This is the invariant that distinguishes the correct
+        // heat-capacity-weighted split from the buggy "give everything to the product" path.
+        val half = input.energy / 2L
+        assertTrue(r.product.energy < half, "product should carry less than half: ${r.product.energy} of ${input.energy}")
+        assertTrue(r.tailings.energy > half, "tailings should carry more than half: ${r.tailings.energy} of ${input.energy}")
+
+        // Energy is conserved exactly.
+        assertEquals(input.energy, r.product.energy + r.tailings.energy, "energy must be conserved")
+    }
+
     // ── "close enough is pure": the threshold that ends the chain ───────────────
 
     /** One charge of the standard ore body, which is what a real concentrator always works on. */
