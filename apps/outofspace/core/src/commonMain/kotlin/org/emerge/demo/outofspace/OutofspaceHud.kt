@@ -136,10 +136,7 @@ class OutofspaceHud {
              * it in your peripheral vision, it is a thing you go and check.
              */
 
-            // ⚠️ **Before the stockpile**, because panels at an anchor stack in draw order and the
-            // first to claim it takes the edge. Time is the thing you reach for without looking, so
-            // it gets the corner.
-            timePanel(controller, fps)
+            sessionPanel(controller, fps)
 
             panel(Anchor.TopRight) {
                 // ⛔ **What you can BUILD with, not what you happen to own.** This used to print
@@ -195,37 +192,6 @@ class OutofspaceHud {
             }
 
             panel(Anchor.BottomLeft) {
-                // Which mode owns the keyboard, and how to change it — said first and loudly,
-                // because a player whose WASD has stopped panning needs the answer immediately.
-                val flying = controller.mode == Mode.Flight
-                button(
-                    if (flying) "FLIGHT MODE  ·  F to build" else "BUILD MODE  ·  F to fly",
-                    if (flying) 0x8A5A2AFFL else 0x232A38FFL,
-                ) { controller.mode = controller.mode.next }
-                if (flying) {
-                    // The autopilot lives beside the mode toggle because it is the same kind of
-                    // thing: a standing instruction about the whole ship, not a machine's setting.
-                    button(
-                        listOf(
-                            "SAS  " to 0x9A9A9AFFL,
-                            (if (controller.state.sas) "HOLDING" else "OFF") to
-                                (if (controller.state.sas) 0x6EE08AFFL else 0x9A9A9AFFL),
-                            "  ·  T" to 0x7A7A7AFFL,
-                        ),
-                        0x2E5A6BFFL,
-                    ) { controller.toggleSas() }
-                    val held = InputKey.ALL.filter { InputKey.heldIn(controller.heldKeys, it) }
-                    row(
-                        if (held.isEmpty()) "WASD moves  ·  QE turns  ·  arrows / Z / X also drive buttons"
-                        else "holding: ${held.joinToString(" ") { it.label }}",
-                        if (held.isEmpty()) 0x9A9A9AFFL else 0x6EE08AFFL,
-                    )
-                }
-                // ⚠️ Beside the mode toggle, which is the other control here that is about the
-                // *session* rather than about a tile — and above the tool rows, so it does not move
-                // when the panel below it changes length with the tool.
-                button("MENU  ·  save, fit, readouts, reset", 0x2A3550FFL) { openSheet = Sheet.Menu }
-                gap()
                 title("TOOL  ·  ${controller.tool.label}   VIEW  ·  ${controller.overlay.label}")
                 controlRowOfTools(controller)
                 actionRow(
@@ -549,19 +515,35 @@ class OutofspaceHud {
     }
 
     /**
-     * **Time, and how fast it is going** — the one instrument that came back out of the readouts.
+     * **The session, in one corner**: how fast time is going, which mode owns the keyboard, and the
+     * way into the game's own menu.
      *
-     * ⚠️ **Every button shows its own state**, which is the whole reason there are seven of them
-     * rather than a pair of arrows: a dial you step through tells you the rate you are at only by
-     * printing it somewhere else, and a player who has lost track of whether they are at 4x or 8x
-     * has to go and read a number. Here the answer is which button is lit.
+     * ⛔ **These are the controls that are about the sitting rather than about a tile**, which is
+     * what makes them one panel. Everything in the bottom-left is an answer to "what does a click
+     * do"; nothing here is. The mode toggle and the menu button used to head that panel and were
+     * pushed up and down the screen by the length of whatever tool was selected — a button that
+     * moves when you change tools is a button you have to look for.
+     *
+     * ⚠️ **Time first, and in the very corner.** It is the control reached for without looking, and
+     * the only one here a player touches more than a handful of times a session.
+     *
+     * ⚠️ **Every rate button shows its own state**, which is the whole reason there are seven rather
+     * than a pair of arrows: a dial you step through tells you the rate you are at only by printing
+     * it somewhere else, and a player who has lost track of whether they are at 4x or 8x has to go
+     * and read a number. Here the answer is which button is lit.
      *
      * ⚠️ **PAUSE and the rate are independent, and the panel has to show both**, because they are:
      * the dial says how fast the clock turns and the pause says whether passes run, and a world
      * stopped at 4x is still settling its animations at 4x. See `OutofspaceController.speed`.
      */
-    private fun UiBuilder.timePanel(controller: OutofspaceController, fps: Float) {
-        panel(Anchor.TopRight, rowHeight = 20f) {
+    private fun UiBuilder.sessionPanel(controller: OutofspaceController, fps: Float) {
+        // ⛔ **A stated width, because a panel auto-sizes and this one changes contents.** Entering
+        // flight adds two rows of key hints, and the widest of them was setting the panel's width —
+        // so the seven time buttons, which share that width between them, grew and shifted every
+        // time the player switched mode. A control that moves when you do something unrelated is a
+        // control you have to look for, which is the whole complaint the mode toggle was moved up
+        // here to answer.
+        panel(Anchor.TopLeft, rowHeight = 20f, minWidth = SESSION_WIDTH_DP) {
             // ⚠️ Coloured by what it means rather than by what it is: the number only ever matters
             // as "is this smooth", and a bare figure makes every player learn the thresholds.
             val shown = fps.toInt()
@@ -594,6 +576,37 @@ class OutofspaceHud {
                     }
                 },
             )
+            gap()
+            // Which mode owns the keyboard, and how to change it — said loudly, because a player
+            // whose WASD has stopped panning needs the answer immediately.
+            val flying = controller.mode == Mode.Flight
+            button(
+                if (flying) "FLIGHT MODE  ·  F to build" else "BUILD MODE  ·  F to fly",
+                if (flying) 0x8A5A2AFFL else 0x232A38FFL,
+            ) { controller.mode = controller.mode.next }
+            if (flying) {
+                // The autopilot lives beside the mode toggle because it is the same kind of thing:
+                // a standing instruction about the whole ship, not a machine's setting.
+                button(
+                    listOf(
+                        "SAS  " to 0x9A9A9AFFL,
+                        (if (controller.state.sas) "HOLDING" else "OFF") to
+                            (if (controller.state.sas) 0x6EE08AFFL else 0x9A9A9AFFL),
+                        "  ·  T" to 0x7A7A7AFFL,
+                    ),
+                    0x2E5A6BFFL,
+                ) { controller.toggleSas() }
+                val held = InputKey.ALL.filter { InputKey.heldIn(controller.heldKeys, it) }
+                if (held.isEmpty()) {
+                    // ⚠️ Two short rows rather than one long one: the single row was half again the
+                    // width of everything else here and set the panel's size on its own.
+                    row("WASD moves  ·  QE turns", 0x9A9A9AFFL)
+                    row("arrows / Z / X also drive buttons", 0x9A9A9AFFL)
+                } else {
+                    row("holding: ${held.joinToString(" ") { it.label }}", 0x6EE08AFFL)
+                }
+            }
+            button("MENU  ·  save, fit, readouts, reset", 0x2A3550FFL) { openSheet = Sheet.Menu }
         }
     }
 
@@ -1722,6 +1735,14 @@ class OutofspaceHud {
 
         /** How wide the menu popover is on a screen with room for one. */
         const val SHEET_WIDTH_DP: Float = 460f
+
+        /**
+         * How wide the session panel is, whatever is in it — see `OutofspaceHud.sessionPanel`.
+         *
+         * Set by its longest row, which is the menu button's own label; everything else is shorter
+         * and the flight rows are deliberately kept under it.
+         */
+        const val SESSION_WIDTH_DP: Float = 400f
 
         /** How wide the readouts popover is: a column of key/value rows, not a row of buttons. */
         const val READOUTS_WIDTH_DP: Float = 560f
