@@ -49,7 +49,7 @@ import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.render.torus.ui.ActionButton
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
-enum class Sheet { None, Menu, Readouts }
+enum class Sheet { None, Menu, Readouts, SaveLoad }
 
 /**
  * How many buildable species the stockpile panel names before it stops counting.
@@ -88,6 +88,91 @@ class OutofspaceHud {
 
     /** What the last clipboard action did, shown next to save status. Cleared after being read. */
     var clipboardStatus: String = ""
+
+    // ── Save/load dialog state ────────────────────────────────────────────────────────────────
+    /** Whether the name input field is capturing keyboard characters. */
+    var capturingName: Boolean = false
+        private set
+
+    /** Whether we're in save mode (currently saving, not loading). */
+    var saveMode: Boolean = true
+        private set
+
+    /** Buffer for the name being typed in the save/load dialog. */
+    private val nameBuffer = StringBuilder()
+
+    /** The list of available save names. */
+    private var availableSaves: List<String> = emptyList()
+
+    /** Pending save/load/delete callbacks (host-provided). */
+    private var pendingOnSave: ((String) -> Unit)? = null
+    private var pendingOnLoad: ((String) -> Unit)? = null
+    private var pendingOnDelete: ((String) -> Unit)? = null
+
+    /** Whether a delete confirmation is pending for this save name. */
+    private var pendingDelete: String? = null
+
+    /** Open the save/load dialog. */
+    fun openSaveLoadDialog(
+        onSave: (String) -> Unit,
+        onLoad: (String) -> Unit,
+        onDelete: (String) -> Unit,
+        saves: List<String>,
+        saveMode: Boolean,
+        defaultName: String,
+    ) {
+        this.pendingOnSave = onSave
+        this.pendingOnLoad = onLoad
+        this.pendingOnDelete = onDelete
+        this.availableSaves = saves
+        this.saveMode = saveMode
+        nameBuffer.setLength(0)
+        nameBuffer.append(defaultName)
+        capturingName = true
+        pendingDelete = null
+        openSheet = Sheet.SaveLoad
+    }
+
+    /** Dismiss the save/load dialog. */
+    fun closeSaveLoadDialog() {
+        capturingName = false
+        pendingOnSave = null
+        pendingOnLoad = null
+        pendingOnDelete = null
+        pendingDelete = null
+        if (openSheet == Sheet.SaveLoad) openSheet = Sheet.None
+    }
+
+    /** Handle a typed character in the name field. */
+    fun typeChar(c: Char) {
+        if (capturingName && nameBuffer.length < 40 && c >= ' ') nameBuffer.append(c)
+    }
+
+    /** Handle backspace in the name field. */
+    fun backspace() {
+        if (capturingName && nameBuffer.isNotEmpty()) nameBuffer.setLength(nameBuffer.length - 1)
+    }
+
+    /** The current name being typed. */
+    fun currentName(): String = nameBuffer.toString()
+
+    /** Commit the current name as a save (called from the key callback). */
+    fun commitSave() {
+        val name = currentName().trim()
+        if (name.isNotBlank()) {
+            pendingOnSave?.invoke(name)
+        }
+        closeSaveLoadDialog()
+    }
+
+    /** Commit the current name as a load (called from the key callback). */
+    fun commitLoad() {
+        val name = currentName().trim()
+        if (name.isNotBlank()) {
+            pendingOnLoad?.invoke(name)
+        }
+        closeSaveLoadDialog()
+    }
 
     /**
      * Which inspector sections the player has folded shut, and which they have opened.
@@ -303,23 +388,14 @@ class OutofspaceHud {
             val inspector = inspectPanel(controller)
             wikiPanel(controller, inspector)
 
-            /*
-             * ⛔ **SAVE, LOAD, FIT, PAUSE and RESET stood here, always open, and are a sheet now.**
-             *
-             * They are about the *game* rather than about the vessel — the only controls in the HUD
-             * that are — and a corner permanently holding a red RESET is a hazard sitting beside the
-             * storage readouts rather than a control anybody is reaching for. The button that opens
-             * them lives in the build menu, because that panel is already where "things you do
-             * rather than things you look at" collect. See [menuSheet].
-             */
-
-            // ⛔ **Last in the frame.** A sheet dims everything under it and takes every click
+            // ⚠️ **Last in the frame.** A sheet dims everything under it and takes every click
             // inside its box, so anything drawn after it would sit on top of a scrim that is
             // supposed to be covering the screen.
             when (openSheet) {
                 Sheet.None -> {}
                 Sheet.Menu -> menuSheet(controller)
                 Sheet.Readouts -> readoutsSheet(controller, fps, stock)
+                Sheet.SaveLoad -> saveLoadSheet(controller)
             }
         }
         // Clear one-shot status messages after they've been displayed.
@@ -512,6 +588,70 @@ class OutofspaceHud {
             )
         } else {
             sheet("oos-menu", "MENU", onDismiss = dismiss, heightFraction = 0.4f, rowHeight = 40f, textSize = 15f, body = body)
+        }
+    }
+
+    /**
+     * Save/load dialog: type a name to save, click a name to load, click "Del" to delete.
+     *
+     * Replaces the old single-slot save/load with a directory-based store where each save has a
+     * user-given name. Enter saves/loads, Escape cancels.
+     */
+    private fun UiBuilder.saveLoadSheet(controller: OutofspaceController) {
+        val name = currentName()
+        val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
+            if (saveMode) {
+                title("Save World", 0x6FD6C4FFL)
+                row("Type a name (Enter to save):", 0x8B96A8FFL)
+                gap(4f)
+                row("> ${name}_", 0xFFFFFFFFL)
+                gap(10f)
+                if (name.isNotBlank()) {
+                    button("Save", 0x2E6E5EFFL) {
+                        pendingOnSave?.invoke(name)
+                    }
+                }
+                button("Cancel", 0x53384AFFL) { closeSaveLoadDialog() }
+            } else {
+                title("Load World", 0x6FD6C4FFL)
+                gap(4f)
+                if (availableSaves.isEmpty()) {
+                    row("No saves yet.", 0x8B96A8FFL)
+                } else {
+                    for (s in availableSaves.take(12)) {
+                        if (pendingDelete == s) {
+                            actionRow(listOf(
+                                Triple("Delete '$s'?", 0x53384AFFL) { },
+                                Triple("Yes", 0xB03A3AFFL) { pendingOnDelete?.invoke(s); pendingDelete = null },
+                                Triple("No", 0x2A3550FFL) { pendingDelete = null },
+                            ))
+                        } else {
+                            actionRow(listOf(
+                                Triple(s, 0x2A3550FFL) { pendingOnLoad?.invoke(s) },
+                                Triple("Del", 0x53384AFFL) { pendingDelete = s },
+                            ))
+                        }
+                    }
+                }
+                gap(8f)
+                button("Cancel", 0x53384AFFL) {
+                    pendingDelete = null
+                    closeSaveLoadDialog()
+                }
+            }
+        }
+        val dismiss = { pendingDelete = null; closeSaveLoadDialog() }
+        if (screenW > NARROW_MAX_DP * density) {
+            val w = minOf(SHEET_WIDTH_DP * density, screenW * 0.5f)
+            val maxRows = if (saveMode) 5 else 14
+            val h = minOf(screenH * 0.6f, (SHEET_TITLE_DP + maxRows * SHEET_ROW_DP + 30f) * density)
+            sheet(
+                "oos-saveload", if (saveMode) "SAVE" else "LOAD", onDismiss = dismiss,
+                boxX = (screenW - w) * 0.5f, boxY = (screenH - h) * 0.5f, boxW = w, boxH = h,
+                rowHeight = SHEET_ROW_DP, textSize = 14f, body = body,
+            )
+        } else {
+            sheet("oos-saveload", if (saveMode) "SAVE" else "LOAD", onDismiss = dismiss, heightFraction = 0.5f, rowHeight = 40f, textSize = 15f, body = body)
         }
     }
 

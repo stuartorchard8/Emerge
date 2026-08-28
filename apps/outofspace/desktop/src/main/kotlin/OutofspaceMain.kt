@@ -56,6 +56,16 @@ fun main() {
     val hud = OutofspaceHud()
     val ui = Ui()
     renderer.centreOn(controller.state)
+    // Auto-resume: load the most recent save if one exists.
+    OoSaves.mostRecent()?.let {
+        val text = OoSaves.load(it)
+        if (text != null) {
+            val state = Save.read(text)
+            controller.reset(state)
+            renderer.centreOn(state)
+            println("resumed from: $it")
+        }
+    }
     // Sound is a host's business and the loop's last passenger: it reads the state the tick just
     // produced and never writes to it, so a machine with no sound device simply skips these lines.
     val impactAudio = ImpactAudioSystem(DesktopImpactAudioEngine())
@@ -64,8 +74,69 @@ fun main() {
     hud.onReset = { controller.reset(); renderer.centreOn(controller.state) }
     hud.onFit = { controller.fit() }
     hud.canSave = true
-    hud.onSave = { hud.saveStatus = saveWorld(controller) }
-    hud.onLoad = { hud.saveStatus = loadWorld(controller, renderer) }
+    hud.onSave = {
+        val mostRecent = OoSaves.mostRecent()
+        val defaultName = "world @ ${controller.tick}"
+        val openSave = if (mostRecent != null) "Save over '$mostRecent'" else "Save"
+        val openLoad = "Load"
+        hud.openSaveLoadDialog(
+            onSave = { name ->
+                val sanitized = OoSaves.save(name, Save.write(controller.state))
+                hud.saveStatus = "saved: $sanitized"
+                hud.closeSaveLoadDialog()
+            },
+            onLoad = { name ->
+                val text = OoSaves.load(name)
+                if (text != null) {
+                    val state = Save.read(text)
+                    controller.reset(state)
+                    renderer.centreOn(state)
+                    hud.saveStatus = "loaded: $name"
+                } else {
+                    hud.saveStatus = "load failed: $name not found"
+                }
+                hud.closeSaveLoadDialog()
+            },
+            onDelete = { name ->
+                OoSaves.delete(name)
+                hud.saveStatus = "deleted: $name"
+                hud.closeSaveLoadDialog()
+            },
+            saves = OoSaves.list(),
+            saveMode = true,
+            defaultName = defaultName,
+        )
+    }
+    hud.onLoad = {
+        val defaultName = OoSaves.mostRecent() ?: "world @ ${controller.tick}"
+        hud.openSaveLoadDialog(
+            onSave = { name ->
+                val sanitized = OoSaves.save(name, Save.write(controller.state))
+                hud.saveStatus = "saved: $sanitized"
+                hud.closeSaveLoadDialog()
+            },
+            onLoad = { name ->
+                val text = OoSaves.load(name)
+                if (text != null) {
+                    val state = Save.read(text)
+                    controller.reset(state)
+                    renderer.centreOn(state)
+                    hud.saveStatus = "loaded: $name"
+                } else {
+                    hud.saveStatus = "load failed: $name not found"
+                }
+                hud.closeSaveLoadDialog()
+            },
+            onDelete = { name ->
+                OoSaves.delete(name)
+                hud.saveStatus = "deleted: $name"
+                hud.closeSaveLoadDialog()
+            },
+            saves = OoSaves.list(),
+            saveMode = false,
+            defaultName = defaultName,
+        )
+    }
 
     var leftDown = false
     var middleDown = false
@@ -278,8 +349,8 @@ fun main() {
             GLFW_KEY_F6 -> { val (ix,iy) = renderer.screenToTile(lastX, lastY); controller.dropRock(ix, iy) }
             GLFW_KEY_F5 -> { controller.reset(); renderer.centreOn(controller.state) }
             GLFW_KEY_F8 -> controller.fit()
-            GLFW_KEY_F9 -> hud.saveStatus = saveWorld(controller)
-            GLFW_KEY_F10 -> hud.saveStatus = loadWorld(controller, renderer)
+            GLFW_KEY_F9 -> hud.onSave()
+            GLFW_KEY_F10 -> hud.onLoad()
             GLFW_KEY_F11 -> {
                 val report = profiler.report()
                 println("═══ PROFILER REPORT (tick ${controller.tick}) ═══")
@@ -312,6 +383,23 @@ fun main() {
             }
             in GLFW_KEY_1..GLFW_KEY_9 -> Brush.ALL.getOrNull(key - GLFW_KEY_1)?.let { controller.brush = it }
             GLFW_KEY_0 -> Brush.ALL.getOrNull(9)?.let { controller.brush = it }
+        }
+        // Name entry for save/load dialog.
+        if (hud.capturingName) {
+            when (key) {
+                GLFW_KEY_BACKSPACE -> hud.backspace()
+                GLFW_KEY_ENTER, GLFW_KEY_KP_ENTER -> {
+                    if (hud.saveMode) hud.commitSave() else hud.commitLoad()
+                }
+                GLFW_KEY_ESCAPE -> hud.closeSaveLoadDialog()
+            }
+            return@glfwSetKeyCallback
+        }
+    }
+
+    glfwSetCharCallback(window) { _, codepoint ->
+        if (codepoint in 32..126 && hud.capturingName) {
+            hud.typeChar(codepoint.toChar())
         }
     }
 
@@ -386,36 +474,6 @@ private const val WHEEL_SCROLL_PX = 48f
  * somebody* — a reproduction of something that misbehaved — and for that, a path you can predict and
  * paste is worth more than a dialog. Slots and naming can come when there is a reason to keep two.
  */
-private val SAVE_FILE = java.io.File("outofspace.save")
-
-/** Writes the world, and says where it went — the path is the point, since it is meant to be shared. */
-private fun saveWorld(controller: OutofspaceController): String = try {
-    SAVE_FILE.writeText(Save.write(controller.state))
-    println("saved to ${SAVE_FILE.absolutePath}")
-    "saved: ${SAVE_FILE.absolutePath}"
-} catch (e: Exception) {
-    println("save failed: ${e.message}")
-    "save failed: ${e.message}"
-}
-
-/**
- * Reads the world back, or says why it could not.
- *
- * A bad save must never take the game down with it: the file is the thing most likely to have been
- * hand-edited, so a parse failure is an ordinary outcome and belongs on screen rather than in a
- * stack trace. The running world is left exactly as it was.
- */
-private fun loadWorld(controller: OutofspaceController, renderer: OutofspaceRenderer): String = try {
-    val state = Save.read(SAVE_FILE.readText())
-    controller.reset(state)
-    renderer.centreOn(state)
-    println("loaded ${SAVE_FILE.absolutePath}")
-    "loaded: ${SAVE_FILE.absolutePath}"
-} catch (e: Exception) {
-    println("load failed: ${e.message}")
-    "load failed: ${e.message}"
-}
-
 private fun updateResolution(window: Long, ui: Ui, renderer: OutofspaceRenderer) {
     MemoryStack.stackPush().use { st ->
         val w = st.mallocInt(1)
