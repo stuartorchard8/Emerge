@@ -24,6 +24,9 @@ expect airBalance = 0
 echo --- build into the NEAR pad: the grid widens and the origin moves with it
 # The left pad is x=0..3. Building at x=1 leaves one clear tile, so the grid owes three: 41 -> 44,
 # and the origin moves +3 in x, which every landmark below follows.
+# ⚠️ Nothing is made of anything by default, so a build has to say what out of — without this
+# line every `place` below is a silent no-op. See `material` in the harness header.
+material STEEL
 brush hull
 place origin-3 origin+13
 run 2

@@ -19,6 +19,9 @@ expect airBalance = 0
 echo --- build into the FAR pad: the grid widens, the origin does not move
 # The ship's rightmost tile is x=36 on a 41-wide grid, so the right pad is x=37..40. Building at
 # x=38 leaves two clear, so the grid grows by the two it owes: 41 -> 43.
+# ⚠️ Nothing is made of anything by default, so a build has to say what out of — without this
+# line every `place` below is a silent no-op. See `material` in the harness header.
+material STEEL
 brush hull
 place origin+34 origin+13
 run 2

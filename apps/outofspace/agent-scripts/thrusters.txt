@@ -20,6 +20,9 @@ camera centre 34 9 64
 # ⚠️ A motor is **two tiles**: the chamber goes where you click and the bell juts out one step in the
 # exhaust direction. So (34,9) puts the chamber in the plate and the bell at (35,9), outboard of the
 # hull, and the placement is refused outright if that tile is taken.
+# ⚠️ Nothing is made of anything by default, so a build has to say what out of — without this
+# line every `place` below is a silent no-op. See `material` in the harness header.
+material TITANIUM
 brush THRUSTER RIGHT
 place 34 9
 

@@ -30,6 +30,9 @@ camera centre 35 9 40
 
 # The tank's centre sits at 31 with its output port on 32, so a run drawn from there is fed by it.
 # Seven tiles, none of which existed before.
+# ⚠️ Nothing is made of anything by default, so a build has to say what out of — without this
+# line every `place` below is a silent no-op. See `material` in the harness header.
+material IRON
 brush RAIL
 drag 32 9 38 9
 

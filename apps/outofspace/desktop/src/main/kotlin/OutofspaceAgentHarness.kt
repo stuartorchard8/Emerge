@@ -76,6 +76,7 @@ import kotlin.math.roundToInt
  * frames <n> [hz]            # N frames of real time, as a window would. The only way to watch a
  *                            # paused world settle: the clock runs, the passes do not
  * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/VENT/... and Right|Down|Left|Up
+ * material <Species>         # what the next placement is made of; nothing builds without one
  * place <x> <y>              # build with the current brush
  * fit                        # shrink grid back to ship + pad
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
@@ -223,6 +224,19 @@ object OutofspaceAgentHarness {
                     println("[agent] brush -> ${controller.brush.label} facing ${controller.brushFacing}")
                 }
                 "facing" -> { controller.brushFacing = direction(t[1]); println("[agent] facing -> ${controller.brushFacing}") }
+                /*
+                 * What the next placement is made of.
+                 *
+                 * ⛔ **Required before anything can be built.** Nothing in the game is made of
+                 * anything by default, so a script that lays track without saying what out of lays
+                 * nothing at all and reads as a silent no-op — see `OutofspaceController.buildMaterial`.
+                 * A sibling of `brush` rather than an argument to `place`, because it is the same
+                 * kind of standing choice the brush is, and a player sets it once and then builds.
+                 */
+                "material" -> {
+                    controller.buildMaterial = species(t[1])
+                    println("[agent] material -> ${controller.buildMaterial?.name}")
+                }
                 "place" -> { controller.place(index(t[1], t[2])); settle() }
                 // Conduit joins by being DRAWN, not by touching, so laying a run has to go through the
                 // controller's drag as a gesture. `place`ing each tile of a line gives disconnected track
@@ -568,6 +582,11 @@ object OutofspaceAgentHarness {
             if (found.isEmpty()) println("[agent] landmarks: nothing placed")
             else println("[agent] landmarks: ${found.joinToString(" | ")}")
         }
+
+        /** A species by name — what a build is made of, and what a wiki page is about. */
+        private fun species(name: String): Species =
+            Species.ALL.firstOrNull { it.name.equals(name, true) }
+                ?: error("unknown species '$name'")
 
         /** A brush by name — a conduit or a building, since the build menu no longer tells them apart. */
         private fun kind(name: String): Brush =
