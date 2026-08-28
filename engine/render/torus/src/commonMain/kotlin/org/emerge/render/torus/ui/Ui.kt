@@ -1490,8 +1490,11 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
     class TextSpan(val key: String, val from: Int, val to: Int)
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
-    fun button(label: String, color: Long, dropTargetId: String? = null, onClick: () -> Unit) =
-        items.add(ButtonItem(label, color, rowHeight, dropTargetId, onClick))
+    fun button(label: String, color: Long, dropTargetId: String? = null, enabled: Boolean = true, onClick: () -> Unit) =
+        items.add(ButtonItem(label, color, rowHeight, dropTargetId, enabled, onClick))
+
+    /** Place a prepared [ActionButton] — the same button, described as data rather than as arguments. */
+    fun button(b: ActionButton) = items.add(ButtonItem(b.label, b.color, rowHeight, null, b.enabled, b.onClick))
 
     /** A button whose label is coloured **per segment**: each pair is (text, colour-or-null); a null
      *  colour uses the auto-contrast against the button [color]. The segments render as one centred label
@@ -1557,16 +1560,24 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     /** A horizontal row of small buttons. */
     fun actionRow(buttons: List<Triple<String, Long, () -> Unit>>) =
-        items.add(ActionRowItem(buttons.map { ActionButton(it.first, it.second, onClick = it.third) }, rowHeight))
+        controlRow(buttons.map { ActionButton(it.first, it.second, onClick = it.third) })
 
     /** A horizontal row of [ActionButton]s — like [actionRow] but each button may be individually disabled
-     *  (dimmed + non-interactive). */
-    fun controlRow(buttons: List<ActionButton>) = items.add(ActionRowItem(buttons, rowHeight))
+     *  (dimmed + non-interactive). Sugar for `row { buttons.forEach { button(it) } }`. */
+    fun controlRow(buttons: List<ActionButton>) = row { buttons.forEach { button(it) } }
 
-    /** A horizontal row of arbitrary items. */
+    /**
+     * A horizontal row of arbitrary items — the toolkit's one and only horizontal container. Anything
+     * that can go in a panel can go in a row, including another [row]; [spacer] absorbs the slack.
+     *
+     * ⚠️ An **empty** row adds nothing at all rather than a zero-height item, because a caller that
+     * computes its children (`actionRow(buttons)`) legitimately produces none, and a row of nothing
+     * has no height to report.
+     */
     fun row(block: PanelBuilder.() -> Unit) {
         val nested = PanelBuilder(rowHeight, scale)
         nested.block()
+        if (nested.items.isEmpty()) return
         items.add(RowItem(nested.items, nested.items.maxOf { it.height }))
     }
 
@@ -1666,7 +1677,10 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         }
     }
 
-    private class ButtonItem(val label: String, val color: Long, override val height: Float, val dropTargetId: String?, val onClick: () -> Unit) : Item {
+    private class ButtonItem(
+        val label: String, val color: Long, override val height: Float, val dropTargetId: String?,
+        val enabled: Boolean, val onClick: () -> Unit,
+    ) : Item {
         override fun measureWidth(textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 2f
         override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
             val inset = 1f
@@ -1674,11 +1688,15 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             // lighten it so the player sees where the drop will land.
             val highlit = dropTargetId != null && ui.hoveredDropTarget() == dropTargetId
             if (dropTargetId != null) ui.emitDropTarget(dropTargetId, x, topY + inset, contentW, height - inset * 2f)
-            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, color)
+            ui.emitRect(x, topY + inset, contentW, height - inset * 2f, if (enabled) color else DISABLED_BG)
             if (highlit) ui.emitRect(x, topY + inset, contentW, height - inset * 2f, 0xFFFFFF44L)   // drop-hover tint
-            ui.emitTextCentered(label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH, contrast(color))
-            ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = label, onClick = onClick)
+            ui.emitTextCentered(
+                label, x + contentW * 0.5f, topY + (height - textH) * 0.5f, textH,
+                if (enabled) contrast(color) else DISABLED_FG,
+            )
+            if (enabled) ui.emitClick(x, topY + inset, contentW, height - inset * 2f, label = label, onClick = onClick)
         }
+        companion object { const val DISABLED_BG = 0x1E2430FFL; const val DISABLED_FG = 0x5A6272FFL }
     }
 
     /** A button whose label is a sequence of independently-coloured segments (see [button]). */
@@ -1962,24 +1980,6 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             ui.emitTextCentered("+", px + bw * 0.5f, ty, textH, 0xFFFFFFFFL)
             ui.emitStepper(px, topY + 1f, bw, height - 2f, +1, onStep)
         }
-    }
-
-    private class ActionRowItem(val buttons: List<ActionButton>, override val height: Float) : Item {
-        private fun bw(label: String, textH: Float) = UiTextRenderer.measureWidthPx(label, textH) + textH * 1.6f
-        override fun measureWidth(textH: Float) = buttons.sumOf { bw(it.label, textH).toDouble() }.toFloat() + (buttons.size - 1) * textH * 0.5f
-        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
-            var bx = x
-            for (b in buttons) {
-                val w = bw(b.label, textH)
-                val bg = if (b.enabled) b.color else DISABLED_BG
-                val fg = if (b.enabled) contrast(b.color) else DISABLED_FG
-                ui.emitRect(bx, topY + 1f, w, height - 2f, bg)
-                ui.emitTextCentered(b.label, bx + w * 0.5f, topY + (height - textH) * 0.5f, textH, fg)
-                if (b.enabled) ui.emitClick(bx, topY + 1f, w, height - 2f, label = b.label, onClick = b.onClick)
-                bx += w + textH * 0.5f
-            }
-        }
-        companion object { const val DISABLED_BG = 0x1E2430FFL; const val DISABLED_FG = 0x5A6272FFL }
     }
 
     private class RowItem(val items: List<Item>, override val height: Float) : Item {
