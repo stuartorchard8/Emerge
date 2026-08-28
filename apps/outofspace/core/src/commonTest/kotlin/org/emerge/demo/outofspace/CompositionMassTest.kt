@@ -21,6 +21,7 @@ import org.emerge.demo.outofspace.world.machine.TileEnergy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.species
 
 /**
  * A body weighs what it is made of, tile by tile.
@@ -240,7 +241,7 @@ class CompositionMassTest {
     @Test
     fun `a length of conduit's bill of materials weighs that conduit`() {
         for (conduit in Conduit.entries) {
-            val bom = conduitBillOfMaterials(conduit)
+            val bom = conduitBillOfMaterials(conduit, conduit.material.species)
             assertEquals(conduit.massPerTile, bom.total, "${conduit.label} bill of materials")
             for (species in Species.ALL) {
                 if (conduit.material.composition[species] == 0L) {

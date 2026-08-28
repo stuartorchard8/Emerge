@@ -20,6 +20,8 @@ import org.emerge.demo.outofspace.world.machine.Storage
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 
 /**
  * [DeconstructRoundingTest]'s twin, one layer up: **a machine shedding its casing has the same rule
@@ -68,7 +70,7 @@ class CasingRoundingTest {
 
         // The ghost, part-built. Put down as its own bill less the shortfall, so what it is still
         // owed is a fraction of a packet and nothing else.
-        val bill = machineBillOfMaterials(DeckMachineKind.Sensor, 1)
+        val bill = machineBillOfMaterials(DeckMachineKind.Sensor, 1, DeckMachineKind.Sensor.material.species)
         val standing = bill.scaledTo(bill.total - shortBy)
         for (sp in Species.ALL) deck.stuff[ghost, sp] = standing[sp]
         return s

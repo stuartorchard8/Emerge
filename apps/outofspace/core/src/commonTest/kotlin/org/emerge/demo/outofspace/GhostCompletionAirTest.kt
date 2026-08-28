@@ -17,6 +17,7 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.species
 
 /**
  * A hull that finishes building displaces the air it now stands in — and nothing may put any back.
@@ -49,7 +50,7 @@ class GhostCompletionAirTest {
         ).stocked(
             grid.tile(3, 4),
             Hull(at).kind.material.composition
-                .scaledTo(machineBillOfMaterials(Hull(at).kind, 1).total * 4)
+                .scaledTo(machineBillOfMaterials(Hull(at).kind, 1, Hull(at).kind.material.species).total * 4)
                 .atAmbient(),
         ).copy(creative = false)
     }

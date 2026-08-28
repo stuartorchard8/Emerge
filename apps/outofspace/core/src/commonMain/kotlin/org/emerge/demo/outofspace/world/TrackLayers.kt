@@ -32,8 +32,13 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      * segment's heat *arrived* from off-world rather than being conjured, and [Work.built] books it.
      * Returning it rather than having the caller ask [Conduit.ambientPerTile] keeps the number the
      * ledger sees and the number the world holds the same one.
+     *
+     * ⛔ **[species] has no default.** Laying metal is the one act that decides what a length of
+     * track *is*, so it is the last place to let a caller not say: a defaulted lay put iron under a
+     * segment that had chosen steel and stated a vessel that disagreed with itself. Say
+     * `conduit.material.species` where the default is genuinely what is meant.
      */
-    fun lay(conduit: Conduit, tile: TileIndex, species: Species = conduit.material.species): Long {
+    fun lay(conduit: Conduit, tile: TileIndex, species: Species): Long {
         val stuff = layers[conduit.ordinal]
         require(!stuff.occupies(tile)) { "$conduit already holds stuff at $tile" }
         val bill = conduitBillOfMaterials(conduit, species)

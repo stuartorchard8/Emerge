@@ -25,6 +25,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.conduitBillOfMaterials
+import org.emerge.demo.outofspace.world.species
+import org.emerge.demo.outofspace.world.material
 
 /**
  * A ghost is track with a representation and no mass — see `apps/outofspace/PLAN_self_building_rails.md`.
@@ -148,7 +151,10 @@ class GhostTest {
 
         // And no delivery like that can ever be admitted, which is the actual protection.
         assertFalse(
-            buildableFrom(Conduit.Rail, Mixture.of(Species.Oxygen to iron * 10, energy = 0)),
+            buildableFrom(
+                conduitBillOfMaterials(Conduit.Rail, Species.Iron),
+                Mixture.of(Species.Oxygen to iron * 10, energy = 0),
+            ),
             "a lump of oxygen is not something a rail may be built from",
         )
     }
@@ -236,7 +242,7 @@ class GhostTest {
      */
     @Test
     fun `a source stops pouring once the site has enough on its way`() {
-        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total
         var s = tankAndRun(ghostAt = 7, stored = Mixture.of(Species.Iron to 40 * Capacity.PACKET_MASS, energy = 0))
         var peak = 0L
         repeat(RAIL_PERIOD * 20) {
@@ -338,7 +344,7 @@ class GhostTest {
             rail = RailLayer.empty(grid.size),
         ).copy(creative = false)
         // Ghosts at the top of the column, iron standing below them on finished track.
-        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         for (y in 2..4) start.conduits.tracks[Conduit.Rail].release(grid.tile(4, y))
         for (y in 9..12) start.rail.loadOnto(grid.tile(4, y), bill.scaledTo(Capacity.PACKET_MASS))
 
@@ -391,7 +397,7 @@ class GhostTest {
         ).copy(creative = false)
 
         val stuff = start.conduits.tracks[Conduit.Rail]
-        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         // ⚠️ **Neither shortfall is a round number of packets, and together they are exactly one.**
         // A quarter and three quarters, so the packet covers both ghosts and neither can swallow it
         // whole — which makes the outcome independent of which branch the fork's turn falls on, and
@@ -655,8 +661,8 @@ class GhostTest {
             runMaterial = Species.Steel,
         )
         assertTrue(
-            org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Steel).total <
-                org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total,
+            conduitBillOfMaterials(Conduit.Rail, Species.Steel).total <
+                conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total,
             "the fixture needs a material lighter than the default, or it proves nothing",
         )
         for (x in 4..6) {
@@ -681,7 +687,7 @@ class GhostTest {
         for (x in 4..6) {
             val t = s.grid.tile(x, 3)
             assertEquals(
-                org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Steel).total,
+                conduitBillOfMaterials(Conduit.Rail, Species.Steel).total,
                 s.conduits.massAt(Conduit.Rail, t),
                 "finished steel track at $t ate material it did not need",
             )
@@ -694,9 +700,9 @@ class GhostTest {
      */
     @Test
     fun `a bill weighs what its own material weighs`() {
-        val iron = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Iron)
-        val copper = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Copper)
-        assertEquals(iron.total, org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total, "iron is the default")
+        val iron = conduitBillOfMaterials(Conduit.Rail, Species.Iron)
+        val copper = conduitBillOfMaterials(Conduit.Rail, Species.Copper)
+        assertEquals(iron.total, conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species).total, "iron is the default")
         assertTrue(copper.total > iron.total, "copper is denser, so a tile of it should cost more")
         assertEquals(copper[Species.Copper], copper.total, "a copper bill is copper and nothing else")
     }
@@ -1241,7 +1247,7 @@ class GhostTest {
         val ghost = before.grid.tile(7, 3)
         // Half of every gram of the bill: a ghost caught midway through building itself.
         val stuff = before.conduits.tracks[Conduit.Rail]
-        val bill = org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail)
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         for (sp in Species.ALL) if (bill[sp] > 0L) stuff[ghost, sp] = bill[sp] / 2
         assertTrue(before.conduits.isGhost(Conduit.Rail, ghost), "the fixture finished building")
         assertTrue(before.conduits.massAt(Conduit.Rail, ghost) > 0L, "the fixture never started building")

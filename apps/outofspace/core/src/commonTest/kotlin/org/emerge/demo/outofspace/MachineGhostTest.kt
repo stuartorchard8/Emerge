@@ -173,7 +173,7 @@ class MachineGhostTest {
     fun `a ghost machine finishes with nothing left standing`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
 
         // Deliberately not a whole number of packets, so the last delivery is a part-packet and the
         // site has something to round.
@@ -439,7 +439,7 @@ class MachineGhostTest {
     @Test
     fun `only steel builds a steel machine, however well a tank is blended`() {
         val at = grid.tile(10, 4)
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
 
         val blended = run(
             tankAndGhost(Hull(at)).stocked(
@@ -832,7 +832,7 @@ class MachineGhostTest {
         ).stocked(
             grid.tile(3, 4),
             bridge.kind.material.composition.scaledTo(
-                machineBillOfMaterials(bridge.kind, bridge.tiles(grid).size).total * 4,
+                machineBillOfMaterials(bridge.kind, bridge.tiles(grid).size, bridge.kind.material.species).total * 4,
             ),
         ).copy(creative = false)
 
@@ -1037,7 +1037,7 @@ class MachineGhostTest {
     fun `a half-built machine keeps exactly what it is made of across a remap`() {
         val at = grid.tile(10, 4)
         val start = tankAndGhost(Hull(at))
-        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        val bill = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
         assertTrue(bill[Species.Steel] > 0L, "fixture: a hull is made of steel, or this proves nothing")
         start.deck.stuff[at, Species.Steel] = bill[Species.Steel] / 2
 

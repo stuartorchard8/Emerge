@@ -34,6 +34,8 @@ import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 
 /**
  * The contact rules: **who touches whom**, which is the whole content of the body model.
@@ -366,7 +368,7 @@ class BodyHeatTest {
         // capacity follows from the iron and carbon on the tile. They differ by 0.17 ppm, and this
         // side is the honest one — the other was a harmonic-mean-density round trip.
         assertEquals(
-            heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull)) * Temperature.AMBIENT_KELVIN,
+            heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull, DeckMachineKind.Hull.material.species)) * Temperature.AMBIENT_KELVIN,
             s.insertedEnergy,
             "a wall brings a wall's worth of room-temperature heat into the world",
         )
@@ -379,7 +381,7 @@ class BodyHeatTest {
         // what left with it is what it was holding, not what it arrived with. That difference is
         // exactly why the term is booked rather than assumed.
         assertTrue(
-            s.insertedEnergy < heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull)) * Temperature.AMBIENT_KELVIN / 1_000L,
+            s.insertedEnergy < heatCapacityOf(tileBillOfMaterials(DeckMachineKind.Hull, DeckMachineKind.Hull.material.species)) * Temperature.AMBIENT_KELVIN / 1_000L,
             "and scrapping it takes that heat back out: ${s.insertedEnergy}",
         )
     }

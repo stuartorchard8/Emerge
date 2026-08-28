@@ -30,6 +30,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 
 /**
  * Demand: nothing moves toward a place that cannot use it.
@@ -252,7 +254,7 @@ class DemandTest {
     @Test
     fun `permits and room agree whether the material can be used or not`() {
         val grid = cfg.initialGrid
-        val bill = conduitBillOfMaterials(Conduit.Rail)
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         val gap = 98_000_000_000L
         // 100g of matter each. The first is the recipe and goes through; the second is 4% quartz,
         // which the door now refuses outright.
@@ -326,7 +328,7 @@ class DemandTest {
     @Test
     fun `material on one branch is not counted against a sink that cannot receive it`() {
         val grid = cfg.initialGrid
-        val bill = conduitBillOfMaterials(Conduit.Rail)
+        val bill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         val lump = iron(500_000_000_000L)
 
         //  (2,3)-(3,3)-(4,3)-(5,3)-[A]     A is 300g short, and the 500g stands at (5,3)
@@ -436,8 +438,8 @@ class DemandTest {
     @Test
     fun `a machine site on unpaid track does not draw what the track will not admit`() {
         val grid = cfg.initialGrid
-        val railBill = conduitBillOfMaterials(Conduit.Rail)
-        val siteBill = machineBillOfMaterials(DeckMachineKind.Concentrator, 2)
+        val railBill = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
+        val siteBill = machineBillOfMaterials(DeckMachineKind.Concentrator, 2, DeckMachineKind.Concentrator.material.species)
 
         val source = grid.tile(2, 3)
         val ghost = grid.tile(5, 3)

@@ -19,6 +19,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 
 /**
  * A bill of materials is one question however big the thing is — increment 5a of
@@ -41,8 +43,8 @@ class MachineBillTest {
     fun machineBillIsTheTileBillOnceEachTile() {
         for (kind in DeckMachineKind.entries) {
             val tiles = 5
-            val each = tileBillOfMaterials(kind)
-            val whole = machineBillOfMaterials(kind, tiles)
+            val each = tileBillOfMaterials(kind, kind.material.species)
+            val whole = machineBillOfMaterials(kind, tiles, kind.material.species)
             for (s in Species.ALL) {
                 assertEquals(each[s] * tiles, whole[s], "${kind.label} wants ${s.name} x $tiles")
             }
@@ -53,7 +55,7 @@ class MachineBillTest {
     @Test
     fun oneTileMachineCostsOneTile() {
         val kind = DeckMachineKind.Hull
-        assertEquals(tileBillOfMaterials(kind).total, machineBillOfMaterials(kind, 1).total)
+        assertEquals(tileBillOfMaterials(kind, kind.material.species).total, machineBillOfMaterials(kind, 1, kind.material.species).total)
     }
 
     /** The deck answers "is this finished" over the whole footprint, summed, not tile by tile. */
@@ -99,7 +101,7 @@ class MachineBillTest {
         val centre = grid.tile(5, 4)
         val hull = Hull(center = centre)
         deck += hull
-        val bill = machineBillOfMaterials(hull.kind, hull.tiles(grid).size)
+        val bill = machineBillOfMaterials(hull.kind, hull.tiles(grid).size, hull.kind.material.species)
         val junk = Species.ALL.first { bill[it] == 0L }
 
         // Ten times the bill in the wrong species, poured straight into the fabric: finished, by
@@ -118,16 +120,23 @@ class MachineBillTest {
         )
     }
 
-    /** Track and machine ask one function, so 95% means one thing in both. */
+    /**
+     * Track and machine ask one function, so the purity standard means one thing in both.
+     *
+     * ⚠️ This used to assert that `buildableFrom(Conduit.Rail, …)` agreed with the bill overload.
+     * That overload is gone — it built the bill from the conduit's *default* material and so
+     * answered for a metal the track may not have chosen — so the premise is restated rather than
+     * dropped: one function, reached with a conduit's bill and with a machine's, gives the same
+     * verdict about the same matter.
+     */
     @Test
     fun purityIsTheSameRuleForBothBills() {
-        val railBill = conduitBillOfMaterials(Conduit.Rail)
+        val railBill = conduitBillOfMaterials(Conduit.Rail, Species.Iron)
+        val casingBill = machineBillOfMaterials(DeckMachineKind.Hull, 1, Species.Steel)
         assertTrue(buildableFrom(railBill, railBill), "a rail is buildable from exactly its own bill")
-        assertEquals(
-            buildableFrom(Conduit.Rail, railBill),
-            buildableFrom(railBill, railBill),
-            "the conduit overload is the bill overload",
-        )
+        assertTrue(buildableFrom(casingBill, casingBill), "a casing is buildable from exactly its own bill")
+        assertFalse(buildableFrom(railBill, casingBill), "steel is not iron, whichever bill is asking")
+        assertFalse(buildableFrom(casingBill, railBill), "and iron is not steel, asked the other way round")
         assertFalse(buildableFrom(railBill, Mixture.EMPTY), "nothing is not a delivery")
     }
 
@@ -138,7 +147,7 @@ class MachineBillTest {
      */
     @Test
     fun `a steel bill refuses pure iron`() {
-        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1)
+        val steel = machineBillOfMaterials(DeckMachineKind.Hull, 1, DeckMachineKind.Hull.material.species)
         assertFalse(
             buildableFrom(steel, Mixture.of(Species.Iron to 1_000_000L, energy = 0L)),
             "a hull accepted a delivery with none of its carbon in it",
@@ -188,7 +197,7 @@ class MachineBillTest {
      */
     @Test
     fun `a single-species bill admits its species and no junk at all`() {
-        val rail = conduitBillOfMaterials(Conduit.Rail)
+        val rail = conduitBillOfMaterials(Conduit.Rail, Conduit.Rail.material.species)
         fun ironWith(junk: Long) = buildableFrom(
             rail,
             Mixture.of(Species.Iron to 1_000_000L - junk, Species.Silicon to junk, energy = 0L),
@@ -222,7 +231,7 @@ class MachineBillTest {
      */
     @Test
     fun `a volatile cannot get into a machine casing`() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Extractor, 1)
+        val bill = machineBillOfMaterials(DeckMachineKind.Extractor, 1, DeckMachineKind.Extractor.material.species)
         val titanium = bill[Species.Titanium]
         assertTrue(titanium > 0L, "fixture: an extractor is made of titanium, or this proves nothing")
 
@@ -247,7 +256,7 @@ class MachineBillTest {
     /** Permille is matter held over matter wanted, so it reaches 1000 exactly when the bill is. */
     @Test
     fun permilleIsMatterHeldOverMatterWanted() {
-        val bill = machineBillOfMaterials(DeckMachineKind.Concentrator, 9)
+        val bill = machineBillOfMaterials(DeckMachineKind.Concentrator, 9, DeckMachineKind.Concentrator.material.species)
         assertEquals(1000, builtPermille(bill, bill.total), "the whole bill is finished")
         assertEquals(0, builtPermille(bill, 0L), "nothing is nothing")
         assertEquals(500, builtPermille(bill, bill.total / 2L), "half the matter is half built")

@@ -213,12 +213,20 @@ fun railAppetites(
      * What a construction site is to be built from, asked per tile.
      *
      * A lambda for the reason [lumpAt] is one: this function is given the *shape* of the problem and
-     * nothing about where the world keeps things. Defaulted so that every caller that predates
-     * material choice — and every fixture — still reads as it did.
+     * nothing about where the world keeps things.
+     *
+     * ⛔ **No default, and it must not get one back.** It had one — the conduit's material — and a
+     * caller that forgot to ask silently grouped every site by a bill it had not chosen. There are
+     * two callers, the reducer and [railFlow], and the entire point of there being one function is
+     * that those two agree; a default is what let them stop agreeing without anybody noticing.
+     * `Conduits::materialAt` is the answer wherever a settled world is to hand.
      */
-    materialAt: (Conduit, TileIndex) -> Species = { conduit, _ -> conduit.material.species },
-    /** The same question for a machine site, which keeps its choice on the deck rather than a segment. */
-    machineMaterialAt: (DeckMachine) -> Species = { it.kind.material.species },
+    materialAt: (Conduit, TileIndex) -> Species,
+    /**
+     * The same question for a machine site, which keeps its choice on the deck rather than a
+     * segment. `DeckArray::materialOf` answers it; no default, for the reason above.
+     */
+    machineMaterialAt: (DeckMachine) -> Species,
     lumpAt: (TileIndex) -> Mixture?,
 ): Appetites {
     if (ghosts.isEmpty() && machineGhosts.isEmpty() && conduitGhosts.isEmpty()) return Appetites.BLIND
@@ -277,6 +285,13 @@ fun railTiles(rails: List<Segment?>): Set<TileIndex> =
  * ⚠️ Reads the *state's* ports and track, so it answers for the tick boundary rather than for the
  * middle of a tick. That is what anything looking in from outside wants, and the reducer does not
  * use it: mid-tick it has its own live copies to pass to the pieces above.
+ *
+ * ⛔ **Every material is stated, exactly as the reducer states them.** This function exists so that
+ * a harness looking in and the tick doing the work cannot form two opinions about the flow — which
+ * is the one thing under suspicion whenever anybody calls it. Letting [railAppetites] fall back to
+ * the conduit's default made it precisely the second opinion it was written to avoid: a run built of
+ * anything but iron was grouped by a bill it had not chosen, so `flow` could report an edge the tick
+ * would never take. Nothing here may be allowed to default again.
  */
 fun VesselState.railFlow(): FlowGraph {
     val rails = conduits[Conduit.Rail]
@@ -294,7 +309,14 @@ fun VesselState.railFlow(): FlowGraph {
         { tile, dir -> rails[tile.index]?.linkedTo(dir) == true },
         grid,
         { tile -> !rail.isEmpty(tile) },
-        railAppetites(grid, ghosts, machineGhosts, otherGhosts) { rail.resourceAt(it) },
+        railAppetites(
+            grid,
+            ghosts,
+            machineGhosts,
+            otherGhosts,
+            conduits::materialAt,
+            deck::materialOf,
+        ) { rail.resourceAt(it) },
         // ⛔ Unpaid track, and nothing else: a ghost rail is a wall to the graph — see
         // [FlowGraph.build]. Ghost *machines* stand on finished track and are deliberately absent.
         walls = ghosts,

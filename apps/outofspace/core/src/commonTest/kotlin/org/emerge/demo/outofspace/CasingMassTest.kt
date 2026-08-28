@@ -9,6 +9,8 @@ import org.emerge.demo.outofspace.world.massPerTile
 import org.emerge.demo.outofspace.world.tileBillOfMaterials
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import org.emerge.demo.outofspace.world.material
+import org.emerge.demo.outofspace.world.species
 
 /**
  * A deck machine's casing is **real matter in the deck layer**, and this is the invariant that made
@@ -26,7 +28,7 @@ class CasingMassTest {
     @Test
     fun `a tile's bill of materials weighs exactly what a tile of that kind weighs`() {
         for (kind in DeckMachineKind.ALL) {
-            val bill = tileBillOfMaterials(kind)
+            val bill = tileBillOfMaterials(kind, kind.material.species)
             val summed = Species.ALL.sumOf { bill[it] }
             assertEquals(kind.massPerTile, summed, "$kind: bill of materials does not sum to massPerTile")
         }
@@ -41,7 +43,7 @@ class CasingMassTest {
         val layer = StuffLayer.empty(4)
         val tile = TileIndex(1)
         for (kind in DeckMachineKind.ALL) {
-            val bill = tileBillOfMaterials(kind)
+            val bill = tileBillOfMaterials(kind, kind.material.species)
             layer.release(tile)
             for (s in Species.ALL) layer[tile, s] = bill[s]
             assertEquals(heatCapacityOf(bill), layer.heatCapacityAt(tile), "$kind: capacity formulas disagree")
@@ -52,7 +54,7 @@ class CasingMassTest {
     fun `a casing is made of something`() {
         // Guards the degenerate pass: an empty bill would sum to zero and equal a zero massPerTile.
         for (kind in DeckMachineKind.ALL) {
-            val bill = tileBillOfMaterials(kind)
+            val bill = tileBillOfMaterials(kind, kind.material.species)
             assertEquals(true, Species.ALL.any { bill[it] > 0L }, "$kind has an empty bill of materials")
         }
     }

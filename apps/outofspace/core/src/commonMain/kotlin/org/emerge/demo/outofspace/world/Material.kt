@@ -376,8 +376,15 @@ val Conduit.ambientPerTile: Long get() = capacityPerTile * Temperature.AMBIENT_K
  * rounding. That is load-bearing: the deck's contribution to the vessel's mass used to be this
  * constant and is now the sum of these species, and the two must agree to the unit or the ship
  * changes weight the day the representation changes. Measured identical for every kind.
+ *
+ * ⛔ **[species] has no default, and must not get one back.** Every bill in the game now takes the
+ * material it is a bill *for*, and a default here is a question the caller was never made to ask —
+ * which is how a finished steel run came to be weighed against iron and turned into a wall that
+ * wanted nothing. A caller always knows: a segment has [Segment.materialOrDefault], a machine has
+ * [org.emerge.demo.outofspace.world.machine.DeckArray.materialOf], a brush has the player's choice.
+ * Where the answer really is "the kind's own", say `kind.material.species` and mean it.
  */
-fun tileBillOfMaterials(kind: DeckMachineKind, species: Species = kind.material.species): Mixture =
+fun tileBillOfMaterials(kind: DeckMachineKind, species: Species): Mixture =
     tileBills.getOrPut(kind.ordinal * Species.COUNT + species.ordinal) {
         // ⚠️ Scaled to what a tile of THIS material weighs, not what a tile of the kind's default
         // one does. A copper machine and a titanium machine of the same kind are different masses,
@@ -406,11 +413,13 @@ private val tileBills = HashMap<Int, Mixture>()
  * [org.emerge.demo.outofspace.world.machine.DeckArray.plusAssign] actually lays down — a tile's bill
  * on each tile. Scale the total instead and the target is a few units away from anything the world
  * can hold, so a finished machine reads as forever unfinished, or as finished a gram early.
+ *
+ * ⛔ **[species] has no default** — see [tileBillOfMaterials], which explains what the default cost.
  */
 fun machineBillOfMaterials(
     kind: DeckMachineKind,
     tiles: Int,
-    species: Species = kind.material.species,
+    species: Species,
 ): Mixture {
     val key = (kind.ordinal * (MAX_CACHED_FOOTPRINT + 1) + tiles) * Species.COUNT + species.ordinal
     if (tiles in 1..MAX_CACHED_FOOTPRINT) {
@@ -451,10 +460,13 @@ private val machineBills = HashMap<Int, Mixture>()
  * ghost tile on every step and a [Mixture] is a hundred and sixty-five longs, and — less obviously —
  * [railAppetites] groups sites into classes by **bill identity**, so a fresh instance per call would
  * silently put every tile in a class of its own.
+ *
+ * ⛔ **[species] has no default** — see [tileBillOfMaterials]. This is the one it cost: `railGhosts`
+ * asked it without a material and so weighed finished steel track against iron's bill.
  */
 fun conduitBillOfMaterials(
     conduit: Conduit,
-    species: Species = conduit.material.species,
+    species: Species,
 ): Mixture = conduitBills.getOrPut(conduit.ordinal * Species.COUNT + species.ordinal) {
     Mixture.of(species to 1_000L, energy = Budget.JOULE)
         .scaledTo(species.solidMassPerTile * conduit.fillPermille / 1_000L)
@@ -506,8 +518,18 @@ private val conduitBills = HashMap<Int, Mixture>()
  */
 const val BUILD_PURITY_PERCENT = 100
 
+/*
+ * ⛔ **There was a `buildableFrom(conduit, mixture)` overload here and it is deliberately gone.**
+ *
+ * It built the bill from the conduit's *default* material, so it answered the anti-exploit's own
+ * question for a metal the track had not chosen: a steel rail asked whether it could be built from
+ * steel got iron's answer. No production code ever called it — the reducer has always had a segment
+ * in its hand and a material to state — so it was a loaded gun aimed at whoever wrote the next
+ * caller, which is exactly how the finished-steel-run stall happened one layer up. State the bill.
+ */
+
 /**
- * Whether [mixture] is something a tile of [conduit] may be built from.
+ * Whether [mixture] is something a thing whose bill of materials is [bill] may be built from.
  *
  * ⛔ **This is the anti-exploit, not a convenience.** A ghost is a free length of track until it is
  * paid for, so the one thing that must never happen is material passing *through* one without being
@@ -517,16 +539,10 @@ const val BUILD_PURITY_PERCENT = 100
  *
  * What matter has been *made into* is not part of it, and no longer exists to be: powdered iron
  * builds a rail exactly as a bar of it would.
- */
-fun buildableFrom(conduit: Conduit, mixture: Mixture): Boolean =
-    buildableFrom(conduitBillOfMaterials(conduit), mixture)
-
-/**
- * Whether [mixture] is something a thing whose bill of materials is [bill] may be built from.
  *
- * The question asked of a bill rather than of a conduit, because a machine's casing is built from
+ * Asked of a bill rather than of a conduit or a kind, because a machine's casing is built from
  * exactly the same rule as a length of track and the two must not be able to drift into two
- * opinions about what 95% means. See the overload above for why this is the anti-exploit.
+ * opinions about what the purity standard means.
  */
 fun buildableFrom(bill: Mixture, mixture: Mixture): Boolean {
     val total = mixture.total
