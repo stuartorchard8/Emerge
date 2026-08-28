@@ -1563,6 +1563,23 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      *  (dimmed + non-interactive). */
     fun controlRow(buttons: List<ActionButton>) = items.add(ActionRowItem(buttons, rowHeight))
 
+    /** A horizontal row of arbitrary items. */
+    fun row(block: PanelBuilder.() -> Unit) {
+        val nested = PanelBuilder(rowHeight, scale)
+        nested.block()
+        items.add(RowItem(nested.items, nested.items.maxOf { it.height }))
+    }
+
+    /** Blank, flexible width: measures **zero**, so it never widens the panel, then absorbs whatever
+     *  slack the panel turned out to have. Two of them centre what's between; one pushes the rest right. */
+    fun spacer() = items.add(SpacerItem())
+
+    private class SpacerItem : Item {
+        override val height = 0f          // never inflates the row's height
+        override fun measureWidth(textH: Float) = 0f
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) = Unit
+    }
+
     /**
      * A **chip** — a tappable current value, the workhorse of a progressive-disclosure screen: it *shows*
      * the value and *opens* the editor for it (`apps/cyto/UI_REDESIGN.md` §3). An empty [label] makes it
@@ -1963,6 +1980,31 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
             }
         }
         companion object { const val DISABLED_BG = 0x1E2430FFL; const val DISABLED_FG = 0x5A6272FFL }
+    }
+
+    private class RowItem(val items: List<Item>, override val height: Float) : Item {
+        private val spacers = items.count { it is SpacerItem }
+        // A spacer claims no inter-item gap either, so `[A, spacer, B]` measures exactly `[A, B]`.
+        private val gaps = (items.size - spacers - 1).coerceAtLeast(0)
+
+        override fun measureWidth(textH: Float) =
+            items.sumOf { it.measureWidth(textH).toDouble() }.toFloat() + gaps * textH * 0.5f
+
+        override fun emit(ui: Ui, x: Float, topY: Float, contentW: Float, textH: Float) {
+            // Slack is what the panel gave us over our natural width — never negative: a row clipped by
+            // the screen has nothing to hand out.
+            val each = if (spacers == 0) 0f else (contentW - measureWidth(textH)).coerceAtLeast(0f) / spacers
+            var bx = x
+            var placed = false
+            for (b in items) {
+                if (b is SpacerItem) { bx += each; continue }
+                if (placed) bx += textH * 0.5f      // gap *before* each subsequent item, so none trails
+                val w = b.measureWidth(textH)
+                b.emit(ui, bx, topY, w, textH)
+                bx += w
+                placed = true
+            }
+        }
     }
 
     private class GapItem(override val height: Float) : Item {

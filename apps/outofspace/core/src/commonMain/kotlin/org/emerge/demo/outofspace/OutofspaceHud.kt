@@ -46,6 +46,7 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
+import org.emerge.render.torus.ui.ActionButton
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
 enum class Sheet { None, Menu, Readouts }
@@ -544,46 +545,37 @@ class OutofspaceHud {
         // control you have to look for, which is the whole complaint the mode toggle was moved up
         // here to answer.
         panel(Anchor.TopLeft, rowHeight = 20f, minWidth = SESSION_WIDTH_DP) {
-            // ⚠️ Coloured by what it means rather than by what it is: the number only ever matters
-            // as "is this smooth", and a bare figure makes every player learn the thresholds.
-            val shown = fps.toInt()
-            keyValue(
-                "FPS",
-                shown.toString(),
-                0x9A9A9AFFL,
-                when {
-                    shown >= 50 -> 0x6ED09AFFL
-                    shown >= 25 -> 0xE0A93AFFL
-                    else -> 0xE05A4AFFL
-                },
-            )
-            actionRow(
-                buildList {
-                    add(
-                        Triple(
-                            if (controller.paused) "PLAY" else "STOP",
-                            if (controller.paused) 0x8A5A2AFFL else 0x232A38FFL,
-                        ) { onTogglePause() },
-                    )
-                    for (rate in OutofspaceController.SPEEDS) {
-                        val on = controller.speed == rate
-                        add(
-                            Triple(
-                                rateLabel(rate),
-                                if (on) 0x3A6EA5FFL else 0x232A38FFL,
-                            ) { controller.speed = rate },
-                        )
-                    }
-                },
-            )
+            val midLabel = if (controller.paused) "PAUSED" else rateLabel(controller.speed)
+            val midColor = if (controller.paused) 0x8A5A2AFFL else 0x232A38FFL
+            row {
+                button("MENU", 0x2A3550FFL) { openSheet = Sheet.Menu }
+                controlRow(listOf(
+                    ActionButton("<<", 0x3A6EA5FFL, enabled = controller.speed > 0.25) { controller.nudgeSpeed(false) },
+                    ActionButton(midLabel, midColor) { onTogglePause() },
+                    ActionButton(">>", 0x3A6EA5FFL, enabled = controller.speed < 8f) { controller.nudgeSpeed(true) },
+                ))
+                spacer()
+                // ⚠️ Coloured by what it means rather than by what it is: the number only ever matters
+                // as "is this smooth", and a bare figure makes every player learn the thresholds.
+                val shown = fps.toInt()
+                keyValue(
+                    "FPS",
+                    shown.toString(),
+                    0x9A9A9AFFL,
+                    when {
+                        shown >= 50 -> 0x6ED09AFFL
+                        shown >= 25 -> 0xE0A93AFFL
+                        else -> 0xE05A4AFFL
+                    },
+                )
+            }
             gap()
             // Which mode owns the keyboard, and how to change it — said loudly, because a player
             // whose WASD has stopped panning needs the answer immediately.
             val flying = controller.mode == Mode.Flight
-            button(
-                if (flying) "FLIGHT MODE  ·  F to build" else "BUILD MODE  ·  F to fly",
-                if (flying) 0x8A5A2AFFL else 0x232A38FFL,
-            ) { controller.mode = controller.mode.next }
+            button(if (flying) "FLIGHT MODE  ·  F to build" else "BUILD MODE  ·  F to fly", if (flying) 0x8A5A2AFFL else 0x232A38FFL) {
+                controller.mode = controller.mode.next
+            }
             if (flying) {
                 // The autopilot lives beside the mode toggle because it is the same kind of thing:
                 // a standing instruction about the whole ship, not a machine's setting.
@@ -591,7 +583,7 @@ class OutofspaceHud {
                     listOf(
                         "SAS  " to 0x9A9A9AFFL,
                         (if (controller.state.sas) "HOLDING" else "OFF") to
-                            (if (controller.state.sas) 0x6EE08AFFL else 0x9A9A9AFFL),
+                                (if (controller.state.sas) 0x6EE08AFFL else 0x9A9A9AFFL),
                         "  ·  T" to 0x7A7A7AFFL,
                     ),
                     0x2E5A6BFFL,
@@ -606,7 +598,6 @@ class OutofspaceHud {
                     row("holding: ${held.joinToString(" ") { it.label }}", 0x6EE08AFFL)
                 }
             }
-            button("MENU  ·  save, fit, readouts, reset", 0x2A3550FFL) { openSheet = Sheet.Menu }
         }
     }
 
