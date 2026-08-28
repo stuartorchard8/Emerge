@@ -31,6 +31,7 @@ import org.emerge.sim.core.physics.primitives.Coord
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.chem.Species
 
 /**
  * Step 2 of `PLAN_rigid_bodies.md`: a contact becomes **a point, a normal and a depth**, and a whole
@@ -366,7 +367,7 @@ class ContactTest {
     @Test
     fun `rock grips harder than metal, and the smoother surface governs`() {
         val rock = roughnessOf(Mixture.EMPTY)
-        val steel = Material.Steel.roughness
+        val steel = roughnessOf(Species.Steel)
 
         val rockOnRock = pairRoughness(rock, rock)
         val rockOnSteel = pairRoughness(rock, steel)
@@ -375,6 +376,38 @@ class ContactTest {
         assertTrue(rockOnRock > rockOnSteel, "rubble on rubble slid as easily as rubble on plate")
         assertEquals(steelOnSteel, rockOnSteel, "the rougher surface decided the pair")
         assertTrue(steelOnSteel > 0L, "the ship is frictionless")
+    }
+
+    /**
+     * ⛔ **Grip is derived from conduction, and nothing else decides it.** The point of the rule is
+     * that a species nobody has thought about answers correctly the moment its conductivity is
+     * stated — so what is pinned is the *mechanism*, not five numbers.
+     *
+     * Every metal the ship is built from slides; every mineral it is built on grips; and the split
+     * has clear air on both sides, so no answer here turns on exactly where the line sits.
+     */
+    @Test
+    fun `grip follows the bond, so every metal slides and every mineral grips`() {
+        val metals = listOf(Species.Steel, Species.Iron, Species.Copper, Species.Titanium)
+        val minerals = listOf(Species.Firebrick, Species.Forsterite, Species.Anorthite, Species.Quartz)
+        for (metal in metals) {
+            for (mineral in minerals) {
+                assertTrue(
+                    roughnessOf(metal) < roughnessOf(mineral),
+                    "$metal did not slide against $mineral",
+                )
+            }
+        }
+        // All metals agree and all minerals agree: the old per-metal spread was noise, and it put
+        // copper — the best conductor in the game — at the grippiest end, which is backwards.
+        assertEquals(1, metals.map { roughnessOf(it) }.distinct().size, "metals disagreed about grip")
+        assertEquals(1, minerals.map { roughnessOf(it) }.distinct().size, "minerals disagreed about grip")
+
+        // A blend is asked the same question, through the same harmonic mean heat uses: a trace of
+        // metal in a rock does not make the rock slippery.
+        val orePlusIron = Mixture.of(Species.Forsterite to 990L, Species.Iron to 10L, energy = 0L)
+        assertEquals(roughnessOf(Species.Forsterite), roughnessOf(orePlusIron), "a speck of iron polished a rock")
+        assertEquals(roughnessOf(Mixture.EMPTY), roughnessOf(Species.Forsterite), "an unassayed body is not rubble")
     }
 
     // ── Fixture ───────────────────────────────────────────────────────────────

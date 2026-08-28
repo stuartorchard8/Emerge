@@ -274,16 +274,12 @@ class RigidBody(
          */
         const val COM_SCALE: Long = Flight.PER_TILE / Rotation.MILLI_TILE
 
-        /**
-         * How well a rock conducts heat — the one solid property its composition does not supply.
-         *
-         * Mass and heat capacity now come from [oreComposition] tile by tile, so what is left here
-         * is conductance, and [Material.Firebrick] is not a joke and not a placeholder for it: an
-         * asteroid is a poor conductor, which is the property a furnace lining is chosen for.
-         * Per-species conductance would need a number [Species] does not carry, so a rock conducts
-         * like rock regardless of what it assays at.
+        /*
+         * ⛔ **`MATERIAL = Material.Firebrick` stood here and was read by nothing.** It said a rock
+         * conducts like a furnace lining because [Species] carried no conductivity of its own; it
+         * does now, and `conductivityOf(oreComposition)` answers from what the rock actually assays
+         * at. The constant had already been made dead by that and was only waiting to be noticed.
          */
-        val MATERIAL: Material = Material.Firebrick
 
         /**
          * Tolerance for fragment shape derivation: 0.1 tile, shaved on exposed edges.

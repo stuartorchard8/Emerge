@@ -73,32 +73,18 @@ object Temperature {
 enum class Material(
     val label: String,
     val composition: Mixture,
-    /**
-     * How much a surface of this stuff grips one it is sliding across — Coulomb's `μ`, in parts per
-     * thousand, and the third physical property a material has here.
-     *
-     * Stated per material rather than per contact because that is what it is a fact about, exactly
-     * as [conductanceCentiTicks] is: a joint's conductance is a property of the two things meeting
-     * and neither of the numbers that make it is. [pairRoughness] is where two of these become one.
-     *
-     * The values are dry static coefficients, near enough to measure against: steel on steel is
-     * about 0.4–0.6, and brick and stone are appreciably grippier at 0.6–0.8. What matters for the
-     * game is the ordering — **metal slides and rock does not** — which is the thing that decides
-     * whether a rock skates across a deck or stays where it lands.
-     */
-    val roughness: Long,
 ) {
     /** The skin. Cheap, stiff, and the only thing that touches space. */
-    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE), roughness = 400L),
+    Steel("STEEL", Mixture.of(Species.Steel to 1_000L, energy = Budget.JOULE)),
 
     /** Track: light, and a decent conductor, so a long run is a long thermal short circuit. */
-    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE), roughness = 450L),
+    Iron("IRON", Mixture.of(Species.Iron to 1_000L, energy = Budget.JOULE)),
 
     /** Pipe and cable. Barely any thermal mass and enormous conductance — a heat pipe by accident. */
-    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE), roughness = 500L),
+    Copper("COPPER", Mixture.of(Species.Copper to 1_000L, energy = Budget.JOULE)),
 
     /** Machine casings: heavy, and a poor conductor, so a machine holds its own heat. */
-    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE), roughness = 400L),
+    Titanium("TITANIUM", Mixture.of(Species.Titanium to 1_000L, energy = Budget.JOULE)),
 
     /**
      * Furnace lining. The most thermal mass and the least conductance: it is meant to stay hot.
@@ -124,7 +110,7 @@ enum class Material(
      * moisture and CaO–SiO₂ forms low-melting eutectics — a quartz-lime lining is a furnace wall that
      * dissolves itself. Periclase costs the same to reach and is a real brick.
      */
-    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE), roughness = 700L),
+    Firebrick("FIREBRICK", Mixture.of(Species.Firebrick to 1_000L, energy = Budget.JOULE)),
     ;
 
     /**
@@ -204,18 +190,56 @@ enum class Material(
 fun pairRoughness(a: Long, b: Long): Long = minOf(a, b) * Flight.FRAC_ONE / 1_000L
 
 /**
- * What a rock's surface grips like.
+ * **Above this, a solid conducts because it has free electrons in it** — the line between a metal
+ * and everything else, in the units [Species.milliWattsPerMetreKelvin] is stated in.
  *
- * ⚠️ **One constant, and the argument is the hook that makes it stop being one.** A rock is a
- * [Mixture] rather than a [Material] — it is whatever the ore field made it — so unlike a hull plate
- * there is no enum entry to hang a number on. Deriving grip from a composition means saying what
- * each species' surface is like, and that is a table of invented numbers until something in the game
- * depends on the difference. What is real today is Stu's ordering: rubble grips harder than any
- * metal aboard, so at 800 against steel's 400 a rock stays where it lands on a deck and two rocks
- * grinding together stay put on each other.
+ * Not a tuned threshold: the table has a factor of four of clear air on either side of it. The
+ * poorest conductor the game calls a metal is titanium at 22, and the best it calls a mineral is
+ * forsterite at 5. Nothing sits near the line, so no species' answer turns on where exactly it is.
  */
-@Suppress("UNUSED_PARAMETER")
-fun roughnessOf(ore: Mixture): Long = 800L
+private const val METALLIC_CONDUCTION_MILLIWATTS = 10_000L
+
+/** What a metal's surface grips like — Coulomb's `μ` in parts per thousand. Steel on steel, ~0.45. */
+private const val METAL_GRIP = 450L
+
+/** What a mineral's grips like. Rock on rock, ~0.8: a heap of rubble behaves like a heap. */
+private const val MINERAL_GRIP = 800L
+
+/**
+ * **What a surface grips like, from what it is made of** — and the *only* thing that decides is
+ * whether the stuff conducts like a metal.
+ *
+ * ⛔ **Derived, because nothing in this game is "normally" made of anything.** Grip used to be five
+ * numbers hand-written on a [Material], plus a single constant standing in for every rock there
+ * could ever be, and the argument for the constant was that per-species grip would be a hundred and
+ * seventy invented values. Both problems have the same answer, and it is one the table already
+ * holds: metallic bonding is what gives a solid free electrons to carry heat *and* the ductile,
+ * smoothly shearing surface that makes it slide. Ceramic and silicate bonding gives it neither. So
+ * conduction is not a proxy for grip here — the two are consequences of the same bond, and a species
+ * that has never been thought about answers correctly the moment its conductivity is stated.
+ *
+ * ⚠️ **What is kept is the ordering, which is the only part that was ever real** (Stu's, and the old
+ * doc said as much): rubble grips harder than any metal aboard, so a rock stays where it lands on a
+ * deck and two rocks grinding together stay put on each other. What is *lost* is the spread among
+ * metals — steel 400, iron 450, copper 500 — which was noise: it put the best conductor in the game
+ * at the grippiest end of it, which is the opposite of the mechanism above and of the real numbers.
+ */
+fun roughnessOf(species: Species): Long =
+    if (species.milliWattsPerMetreKelvin >= METALLIC_CONDUCTION_MILLIWATTS) METAL_GRIP else MINERAL_GRIP
+
+/**
+ * The same question of a blend — an ore body, which is whatever the field made it.
+ *
+ * ⚠️ Through [conductivityOf], so it is the **mass-weighted harmonic** mean that decides, exactly as
+ * it does for heat: a mostly-silicate rock with a little iron in it conducts like the silicate and
+ * grips like it too. A trace of metal does not make a rock slippery, which is the right answer and
+ * one the arithmetic gives without being told.
+ *
+ * ⚠️ An empty mixture conducts nothing and so grips like rock. That is the useful reading — a body
+ * with no assay is rubble — and it is what the constant this replaced said.
+ */
+fun roughnessOf(ore: Mixture): Long =
+    if (conductivityOf(ore) >= METALLIC_CONDUCTION_MILLIWATTS) METAL_GRIP else MINERAL_GRIP
 
 /**
  * Two things in contact conduct at the **series** combination of their conductances.

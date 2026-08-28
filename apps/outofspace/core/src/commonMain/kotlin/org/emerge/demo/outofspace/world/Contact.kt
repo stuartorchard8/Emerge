@@ -289,10 +289,10 @@ fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
  * The friction of one cell of a body against one tile of the ship — **from what the two are made
  * of**, and looked up per contact rather than read from a constant by the solver.
  *
- * Each side answers with its own [Material.roughness] and [pairRoughness] combines them, so the
- * ordering the game actually shows is metal on metal sliding, rock on metal gripping a little
- * harder, and rock on rock gripping hardest. A rock that lands on a steel deck settles; the same
- * rock landing on a smelter's firebrick lining stops sooner.
+ * Each side answers with [roughnessOf] and [pairRoughness] combines them, so the ordering the game
+ * actually shows is metal on metal sliding, rock on metal gripping a little harder, and rock on rock
+ * gripping hardest. A rock that lands on a steel deck settles; the same rock landing on a furnace's
+ * firebrick lining stops sooner — because firebrick is a ceramic and does not conduct.
  *
  * ⚠️ [machine] is the machine occupying the tile, and `null` means bare hull. It is threaded down
  * here from the vessel for this one question, because [StructureMap] deliberately does not carry it
@@ -300,7 +300,7 @@ fun bodiesOverlap(a: RigidBody, aAt: Pose, b: RigidBody, bAt: Pose): Boolean {
  * needs.
  */
 fun frictionBetween(body: RigidBody, cell: Int, machine: DeckMachine?): Long =
-    pairRoughness(roughnessOfBody(body), (machine?.kind ?: DeckMachineKind.Hull).material.roughness)
+    pairRoughness(roughnessOfBody(body), roughnessOf((machine?.kind ?: DeckMachineKind.Hull).material.species))
 
 /**
  * The friction of one body's cell against **another body's** cell — the same lookup, both sides now
@@ -321,7 +321,7 @@ fun frictionBetween(a: RigidBody, aCell: Int, b: RigidBody, bCell: Int): Long =
 /** What a body's surface is like, from what it is made of. */
 private fun roughnessOfBody(body: RigidBody): Long = when (body.kind) {
     BodyKind.ROCK -> roughnessOf(body.oreComposition ?: Mixture.EMPTY)
-    BodyKind.FRAGMENT -> body.machineKind!!.material.roughness
+    BodyKind.FRAGMENT -> roughnessOf(body.machineKind!!.material.species)
 }
 
 /**
