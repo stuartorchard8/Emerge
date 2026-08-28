@@ -1199,6 +1199,13 @@ object OutofspaceAgentHarness {
             org.lwjgl.opengl.GL.createCapabilities()
             val r = OutofspaceRenderer()
             val h = OutofspaceHud()
+            // ⚠️ **Wired like every other host, and it was not.** The HUD's callbacks default to
+            // doing nothing, so a `tap` on a button that goes through one reported success and
+            // changed nothing — a silent no-op the harness is supposed to be the cure for. Only
+            // pause is wired: the rest (save, load, reset, fit) either need a path the script did
+            // not give or would throw the world away mid-run, and a script that wants them has
+            // commands of its own.
+            h.onTogglePause = { controller.paused = !controller.paused }
             val u = Ui()
             r.setResolution(RES_W.toFloat(), RES_H.toFloat())
             u.setResolution(RES_W.toFloat(), RES_H.toFloat())

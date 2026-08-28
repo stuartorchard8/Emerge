@@ -136,6 +136,11 @@ class OutofspaceHud {
              * it in your peripheral vision, it is a thing you go and check.
              */
 
+            // ⚠️ **Before the stockpile**, because panels at an anchor stack in draw order and the
+            // first to claim it takes the edge. Time is the thing you reach for without looking, so
+            // it gets the corner.
+            timePanel(controller, fps)
+
             panel(Anchor.TopRight) {
                 // ⛔ **What you can BUILD with, not what you happen to own.** This used to print
                 // the summed heap's dominant species and its purity, which on a real save read
@@ -378,8 +383,9 @@ class OutofspaceHud {
                 // The controller's count, not the state's: `state.tick` counts frozen ticks too and
                 // would climb while the game was stopped. See [OutofspaceController.livedTicks].
                 keyValue("Tick", controller.livedTicks.toString())
-                keyValue("FPS", fps.toInt().toString())
-                keyValue("Speed", "${controller.speed}x")
+                // ⚠️ FPS and the speed dial are not here: they came back out to the top-right
+                // corner, where they are permanently visible — see [timePanel]. Printing them twice
+                // would be two places to read one number and one of them free to go stale.
                 gap()
                 title("FLIGHT")
                 keyValue("Mass", mass(s.mass))
@@ -540,6 +546,70 @@ class OutofspaceHud {
         } else {
             sheet("oos-menu", "MENU", onDismiss = dismiss, heightFraction = 0.4f, rowHeight = 40f, textSize = 15f, body = body)
         }
+    }
+
+    /**
+     * **Time, and how fast it is going** — the one instrument that came back out of the readouts.
+     *
+     * ⚠️ **Every button shows its own state**, which is the whole reason there are seven of them
+     * rather than a pair of arrows: a dial you step through tells you the rate you are at only by
+     * printing it somewhere else, and a player who has lost track of whether they are at 4x or 8x
+     * has to go and read a number. Here the answer is which button is lit.
+     *
+     * ⚠️ **PAUSE and the rate are independent, and the panel has to show both**, because they are:
+     * the dial says how fast the clock turns and the pause says whether passes run, and a world
+     * stopped at 4x is still settling its animations at 4x. See `OutofspaceController.speed`.
+     */
+    private fun UiBuilder.timePanel(controller: OutofspaceController, fps: Float) {
+        panel(Anchor.TopRight, rowHeight = 20f) {
+            // ⚠️ Coloured by what it means rather than by what it is: the number only ever matters
+            // as "is this smooth", and a bare figure makes every player learn the thresholds.
+            val shown = fps.toInt()
+            keyValue(
+                "FPS",
+                shown.toString(),
+                0x9A9A9AFFL,
+                when {
+                    shown >= 50 -> 0x6ED09AFFL
+                    shown >= 25 -> 0xE0A93AFFL
+                    else -> 0xE05A4AFFL
+                },
+            )
+            actionRow(
+                buildList {
+                    add(
+                        Triple(
+                            if (controller.paused) "PLAY" else "STOP",
+                            if (controller.paused) 0x8A5A2AFFL else 0x232A38FFL,
+                        ) { onTogglePause() },
+                    )
+                    for (rate in OutofspaceController.SPEEDS) {
+                        val on = controller.speed == rate
+                        add(
+                            Triple(
+                                rateLabel(rate),
+                                if (on) 0x3A6EA5FFL else 0x232A38FFL,
+                            ) { controller.speed = rate },
+                        )
+                    }
+                },
+            )
+        }
+    }
+
+    /**
+     * A speed as a button reads it: `.25x`, `.5x`, `1x`, `8x`.
+     *
+     * ⚠️ **Built from hundredths rather than from the float's own string**, for two reasons. Seven
+     * buttons share one row, so "0.25x" is two characters that buy nothing — the leading zero goes
+     * and a trailing one never appears, which is what makes ".5x" and not ".50x". And a float's
+     * decimal spelling is the platform's business, not ours: this is common code and JS and the JVM
+     * are free to disagree about it.
+     */
+    private fun rateLabel(rate: Float): String {
+        if (rate >= 1f) return "${rate.toInt()}x"
+        val hundredths = (rate * 100f).toInt()
+        return if (hundredths % 10 == 0) ".${hundredths / 10}x" else ".${hundredths}x"
     }
 
     /**

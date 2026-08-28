@@ -75,6 +75,12 @@ class OutofspaceController(
      */
     var speed: Float = 1f
 
+    /** Steps the dial one notch along [SPEEDS], clamped at both ends. */
+    fun nudgeSpeed(faster: Boolean) {
+        val at = SPEEDS.indexOfFirst { it >= speed - 0.001f }.let { if (it < 0) SPEEDS.lastIndex else it }
+        speed = SPEEDS[(at + if (faster) 1 else -1).coerceIn(SPEEDS.indices)]
+    }
+
     /**
      * Ticks in which the world actually moved — what a player means by "tick".
      *
@@ -749,4 +755,16 @@ class OutofspaceController(
         livedTicks = newState.tick
         frame.reset(newState)
     }
+    companion object {
+        /**
+         * The speeds the dial offers, slowest first.
+         *
+         * ⛔ **One list, because there are two ways to reach it** — the buttons in the HUD and the
+         * `[` / `]` keys — and a keyboard that could reach a rate the buttons could not show would
+         * leave the panel highlighting nothing while the world ran at a speed nobody chose. The
+         * old keys halved and doubled freely up to 16x and did exactly that.
+         */
+        val SPEEDS: List<Float> = listOf(0.25f, 0.5f, 1f, 2f, 4f, 8f)
+    }
+
 }

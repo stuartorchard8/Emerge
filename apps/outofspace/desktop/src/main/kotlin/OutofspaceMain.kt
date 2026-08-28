@@ -298,8 +298,10 @@ fun main() {
                 val (ix, iy) = renderer.screenToTile(lastX, lastY)
                 hud.clipboardStatus = controller.pasteSettings(TileIndex(ix.toInt() + iy.toInt() * controller.state.grid.width))
             }
-            GLFW_KEY_LEFT_BRACKET -> controller.speed = max(0.25f, controller.speed / 2f)
-            GLFW_KEY_RIGHT_BRACKET -> controller.speed = (controller.speed * 2f).coerceAtMost(16f)
+            // Through the controller's own ladder, so the keys and the HUD's buttons cannot reach
+            // different speeds — see `OutofspaceController.SPEEDS`.
+            GLFW_KEY_LEFT_BRACKET -> controller.nudgeSpeed(faster = false)
+            GLFW_KEY_RIGHT_BRACKET -> controller.nudgeSpeed(faster = true)
             GLFW_KEY_ESCAPE -> {
                 if (controller.mode == Mode.Flight) {
                     controller.mode = Mode.Build
