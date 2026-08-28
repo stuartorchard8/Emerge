@@ -34,7 +34,7 @@ fun railGhosts(rails: List<Segment?>, tracks: TrackLayers): Set<TileIndex> {
         val segment = rails[i] ?: continue
         if (segment.deconstructing) continue
         val tile = TileIndex(i)
-        if (!tracks.holdsFullBill(Conduit.Rail, tile)) out.add(tile)
+        if (!tracks.holdsFullBill(Conduit.Rail, tile, segment.materialOrDefault)) out.add(tile)
     }
     return out
 }
@@ -77,7 +77,7 @@ fun conduitGhosts(
             if (rails[i] == null) continue
             val tile = TileIndex(i)
             if (tile in out) continue
-            if (!tracks.holdsFullBill(conduit, tile)) out[tile] = conduit
+            if (!tracks.holdsFullBill(conduit, tile, segment.materialOrDefault)) out[tile] = conduit
         }
     }
     return out

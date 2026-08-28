@@ -572,12 +572,14 @@ class OutofspaceRenderer {
      * between "not yet" and "on its way out" is the difference between waiting and having made a
      * mistake, and a player has to be able to see which they are looking at.
      *
-     * ⚠️ The fraction is [TrackLayers.builtPermille], which is the *minimum* per-species ratio and not
-     * the total. It reaches full exactly when the tile does, so the picture cannot say finished while
+     * ⚠️ The fraction is [Conduits.builtPermille] — the segment's matter over the bill for the
+     * material that segment chose. Asked of the layer instead it would be weighed against the
+     * conduit's default, and a finished run of anything else would be drawn for ever as very nearly
+     * built. It reaches full exactly when the tile does, so the picture cannot say finished while
      * the sim says ghost.
      */
     private fun conduitColor(state: VesselState, conduit: Conduit, tile: TileIndex): Long {
-        val built = state.conduits.tracks.builtPermille(conduit, tile) / 1000f
+        val built = state.conduits.builtPermille(conduit, tile) / 1000f
         val whole = kindColor(conduit)
         if (state.conduits.at(conduit, tile)?.deconstructing == true) {
             if (built > 0.99f) {

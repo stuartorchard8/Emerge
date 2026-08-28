@@ -254,7 +254,7 @@ class MachineGhostTest {
         val s = run(start, OutofspaceReducer.RAIL_PERIOD * 120)
         assertTrue(
             s.conduits.isComplete(Conduit.Rail, at),
-            "the rail stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, at)} permille",
+            "the rail stalled at ${s.conduits.builtPermille(Conduit.Rail, at)} permille",
         )
     }
 
@@ -306,7 +306,7 @@ class MachineGhostTest {
 
         for (t in plugs) assertTrue(
             s.conduits.isComplete(Conduit.Rail, t),
-            "the ghost rail at $t stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, t)} permille: " +
+            "the ghost rail at $t stalled at ${s.conduits.builtPermille(Conduit.Rail, t)} permille: " +
                 "titanium got in front of the iron",
         )
         assertFalse(s.deck.isGhost(grid.tile(13, 4)), "the storage past the plug never finished")

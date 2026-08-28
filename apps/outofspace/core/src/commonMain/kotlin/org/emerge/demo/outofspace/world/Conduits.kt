@@ -94,13 +94,21 @@ class Conduits private constructor(
      * construction — a baseline is taken from the world after it is built.
      *
      * Deliberately **not** what [swept] does. The reducer lays ghosts; only a stated world says this.
+     *
+     * ⚠️ **Out of the segment's own material**, not the conduit's default. A fixture or a save that
+     * says a run is steel means a run *made of steel*; laying iron under it would state a vessel
+     * that disagrees with itself about what it is, and every question asked of it afterwards would
+     * pick one of the two answers. The save reader leans on this: `trackstuff` is written only for
+     * track whose metal is not what its own material says, so what is laid here is the file's
+     * default. See [Save.writeTrackStuff].
      */
     private fun finished(): Conduits {
         for (conduit in Conduit.entries) {
             val layer = layers[conduit.ordinal]
             for (i in layer.indices) {
+                val segment = layer[i] ?: continue
                 val tile = TileIndex(i)
-                if (layer[i] != null && !tracks.occupies(conduit, tile)) tracks.lay(conduit, tile)
+                if (!tracks.occupies(conduit, tile)) tracks.lay(conduit, tile, segment.materialOrDefault)
             }
         }
         return this

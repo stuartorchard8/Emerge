@@ -60,11 +60,20 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      *
      * The single place the question is answered, so the routing, the ledger and the renderer cannot
      * drift into three different opinions about which tiles are ghosts.
+     *
+     * ⛔ **[species] has no default, and must not get one back.** It had one — the conduit's — and it
+     * answered silently for the wrong metal wherever a caller had a segment in its hand and did not
+     * think to ask it what it was made of. Steel is a hair lighter than iron, so a finished steel
+     * run read as unbuilt while the appetite stated for it the same tick read as satisfied, and
+     * every tile of it became a wall that wanted nothing and let nothing past. A layer holds matter
+     * and knows nothing about intent; the caller always knows the material, so the caller says it.
+     * Ask [Conduits.isComplete] where a segment is to hand — it is this question with the material
+     * already answered.
      */
     fun holdsFullBill(
         conduit: Conduit,
         tile: TileIndex,
-        species: Species = conduit.material.species,
+        species: Species,
     ): Boolean {
         val stuff = layers[conduit.ordinal]
         return holdsFullBill(conduitBillOfMaterials(conduit, species), stuff.massAt(tile))
@@ -77,11 +86,15 @@ class TrackLayers private constructor(private val layers: Array<StuffLayer>) {
      *
      * For readouts and the renderer. The sim asks [holdsFullBill], which is the same question
      * without the arithmetic.
+     *
+     * ⛔ **[species] has no default**, for the reason [holdsFullBill] gives. A readout that guesses
+     * the material shows a finished run as 99% built, which is exactly how the bug above looked from
+     * the outside. Use [Conduits.builtPermille].
      */
     fun builtPermille(
         conduit: Conduit,
         tile: TileIndex,
-        species: Species = conduit.material.species,
+        species: Species,
     ): Int {
         val stuff = layers[conduit.ordinal]
         return builtPermille(conduitBillOfMaterials(conduit, species), stuff.massAt(tile))

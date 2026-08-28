@@ -165,6 +165,8 @@ class GhostTest {
         stored: Mixture = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0),
         /** What the ghost is to be built from. Null is the conduit's default, which is iron. */
         ghostMaterial: Species? = null,
+        /** What the *finished* track leading to it is made of. Null is the conduit's default. */
+        runMaterial: Species? = null,
     ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
@@ -173,6 +175,12 @@ class GhostTest {
         joinRow(grid, rails, 4, 7, 3)
         // Stated before the world is built, because `Conduits` hands out immutable segment lists —
         // a choice is part of what the world *is* rather than something done to it afterwards.
+        if (runMaterial != null) {
+            for (x in 4..7) {
+                val t = grid.tile(x, 3)
+                rails[t.index] = rails[t.index]!!.copy(material = runMaterial)
+            }
+        }
         if (ghostAt != null && ghostMaterial != null) {
             val t = grid.tile(ghostAt, 3)
             rails[t.index] = rails[t.index]!!.copy(material = ghostMaterial)
@@ -464,7 +472,7 @@ class GhostTest {
 
         assertTrue(
             s.conduits.isComplete(Conduit.Rail, ghost),
-            "the ghost stalled at ${s.conduits.tracks.builtPermille(Conduit.Rail, ghost)} permille: " +
+            "the ghost stalled at ${s.conduits.builtPermille(Conduit.Rail, ghost)} permille: " +
                 "the ore branch held the junction open without ever moving",
         )
         assertFalse(s.rail.isEmpty(grid.tile(5, 5)), "the ore moved, and it has nowhere it could go")
@@ -617,6 +625,67 @@ class GhostTest {
             "iron built a rail that had chosen copper",
         )
         assertEquals(0L, withIron.conduits.massAt(Conduit.Rail, withIron.grid.tile(7, 3)), "and it took none of it")
+    }
+
+    /**
+     * ⛔ **A finished run built of something LIGHTER than the default was a wall.**
+     *
+     * Stu's save, 2026-08-28: a steel run at (23,22)..(23,25), a 30kg steel packet standing at
+     * (23,24), a steel rail site at (23,22) short of 17kg — and nothing moved, ever.
+     *
+     * Steel is very slightly lighter than iron, so a tile of steel weighs *less* than a tile of
+     * iron. [railGhosts] weighed every segment against the conduit's **default** bill and so read
+     * finished steel track as unbuilt, while the appetite the same tick states for that site was
+     * built from the segment's **own** material and came out at nought. The two halves disagreeing
+     * produced the one thing neither could produce alone: a construction site that stands in the
+     * road — [Acceptance.stopsTraffic] — and wants nothing, so its door refuses everything for
+     * ever. Every finished tile of the run was such a wall.
+     *
+     * ⚠️ **The copper test above cannot see this and never could**: copper is *denser* than iron, so
+     * a finished copper rail clears the iron bill by weight and the wrong question happens to give
+     * the right answer. Only a lighter material exposes it — which is every rock in the game, and
+     * steel by a hair.
+     */
+    @Test
+    fun `finished track built of a lighter metal is not a ghost, and does not stand in the road`() {
+        val start = tankAndRun(
+            ghostAt = 7,
+            stored = Mixture.of(Species.Steel to 8 * Capacity.PACKET_MASS, energy = 0),
+            ghostMaterial = Species.Steel,
+            runMaterial = Species.Steel,
+        )
+        assertTrue(
+            org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Steel).total <
+                org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail).total,
+            "the fixture needs a material lighter than the default, or it proves nothing",
+        )
+        for (x in 4..6) {
+            val t = start.grid.tile(x, 3)
+            assertTrue(start.conduits.isComplete(Conduit.Rail, t), "the fixture laid a ghost at $t")
+            assertEquals(
+                Species.Steel,
+                start.conduits.tracks.dominantAt(Conduit.Rail, t),
+                "a run stated as steel was laid out of something else at $t",
+            )
+        }
+
+        val s = run(start, RAIL_PERIOD * 30)
+        val ghost = s.grid.tile(7, 3)
+        assertTrue(
+            s.conduits.isComplete(Conduit.Rail, ghost),
+            "steel never crossed its own finished track: the site stalled at " +
+                "${s.conduits.builtPermille(Conduit.Rail, ghost)} permille",
+        )
+        // And the track it crossed did not fatten on the way past: a tile that reads as unbuilt has
+        // an appetite, and the same mismatch would have every finished tile skim the traffic.
+        for (x in 4..6) {
+            val t = s.grid.tile(x, 3)
+            assertEquals(
+                org.emerge.demo.outofspace.world.conduitBillOfMaterials(Conduit.Rail, Species.Steel).total,
+                s.conduits.massAt(Conduit.Rail, t),
+                "finished steel track at $t ate material it did not need",
+            )
+        }
     }
 
     /**

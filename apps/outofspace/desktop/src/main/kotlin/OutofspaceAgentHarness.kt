@@ -780,7 +780,7 @@ object OutofspaceAgentHarness {
                 for (c in Conduit.entries) {
                     val seg = state.conduits.at(c, tile) ?: continue
                     if (state.conduits.isGhost(c, tile)) {
-                        ghosts.add("($x,$y) ${c.label} ${state.conduits.tracks.builtPermille(c, tile) / 10}%")
+                        ghosts.add("($x,$y) ${c.label} ${state.conduits.builtPermille(c, tile) / 10}%")
                     }
                     if (seg.deconstructing) marked.add("($x,$y) ${c.label}")
                 }
@@ -885,7 +885,7 @@ object OutofspaceAgentHarness {
             // facts a self-building run turns on. See `apps/outofspace/PLAN_self_building_rails.md`.
             for (c in Conduit.entries) {
                 val seg = state.conduits.at(c, tile) ?: continue
-                println("[agent]   ${c.label.lowercase().padEnd(9)} ${state.conduits.tracks.builtPermille(c, tile) / 10}% built" +
+                println("[agent]   ${c.label.lowercase().padEnd(9)} ${state.conduits.builtPermille(c, tile) / 10}% built" +
                     // ⚠️ **Exact, in the sim's own units, beside the human figure.** A conduit a
                     // microgram short of its bill prints as its full mass in grams and reads 99%
                     // for ever; the gap is the whole story and no gram-scale readout can show it.

@@ -308,10 +308,14 @@ object Save {
     private fun writeTrackStuff(out: StringBuilder, conduits: Conduits) {
         for (conduit in Conduit.entries) {
             val stuff = conduits.tracks[conduit]
-            val bill = conduitBillOfMaterials(conduit)
             for (tile in 0 until conduits.tileCount) {
                 val t = TileIndex(tile)
-                if (conduits.at(conduit, t) == null) continue
+                val segment = conduits.at(conduit, t) ?: continue
+                // ⚠️ **Against the segment's own material**, which is what the reader lays when this
+                // line is absent — see [Conduits.finished]. Weighed against the conduit's default
+                // instead, a whole run built of something else would be written out tile by tile and
+                // — worse — a file that omitted the line would come back made of the wrong metal.
+                val bill = conduitBillOfMaterials(conduit, segment.materialOrDefault)
                 if (Species.ALL.all { stuff[t, it] == bill[it] }) continue
                 out.append("trackstuff ").append(conduit.name).append(' ').append(tile).append(' ')
                     .append(writeMixture(stuff.mixtureAt(t))).append('\n')

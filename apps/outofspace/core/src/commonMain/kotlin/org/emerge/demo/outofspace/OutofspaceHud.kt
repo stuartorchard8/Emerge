@@ -695,7 +695,7 @@ class OutofspaceHud {
 
         title(conduit.label)
         if (s.conduits.isGhost(conduit, tile)) {
-            keyValue("BUILT", "${s.conduits.tracks.builtPermille(conduit, tile) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
+            keyValue("BUILT", "${s.conduits.builtPermille(conduit, tile) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
         }
         if (segment.deconstructing) row("marked for deconstruction", 0xE05A4AFFL)
 
