@@ -187,6 +187,13 @@ class DeckArray(
     /** What the machine anchored at [tile] is made of, or null where nothing is anchored there. */
     fun materialAt(tile: TileIndex): Species? = materials[tile.index]
 
+    /** Whether [tile] can have air in it — empty, a ghost, or a machine that does not hold air out. */
+    fun isPermeableToAir(tile: TileIndex): Boolean {
+        val m = this[tile] ?: return true
+        if (isGhost(tile)) return true
+        return !m.kind.preventAirflow
+    }
+
     fun copyOf(): DeckArray = DeckArray(grid, machines.copyOf(), stuff.copyOf(), materials.copyOf())
 
     val size get() = machines.size

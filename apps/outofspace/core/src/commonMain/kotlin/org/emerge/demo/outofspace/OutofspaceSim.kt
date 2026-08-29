@@ -2240,7 +2240,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // sealed room and be told only at completion that it could never have been built there.
             // The displacement happens when the casing does.
             if (kind.preventAirflow &&
-                !tryDisplaceAir(grid, masses, airEnergy, covered, commit = creative) { originOf[it] == TileIndex.NONE }
+                !tryDisplaceAir(grid, masses, airEnergy, covered, commit = creative) { deck.isPermeableToAir(it) }
             ) return
 
             // Outside creative the machine arrives as a ghost: standing there, made of nothing, and
@@ -2996,7 +2996,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Close enough to finish? Then the air has to be able to leave before anything is taken.
             if (have >= need && m.kind.preventAirflow &&
                 !tryDisplaceAir(grid, masses, airEnergy, tiles.toList(), commit = false) {
-                    originOf[it] == TileIndex.NONE
+                    deck.isPermeableToAir(it)
                 }
             ) return null
 
@@ -3037,7 +3037,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         private fun finishMachine(m: DeckMachine, tiles: Array<TileIndex>) {
             if (!m.kind.preventAirflow || !deck.holdsFullBill(m)) return
             // Guaranteed to succeed: the delivery that got here was refused unless the air could go.
-            tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { originOf[it] == TileIndex.NONE }
+            tryDisplaceAir(grid, masses, airEnergy, tiles.toList()) { deck.isPermeableToAir(it) }
             // The tile is a wall from this instant, and the tick's map still says otherwise.
             solidityChanged = true
         }

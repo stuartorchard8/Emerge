@@ -13,6 +13,8 @@ import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.world.MassIndex
 import org.emerge.demo.outofspace.world.machine.Hull
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.machine.Vent
 import org.emerge.demo.outofspace.world.Structure
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.VesselState
@@ -363,5 +365,41 @@ class AtmosphereTest {
         // either holds or it does not; a run long enough for the world to be busy is the whole
         // requirement, and 500 ticks of a breathing starter vessel is amply that.
         assertEquals(digest(run(starterVessel(grid), 500)), digest(run(starterVessel(grid), 500)))
+    }
+
+    @Test
+    fun `air displaces through a tile occupied by a non-preventAirflow machine`() {
+        // A narrow corridor where the only exit is a Vent tile. All other neighbors of the strip
+        // are hull tiles (preventAirflow = true), which the predicate rejects as non-permeable.
+        // This proves deck.isPermeableToAir returns true for a Vent.
+        val g = Grid(5, 3)
+        val vent = g.tile(2, 1)
+        val strip = listOf(g.tile(1, 1), g.tile(3, 1))
+        val deck = DeckArray(g)
+        deck.stand(Vent(vent), withCasing = true, material = Species.Iron)
+        // Block every other neighbor of the strip with Hull (preventAirflow) tiles,
+        // leaving only the Vent as a permeable exit.
+        deck.stand(Hull(g.tile(1, 0)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(1, 2)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(2, 0)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(2, 2)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(3, 0)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(3, 2)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(0, 1)), withCasing = true, material = Species.Iron)
+        deck.stand(Hull(g.tile(4, 1)), withCasing = true, material = Species.Iron)
+        val masses = MassArray(g.size)
+        val energies = EnergyArray(g.size)
+        masses[MassIndex(g.tile(1, 1), Fluid.Oxygen)] = 1_000L * gram
+        masses[MassIndex(g.tile(3, 1), Fluid.Oxygen)] = 1_000L * gram
+        energies[g.tile(1, 1)] = 1_000L * joule
+        energies[g.tile(3, 1)] = 1_000L * joule
+
+        assertTrue(
+            tryDisplaceAir(g, masses, energies, strip) { deck.isPermeableToAir(it) },
+            "air displaces through a Vent tile",
+        )
+        assertEquals(0L, masses[MassIndex(g.tile(1, 1), Fluid.Oxygen)], "left source is empty")
+        assertEquals(0L, masses[MassIndex(g.tile(3, 1), Fluid.Oxygen)], "right source is empty")
+        assertEquals(2_000L * gram, masses[MassIndex(vent, Fluid.Oxygen)], "all air arrived at the Vent")
     }
 }
