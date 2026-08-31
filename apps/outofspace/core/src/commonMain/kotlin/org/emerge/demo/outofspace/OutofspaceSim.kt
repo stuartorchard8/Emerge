@@ -313,7 +313,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 val target: DeckMachine? = w.deck[seen]
                                 val reading = fullness(target, seen, w.grid, w.buffers)
                                 // Threshold sign dictates comparison polarity (negative = less than, positive = greater than)
-                                val requirementsMet = reading*m.threshold.sign >= m.threshold
+                                val sign = if (m.threshold.sign == 0) 1 else m.threshold.sign
+                                val requirementsMet = reading*sign > m.threshold
                                 val delaying = m.delayedFor < m.delay
                                 val releasing = m.releasedFor < m.release
                                 if (requirementsMet) {

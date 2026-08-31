@@ -1731,7 +1731,7 @@ class OutofspaceHud {
                     "ON WHEN ",
                     0x9A9A9AFFL,
                 )
-                button(if(machine.threshold > 0) ">" else "<", 0x2E5A6BFFL) {
+                button(if(machine.threshold < 0) "<" else ">", 0x2E5A6BFFL) {
                     controller.invertSensorThreshold(tile)
                 }
                 button("${machine.threshold.absoluteValue/10}%", 0x2E5A6BFFL) {
@@ -1756,7 +1756,7 @@ class OutofspaceHud {
             }
             row {
                 text(
-                    "OFF WHEN ${if(machine.threshold > 0) "<" else ">"} ${machine.threshold.absoluteValue/10}% FOR",
+                    "OFF WHEN ${if(machine.threshold < 0) ">= " else if(machine.threshold > 0) "<= " else ""}${machine.threshold.absoluteValue/10}% FOR",
                     0x9A9A9AFFL,
                 )
                 val releasing = machine.releasedFor < machine.release && machine.releasedFor > 0

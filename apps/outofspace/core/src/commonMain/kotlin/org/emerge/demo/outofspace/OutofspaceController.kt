@@ -603,9 +603,10 @@ class OutofspaceController(
     fun cycleSensorThreshold(tile: TileIndex, delta: Int) {
         val m = state.machineCovering(tile) as? Sensor ?: return
 
+        val sign = if (m.threshold.sign == 0) 1 else m.threshold.sign
         val at = POSITIVE_WEIGHT_LADDER.indexOf(m.threshold.absoluteValue).let { if (it < 0) 0 else it }
         val next = POSITIVE_WEIGHT_LADDER[((at + delta) % POSITIVE_WEIGHT_LADDER.size + POSITIVE_WEIGHT_LADDER.size) % POSITIVE_WEIGHT_LADDER.size]
-        pending.add(Edit.TuneSensor(tile, next*m.threshold.sign, m.delay, m.release))
+        pending.add(Edit.TuneSensor(tile, next*sign, m.delay, m.release))
     }
 
     fun cycleSensorDelay(tile: TileIndex, delta: Int) {
