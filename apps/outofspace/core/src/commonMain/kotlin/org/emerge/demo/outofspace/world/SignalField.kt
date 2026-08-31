@@ -48,12 +48,12 @@ class SignalField(
          * and not something to complain about.
          */
         fun build(networks: SignalNetworks, emit: (raise: (TileIndex, Int) -> Unit) -> Unit): SignalField {
-            val values = IntArray(networks.count)
+            val values = IntArray(networks.count) { 0 }
             emit { tile, value ->
                 val id = networks[tile]
                 if (id >= 0) {
-                    val clamped = value.coerceIn(0, FULL)
-                    if (clamped > values[id]) values[id] = clamped
+                    // Signals are accumulative
+                    values[id] = (values[id] + value).coerceIn(0, FULL)
                 }
             }
             return SignalField(networks, values)

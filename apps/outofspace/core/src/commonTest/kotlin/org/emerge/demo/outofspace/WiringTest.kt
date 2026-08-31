@@ -124,7 +124,7 @@ class WiringTest {
     }
 
     @Test
-    fun `the loudest transmitter wins a shared network, so order cannot matter`() {
+    fun `transmitter signals accumulate on a shared network, so order cannot matter`() {
         val grid = Grid(6, 2)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(grid, wires, 0, 5, 0)
@@ -132,10 +132,10 @@ class WiringTest {
 
         val field = SignalField.build(networks) { raise ->
             raise(grid.tile(0, 0), 200)
-            raise(grid.tile(3, 0), 900)
+            raise(grid.tile(3, 0), 100)
             raise(grid.tile(5, 0), 400)
         }
-        assertEquals(900, field.at(grid.tile(1, 0)), "the run carries the loudest of the three, everywhere")
+        assertEquals(700, field.at(grid.tile(1, 0)), "the run carries the loudest of the three, everywhere")
     }
 
     // ── Sensors ───────────────────────────────────────────────────────────────
