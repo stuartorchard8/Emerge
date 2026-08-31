@@ -291,26 +291,6 @@ fun main() {
             return@glfwSetKeyCallback
         }
 
-        // The debug engine is a **throttle**, so it reads press and release rather than press alone.
-        val burn = when (key) {
-            GLFW_KEY_LEFT -> -1 to 0
-            GLFW_KEY_RIGHT -> 1 to 0
-            GLFW_KEY_UP -> 0 to -1
-            GLFW_KEY_DOWN -> 0 to 1
-            else -> null
-        }
-        if (burn != null) {
-            if (action == GLFW_RELEASE) {
-                // Cleared per axis rather than zeroed outright, so letting go of one of two held
-                // keys leaves the other still burning.
-                if (burn.first != 0) controller.thrustX = 0
-                if (burn.second != 0) controller.thrustY = 0
-            } else if (action == GLFW_PRESS) {
-                if (burn.first != 0) controller.thrustX = burn.first
-                if (burn.second != 0) controller.thrustY = burn.second
-            }
-            return@glfwSetKeyCallback
-        }
         if (action != GLFW_PRESS) return@glfwSetKeyCallback
         when (key) {
             GLFW_KEY_SPACE -> controller.paused = !controller.paused
@@ -319,8 +299,6 @@ fun main() {
                 controller.mode = controller.mode.next
                 // Whatever was being panned or aimed is not being panned or aimed any more.
                 panKeys.fill(false)
-                controller.thrustX = 0
-                controller.thrustY = 0
             }
             // Stability augmentation, on the key every space game puts it on.
             GLFW_KEY_T -> controller.toggleSas()

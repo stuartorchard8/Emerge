@@ -263,7 +263,7 @@ class OutofspaceHud {
                     // none at all until these were split.
                     val inFabric = stock.fabricSpecies
                     if (inFabric.isNotEmpty()) {
-                        text("in fabric · deconstruct to free", 0x7A8A9AFFL)
+                        text("built-in · deconstruct to free", 0x7A8A9AFFL)
                         for (species in inFabric.take(STOCKPILE_LINES)) {
                             keyValue(
                                 "  ${species.name}",
@@ -368,12 +368,9 @@ class OutofspaceHud {
                 } else {
                     title("INSPECT  ·  ${controller.inspectLayer.label}")
                     text("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
-                    text("machine settings live on the DECK layer", 0x9A9A9AFFL)
                 }
                 text("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
                 text("space pause", 0x9A9A9AFFL)
-                // Debug engine row (yellow, named).
-                text("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
                 text("F8 fit grid", 0x9A9A9AFFL)
                 if (canSave) text("F9 save · F10 load", 0x9A9A9AFFL)
             }
@@ -1745,7 +1742,7 @@ class OutofspaceHud {
                     0x9A9A9AFFL,
                 )
                 val delaying = machine.delayedFor < machine.delay && machine.delayedFor > 0
-                val delayedForSeconds = machine.delayedFor * controller.cfg.secondsPerTick
+                val delayedForSeconds = seconds(machine.delayedFor.toLong(), controller.cfg)
                 val delaySeconds = machine.delay * controller.cfg.secondsPerTick
                 val label = if (delaying) "$delayedForSeconds/$delaySeconds" else "$delaySeconds"
                 val color = if (delaying) 0xE0A93AFFL else 0x6EE08AFFL
@@ -1763,7 +1760,7 @@ class OutofspaceHud {
                     0x9A9A9AFFL,
                 )
                 val releasing = machine.releasedFor < machine.release && machine.releasedFor > 0
-                val releasedForSeconds = machine.releasedFor * controller.cfg.secondsPerTick
+                val releasedForSeconds = seconds(machine.releasedFor.toLong(), controller.cfg)
                 val releaseSeconds = machine.release * controller.cfg.secondsPerTick
                 val label = if (releasing) "$releasedForSeconds/$releaseSeconds" else "$releaseSeconds"
                 val color = if (releasing) 0xE0A93AFFL else 0x6EE08AFFL
@@ -1873,6 +1870,22 @@ class OutofspaceHud {
             g < 10_000_000L -> "$sign${g / 1000}.${(g % 1000) / 100}kg"
             else -> "$sign${g / 1_000_000}.${(g % 1_000_000) / 100_000}t"
         }
+    }
+
+    private fun time(ticks: Long, config: OutofspaceConfig): String {
+        val sign = if (ticks < 0L) "-" else ""
+        val ms = (if (ticks < 0L) -ticks else ticks) * 1000 / config.ticksPerSecond
+        return when {
+            ms < 1000L -> "$sign${ms} ms"
+            ms < 60_000L -> "$sign${ms / 1000}.${(ms % 1000) / 100} sec"
+            else -> "$sign${ms / 60_000L}:${(ms % 60_000L) / 1000}"
+        }
+    }
+
+    private fun seconds(ticks: Long, config: OutofspaceConfig): String {
+        val sign = if (ticks < 0L) "-" else ""
+        val ms = (if (ticks < 0L) -ticks else ticks) * 1000 / config.ticksPerSecond
+        return "$sign${ms / 1000}.${(ms % 1000) / 100}"
     }
 
     /** Distance/speed in PER_TILE billionths, to 6 decimals (breach sensitivity). */
