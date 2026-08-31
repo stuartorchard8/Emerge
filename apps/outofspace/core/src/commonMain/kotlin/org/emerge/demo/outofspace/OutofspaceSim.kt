@@ -271,7 +271,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // modifies them).
         val _m0 = _prof0; val _m = if (_m0) TimeSource.Monotonic.markNow() else null
         var networks = SignalNetworks.none(w.grid.size)
-        var signals = SignalField.none(w.grid.size)
+        var nextSignals = state.signals
         var openness = IntArray(w.grid.size)
         // ⚠️ **Not derived yet.** An airlock is a wall whose solidity is a signal, so the structure
         // cannot be known until the openness is, and the openness comes out of the signal pass
@@ -292,7 +292,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // machines read signals, so we compute them here alongside structure.
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
             w.networks = networks
-            signals = SignalField.build(networks) { raise ->
+            nextSignals = SignalField.build(networks) { raise ->
                 // The transmitters are deck machines, so this walks the deck. ⚠️ It used to walk
                 // `machines`, and a reified lookup that resolves the wrong hierarchy answers *null*
                 // — every sensor and every button would simply have stopped emitting, with nothing
@@ -324,11 +324,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     raise(tile, (g.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
                 }
             }
-            w.signals = signals
 
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
-            openness = airlockOpenness(w.deck, signals) ?: IntArray(w.grid.size)
+            openness = airlockOpenness(w.deck, state.signals) ?: IntArray(w.grid.size)
         }
         // The one derivation, off whatever the openness turned out to be: the pass's answer on a
         // machine tick, and all-shut on a tick that skipped it, which is what the pass would leave
@@ -354,7 +353,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // waiting on, and it would never empty. A rail being taken apart still carries
                 // traffic because carrying is not producing; this is.
                 if (tile in w.scrapping) continue
-                val activation = m.wiring.activation(Action.Run, signals.at(tile))
+                val activation = m.wiring.activation(Action.Run, state.signals.at(tile))
                 w[tile] = when (m) {
                     // A bridge is inert like a length of track: its load is shuffled along by
                     // [advanceBridges] with the rest of the conduit step, not by running the machine.
@@ -410,7 +409,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             w.advanceRails(ports)
 
             for ((tile, at) in ports) for (port in at) {
-                if (port.kind == PortKind.Output) w.pushOut(tile, port)
+                if (port.kind == PortKind.Output) w.pushOut(tile, port, state.signals)
             }
             w.readGauges()
             motion = w.motion.freeze(state.tick, RAIL_PERIOD)
@@ -541,7 +540,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
             // Pumps alongside valves, before either layer is diffused (see [applyPumps]).
             applyPumps(
-                demands = pumpDemands(state.grid, w.deck, conduits, signals),
+                demands = pumpDemands(state.grid, w.deck, conduits, state.signals),
                 roomMass = w.masses,
                 roomEnergy = w.airEnergy,
                 pipeMass = w.pipeMass,
@@ -883,7 +882,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             builtMass = w.builtMass,
             scrapping = w.scrapping.toSet(),
             sas = w.sas,
-            signals = signals,
+            signals = nextSignals,
             networks = networks,
             structure = structure,
             occupancy = occupancy,
@@ -1611,9 +1610,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Who is joined to whom, set once the wire has been swept. */
         var networks: SignalNetworks = SignalNetworks.none(state.grid.size)
-
-        /** This tick's signal snapshot, set once the sensing pass has run. */
-        var signals: SignalField = SignalField.none(state.grid.size)
 
         /**
          * Joules each **machine** gained this tick from its own work, indexed by where it is stored.
@@ -3064,7 +3060,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         }
 
         /** Place output packet at port tile (ports behind buildings). Tops up partial packets where possible. */
-        fun pushOut(tile: TileIndex, port: Port) {
+        fun pushOut(tile: TileIndex, port: Port, signals: SignalField) {
             val segment = rails[tile.index] ?: return
             val m = deck[port.owner] ?: return
             // A bridge is not ejected from here. It sets its load down as part of the conduit step

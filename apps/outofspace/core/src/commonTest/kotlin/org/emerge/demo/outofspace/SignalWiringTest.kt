@@ -4,7 +4,6 @@ import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferRole
 import org.emerge.demo.outofspace.world.machine.Thruster
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
-import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.chem.Species
@@ -92,13 +91,15 @@ class SignalWiringTest {
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) signalRow(wires, extractorAt.first, sensorAt.first, 3)
 
-        return VesselState(
+        return run(VesselState(
             grid,
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
-            bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        ).stocked(grid.tile(13, 5), stored)
+        ).stocked(grid.tile(13, 5), stored), 1).copy(
+            // Place rock after signals have propagated for a tick
+            bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
+        )
     }
 
     private fun extractor(s: VesselState) = s.deck[grid.tile(extractorAt.first, extractorAt.second)] as? Extractor
@@ -136,7 +137,7 @@ class SignalWiringTest {
             OutofspaceInput(listOf(Edit.Cut(grid.tile(7, 3), grid.tile(8, 3), Conduit.Signal))),
         )
 
-        assertTrue(before == 0L, "joined, the full tank should have stopped it dead: ${before}g")
+        assertEquals(0L, before, "joined, the full tank should have stopped it dead: ${before}g")
         assertTrue(ground(cut) > 0L, "cut, it should be digging again: ${ground(cut)}g")
     }
 
