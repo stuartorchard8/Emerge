@@ -458,8 +458,13 @@ object Save {
                 put("filter", it.species?.name)
                 put("filterpct", it.minPercent.toString())
             }
-            // A sensor is its facing and its wiring, both written by the common code around this.
-            is Sensor -> {}
+            is Sensor -> {
+                put("threshold", m.threshold.toString())
+                put("delay", m.delay.toString())
+                put("delayedFor", m.delayedFor.toString())
+                put("release", m.release.toString())
+                put("releasedFor", m.releasedFor.toString())
+            }
             // A button is its key and its wiring; the common code writes the second.
             is WireButton -> put("key", m.key.name)
             // A pump holds nothing: what it moves is in the two air fields. Facing and wiring are
@@ -1523,9 +1528,16 @@ object Save {
                     else SpeciesFilter(species, pct)
                 },
             )
-            // v10 and earlier named a colour here. Read and discarded: a sensor now drives the wire
-            // under it, and no colour can be turned back into a piece of geometry that was never laid.
-            DeckMachineKind.Sensor -> Sensor(tile, facing())
+            DeckMachineKind.Sensor -> Sensor(
+                tile,
+                facing(),
+                wiring = Wiring.RUNNING,
+                f["threshold"]?.toIntOrNull() ?: 500,
+                f["delay"]?.toIntOrNull() ?: 0,
+                f["delayedFor"]?.toIntOrNull() ?: 0,
+                f["release"]?.toIntOrNull() ?: 0,
+                f["releasedFor"]?.toIntOrNull() ?: 0,
+            )
             DeckMachineKind.KeyInput -> WireButton(
                 tile,
                 key = f["key"]?.let { name ->

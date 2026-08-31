@@ -47,6 +47,7 @@ import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.demo.outofspace.world.Stockpile
 import org.emerge.render.torus.ui.ActionButton
+import kotlin.math.absoluteValue
 
 /** A full-screen overlay: the game's own controls, or the sim's readouts. One at a time. */
 enum class Sheet { None, Menu, Readouts, SaveLoad }
@@ -1729,6 +1730,39 @@ class OutofspaceHud {
                 0x9A9A9AFFL,
                 if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
             )
+            row {
+                row(
+                    "WHEN",
+                    0x9A9A9AFFL,
+                )
+                button("${if(machine.threshold > 0) ">" else "<"} ${machine.threshold.absoluteValue/10}%", 0x2E5A6BFFL) {
+                    controller.cycleSensorThreshold(tile, 1)
+                }
+            }
+            row {
+                row(
+                    "DELAY",
+                    0x9A9A9AFFL,
+                )
+                val delaying = machine.delayedFor < machine.delay && machine.delayedFor > 0
+                val label = if (delaying) "${machine.delayedFor}/${machine.delay}" else "${machine.delay}"
+                val color = if (delaying) 0xE0A93AFFL else 0x6EE08AFFL
+                button(label, color) {
+                    controller.cycleSensorDelay(tile, 1)
+                }
+            }
+            row {
+                row(
+                    "RELEASE",
+                    0x9A9A9AFFL,
+                )
+                val releasing = machine.releasedFor < machine.release && machine.releasedFor > 0
+                val label = if (releasing) "${machine.releasedFor}/${machine.release}" else "${machine.release}"
+                val color = if (releasing) 0xE0A93AFFL else 0x6EE08AFFL
+                button(label, color) {
+                    controller.cycleSensorRelease(tile, 1)
+                }
+            }
             val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
             row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
         }

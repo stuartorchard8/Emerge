@@ -19,6 +19,12 @@ data class Sensor(
     override val center: TileIndex,
     override val facing: Direction,
     override val wiring: Wiring = Wiring.RUNNING,
+    /** Signal propagation characteristics */
+    val threshold: Int,
+    val delay: Int,
+    val delayedFor: Int = 0,
+    val release: Int,
+    val releasedFor: Int = 0,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Sensor
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)

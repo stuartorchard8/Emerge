@@ -10,4 +10,5 @@ package org.emerge.demo.outofspace.world
  */
 enum class Action(val label: String) {
     Run("RUN"),
+    Need("NEED"),
 }

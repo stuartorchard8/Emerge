@@ -14,7 +14,6 @@ import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.world.machine.ThrusterControl
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VolumeField
-import org.emerge.demo.outofspace.world.machine.DeckMachineKind
 
 /** A player action. Actions are values, so they replay, serialise and travel over a wire. */
 sealed interface Edit {
@@ -100,6 +99,7 @@ sealed interface Edit {
      * setting than the one the player saw.
      */
     data class TuneDecomposer(val tile: TileIndex, val setTemperature: Int, val dwellTicks: Int) : Edit
+    data class TuneSensor(val tile: TileIndex, val threshold: Int, val delay: Int, val release: Int) : Edit
 
     /**
      * Which orders a thruster takes: the pilot's stick, or the wire under it.

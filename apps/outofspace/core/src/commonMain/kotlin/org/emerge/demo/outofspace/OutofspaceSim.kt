@@ -134,6 +134,8 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.SimReducer
 import org.emerge.sim.core.ecs.PipelineProfiler
+import kotlin.math.min
+import kotlin.math.sign
 import kotlin.time.TimeSource
 
 /** One tick: edits → sense → produce → process → eject → advance conduits → fluid → heat → motion.
@@ -309,7 +311,36 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             // resolves one hierarchy or the other and would read a tank as absent.
                             if (seen != TileIndex.NONE) {
                                 val target: DeckMachine? = w.deck[seen]
-                                raise(tile, fullness(target, seen, w.grid, w.buffers))
+                                val reading = fullness(target, seen, w.grid, w.buffers)
+                                // Threshold sign dictates comparison polarity (negative = less than, positive = greater than)
+                                val requirementsMet = reading*m.threshold.sign >= m.threshold
+                                val delaying = m.delayedFor < m.delay
+                                val releasing = m.releasedFor < m.release
+                                if (requirementsMet) {
+                                    if (delaying && !releasing) {
+                                        w.deck[tile] = m.copy(
+                                            delayedFor = m.delayedFor+1,
+                                            releasedFor = m.release,
+                                        )
+                                    } else {
+                                        w.deck[tile] = m.copy(
+                                            releasedFor = 0,
+                                        )
+                                        raise(tile, SignalField.FULL)
+                                    }
+                                } else {
+                                    if (releasing && !delaying) {
+                                        w.deck[tile] = m.copy(
+                                            delayedFor = m.delay,
+                                            releasedFor = m.releasedFor+1,
+                                        )
+                                        raise(tile, SignalField.FULL)
+                                    } else {
+                                        w.deck[tile] = m.copy(
+                                            delayedFor = 0,
+                                        )
+                                    }
+                                }
                             }
                         }
                         // A finger on a key, on the same footing as any other transmitter.
@@ -1937,6 +1968,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                             heldTicks = 0,
                         )
                     }
+                }
+                is Edit.TuneSensor -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile] as? Sensor ?: return
+                    val delayedFor = if (m.delay == m.delayedFor) edit.delay else min(m.delayedFor, edit.delay)
+                    val releasedFor = if (m.release == m.releasedFor) edit.release else min(m.releasedFor, edit.release)
+                    deck[tile] = m.copy(
+                        threshold = edit.threshold,
+                        delay = edit.delay,
+                        delayedFor = delayedFor,
+                        release = edit.release,
+                        releasedFor = releasedFor,
+                    )
                 }
 
                 is Edit.LockStorageSpecies -> {
@@ -3633,7 +3677,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile)
             DeckMachineKind.Storage -> Storage(tile, facing)
-            DeckMachineKind.Sensor -> Sensor(tile, facing)
+            DeckMachineKind.Sensor -> Sensor(tile, facing, threshold = SignalField.FULL, delay = 0, release = 0)
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)
             DeckMachineKind.Thruster -> Thruster(tile, facing)

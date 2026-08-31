@@ -13,11 +13,13 @@ import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.TICK_LADDER
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.WEIGHT_LADDER
 import org.emerge.demo.outofspace.world.bufferTile
+import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.starterVessel
@@ -582,18 +584,36 @@ class OutofspaceController(
     /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
     fun cycleTriggerWeight(tile: TileIndex, action: Action, slot: Int, delta: Int) {
         val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
-        val currentDeck = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
 
         if (current != null) {
             val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
             val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
             wire(tile, action, slot, current.copy(weightPermille = next))
         }
-        if (currentDeck != null) {
-            val at = WEIGHT_LADDER.indexOf(currentDeck.weightPermille).let { if (it < 0) 0 else it }
-            val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
-            wire(tile, action, slot, currentDeck.copy(weightPermille = next))
-        }
+    }
+
+    fun cycleSensorThreshold(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Sensor ?: return
+
+        val at = WEIGHT_LADDER.indexOf(m.threshold).let { if (it < 0) 0 else it }
+        val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
+        pending.add(Edit.TuneSensor(tile, next, m.delay, m.release))
+    }
+
+    fun cycleSensorDelay(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Sensor ?: return
+
+        val at = TICK_LADDER.indexOf(m.delay).let { if (it < 0) 0 else it }
+        val next = TICK_LADDER[((at + delta) % TICK_LADDER.size + TICK_LADDER.size) % TICK_LADDER.size]
+        pending.add(Edit.TuneSensor(tile, m.threshold, next, m.release))
+    }
+
+    fun cycleSensorRelease(tile: TileIndex, delta: Int) {
+        val m = state.machineCovering(tile) as? Sensor ?: return
+
+        val at = TICK_LADDER.indexOf(m.release).let { if (it < 0) 0 else it }
+        val next = TICK_LADDER[((at + delta) % TICK_LADDER.size + TICK_LADDER.size) % TICK_LADDER.size]
+        pending.add(Edit.TuneSensor(tile, m.threshold, m.delay, next))
     }
 
     /** Drops a rock centred on ([x], [y]) — the stand-in for capture, see [Edit.DropRock]. */
