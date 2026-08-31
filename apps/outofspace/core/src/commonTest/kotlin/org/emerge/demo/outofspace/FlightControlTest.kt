@@ -51,8 +51,8 @@ class FlightControlTest {
         assertEquals(1, FlightIntent.of(InputKey.Right.bit).translateX)
         // A is counter-clockwise, B is clockwise: clockwise-positive matches the sign a torque
         // takes on a y-down grid.
-        assertEquals(-FlightIntent.FULL, FlightIntent.of(InputKey.A.bit).spin)
-        assertEquals(FlightIntent.FULL, FlightIntent.of(InputKey.B.bit).spin)
+        assertEquals(-FlightIntent.FULL, FlightIntent.of(InputKey.Q.bit).spin)
+        assertEquals(FlightIntent.FULL, FlightIntent.of(InputKey.E.bit).spin)
         // Opposing keys cancel rather than fighting, which is what a stick does.
         assertEquals(0, FlightIntent.of(InputKey.Left.bit or InputKey.Right.bit).translateX)
     }
@@ -419,7 +419,7 @@ class FlightControlTest {
         val cfg = OutofspaceConfig()
         val controller = OutofspaceController(cfg, hullWithThruster(cfg.initialGrid, row = BAY_Y - 8))
         controller.mode = Mode.Flight
-        controller.heldKeys = InputKey.A.bit
+        controller.heldKeys = InputKey.Q.bit
 
         repeat(TICKS) { controller.stepOnce() }
 

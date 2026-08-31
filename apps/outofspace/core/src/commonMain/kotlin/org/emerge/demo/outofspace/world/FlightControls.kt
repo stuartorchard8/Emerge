@@ -71,7 +71,7 @@ data class FlightIntent(
             return FlightIntent(
                 translateX = held(InputKey.Right) - held(InputKey.Left),
                 translateY = held(InputKey.Down) - held(InputKey.Up),
-                spin = (held(InputKey.B) - held(InputKey.A)) * FULL,
+                spin = (held(InputKey.E) - held(InputKey.Q)) * FULL,
             )
         }
     }

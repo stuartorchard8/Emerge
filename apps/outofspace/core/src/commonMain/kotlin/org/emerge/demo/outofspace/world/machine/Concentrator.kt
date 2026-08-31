@@ -29,7 +29,7 @@ data class Concentrator(
      * stage 2 is still limited by the ore rather than by the machine, so raising the rating past
      * that buys a duplicated 87% step instead of a better one.
      */
-    val efficiencyPermille: Int = 600,
+    val efficiencyPermille: Int = 750,
     override val wiring: Wiring = Wiring.RUNNING,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Concentrator

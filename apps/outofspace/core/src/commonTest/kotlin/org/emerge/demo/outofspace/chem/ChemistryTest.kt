@@ -310,12 +310,12 @@ class ChemistryTest {
 
         var m = charge()
         val shown = mutableListOf<Long>()
-        repeat(5) {
+        repeat(4) {
             // Every stage works a full charge, as `refine` does via takeAtLeast(CHARGE_MASS).
             m = process(m.scaledTo(org.emerge.demo.outofspace.world.machine.Concentrator.CHARGE_MASS), eff).product
             shown += m[m.dominant!!] * 100L / m.total
         }
-        assertEquals(listOf(65L, 86L, 94L, 97L, 100L), shown, "the displayed purity ladder")
+        assertEquals(listOf(65L, 87L, 96L, 100L), shown, "the displayed purity ladder")
         assertEquals(0L, m.total - m[m.dominant!!], "stage 5 must be exactly pure, not nearly")
     }
 

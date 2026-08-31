@@ -19,8 +19,10 @@ enum class InputKey(val label: String) {
     Down("DOWN"),
     Left("LEFT"),
     Right("RIGHT"),
-    A("A"),
-    B("B"),
+    Q("Q"),
+    E("E"),
+    Z("Z"),
+    X("X"),
     ;
 
     /** This key's bit in the held-key mask carried on [org.emerge.demo.outofspace.OutofspaceInput]. */

@@ -1248,7 +1248,7 @@ class OutofspaceHud {
                 // clickable** — the name is up in the title where a click would compete with
                 // nothing, but a player who has just chosen a material is not looking at the title,
                 // they are looking at the numbers. The button sits under them.
-                button("READ ABOUT ${chosen.name.uppercase()}", 0x2E5A6BFFL) { controller.openWiki(chosen) }
+                button("MORE INFO", 0x2E5A6BFFL) { controller.openWiki(chosen) }
             }
         }
 

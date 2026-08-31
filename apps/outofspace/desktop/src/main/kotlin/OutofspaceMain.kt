@@ -8,10 +8,8 @@ import org.emerge.demo.outofspace.audio.ImpactAudioSystem
 import org.emerge.demo.outofspace.DeleteLayer
 import org.emerge.demo.outofspace.Tool
 import org.emerge.demo.outofspace.Mode
-import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.machine.InputKey
 import org.emerge.demo.outofspace.Brush
-import org.emerge.demo.outofspace.InspectLayer
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.sim.core.ecs.PipelineProfiler
@@ -76,7 +74,7 @@ fun main() {
     hud.canSave = true
     hud.onSave = {
         val mostRecent = OoSaves.mostRecent()
-        val defaultName = "world @ ${controller.tick}"
+        val defaultName = mostRecent ?: "world @ ${controller.tick}"
         val openSave = if (mostRecent != null) "Save over '$mostRecent'" else "Save"
         val openLoad = "Load"
         hud.openSaveLoadDialog(
@@ -265,11 +263,10 @@ fun main() {
                 GLFW_KEY_DOWN, GLFW_KEY_S -> InputKey.Down
                 GLFW_KEY_LEFT, GLFW_KEY_A -> InputKey.Left
                 GLFW_KEY_RIGHT, GLFW_KEY_D -> InputKey.Right
-                // Q/E are the roll keys the flight controls read as counter-clockwise and
-                // clockwise; Z/X stay bound to the same two inputs, since a [WireButton] may well
-                // have been wired to them before the stick existed.
-                GLFW_KEY_Q, GLFW_KEY_Z -> InputKey.A
-                GLFW_KEY_E, GLFW_KEY_X -> InputKey.B
+                GLFW_KEY_Q -> InputKey.Q
+                GLFW_KEY_E -> InputKey.E
+                GLFW_KEY_Z -> InputKey.Z
+                GLFW_KEY_X -> InputKey.X
                 else -> null
             }
             if (bound != null) {

@@ -130,9 +130,9 @@ class SignalInputTest {
 
     @Test
     fun `a button keeps its key across a save`() {
-        val s = rig(InputKey.B)
+        val s = rig(InputKey.X)
         val back = Save.read(Save.write(s))
-        assertEquals(InputKey.B, (back.deck[grid.tile(buttonAt.first, buttonAt.second)] as? WireButton)?.key)
+        assertEquals(InputKey.X, (back.deck[grid.tile(buttonAt.first, buttonAt.second)] as? WireButton)?.key)
     }
 
     // ── The whole point ───────────────────────────────────────────────────────
