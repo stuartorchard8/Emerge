@@ -12,8 +12,6 @@ import org.emerge.render.torus.ui.PanelBuilder
 import org.emerge.render.torus.ui.Ui
 import org.emerge.render.torus.ui.UiBuilder
 import org.emerge.render.torus.ui.UiTextRenderer
-import kotlin.math.PI
-import kotlin.math.cos
 
 /**
  * The campaign runtime. Owns the current chapter + step, evaluates the active step's [Gate] against the
@@ -748,23 +746,23 @@ class CampaignDirector {
             gap(4f)
             val situation = situationText()
             val body = situation ?: copy(step.text, step.altText)
-            for (line in wrap(body, wrapChars)) row(line, if (situation != null) 0xFFD86EFFL else 0xEAEEF6FFL)
-            step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) row(line, 0xFFD86EFFL) }
+            for (line in wrap(body, wrapChars)) text(line, if (situation != null) 0xFFD86EFFL else 0xEAEEF6FFL)
+            step.spotlight?.hint?.let { gap(2f); for (line in wrap(copy("→ $it"), wrapChars)) text(line, 0xFFD86EFFL) }
 
             // Objective line + progress for a World / Did gate.
             if (gate is Gate.World) {
                 gap(4f)
                 val prog = query?.let { gate.progress?.invoke(it) }
                 val suffix = if (prog != null) "   ${prog.first}/${prog.second}" else ""
-                for (line in wrap(copy("GOAL: ${gate.desc}$suffix"), wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
+                for (line in wrap(copy("GOAL: ${gate.desc}$suffix"), wrapChars)) text(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
             } else if (gate is Gate.Did) {
                 gap(4f)
-                for (line in wrap(copy("GOAL: ${gate.desc}"), wrapChars)) row(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
+                for (line in wrap(copy("GOAL: ${gate.desc}"), wrapChars)) text(line, if (gateMet) 0x8FE39AFFL else 0x9AA6BCFFL)
             }
 
             if (showDetail && step.detail != null) {
                 gap(4f)
-                for (line in wrap(copy(step.detail), wrapChars)) row(line, 0xB6C0D4FFL)
+                for (line in wrap(copy(step.detail), wrapChars)) text(line, 0xB6C0D4FFL)
             }
 
             gap(6f)

@@ -29,7 +29,7 @@ class UiLongPressDragTest {
         fun build() = ui.frame {
             scrollArea("list", 0f, 0f, 200f, 400f, rowHeight = 100f) {
                 geneCard(listOf(listOf("GENE" to null)), 0x336633FFL, dragId = "card", onDrop = { t -> dropped = t; dropCount++ }) { taps++ }
-                repeat(8) { row("FILLER $it") }
+                repeat(8) { text("FILLER $it") }
             }
         }
 

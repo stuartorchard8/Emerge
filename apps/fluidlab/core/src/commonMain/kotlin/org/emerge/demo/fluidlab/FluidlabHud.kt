@@ -53,8 +53,8 @@ class FluidlabHud {
                 button("OVERLAY", 0x2E8B40FFL) { onCycleOverlay() }
                 button("RESET", 0xCC3333FFL) { onReset() }
                 gap()
-                row("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
-                row("Click a tile to breach it", 0x9A9A9AFFL)
+                text("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
+                text("Click a tile to breach it", 0x9A9A9AFFL)
             }
         }
     }

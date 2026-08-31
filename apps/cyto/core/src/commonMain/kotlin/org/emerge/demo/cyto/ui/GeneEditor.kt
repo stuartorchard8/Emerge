@@ -587,7 +587,7 @@ class GeneEditor {
         // buttons (there'd otherwise be no way to author a first gene without duplicating one).
         run {
             gap(8f)
-            row(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A WORD TO EDIT)", 0x7A8699FFL)
+            text(if (info.genes.isEmpty()) "GENOME  (EMPTY)" else "GENOME  (TAP A WORD TO EDIT)", 0x7A8699FFL)
             val liveGenes = info.genes.map { it.gene }
             val effectiveGrouping = grouping ?: if (liveGenes.any { it.group.isNotEmpty() }) EMPTY_GROUPING else null
             val sections = effectiveGrouping?.sections(liveGenes)
@@ -709,31 +709,31 @@ class GeneEditor {
             // the FRAGMENTS and the substrate is derived, so the reaction is chosen the same way either way.
             Pick.Break -> pickSheet(b, "BREAK WHAT?", wide, heightFraction = 0.5f) {
                 val act = d.action
-                row("INTO", 0x7A8699FFL)
+                text("INTO", 0x7A8699FFL)
                 speciesBuilder("brk-a", actionLens(left = true))
                 gap(10f)
-                row("AND", 0x7A8699FFL)
+                text("AND", 0x7A8699FFL)
                 speciesBuilder("brk-b", actionLens(left = false))
                 gap(10f)
-                row("SPLITS", 0x7A8699FFL)
-                row(breakLabel(act), if (act.breakTarget.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
+                text("SPLITS", 0x7A8699FFL)
+                text(breakLabel(act), if (act.breakTarget.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
                 // BreakBond consumes the JOINED substrate from the cytoplasm, so warn on that molecule, not the
                 // two fragments the gene names.
                 supplyWarning(act.breakTarget, fromEnv = false)
             }
             Pick.Bond -> pickSheet(b, "BOND WHAT?", wide, heightFraction = 0.5f) {
                 val s = d.source as? EnergySource.FormBond ?: return@pickSheet
-                row("JOIN", 0x7A8699FFL)
+                text("JOIN", 0x7A8699FFL)
                 speciesBuilder("bond-a", sourceLens(left = true))
                 gap(10f)
-                row("TO", 0x7A8699FFL)
+                text("TO", 0x7A8699FFL)
                 speciesBuilder("bond-b", sourceLens(left = false))
                 gap(10f)
                 // A READOUT, not a control — plain text rather than a chip, because a chip draws a dropdown
                 // chevron and would promise an interaction that doesn't exist. Orange when the pair can't
                 // react, matching how the panel colours a gene that can't fire.
-                row("MAKES", 0x7A8699FFL)
-                row(synthesisLabel(s), if (s.product.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
+                text("MAKES", 0x7A8699FFL)
+                text(synthesisLabel(s), if (s.product.isEmpty()) 0xC8963CFFL else 0x8FCF9FFFL)
                 // Synthesis draws BOTH reactants from the cytoplasm; warn on whichever the cell doesn't hold.
                 supplyWarning(s.a, fromEnv = false)
                 supplyWarning(s.b, fromEnv = false)
@@ -745,7 +745,7 @@ class GeneEditor {
                 val idx = editingIndex ?: return@pickSheet
                 if (confirmingDelete) {
                     // Two-step guard: DELETE only arms the confirm; this second tap actually removes it.
-                    row("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
+                    text("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
                     gap(6f)
                     listRow("DELETE GENE", "REMOVE IT PERMANENTLY") { controller.deleteHeldGene(idx); closePick(); reset() }
                     gap(4f)
@@ -771,9 +771,9 @@ class GeneEditor {
         val typed = groupBuffer.toString()
         val shown = (typed.uppercase().ifEmpty { "" }) + "_"   // trailing cursor, all-caps font
         val body: PanelBuilder.() -> Unit = {
-            row("TYPE A NAME, THEN ENTER.", 0x9A9A9AFFL)
+            text("TYPE A NAME, THEN ENTER.", 0x9A9A9AFFL)
             gap(6f)
-            row(shown, 0xFFFFFFFFL)
+            text(shown, 0xFFFFFFFFL)
             gap(10f)
             listRow("CREATE GROUP", if (typed.isBlank()) "TYPE A NAME FIRST" else "TAG THE GENE '${typed.uppercase()}'") {
                 if (typed.isNotBlank()) confirmGroupName()
@@ -798,9 +798,9 @@ class GeneEditor {
         // colour with no cursor to read as "selected"; once they start typing it's white text + a cursor.
         val shown = if (constantPristine) typed else typed + "_"
         val body: PanelBuilder.() -> Unit = {
-            row("TYPE A NUMBER ($constantMin-$constantMax), THEN ENTER.", 0x9A9A9AFFL)
+            text("TYPE A NUMBER ($constantMin-$constantMax), THEN ENTER.", 0x9A9A9AFFL)
             gap(6f)
-            row(shown, if (constantPristine) 0x66CC66FFL else 0xFFFFFFFFL)
+            text(shown, if (constantPristine) 0x66CC66FFL else 0xFFFFFFFFL)
             gap(10f)
             val parsed = typed.toIntOrNull()
             listRow("SET VALUE", if (parsed == null) "TYPE A NUMBER FIRST" else "USE ${parsed.coerceIn(constantMin, constantMax)}") {
@@ -825,9 +825,9 @@ class GeneEditor {
         val idx = pendingDeleteGene ?: return
         val summary = info.genes.getOrNull(idx)?.desc?.uppercase() ?: "GENE ${idx + 1}"
         val body: PanelBuilder.() -> Unit = {
-            row("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
+            text("THIS CAN'T BE UNDONE.", 0x9A9A9AFFL)
             gap(6f)
-            row(summary, 0xE0E6F0FFL)
+            text(summary, 0xE0E6F0FFL)
             gap(10f)
             listRow("DELETE GENE", "REMOVE IT PERMANENTLY") { controller.deleteHeldGene(idx); pendingDeleteGene = null }
             gap(4f)
@@ -846,7 +846,7 @@ class GeneEditor {
      *  [tryPaste], which routes a name clash to the conflict dialog). */
     private fun renderPastePicker(b: UiBuilder, controller: CytoController, info: CytoController.CellInfo, wide: Boolean) {
         val body: PanelBuilder.() -> Unit = {
-            if (activeSnippets.isEmpty()) row("THE BANK IS EMPTY.", 0x9A9A9AFFL)
+            if (activeSnippets.isEmpty()) text("THE BANK IS EMPTY.", 0x9A9A9AFFL)
             for (snip in activeSnippets) {
                 listRow(snip.name.uppercase(), "${snip.genes.size} GENE(S)") { tryPaste(controller, info, snip) }
                 gap(4f)
@@ -879,7 +879,7 @@ class GeneEditor {
     private fun renderPasteConflictDialog(b: UiBuilder, controller: CytoController, snip: GeneSnippet, wide: Boolean) {
         val name = snip.name
         val body: PanelBuilder.() -> Unit = {
-            row("THIS CELL ALREADY HAS A '${name.uppercase()}' GROUP.", 0x9A9A9AFFL)
+            text("THIS CELL ALREADY HAS A '${name.uppercase()}' GROUP.", 0x9A9A9AFFL)
             gap(10f)
             listRow("REPLACE", "SWAP THE EXISTING '${name.uppercase()}' FOR THE BANKED ONE") {
                 controller.replaceHeldGroup(name, snip.genes); expandedGroups.add(name); pasteConflict = null
@@ -919,15 +919,15 @@ class GeneEditor {
         val op = if (pickSide == 0) cl.lhs else cl.rhs
         fun setOp(newOp: Operand) { draft = withClauseAt(d, ci, if (pickSide == 0) cl.copy(lhs = newOp) else cl.copy(rhs = newOp)) }
         pickSheet(b, if (pickSide == 0) "LEFT SIDE" else "RIGHT SIDE", wide) {
-            row("KIND", 0x7A8699FFL)
+            text("KIND", 0x7A8699FFL)
             operandKindLabels.forEachIndexed { i, label ->
                 listRow(label.uppercase(), operandKindBlurb(i), selected = operandKind(op) == i) { setOp(operandOfKind(i, op)) }
                 gap(4f)
             }
             gap(8f)
             when (op) {
-                is Operand.Constant -> { row("VALUE", 0x7A8699FFL); numberField(op.value, 0, 1_000_000) { setOp(Operand.Constant(it)) } }
-                is Operand.Chem -> { row("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens()) }
+                is Operand.Constant -> { text("VALUE", 0x7A8699FFL); numberField(op.value, 0, 1_000_000) { setOp(Operand.Constant(it)) } }
+                is Operand.Chem -> { text("MOLECULE", 0x7A8699FFL); speciesBuilder("op-chem", clauseSpeciesLens()) }
                 else -> {}
             }
             // Any clause is removable — dropping the last one restores the gene to the unconditional ALWAYS
@@ -1042,8 +1042,8 @@ class GeneEditor {
         // Two short lines rather than one long one: the popover is narrow, and a single sentence clips. Orange
         // (the panel's advisory colour) carries the "heads up" — no leading glyph (the bitmap font has no `!`).
         gap(6f)
-        row("NO ${sp(species)} $where YET.", 0xC8963CFFL)
-        row("THE GENE WON'T ACT UNTIL THERE IS.", 0x9A9A9AFFL)
+        text("NO ${sp(species)} $where YET.", 0xC8963CFFL)
+        text("THE GENE WON'T ACT UNTIL THERE IS.", 0x9A9A9AFFL)
     }
 
     /** The [supplyWarning] appropriate to an action's own operand: the cytoplasm-consuming actions

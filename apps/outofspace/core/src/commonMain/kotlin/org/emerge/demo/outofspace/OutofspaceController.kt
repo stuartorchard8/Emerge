@@ -13,6 +13,7 @@ import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Conduit
 import org.emerge.demo.outofspace.world.Direction
+import org.emerge.demo.outofspace.world.POSITIVE_WEIGHT_LADDER
 import org.emerge.demo.outofspace.world.TICK_LADDER
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
@@ -27,6 +28,8 @@ import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
 import org.emerge.sim.core.ecs.PipelineProfiler
+import kotlin.math.absoluteValue
+import kotlin.math.sign
 
 /**
  * Owns the running world and the boundary between real time and sim time.
@@ -592,12 +595,17 @@ class OutofspaceController(
         }
     }
 
+    fun invertSensorThreshold(tile: TileIndex) {
+        val m = state.machineCovering(tile) as? Sensor ?: return
+        pending.add(Edit.TuneSensor(tile, -m.threshold, m.delay, m.release))
+    }
+
     fun cycleSensorThreshold(tile: TileIndex, delta: Int) {
         val m = state.machineCovering(tile) as? Sensor ?: return
 
-        val at = WEIGHT_LADDER.indexOf(m.threshold).let { if (it < 0) 0 else it }
-        val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
-        pending.add(Edit.TuneSensor(tile, next, m.delay, m.release))
+        val at = POSITIVE_WEIGHT_LADDER.indexOf(m.threshold.absoluteValue).let { if (it < 0) 0 else it }
+        val next = POSITIVE_WEIGHT_LADDER[((at + delta) % POSITIVE_WEIGHT_LADDER.size + POSITIVE_WEIGHT_LADDER.size) % POSITIVE_WEIGHT_LADDER.size]
+        pending.add(Edit.TuneSensor(tile, next*m.threshold.sign, m.delay, m.release))
     }
 
     fun cycleSensorDelay(tile: TileIndex, delta: Int) {

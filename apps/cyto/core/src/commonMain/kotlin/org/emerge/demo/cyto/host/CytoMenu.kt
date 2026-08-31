@@ -172,7 +172,7 @@ class CytoMenu {
         // Which build this is. Dim and out of the way, but present on every host — the phone APK has no
         // other way to say what it was built from.
         ui.panel(Anchor.BottomCenter, rowHeight = 16f, background = 0x00000000) {
-            row(BuildInfo.LABEL, 0x7A8699FFL)
+            text(BuildInfo.LABEL, 0x7A8699FFL)
         }
     }
 
@@ -191,12 +191,12 @@ class CytoMenu {
         drawMap(ui, map, cb)
         ui.panel(Anchor.TopLeft, padding = 14f, background = 0x141C2CF0, rowHeight = 24f) {
             title("Campaign", 0x6FD6C4FFL)
-            if (campaignChapters.isEmpty()) row("No chapters yet.", 0x8B96A8FFL)
+            if (campaignChapters.isEmpty()) text("No chapters yet.", 0x8B96A8FFL)
             else {
                 // Two short lines rather than one long one: `row` clips rather than wraps, and a phone at
                 // 2.6x density fits about 26 characters across the whole screen.
-                row("Where you have been,", 0x8B96A8FFL)
-                row("and where it leads.", 0x8B96A8FFL)
+                text("Where you have been,", 0x8B96A8FFL)
+                text("and where it leads.", 0x8B96A8FFL)
             }
         }
         ui.panel(Anchor.BottomLeft, padding = 14f, background = 0x141C2CF0, rowHeight = 26f) {
@@ -271,7 +271,7 @@ class CytoMenu {
     private fun newGame(ui: UiBuilder, cb: Callbacks) {
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 28f) {
             title("New World", 0x6FD6C4FFL)
-            row("Pick a scenario", 0x8B96A8FFL)
+            text("Pick a scenario", 0x8B96A8FFL)
             gap(8f)
             for (s in CytoScenario.PRESETS) button(s.name, MENU_BTN) { cb.onStart(s) }
             gap(6f)
@@ -290,7 +290,7 @@ class CytoMenu {
             stepper("Night ticks", "$nightTicks") { nightTicks = clampL(nightTicks + it * 10L, 60L, 20000L) }
             stepper("Matter/cell", "$matterLevel") { matterLevel = clamp(matterLevel + it, 1, 100000) }
             gap(6f)
-            row("Founders", 0x8B96A8FFL)
+            text("Founders", 0x8B96A8FFL)
             stepper("Autotrophs", "$collectors") { collectors = clamp(collectors + it, 0, 64) }
             stepper("Heterotrophs", "$muscle") { muscle = clamp(muscle + it, 0, 64) }
             picker(
@@ -309,7 +309,7 @@ class CytoMenu {
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
             title("Load World", 0x6FD6C4FFL)
             gap(6f)
-            if (saves.isEmpty()) row("No saves yet.", 0x8B96A8FFL)
+            if (saves.isEmpty()) text("No saves yet.", 0x8B96A8FFL)
             for (name in saves.take(12)) {
                 if (pendingDelete == name) {
                     actionRow(listOf(
@@ -333,10 +333,10 @@ class CytoMenu {
         val name = currentName()
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
             title("Save World", 0x6FD6C4FFL)
-            row("Type a name (Enter to save):", 0x8B96A8FFL)
+            text("Type a name (Enter to save):", 0x8B96A8FFL)
             gap(4f)
             // The name field: show the buffer + a caret so it reads as an editable field.
-            row("> ${name}_", 0xFFFFFFFFL)
+            text("> ${name}_", 0xFFFFFFFFL)
             gap(10f)
             if (name.isNotBlank()) button("Save", MENU_ACCENT) { cb.onSave(name) }
             button("Back", MENU_QUIT) { enterGame() }
@@ -347,12 +347,12 @@ class CytoMenu {
         val name = currentName()
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 26f) {
             title("Save Genome", 0x6FD6C4FFL)
-            row("Names the current cell's genome as a reusable", 0x8B96A8FFL)
-            row("brush. Same name overwrites.", 0x8B96A8FFL)
+            text("Names the current cell's genome as a reusable", 0x8B96A8FFL)
+            text("brush. Same name overwrites.", 0x8B96A8FFL)
             gap(6f)
             // Swatch preview (the exported cell's BIO colour) + the editable name field.
             button("swatch", pendingGenomeColor) { }
-            row("> ${name}_", 0xFFFFFFFFL)
+            text("> ${name}_", 0xFFFFFFFFL)
             gap(10f)
             if (name.isNotBlank()) button("Save", MENU_ACCENT) { cb.onSaveGenome(name, pendingGenomeColor, pendingGenome) }
             button("Back", MENU_QUIT) { enterGame() }
@@ -363,12 +363,12 @@ class CytoMenu {
         ui.panel(Anchor.Center, padding = 20f, background = 0x141C2CF0, rowHeight = 24f) {
             title("About Cyto", 0x6FD6C4FFL)
             gap(6f)
-            row("A cell-scale evolution sandbox: autotrophs bond", 0xC8C8C8FFL)
-            row("matter under a sweeping daylight band, grow,", 0xC8C8C8FFL)
-            row("divide, and evolve. Drag cells, inspect genomes,", 0xC8C8C8FFL)
-            row("and watch a colony find its carrying capacity.", 0xC8C8C8FFL)
+            text("A cell-scale evolution sandbox: autotrophs bond", 0xC8C8C8FFL)
+            text("matter under a sweeping daylight band, grow,", 0xC8C8C8FFL)
+            text("divide, and evolve. Drag cells, inspect genomes,", 0xC8C8C8FFL)
+            text("and watch a colony find its carrying capacity.", 0xC8C8C8FFL)
             gap(8f)
-            row("Space pause  •  [ ] speed  •  Esc menu", 0x8B96A8FFL)
+            text("Space pause  •  [ ] speed  •  Esc menu", 0x8B96A8FFL)
             gap(8f)
             button("Back", MENU_QUIT) { page = Page.Title }
         }
@@ -380,8 +380,8 @@ class CytoMenu {
             gap(6f)
             // Pointer-only controls (a touch host has no mouse buttons — its camera is two-finger).
             if (hasMouse) {
-                row("CONTROLS", 0x8FA4C8FFL)
-                row("Left-drag empty space pans the camera.", 0xC8C8C8FFL)
+                text("CONTROLS", 0x8FA4C8FFL)
+                text("Left-drag empty space pans the camera.", 0xC8C8C8FFL)
                 gap(4f)
                 val rcc = cb.rightClickCamera()
                 // Left-drag always pans; the right button is an opt-in second camera control. The label shows
@@ -389,10 +389,10 @@ class CytoMenu {
                 button(if (rcc) "Right-click camera: ON" else "Right-click camera: OFF", if (rcc) MENU_ACCENT else MENU_BTN) {
                     cb.onSetRightClickCamera(!rcc)
                 }
-                row(if (rcc) "The RIGHT button also pans/focuses." else "The RIGHT button does nothing (turn on to enable).", 0xC8C8C8FFL)
+                text(if (rcc) "The RIGHT button also pans/focuses." else "The RIGHT button does nothing (turn on to enable).", 0xC8C8C8FFL)
                 gap(8f)
             }
-            row("World tuning lives under New > Custom.", 0x8A8A8AFFL)
+            text("World tuning lives under New > Custom.", 0x8A8A8AFFL)
             gap(8f)
             button("Back", MENU_QUIT) { page = Page.Title }
         }

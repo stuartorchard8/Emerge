@@ -24,8 +24,8 @@ fun UiBuilder.cellInfoPanel(info: CytoController.CellInfo?) {
         keyValue("LIGHT", info.light)
         metabolismTable(info)
         if (info.genes.isNotEmpty()) {
-            gap(); row("GENES (orange = inactive)")
-            for (g in info.genes) row(g.desc, color = if (g.active) 0x88CC88FFL else 0xC8963CFFL)   // active green, inactive orange
+            gap(); text("GENES (orange = inactive)")
+            for (g in info.genes) text(g.desc, color = if (g.active) 0x88CC88FFL else 0xC8963CFFL)   // active green, inactive orange
         }
     }
 }
@@ -34,7 +34,7 @@ fun UiBuilder.cellInfoPanel(info: CytoController.CellInfo?) {
 fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
     if (info.metabolism.isEmpty()) return
     gap()
-    row(METAB_HEADER, color = 0x9A9A9AFFL)
+    text(METAB_HEADER, color = 0x9A9A9AFFL)
     for (r in info.metabolism) {
         // Colour by the net story: any inflow/build → green, else any outflow → orange, else held.
         val color = when {
@@ -42,7 +42,7 @@ fun PanelBuilder.metabolismTable(info: CytoController.CellInfo) {
             r.dirEnvCyt == "<<" || r.dirCytBio == "<<" -> 0xCC8855FFL
             else -> 0xC8C8C8FFL
         }
-        row(metabRow(r, info.aliases), color, key = MetabKeys.row(r.species), spans = columnSpans(r.species))
+        text(metabRow(r, info.aliases), color, key = MetabKeys.row(r.species), spans = columnSpans(r.species))
     }
 }
 

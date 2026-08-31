@@ -7,7 +7,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * [PanelBuilder.row] — the toolkit's one horizontal container — and the two ways it hands out width:
+ * [PanelBuilder.text] — the toolkit's one horizontal container — and the two ways it hands out width:
  * [PanelBuilder.spacer] (take what's left over) and `weight` (share what's left over).
  *
  * The property under test is that **a weight beats the text**. Every widget here could lay itself out

@@ -1,6 +1,5 @@
 package org.emerge.demo.cyto.ui
 
-import org.emerge.demo.cyto.CellColorMode
 import org.emerge.demo.cyto.sim.TouchMode
 import org.emerge.render.torus.ui.ActionButton
 import org.emerge.render.torus.ui.Anchor
@@ -52,7 +51,7 @@ class CytoHud {
                 ActionButton(mid, midColor) { controls.onTogglePause() },
                 ActionButton(">>", 0x3A6EA5FFL, enabled = controls.fastEnabled) { controls.onFaster() },
             ))
-            if (controls.simStatus.isNotEmpty()) row(controls.simStatus, 0x8FA4C8FFL)
+            if (controls.simStatus.isNotEmpty()) text(controls.simStatus, 0x8FA4C8FFL)
         }
     }
 
@@ -113,7 +112,7 @@ class CytoHud {
 
     private fun speedSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
         sheetHost(b, "hud-speed", "SPEED", wide, heightFraction = 0.34f) {
-            if (controls.simStatus.isNotEmpty()) { row(controls.simStatus, 0x8FE39AFFL); gap(6f) }
+            if (controls.simStatus.isNotEmpty()) { text(controls.simStatus, 0x8FE39AFFL); gap(6f) }
             actionRow(listOf(
                 Triple("<<  SLOWER", 0x3A6EA5FFL) { controls.onSlower() },
                 Triple(if (controls.simPaused) "PLAY" else "PAUSE", 0x3A6EA5FFL) { controls.onTogglePause() },
@@ -124,7 +123,7 @@ class CytoHud {
 
     private fun brushSheet(b: UiBuilder, controls: CytoControls, wide: Boolean) {
         sheetHost(b, "hud-brush", "BRUSH", wide, heightFraction = 0.6f) {
-            row("PAINT", 0x7A8699FFL)
+            text("PAINT", 0x7A8699FFL)
             val palette = controls.genomePalette
             if (palette.isNotEmpty()) {
                 palette.forEachIndexed { i, (name, color) ->
@@ -133,10 +132,10 @@ class CytoHud {
                     }
                 }
             } else {
-                row("no genome brushes", 0x707070FFL)
+                text("no genome brushes", 0x707070FFL)
             }
             gap(8f)
-            row("TOUCH MODE", 0x7A8699FFL)
+            text("TOUCH MODE", 0x7A8699FFL)
             for (mode in TouchMode.entries) {
                 listRow(mode.name.uppercase(), selected = mode == controls.touchMode) { controls.setTouchMode(mode) }
             }
@@ -154,12 +153,12 @@ class CytoHud {
             // has always shown; picking one species shows that molecule's distribution alone, in its own
             // pigment and on the SAME density scale — so a layer that reads dim genuinely means "there is
             // little of this here" rather than "this view is scaled differently".
-            row("MATTER", 0x7A8699FFL)
+            text("MATTER", 0x7A8699FFL)
             listRow("ALL SPECIES", selected = controls.matterSpeciesId == CytoControls.ALL_MATTER) {
                 controls.setMatterSpecies(CytoControls.ALL_MATTER)
             }
             val present = controls.onListMatterSpecies()
-            if (present.isEmpty()) row("nothing in the world yet", 0x707070FFL)
+            if (present.isEmpty()) text("nothing in the world yet", 0x707070FFL)
             for ((id, name, total) in present) {
                 listRow("${name.uppercase()}  ${compactAmount(total)}", selected = id == controls.matterSpeciesId) {
                     controls.setMatterSpecies(id)

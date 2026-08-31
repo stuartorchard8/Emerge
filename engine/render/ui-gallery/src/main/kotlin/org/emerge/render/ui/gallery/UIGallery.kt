@@ -53,7 +53,7 @@ object UIGallery {
                 background = 0x10182CF0L,
             ) {
                 title("SCROLL AREA (drag / wheel)")
-                row("40 rows in a 345px viewport", 0x9A9A9AFFL)
+                text("40 rows in a 345px viewport", 0x9A9A9AFFL)
                 gap(6f)
                 for (i in 1..40) {
                     button("Row $i" + if (state.scrollPick == i) "  <" else "", if (state.scrollPick == i) 0x3A6EA5FFL else 0x2A3550FFL) {
@@ -70,10 +70,10 @@ object UIGallery {
 
     private fun PanelBuilder.textWidgets() {
         title("TEXT WIDGETS")
-        row("Standard gray row text")
-        row("This row uses medium gray (0xC8C8C8FF)", 0xC8C8C8FFL)
-        row("Colored row: cyan", 0x00AACCFFL)
-        row("Colored row: amber", 0xEEDD44FFL)
+        text("Standard gray row text")
+        text("This row uses medium gray (0xC8C8C8FF)", 0xC8C8C8FFL)
+        text("Colored row: cyan", 0x00AACCFFL)
+        text("Colored row: amber", 0xEEDD44FFL)
         gap(8f)
         keyValue("Label", "Value")
         keyValue("Font Size", "18px row height")
@@ -136,7 +136,7 @@ object UIGallery {
         gap()
         stepper("Rate", state.rate.toString()) { d -> state.rate = (state.rate + d).coerceIn(0, 100_000) }
         gap()
-        row("Hold +/- to see accelerating repeat")
+        text("Hold +/- to see accelerating repeat")
     }
 
     /** Chips + segmented controls — the progressive-disclosure widgets: a chip shows a value and opens its
@@ -165,7 +165,7 @@ object UIGallery {
 
     private fun PanelBuilder.hoverRows(state: GalleryState) {
         title("HOVER ROWS (desktop reveal)")
-        row("hover a row -> +/X appear", 0x9A9A9AFFL)
+        text("hover a row -> +/X appear", 0x9A9A9AFFL)
         for (i in 1..3) {
             hoverRow(
                 "Clause $i",
@@ -176,9 +176,9 @@ object UIGallery {
             )
         }
         gap(4f)
-        row("+ taps: ${state.hoverPlus}   X taps: ${state.hoverClose}", 0x7A8699FFL)
+        text("+ taps: ${state.hoverPlus}   X taps: ${state.hoverClose}", 0x7A8699FFL)
         gap(8f)
-        row("INLINE DROPDOWN (opens down):", 0x9A9A9AFFL)
+        text("INLINE DROPDOWN (opens down):", 0x9A9A9AFFL)
         dropdown("ACTION", state.ddTop, state.ddOptions, state.ddTopOpen,
             onToggle = { state.ddTopOpen = !state.ddTopOpen },
             onPick = { state.ddTop = state.ddOptions[it]; state.ddTopOpen = false })
@@ -212,7 +212,7 @@ object UIGallery {
 
     private fun PanelBuilder.dropdownFlip(state: GalleryState) {
         title("EDGE-AWARE DROPDOWN")
-        row("near screen bottom -> flips UP:", 0x9A9A9AFFL)
+        text("near screen bottom -> flips UP:", 0x9A9A9AFFL)
         dropdown("ACTION", state.ddBottom, state.ddOptions, state.ddBottomOpen,
             onToggle = { state.ddBottomOpen = !state.ddBottomOpen },
             onPick = { state.ddBottom = state.ddOptions[it]; state.ddBottomOpen = false })
@@ -220,13 +220,13 @@ object UIGallery {
 
     private fun PanelBuilder.gapDemo() {
         title("GAP / SPACING")
-        row("Small gap (6px) below:", 0x9A9A9AFFL)
+        text("Small gap (6px) below:", 0x9A9A9AFFL)
         gap(6f)
-        row("Medium gap (16px) below:", 0x9A9A9AFFL)
+        text("Medium gap (16px) below:", 0x9A9A9AFFL)
         gap(16f)
-        row("Large gap (32px) below:", 0x9A9A9AFFL)
+        text("Large gap (32px) below:", 0x9A9A9AFFL)
         gap(32f)
-        row("(end)", 0x9A9A9AFFL)
+        text("(end)", 0x9A9A9AFFL)
     }
 
     private fun PanelBuilder.statePanel(state: GalleryState, fps: Float) {
@@ -258,13 +258,13 @@ object UIGallery {
 
     private fun PanelBuilder.bottomLeft() {
         title("BOTTOM-LEFT PANEL", 0x2E8B40FFL)
-        row("Anchored BottomLeft")
+        text("Anchored BottomLeft")
         keyValue("window", "${GALLERY_WIDTH}x$GALLERY_HEIGHT")
     }
 
     private fun PanelBuilder.bottomRight(state: GalleryState) {
         title("BOTTOM-RIGHT PANEL", 0xCC3333FFL)
-        row("Anchored BottomRight")
+        text("Anchored BottomRight")
         button("I'm a button", 0x3A6EA5FFL) { state.brBtn++ }
     }
 

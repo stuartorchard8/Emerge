@@ -232,10 +232,10 @@ class OutofspaceHud {
                 // Summing is what destroys the information: a storage can supply a species only if
                 // it holds nothing else, so buildability is a per-tank fact — see [Stockpile].
                 title("STOCKPILE")
-                row("(pure material aboard)", 0x7A8A9AFFL)
+                text("(pure material aboard)", 0x7A8A9AFFL)
                 val held = stock.held
                 if (held.isEmpty) {
-                    row("(no storage holding anything)", 0x9A9A9AFFL)
+                    text("(no storage holding anything)", 0x9A9A9AFFL)
                 } else {
                     keyValue("TOTAL", mass(held.total))
                     val buildable = stock.buildableSpecies
@@ -243,9 +243,9 @@ class OutofspaceHud {
                         // The case worth saying out loud rather than leaving as a blank: a hold full
                         // of ore is not a hold full of building material, and the reason a site is
                         // not being fed is usually this.
-                        row("nothing loose is pure enough to build with", 0xC8A44AFFL)
+                        text("nothing loose is pure enough to build with", 0xC8A44AFFL)
                     } else {
-                        row("loose", 0x7A8A9AFFL)
+                        text("loose", 0x7A8A9AFFL)
                         for (species in buildable.take(STOCKPILE_LINES)) {
                             keyValue(
                                 "  ${species.name}",
@@ -255,7 +255,7 @@ class OutofspaceHud {
                             )
                         }
                         val rest = buildable.size - STOCKPILE_LINES
-                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                        if (rest > 0) text("  and $rest more", 0x7A8A9AFFL)
                     }
                     // ⛔ **Its own list, and never folded into the one above.** Fabric outweighs
                     // anything in a hold, so merged on mass it swamps the panel and ranked below it
@@ -263,7 +263,7 @@ class OutofspaceHud {
                     // none at all until these were split.
                     val inFabric = stock.fabricSpecies
                     if (inFabric.isNotEmpty()) {
-                        row("in fabric · deconstruct to free", 0x7A8A9AFFL)
+                        text("in fabric · deconstruct to free", 0x7A8A9AFFL)
                         for (species in inFabric.take(STOCKPILE_LINES)) {
                             keyValue(
                                 "  ${species.name}",
@@ -273,7 +273,7 @@ class OutofspaceHud {
                             )
                         }
                         val rest = inFabric.size - STOCKPILE_LINES
-                        if (rest > 0) row("  and $rest more", 0x7A8A9AFFL)
+                        if (rest > 0) text("  and $rest more", 0x7A8A9AFFL)
                     }
                 }
             }
@@ -300,12 +300,12 @@ class OutofspaceHud {
                         ) { controller.brush = option }
                     }
                     gap()
-                    row("click or drag to place", 0x9A9A9AFFL)
+                    text("click or drag to place", 0x9A9A9AFFL)
                     // Track: drag to connect (not by touching).
                     if (controller.brush is Brush.Run) {
-                        row("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
+                        text("DRAG to connect · a click alone joins nothing", 0xE8B84AFFL)
                     }
-                    row("R rotate brush", 0x9A9A9AFFL)
+                    text("R rotate brush", 0x9A9A9AFFL)
 
                     // ── What it is to be made of ──────────────────────────────
                     //
@@ -339,8 +339,8 @@ class OutofspaceHud {
                         },
                     )
                     gap()
-                    row("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
-                    row("TOP takes one layer at a time", 0x9A9A9AFFL)
+                    text("click or drag to remove · E cycles layer", 0x9A9A9AFFL)
+                    text("TOP takes one layer at a time", 0x9A9A9AFFL)
                 } else if (controller.tool == Tool.Cut) {
                     title("CUT  ·  ${controller.cutConduit.label}")
                     actionRow(
@@ -352,30 +352,30 @@ class OutofspaceHud {
                         },
                     )
                     gap()
-                    row("drag ALONG a run to sever · E cycles conduit", 0x9A9A9AFFL)
-                    row("cuts the joins you draw · other joins stay", 0xE8B84AFFL)
+                    text("drag ALONG a run to sever · E cycles conduit", 0x9A9A9AFFL)
+                    text("cuts the joins you draw · other joins stay", 0xE8B84AFFL)
                 } else if (controller.tool == Tool.Inject) {
                     title("INJECT  ·  ${Edit.INJECT_MASS}G / TICK")
-                    row("hold over a permeable tile", 0x9A9A9AFFL)
+                    text("hold over a permeable tile", 0x9A9A9AFFL)
                     // Named as debug in the same yellow the engine row uses, because it is the same
                     // kind of lie: it makes matter, and says so in the atmosphere panel.
-                    row("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                    text("debug tool · gas from nowhere, booked as INJECTED", 0xC8A44AFFL)
                 } else if (controller.tool == Tool.InjectWater) {
                     title("WATER  ·  ${Edit.WATER_INJECT_MASS}G / TICK")
-                    row("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
-                    row("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
-                    row("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  room temperature", 0x9A9A9AFFL)
+                    text("hold over a permeable tile · ~1s fills a tile", 0x9A9A9AFFL)
+                    text("debug tool · water from nowhere, booked as INJECTED", 0xC8A44AFFL)
+                    text("arrives at ${Edit.WATER_INJECT_KELVIN}K  ·  room temperature", 0x9A9A9AFFL)
                 } else {
                     title("INSPECT  ·  ${controller.inspectLayer.label}")
-                    row("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
-                    row("machine settings live on the DECK layer", 0x9A9A9AFFL)
+                    text("click a tile to read it  ·  click again for the next layer", 0x9A9A9AFFL)
+                    text("machine settings live on the DECK layer", 0x9A9A9AFFL)
                 }
-                row("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
-                row("space pause", 0x9A9A9AFFL)
+                text("Q tool · WASD or right-drag pan · wheel zoom", 0x9A9A9AFFL)
+                text("space pause", 0x9A9A9AFFL)
                 // Debug engine row (yellow, named).
-                row("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
-                row("F8 fit grid", 0x9A9A9AFFL)
-                if (canSave) row("F9 save · F10 load", 0x9A9A9AFFL)
+                text("arrows fly the ship  (debug engine)", 0xC8A44AFFL)
+                text("F8 fit grid", 0x9A9A9AFFL)
+                if (canSave) text("F9 save · F10 load", 0x9A9A9AFFL)
             }
 
             // ⚠️ **Immediately after the build panel and before anything else**, because it is
@@ -470,7 +470,7 @@ class OutofspaceHud {
                 if (s.reconciledMass != 0L) {
                     keyValue("Written off", mass(s.reconciledMass), 0x9A9A9AFFL, 0xC8A44AFFL)
                 }
-                row(
+                text(
                     if (drift == 0L) "balanced" else "LEAK ${mass(drift)}",
                     if (drift == 0L) 0x6ED09AFFL else 0xE05A4AFFL,
                 )
@@ -482,7 +482,7 @@ class OutofspaceHud {
                 // "injected 0g" on every world that never touched it is a row nobody reads.
                 if (s.injectedAirMass != 0L) keyValue("Injected", mass(s.injectedAirMass))
                 val airBalanced = s.airBalance == 0L
-                row(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
+                text(if (airBalanced) "balanced" else "LEAK", if (airBalanced) 0x6ED09AFFL else 0xE05A4AFFL)
                 gap()
                 title("ENERGY")
                 keyValue("Generated", energy(s.generatedEnergy))
@@ -497,14 +497,14 @@ class OutofspaceHud {
                 // on is one nobody looks at again. The readouts above stay: they are still the
                 // numbers, it is only the verdict on them that is suspended. Mass balance, which
                 // survives the rescale, keeps its lamp and is the tripwire that matters.
-                row("(energy ledgers parked  ·  unit rescale step 3)", 0x8A8A8AFFL)
+                text("(energy ledgers parked  ·  unit rescale step 3)", 0x8A8A8AFFL)
                 gap()
                 // One row per circuit the player has actually laid, rather than six fixed colours
                 // most of which read zero. An empty list here means no wire aboard, which is the
                 // honest thing to say.
                 title("SIGNALS")
                 if (s.signals.networkCount == 0) {
-                    row("(no wire laid)", 0x5A5A5AFFL)
+                    text("(no wire laid)", 0x5A5A5AFFL)
                 } else {
                     for (id in 0 until s.signals.networkCount) {
                         val value = s.signals.ofNetwork(id)
@@ -547,8 +547,8 @@ class OutofspaceHud {
     private fun UiBuilder.menuSheet(controller: OutofspaceController) {
         val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
             if (canSave) {
-                if (saveStatus.isNotEmpty()) row(saveStatus, 0x9AA4B4FFL)
-                if (clipboardStatus.isNotEmpty()) row(clipboardStatus, 0x9AA4B4FFL)
+                if (saveStatus.isNotEmpty()) text(saveStatus, 0x9AA4B4FFL)
+                if (clipboardStatus.isNotEmpty()) text(clipboardStatus, 0x9AA4B4FFL)
                 actionRow(
                     listOf(
                         Triple("SAVE  ·  F9", 0x2E5A6BFFL) { onSave() },
@@ -603,9 +603,9 @@ class OutofspaceHud {
         val body: org.emerge.render.torus.ui.PanelBuilder.() -> Unit = {
             if (saveMode) {
                 title("Save World", 0x6FD6C4FFL)
-                row("Type a name (Enter to save):", 0x8B96A8FFL)
+                text("Type a name (Enter to save):", 0x8B96A8FFL)
                 gap(4f)
-                row("> ${name}_", 0xFFFFFFFFL)
+                text("> ${name}_", 0xFFFFFFFFL)
                 gap(10f)
                 if (name.isNotBlank()) {
                     button("Save", 0x2E6E5EFFL) {
@@ -617,7 +617,7 @@ class OutofspaceHud {
                 title("Load World", 0x6FD6C4FFL)
                 gap(4f)
                 if (availableSaves.isEmpty()) {
-                    row("No saves yet.", 0x8B96A8FFL)
+                    text("No saves yet.", 0x8B96A8FFL)
                 } else {
                     for (s in availableSaves.take(12)) {
                         if (pendingDelete == s) {
@@ -733,10 +733,10 @@ class OutofspaceHud {
                 if (held.isEmpty()) {
                     // ⚠️ Two short rows rather than one long one: the single row was half again the
                     // width of everything else here and set the panel's size on its own.
-                    row("WASD moves  ·  QE turns", 0x9A9A9AFFL)
-                    row("arrows / Z / X also drive buttons", 0x9A9A9AFFL)
+                    text("WASD moves  ·  QE turns", 0x9A9A9AFFL)
+                    text("arrows / Z / X also drive buttons", 0x9A9A9AFFL)
                 } else {
-                    row("holding: ${held.joinToString(" ") { it.label }}", 0x6EE08AFFL)
+                    text("holding: ${held.joinToString(" ") { it.label }}", 0x6EE08AFFL)
                 }
             }
         }
@@ -890,14 +890,15 @@ class OutofspaceHud {
         // reference then hangs above it. See [wikiPanel].
         panel(Anchor.BottomRight, rowHeight = 20f) {
             title("INSPECT  ·  (${grid.xOf(tile)}, ${grid.yOf(tile)})")
-            placeRow(s, tile)
+            gap()
             // The tabs are the cycle made visible. A player who never notices that clicking again
             // steps the layer can still reach every one of them by name, and a player who does can
             // see how many are left.
+            val deckLabel = s.machineCovering(tile)?.kind?.label ?: InspectLayer.Deck.label
             actionRow(
                 layers.map { option ->
                     Triple(
-                        if (option == layer) "> ${option.label}" else option.label,
+                        if (option == InspectLayer.Deck) deckLabel else option.label,
                         if (option == layer) 0x3A6EA5FFL else 0x232A38FFL,
                     ) { controller.inspect(tile, option) }
                 },
@@ -914,22 +915,6 @@ class OutofspaceHud {
         return lastPanelRect
     }
 
-    /** Where this tile is, in the one sense every layer shares: inside, outside, hull or machine. */
-    private fun PanelBuilder.placeRow(s: VesselState, tile: TileIndex) {
-        val structure = s.structure[tile.index]
-        keyValue(
-            "PLACE",
-            when (structure) {
-                Structure.Vacuum -> "OUTSIDE"
-                Structure.Hull -> "HULL"
-                Structure.Interior -> "INSIDE"
-                Structure.Machine -> "MACHINE"
-            },
-            0x9A9A9AFFL,
-            if (structure == Structure.Vacuum) 0x7A8AA0FFL else 0x9ED0B0FFL,
-        )
-    }
-
     /**
      * The building on this tile: what it is made of, what it is holding, and every dial it has.
      *
@@ -942,20 +927,20 @@ class OutofspaceHud {
     private fun PanelBuilder.deckLayer(controller: OutofspaceController, tile: TileIndex) {
         val s = controller.state
         val grid = s.grid
-        val machine = s.machineCovering(tile) ?: run { row("(bare deck)", 0x9A9A9AFFL); return }
+        val machine = s.machineCovering(tile) ?: run { text("(bare deck)", 0x9A9A9AFFL); return }
         val anchor = s.occupancy[tile]
         val parts = machine.tiles(grid)
 
-        title("${machine.kind.label}  ·  (${grid.xOf(anchor)}, ${grid.yOf(anchor)})")
-
-        // Built-ness first, because an unfinished machine explains every other number below it: a
-        // ghost is short of its bill, holds the wrong things, and does nothing at all.
+        val deconstructing = anchor in s.scrapping
         val built = s.deck.builtPermille(machine)
-        if (built < 1000) {
-            keyValue("BUILT", "${built / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
+        if (deconstructing || built < 1000) {
+            row {
+                if (deconstructing) text("DECONSTRUCTING", 0xE05A4AFFL)
+                else text("UNDER CONSTRUCTION", 0x9A9A9AFFL)
+                text("(${built / 10}%)", 0xE0A93AFFL)
+            }
         }
-        if (anchor in s.scrapping) row("marked for deconstruction", 0xE05A4AFFL)
-
+        gap()
         var casing = Mixture.EMPTY
         var energy = 0L
         var capacity = 0L
@@ -964,24 +949,27 @@ class OutofspaceHud {
             energy += s.deck.stuff.energyAt(part)
             capacity += s.deck.stuff.heatCapacityAt(part)
         }
-        keyValue("CASING", mass(casing.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
-        compositionRows(controller, casing)
+        val dominantCasing = casing.dominant
+        if (dominantCasing != null) {
+            text("MADE FROM", 0x9A9A9AFFL)
+            row {
+                text(mass(casing.total), 0xFFFFFFFFL)
+                speciesRow(controller, dominantCasing)
+            }
+        }
+        gap()
         if (capacity > 0L) {
+            text("TEMPERATURE", 0x9A9A9AFFL)
             val k = (energy / capacity).toInt()
-            keyValue(
-                "TEMP",
+            text(
                 "${k}K  (${k - 273}C)",
-                0x9A9A9AFFL,
                 if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        keyValue("TILES", "${parts.size}", 0x9A9A9AFFL, 0x9AA4B4FFL)
 
         val buffers = contentsBreakdown(machine, anchor, grid, s.buffers)
-        section("contents", "CONTENTS", open = true) {
-            if (buffers.isEmpty()) {
-                row("(holding nothing)", 0x9A9A9AFFL)
-            } else {
+        if (buffers.isNotEmpty()) {
+            section("contents", "CONTENTS", open = true) {
                 for ((label, resource) in buffers) {
                     keyValue(label, mass(resource.total))
                     compositionRows(controller, resource)
@@ -1004,7 +992,7 @@ class OutofspaceHud {
         // Wiring is the one section that starts shut. Every machine has some, most machines never
         // need theirs touched, and it is the longest of the three — so it is the section that would
         // otherwise push the numbers people came for off the bottom of the panel.
-        section("wiring", "WIRING", open = false) { wiringControls(controller, anchor, machine) }
+        section("wiring", "WIRING", open = true) { wiringControls(controller, anchor, machine) }
     }
 
     /**
@@ -1032,28 +1020,39 @@ class OutofspaceHud {
     /** One fitting of one conduit layer: the metal, and whatever it is carrying. */
     private fun PanelBuilder.conduitLayer(controller: OutofspaceController, tile: TileIndex, conduit: Conduit) {
         val s = controller.state
-        val segment = s.conduits.at(conduit, tile) ?: run { row("(nothing here)", 0x9A9A9AFFL); return }
+        val segment = s.conduits.at(conduit, tile) ?: run { text("(nothing here)", 0x9A9A9AFFL); return }
 
-        title(conduit.label)
-        if (s.conduits.isGhost(conduit, tile)) {
-            keyValue("BUILT", "${s.conduits.builtPermille(conduit, tile) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
+        val deconstructing = segment.deconstructing
+        val built = s.conduits.builtPermille(conduit, tile)
+        if (deconstructing || built < 1000) {
+            row {
+                if (deconstructing) text("DECONSTRUCTING", 0xE05A4AFFL)
+                else text("UNDER CONSTRUCTION", 0x9A9A9AFFL)
+                text("(${built / 10}%)", 0xE0A93AFFL)
+            }
         }
-        if (segment.deconstructing) row("marked for deconstruction", 0xE05A4AFFL)
-
-        val metal = s.conduits.tracks[conduit].mixtureAt(tile)
-        keyValue("FITTING", mass(metal.total), 0x9A9A9AFFL, 0xFFFFFFFFL)
-        compositionRows(controller, metal)
+        gap()
+        val casing = s.conduits.tracks[conduit].mixtureAt(tile)
+        val dominantCasing = casing.dominant
+        if (dominantCasing != null) {
+            row {
+                text("MADE FROM ", 0x9A9A9AFFL)
+                spacer()
+                text(mass(casing.total), 0xFFFFFFFFL)
+                speciesRow(controller, dominantCasing)
+            }
+        }
+        gap()
         val capacity = s.conduits.heatCapacityAt(conduit, tile)
         if (capacity > 0L) {
             val k = (s.conduits.energyAt(conduit, tile) / capacity).toInt()
             keyValue(
-                "TEMP",
+                "TEMPERATURE",
                 "${k}K  (${k - 273}C)",
                 0x9A9A9AFFL,
                 if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
             )
         }
-        keyValue("JOINED", joins(segment), 0x9A9A9AFFL, 0x9AA4B4FFL)
 
         // What the layer is *for*. Each conduit carries a different kind of thing, and only rail and
         // pipe carry anything at all yet — a wire carries a number and power carries nothing, and
@@ -1062,14 +1061,12 @@ class OutofspaceHud {
         when (conduit) {
             Conduit.Rail -> {
                 val riding = s.rail.resourceAt(tile)
-                if (riding == null) {
-                    row("(nothing riding it)", 0x9A9A9AFFL)
-                } else {
+                if (riding != null) {
                     keyValue("CARRYING", mass(riding.total))
                     compositionRows(controller, riding)
                     val k = s.rail.stuff.kelvinAt(tile)
                     keyValue(
-                        "LUMP TEMP",
+                        "TEMPERATURE",
                         "${k}K  (${k - 273}C)",
                         0x9A9A9AFFL,
                         if (k > Temperature.AMBIENT_KELVIN + 60) 0xE0864AFFL else 0x9AC0E0FFL,
@@ -1079,24 +1076,24 @@ class OutofspaceHud {
             Conduit.Pipe -> {
                 val inside = s.pipeAir.mixtureAt(tile)
                 if (inside.isEmpty) {
-                    row("(empty)", 0x9A9A9AFFL)
+                    text("(empty)", 0x9A9A9AFFL)
                 } else {
                     keyValue("INSIDE", mass(inside.total))
                     compositionRows(controller, inside, maxEntries = 5)
                     val k = s.pipeAir.kelvinAt(tile)
-                    keyValue("FLUID TEMP", "${k}K  (${k - 273}C)", 0x9A9A9AFFL, 0x9AC0E0FFL)
+                    keyValue("FLUID TEMPERATURE", "${k}K  (${k - 273}C)", 0x9A9A9AFFL, 0x9AC0E0FFL)
                 }
             }
             Conduit.Signal -> {
                 val network = s.networks[tile]
                 if (network < 0) {
-                    row("(not part of a circuit)", 0x9A9A9AFFL)
+                    text("(not part of a circuit)", 0x9A9A9AFFL)
                 } else {
                     val value = s.signals.ofNetwork(network)
                     keyValue("CIRCUIT $network", "${value / 10}%", 0x9A9A9AFFL, if (value > 0) 0x6EE08AFFL else 0x5A5A5AFFL)
                 }
             }
-            Conduit.Power -> row("carries nothing yet", 0x9A9A9AFFL)
+            Conduit.Power -> text("carries nothing yet", 0x9A9A9AFFL)
         }
     }
 
@@ -1120,6 +1117,8 @@ class OutofspaceHud {
         val s = controller.state
         val density = s.air.densityAt(tile)
         val percent = s.pressurePercentAt(tile)
+        // Straight into the details - this gap separates them from the layer selector
+        gap()
         keyValue(
             "PRESSURE",
             "$percent% atm",
@@ -1131,7 +1130,7 @@ class OutofspaceHud {
             },
         )
         if (Negligible.gas(density)) {
-            row("   VACUUM", 0x7A8A9AFFL)
+            text("   VACUUM", 0x7A8A9AFFL)
             return
         }
         keyValue("DENSITY", "${density * 100 / Stuff.AMBIENT_AIR.total}% atm", 0x9A9A9AFFL, 0x9AA4B4FFL)
@@ -1177,9 +1176,9 @@ class OutofspaceHud {
         for (species in named) {
             val percent = mixture[species] * 100 / total
             listed += percent
-            speciesRow(controller, "${(if (percent < 1) "<1" else percent.toString()).padStart(3)}% ${species.name.uppercase()}", species)
+            speciesRow(controller, species, "${(if (percent < 1) "<1" else percent.toString()).padStart(4)}%")
         }
-        if (present.size > maxEntries) row(" ${(100L - listed).toString().padStart(3)}% other", 0x9AA4B4FFL)
+        if (present.size > maxEntries) text("${(if (listed > 99) "<1" else (100L - listed).toString()).padStart(4)}% other", 0x9AA4B4FFL)
     }
 
     /** Air direction as 8-point compass (+y is down). */
@@ -1241,8 +1240,8 @@ class OutofspaceHud {
         scrollArea("material-head", x, top, width, infoHeight, rowHeight = rowH, background = 0x000000C0L) {
             title("MATERIAL  ·  ${chosen?.name?.uppercase() ?: "NONE PICKED"}")
             if (chosen == null) {
-                row("pick one below", 0xE05A4AFFL)
-                row("nothing places until you do", 0x9A9A9AFFL)
+                text("pick one below", 0xE05A4AFFL)
+                text("nothing places until you do", 0x9A9A9AFFL)
             } else {
                 materialFacts(chosen)
                 // ⚠️ **The way into the article, and it is a button rather than the name being
@@ -1262,7 +1261,7 @@ class OutofspaceHud {
         val offer = stock.buildableSpecies
         scrollArea("material-list", x, listTop, width, height, rowHeight = rowH, background = 0x000000C0L) {
             title("LOOSE ABOARD")
-            if (offer.isEmpty()) row("nothing the network can deliver", 0xC8A44AFFL)
+            if (offer.isEmpty()) text("nothing the network can deliver", 0xC8A44AFFL)
             for (species in offer) materialChoice(controller, species, mass(stock.buildable(species)))
             // ⚠️ A section of its own, below the hold and never merged into it — the allowance is a
             // property of the mode rather than something aboard. See [Stockpile.CREATIVE_MATERIALS].
@@ -1271,7 +1270,7 @@ class OutofspaceHud {
                 if (free.isNotEmpty()) {
                     gap()
                     title("CREATIVE")
-                    row("always available", 0x7A7A7AFFL)
+                    text("always available", 0x7A7A7AFFL)
                     for (species in free) materialChoice(controller, species, "")
                 }
             }
@@ -1344,8 +1343,12 @@ class OutofspaceHud {
         return "${milli / 1_000}.${(milli % 1_000) / 100} W/m/K"
     }
 
-    private fun PanelBuilder.speciesRow(controller: OutofspaceController, label: String, species: Species) =
-        button(label, 0x1E2634FFL) { controller.openWiki(species) }
+    private fun PanelBuilder.speciesRow(controller: OutofspaceController, species: Species, prefix: String? = null, suffix: String? = null) =
+        row {
+            if (prefix != null) text(prefix)
+            button(species.name.uppercase(), 0x1E2634FFL) { controller.openWiki(species) }
+            if (suffix != null) text(suffix)
+        }
 
     /**
      * The reference: one species, what it is made of, and every reaction it is either end of.
@@ -1416,7 +1419,7 @@ class OutofspaceHud {
             materialFacts(species)
             // Said only where it is true. "Solid only" on a hundred and forty-five rocks is a line
             // that teaches nobody anything; "can be a gas" on the twenty that can is the fact.
-            if (species.fluid != null) row("can be a gas", 0x9AC0E0FFL)
+            if (species.fluid != null) text("can be a gas", 0x9AC0E0FFL)
         }
 
         // ── The body: as long as the chemistry makes it, and no longer ────────────────────────
@@ -1440,21 +1443,22 @@ class OutofspaceHud {
         val bodyTop = scrollAreaAbove(
             "wiki", x, bottom, width, maxBody, rowHeight = rowH, background = 0x0B0E14FFL,
         ) {
+            abundanceSection(species)
+
             val parts = compositionOf(species)
             if (parts.isNotEmpty()) {
-                section("wiki-made-of", "MADE OF", open = true) {
+                section("wiki-made-of", "COMPOSITION", open = true) {
                     for (part in parts) {
                         val percent = part.partsPerThousand / 10
                         speciesRow(
                             controller,
-                            "${percent.toString().padStart(3)}% ${part.element.name.uppercase()}  x${part.atoms}",
                             part.element,
+                            "${percent.toString().padStart(3)}%",
+                            "x${part.atoms}",
                         )
                     }
                 }
             }
-
-            abundanceSection(species)
 
             reactionSection(controller, "wiki-uses", "TAKES PART IN", reactionsConsuming(species))
             reactionSection(controller, "wiki-from", "MADE BY", reactionsProducing(species))
@@ -1480,20 +1484,20 @@ class OutofspaceHud {
      * rank is what says whether that number is ordinary or remarkable.
      */
     private fun PanelBuilder.abundanceSection(species: Species) {
-        section("wiki-abundance", "FOUND IN ROCK", open = true) {
-            if (!species.occursNaturally) {
-                row("never loose in rock", 0xE0A93AFFL)
-                row("it has to be made", 0x9A9A9AFFL)
-                return@section
+        if (!species.occursNaturally) {
+            text("never loose in rock", 0xE0A93AFFL)
+            text("it has to be made", 0x9A9A9AFFL)
+        } else {
+            section("wiki-abundance", "FOUND IN ROCK", open = true) {
+                keyValue("SHARE", abundanceOf(species), 0x9A9A9AFFL, 0x9ED0B0FFL)
+                keyValue(
+                    "RANK",
+                    "${abundanceRank(species)} of ${Species.NATURAL.size}",
+                    0x9A9A9AFFL,
+                    0x9AA4B4FFL,
+                )
+                text("by mass, of a reference rock", 0x7A7A7AFFL)
             }
-            keyValue("SHARE", abundanceOf(species), 0x9A9A9AFFL, 0x9ED0B0FFL)
-            keyValue(
-                "RANK",
-                "${abundanceRank(species)} of ${Species.NATURAL.size}",
-                0x9A9A9AFFL,
-                0x9AA4B4FFL,
-            )
-            row("by mass, of a reference rock", 0x7A7A7AFFL)
         }
     }
 
@@ -1665,7 +1669,7 @@ class OutofspaceHud {
         }
         // ⚠️ No semicolon: the bitmap font has no glyph for one and draws "?" instead. The
         // interpunct is already used in every panel title, so it is known to exist.
-        row("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
+        text("tap a dial to raise it  ·  wraps around", 0x7A7A7AFFL)
     }
 
     /**
@@ -1688,7 +1692,7 @@ class OutofspaceHud {
         when (machine.control) {
             ThrusterControl.Flight -> {
                 keyValue("PUSHES", machine.thrust.name.uppercase(), 0x9A9A9AFFL, 0x9ED0B0FFL)
-                row("WSAD moves  ·  QE turns  ·  press F to fly", 0x9A9A9AFFL)
+                text("WSAD moves  ·  QE turns  ·  press F to fly", 0x9A9A9AFFL)
                 // What the motor makes of the stick right now, which is the readout that turns a
                 // badly placed engine from a mystery into something a player can see is idle.
                 // Read off the machine and never recomputed here — see [Thruster.firing]. On a
@@ -1697,7 +1701,7 @@ class OutofspaceHud {
                 // direction.
                 keyValue("FIRING", "${machine.firing.coerceAtLeast(0) / 10}%", 0x9A9A9AFFL, 0xE0A93AFFL)
             }
-            ThrusterControl.Wire -> row("driven by its WIRING, below", 0x9A9A9AFFL)
+            ThrusterControl.Wire -> text("driven by its WIRING, below", 0x9A9A9AFFL)
         }
     }
 
@@ -1718,53 +1722,59 @@ class OutofspaceHud {
                 onCmp = { controller.cycleInputKey(tile, 1) },
                 onRhs = { controller.cycleInputKey(tile, 1) },
             )
-            row("held in FLIGHT mode  ·  press F to switch", 0x9A9A9AFFL)
+            text("held in FLIGHT mode  ·  press F to switch", 0x9A9A9AFFL)
         }
 
         if (machine is Sensor) {
             val watched = grid.neighbour(tile, machine.facing)
-            keyValue(
-                "EMITS",
-                if (wired) "${controller.state.signals.at(tile) / 10}% on circuit ${controller.state.networks[tile]}"
-                else "(no wire under it)",
-                0x9A9A9AFFL,
-                if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
-            )
+            val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
+            text("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
             row {
-                row(
-                    "WHEN",
+                text(
+                    "ON WHEN ",
                     0x9A9A9AFFL,
                 )
-                button("${if(machine.threshold > 0) ">" else "<"} ${machine.threshold.absoluteValue/10}%", 0x2E5A6BFFL) {
+                button(if(machine.threshold > 0) ">" else "<", 0x2E5A6BFFL) {
+                    controller.invertSensorThreshold(tile)
+                }
+                button("${machine.threshold.absoluteValue/10}%", 0x2E5A6BFFL) {
                     controller.cycleSensorThreshold(tile, 1)
                 }
-            }
-            row {
-                row(
-                    "DELAY",
+                text(
+                    " FOR ",
                     0x9A9A9AFFL,
                 )
                 val delaying = machine.delayedFor < machine.delay && machine.delayedFor > 0
-                val label = if (delaying) "${machine.delayedFor}/${machine.delay}" else "${machine.delay}"
+                val delayedForSeconds = machine.delayedFor * controller.cfg.secondsPerTick
+                val delaySeconds = machine.delay * controller.cfg.secondsPerTick
+                val label = if (delaying) "$delayedForSeconds/$delaySeconds" else "$delaySeconds"
                 val color = if (delaying) 0xE0A93AFFL else 0x6EE08AFFL
                 button(label, color) {
                     controller.cycleSensorDelay(tile, 1)
                 }
+                text(
+                    " SECONDS",
+                    0x9A9A9AFFL,
+                )
             }
             row {
-                row(
-                    "RELEASE",
+                text(
+                    "OFF WHEN ${if(machine.threshold > 0) "<" else ">"} ${machine.threshold.absoluteValue/10}% FOR",
                     0x9A9A9AFFL,
                 )
                 val releasing = machine.releasedFor < machine.release && machine.releasedFor > 0
-                val label = if (releasing) "${machine.releasedFor}/${machine.release}" else "${machine.release}"
+                val releasedForSeconds = machine.releasedFor * controller.cfg.secondsPerTick
+                val releaseSeconds = machine.release * controller.cfg.secondsPerTick
+                val label = if (releasing) "$releasedForSeconds/$releaseSeconds" else "$releaseSeconds"
                 val color = if (releasing) 0xE0A93AFFL else 0x6EE08AFFL
                 button(label, color) {
                     controller.cycleSensorRelease(tile, 1)
                 }
+                text(
+                    " SECONDS",
+                    0x9A9A9AFFL,
+                )
             }
-            val target = if (watched != TileIndex.NONE) controller.state.machineCovering(watched) else null
-            row("watching: ${target?.kind?.label ?: "(nothing)"}", 0x9A9A9AFFL)
         }
 
         if (machine is Gauge) {
@@ -1776,7 +1786,7 @@ class OutofspaceHud {
                 if (wired) 0x6EE08AFFL else 0xE0A93AFFL,
             )
             if (machine.lastDominant == null) {
-                row("nothing has passed through yet", 0x9A9A9AFFL)
+                text("nothing has passed through yet", 0x9A9A9AFFL)
             } else {
                 keyValue(
                     "LAST SAW",
@@ -1793,7 +1803,7 @@ class OutofspaceHud {
         keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
 
         if (triggers.isEmpty()) {
-            row("(never runs  ·  no terms)", 0xE05A4AFFL)
+            text("(never runs  ·  no terms)", 0xE05A4AFFL)
         } else {
             for ((slot, trigger) in triggers.withIndex()) {
                 clauseRow(
@@ -1809,8 +1819,8 @@ class OutofspaceHud {
         button("+ ADD TERM", 0x2E5A6BFFL) {
             controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
         }
-        row("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
-        row(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0  ·  no wire under this tile", 0x7A7A7AFFL)
+        text("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
+        text(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0  ·  no wire under this tile", 0x7A7A7AFFL)
     }
 
     private fun org.emerge.render.torus.ui.PanelBuilder.controlRowOfTools(controller: OutofspaceController) {

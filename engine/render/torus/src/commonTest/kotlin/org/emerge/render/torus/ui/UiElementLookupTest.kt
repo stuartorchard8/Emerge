@@ -145,7 +145,7 @@ class UiElementLookupTest {
         val ui = Ui().apply { setResolution(400f, 300f) }
         ui.frame {
             panel(Anchor.TopLeft) {
-                row("METABOLISM")
+                text("METABOLISM")
                 keyValue("LIGHT", "4200")
                 button("+ NEW GENE", 0x336633FFL) {}
             }
@@ -166,8 +166,8 @@ class UiElementLookupTest {
         val ui = Ui().apply { setResolution(400f, 300f) }
         ui.frame {
             panel(Anchor.TopLeft) {
-                row("TAP THE CHEMISTRY SECTION TO VIEW THE READOUTS.")
-                row("CHEMISTRY")
+                text("TAP THE CHEMISTRY SECTION TO VIEW THE READOUTS.")
+                text("CHEMISTRY")
             }
         }
         val hit = assertNotNull(ui.element("CHEMISTRY"))
@@ -182,7 +182,7 @@ class UiElementLookupTest {
         val ui = Ui().apply { setResolution(400f, 300f) }
         ui.frame {
             panel(Anchor.TopLeft) {
-                row("DIVIDE")
+                text("DIVIDE")
                 button("DIVIDE", 0x336633FFL) {}
             }
         }
@@ -273,7 +273,7 @@ class UiElementLookupTest {
             val text = "BLUGRAM".padEnd(9) + "498".padStart(5) + " == " + cyt.padStart(5) + " == " + "0".padStart(5)
             ui.frame {
                 panel(Anchor.TopLeft) {
-                    row(
+                    text(
                         text, key = "metab:bg",
                         spans = listOf(
                             PanelBuilder.TextSpan("metab:bg:env", 9, 14),

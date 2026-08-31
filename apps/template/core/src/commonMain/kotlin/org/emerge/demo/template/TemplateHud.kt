@@ -38,8 +38,8 @@ class TemplateHud {
                 button("SPAWN 50", 0x2E8B40FFL) { onSpawnBurst() }
                 button("CLEAR", 0xCC3333FFL) { onClear() }
                 gap()
-                row("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
-                row("Click empty space to spawn", 0x9A9A9AFFL)
+                text("Drag to pan, wheel to zoom", 0x9A9A9AFFL)
+                text("Click empty space to spawn", 0x9A9A9AFFL)
             }
         }
     }

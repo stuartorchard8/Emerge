@@ -1483,16 +1483,16 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      * rather than the whole row is the difference between "look here" and "look somewhere on this line".
      * Character offsets only make sense against the monospace renderer, which is what panels use.
      */
-    fun row(text: String, color: Long = 0xC8C8C8FFL, key: String? = null, spans: List<TextSpan> = emptyList()) =
+    fun text(text: String, color: Long = 0xC8C8C8FFL, key: String? = null, spans: List<TextSpan> = emptyList()) =
         items.add(TextItem(text, color, rowHeight, key, spans))
 
-    /** A named character range `[from, to)` within a [row]'s text. */
+    /** A named character range `[from, to)` within a [text]'s text. */
     class TextSpan(val key: String, val from: Int, val to: Int)
     fun keyValue(key: String, value: String, keyColor: Long = 0x9A9A9AFFL, valueColor: Long = 0xFFFFFFFFL) =
         items.add(KeyValueItem(key, value, keyColor, valueColor, rowHeight))
     /**
      * A button. [widthEm] pins its width to that many multiples of the text height instead of letting it
-     * size to its label — what a *deliberately narrow* control in a [row] needs, so that the items
+     * size to its label — what a *deliberately narrow* control in a [text] needs, so that the items
      * sharing the row with it don't lose room every time its text grows a character.
      */
     fun button(
@@ -1623,7 +1623,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         // 2px rather than the row's usual half-character: segments touching is what makes a set of
         // them read as one control instead of as loose buttons.
         row(gapPx = 2f) {
-            if (label.isNotEmpty()) row(label, 0x9A9A9AFFL)
+            if (label.isNotEmpty()) text(label, 0x9A9A9AFFL)
             spacer(minEm = 1f)
             for ((i, opt) in options.withIndex()) segment(opt, options, i == selected) { onSelect(i) }
         }
@@ -1673,7 +1673,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
         val height: Float
 
         /**
-         * How much of a [row]'s **leftover** width this item claims, `0` meaning "just my natural width".
+         * How much of a [text]'s **leftover** width this item claims, `0` meaning "just my natural width".
          *
          * ⚠️ A weight *replaces* the natural width rather than adding to it: two weight-1 chips come out
          * the same size whatever their text, which is the whole point of [clauseRow] — an operand that
