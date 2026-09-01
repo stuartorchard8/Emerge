@@ -59,25 +59,35 @@ enforce; it does need saying out loud in the class doc.
 Ordered so the case that can invalidate the shape comes first. Steps 1 and 2 are the design; 3–6 are
 consequences.
 
-### 1. `MassDistribution.comX/comY` in `Flight.PER_TILE` units
+### 1. ✅ The centre of mass as a position — `5780a572`, `30799ff8`
 
-Prerequisite, and independently green. The COM becomes load-bearing for the world transform, where
-today it only feeds torque, so millitiles (1e6× coarser than a coordinate) stop being obviously
-enough.
+Done, in two commits, and the shape changed on contact with the code.
 
-Cheap, because `massDistribution` accumulates `momentX` in **tile** units and only the output scale
-is millitiles — `scaledRatio(momentX, mass, MILLI_TILE)` becomes `…, Flight.PER_TILE)`. The
-accumulator is untouched, so no new overflow: the 2e17 bound the comment states still holds.
+**It is an addition, not a unit change.** `MassDistribution.comX` anchors the whole rotational
+system — `torqueAbout`, every `tileCentre(…) − com` lever arm, three gyration passes, `Composite`'s
+parallel-axis term — and that system genuinely wants millitiles: `Rotation`'s note says radii are
+millitiles, `torqueAbout` divides by `MILLI_TILE`, and `gyrationSq`'s scale only coincides with
+`GYRATION_SCALE` because a millitile² *is* a micro-tile². Those are radii. What the grid needs is a
+**position**. So the distribution carries both: `comMilliX` the arm, `comX` the position.
 
-⛔ **The gyration pass still wants millitiles.** `rx = tileCentre(…) − comX` is squared, and `rx²` at
-PER_TILE is 1e18 before it is summed. That pass converts down locally. Same for `Composite` (whose
-`d²` term relies on millitile² being micro-tile²) and `Contact`'s arms.
+**The margin was measured, not assumed.** On the starter vessel — 96.3 t, a 100 kg packet — one
+packet moving one tile shifts the centre by **1.04 millitiles**. A full packet-tile move is one unit
+at radius resolution and everything finer is zero, so a grid hung off it would snap in whole
+0.001-tile steps. At the position scale the same move is 1 038 521 units. That settles the question
+the Open section raised: millitiles would *not* have been enough.
 
-Consumers to convert: `Composite`, `Contact.kt:559`, `Weld.kt:101`, `Diffusion.kt:329`,
-`FlightControls.kt:145`, `OutofspaceRenderer.kt:186`.
+**Split so the compiler did the finding.** Both quantities are `Long`, so a site taking the wrong one
+is silently wrong rather than red. `5780a572` renames `comX` → `comMilliX` and nothing else — 82
+sites, every one visited because the build refused otherwise. `30799ff8` adds `comX` back as the
+position, which nothing reads until step 2, so nothing could break.
 
-**Gate:** whole existing suite. This step is a pure refactor — no behaviour change intended, so
-anything that moves is a transcription error.
+⚠️ **The two are carried, not derived from one another.** Collapsing them moves every torque arm by
+up to a millitile. That is a change to argue on `MomentumLedger`'s evidence — do it in step 3, where
+the integrator is already under the microscope, not before. `RotationTest` pins them to one point
+meanwhile.
+
+`Rotation.PER_MILLI_TILE` now states the position/radius conversion once; `RigidBody.COM_SCALE` and
+`Composite.PER_MILLI_TILE` were already two copies of it.
 
 ### 2. `Pose` carries the COM, and the weld with it
 
@@ -145,11 +155,12 @@ Both fail today. Neither should be able to fail again.
 
 ## Open
 
-- **Whether millitile COM would have been enough.** `rotScale`'s note says contacts resolve in
-  millitiles, so the grid offset may not need PER_TILE at all — step 1 might be unnecessary. It is
-  cheap and it removes the question, but it is worth measuring rather than assuming, because the
-  concern is not the magnitude but whether a *per-tick changing* quantisation shimmers where a static
-  one would not.
+- ~~**Whether millitile COM would have been enough.**~~ **Closed, measured:** no. One packet moving
+  one tile is 1.04 millitiles on the starter vessel, so the radius scale resolves a full packet-tile
+  move to a single unit and everything smaller to nothing. See step 1.
+- **When to collapse `comMilliX` into `comX`.** Deferred out of step 1 on purpose — it moves every
+  torque arm by up to a millitile and wants the ledger's evidence. Step 3 is where that evidence is
+  already being read.
 - **`atmosphereDistribution` takes the vessel's COM as its pivot** and is deliberately a second body.
   Nothing here changes that, but it reads `about.comX` and so inherits step 1's unit change.
 - **Debris and `PLAN_rigid_debris.md`** — a body that splits gets two COMs from one, which is a
