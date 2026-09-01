@@ -92,7 +92,18 @@ fun materialBefore(conduit: Conduit): Species = when (conduit) {
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 21
+    const val VERSION = 22
+
+    /**
+     * The first version that can carry a [org.emerge.demo.outofspace.world.BodyKind.STATION].
+     *
+     * ⚠️ **The bump is a record, not a guard.** A `station` line is a new line type, so an older
+     * build handed a v22 file skips it and loads a world with no trading posts in it — a save that
+     * opens successfully and is missing the thing the player was doing. Nothing refuses a
+     * newer-than-known file today (the reader has no upper-version check at all), so this number is
+     * what a person diagnosing that would read, and not something that prevents it.
+     */
+    const val STATION_VERSION = 22
 
     /**
      * The first version whose thrusters have a bell — see [ThrusterMigration].
@@ -176,7 +187,12 @@ object Save {
         // Body momentum AND position both in the world frame since v15 — see [Pose]. Shape as a
         // 0/1 run for hand-editing.
         for (b in state.bodies) {
-            out.append("body ").append(b.width).append(' ').append(b.height)
+            // ⛔ **A station is written as its own line type**, sharing the first twelve fields with a
+            // body and adding three of its own. Widening `body` would have put an economy on every
+            // rock in the file; a second tag keeps a rock's line exactly what it has always been, and
+            // an older build refuses a v22 file outright rather than loading it minus its stations.
+            out.append(if (b.kind == BodyKind.STATION) "station " else "body ")
+                .append(b.width).append(' ').append(b.height)
                 .append(' ').append(b.positionX).append(' ').append(b.positionY)
                 .append(' ').append(b.impulseX).append(' ').append(b.impulseY)
                 .append(' ').append(writeTileEnergy(b.energy))
@@ -187,6 +203,15 @@ object Save {
             // it had — a v15 save loads into this build unchanged and simply arrives unturned, which
             // is what it meant.
             out.append(' ').append(b.ang.raw).append(' ').append(b.angImpulse)
+            b.station?.let { st ->
+                // Fill is written only here because only a station has ever needed it back: a rock is
+                // solid through, and a fragment — the other kind that carries one — is never
+                // constructed. ⚠️ Both mixtures are masses and go through the scale; the ore's energy
+                // is not written because a station has none. See [Station.ore].
+                out.append(' ').append(b.fillPermille)
+                    .append(' ').append(writeMixture(st.ore))
+                    .append(' ').append(writeMixture(st.market.holdings()))
+            }
             out.append("   # ").append(b.filled).append(" cells, ").append(b.mass).append("g\n")
         }
 
@@ -999,6 +1024,35 @@ object Save {
                 "reconciled" -> reconciled = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable reconciled mass"))
                 "captured" -> {} // consumed, ignored — legacy field
                 "baselinebody", "baselinerock" -> {} // consumed, ignored — legacy field
+                // Twelve fields shared with `body`, then fill, the mixed reserve and the shelves.
+                "station" -> {
+                    val w = tokens[1].toIntOrNull() ?: fail("unreadable station width")
+                    val h = tokens[2].toIntOrNull() ?: fail("unreadable station height")
+                    val bits = tokens.getOrNull(9) ?: fail("a station needs a shape")
+                    if (bits.length != w * h) fail("a ${w}x$h station has ${bits.length} cells")
+                    bodies.add(
+                        RigidBody(
+                            kind = BodyKind.STATION,
+                            width = w, height = h,
+                            cells = BooleanArray(bits.length) { bits[it] == '1' },
+                            positionX = long(3), positionY = long(4),
+                            impulseX = scaled(5), impulseY = scaled(6),
+                            energy = bodyEnergy(tokens[7], bits.count { it == '1' }, energyScale, ::fail),
+                            // ⚠️ NOT scaled — proportions, like a rock's. See the `body` branch.
+                            oreComposition = readMixture(tokens[8], Rescale.NONE, ::fail),
+                            ang = Coord(tokens.getOrNull(10)?.toIntOrNull() ?: 0),
+                            angImpulse = if (tokens.size > 11) scaled(11) else 0L,
+                            fillPermille = tokens.getOrNull(12)?.toIntOrNull() ?: 1_000,
+                            station = Station(
+                                // ⚠️ These two ARE scaled: they are masses, not proportions.
+                                ore = readMixture(tokens.getOrNull(13) ?: "-", scale, ::fail),
+                                market = Market.holding(
+                                    readMixture(tokens.getOrNull(14) ?: "-", scale, ::fail),
+                                ),
+                            ),
+                        ),
+                    )
+                }
                 "body", "rock" -> {
                     val w = tokens[1].toIntOrNull() ?: fail("unreadable body width")
                     val h = tokens[2].toIntOrNull() ?: fail("unreadable body height")

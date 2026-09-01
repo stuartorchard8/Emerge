@@ -14,6 +14,53 @@ enum class BodyKind {
     ROCK,
     /** A machine casing torn loose by dismantling. */
     FRAGMENT,
+
+    /**
+     * Somebody else's vessel: a trading post, permanent, with an economy of its own.
+     *
+     * ⛔ **A body and not a second kind of world.** `PLAN_economy.md` §1 — a station needs a shape to
+     * collide with, a pose that persists, and a stockpile; a `RigidBody` already gives the first two,
+     * and the third hangs off it as [RigidBody.station]. Nothing here brings the vessel/rigid-body
+     * unification forward, and it must not: see `PLAN_rigid_bodies.md` step 6, which is a project of
+     * its own.
+     */
+    STATION,
+}
+
+/**
+ * What a [BodyKind.STATION] body trades with — `PLAN_economy.md` §6.
+ *
+ * ⛔ **A station has no thermal model, deliberately.** Matter sold to one leaves the vessel's ledgers
+ * through `exportedMass`/`exportedEnergy` and is then outside every ledger in the game. Half-modelling
+ * its heat — an ore reserve that warms while a stock pile does not — would be worse than not modelling
+ * it: the boundary would be somewhere inside the station rather than at its door. So the door is the
+ * boundary, and everything past it is mass.
+ */
+class Station(
+    ore: Mixture,
+    /** The pure shelves, and the prices they imply. */
+    val market: Market,
+) {
+    /**
+     * What has been bought from passing ships and not yet separated — the mixed reserve.
+     *
+     * Held apart from the [market]'s shelves because **prices are quoted against pure stock**, and
+     * that is what makes purification mean something: a station glutted with ore it has not worked
+     * through is still paying well for the metals in it.
+     *
+     * ⛔ **Energy is stripped here, so "no thermal model" is true rather than aspirational.** A
+     * `Mixture` carries heat and a station's shelves do not, so a reserve that kept its energy would
+     * put the boundary of the thermal model somewhere *inside* the station: ore would warm and cool
+     * while the pure pile it turns into could not. The boundary is the door.
+     */
+    val ore: Mixture = if (ore.energy == 0L) ore else Mixture.of(ore.masses, 0L)
+
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is Station && ore == other.ore && market.holdings() == other.market.holdings())
+
+    override fun hashCode(): Int = ore.hashCode() * 31 + market.holdings().hashCode()
+
+    override fun toString(): String = "Station(ore ${ore.total}g, stock ${market.holdings().total}g)"
 }
 
 /**
@@ -94,6 +141,13 @@ class RigidBody(
      */
     val fillPermille: Int = 1_000,
     /**
+     * Its economy, for a [BodyKind.STATION], and null for everything else.
+     *
+     * The same shape [oreComposition] and [machineKind] already are: a payload that only one kind
+     * carries, hanging off the one class that knows where the thing *is*.
+     */
+    val station: Station? = null,
+    /**
      * Thermal energy, **per filled cell**, in the energy unit [org.emerge.demo.outofspace.num.Budget]
      * states — indexed by a cell's ordinal among the filled ones, not by its position in [cells].
      *
@@ -116,6 +170,10 @@ class RigidBody(
         require(oreComposition != null) { "a $kind body must say what it is made of" }
         require(kind == BodyKind.FRAGMENT || machineKind == null) {
             "a $kind body cannot have come off a ${machineKind?.label}"
+        }
+        // A station is defined by having somebody to trade with; a rock is defined by not having one.
+        require((kind == BodyKind.STATION) == (station != null)) {
+            "a $kind body ${if (station == null) "has no" else "has an"} economy"
         }
     }
 
@@ -266,6 +324,10 @@ class RigidBody(
         // field that is not listed silently reverts to its default on every copy — which for a
         // fragment would mean it filled a whole tile the first time anything touched it.
         fillPermille: Int = this.fillPermille,
+        // ⚠️ The trap the comment above names, and this is the field it was waiting for: `driftBodies`
+        // copies every body every tick, so a station left off this list would lose its entire economy
+        // on the first tick it moved — silently, and only in a running world.
+        station: Station? = this.station,
         energy: TileEnergy = this.energy,
     ): RigidBody = RigidBody(
         kind = kind, width = width, height = height, cells = cells,
@@ -273,6 +335,7 @@ class RigidBody(
         impulseX = impulseX, impulseY = impulseY,
         ang = ang, angImpulse = angImpulse,
         oreComposition = oreComposition, machineKind = machineKind, fillPermille = fillPermille,
+        station = station,
         energy = energy,
     )
 
@@ -284,7 +347,7 @@ class RigidBody(
             impulseX == other.impulseX && impulseY == other.impulseY &&
             ang == other.ang && angImpulse == other.angImpulse &&
             oreComposition == other.oreComposition && machineKind == other.machineKind &&
-            fillPermille == other.fillPermille && energy == other.energy)
+            fillPermille == other.fillPermille && station == other.station && energy == other.energy)
 
     override fun hashCode(): Int = (kind.ordinal * 31 + (positionX * 31 + positionY).toInt()) * 31 + cells.contentHashCode()
 
@@ -318,6 +381,61 @@ class RigidBody(
          * A disc rather than a square, because the first thing anyone will do is look at it, and a
          * square body reads as a crate. Rasterised on the cell centres so it is symmetric.
          */
+        /**
+         * A station: a **hollow rectangular shell**, [width] by [height] cells, [thickness] deep.
+         *
+         * ⛔ **Hollow is a performance requirement before it is an aesthetic one, and it is exact.**
+         * `collectBodyContacts` is O(cells × cells), culled only by a whole-body bound-radius test —
+         * so a *solid* 100×100 station is 10,000 cells with a ~70-tile radius that culls nothing in
+         * its own neighbourhood, and every rock nearby pays 10,000 pair tests a substep. The
+         * perimeter is ~400: **twenty-five times cheaper**, and it is also what a station *is*, which
+         * is why this is not a trick. `cellDistribution` walks the mask and skips empties, so the
+         * centre of mass, the radius of gyration and [boundRadius] all come out right for a ring with
+         * no code anywhere else knowing it is one.
+         *
+         * ⛔ `CellShape.Box` would not have helped: the cost is per cell whichever shape a cell is.
+         * The coarse decomposition that *would* — a dozen boxes for the whole station — needs a body
+         * whose collider set is decoupled from its cell mask, which does not exist. See
+         * `PLAN_economy.md` §6.
+         */
+        fun stationShell(
+            width: Int,
+            height: Int,
+            positionX: Long,
+            positionY: Long,
+            composition: Mixture,
+            station: Station,
+            thickness: Int = 1,
+            fillPermille: Int = 1_000,
+            kelvin: Int = Temperature.AMBIENT_KELVIN,
+        ): RigidBody {
+            require(width > 2 * thickness && height > 2 * thickness) {
+                "a ${width}x$height shell $thickness deep has no inside"
+            }
+            val cells = BooleanArray(width * height)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    cells[y * width + x] =
+                        x < thickness || y < thickness ||
+                            x >= width - thickness || y >= height - thickness
+                }
+            }
+            val filled = cells.count { it }
+            return RigidBody(
+                kind = BodyKind.STATION,
+                width = width, height = height, cells = cells,
+                positionX = positionX, positionY = positionY,
+                impulseX = 0L, impulseY = 0L,
+                oreComposition = composition,
+                fillPermille = fillPermille,
+                station = station,
+                energy = TileEnergy.uniform(
+                    filled,
+                    capacityPerTileOf(composition) * fillPermille / 1_000 * kelvin,
+                ),
+            )
+        }
+
         fun rockBlob(
             radius: Int,
             positionX: Long,

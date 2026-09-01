@@ -98,6 +98,15 @@ class Market private constructor(private val stock: LongArray) {
         return scaledRatio(mass, Prices.PRICE_UNIT_MASS, askFor(species, mass))
     }
 
+    /**
+     * Everything on the shelves, as one mixture.
+     *
+     * ⚠️ **Mass only — the energy is zero and means it.** A station has no thermal model; see
+     * [org.emerge.demo.outofspace.world.Station]. This is for the save and for readouts, and it must
+     * not be handed to anything that would read the energy as a temperature.
+     */
+    fun holdings(): Mixture = Mixture.of(stock, 0L)
+
     /** True when the trader is actually holding enough of [species] to sell you [mass] of it. */
     fun canSupply(species: Species, mass: Long): Boolean = mass in 0L..stock[species.ordinal]
 
@@ -184,6 +193,13 @@ class Market private constructor(private val stock: LongArray) {
 
         /** A trader with empty shelves, quoting list for everything. */
         fun empty(): Market = Market(LongArray(Species.COUNT))
+
+        /** A trader holding exactly the mass in [mixture]. The inverse of [holdings]. */
+        fun holding(mixture: Mixture): Market {
+            val stock = LongArray(Species.COUNT)
+            for (species in Species.ALL) stock[species.ordinal] = mixture[species]
+            return Market(stock)
+        }
 
         /** A trader holding exactly what it is given. */
         fun of(vararg holdings: Pair<Species, Long>): Market {

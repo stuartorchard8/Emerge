@@ -132,6 +132,14 @@ object RockSpawner {
     /** Size of each chunk in tiles. */
     const val CHUNK_SIZE: Int = 64
 
+    /**
+     * How much empty space a station keeps around its hull before a rock may spawn there, in tiles.
+     *
+     * Half a chunk. Enough that a station is approachable — a berth walled in by boulders is a berth
+     * nobody can use — without carving a hole in the asteroid field big enough to notice.
+     */
+    const val STATION_CLEARANCE_TILES: Long = 32L
+
     /** How many ticks to wait before the spawner activates (preserves initial rock field). */
     const val ACTIVATE_AFTER_TICK: Int = 4
 
@@ -203,7 +211,11 @@ object RockSpawner {
             val bodyChunkY = chunkIndexOf(bodyTileY)
             val dx = abs(bodyChunkX)
             val dy = abs(bodyChunkY)
-            if (dx <= WINDOW_RADIUS && dy <= WINDOW_RADIUS) {
+            // ⛔ **A station is permanent and is never despawned.** Everything else here is scenery
+            // the window may forget; a station is a place the player is expected to come *back* to,
+            // and one that evaporated because they flew eleven chunks away would take their money,
+            // their standing orders and their reason to return with it.
+            if (body.kind == BodyKind.STATION || (dx <= WINDOW_RADIUS && dy <= WINDOW_RADIUS)) {
                 result.add(body)
             }
         }
@@ -655,10 +667,14 @@ object RockSpawner {
         val maxY = (tileY + halfSpan) * Flight.PER_TILE
 
         for (body in bodies) {
-            val bodyMinX = body.localX(pose)
-            val bodyMinY = body.localY(pose)
-            val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE
-            val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE
+            // A station keeps a clear approach around itself — Stu's exclusion zone. Every other body
+            // asks only for the space it occupies, so this is zero for rocks and the loop is
+            // unchanged for them.
+            val clear = if (body.kind == BodyKind.STATION) STATION_CLEARANCE_TILES * Flight.PER_TILE else 0L
+            val bodyMinX = body.localX(pose) - clear
+            val bodyMinY = body.localY(pose) - clear
+            val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE + 2 * clear
+            val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE + 2 * clear
 
             if (minX < bodyMaxX && maxX > bodyMinX && minY < bodyMaxY && maxY > bodyMinY) {
                 return true

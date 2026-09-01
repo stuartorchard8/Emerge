@@ -62,6 +62,9 @@ import org.emerge.demo.outofspace.world.machine.BuyOrder
 import org.emerge.demo.outofspace.world.machine.DockingPort
 import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
+import org.emerge.demo.outofspace.world.BodyKind
+import org.emerge.demo.outofspace.world.Station
+import org.emerge.demo.outofspace.world.worked
 import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.Motion
 import org.emerge.demo.outofspace.world.MotionLog
@@ -852,9 +855,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             vesselTileX = vesselTileX,
             vesselTileY = vesselTileY,
         )
+        // ── Stations mind their own business ────────────────────────────────
+        //
+        // Separating a kilogram of ore and cracking a kilogram of a compound, per station, per tick
+        // — `PLAN_economy.md` §6.1. Not gated on a period: the rate IS per tick, and a period would
+        // make it a rate about the schedule instead. Frozen ticks do nothing, like everything else.
+        //
+        // ⚠️ **Outside every ledger in the game.** A station's stockpile is not the vessel's matter
+        // and never was; the only place the two meet is the docking port, where `exportedMass` and
+        // `importedMass` book the crossing.
+        val bodiesAtWork =
+            if (frozen || bodiesToDrift.none { it.kind == BodyKind.STATION }) bodiesToDrift
+            else bodiesToDrift.map { body ->
+                val station = body.station ?: return@map body
+                body.copy(station = station.worked())
+            }
         // Replace w.bodies contents (driftBodies mutates by reference via the list).
         w.bodies.clear()
-        w.bodies.addAll(bodiesToDrift)
+        w.bodies.addAll(bodiesAtWork)
 
         // Bodies fly here because this is where the ship's own motion is known.
         // A body is stated entirely in the *world* now — position and momentum both — so drifting
