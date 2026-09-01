@@ -272,4 +272,89 @@ class SignalWiringTest {
             "the circuit should come back carrying what it carried",
         )
     }
+
+    // ── A stopped clock ───────────────────────────────────────────────────────
+
+    /** The same run of wire, with a slow sensor on the end of it and nothing to throttle. */
+    private fun delayRig(delay: Int, release: Int = 0): VesselState {
+        val deck = DeckArray(grid)
+        deck += fixtureStorage(grid.tile(13, 5), Direction.Right)
+        deck += Sensor(
+            grid.tile(sensorAt.first, sensorAt.second), Direction.Down,
+            threshold = 0, delay = delay, release = release,
+        )
+
+        val wires = arrayOfNulls<Segment>(grid.size)
+        signalRow(wires, extractorAt.first, sensorAt.first, 3)
+
+        return VesselState(
+            grid,
+            deck,
+            conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
+            buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
+        ).stocked(grid.tile(13, 5), Mixture.of(Species.Iron to Storage.CAP, energy = 0))
+    }
+
+    private fun sensor(s: VesselState): Sensor =
+        s.deck[grid.tile(sensorAt.first, sensorAt.second)] as Sensor
+
+    private fun paused(state: VesselState, ticks: Int): VesselState {
+        var s = state
+        repeat(ticks) { s = OutofspaceReducer.freeze(cfg, s, emptyMap()) }
+        return s
+    }
+
+    /**
+     * ⛔ **A delay is a wait the player has to sit through**, so a stopped game must not serve any
+     * of it. The signal pass runs on frozen ticks on purpose — what the wires carry is a derivation,
+     * not time passing, and skipping it would slam every airlock shut for as long as the game was
+     * stopped — but the sensor's two counters *are* time passing and were being advanced inside it.
+     * A sensor with a minute on its dial used to come off pause already fired.
+     */
+    @Test
+    fun `a paused game serves none of a sensor's delay`() {
+        val started = run(delayRig(delay = 8), 3)
+        assertEquals(3, sensor(started).delayedFor, "three live ticks should be three ticks served")
+        assertEquals(
+            0, started.signals.at(grid.tile(sensorAt.first, sensorAt.second)),
+            "still counting down: the sensor should not be driving the run yet",
+        )
+
+        val stopped = paused(started, 30)
+        assertEquals(3, sensor(stopped).delayedFor, "thirty stopped ticks are no wait at all")
+        assertEquals(
+            0, stopped.signals.at(grid.tile(sensorAt.first, sensorAt.second)),
+            "a paused sensor should not fire itself",
+        )
+
+        // And the wait resumes where it left off rather than restarting: five more live ticks fill
+        // the dial, and the sixth — the first tick that finds it no longer counting — fires.
+        val resumed = run(stopped, 6)
+        assertEquals(8, sensor(resumed).delayedFor)
+        assertEquals(
+            SignalField.FULL, resumed.signals.at(grid.tile(sensorAt.first, sensorAt.second)),
+            "the wait was served in full and only once, so it should be on",
+        )
+    }
+
+    /** The other dial, which holds a signal up after the reading has gone away. */
+    @Test
+    fun `a paused game serves none of a sensor's release`() {
+        // Fires immediately, then holds for ten ticks once the tank is emptied.
+        val on = run(delayRig(delay = 0, release = 10), 2)
+        assertEquals(
+            SignalField.FULL, on.signals.at(grid.tile(sensorAt.first, sensorAt.second)),
+            "a full tank with no delay should be driving the run",
+        )
+
+        val emptied = run(on.stocked(grid.tile(13, 5), null), 3)
+        assertEquals(3, sensor(emptied).releasedFor, "three live ticks of the hold")
+
+        val stopped = paused(emptied, 30)
+        assertEquals(3, sensor(stopped).releasedFor, "thirty stopped ticks are no hold at all")
+        assertEquals(
+            SignalField.FULL, stopped.signals.at(grid.tile(sensorAt.first, sensorAt.second)),
+            "a paused sensor should not release itself either",
+        )
+    }
 }

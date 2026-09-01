@@ -245,12 +245,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * ⚠️ Frozen ticks shift where the staggered subsystems sit in their periods, because they are
      * counted like any other. Harmless: the offsets are arbitrary and only have to miss each other.
      *
-     * ⚠️ **The derivations still run** — signals, networks, openness, structure. They are not time
-     * passing, they are what the world *is*, and skipping them would slam every airlock shut for as
-     * long as the game was stopped (`openness` defaults to all-shut, a path that is dead today only
-     * because [MACHINE_PERIOD] is one). They cost about a tenth of a tick, which a stopped game can
-     * well afford; if that ever stops being true it is an optimisation with a measurement behind it,
-     * not a correctness question.
+     * ⛔ **The signal pass does not run either** — signals, networks, openness, structure are all
+     * carried from the previous tick. It used to run, on the grounds that a derivation is not time
+     * passing; it is not purely one, because a sensor's `delay` and `release` counters are advanced
+     * inside it, so a stopped game served the player's waits for them and airlocks opened and shut
+     * on their own for as long as it was paused. Carrying costs nothing and cannot drift: both maps
+     * live on the state. See the note at the pass itself for what an edit made while stopped does.
      */
     fun freeze(
         cfg: OutofspaceConfig,
@@ -295,19 +295,24 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // unread a few lines later on every tick there has ever been, because [MACHINE_PERIOD] is
         // one and the pass that recomputes it therefore always runs. Measured at 10% of the tick.
         var structure: StructureMap
-        // ⚠️ **Deliberately not told about `frozen`**, unlike every other schedule here. What sits
-        // under this flag is a *derivation* — what the wires carry, which doors are open, what the
-        // structure therefore is — and a derivation is not time passing. A frozen tick that skipped
-        // it would recompute `structure` against an all-shut `openness` and slam every airlock for
-        // as long as the game was stopped. The machine *pass* below is the part that is time
-        // passing, and that one is gated on [runMachines].
-        val machineTick = shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET, frozen = false)
-        val runMachines = machineTick && !frozen
+        // ⛔ **A stopped game derives nothing either.** This used to be told `frozen = false` on
+        // the grounds that a derivation is not time passing — but the pass is not purely a
+        // derivation: a sensor's delay and release counters are advanced inside it, so running it
+        // while stopped served the player's waits for them, and made airlocks open and shut on their
+        // own for as long as the game was paused. Both maps this produces are *stored* —
+        // [VesselState.signals] and [VesselState.structure] — so a skipped tick simply carries them
+        // and the doors stay exactly as the player left them. The all-shut `openness` the old note
+        // feared was only ever reachable because `structure` was re-derived below rather than carried.
+        //
+        // ⚠️ **An edit made while stopped does not reach the wires until play resumes.** Cutting a
+        // wire or laying one changes nothing until the next live tick, which then re-derives from the
+        // edited deck. One tick of lag on a paused build, against a paused world that actually holds
+        // still.
+        val machineTick = shouldRun(state.tick, MACHINE_PERIOD, MACHINE_OFFSET, frozen)
         if (machineTick) {
             // Signals derived from network + machine fullness + player keys. Only
             // machines read signals, so we compute them here alongside structure.
             networks = SignalNetworks.derive(w.grid, w.conduitsSnapshot())
-            w.networks = networks
             nextSignals = SignalField.build(networks) { raise ->
                 // The transmitters are deck machines, so this walks the deck. ⚠️ It used to walk
                 // `machines`, and a reified lookup that resolves the wrong hierarchy answers *null*
@@ -331,6 +336,10 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                                 val requirementsMet = reading*sign > m.threshold
                                 val delaying = m.delayedFor < m.delay
                                 val releasing = m.releasedFor < m.release
+                                // ⚠️ **These two counters are time passing**, and they are why
+                                // this whole pass is gated on [machineTick] rather than run on
+                                // every tick: a delay counted down while the game is stopped is a
+                                // delay the player never waited for.
                                 if (requirementsMet) {
                                     if (delaying && !releasing) {
                                         w.deck[tile] = m.copy(
@@ -382,12 +391,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Signals before structure: an airlock is a wall whose solidity is a signal.
             // Edits this tick are already applied in w, so sensors/gauges still see them.
             openness = airlockOpenness(w.deck, state.signals) ?: IntArray(w.grid.size)
+            structure = StructureMap.derive(w.grid, w.deck, openness)
+        } else {
+            // Carried rather than recomputed — see the note on [machineTick]. `openness` is still
+            // worked out, from the carried signals, so that the one thing below which may re-derive
+            // the map (`solidityChanged`) cannot do it against a set of doors nothing ever consulted.
+            networks = state.networks
+            nextSignals = state.signals
+            openness = airlockOpenness(w.deck, state.signals) ?: IntArray(w.grid.size)
+            structure = state.structure
         }
-        // The one derivation, off whatever the openness turned out to be: the pass's answer on a
-        // machine tick, and all-shut on a tick that skipped it, which is what the pass would leave
-        // behind anyway with nothing to open a lock.
-        structure = StructureMap.derive(w.grid, w.deck, openness)
-        if (runMachines) {
+        w.networks = networks
+        if (machineTick) {
             // The stick, plus whatever the autopilot is leaning on it with. Taken once for the
             // whole pass so that every motor is answering the same request — see [Sas]. It sits
             // below the structure now only because the structure had to move up; nothing here reads
