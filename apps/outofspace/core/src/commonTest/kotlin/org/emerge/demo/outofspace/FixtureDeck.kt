@@ -8,6 +8,10 @@ import org.emerge.demo.outofspace.world.Segment
 import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.demo.outofspace.world.machine.DeckMachine
 import org.emerge.demo.outofspace.world.machine.DeckMachineKind
+import org.emerge.demo.outofspace.world.machine.Sensor
+import org.emerge.demo.outofspace.world.machine.Storage
+import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.conduitBillOfMaterials
 import org.emerge.demo.outofspace.world.conductanceOf
 import org.emerge.demo.outofspace.world.fillPermille
@@ -115,3 +119,52 @@ fun fixtureConductance(conduit: Conduit): Long =
 val FORMER_MATERIALS: List<Species> = listOf(
     Species.Steel, Species.Iron, Species.Copper, Species.Titanium, Species.Firebrick,
 )
+
+/*
+ * ── Machines whose settings the fixtures have no opinion about ────────────────
+ *
+ * The same bargain as `plusAssign`, one level down. A [Storage] and a [Sensor] each grew a dial the
+ * player is meant to turn, and neither has a default, for the good reason that the two places the
+ * game builds one disagree: a warehouse the player drops is born tending itself, and a warehouse the
+ * starter vessel lays down is not. That is a choice about play, and it should be made where a
+ * warehouse is placed rather than hidden in the constructor.
+ *
+ * Two hundred fixtures are not making that choice. They were written before the dials existed and
+ * they mean the machine they were written against, so they say so here, once — **historical, never
+ * normative**, exactly as the material table above is.
+ *
+ * ⚠️ A test that is *about* a dial sets it and does not come through here.
+ */
+
+/**
+ * A warehouse that minds only what it is told to — what `Storage(tile, facing)` used to be.
+ *
+ * Auto-lock and auto-unlock both off, because before they existed a warehouse never locked itself
+ * onto a species nor let one go: it took what it was sent and held what it was given, and every
+ * fixture that watches material reach a tank was measured against that. [org.emerge.demo.outofspace.world.starterVessel] makes the
+ * same choice for the same reason.
+ */
+fun fixtureStorage(
+    center: TileIndex,
+    facing: Direction,
+    filter: SpeciesFilter? = null,
+): Storage = Storage(center, facing, filter = filter, autoLock = false, autoUnlock = false)
+
+/**
+ * A sensor with the dials wide open — as near as there is to what `Sensor(tile, facing)` used to be.
+ *
+ * ⚠️ **There is no value here that restores the old behaviour, because the old behaviour is gone.**
+ * A sensor used to put the reading itself on the wire, so a half-full tank drove a half-strength
+ * signal; it now compares that reading against [Sensor.threshold] and raises [SignalField.FULL] or
+ * nothing. Analogue became binary, and no threshold makes a wire carry 500 again.
+ *
+ * So this states the *most permissive* tuning rather than an equivalent one: `threshold = 0` fires
+ * on any reading above nothing at all, and no delay or release means it answers the same tick it
+ * senses. That is what the wiring fixtures want — they fill a tank and ask whether the machine
+ * downstream noticed — and it is the tuning [org.emerge.demo.outofspace.world.starterVessel] gives its own demo sensor. A fixture
+ * that asserts on the *strength* of a signal is asserting about the sensor that was replaced.
+ */
+fun fixtureSensor(
+    center: TileIndex,
+    facing: Direction,
+): Sensor = Sensor(center, facing, threshold = 0, delay = 0, release = 0)

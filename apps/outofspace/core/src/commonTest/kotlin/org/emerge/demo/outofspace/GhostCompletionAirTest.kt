@@ -37,7 +37,7 @@ class GhostCompletionAirTest {
         val deck = DeckArray(grid)
         for (x in 0..<grid.width) { deck += Hull(grid.tile(x, 0)); deck += Hull(grid.tile(x, grid.height - 1)) }
         for (y in 1..<grid.height - 1) { deck += Hull(grid.tile(0, y)); deck += Hull(grid.tile(grid.width - 1, y)) }
-        deck += Storage(grid.tile(3, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 4), Direction.Right)
         deck.standGhost(Hull(at))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, grid.xOf(at), 4)

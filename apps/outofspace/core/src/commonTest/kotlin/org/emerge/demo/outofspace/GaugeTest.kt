@@ -52,8 +52,8 @@ class GaugeTest {
         val grid = Grid(14, 6)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Storage(grid.tile(3, 2), Direction.Right)
-        deck += Storage(grid.tile(10, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(10, 2), Direction.Right)
         joinRow(grid, rails, 4, 9, 2)
         // The gauge is a building standing over the run now, not a flag on it — two acts.
         deck += Gauge(grid.tile(gaugeTileX, 2))
@@ -118,8 +118,8 @@ class GaugeTest {
         val grid = Grid(14, 6)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Storage(grid.tile(3, 2), Direction.Right)
-        deck += Storage(grid.tile(10, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(10, 2), Direction.Right)
         joinRow(grid, rails, 4, 9, 2)
         // The gauge is a building standing over the run now, not a flag on it — two acts.
         deck += Gauge(grid.tile(gaugeTileX, 2))
@@ -206,7 +206,7 @@ class GaugeTest {
     fun `machines that hold nothing report nothing rather than a phantom row`() {
         val grid = Grid(9, 9)
         val centre = grid.tile(4, 4)
-        assertEquals(emptyList(), contentsBreakdown(Storage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
+        assertEquals(emptyList(), contentsBreakdown(fixtureStorage(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
         assertEquals(emptyList(), contentsBreakdown(Concentrator(centre, Direction.Right), centre, grid, BufferLayer.empty(grid.size)))
     }
 

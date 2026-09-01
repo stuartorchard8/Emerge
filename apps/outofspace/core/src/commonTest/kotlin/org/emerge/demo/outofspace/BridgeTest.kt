@@ -61,10 +61,10 @@ class BridgeTest {
 
         // Emptying the horizontal source is how the merge is caught: with nothing of its own to
         // send, anything arriving at its tank must have come off the *other* line.
-        deck += Storage(grid.tile(3, 5), Direction.Right)   // out at (4, 5)
-        deck += Storage(grid.tile(15, 5), Direction.Right)             // in at (14, 5)
-        deck += Storage(grid.tile(9, 2), Direction.Down)       // out at (9, 3)
-        deck += Storage(grid.tile(9, 9), Direction.Down)               // in at (9, 8)
+        deck += fixtureStorage(grid.tile(3, 5), Direction.Right)   // out at (4, 5)
+        deck += fixtureStorage(grid.tile(15, 5), Direction.Right)      // in at (14, 5)
+        deck += fixtureStorage(grid.tile(9, 2), Direction.Down)       // out at (9, 3)
+        deck += fixtureStorage(grid.tile(9, 9), Direction.Down)        // in at (9, 8)
 
         val track = rails(grid) {
             col(9, 3, 8)

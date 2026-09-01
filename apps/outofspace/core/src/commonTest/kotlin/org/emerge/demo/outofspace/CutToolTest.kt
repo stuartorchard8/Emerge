@@ -188,7 +188,7 @@ class CutToolTest {
     @Test
     fun `nothing crosses a cut`() {
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(1, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(1, 4), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, 11, 4)
         val start = VesselState(

@@ -41,7 +41,7 @@ class StockpileTest {
     private fun vesselHolding(vararg tanks: Mixture): VesselState {
         val deck = DeckArray(grid)
         val at = tanks.indices.map { grid.tile(2 + it * 4, 4) }
-        for (tile in at) deck += Storage(tile, Direction.Right)
+        for (tile in at) deck += fixtureStorage(tile, Direction.Right)
         var s = VesselState(
             grid, deck,
             conduits = Conduits.ofRails(arrayOfNulls<org.emerge.demo.outofspace.world.Segment>(grid.size).toList()),
@@ -159,7 +159,7 @@ class StockpileTest {
         val grid = Grid(16, 8)
         val deck = DeckArray(grid)
         val tank = grid.tile(2, 4)
-        deck += Storage(tank, Direction.Right)
+        deck += fixtureStorage(tank, Direction.Right)
         val world = VesselState(
             grid, deck,
             conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),

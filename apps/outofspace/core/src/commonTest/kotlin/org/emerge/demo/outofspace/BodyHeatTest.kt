@@ -275,7 +275,7 @@ class BodyHeatTest {
         val ore = Mixture.of(Species.Iron to 400L * Budget.KILOGRAM, energy = 0L)
 
         var s = room(10, 10, deckFill = { x, y, tile ->
-            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+            if (x == 5 && y == 5) fixtureStorage(tile, Direction.Right) else null
         }).stocked(at, ore)
         // Put the charge in at room temperature, so what follows is heat arriving and not heat
         // that was already there.
@@ -312,7 +312,7 @@ class BodyHeatTest {
         val g = Grid(12, 12)
         val at = g.tile(5, 5)
         val s = room(10, 10, deckFill = { x, y, tile ->
-            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+            if (x == 5 && y == 5) fixtureStorage(tile, Direction.Right) else null
         })
         assertEquals(0L, s.buffers.massAt(at))
         // It survives a run rather than dividing by zero somewhere in the solver.
@@ -328,7 +328,7 @@ class BodyHeatTest {
             if (x == 5 && y == 5) Furnace(at, Direction.Right) else null
         })
         val tank = room(10, 10, deckFill = { x, y, tile ->
-            if (x == 5 && y == 5) Storage(tile, Direction.Right) else null
+            if (x == 5 && y == 5) fixtureStorage(tile, Direction.Right) else null
         })
 
         // The same number of energy into each, on top of ambient. One path now that every kind is a
@@ -409,7 +409,7 @@ class BodyHeatTest {
             // A one-tile instrument under each wire tile, or bare deck: the casing sharing the tile
             // is the third contact, and three is where a per-pair cap stops adding up.
             val world = room(12, 10, deckFill = { x, y, at ->
-                if (overDeck && y == row && x in xs) Sensor(at, Direction.Up) else null
+                if (overDeck && y == row && x in xs) fixtureSensor(at, Direction.Up) else null
             })
             val grid = world.grid
 

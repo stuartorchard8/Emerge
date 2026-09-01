@@ -588,7 +588,7 @@ class SaveTest {
         // At (8,4), not (7,4): the extractor is five across and covers x 2..6, and both of them
         // are deck machines now — a warehouse whose footprint overlapped it used to be legal only
         // because the two lived on different lists.
-        deck += Storage(grid.tile(8, 4), Direction.Left)
+        deck += fixtureStorage(grid.tile(8, 4), Direction.Left)
 
         val state = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
             .stocked(grid.tile(8, 4), Mixture.of(Species.Iron to 900L, energy = 0))

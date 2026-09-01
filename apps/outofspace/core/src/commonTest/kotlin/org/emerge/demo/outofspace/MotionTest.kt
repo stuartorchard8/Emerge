@@ -51,7 +51,7 @@ class MotionTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
-        deck += Storage(grid.tile(tankX, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(tankX, 3), Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
         return VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
     }
@@ -156,7 +156,7 @@ class MotionTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 3)
-        deck += Storage(grid.tile(11, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(11, 3), Direction.Right)
         deck += Bridge(grid.tile(6, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)

@@ -51,7 +51,7 @@ class EditorToolsTest {
         val deck = DeckArray(grid)
         for (x in 2..10) { deck += Hull(grid.tile(x, 2)); deck += Hull(grid.tile(x, 8)) }
         for (y in 3..7) { deck += Hull(grid.tile(2, y)); deck += Hull(grid.tile(10, y)) }
-        deck += Storage(grid.tile(6, 5), Direction.Right)
+        deck += fixtureStorage(grid.tile(6, 5), Direction.Right)
         val c = OutofspaceController(cfg, VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size), creative=true))
         // ⚠️ A controller with no material picked places nothing — see `buildMaterial`. That is the
         // rule under test elsewhere; here it is just something a player would have done first.

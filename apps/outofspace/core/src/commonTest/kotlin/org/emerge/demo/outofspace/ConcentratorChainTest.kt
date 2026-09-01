@@ -67,10 +67,10 @@ class ConcentratorChainTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         deck += Concentrator(grid.tile(3, 3), Direction.Right)                // covers x 2..4
         // Forward of the concentrator's product port, and below its tailings port.
-        deck += Storage(grid.tile(7, 3), Direction.Right)                 // input port at (6, 3)
+        deck += fixtureStorage(grid.tile(7, 3), Direction.Right)          // input port at (6, 3)
         // Facing Down, so its input port is on top at (3, 7), under the end of the tailings run.
         // A tank has one input now, not two, so which way it faces is the whole of how you feed it.
-        deck += Storage(grid.tile(3, 8), Direction.Down)
+        deck += fixtureStorage(grid.tile(3, 8), Direction.Down)
         joinRow(grid, rails, 4, 6, 3)   // product run
         joinCol(grid, rails, 3, 4, 7)   // tailings run
         var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
@@ -124,7 +124,7 @@ class ConcentratorChainTest {
         val feed = feedExtractor(grid, deck, 2, 3, bodies = 8)
         val stages = listOf(6, 11, 16)
         for (x in stages) deck += Concentrator(grid.tile(x, 3), Direction.Right)   // no waste runs anywhere
-        deck += Storage(grid.tile(21, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(21, 3), Direction.Right)
         joinRow(grid, rails, 4, 5, 3)
         joinRow(grid, rails, 7, 10, 3)
         joinRow(grid, rails, 12, 15, 3)

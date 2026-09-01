@@ -174,7 +174,7 @@ class GhostTest {
     ): VesselState {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
         // Stated before the world is built, because `Conduits` hands out immutable segment lists —
@@ -869,10 +869,10 @@ class GhostTest {
         val grid = Grid(12, 6)
         val deck = DeckArray(grid)
         // Titanium, with its output port standing on the ghost itself.
-        deck += Storage(grid.tile(3, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 3), Direction.Right)
         // A real sink at the far end, so the network genuinely does want titanium *somewhere* —
         // without it the whitelist refuses the push for an unrelated reason and proves nothing.
-        deck += Storage(grid.tile(8, 3), Direction.Left)
+        deck += fixtureStorage(grid.tile(8, 3), Direction.Left)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 9, 3)
         val start = VesselState(

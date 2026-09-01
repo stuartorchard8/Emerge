@@ -84,9 +84,9 @@ class SignalWiringTest {
         val stored = Mixture.of(Species.Iron to fill, energy = 0)
         deck += Extractor(grid.tile(extractorAt.first, extractorAt.second), Direction.Right)
             .withWiring(stopWhenFull)
-        deck += Storage(grid.tile(13, 5), Direction.Right)
+        deck += fixtureStorage(grid.tile(13, 5), Direction.Right)
         // Looking up at the tank, which sits below the run.
-        deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
+        deck += fixtureSensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) signalRow(wires, extractorAt.first, sensorAt.first, 3)
@@ -172,8 +172,8 @@ class SignalWiringTest {
         // A thruster used as a generic wired burner, so it has to be *on the wire*: by default a
         // motor answers the pilot and ignores its wiring entirely — see [ThrusterControl].
         deck += Thruster(at, Direction.Right, control = ThrusterControl.Wire).withWiring(stopWhenFull)
-        deck += Storage(grid.tile(13, 5), Direction.Right)
-        deck += Sensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
+        deck += fixtureStorage(grid.tile(13, 5), Direction.Right)
+        deck += fixtureSensor(grid.tile(sensorAt.first, sensorAt.second), Direction.Down)
 
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, extractorAt.first, sensorAt.first, 3)
@@ -216,8 +216,8 @@ class SignalWiringTest {
     fun `two machines on one run see the same value`() {
         val deck = DeckArray(grid)
         val stored = Mixture.of(Species.Iron to Storage.CAP, energy = 0)
-        deck += Storage(grid.tile(13, 5), Direction.Right)
-        deck += Sensor(grid.tile(12, 3), Direction.Down)
+        deck += fixtureStorage(grid.tile(13, 5), Direction.Right)
+        deck += fixtureSensor(grid.tile(12, 3), Direction.Down)
         val wires = arrayOfNulls<Segment>(grid.size)
         signalRow(wires, 2, 12, 3)
 

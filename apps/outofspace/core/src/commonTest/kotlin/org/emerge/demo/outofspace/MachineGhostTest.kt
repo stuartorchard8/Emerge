@@ -86,7 +86,7 @@ class MachineGhostTest {
     private fun tankAndGhost(machine: DeckMachine, material: Species = materialBefore(machine.kind)): VesselState {
         val at = machine.center
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 4), Direction.Right)
         deck.stand(machine, withCasing = false, material = material)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, grid.xOf(at), 4)
@@ -279,9 +279,9 @@ class MachineGhostTest {
     @Test
     fun `titanium waits behind a ghost rail until the iron for it is on its way`() {
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 4), Direction.Right)
-        deck += Storage(grid.tile(5, 3), Direction.Down)
-        val target = Storage(grid.tile(13, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(2, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(5, 3), Direction.Down)
+        val target = fixtureStorage(grid.tile(13, 4), Direction.Right)
         deck.standGhost(target)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 13, 4)
@@ -334,9 +334,9 @@ class MachineGhostTest {
     @Test
     fun `iron crosses a half-built machine to reach the ghost beyond it`() {
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(1, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(1, 4), Direction.Right)
         // Titanium, and 3x3, so its construction port sits on the run at its centre.
-        val blocking = Storage(grid.tile(7, 4), Direction.Right)
+        val blocking = fixtureStorage(grid.tile(7, 4), Direction.Right)
         deck.standGhost(blocking)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 2, 12, 4)
@@ -662,7 +662,7 @@ class MachineGhostTest {
         // machine that cannot put its metal anywhere correctly refuses to start coming apart.
         // Facing Left puts its input on the run at (4, 4) and its output off the track entirely, so
         // it is a sink and nothing else.
-        if (sink) deck += Storage(grid.tile(3, 4), Direction.Left)
+        if (sink) deck += fixtureStorage(grid.tile(3, 4), Direction.Left)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Past the machine, not merely up to it: a bridge hands its casing back through its *output*
         // end, a tile beyond its centre, and a run that stopped short would leave it nowhere to put
@@ -743,7 +743,7 @@ class MachineGhostTest {
     @Test
     fun `a machine hands its contents back before its casing`() {
         val at = grid.tile(10, 4)
-        val tank = Storage(at, Direction.Right)
+        val tank = fixtureStorage(at, Direction.Right)
         val before = builtMachine(tank).stocked(
             at,
             Mixture.of(Species.Iron to 3 * Capacity.PACKET_MASS, energy = 0),
@@ -845,7 +845,7 @@ class MachineGhostTest {
         val bridge = Bridge(at, Direction.Right)
         val fed = constructionTileOf(grid, bridge)
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 4), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 4), Direction.Right)
         deck.standGhost(bridge)
         val rails = arrayOfNulls<Segment>(grid.size)
         // Stops at the end it is fed at. The span itself carries no track — that is what a bridge is.

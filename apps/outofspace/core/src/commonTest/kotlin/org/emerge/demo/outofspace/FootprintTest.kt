@@ -221,8 +221,8 @@ class FootprintTest {
         val ingots = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0)
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
-        deck += Storage(grid.tile(2, 6), Direction.Right)   // output port at (3, 6)
-        deck += Storage(grid.tile(6, 6), Direction.Right)           // input ports at (5, 6) and (6, 5)
+        deck += fixtureStorage(grid.tile(2, 6), Direction.Right)   // output port at (3, 6)
+        deck += fixtureStorage(grid.tile(6, 6), Direction.Right)    // input ports at (5, 6) and (6, 5)
         // Track from the source's output port along to wherever the run is told to end.
         joinRow(grid, rails, 3, endX, 6)
         joinCol(grid, rails, endX, endY, 6)
@@ -259,9 +259,9 @@ class FootprintTest {
         val grid = Grid(12, 12)
         val stored = Mixture.of(Species.Iron to Storage.CAP, energy = 0)
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(6, 6), Direction.Right)
+        deck += fixtureStorage(grid.tile(6, 6), Direction.Right)
         // Looking up at the tank's bottom-right corner -- a covered tile, not its centre.
-        deck += Sensor(grid.tile(7, 8), Direction.Up)
+        deck += fixtureSensor(grid.tile(7, 8), Direction.Up)
         // A stub of wire under the sensor: without one it reads the tank correctly and tells nobody.
         val wires = arrayOfNulls<Segment>(grid.size)
         wires[grid.tile(7, 8).index] = Segment(org.emerge.demo.outofspace.world.Conduit.Signal, material = materialBefore(org.emerge.demo.outofspace.world.Conduit.Signal))

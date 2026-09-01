@@ -68,8 +68,8 @@ class StorageFilterTest {
     private fun tankToTank(filter: SpeciesFilter?): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right)
-        deck += Storage(grid.tile(10, 3), Direction.Right, filter = filter)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(10, 3), Direction.Right, filter = filter)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 9, 3)
         return VesselState(
@@ -126,7 +126,7 @@ class StorageFilterTest {
     fun `a lock survives a save and a load`() {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(Species.Titanium, 70))
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right, filter = SpeciesFilter(Species.Titanium, 70))
         val state = VesselState(
             grid, deck,
             conduits = Conduits.ofRails(arrayOfNulls<Segment>(grid.size).toList()),

@@ -107,7 +107,7 @@ class VesselSimTest {
         // Empty to begin with, and filled by the extractor. Starting it full would be quicker but the
         // conservation ledger counts everything aboard as extracted, and 20kg conjured into a tank is
         // exactly the sort of leak that ledger exists to catch.
-        deck += Storage(grid.tile(toX + 1, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(toX + 1, 2), Direction.Right)
         // The plate is five tiles across, so the port is at x=4 and the run starts there.
         joinRow(grid, rails, 4, toX, 2)
         // Creative: one of these tears the tank out mid-run to watch the jam clear, and a marked
@@ -155,7 +155,7 @@ class VesselSimTest {
         val deck = DeckArray(grid)
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 5)
-        deck += Storage(grid.tile(8, 5), Direction.Right)          // in at (7, 5)
+        deck += fixtureStorage(grid.tile(8, 5), Direction.Right)   // in at (7, 5)
         deck += Vent(grid.tile(5, 2))                                       // in at its own tile
         joinRow(grid, rails, 4, 7, 5)
         joinCol(grid, rails, 5, 2, 5)   // the branch, up from the middle of the run to the vent
@@ -189,7 +189,7 @@ class VesselSimTest {
         val rails = arrayOfNulls<Segment>(grid.size)
         val feed = feedExtractor(grid, deck, 2, 5)
         deck += Vent(grid.tile(5, 2))                                       // two tiles up from the fork
-        deck += Storage(grid.tile(9, 5), Direction.Right)          // four tiles along, in at (8, 5)
+        deck += fixtureStorage(grid.tile(9, 5), Direction.Right)   // four tiles along, in at (8, 5)
         joinRow(grid, rails, 4, 8, 5)
         joinCol(grid, rails, 5, 2, 5)
 
@@ -237,7 +237,7 @@ class VesselSimTest {
         // A storage recirculating on its own loop: out at (8, 5), round, and back in at (6, 5).
         // Empty to begin with: everything aboard counts as extracted, so seeding the tank would trip
         // the conservation ledger rather than test anything.
-        deck += Storage(grid.tile(7, 5), Direction.Right)
+        deck += fixtureStorage(grid.tile(7, 5), Direction.Right)
         joinRow(grid, rails, 8, 9, 5)
         joinCol(grid, rails, 9, 5, 7)
         joinRow(grid, rails, 4, 9, 7)
@@ -404,7 +404,7 @@ class VesselSimTest {
         val ingot = SolidPacket(Mixture.of(Species.Iron to 1_000L, energy = 0))
         val deck = DeckArray(grid)
         // The tank faces open deck beyond it, so it fills rather than draining.
-        deck += Storage(grid.tile(4, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(4, 2), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         rails[grid.tile(3, 2).index] = Segment(Conduit.Rail, material = materialBefore(Conduit.Rail))                 // its input port
         // Creative: the point is that the stockpile is *where things are*, shown by taking the tank
@@ -458,7 +458,7 @@ class VesselSimTest {
 
         // The belt: (1,2) through to (8,2), and a tank at the end taking delivery at (8,2).
         joinRow(grid, rails, 1, 8, 2)
-        deck += Storage(grid.tile(9, 2), Direction.Right)
+        deck += fixtureStorage(grid.tile(9, 2), Direction.Right)
 
         // The machine sits below the belt facing down, so its input port is the belt tile (4,2)
         // above it and its outputs are at (4,4) and (3,3), where there is no track to receive them.
@@ -549,7 +549,7 @@ class VesselSimTest {
         val grid = Grid(5, 5)
         val at = grid.tile(2, 2)
         val deck = DeckArray(grid)
-        val store = Storage(at, Direction.Right)
+        val store = fixtureStorage(at, Direction.Right)
         deck += store
         val held = Mixture.of(Species.Iron to 999L, energy = 0)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
@@ -570,7 +570,7 @@ class VesselSimTest {
         val grid = Grid(10, 6)
         val stored = Mixture.of(Species.Iron to 100L, energy = 0)
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(4, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(4, 3), Direction.Right)
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(4, 3), stored)
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(grid.tile(4, 3)))))
         val tank = s.deck[grid.tile(4, 3)] as? Storage

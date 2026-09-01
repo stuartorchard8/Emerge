@@ -69,7 +69,7 @@ class DemandTest {
     private fun tankAndRun(toX: Int, sink: Boolean): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
         if (sink) deck += Vent(grid.tile(toX + 1, 3))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, if (sink) toX + 1 else toX, 3)
@@ -168,7 +168,7 @@ class DemandTest {
     fun `a site does not draw material it cannot be built from`() {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(2, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 9, 3)
         var s = VesselState(
@@ -201,7 +201,7 @@ class DemandTest {
     fun `the same rail comes apart once there is somewhere for its metal to go`() {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(11, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(11, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 3, 10, 3)
         var s = VesselState(

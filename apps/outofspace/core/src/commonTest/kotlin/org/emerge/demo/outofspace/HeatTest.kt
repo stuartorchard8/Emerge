@@ -132,8 +132,8 @@ class HeatTest {
         val grid = Grid(5, 3)
         val deck = DeckArray(grid)
         for (x in 0 until 5) {
-            deck += Sensor(grid.tile(x, 0), Direction.Right)
-            deck += Sensor(grid.tile(x, 2), Direction.Right)
+            deck += fixtureSensor(grid.tile(x, 0), Direction.Right)
+            deck += fixtureSensor(grid.tile(x, 2), Direction.Right)
         }
         val s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         assertEquals(

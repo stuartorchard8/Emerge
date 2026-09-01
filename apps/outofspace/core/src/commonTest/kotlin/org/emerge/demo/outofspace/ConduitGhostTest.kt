@@ -74,12 +74,12 @@ class ConduitGhostTest {
         railUnder: Boolean = true,
     ): VesselState {
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 3), Direction.Right)
         // ⚠️ **Somewhere for the copper to go**, or nothing can ever be deconstructed: a marked
         // segment with no consumer downstream waits rather than dumping its metal on a dead run, so
         // a run whose only machine is a source can only ever be built. A tank takes material in on
         // its **left** — see `Port.kt` — so the receiving one sits past the end of the line.
-        deck += Storage(grid.tile(9, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(9, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         if (railUnder) joinRow(grid, rails, 4, 8, 3)
         val pipes = arrayOfNulls<Segment>(grid.size)
@@ -223,9 +223,9 @@ class ConduitGhostTest {
      */
     private fun tankAndWiredRunUnderSensor(): VesselState {
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 3), Direction.Right)
-        deck += Storage(grid.tile(9, 3), Direction.Right)
-        deck.standGhost(Sensor(grid.tile(5, 3), Direction.Right))
+        deck += fixtureStorage(grid.tile(3, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(9, 3), Direction.Right)
+        deck.standGhost(fixtureSensor(grid.tile(5, 3), Direction.Right))
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 8, 3)
         val wires = arrayOfNulls<Segment>(grid.size)

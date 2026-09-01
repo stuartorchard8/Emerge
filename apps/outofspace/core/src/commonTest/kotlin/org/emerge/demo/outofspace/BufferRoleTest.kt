@@ -36,7 +36,7 @@ class BufferRoleTest {
     private fun kinds(facing: Direction): List<DeckMachine> = listOf(
         Extractor(centre, facing), Thruster(centre, facing),
         Concentrator(centre, facing), Furnace(centre, facing),
-        Storage(centre, facing),
+        fixtureStorage(centre, facing),
     )
 
     @Test
@@ -87,7 +87,7 @@ class BufferRoleTest {
 
     @Test
     fun `machines that hold nothing claim nothing`() {
-        for (m in listOf(Sensor(centre, Direction.Right), Pump(centre, Direction.Right))) {
+        for (m in listOf(fixtureSensor(centre, Direction.Right), Pump(centre, Direction.Right))) {
             assertEquals(emptyList(), bufferRolesOf(m), "$m claims a store")
             for (role in BufferRole.entries) assertNull(bufferTile(grid, m, centre, role))
         }

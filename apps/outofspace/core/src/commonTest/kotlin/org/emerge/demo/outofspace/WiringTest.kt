@@ -154,8 +154,8 @@ class WiringTest {
         val wires = arrayOfNulls<Segment>(grid.size)
         if (wired) wires[eye.index] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         val deck = DeckArray(grid)
-        deck += Storage(tank, Direction.Right)
-        deck += Sensor(eye, Direction.Left)
+        deck += fixtureStorage(tank, Direction.Right)
+        deck += fixtureSensor(eye, Direction.Left)
         return VesselState(
             grid,
             deck,
@@ -176,7 +176,7 @@ class WiringTest {
         val wires = arrayOfNulls<Segment>(grid.size)
         wires[1] = Segment(Conduit.Signal, material = materialBefore(Conduit.Signal))
         val deck = DeckArray(grid)
-        deck += Sensor(TileIndex(1), Direction.Left)
+        deck += fixtureSensor(TileIndex(1), Direction.Left)
         var s = VesselState(
             grid,
             deck,
@@ -236,8 +236,8 @@ class WiringTest {
         val grid = Grid(12, 6)
         val stored = Mixture.of(Species.Iron to 4 * Capacity.PACKET_MASS, energy = 0)
         val deck = DeckArray(grid)
-        deck += Storage(grid.tile(3, 3), Direction.Right).copy(wiring = wiring()) as Storage
-        deck += Storage(grid.tile(8, 3), Direction.Right)
+        deck += fixtureStorage(grid.tile(3, 3), Direction.Right).copy(wiring = wiring()) as Storage
+        deck += fixtureStorage(grid.tile(8, 3), Direction.Right)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 7, 3)
         var s = VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).stocked(grid.tile(3, 3), stored)
@@ -270,8 +270,8 @@ class WiringTest {
             wiring = wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000),
             bodies = 4,
         )
-        deck += Storage(grid.tile(6, 3), Direction.Right)   // input port at (5, 3)
-        deck += Sensor(grid.tile(6, 5), Direction.Up)
+        deck += fixtureStorage(grid.tile(6, 3), Direction.Right)   // input port at (5, 3)
+        deck += fixtureSensor(grid.tile(6, 5), Direction.Up)
         val rails = arrayOfNulls<Segment>(grid.size)
         joinRow(grid, rails, 4, 5, 3)
         // The run that joins the sensor to the extractor. Without it the two are strangers, which is
@@ -434,7 +434,7 @@ class WiringTest {
         val deck = DeckArray(g)
         val rails = arrayOfNulls<Segment>(g.size)
         deck += upstream.movedTo(g.tile(3, 3))   // output port at (4, 3)
-        deck += Storage(g.tile(7, 3), Direction.Right)  // input port at (6, 3)
+        deck += fixtureStorage(g.tile(7, 3), Direction.Right)  // input port at (6, 3)
         joinRow(g, rails, 4, 6, 3)
         return VesselState(g, deck, conduits = Conduits.ofRails(rails.toList()), buffers = BufferLayer.forDeck(g, deck), rail = RailLayer.empty(g.size))
             .stocked(g.tile(3, 3), stocked)
@@ -443,7 +443,7 @@ class WiringTest {
     @Test
     fun `a storage releases only while it is told to`() {
         val stored = Mixture.of(Species.Iron to 5 * Capacity.PACKET_MASS, energy = 0)
-        val shut = Storage(TileIndex(0), Direction.Right).copy(wiring = wiring())
+        val shut = fixtureStorage(TileIndex(0), Direction.Right).copy(wiring = wiring())
         // The downstream tank is what gets checked, not the stockpile: both tanks feed the stockpile
         // now, so its total is 5kg either way and would say nothing about whether the valve opened.
         val g = twoUp(shut, stored).grid
@@ -451,7 +451,7 @@ class WiringTest {
         assertEquals(5 * Capacity.PACKET_MASS, s.buffers.resourceAt(g.tile(3, 3))!!.total, "a closed valve holds everything")
         assertNull(s.buffers.resourceAt(g.tile(7, 3)), "so nothing arrives downstream")
 
-        var s2 = run(twoUp(Storage(TileIndex(0), Direction.Right), stored), 20 * RAIL_PERIOD)
+        var s2 = run(twoUp(fixtureStorage(TileIndex(0), Direction.Right), stored), 20 * RAIL_PERIOD)
         assertEquals(5 * Capacity.PACKET_MASS, s2.buffers.resourceAt(g.tile(7, 3))!!.total, "an open one drains into the next tank")
         assertNull(s2.buffers.resourceAt(g.tile(3, 3)), "and empties itself doing it")
     }
