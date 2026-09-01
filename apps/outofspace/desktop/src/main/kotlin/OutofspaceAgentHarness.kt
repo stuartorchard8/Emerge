@@ -1121,6 +1121,20 @@ object OutofspaceAgentHarness {
             "baselineCargoMass" -> grams(state.baselineCargoMass)
             // Body stats. No conservation ledger — bodies spawn/despawn freely (RockSpawner).
             "rockCount" -> state.bodies.size.toDouble()
+            /*
+             * ⚠️ **Every body summed, not the first one.** `rockX`/`rockY` below are deliberately
+             * about the first body — a script that dropped one rock wants to know where *it* went —
+             * but a mass is the one rock quantity that is only meaningful over the lot: what this
+             * is for is watching an extractor eat, and the number that goes down as it does is all
+             * the rock there is.
+             *
+             * ⛔ **It has been in [FIELDS] since the field list was written and has never had a
+             * case here**, which is a worse failure than an absent field: `dumpState` does
+             * `reading(f)!!` over [FIELDS], so the whole `state` command threw a null pointer, and
+             * `expect rockMass ...` reported "unknown field" — against a list that plainly
+             * contained it. Anything added to [FIELDS] needs a branch here.
+             */
+            "rockMass" -> grams(state.bodies.sumOf { it.mass })
             // The first body, in tiles, so a script can say where it went and how fast. Zero when
             // there is none, which reads as "nothing out there" rather than failing the lookup.
             //
