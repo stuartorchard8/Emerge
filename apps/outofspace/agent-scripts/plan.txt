@@ -1,0 +1,65 @@
+# The build cursor's plan: what a click would put down, drawn before it is clicked.
+#
+# In BUILD mode the tile under the pointer carries a preview of the selected brush -- its real
+# footprint, turned the way the player has turned it, with its ports on the sides they will actually
+# be on. It is drawn in one colour when the placement would go through and another when it would be
+# refused, so "will this fit here" is answered by moving the mouse instead of by clicking and
+# watching nothing happen.
+#
+# What to read in the shots:
+#   `storage-ok`      -- a three-wide CYAN body with a bright cyan outline, white port left, green
+#                        port right. Cyan is the cursor's colour and nothing else in the world uses
+#                        it; a ghost -- something already placed and waiting for metal -- is slate.
+#   `storage-blocked` -- the identical shape in RED over the concentrator it would land on. The same
+#                        drawing, the same ports, one colour different: the tint is the only thing
+#                        the eye has to compare.
+#   `thruster-right`  -- a 1x2: the anchor plus the bell in FRONT of the cursor. Allowed.
+#   `thruster-left`   -- the same tile, turned. The bell swings onto the concentrator, so it is red.
+#                        This pair is the whole argument for previewing the facing.
+#   `extractor-rim`   -- five across, hanging off the grid. There is no footprint at all to draw
+#                        here (`footprint` answers null rather than a clipped shape), so the refusal
+#                        is drawn on the cursor tile alone.
+#   `rail` / `pipe`   -- a run has no footprint and no facing: a stub at the conduit's own gauge, so
+#                        a pipe plan is visibly thinner than a rail plan. No arms -- which way a run
+#                        joins is decided by the DRAG, and drawing arms first would promise a shape
+#                        the click does not produce.
+#   `no-material`     -- nothing chosen to build out of, so nothing places. Refused everywhere, and
+#                        the cursor now says the same thing the MATERIAL panel does.
+#
+# ⚠️ `hover` is what makes any of this photographable: a capture has no mouse, and every shot taken
+# before that command existed was of a game nobody was pointing at.
+
+new
+creative 0
+tool BUILD
+material Iron
+camera centre 20 14 40
+
+brush STORAGE Right
+hover 24 6
+shot plan-storage-ok
+hover 18 9
+shot plan-storage-blocked
+
+brush THRUSTER Right
+hover 18 10
+shot plan-thruster-right
+facing Left
+shot plan-thruster-left
+
+brush RAIL
+hover 24 10
+shot plan-rail
+brush PIPE
+shot plan-pipe
+
+material none
+brush STORAGE Right
+hover 24 6
+shot plan-no-material
+
+material Iron
+brush EXTRACTOR
+camera centre 6 14 40
+hover 1 9
+shot plan-extractor-rim

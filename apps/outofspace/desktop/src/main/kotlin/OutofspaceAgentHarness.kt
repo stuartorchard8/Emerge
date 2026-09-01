@@ -83,7 +83,7 @@ import kotlin.math.roundToInt
  * frames <n> [hz]            # N frames of real time, as a window would. The only way to watch a
  *                            # paused world settle: the clock runs, the passes do not
  * brush <kind> [dir]         # RAIL/EXTRACTOR/PROCESSOR/VENT/... and Right|Down|Left|Up
- * material <Species>         # what the next placement is made of; nothing builds without one
+ * material <Species>|none    # what the next placement is made of; nothing builds without one
  * place <x> <y>              # build with the current brush
  * fit                        # shrink grid back to ship + pad
  * drag <x0> <y0> <x1> <y1>   # lay a conduit run — track connects by being DRAWN, so this is not
@@ -99,6 +99,9 @@ import kotlin.math.roundToInt
  *                            # this model boils water near -33C (PLAN_phase_transitions.md 5c)
  * wiki <Species> | wiki off      # open the reference on a species — also what narrows the nav map
  *                            # to it, so this is how a prospecting map gets photographed
+ * hover <x> <y> | hover off  # put the pointer on a tile, so a capture shows what a player would
+ *                            # see under it — the build cursor's plan, and whether it would be
+ *                            # refused. `off` is a mouse that has left the window
  * overlay <name>             # PLAIN/HEAT/AIR/PRESSURE/DENSITY/FLOW — what `shot` draws through
  * camera fit|centre <x> <y>|zoom <tilePx>|pan <dx> <dy>
  * field <what> [x0 y0 x1 y1] # ASCII map: pressure|density|speed|heat|air|flow|build|
@@ -171,6 +174,16 @@ object OutofspaceAgentHarness {
             get() = controller.overlay
             set(v) { controller.overlay = v }
 
+        /**
+         * Where the pointer is being pretended to be — see the `hover` command.
+         *
+         * Harness state rather than controller state, because it *is* the mouse: a real host works
+         * this out from the cursor every frame and hands it to the draw. Nothing in the sim reads
+         * it. It exists so the build cursor's plan — the one thing on screen that is a function of
+         * where the mouse is and of nothing else — can be photographed at all.
+         */
+        private var hovered: TileIndex = TileIndex.NONE
+
         // GL, and everything that needs a context. Null until the first `shot`.
         private var window: Long = NULL
         private var renderer: OutofspaceRenderer? = null
@@ -240,9 +253,12 @@ object OutofspaceAgentHarness {
                  * A sibling of `brush` rather than an argument to `place`, because it is the same
                  * kind of standing choice the brush is, and a player sets it once and then builds.
                  */
+                // `material none` puts the player back where a fresh game starts them: holding a
+                // brush with nothing to build out of. Reachable in the game by never choosing, and
+                // until now not reachable from a script at all.
                 "material" -> {
-                    controller.buildMaterial = species(t[1])
-                    println("[agent] material -> ${controller.buildMaterial?.name}")
+                    controller.buildMaterial = if (t[1].equals("none", true)) null else species(t[1])
+                    println("[agent] material -> ${controller.buildMaterial?.name ?: "nothing chosen"}")
                 }
                 "place" -> { controller.place(index(t[1], t[2])); settle() }
                 // Conduit joins by being DRAWN, not by touching, so laying a run has to go through the
@@ -412,6 +428,17 @@ object OutofspaceAgentHarness {
                     println("[agent] tool -> ${controller.tool.label} " +
                         if (controller.tool == Tool.Cut) "(${controller.cutConduit.label})"
                         else "(${controller.deleteLayer.label})")
+                }
+                // Put the pointer somewhere, or take it away again — the only way to photograph
+                // anything that follows the mouse. `hover off` is what a mouse leaving the window
+                // does, and is what every capture taken before this command existed showed.
+                "hover" -> {
+                    hovered = if (t.getOrNull(1).equals("off", true)) TileIndex.NONE else index(t[1], t[2])
+                    println("[agent] hover -> " + if (hovered == TileIndex.NONE) "nothing" else
+                        "${state.grid.xOf(hovered)},${state.grid.yOf(hovered)}" +
+                            (controller.planAt(hovered)?.let { p ->
+                                " (${p.brush.label} ${p.facing} ${if (p.allowed) "fits" else "REFUSED"})"
+                            } ?: ""))
                 }
                 "overlay" -> {
                     overlay = Overlay.entries.firstOrNull { it.name.equals(t[1], true) || it.label.equals(t[1], true) }
@@ -1306,8 +1333,11 @@ object OutofspaceAgentHarness {
             pendingCamera(r)
             glViewport(0, 0, RES_W, RES_H)
             val clock = if (live) controller.simTime else OutofspaceRenderer.SETTLED
-            r.draw(state, TileIndex.NONE, InspectLayer.Deck, TileIndex.NONE, overlay, clock, controller.mode.camera)
-            h.build(u, controller, fps = 0f, hovered = TileIndex.NONE)
+            r.draw(
+                state, TileIndex.NONE, InspectLayer.Deck, hovered, overlay, clock,
+                controller.mode.camera, controller.planAt(hovered),
+            )
+            h.build(u, controller, fps = 0f, hovered = hovered)
             u.draw()
             glFinish()
 

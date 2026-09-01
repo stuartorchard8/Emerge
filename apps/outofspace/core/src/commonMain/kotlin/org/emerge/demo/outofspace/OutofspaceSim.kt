@@ -48,6 +48,8 @@ import org.emerge.demo.outofspace.world.PortKind
 import org.emerge.demo.outofspace.world.SpeciesFilter
 import org.emerge.demo.outofspace.world.Stream
 import org.emerge.demo.outofspace.world.tryDisplaceAir
+import org.emerge.demo.outofspace.world.canStand
+import org.emerge.demo.outofspace.world.machine.newDeckMachine
 import org.emerge.demo.outofspace.world.footprint
 import org.emerge.demo.outofspace.world.portsOf
 import org.emerge.demo.outofspace.world.standingPortsOf
@@ -2547,24 +2549,30 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             deck: DeckArray,
             material: Species,
         ) {
-            val built = newDeckMachine(kind, tile, facing) ?: return
-            // Null means it hangs off the grid — half a bridge, or a smelter over the rim.
-            val covered = (kind.footprint(tile, grid, facing) ?: return).toList()
-            // Over anything occupied = no-op (footprint check, not just cursor tile).
-            if (covered.any { originOf[it] != TileIndex.NONE }) return
-            if (portsClash(portsOf(grid, built))) return
-
-            // A solid deck machine is solid — air must have somewhere to go. Last check (air, not
-            // geometry). A permeable one displaces nothing and so can be laid in a sealed room.
-            //
-            // ⚠️ **A ghost is refused on the same terms and displaces nothing.** It has no metal to
-            // push air aside with, so the room it stands in is unchanged until it is finished — but
-            // the restriction still governs where it may be put, or a player would draw a frame in a
-            // sealed room and be told only at completion that it could never have been built there.
-            // The displacement happens when the casing does.
-            if (kind.preventAirflow &&
-                !tryDisplaceAir(grid, masses, airEnergy, covered, commit = creative) { deck.isPermeableToAir(it) }
+            // Every rail port already on the deck, which is what a proposed machine's own ports are
+            // checked against. `lazy` because it walks the whole deck and most placements never
+            // reach the question — a footprint over the rim or over another machine is refused
+            // first — and *local*, so a second placement in the same tick sees what the first put
+            // down rather than a map taken before it existed.
+            val standingPorts: Map<TileIndex, List<Port>> by lazy { portsByTile(Conduit.Rail) }
+            // ⛔ **Every refusal is [canStand]'s, and none of them is repeated here.** The build
+            // cursor draws its preview off the same call, so a rule stated twice is a preview that
+            // eventually promises something the reducer will not do. The one thing this adds is the
+            // *side effect*: in creative the air is not merely asked about, it is moved, which is
+            // why the displacement arrives as a lambda rather than as a flag.
+            if (!canStand(
+                    grid, kind, tile, facing,
+                    occupied = { originOf[it] != TileIndex.NONE },
+                    portsOn = { standingPorts[it].orEmpty() },
+                    displaceAir = { area ->
+                        tryDisplaceAir(grid, masses, airEnergy, area, commit = creative) {
+                            deck.isPermeableToAir(it)
+                        }
+                    },
+                )
             ) return
+            val built = newDeckMachine(kind, tile, facing)
+            val covered = built.tiles(grid).toList()
 
             // Outside creative the machine arrives as a ghost: standing there, made of nothing, and
             // nothing is booked because nothing came from off-world. See [DeckArray.stand].
@@ -2576,11 +2584,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             for (t in covered) originOf[t] = tile
         }
 
-        /** Any two ports of the same conduit on one tile clash. */
-        private fun portsClash(proposed: List<Port>): Boolean {
-            val existing = portsByTile(Conduit.Rail)
-            return proposed.any { p -> existing[p.tile].orEmpty().any { it.conduit == p.conduit } }
-        }
 
         /** The direction from [from] to [to] when the two are neighbours, else null. */
         private fun adjacency(from: TileIndex, to: TileIndex): Direction? {
@@ -4044,25 +4047,5 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** What a packet becomes when it is tipped onto the deck. */
         private fun asResource(packet: Packet): Mixture =
             packet.contents
-
-        private fun newDeckMachine(kind: DeckMachineKind, tile: TileIndex, facing: Direction): DeckMachine? = when (kind) {
-            DeckMachineKind.Hull -> Hull(tile)
-            DeckMachineKind.Airlock -> Airlock(tile)
-            DeckMachineKind.Vent -> Vent(tile)
-            DeckMachineKind.Storage -> Storage(tile, facing, autoLock = true, autoUnlock = true)
-            // Placed with both lists empty: a port that has not been told what to trade is inert,
-            // and choosing for the player is the one thing a mouth onto their money must not do.
-            DeckMachineKind.DockingPort -> DockingPort(tile, facing)
-            DeckMachineKind.Sensor -> Sensor(tile, facing, threshold = SignalField.FULL, delay = 0, release = 0)
-            DeckMachineKind.KeyInput -> WireButton(tile)
-            DeckMachineKind.Pump -> Pump(tile, facing)
-            DeckMachineKind.Thruster -> Thruster(tile, facing)
-            DeckMachineKind.Concentrator -> Concentrator(tile, facing)
-            DeckMachineKind.Furnace -> Furnace(tile, facing)
-            DeckMachineKind.Extractor -> Extractor(tile, facing)
-            DeckMachineKind.Bridge -> Bridge(tile, facing)
-            DeckMachineKind.Gauge -> Gauge(tile)
-            DeckMachineKind.Valve -> Valve(tile)
-        }
     }
 }

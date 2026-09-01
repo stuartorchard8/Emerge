@@ -37,6 +37,18 @@ class Stuff(
     /** The bond energy of every tile, for a caller that is about to settle it. */
     fun copyCohesion(): EnergyArray = EnergyArray(cohesion.data.copyOf())
 
+    /**
+     * Whether the air standing in [area] could be pushed out through [permeable] neighbours — the
+     * question [tryDisplaceAir] answers, asked without moving a gram.
+     *
+     * A method rather than `tryDisplaceAir(grid, field.copyMass(), ...)` at the call site, because
+     * the copy would be the whole atmosphere and this is asked once a frame by the build cursor.
+     * The arrays are private for good reason; lending them read-only to a function that has been
+     * told not to commit is the narrowest way to keep them that way.
+     */
+    fun canDisplace(grid: Grid, area: Collection<TileIndex>, permeable: (TileIndex) -> Boolean): Boolean =
+        tryDisplaceAir(grid, masses, energies, area, commit = false, permeable = permeable)
+
     fun massOf(tile: TileIndex, fluid: Fluid): Long = masses[MassIndex(tile, fluid)]
 
     /**

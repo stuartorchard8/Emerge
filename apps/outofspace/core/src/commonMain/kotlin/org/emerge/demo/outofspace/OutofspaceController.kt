@@ -18,6 +18,7 @@ import org.emerge.demo.outofspace.world.TICK_LADDER
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
+import org.emerge.demo.outofspace.world.canStand
 import org.emerge.demo.outofspace.world.Docking
 import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.machine.BuyOrder
@@ -230,6 +231,30 @@ class OutofspaceController(
     fun place(tile: TileIndex) {
         val material = buildMaterial ?: return
         pending.add(Edit.Place(tile, brush, brushFacing, material))
+    }
+
+    /**
+     * What a click on [tile] would put down, for the renderer to draw under the cursor — see
+     * [BuildPlan].
+     *
+     * Null when there is nothing to preview: another tool is out, the player is flying, or the
+     * pointer is off the grid. **Not** null when the placement would be refused — a refusal is the
+     * thing most worth showing, and it is shown by [BuildPlan.allowed] rather than by an absence.
+     *
+     * ⚠️ **Asked once a frame, and answers off the settled state.** It reads the world and changes
+     * nothing, so a host may call it as often as it likes; what it must not do is call it and then
+     * assume the answer still holds a tick later, because by then the player may have built
+     * something. The reducer asks the same question again at the moment it matters.
+     */
+    fun planAt(tile: TileIndex): BuildPlan? {
+        if (mode != Mode.Build || tool != Tool.Build || tile == TileIndex.NONE) return null
+        val allowed = buildMaterial != null && when (val b = brush) {
+            // Track goes anywhere there is grid: the layers no longer exclude each other, and a run
+            // drawn over a run it already has is a no-op rather than a mistake — see `layConduit`.
+            is Brush.Run -> true
+            is Brush.Building -> state.canStand(b.kind, tile, brushFacing)
+        }
+        return BuildPlan(tile, brush, brushFacing, allowed)
     }
 
     /**

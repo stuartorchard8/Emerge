@@ -11,6 +11,8 @@ import org.emerge.demo.outofspace.world.machine.Valve
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.Bridge
 import org.emerge.demo.outofspace.world.Conduit
+import org.emerge.demo.outofspace.world.footprint
+import org.emerge.demo.outofspace.world.machine.newDeckMachine
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.PortKind
@@ -273,6 +275,12 @@ class OutofspaceRenderer {
         overlay: Overlay = Overlay.None,
         simTime: Double = SETTLED,
         camera: CameraFrame = CameraFrame.Grid,
+        /**
+         * What the build tool would put on [hoveredTile], or null when it would put nothing there —
+         * see [OutofspaceController.planAt]. Defaulted, so a host with no pointer to speak of (a
+         * phone) says nothing rather than saying no.
+         */
+        plan: BuildPlan? = null,
     ) {
         followAnchor(state, camera)
         setViewAngle(if (camera == CameraFrame.World) state.ang else Coord(0))
@@ -455,6 +463,12 @@ class OutofspaceRenderer {
         if (inspectLayer == InspectLayer.Atmosphere && inspectTile != TileIndex.NONE) {
             tileRect(grid.xOf(inspectTile), grid.yOf(inspectTile), 1f, Colors.HOVER)
         }
+
+        // **Last, over everything.** The plan is the only thing on screen that is not in the world,
+        // and half of what it has to say is what it is standing on top of — the machine in the way,
+        // the rim it hangs off. Drawn under the deck pass it would be hidden by exactly the obstacle
+        // it is reporting.
+        if (plan != null) drawPlan(state, plan)
 
         rects.drawInstanced(count, matrices, colors)
         GPU.disableBlend()
@@ -884,6 +898,57 @@ class OutofspaceRenderer {
             }
         }
         drawPorts(state, m)
+    }
+
+    /**
+     * The cursor's own ghost: what a click would put down, where it would land, and whether it would
+     * be allowed — see [BuildPlan].
+     *
+     * **The same drawing in two colours**, and that is the whole design. A refused placement is not
+     * drawn differently, or smaller, or with a symbol on it: it is the identical footprint, the
+     * identical outline and the identical ports, in the colours that mean no. So the only thing the
+     * eye has to compare between a good position and a bad one is the tint, and moving the mouse
+     * along a wall answers "where does this fit" without a single click.
+     *
+     * ⚠️ **The footprint is asked for, never assumed.** A thruster's second tile is in front of the
+     * cursor and a bridge's span turns with it, so a plan near the rim has no footprint at all —
+     * [DeckMachine.tiles] would *throw* rather than answer, which is right for a machine that is
+     * standing somewhere and wrong for one that is only being considered. That case is the one that
+     * cannot be drawn as a shape, so it is drawn as a refusal on the cursor tile alone.
+     */
+    private fun drawPlan(state: VesselState, plan: BuildPlan) {
+        val fill = if (plan.allowed) Colors.PLAN else Colors.PLAN_REFUSED
+        val edge = if (plan.allowed) Colors.PLAN_EDGE else Colors.PLAN_REFUSED_EDGE
+        val x = state.grid.xOf(plan.tile)
+        val y = state.grid.yOf(plan.tile)
+        when (val brush = plan.brush) {
+            // A stub of the conduit at its own gauge, so a plan for a pipe is visibly thinner than
+            // one for track. No arms: which way a run joins is decided by the drag, and drawing arms
+            // before there is a drag would be inventing a shape the click will not produce.
+            is Brush.Run -> {
+                val gauge = when (brush.conduit) {
+                    Conduit.Rail -> Visual.RAIL_DIAMETER
+                    Conduit.Pipe -> Visual.PIPE_DIAMETER
+                    Conduit.Signal, Conduit.Power -> Visual.WIRE_DIAMETER
+                }
+                rect((x + 0.5f) * tilePx, (y + 0.5f) * tilePx, gauge * tilePx, gauge * tilePx, edge)
+                tileRect(x, y, 1f, fill)
+            }
+            is Brush.Building -> {
+                if (brush.kind.footprint(plan.tile, state.grid, plan.facing) == null) {
+                    tileRect(x, y, 1f, fill)
+                    frame(x, y, edge)
+                    return
+                }
+                val proposed = newDeckMachine(brush.kind, plan.tile, plan.facing)
+                footprintRect(state, proposed, Visual.MACHINE_INSET, fill)
+                footprintOutline(state, proposed, edge)
+                // Drawn refused as well as allowed, in their own white-in/green-out colours: they
+                // are how the player reads the facing they picked, and a machine whose ports are
+                // pointing the wrong way is a thing worth seeing *before* finding somewhere it fits.
+                drawPorts(state, proposed)
+            }
+        }
     }
 
     /**
@@ -1568,6 +1633,24 @@ class OutofspaceRenderer {
         // A segment on its way out, warm where a ghost is cold. The direction has to be legible
         // without reading a number: "not yet" and "going" are opposite mistakes to make.
         const val SCRAPPING  = 0x8A4A2AFFL
+
+        // ── The cursor's plan ───────────────────────────────────────────
+        //
+        // What the build tool is *about to* put down, as against [GHOST], which is something that
+        // has been put down and is waiting for its metal. The two must not be confused, because the
+        // player can act on exactly one of them: a plan follows the mouse and vanishes when the tool
+        // is put away, and a ghost is a commitment that has to be demolished to undo.
+        //
+        // So this is bright where a ghost is nearly the deck it stands on, and cyan where a ghost is
+        // slate. Nothing else in the world is this colour.
+        const val PLAN        = 0x6EC8FF66L
+        const val PLAN_EDGE   = 0xA8E4FFFFL
+
+        // Refused: the same shape in the one colour the eye reads as "no". Red rather than
+        // [SCRAPPING]'s burnt orange — a condemned machine is a decision the player made and this is
+        // a decision the game is declining, and they should not be a shade apart.
+        const val PLAN_REFUSED      = 0xE0402866L
+        const val PLAN_REFUSED_EDGE = 0xFF6A4AFFL
 
         // ── Rock ────────────────────────────────────────────────────────
         // Warm, desaturated.
