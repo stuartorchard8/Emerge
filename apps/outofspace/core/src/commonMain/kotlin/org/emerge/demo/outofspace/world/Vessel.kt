@@ -382,6 +382,20 @@ data class VesselState(
      */
     val sas: Boolean = false,
     /**
+     * What the player has in the bank — see `PLAN_economy.md` §4.
+     *
+     * ⛔ **Deliberately outside every ledger in this class.** Money is not a substance: it has no
+     * position, no temperature and no mass, it is not conserved against anything, and it must never
+     * appear as a term in [massBalance] or [heatBalance]. Matter crossing a docking port is what
+     * those two hear about, through `importedMass`/`exportedMass` and their energy twins; the
+     * credits that changed hands at the same moment are a fact about the player, not about the world.
+     *
+     * ✅ A new save opens with **nothing** (Stu, 2026-09-01) — the first haul is the whole stake.
+     * Opening in debt is a parked idea and not a rejected one; it costs a negative value here plus an
+     * interest term, both of which this field already permits.
+     */
+    val credits: Long = 0L,
+    /**
      * The centre tiles of the deck machines the player has marked for deconstruction.
      *
      * A **set on the vessel rather than a bit on the machine**, which is the one place this differs

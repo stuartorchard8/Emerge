@@ -829,4 +829,34 @@ class SaveTest {
         val error = assertFailsWith<SaveError> { Save.read("outofspace 1\ngrid 4 4\nrail 99 Rail links=0\n") }
         assertTrue(error.message!!.contains("outside"), error.message!!)
     }
+    @Test
+    fun `credits survive a round trip and a file without them opens broke`() {
+        val rich = starterVessel(Grid(24, 16)).copy(credits = 12_345_678L)
+        assertEquals(12_345_678L, Save.read(Save.write(rich)).credits)
+
+        // ⛔ Absent reads as **zero**, not as a stake — a new save opens with nothing
+        // (`PLAN_economy.md` §4), and so does every world written before there was anything to buy.
+        val withoutLine = Save.write(rich).lineSequence().filterNot { it.startsWith("credits ") }
+            .joinToString("\n")
+        assertEquals(0L, Save.read(withoutLine).credits)
+    }
+
+    @Test
+    fun `credits are a count and do not move with the mass unit`() {
+        // ⚠️ The trap this exists for: every other appended scalar in the save is a mass and is read
+        // through `scale.of`. Credits are not, so a file written at a different mass unit must come
+        // back with the same bank balance rather than one multiplied by a million.
+        val rich = starterVessel(Grid(24, 16)).copy(credits = 1_000L)
+        val native = Save.write(rich)
+        // Header is positional: name, version, mass scale, energy scale — slot 2, the same slot
+        // `a save finer than this build is rounded` edits.
+        val header = native.lineSequence().first().split(' ')
+        val massSlot = 2
+        val coarser = header.toMutableList().also {
+            it[massSlot] = (header[massSlot].toLong() * 1_000L).toString()
+        }
+        val reread = Save.read(native.replaceFirst(header.joinToString(" "), coarser.joinToString(" ")))
+        assertEquals(1_000L, reread.credits, "credits moved with the mass unit")
+    }
+
 }

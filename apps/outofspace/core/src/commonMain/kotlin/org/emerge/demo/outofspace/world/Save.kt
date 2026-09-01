@@ -158,6 +158,10 @@ object Save {
         out.append("creative ").append(if (state.creative) 1 else 0).append('\n')
         // Absent reads as off, which is what every world written before the autopilot existed was.
         out.append("sas ").append(if (state.sas) 1 else 0).append('\n')
+        // The bank. Not a mass, so it is written bare rather than through the mass scale — see
+        // [VesselState.credits], which is deliberately outside every ledger. Absent reads as zero,
+        // which is what every world written before there was anything to buy had.
+        out.append("credits ").append(state.credits).append('\n')
         out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
@@ -715,6 +719,7 @@ object Save {
         /** `k=` readings held aside by (conduit ordinal, tile index) — see where they are applied. */
         var creative = false
         var sas = false
+        var credits = 0L
         val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
         var reconciled: Long? = null
@@ -966,6 +971,10 @@ object Save {
                 "pipemomx", "pipemomy", "momx", "momy" -> Unit
                 "creative" -> creative = tokens.getOrNull(1) != "0"
                 "sas" -> sas = tokens.getOrNull(1) == "1"
+                // ⚠️ Not through `scale.of` — credits are a count, not a mass, and reading them
+                // through the mass scale would multiply the player's bank by 10⁶ on any file
+                // written at a different unit.
+                "credits" -> credits = tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable credits")
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
                 // what a world where nothing has ever been built out of its own stores has.
                 "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
@@ -1125,6 +1134,7 @@ object Save {
             occupancy = occupancy,
             creative = creative,
             sas = sas,
+            credits = credits,
             scrapping = scrapping,
             builtMass = built,
             // A file that predates the field means "started empty", not "recompute from what is
