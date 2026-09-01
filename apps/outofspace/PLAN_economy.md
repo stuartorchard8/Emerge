@@ -1,7 +1,7 @@
 # Economy
 
-Status: **steps 1–4 BUILT and green** (2026-09-01) — money, prices, valuation, the docking port,
-stations and docking. Steps 5–6 (trade UI, arc tuning) not started.
+Status: **steps 1–5 BUILT and green** (2026-09-01) — money, prices, valuation, the docking port,
+stations, docking and the trade UI. **Step 6 (the arc) is all that is left**, and it is a playtest.
 ⏸ One piece of §7 is deliberately not built: the visual approach — see §10c.
 ✅ Station size settled at **20×20** (`RigidBody.STATION_TILES`) against the measurement in §10b;
 100×100 waits on the coarse box decomposition parked in §6. Numbers in §3
@@ -446,8 +446,9 @@ market). `starterWorld` with one deterministic station, `Station.id` + `DockNode
 `momentumBalanceX/Y` and `angularBalance` asserted **every tick for 300 ticks** across dock, drift and
 undock. 25 tests.
 
-**5. Trade UI.** The inspector panel and the trade sheet, with `agent-scripts/trade.txt`.
-*Done when:* screenshotted wide and narrow, and the screenshots are in the commit message.
+**5. ✅ BUILT — the trade UI** (`1678dffb`). `Sheet.Trade` opening itself on arrival, the docking
+port's `BERTH` inspector section carrying the way back plus the interlock and RELEASE CLAMPS,
+`Edit.TuneDockingPort`, and `agent-scripts/trade.txt` shooting it wide and narrow.
 
 **6. The arc.** Re-author the starter vessel to the tier-1 ship — extractor, no concentrator (Stu,
 2026-09-01) — and tune fuel cost, ore value and machine bills until tier 1 → 2 → 3 paces.
@@ -649,6 +650,28 @@ strange thing to have happen for a cosmetic two tiles.
 ⛔ **So it belongs in the view, and the view is step 5.** The gap is at most `Docking.RANGE_TILES`
 before capture, the sim can hold the pose it captured at, and the renderer can close the last two
 tiles over a few frames without any of the above being true. Left here rather than done badly.
+
+## 10d. What step 5 turned up
+
+⛔ **A SCREENSHOT FOUND A BUG NO TEST WAS LOOKING FOR.** The sheet read `BERTH · STATION 0` for a
+station whose id is 1. Both of `StationIndustry`'s plants rebuild a `Station` from two of its four
+fields, and the constructor defaults the other two — so **every station lost its identity and all of
+its berths one tick after the world started**. Silent, in a value nothing reads until the player
+tries to dock, and invisible to every test in `StationTest` because none of them looked at `id` or
+`docks` *after* `worked()`. Exactly the shape `RigidBody.copy` warns about in capitals, one field
+list over, and the reason "a panel is not done until it has been screenshotted" is a rule.
+
+✅ **The sell side must stay explicit.** Stu weighed an alternative worth recording: no UI at all,
+and an **unfiltered demand** on the docking port the moment it berths, with the output side
+auto-buying to meet whatever species-filtered demand already exists on the network. It is much
+simpler, and he named its failure himself — an unfiltered mouth drains the tanks the player was
+saving, *silently*, because a demand is invisible until the belts start moving. The sheet exists so
+that nothing is sold which the player has not named.
+
+⏸ **The buy half of that idea is still good and is not built.** "Order whatever the network is
+already asking for" is a real convenience with no hazard in it: the demand system knows what every
+locked warehouse and construction site wants, and a port could fill those orders without the player
+listing species by hand. Worth adding as a *switch* beside the manual list rather than instead of it.
 
 ## 11. Hazards carried in from memory
 
