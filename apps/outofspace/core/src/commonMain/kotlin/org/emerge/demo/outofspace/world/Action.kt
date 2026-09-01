@@ -1,9 +1,9 @@
 package org.emerge.demo.outofspace.world
 
 /**
- * What a machine can be told to do. One entry today, deliberately: [Run] is a *throttle*, not a
- * switch — its magnitude scales the machine's rate, so a half-strength signal is a half-speed
- * machine and weights mean something beyond on and off.
+ * What a machine can be told to do. [Run] is a *switch*, not a throttle: it says whether the machine
+ * works this tick and nothing about how hard. It was a throttle once, scaled by the strength of the
+ * signal driving it — see [Wiring] for why that went, and where the analogue went instead.
  *
  * The map-of-actions shape is kept from the Godot `action_triggers` grammar so that adding a second
  * action later is adding an enum entry rather than reworking the wiring.

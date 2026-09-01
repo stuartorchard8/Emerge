@@ -253,8 +253,8 @@ const val STARTER_DEMO_PLATE_Y = STARTER_PLATE_Y + 7
 private val STOP_WHEN_FULL = Wiring(
     mapOf(
         Action.Run to listOf(
-            Trigger(SignalSource.Always, SignalField.FULL),
-            Trigger(SignalSource.Wire, -SignalField.FULL),
+            Trigger(SignalSource.Always),
+            Trigger(SignalSource.Wire, negated = true),
         ),
     ),
 )

@@ -49,13 +49,16 @@ fun airlockOpenness(deck: DeckArray, signals: SignalField): IntArray? {
     }
     return openness
 }
-fun airlockOpenness(m: Airlock, signals: SignalField): Int {
-    val activation = m.wiring.activation(Action.Run, signals.at(m.center))
-    if (activation <= 0) return 0
-    // N.B. we used to open proportionally to activation, and may go back to that at some point.
-    // return activation * ApertureField.OPEN / SignalField.FULL
-    return ApertureField.OPEN
-}
+/**
+ * A door is open or shut.
+ *
+ * It used to open in proportion to activation, and the note here used to say it might again. It will
+ * not by way of the wire: a signal is a verdict now and carries no amount to open by — see [Wiring].
+ * A door that wanted to crack itself ajar would decide that on its own tile, out of a setting of its
+ * own, the way a sensor decides its threshold.
+ */
+fun airlockOpenness(m: Airlock, signals: SignalField): Int =
+    if (m.wiring.isOn(Action.Run, signals.at(m.center))) ApertureField.OPEN else 0
 
 class ApertureField(
     private val edges: EdgeGrid,

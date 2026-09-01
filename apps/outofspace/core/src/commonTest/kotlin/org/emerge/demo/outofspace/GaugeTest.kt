@@ -16,6 +16,7 @@ import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Concentrator
 import org.emerge.demo.outofspace.world.Segment
+import org.emerge.demo.outofspace.world.SignalField
 import org.emerge.demo.outofspace.world.machine.Storage
 import org.emerge.demo.outofspace.world.VesselState
 import org.emerge.demo.outofspace.world.contentsBreakdown
@@ -101,11 +102,20 @@ class GaugeTest {
         assertEquals(s.extractedMass + s.baselineCargoMass + 4 * Capacity.PACKET_MASS, s.inTransitMass + s.ventedMass + s.builtMass, "and none went missing")
     }
 
+    /**
+     * ⛔ **It used to put the mass itself on the wire, and a half packet read 50%.** A gauge was the
+     * last transmitter that could say a number, and the network carries verdicts now — see [Wiring].
+     * What it reports is the reading a player wires up anyway: this line is moving, or it has
+     * stalled. The purity it measures is still on the machine, for the panel.
+     */
     @Test
-    fun `a gauge puts its mass on the wire beneath it`() {
+    fun `a gauge reports that something went past, whatever the size of it`() {
         val half = Mixture.of(Species.Iron to Capacity.PACKET_MASS/2, energy = 0)
-        val s = run(line(half), 3*RAIL_PERIOD)
-        assertEquals(500, s.signals.at(s.grid.tile(gaugeTileX, 2)), "half packet reads 50%")
+        val whole = Mixture.of(Species.Iron to Capacity.PACKET_MASS, energy = 0)
+        val wire = { m: Mixture -> run(line(m), 3*RAIL_PERIOD).let { it.signals.at(it.grid.tile(gaugeTileX, 2)) } }
+
+        assertEquals(SignalField.FULL, wire(half), "half a packet is still something going past")
+        assertEquals(wire(whole), wire(half), "and a whole packet says exactly the same thing")
     }
 
     /**

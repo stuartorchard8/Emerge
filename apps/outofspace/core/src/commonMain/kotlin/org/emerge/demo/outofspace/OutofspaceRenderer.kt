@@ -773,7 +773,7 @@ class OutofspaceRenderer {
         // A transmitter is never "stopped": a sensor or a button with no activation is doing its
         // job, and so is a shut airlock — see the note on [Airlock.SEALED].
         if (m !is Airlock && m !is Sensor && m !is WireButton &&
-            m.wiring.activation(Action.Run, state.signals.at(tile)) <= 0
+            !m.wiring.isOn(Action.Run, state.signals.at(tile))
         ) {
             footprintRect(state, m, Visual.MACHINE_INSET, Colors.STOPPED_BODY)
             footprintRect(state, m, Visual.STOP_INDICATOR_SCALE, Colors.STOPPED_INDICATOR)

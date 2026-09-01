@@ -17,6 +17,10 @@ import org.emerge.demo.outofspace.logistics.SolidPacket
 import org.emerge.demo.outofspace.world.Stuff
 import org.emerge.demo.outofspace.world.Direction
 import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.SignalField
+import org.emerge.demo.outofspace.world.SignalSource
+import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.machine.Extractor
 import org.emerge.demo.outofspace.world.Save
@@ -34,6 +38,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.materialBefore
 
@@ -598,9 +603,10 @@ class SaveTest {
         val extractor = assertNotNull(back.deck[grid.tile(4, 4)] as? Extractor)
         // One store now: the jaws are gone, and with them `carry`. See [Extractor].
         assertEquals(123L, back.inStore(grid.tile(4, 4), BufferRole.Product)?.total)
-        // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour.
+        // `ALWAYS - RED`: two terms, and the negative one is the whole behaviour. The weight it was
+        // written with is gone — a term has a sign now — but the sign is what carried the meaning.
         assertEquals(2, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run).size)
-        assertEquals(-1000, extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].weightPermille)
+        assertTrue(extractor.wiring.triggers(org.emerge.demo.outofspace.world.Action.Run)[1].negated)
 
         // The contents survive in the buffer layer; the record still carries `stored`, so the file
         // format is unchanged and an older save loads into the new home unaltered.
@@ -746,6 +752,42 @@ class SaveTest {
         // A `machine … Miner` record from v1, landing on the deck: the rename and the move are
         // applied on one path, so the oldest file in the game still loads.
         assertNotNull(Save.read(v1).deck[TileIndex(20)] as? Extractor)
+    }
+
+    /**
+     * Every file ever written spells a wiring term `SOURCE@weight`, and the weight is gone.
+     *
+     * ⛔ **The sign is the whole of what survives, and the whole of what those files decided.** A
+     * term carries no strength now — see [Trigger] — so `@500` cannot come back as half of anything.
+     * Against a network that only ever carries 0 or [SignalField.FULL] that costs nothing a player
+     * could observe: what `ALWAYS@1000 + WIRE@-1000` did was stop when the wire went live, and that
+     * is exactly what it still does. There is no version gate on this, because the sign is
+     * recoverable from every file in existence and a migration would have nothing else to do.
+     */
+    @Test
+    fun `an old file's weighted terms come back as signs`() {
+        val old = """
+            outofspace 21
+            grid 8 6
+            machine 20 Extractor facing=Right wire=Run:ALWAYS@1000,WIRE@-1000
+        """.trimIndent() + "\n"
+        val terms = assertNotNull(Save.read(old).deck[TileIndex(20)]).wiring.triggers(Action.Run)
+
+        assertEquals(listOf(Trigger(SignalSource.Always), Trigger(SignalSource.Wire, negated = true)), terms)
+        // And it behaves as it always did: running until the wire goes live, then stopping.
+        val wiring = Wiring(mapOf(Action.Run to terms))
+        assertTrue(wiring.isOn(Action.Run, 0))
+        assertFalse(wiring.isOn(Action.Run, SignalField.FULL))
+    }
+
+    /** A half-weighted term is not half a machine any more; it is a machine that runs. */
+    @Test
+    fun `an old file's fractional weight comes back as a plain positive term`() {
+        val old = "outofspace 21\ngrid 8 6\nmachine 20 Extractor facing=Right wire=Run:ALWAYS@500\n"
+        val terms = assertNotNull(Save.read(old).deck[TileIndex(20)]).wiring.triggers(Action.Run)
+
+        assertEquals(listOf(Trigger(SignalSource.Always)), terms)
+        assertTrue(Wiring(mapOf(Action.Run to terms)).isOn(Action.Run, 0), "at full rate, not half of one")
     }
 
     @Test

@@ -1812,8 +1812,8 @@ class OutofspaceHud {
 
         val action = Action.Run
         val triggers = machine.wiring.triggers(action)
-        val activation = machine.wiring.activation(action, controller.state.signals.at(tile))
-        keyValue(action.label, "${activation / 10}%", 0x9A9A9AFFL, if (activation > 0) 0x6ED09AFFL else 0xE05A4AFFL)
+        val on = machine.wiring.isOn(action, controller.state.signals.at(tile))
+        keyValue(action.label, if (on) "ON" else "OFF", 0x9A9A9AFFL, if (on) 0x6ED09AFFL else 0xE05A4AFFL)
 
         if (triggers.isEmpty()) {
             text("(never runs  ·  no terms)", 0xE05A4AFFL)
@@ -1822,17 +1822,17 @@ class OutofspaceHud {
                 clauseRow(
                     lhs = if (slot == 0) "WHEN " + trigger.source.label else "PLUS " + trigger.source.label,
                     cmp = "x",
-                    rhs = signed(trigger.percent),
+                    rhs = if (trigger.negated) "IS OFF" else "IS ON",
                     onLhs = { controller.cycleTriggerSource(tile, action, slot, 1) },
                     onCmp = { controller.wire(tile, action, slot, null) },
-                    onRhs = { controller.cycleTriggerWeight(tile, action, slot, 1) },
+                    onRhs = { controller.toggleTriggerNegated(tile, action, slot) },
                 )
             }
         }
         button("+ ADD TERM", 0x2E5A6BFFL) {
-            controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire, SignalField.FULL))
+            controller.wire(tile, action, triggers.size, Trigger(SignalSource.Wire))
         }
-        text("tap source / weight to cycle, x to delete", 0x7A7A7AFFL)
+        text("tap source or ON-OFF to change, x to delete", 0x7A7A7AFFL)
         text(if (wired) "WIRE reads circuit ${controller.state.networks[tile]}" else "WIRE reads 0  ·  no wire under this tile", 0x7A7A7AFFL)
     }
 

@@ -164,7 +164,7 @@ class SignalInputTest {
         deck -= airlockTile
         deck += Airlock(
             airlockTile,
-            wiring = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Wire, SignalField.FULL)))),
+            wiring = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Wire)))),
         )
         deck += WireButton(grid.tile(3, h / 2), InputKey.Right)
 

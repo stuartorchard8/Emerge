@@ -18,7 +18,6 @@ import org.emerge.demo.outofspace.world.TICK_LADDER
 import org.emerge.demo.outofspace.world.TileIndex
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.VesselState
-import org.emerge.demo.outofspace.world.WEIGHT_LADDER
 import org.emerge.demo.outofspace.world.bufferTile
 import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.toMachineSettings
@@ -596,15 +595,15 @@ class OutofspaceController(
         }
     }
 
-    /** Cycles a trigger's weight through [WEIGHT_LADDER] — a ladder beats a slider on a touchscreen. */
-    fun cycleTriggerWeight(tile: TileIndex, action: Action, slot: Int, delta: Int) {
-        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot)
-
-        if (current != null) {
-            val at = WEIGHT_LADDER.indexOf(current.weightPermille).let { if (it < 0) 0 else it }
-            val next = WEIGHT_LADDER[((at + delta) % WEIGHT_LADDER.size + WEIGHT_LADDER.size) % WEIGHT_LADDER.size]
-            wire(tile, action, slot, current.copy(weightPermille = next))
-        }
+    /**
+     * Flips a trigger between counting for and counting against.
+     *
+     * What used to be a ladder of weights is one bit now — see [Trigger]. A toggle needs no `delta`
+     * and no wrapping, which is the whole of what the simplification bought the UI.
+     */
+    fun toggleTriggerNegated(tile: TileIndex, action: Action, slot: Int) {
+        val current = state.machineCovering(tile)?.wiring?.triggers(action)?.getOrNull(slot) ?: return
+        wire(tile, action, slot, current.copy(negated = !current.negated))
     }
 
     fun invertSensorThreshold(tile: TileIndex) {

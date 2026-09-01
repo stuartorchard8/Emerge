@@ -26,6 +26,7 @@ import org.emerge.demo.outofspace.world.machine.DeckArray
 import org.emerge.sim.core.PlayerId
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.materialBefore
 
@@ -59,12 +60,12 @@ class SignalWiringTest {
         }
     }
 
-    /** `RUN = ALWAYS − WIRE`: the throttle every one of these is about. */
+    /** `RUN = ALWAYS − WIRE`: the switch every one of these is about. */
     private val stopWhenFull = Wiring(
         mapOf(
             Action.Run to listOf(
-                Trigger(SignalSource.Always, SignalField.FULL),
-                Trigger(SignalSource.Wire, -SignalField.FULL),
+                Trigger(SignalSource.Always),
+                Trigger(SignalSource.Wire, negated = true),
             ),
         ),
     )
@@ -119,7 +120,7 @@ class SignalWiringTest {
             s.signals.at(grid.tile(extractorAt.first, extractorAt.second)),
             "a full tank should be driving the whole run, including the far end",
         )
-        assertEquals(0, extractor(s)!!.wiring.activation(Action.Run, s.signals.at(grid.tile(extractorAt.first, extractorAt.second))))
+        assertFalse(extractor(s)!!.wiring.isOn(Action.Run, s.signals.at(grid.tile(extractorAt.first, extractorAt.second))))
     }
 
     /**
@@ -195,21 +196,33 @@ class SignalWiringTest {
         Storage.CAP - (s.inStore(grid.tile(extractorAt.first, extractorAt.second), BufferRole.Input)?.total ?: 0L)
 
     /**
-     * Half a signal is half a machine, over a wire exactly as it was over a channel. The proportional
-     * controller is the interesting half of this grammar and it would be easy to lose to a boolean.
+     * ⛔ **`a partial reading throttles proportionally` stood here, and it was lost to a boolean on
+     * purpose.** Its comment warned that the proportional controller was the interesting half of the
+     * grammar and would be easy to lose by accident. It was not lost by accident: a sensor reports a
+     * verdict and a term carries a sign, so there is no partial reading left to throttle on — see
+     * [Wiring] for what was traded and why. Analogue survives inside machines, where a thruster on
+     * [ThrusterControl.Flight] is still throttled per motor by the flight solver.
+     *
+     * What is pinned in its place is the contract that replaced it, asked of the same rig over the
+     * same window: a machine wired `ALWAYS − WIRE` works flat out or not at all.
      */
     @Test
-    fun `a partial reading throttles proportionally`() {
+    fun `a reading stops the machine outright rather than throttling it`() {
         // Four ticks, not forty: over a longer window the machine's own buffer empties and it
-        // stalls, and a stalled machine works the same amount whatever its throttle says. Measured
-        // over the window where the throttle is the only thing governing the rate.
+        // stalls, and a stalled machine works the same amount whatever it was told. Measured over
+        // the window where the wire is the only thing governing the rate.
         val empty = burned(run(burnerRig(0L), 4))
         val quarter = burned(run(burnerRig(Storage.CAP / 4), 4))
         val half = burned(run(burnerRig(Storage.CAP / 2), 4))
 
-        assertTrue(empty > quarter, "an empty tank should not throttle at all: $empty vs $quarter")
-        assertTrue(quarter > half, "a quarter-full tank should throttle less than a half-full one: $quarter vs $half")
-        assertTrue(half > 0L, "and half full is still running")
+        assertTrue(empty > 0L, "a quiet wire leaves the machine running: $empty")
+        assertTrue(empty > quarter, "and anything in the tank stops it: $empty vs $quarter")
+        assertEquals(quarter, half, "a fuller tank stops it no harder: $quarter vs $half")
+        // ⚠️ **Stopped dead, one tick late.** A signal is built from the state the tick before it,
+        // so the machine works the tick the packet lands and none after — a quarter of the window
+        // measured here. That lag is the network's, not the throttle's: what it is *not* is a rate
+        // that scales with the reading, which is what would show up as a half or a third instead.
+        assertEquals(empty, quarter * 4, "exactly one tick of work before the wire caught up")
     }
 
     @Test

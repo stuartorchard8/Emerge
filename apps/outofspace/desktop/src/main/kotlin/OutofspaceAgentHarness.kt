@@ -337,7 +337,7 @@ object OutofspaceAgentHarness {
                 }
 
                 "rotate" -> { controller.rotate(index(t[1], t[2])); settle() }
-                // `wire <x> <y> <ALWAYS|WIRE> <permille>` — appends one RUN term, which is the whole
+                // `wire <x> <y> <ALWAYS|WIRE> [not]` — appends one RUN term, which is the whole
                 // of the wiring grammar a script has ever needed. Without it an airlock cannot be
                 // opened headlessly at all: it ships wired to nothing on purpose, so every screenshot
                 // of one would be of a shut door.
@@ -346,9 +346,12 @@ object OutofspaceAgentHarness {
                     val source = SignalSource.ALL.firstOrNull { it.name.equals(t[3], true) }
                         ?: error("unknown source '${t[3]}' (have ${SignalSource.ALL.map { it.label }})")
                     val slot = controller.state.machineCovering(at)?.wiring?.triggers(Action.Run)?.size ?: 0
-                    controller.wire(at, Action.Run, slot, Trigger(source, t[4].toInt()))
+                    // A term is a sign now, not a weight — see [Trigger]. The fourth word is read
+                    // as a flag so old scripts written `... WIRE -1000` still say "against".
+                    val negated = t.getOrNull(4)?.let { it.equals("not", true) || it.startsWith("-") } ?: false
+                    controller.wire(at, Action.Run, slot, Trigger(source, negated))
                     settle()
-                    println("[agent] wire ${t[1]},${t[2]} RUN += ${source.label}@${t[4]}")
+                    println("[agent] wire ${t[1]},${t[2]} RUN += ${if (negated) "NOT " else ""}${source.label}")
                 }
                 // `bind <x> <y> <key>` and `hold <key>...` / `release` — the pilot's hands. Without
                 // these no script can press anything, and the flight loop is unreachable headlessly.

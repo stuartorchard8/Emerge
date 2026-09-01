@@ -576,7 +576,7 @@ object Save {
 
     private fun writeWiring(w: Wiring): String =
         Action.entries.joinToString(";") { action ->
-            action.name + ":" + w.triggers(action).joinToString(",") { "${it.source.name}@${it.weightPermille}" }
+            action.name + ":" + w.triggers(action).joinToString(",") { (if (it.negated) "!" else "") + it.source.name }
         }
 
     /**
@@ -1705,17 +1705,37 @@ object Save {
             val action = Action.entries.firstOrNull { it.name == actionName } ?: fail("unknown action '$actionName'")
             val terms = part.substring(colon + 1)
             val triggers = if (terms.isEmpty()) emptyList() else terms.split(',').map { term ->
-                val atSign = term.indexOf('@')
-                if (atSign < 0) fail("expected SOURCE@weight, got '$term'")
-                val sourceName = term.substring(0, atSign)
-                Trigger(
-                    readSource(sourceName, fail),
-                    term.substring(atSign + 1).toIntOrNull() ?: fail("bad weight in '$term'"),
-                )
+                readTrigger(term, fail)
             }
             wiring = wiring.with(action, triggers)
         }
         return wiring
+    }
+
+    /**
+     * One wiring term, reading both spellings.
+     *
+     * v21 and earlier wrote `SOURCE@weight`, where the weight was a signed permille that scaled the
+     * signal. A term carries only a sign now — see [Trigger] — so an old file keeps the sign and
+     * drops the magnitude. That is lossy, and it is the loss the change was: a term written `@500`
+     * meant "at half strength", and there is no half strength to restore it to.
+     *
+     * ⚠️ **It is behaviour-preserving where behaviour was reachable.** Every weight the UI could
+     * actually produce was ±250..±1000, and against a network that now only ever carries 0 or
+     * [SignalField.FULL] the sign is the whole of what those terms decided. A vessel wired
+     * `ALWAYS + WIRE@-1000` stops when its wire goes live exactly as it did; one wired `ALWAYS@500`
+     * runs at full rate rather than half, because half is not a thing a wire can ask for any more.
+     * No version bump: the sign is recoverable from every file ever written, so there is nothing a
+     * migration would get right that this does not.
+     */
+    private fun readTrigger(term: String, fail: (String) -> Nothing): Trigger {
+        val atSign = term.indexOf('@')
+        if (atSign < 0) {
+            val negated = term.startsWith('!')
+            return Trigger(readSource(if (negated) term.substring(1) else term, fail), negated)
+        }
+        val weight = term.substring(atSign + 1).toIntOrNull() ?: fail("bad weight in '$term'")
+        return Trigger(readSource(term.substring(0, atSign), fail), negated = weight < 0)
     }
 
     /**

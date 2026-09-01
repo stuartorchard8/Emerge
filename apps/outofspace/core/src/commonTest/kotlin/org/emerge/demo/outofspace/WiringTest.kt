@@ -35,6 +35,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.emerge.demo.outofspace.world.materialBefore
 
@@ -56,8 +57,12 @@ class WiringTest {
         return s
     }
 
-    private fun wiring(vararg terms: Pair<SignalSource, Int>) =
-        Wiring(mapOf(Action.Run to terms.map { Trigger(it.first, it.second) }))
+    private fun wiring(vararg terms: Trigger) = Wiring(mapOf(Action.Run to terms.toList()))
+
+    private val always = Trigger(SignalSource.Always)
+    private val notAlways = Trigger(SignalSource.Always, negated = true)
+    private val onWire = Trigger(SignalSource.Wire)
+    private val offWire = Trigger(SignalSource.Wire, negated = true)
 
     /**
      * A run of wire along row [y], laid and joined, so a fixture can actually connect two things.
@@ -91,21 +96,43 @@ class WiringTest {
 
     // ── Activation arithmetic ─────────────────────────────────────────────────
 
+    /**
+     * ⛔ **There is no half-on to assert any more.** This used to pin `Σ(signal × weight)` clamped to
+     * ±1000, and a `WIRE` term against a half-strength signal came to 500. Terms carry a sign and
+     * nothing else now, so what is left to pin is the sum's *polarity* — which is all any of those
+     * arrangements ever decided once the network went binary. See [Wiring].
+     */
     @Test
-    fun `activation sums the terms and clamps`() {
-        val wire = 1000
-        assertEquals(1000, wiring(SignalSource.Always to 1000).activation(Action.Run, wire))
-        assertEquals(500, wiring(SignalSource.Wire to 1000).activation(Action.Run, 500))
-        assertEquals(250, wiring(SignalSource.Wire to 500).activation(Action.Run, 500))
-        assertEquals(0, wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000).activation(Action.Run, wire))
-        // Sums past full are clamped, not wrapped.
-        assertEquals(1000, wiring(SignalSource.Always to 1000, SignalSource.Wire to 1000).activation(Action.Run, wire))
-        assertEquals(-1000, wiring(SignalSource.Wire to -1000, SignalSource.Wire to -1000).activation(Action.Run, wire))
+    fun `a machine is on when its terms sum above zero`() {
+        val live = SignalField.FULL
+        assertTrue(wiring(always).isOn(Action.Run, live))
+        assertTrue(wiring(onWire).isOn(Action.Run, live))
+        assertFalse(wiring(onWire).isOn(Action.Run, 0))
+        // The cancelling pair: ALWAYS carries it until the wire goes live and takes it back to zero.
+        assertFalse(wiring(always, offWire).isOn(Action.Run, live))
+        assertTrue(wiring(always, offWire).isOn(Action.Run, 0))
+        // Two terms agreeing is still on — a sum above zero, not a sum equal to one.
+        assertTrue(wiring(always, onWire).isOn(Action.Run, live))
+        assertFalse(wiring(offWire, offWire).isOn(Action.Run, live))
+        // Zero is off, and a term voting against itself is the shortest way to say never.
+        assertFalse(wiring(always, notAlways).isOn(Action.Run, live))
+    }
+
+    /**
+     * What the sign-only grammar gained: "run while this is quiet" is one term now.
+     *
+     * Under weights a lone negative term summed to −1000 and the machine never started, so the
+     * thought had to be spelled `ALWAYS − WIRE`. Both still work; this pins that the short one does.
+     */
+    @Test
+    fun `a lone negated term runs while its source is quiet`() {
+        assertTrue(wiring(offWire).isOn(Action.Run, 0))
+        assertFalse(wiring(offWire).isOn(Action.Run, SignalField.FULL))
     }
 
     @Test
     fun `a machine with no terms never runs`() {
-        assertEquals(0, Wiring(mapOf(Action.Run to emptyList())).activation(Action.Run, SignalField.FULL))
+        assertFalse(Wiring(mapOf(Action.Run to emptyList())).isOn(Action.Run, SignalField.FULL))
     }
 
     /**
@@ -115,12 +142,12 @@ class WiringTest {
      */
     @Test
     fun `an unwired WIRE term reads nothing, so ALWAYS minus WIRE runs at full`() {
-        assertEquals(1000, wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000).activation(Action.Run, 0))
+        assertTrue(wiring(always, offWire).isOn(Action.Run, 0))
     }
 
     @Test
     fun `ALWAYS reads full whatever the wire under it is doing`() {
-        assertEquals(1000, wiring(SignalSource.Always to 1000).activation(Action.Run, 0))
+        assertTrue(wiring(always).isOn(Action.Run, 0))
     }
 
     @Test
@@ -164,10 +191,20 @@ class WiringTest {
         ).stocked(tank, stored)
     }
 
+    /**
+     * ⛔ **It used to report the fullness itself, and a half-full tank read 500.** A sensor compares
+     * its reading against its own threshold now and says yes or no — see [Sensor]. The fixture's
+     * sensor is wide open (`threshold = 0`), so what it answers is "is there anything in there".
+     */
     @Test
-    fun `a sensor reports the fullness of the tile it faces`() {
-        val s = run(tankAndSensor(Storage.CAP / 2), 1)
-        assertEquals(500, s.signals.at(sensorTile), "a half-full tank should read 50%")
+    fun `a sensor reports a verdict on the tile it faces, not a reading`() {
+        assertEquals(SignalField.FULL, run(tankAndSensor(Storage.CAP / 2), 1).signals.at(sensorTile))
+        assertEquals(
+            run(tankAndSensor(Storage.CAP), 1).signals.at(sensorTile),
+            run(tankAndSensor(Storage.CAP / 2), 1).signals.at(sensorTile),
+            "a full tank and a half-full one clear the same threshold, so they say the same thing",
+        )
+        assertEquals(0, run(tankAndSensor(0L), 1).signals.at(sensorTile), "and an empty tank says nothing")
     }
 
     @Test
@@ -211,7 +248,7 @@ class WiringTest {
         // could be observed at the far end anyway.
         //
         // What was genuinely lost is the ability to run one *slowly* by wiring it to a weak signal.
-        // That is a wiring question rather than an extraction one, and it is Stu's to reopen.
+        // That question is closed: a wire carries a verdict and there is no weak signal to wire to.
         fun groundInASecond(w: Wiring): Long {
             val grid = Grid(5, 5)
             val deck = DeckArray(grid)
@@ -220,13 +257,12 @@ class WiringTest {
             return s.inStore(grid.tile(2, 2), BufferRole.Product)?.total ?: 0L
         }
         // Whatever four ticks of biting comes to — cells are whole and their mass is the rock's, so
-        // the number is a property of the feed and not of the machine. What is pinned is that every
-        // positive signal gives the *same* answer and a non-positive one gives nothing.
-        val full = groundInASecond(wiring(SignalSource.Always to 1000))
+        // the number is a property of the feed and not of the machine. What is pinned is that a
+        // machine told to run does, and one told not to does nothing.
+        val full = groundInASecond(wiring(always))
         assertTrue(full > 0L, "a fully wired extractor bit nothing at all")
-        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 500)), "half a signal is still on")
-        assertEquals(full, groundInASecond(wiring(SignalSource.Always to 250)), "a quarter signal is still on")
-        assertEquals(0L, groundInASecond(wiring(SignalSource.Always to -1000)), "negative activation stops it")
+        assertEquals(0L, groundInASecond(wiring(notAlways)), "a term voting against stops it")
+        assertEquals(0L, groundInASecond(wiring()), "and no terms at all stops it")
     }
 
     @Test
@@ -260,14 +296,14 @@ class WiringTest {
      * more interesting half and comparisons can be added without disturbing it.
      */
     @Test
-    fun `an extractor wired ALWAYS minus WIRE throttles smoothly as the tank it fills gets full`() {
+    fun `an extractor wired ALWAYS minus WIRE stops dead when the tank it fills reports full`() {
         // The extractor's plate covers x 0..4 and it pushes out at x=4; the tank covers 5..7 and
         // takes it in at x=5. The sensor sits below the tank looking up at its bottom row.
         val grid = Grid(12, 8)
         val deck = DeckArray(grid)
         val feed = feedExtractor(
             grid, deck, 2, 3,
-            wiring = wiring(SignalSource.Always to 1000, SignalSource.Wire to -1000),
+            wiring = wiring(always, offWire),
             bodies = 4,
         )
         deck += fixtureStorage(grid.tile(6, 3), Direction.Right)   // input port at (5, 3)
@@ -290,8 +326,9 @@ class WiringTest {
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
 
-        // Throttling begins on the very first tick — fullness is continuous, so there is no grace
-        // period. What matters is the *shape*: the rate falls away as the tank fills.
+        // The sensor is wide open (`threshold = 0`), so it fires as soon as the first packet lands
+        // in the tank and the extractor stops dead. What is asserted is that shape: it grinds while
+        // the tank is empty, and it has all but stopped once anything is in there.
         //
         // Measured as **what has been ground out of the extractor**: everything taken off a rock,
         // less the cell still in the jaws. Neither `extractedMass` nor "mass aboard" would do — a
@@ -300,20 +337,18 @@ class WiringTest {
         fun ground(w: VesselState): Long =
             w.extractedMass - (w.inStore(grid.tile(2, 3), BufferRole.Inside)?.total ?: 0L)
         val firstTenSeconds = ground(run(s, 40))
-        assertTrue(firstTenSeconds > 7_000L, "barely throttled while nearly empty, got ${firstTenSeconds}g")
+        assertTrue(firstTenSeconds > 7_000L, "should grind freely while the tank is empty, got ${firstTenSeconds}g")
 
-        // Long enough to fill the tank at belt rate, and then half again because the throttle
-        // slows the last of it down. Derived rather than typed: filling a tank takes as many ticks
-        // as it takes packets, and how big a packet is is a tuning dial.
-        s = run(s, ticksToMove(Storage.CAP) * 3 / 2)
+        // ⛔ **This used to run until the tank filled** — `ticksToMove(Storage.CAP) * 3 / 2`, on the
+        // reasoning that a throttle slows the last of it down. The tank never fills now: the sensor
+        // trips on the first packet to land and the feed stops, so waiting for a full one is waiting
+        // for something the wiring is there to prevent. Long enough to land a packet and no longer.
+        s = run(s, ticksToMove(Capacity.PACKET_MASS) * 2)
         val onTheWire = s.signals.at(grid.tile(2, 3))
-        assertTrue(onTheWire > 800, "the tank should be reading nearly full, got $onTheWire")
+        assertEquals(SignalField.FULL, onTheWire, "the tank has stock, so the sensor should be firing")
 
         val lateRate = ground(run(s, 40)) - ground(s)
-        assertTrue(
-            lateRate * 4 < firstTenSeconds,
-            "should be throttled to a fraction of its early rate: ${firstTenSeconds}g then ${lateRate}g",
-        )
+        assertEquals(0L, lateRate, "and a firing sensor stops the feed dead, not merely slows it")
         assertTrue(s.buffers.resourceAt(grid.tile(6, 3))!!.total <= Storage.CAP, "and it never overfills")
     }
 
@@ -327,7 +362,12 @@ class WiringTest {
      * seconds to re-derive a rate the sibling test already measures on a grid a tenth the size. What
      * is particular to the starter vessel is the *wiring*, and wiring can be read the moment the
      * tank has something in it. So the tank is stated as nearly full and the run is long enough for
-     * the signal to cross the vessel and the line to bank a packet.
+     * the signal to cross the vessel.
+     *
+     * ⚠️ **Banking takes an order of magnitude longer than wiring does.** The wire is readable within
+     * a couple of ticks; the main line is thirty tiles of track and banks nothing at all for the
+     * first few hundred, so the two are measured over different windows. This read both at 200 for a
+     * long time and nobody noticed, because the banking assertion sat behind one that failed first.
      */
     @Test
     fun `the starter vessel ships that same loop, working`() {
@@ -362,17 +402,19 @@ class WiringTest {
 
         val s = run(start, 200)
         val onTheWire = s.signals.at(throttled.single())
-        assertTrue(onTheWire > 800, "the demonstration storage is nearly full, wire reads $onTheWire")
-        // And the reading is *live* rather than a constant the fixture put there: the tank goes on
-        // filling, and the wire follows it up.
-        val later = run(s, 150).signals.at(throttled.single())
-        assertTrue(later > onTheWire, "the wire should track the tank as it fills: $onTheWire then $later")
+        assertEquals(SignalField.FULL, onTheWire, "the demonstration storage has stock, so its sensor fires")
+        // And the signal is *live* rather than a constant the fixture put there: the same vessel
+        // with nothing stocked into that tank leaves the same wire quiet. Read early, before the
+        // demonstration line has had time to deliver a packet and fill it by itself.
+        val unstocked = run(workingVessel(Grid(40, 28)), 2)
+        assertEquals(0, unstocked.signals.at(throttled.single()), "with the tank empty the wire is quiet")
         // The main line is unaffected by any of it. Stated as *growth*, because the vessel is built
         // holding half a tank of iron to build with — a bare "there is iron aboard" would pass on a
         // line that never turned a wheel.
+        val settled = run(s, 1_000).stockpile.totalMass
         assertTrue(
-            s.stockpile.totalMass > banked,
-            "the refinery line still banks what it digs: $banked then ${s.stockpile.totalMass}",
+            settled > banked,
+            "the refinery line still banks what it digs: $banked then $settled",
         )
     }
 
@@ -388,11 +430,11 @@ class WiringTest {
         deck += Extractor(at, Direction.Right)
         val base = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
 
-        val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 99, Trigger(SignalSource.Wire, -1000)))))
+        val added = run(base, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 99, offWire))))
         assertEquals(2, added.deck[at]!!.wiring.triggers(Action.Run).size, "a slot past the end appends")
 
-        val changed = run(added, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 1, Trigger(SignalSource.Wire, 500)))))
-        assertEquals(Trigger(SignalSource.Wire, 500), changed.deck[at]!!.wiring.triggers(Action.Run)[1])
+        val changed = run(added, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 1, onWire))))
+        assertEquals(onWire, changed.deck[at]!!.wiring.triggers(Action.Run)[1])
 
         val removed = run(changed, 1, OutofspaceInput(listOf(Edit.Wire(at, Action.Run, 1, null))))
         assertEquals(1, removed.deck[at]!!.wiring.triggers(Action.Run).size)
@@ -405,20 +447,20 @@ class WiringTest {
         val at = grid.tile(3, 3)
         var s = VesselState.empty(grid)
         s = run(s, 1, OutofspaceInput(listOf(fixturePlace(at, Brush.Building(DeckMachineKind.Extractor), Direction.Right))))
-        assertEquals(listOf(Trigger(SignalSource.Always, 1000)), s.deck[at]!!.wiring.triggers(Action.Run))
+        assertEquals(listOf(always), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 
     @Test
     fun `wiring survives rotation`() {
         val grid = Grid(9, 9)
         val at = grid.tile(4, 4)
-        val wired = Extractor(at, Direction.Right).withWiring(wiring(SignalSource.Wire to 750))
+        val wired = Extractor(at, Direction.Right).withWiring(wiring(onWire))
         val deck = DeckArray(grid)
         deck += wired
         var s = VesselState(grid, deck, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
         s = run(s, 1, OutofspaceInput(listOf(Edit.Rotate(at))))
         assertEquals(Direction.Down, (s.deck[at] as? Extractor)!!.facing)
-        assertEquals(listOf(Trigger(SignalSource.Wire, 750)), s.deck[at]!!.wiring.triggers(Action.Run))
+        assertEquals(listOf(onWire), s.deck[at]!!.wiring.triggers(Action.Run))
     }
 
     // ── Storage ───────────────────────────────────────────────────────────────

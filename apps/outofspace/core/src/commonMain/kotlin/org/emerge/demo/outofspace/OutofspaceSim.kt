@@ -350,10 +350,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     }
                 }
                 // Gauge persists after packet leaves.
+                //
+                // ⛔ **"Something went past", not "how much".** It used to raise the last mass as a
+                // fraction of a packet, which made it the one transmitter on the network that could
+                // say a number — see [Wiring] for why nothing says numbers any more. What is left is
+                // the reading a player actually wires up: this line is moving, or this line has
+                // stalled. The purity it measures is still on the machine for the panel to show, and
+                // a gauge that fired on *that* would be a threshold like a sensor's rather than
+                // anything the wire needs to learn.
                 for (tile in w.grid.tiles) {
                     if (w.deck.isGhost(tile)) continue
                     val g = w.deck[tile] as? Gauge ?: continue
-                    raise(tile, (g.lastMass * SignalField.FULL / Capacity.PACKET_MASS).toInt())
+                    if (g.lastMass > 0L) raise(tile, SignalField.FULL)
                 }
             }
 
@@ -385,7 +393,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 // waiting on, and it would never empty. A rail being taken apart still carries
                 // traffic because carrying is not producing; this is.
                 if (tile in w.scrapping) continue
-                val activation = m.wiring.activation(Action.Run, state.signals.at(tile))
+                val on = m.wiring.isOn(Action.Run, state.signals.at(tile))
                 w[tile] = when (m) {
                     // A bridge is inert like a length of track: its load is shuffled along by
                     // [advanceBridges] with the rest of the conduit step, not by running the machine.
@@ -396,10 +404,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // A thruster on flight control answers the pilot's stick, not the wire — see
                     // [ThrusterControl]. Worked out per motor from where it sits and which way it
                     // points, so the ship needs no allocation of engines to axes anywhere.
-                    is Thruster -> w.fire(cfg, m, flight[tile.index].takeIf { m.control == ThrusterControl.Flight } ?: activation, tile, structure)
-                    is Concentrator -> w.refine(cfg, m, activation, tile)
-                    is Furnace -> w.refine(cfg, m, activation, tile)
-                    is Extractor -> w.leech(m, activation, tile)
+                    // ⚠️ The one machine still handed a *number*, and it does not come from the
+                    // wire: the flight solver throttles each motor by how much of the pilot's
+                    // demand it is placed to answer. A thruster on WIRE gets all or nothing like
+                    // everything else.
+                    is Thruster -> w.fire(
+                        cfg, m,
+                        flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
+                            ?: if (on) SignalField.FULL else 0,
+                        tile, structure,
+                    )
+                    is Concentrator -> w.refine(cfg, m, on, tile)
+                    is Furnace -> w.refine(cfg, m, on, tile)
+                    is Extractor -> w.leech(m, on, tile)
                 }
             }
 
@@ -1043,9 +1060,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             if (conduits.at(Conduit.Pipe, tile) == null) continue
             val intake = grid.neighbour(tile, pump.facing)
             if (intake == TileIndex.NONE) continue
-            val activation = pump.wiring.activation(Action.Run, signals.at(tile))
-            if (activation <= 0) continue
-            val moles = Pump.MILLIMOLES_PER_TICK * activation / SignalField.FULL
+            if (!pump.wiring.isOn(Action.Run, signals.at(tile))) continue
+            val moles = Pump.MILLIMOLES_PER_TICK
             if (moles <= 0L) continue
             (demands ?: ArrayList<PumpDemand>(4).also { demands = it }).add(PumpDemand(intake, tile, moles))
         }
@@ -1075,12 +1091,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         buffers.put(bufferTile(grid, m, centre, role)!!, resource)
     }
 
+    /**
+     * A rate scaled by [activation], carrying the remainder between ticks.
+     *
+     * ⚠️ **Proportional on purpose, and no longer reachable from the wire.** The only caller that
+     * passes anything but nothing-or-[SignalField.FULL] is a thruster under flight control, which is
+     * exactly the arrangement [Wiring] describes: the analogue lives inside the machine.
+     */
     private fun throttled(perTick: Long, activation: Int, carry: Long): Pair<Long, Long> {
         if (activation <= 0) return 0L to carry
         return Rate.tick(perTick * activation, SignalField.FULL, carry)
     }
 
-    private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, activation: Int, tile: TileIndex): Concentrator {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Concentrator, on: Boolean, tile: TileIndex): Concentrator {
         // Starting a fresh lump is a move between two stores, and the whole tick's heat is applied
         // the moment it starts rather than dribbled out over the action.
         val inProgress = store(m, tile, BufferRole.Inside) ?: run {
@@ -1093,7 +1116,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             charge
         }
 
-        val (actionProgress, carry) = throttled(1, activation, m.carry)
+        val (actionProgress, carry) = throttled(1, if (on) SignalField.FULL else 0, m.carry)
         if (m.progress + actionProgress >= m.ticksPerAction) {
             // ⛔ **Any packet in either output blocks the machine — not a *full* output.** A
             // concentrator works in whole packets: two in, one packet of concentrate and one of
@@ -1144,7 +1167,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
      * ramp does not finish before the charge is handed on. Increment 4 may want "and has stopped
      * reacting" as the release condition once there is a reaction table to ask.
      */
-    private fun Work.refine(cfg: OutofspaceConfig, m: Furnace, activation: Int, tile: TileIndex): Furnace {
+    private fun Work.refine(cfg: OutofspaceConfig, m: Furnace, on: Boolean, tile: TileIndex): Furnace {
         val chamber = bufferTile(grid, m, tile, BufferRole.Inside)!!
 
         // An empty chamber takes the next charge. Nothing is charged for the loading itself — the
@@ -1156,7 +1179,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             putStore(m, tile, BufferRole.Inside, fresh)
             return m
         }
-        if (activation <= 0) return m
+        if (!on) return m
 
         // The thermostat. It reads the charge and it heats the charge, which is the one arrangement
         // in which the two are the same question — see [Work.heatBuffer] for why the element is
@@ -1169,7 +1192,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // is the slow bleed the machine is supposed to have rather than a rule written here.
         val shortfall = buffers.stuff.heatCapacityAt(chamber) * (m.setTemperature - buffers.stuff.kelvinAt(chamber))
         if (shortfall > 0L) {
-            heatBuffer(chamber, minOf(shortfall, scaledRatio(activation.toLong(), SignalField.FULL.toLong(), HEATER_POWER)))
+            heatBuffer(chamber, minOf(shortfall, HEATER_POWER))
             return m
         }
 
@@ -2374,12 +2397,12 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
          * Only the mass of it is obvious, and the other two are exactly the kind of half-exchange
          * the ledgers exist to catch.
          */
-        fun leech(m: Extractor, activation: Int, tile: TileIndex): Extractor {
+        fun leech(m: Extractor, on: Boolean, tile: TileIndex): Extractor {
             // Backed up: stop biting. What is not taken is still in the rock — or still on the floor
             // — which is a better place for it than a buffer; nothing is forfeit by waiting.
             val held = buffers.resourceAt(bufferTile(grid, m, tile, BufferRole.Product)!!)
             if ((held?.total ?: 0L) >= Extractor.BUFFER_CAP) return m
-            if (activation <= 0) return m
+            if (!on) return m
 
             var taken = Mixture.EMPTY
 
@@ -3127,7 +3150,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Machines that gate output hold their product when RUN activation is zero — a storage
             // becomes a valve when wired; extractors/concentrators/furnaces do the same.
             // (Bridges are excluded above; thrusters/vents have no output port.)
-            if (m.kind.gatesOutput && m.wiring.activation(Action.Run, signals.at(port.owner)) <= 0) return
+            if (m.kind.gatesOutput && !m.wiring.isOn(Action.Run, signals.at(port.owner))) return
 
             val buffer = bufferFor(m, port) ?: return
             // ⚠️ **A source holds on to what nothing wants, and lets go of no more than is wanted.**

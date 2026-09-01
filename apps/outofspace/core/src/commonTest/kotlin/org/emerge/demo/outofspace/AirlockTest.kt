@@ -3,6 +3,8 @@ package org.emerge.demo.outofspace
 import org.emerge.demo.outofspace.world.RailLayer
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Action
+import org.emerge.demo.outofspace.world.ApertureField
+import org.emerge.demo.outofspace.world.airlockOpenness
 import org.emerge.demo.outofspace.world.machine.Airlock
 import org.emerge.demo.outofspace.world.Grid
 import org.emerge.demo.outofspace.world.machine.Hull
@@ -44,9 +46,8 @@ class AirlockTest {
         return s
     }
 
-    /** Wired to the constant at [permille], which is the simplest possible "somebody is holding the button". */
-    private fun held(permille: Int) =
-        Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Always, permille))))
+    /** Wired to the constant: the simplest possible "somebody is holding the button". */
+    private fun held() = Wiring(mapOf(Action.Run to listOf(Trigger(SignalSource.Always))))
 
     /**
      * A sealed hull box with one tile of its **right** wall replaced by [door].
@@ -114,7 +115,7 @@ class AirlockTest {
 
     @Test
     fun `a signalled airlock lets the air out`() {
-        val start = roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL)))
+        val start = roomWithDoor(Airlock(TileIndex(0), wiring = held()))
         val after = run(start, 60)
 
         assertTrue(
@@ -130,7 +131,7 @@ class AirlockTest {
      */
     @Test
     fun `venting through an airlock keeps the air ledger balanced`() {
-        val s = run(roomWithDoor(Airlock(TileIndex(0),wiring = held(SignalField.FULL))), 60)
+        val s = run(roomWithDoor(Airlock(TileIndex(0),wiring = held())), 60)
         assertEquals(0L, s.airBalance, "aboard ${s.atmosphereMass} + vented ${s.airVentedMass}")
     }
 
@@ -142,19 +143,25 @@ class AirlockTest {
      */
     @Test
     fun `an open airlock puts the room outside`() {
-        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 1)
+        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held())), 1)
         assertEquals(Structure.Vacuum, s.structure[insideTheDoor(s).index])
     }
 
     // ── Graded ────────────────────────────────────────────────────────────────
 
+    /**
+     * ⛔ **`a wider signal vents the same` stood here, and there is no wider signal to give it.**
+     *
+     * It fed the door a quarter-strength constant and pinned that the room vented exactly as fast as
+     * under a full one — the assertion that caught grading being dropped from [airlockOpenness]. A
+     * term carries a sign and no strength now, so a quarter signal is not a thing a test can build,
+     * and what is left to state is the contract itself: open or shut, nothing between.
+     */
     @Test
-    fun `a wider signal vents the same`() {
-        val ajar = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL / 4))), 30).airVentedMass
-        val wide = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 30).airVentedMass
-
-        assertTrue(ajar > 0L, "a quarter-signal opens the door")
-        assertEquals(wide, ajar, "and the door should leak the same as one open with full signal: $wide vs $ajar")
+    fun `a door is open or shut, with nothing in between`() {
+        val signals = SignalField.none(1)
+        assertEquals(ApertureField.OPEN, airlockOpenness(Airlock(TileIndex(0), wiring = held()), signals))
+        assertEquals(0, airlockOpenness(Airlock(TileIndex(0), wiring = Wiring(mapOf(Action.Run to emptyList()))), signals))
     }
 
     // ── Thrust ────────────────────────────────────────────────────────────────
@@ -166,7 +173,7 @@ class AirlockTest {
      */
     @Test
     fun `venting out of one side drives the vessel the other way`() {
-        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held(SignalField.FULL))), 60)
+        val s = run(roomWithDoor(Airlock(TileIndex(0), wiring = held())), 60)
 
         assertTrue(s.vesselImpulseX < 0L, "exhaust went +x, so the ship should go -x: ${s.vesselImpulseX}")
         assertTrue(
