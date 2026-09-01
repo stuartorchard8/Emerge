@@ -65,20 +65,39 @@ class StorageFilterTest {
      * Two warehouses and not a warehouse and a vent, because the question is what a *sink* refuses:
      * a vent takes anything and would answer nothing.
      */
-    private fun tankToTank(filter: SpeciesFilter?): VesselState {
+    private fun tankToTank(
+        filter: SpeciesFilter?,
+        stock: Mixture = titanium(load),
+        receiverIsGhost: Boolean = false,
+        /**
+         * How far the track runs. Nine tiles stops at the warehouse's door; ten puts track under
+         * the warehouse itself, which is what a site needs — a ghost machine is fed at the tile it
+         * stands on, so with no rail there it is not on the network at all and the whole question
+         * goes away untested.
+         */
+        railTo: Int = 9,
+    ): VesselState {
         val grid = cfg.initialGrid
         val deck = DeckArray(grid)
         deck += fixtureStorage(grid.tile(2, 3), Direction.Right)
-        deck += fixtureStorage(grid.tile(10, 3), Direction.Right, filter = filter)
+        val receiver = fixtureStorage(grid.tile(10, 3), Direction.Right, filter = filter)
+        if (receiverIsGhost) deck.standGhost(receiver) else deck += receiver
         val rails = arrayOfNulls<Segment>(grid.size)
-        joinRow(grid, rails, 3, 9, 3)
+        joinRow(grid, rails, 3, railTo, 3)
         return VesselState(
             grid, deck,
             conduits = Conduits.ofRails(rails.toList()),
             buffers = BufferLayer.forDeck(grid, deck),
             rail = RailLayer.empty(grid.size),
-        ).stocked(grid.tile(2, 3), titanium(load))
+        ).stocked(grid.tile(2, 3), stock)
     }
+
+    /**
+     * Pure iron: 100% of one species, and not the [Species.Titanium] a fixture storage is built out
+     * of. So a purity-only lock admits it and a storage's own bill of materials does not — which is
+     * the pair the ghost tests below turn on.
+     */
+    private fun pureIron(mass: Long) = Mixture.of(Species.Iron to mass, energy = 0)
 
     private fun VesselState.received(): Long = inStore(grid.tile(10, 3), BufferRole.Inside)?.total ?: 0L
 
@@ -119,6 +138,42 @@ class StorageFilterTest {
         assertTrue(SpeciesFilter(Species.Titanium, 90).admits(ore))
         assertTrue(!SpeciesFilter(Species.Titanium, 99).admits(ore))
         assertTrue(!SpeciesFilter(Species.Titanium, 90).admits(Mixture.EMPTY), "nothing is not a delivery")
+    }
+
+    /**
+     * ⛔ **A construction site is not a warehouse, whatever its dials say.**
+     *
+     * Stu's save `source_27_12`, 2026-09-01. A storage 29% built at the far end of a corridor was
+     * locked at 100% purity — the dials are set when the site is placed, so a ghost carries them
+     * from the first tick. That lock was stated to the network as an ordinary warehouse appetite:
+     * endless, and satisfied by anything pure. Eleven tiles upstream a tank of pure Enstatite read
+     * it, found somewhere its cargo could go for ever, and poured. The site then refused every
+     * packet at its own door — it is being built out of Ferrosilite — and seven of them filled the
+     * corridor solid.
+     *
+     * Every rule was doing its job. The appetite was simply not the site's to state: a shell that
+     * cannot hold a gram until it is paid for has exactly one appetite, its bill, and that is
+     * already stated for it as a construction site.
+     */
+    @Test
+    fun `a warehouse still being built states its bill and not its lock`() {
+        val s = run(
+            tankToTank(SpeciesFilter(null, 100), pureIron(load), receiverIsGhost = true, railTo = 10),
+            40 * RAIL_PERIOD,
+        )
+
+        assertEquals(0L, s.onTrack(), "a site's lock filled the run with material only the finished tank could take")
+        assertEquals(load, s.inStore(s.grid.tile(2, 3), BufferRole.Inside)?.total, "and the source kept it all")
+    }
+
+    /**
+     * ⚠️ **The other half, or the fix is just a way of turning locks off.** The same tank, finished,
+     * is a real warehouse with a real endless appetite, and pure iron is exactly what it asked for.
+     */
+    @Test
+    fun `a finished warehouse locked on purity alone draws what is pure`() {
+        val s = run(tankToTank(SpeciesFilter(null, 100), pureIron(load), railTo = 10), 40 * RAIL_PERIOD)
+        assertTrue(s.received() > 0L, "a warehouse locked at 100% refused a lump of one species")
     }
 
     /** A lock is the player's decision, so it survives the file. */

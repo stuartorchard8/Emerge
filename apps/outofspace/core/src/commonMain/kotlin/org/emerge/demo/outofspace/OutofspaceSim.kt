@@ -3424,6 +3424,16 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 if (rails[tile.index] == null) continue
                 val input = at.firstOrNull { it.kind == PortKind.Input } ?: continue
                 val storage = deck[input.owner] as? Storage ?: continue
+                // ⛔ **A construction site is not a warehouse.** A ghost's dials are already set —
+                // the player picks them when they place it — but the shell cannot hold a gram until
+                // it is paid for, so an appetite stated on its behalf is an endless demand nothing
+                // can ever satisfy. Stu's save, `source_27_12`: a 29%-built storage locked at 100%
+                // purity sat at the far end of a corridor and told a tank of pure Enstatite eleven
+                // tiles away that it would take everything for ever. The tank poured, the ghost
+                // refused it at its own door (it is being built out of Ferrosilite), and seven
+                // packets filled the corridor solid. The site's own bill is stated above, which is
+                // the only appetite it has while it is a site.
+                if (deck.isGhost(input.owner)) continue
                 val filter = storage.filter ?: continue
                 accepts.getOrPut(tile) { mutableListOf() }.add(Acceptance.filtered(filter))
             }
