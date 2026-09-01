@@ -976,7 +976,7 @@ class OutofspaceHud {
 
         val storage = machine as? Storage
         if (storage != null) {
-            section("storage", "FILTER", open = true) { storageControls(controller, tile, storage) }
+            section("storage", "FILTER", open = true) { storageControls(controller, storage) }
         }
         val decomposer = machine as? Furnace
         if (decomposer != null) {
@@ -1555,7 +1555,7 @@ class OutofspaceHud {
      * in the game would ask them to name things they have never seen, and would let them lock a
      * warehouse onto something that has never come aboard.
      */
-    private fun PanelBuilder.storageControls(controller: OutofspaceController, tile: TileIndex, storage: Storage) {
+    private fun PanelBuilder.storageControls(controller: OutofspaceController, storage: Storage) {
         val grid = controller.state.grid
         val store = bufferTile(grid, storage, storage.center, BufferRole.Inside)
         val held = store?.let { controller.state.buffers.resourceAt(it) }
@@ -1566,7 +1566,7 @@ class OutofspaceHud {
             if (dominant == null) {
                 keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
                 button("LOCK PURITY TO ${SpeciesFilter.MAX_PERCENT}%", 0x2E5A6BFFL) {
-                    controller.lockStoragePercent(tile, SpeciesFilter.MAX_PERCENT)
+                    controller.lockStoragePercent(storage, SpeciesFilter.MAX_PERCENT)
                 }
             } else {
                 keyValue("TAKES", "ANYTHING", 0x9A9A9AFFL, 0x9ED0B0FFL)
@@ -1578,10 +1578,10 @@ class OutofspaceHud {
                     0x2E5A6BFFL,
                 ) {
                     val currentPercent = (held[dominant] * 100L) / held.total
-                    controller.lockStoragePercent(tile, SpeciesFilter.PERCENTS.reversed().firstOrNull {
+                    controller.lockStoragePercent(storage, SpeciesFilter.PERCENTS.reversed().firstOrNull {
                         (it ?: 0) <= currentPercent }
                     )
-                    controller.lockStorageSpecies(tile, dominant)
+                    controller.lockStorageSpecies(storage, dominant)
                 }
             }
         } else {
@@ -1591,20 +1591,36 @@ class OutofspaceHud {
                     (filter.species?.name?.uppercase() ?: "PURITY") to filter.species?.let { speciesColor(it) },
                 ),
                 0x2E5A6BFFL,
-            ) { controller.toggleStorageFilterSpecies(tile) }
+            ) { controller.toggleStorageFilterSpecies(storage) }
             if (filter.minPercent == null) {
                 button("ANY PURITY", 0x2E5A6BFFL) {
-                    controller.cycleStorageFilterPercent(tile, 1)
+                    controller.cycleStorageFilterPercent(storage, 1)
                 }
             } else {
                 clauseRow(
                     lhs = "AT LEAST",
                     cmp = "${filter.minPercent}%",
                     rhs = "pure",
-                    onLhs = { controller.cycleStorageFilterPercent(tile, -1) },
-                    onCmp = { controller.cycleStorageFilterPercent(tile, -1) },
-                    onRhs = { controller.cycleStorageFilterPercent(tile, 1) },
+                    onLhs = { controller.cycleStorageFilterPercent(storage, -1) },
+                    onCmp = { controller.cycleStorageFilterPercent(storage, -1) },
+                    onRhs = { controller.cycleStorageFilterPercent(storage, 1) },
                 )
+            }
+        }
+
+        row {
+            button(
+                "AUTO-LOCK ${if (storage.autoLock) "ON" else "OFF"}",
+                if (storage.autoLock) 0x6EE08AFFL else 0xE0A93AFFL,
+                weight = 1f) {
+                controller.toggleStorageAutoLock(storage)
+            }
+            gap()
+            button(
+                "AUTO-UNLOCK ${if (storage.autoUnlock) "ON" else "OFF"}",
+                if (storage.autoUnlock) 0x6EE08AFFL else 0xE0A93AFFL,
+                weight = 1f) {
+                controller.toggleStorageAutoUnlock(storage)
             }
         }
     }

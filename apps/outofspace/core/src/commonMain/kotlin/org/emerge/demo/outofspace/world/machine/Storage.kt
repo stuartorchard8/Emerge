@@ -38,6 +38,8 @@ data class Storage(
     override val wiring: Wiring = Wiring.RUNNING,
     /** What this warehouse is locked onto, or null while it takes anything. */
     val filter: SpeciesFilter? = null,
+    val autoLock: Boolean,
+    val autoUnlock: Boolean,
 ) : DirectedDeckMachine {
     override val kind: DeckMachineKind get() = DeckMachineKind.Storage
     override fun rotated(): DeckMachine = copy(facing = facing.clockwise)

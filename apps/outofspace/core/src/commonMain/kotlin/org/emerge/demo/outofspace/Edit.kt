@@ -86,6 +86,13 @@ sealed interface Edit {
     /**
      * Locks down what a warehouse can accept. Can either be a specific dominant species, or a minimum purity, or both.
      */
+    data class TuneStorage(
+        val tile: TileIndex,
+        val species: Species?,
+        val minPercent: Int?,
+        val autoLock: Boolean,
+        val autoUnlock: Boolean,
+    ) : Edit
     data class LockStoragePercent(val tile: TileIndex, val minPercent: Int?) : Edit
     data class LockStorageSpecies(val tile: TileIndex, val species: Species?) : Edit
 

@@ -1984,6 +1984,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     )
                 }
 
+                is Edit.TuneStorage -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val m = deck[tile]
+                    if (m is Storage) {
+                        val filter = if (edit.species == null && edit.minPercent == null) null
+                        else SpeciesFilter(edit.species, edit.minPercent)
+                        deck[tile] = m.copy(
+                            filter = filter,
+                            autoLock = edit.autoLock,
+                            autoUnlock = edit.autoUnlock,
+                        )
+                    }
+                }
                 is Edit.LockStorageSpecies -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]
@@ -3219,7 +3232,18 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         /** Write back what is left in the buffer that drained through [port]. */
         private fun drained(m: DeckMachine, port: Port, rest: Mixture?) {
             val role = outputBufferRole(m, port.stream) ?: return
-            buffers.put(bufferTile(grid, m, port.owner, role) ?: return, rest)
+            val tile = bufferTile(grid, m, port.owner, role) ?: return
+
+            if (rest == null && m is Storage && m.autoUnlock) {
+                val filter = m.filter
+                if (filter?.minPercent == 100) {
+                    // 100% pure unlocks species but not purity
+                    deck[m.center] = m.copy(filter = filter.copy(species = null))
+                } else {
+                    deck[m.center] = m.copy(filter = null)
+                }
+            }
+            buffers.put(tile, rest)
         }
 
         /**
@@ -3631,6 +3655,19 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     val store = bufferTile(grid, destination, destination.center, role) ?: return false
                     val merged = acceptInto(destination, buffers.resourceAt(store), packet) ?: return false
                     buffers.put(store, merged)
+                    if (destination.autoLock && (destination.filter?.species == null || destination.filter.minPercent != 100)) {
+                        val dominant = packet.contents.dominant
+                        if (dominant != null) {
+                            val isPure = packet.contents[dominant] == packet.contents.total
+                            val lockPercent = if (isPure) 100 else null
+                            deck[destination.center] = destination.copy(
+                                filter = SpeciesFilter(
+                                    species = packet.contents.dominant,
+                                    minPercent = lockPercent
+                                )
+                            )
+                        }
+                    }
                     true
                 }
                 // None of these is on the material network at all: no ports, nothing to hand
@@ -3677,7 +3714,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             DeckMachineKind.Hull -> Hull(tile)
             DeckMachineKind.Airlock -> Airlock(tile)
             DeckMachineKind.Vent -> Vent(tile)
-            DeckMachineKind.Storage -> Storage(tile, facing)
+            DeckMachineKind.Storage -> Storage(tile, facing, autoLock = true, autoUnlock = true)
             DeckMachineKind.Sensor -> Sensor(tile, facing, threshold = SignalField.FULL, delay = 0, release = 0)
             DeckMachineKind.KeyInput -> WireButton(tile)
             DeckMachineKind.Pump -> Pump(tile, facing)

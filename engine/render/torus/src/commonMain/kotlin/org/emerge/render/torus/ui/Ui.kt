@@ -1497,8 +1497,8 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
      */
     fun button(
         label: String, color: Long, dropTargetId: String? = null, enabled: Boolean = true,
-        widthEm: Float = 0f, onClick: () -> Unit,
-    ) = items.add(ButtonItem(label, color, rowHeight, dropTargetId, enabled, widthEm, onClick))
+        widthEm: Float = 0f, weight: Float = 0f, onClick: () -> Unit,
+    ) = items.add(ButtonItem(label, color, rowHeight, dropTargetId, enabled, widthEm, onClick, weight))
 
     /** Place a prepared [ActionButton] — the same button, described as data rather than as arguments. */
     fun button(b: ActionButton) = items.add(ButtonItem(b.label, b.color, rowHeight, null, b.enabled, 0f, b.onClick))
@@ -1723,7 +1723,7 @@ class PanelBuilder internal constructor(private val rowHeight: Float, private va
 
     private class ButtonItem(
         val label: String, val color: Long, override val height: Float, val dropTargetId: String?,
-        val enabled: Boolean, val widthEm: Float, val onClick: () -> Unit,
+        val enabled: Boolean, val widthEm: Float, val onClick: () -> Unit, override val weight: Float = 0f
     ) : Item {
         override fun measureWidth(textH: Float) =
             if (widthEm > 0f) widthEm * textH else UiTextRenderer.measureWidthPx(label, textH) + textH * 2f

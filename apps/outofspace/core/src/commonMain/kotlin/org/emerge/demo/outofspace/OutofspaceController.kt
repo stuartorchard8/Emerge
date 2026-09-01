@@ -446,8 +446,22 @@ class OutofspaceController(
     fun bindKey(tile: TileIndex, key: InputKey) = pending.add(Edit.BindKey(tile, key))
 
     /** Locks a warehouse onto what it holds most of, or unlocks it — see [Edit.LockStoragePercent]. */
-    fun lockStoragePercent(tile: TileIndex, minPercent: Int?) = pending.add(Edit.LockStoragePercent(tile, minPercent))
-    fun lockStorageSpecies(tile: TileIndex, species: Species?) = pending.add(Edit.LockStorageSpecies(tile, species))
+    fun lockStoragePercent(storage: Storage, minPercent: Int?) = pending.add(Edit.LockStoragePercent(storage.center, minPercent))
+    fun lockStorageSpecies(storage: Storage, species: Species?) = pending.add(Edit.LockStorageSpecies(storage.center, species))
+    fun toggleStorageAutoLock(storage: Storage) = pending.add(Edit.TuneStorage(
+        storage.center,
+        storage.filter?.species,
+        storage.filter?.minPercent,
+        !storage.autoLock,
+        storage.autoUnlock,
+    ))
+    fun toggleStorageAutoUnlock(storage: Storage) = pending.add(Edit.TuneStorage(
+        storage.center,
+        storage.filter?.species,
+        storage.filter?.minPercent,
+        storage.autoLock,
+        !storage.autoUnlock,
+    ))
 
     /**
      * Copies the settings from the machine at [tile] to the internal clipboard.
@@ -497,24 +511,22 @@ class OutofspaceController(
      * Only meaningful once locked: an unlocked tank has no threshold to move, and the panel offers
      * the lock button instead.
      */
-    fun cycleStorageFilterPercent(tile: TileIndex, delta: Int) {
-        val current = state.machineCovering(tile) as? Storage ?: return
-        val filter = current.filter ?: return
+    fun cycleStorageFilterPercent(storage: Storage, delta: Int) {
+        val filter = storage.filter ?: return
         val all = SpeciesFilter.PERCENTS
         val at = all.indexOf(filter.minPercent).let { if (it < 0) all.indexOf(SpeciesFilter.MAX_PERCENT) else it }
-        lockStoragePercent(tile, all[((at + delta) % all.size + all.size) % all.size])
+        lockStoragePercent(storage, all[((at + delta) % all.size + all.size) % all.size])
     }
-    fun toggleStorageFilterSpecies(tile: TileIndex) {
-        val current = state.machineCovering(tile) as? Storage ?: return
-        val filter = current.filter ?: return
+    fun toggleStorageFilterSpecies(storage: Storage) {
+        val filter = storage.filter ?: return
         // Whatever it is holding most of. A tank with nothing in it has no
         // dominant species and so cannot be locked — the panel says as much
         // rather than this failing quietly, but it must also be true here:
         // the edit queue is not the only way in.
-        val store = bufferTile(state.grid, current, tile, BufferRole.Inside)
+        val store = bufferTile(state.grid, storage, storage.center, BufferRole.Inside)
         val held = store?.let { state.buffers.resourceAt(it) }
         // ⚠️ **Re-locking clears the species requirement, leaving any purity requirement untouched.
-        lockStorageSpecies(tile, if (filter.species == null) held?.dominant else null )
+        lockStorageSpecies(storage, if (filter.species == null) held?.dominant else null )
     }
 
     /**

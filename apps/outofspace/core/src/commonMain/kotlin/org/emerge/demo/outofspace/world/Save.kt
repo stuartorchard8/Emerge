@@ -454,9 +454,14 @@ object Save {
             // written only when locked: an unlocked warehouse is the overwhelming majority and adds
             // nothing to the line, and an older file with neither field loads unlocked, which is
             // exactly what it was.
-            is Storage -> m.filter?.let {
-                put("filter", it.species?.name)
-                put("filterpct", it.minPercent.toString())
+            is Storage -> {
+                m.filter?.let {
+                    put("filter", it.species?.name)
+                    put("filterpct", it.minPercent.toString())
+                }
+                val autoLock = if (m.autoLock)     0b01 else 0
+                val autoUnlock = if (m.autoUnlock) 0b10 else 0
+                put("auto", (autoLock+autoUnlock).toString())
             }
             is Sensor -> {
                 put("threshold", m.threshold.toString())
@@ -1527,6 +1532,8 @@ object Save {
                     if (species == null && pct == null) null
                     else SpeciesFilter(species, pct)
                 },
+                autoLock = (f["auto"]?.toIntOrNull() ?: 0)%2==1,
+                autoUnlock = (f["auto"]?.toIntOrNull() ?: 0)/2%2==1,
             )
             DeckMachineKind.Sensor -> Sensor(
                 tile,
