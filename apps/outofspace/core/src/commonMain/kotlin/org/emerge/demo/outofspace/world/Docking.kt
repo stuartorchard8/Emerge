@@ -63,12 +63,19 @@ object Docking {
         val nodeX = nodeWorldX(node, stationPose)
         val nodeY = nodeWorldY(node, stationPose)
 
-        // ⚠️ The difference is taken before anything is squared. Two absolute world coordinates
-        // multiplied together leave `Long` three tiles from the origin — `PLAN_rigid_bodies.md` §5.3,
-        // and it fails silently as a wrapped value rather than loudly.
+        // ⚠️ The difference is taken before anything is squared, because two absolute world
+        // coordinates multiplied together leave `Long` three tiles from the origin.
         val dx = shipX - nodeX
         val dy = shipY - nodeY
         val reach = RANGE_TILES * Flight.PER_TILE
+        // ⛔ **And the difference is bounded before it is squared, which is the same hazard one level
+        // in.** Taking the difference first is not enough: a station sixty tiles away gives
+        // `dx = 6e10`, and `dx²` is 3.6e21 against a `Long` that stops at 9.2e18. It wraps — to
+        // something small, or negative — and the range test then *passes*, which is how a ship
+        // berthed across sixty tiles of empty space. Rejecting on the box first bounds both squares
+        // by `reach²`, which is 4e18 and fits. Found by the test that shoves the station out of
+        // range; nothing about the arithmetic looked wrong.
+        if (dx > reach || dx < -reach || dy > reach || dy < -reach) return false
         if (dx * dx + dy * dy > reach * reach) return false
 
         return squareOn(port.facing, shipPose, node.facing, stationPose)
@@ -118,4 +125,42 @@ object Docking {
 
     private fun nodeLocalY(node: DockNode): Long =
         (node.cellY + node.facing.dy) * Flight.PER_TILE + Flight.PER_TILE / 2
+}
+
+/**
+ * What the vessel is bolted to, and the pose it holds relative to it.
+ *
+ * ⛔ **The offset is captured once, at the moment of capture, and never recomputed.** That is what
+ * makes the joint rigid: the pair's members hold a fixed relative pose for ever, so advancing the
+ * pair is one rotation and one translation applied to both, with no constraint to solve and nothing
+ * to drift. Recomputing it per tick from the two poses would make the weld a description of wherever
+ * the bodies had got to rather than a rule about where they must be.
+ */
+class DockLink(
+    /** Which station — [Station.id], because a body has no identity and an index is not stable. */
+    val stationId: Int,
+    /** The docking port doing the holding, by its centre tile. */
+    val portTile: TileIndex,
+    /** Which of the station's berths. */
+    val nodeIndex: Int,
+    /**
+     * The station's pose in the **vessel's** frame, frozen at capture: position in
+     * [Flight.PER_TILE]s and a relative angle.
+     *
+     * Held this way round because the vessel is the member that carries the pair's momentum, so the
+     * vessel's pose is the one that is advanced and the station's is the one derived from it.
+     */
+    val stationLocalX: Long,
+    val stationLocalY: Long,
+    val stationRelativeAng: Int,
+) {
+    override fun equals(other: Any?): Boolean =
+        this === other || (other is DockLink && stationId == other.stationId &&
+            portTile == other.portTile && nodeIndex == other.nodeIndex &&
+            stationLocalX == other.stationLocalX && stationLocalY == other.stationLocalY &&
+            stationRelativeAng == other.stationRelativeAng)
+
+    override fun hashCode(): Int = (stationId * 31 + portTile.index) * 31 + nodeIndex
+
+    override fun toString(): String = "DockLink(station $stationId, berth $nodeIndex)"
 }

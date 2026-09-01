@@ -125,6 +125,28 @@ sealed interface Edit {
      */
     data class SetSas(val on: Boolean) : Edit
 
+    /**
+     * Berth the vessel's docking port at [tile] against whichever station berth it is lined up with.
+     *
+     * Refused unless the two mouths are within range and square on — see
+     * [org.emerge.demo.outofspace.world.Docking]. A refusal is silent and leaves the world alone,
+     * because the affordance that issues this only appears when it would succeed.
+     */
+    data class Dock(val tile: TileIndex) : Edit
+
+    /** Let go. The pair's motion is divided back between the two members as it was welded. */
+    data object Undock : Edit
+
+    /**
+     * Whether the engines are allowed to fire while berthed.
+     *
+     * ⛔ **Off by default, and a safety interlock rather than a rule.** Firing a motor against a
+     * station you are bolted to is not a manoeuvre, it is an accident — but it is the player's ship,
+     * and a game that simply refuses is a game arguing with them. So it is a switch, and the switch
+     * starts in the position that does not wreck anything.
+     */
+    data class SetDockedThrust(val allowed: Boolean) : Edit
+
     /** Wire: rewires action term. slot≥end=append, null trigger=remove. Single edit type (add/change/remove are same list op). */
     data class Wire(val tile: TileIndex, val action: Action, val slot: Int, val trigger: Trigger?) : Edit
 

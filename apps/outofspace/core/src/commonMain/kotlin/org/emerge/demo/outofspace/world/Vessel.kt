@@ -429,6 +429,23 @@ data class VesselState(
      */
     val dockedMarket: Market? = null,
     /**
+     * The berth the vessel is bolted to, or null when it is flying free — `PLAN_economy.md` §7.
+     *
+     * ⛔ **While this is set the vessel does not integrate its own pose.** It is one member of a
+     * welded pair, and the pair moves as a single rigid body about a joint centre of mass that
+     * belongs to neither of them. See [org.emerge.demo.outofspace.world.Composite].
+     */
+    val docked: DockLink? = null,
+    /**
+     * Whether the engines may fire while [docked] is set. Off by default — see [Edit.SetDockedThrust].
+     *
+     * On the **vessel** and not on the docking port, for exactly the reason [sas] is: it is a
+     * standing instruction about what the ship should do with the engines it has, and a fleet of
+     * motors each with its own opinion about whether it is safe to fire is not a thing anybody wants
+     * to configure.
+     */
+    val dockedThrustAllowed: Boolean = false,
+    /**
      * The centre tiles of the deck machines the player has marked for deconstruction.
      *
      * A **set on the vessel rather than a bit on the machine**, which is the one place this differs

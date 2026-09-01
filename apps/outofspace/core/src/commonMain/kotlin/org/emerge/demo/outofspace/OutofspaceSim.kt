@@ -64,6 +64,10 @@ import org.emerge.demo.outofspace.world.Market
 import org.emerge.demo.outofspace.world.Prices
 import org.emerge.demo.outofspace.world.BodyKind
 import org.emerge.demo.outofspace.world.Station
+import org.emerge.demo.outofspace.world.DockLink
+import org.emerge.demo.outofspace.world.Docking
+import org.emerge.demo.outofspace.world.Weld
+import org.emerge.demo.outofspace.world.Composite
 import org.emerge.demo.outofspace.world.worked
 import org.emerge.demo.outofspace.world.heatCapacityOf
 import org.emerge.demo.outofspace.world.Motion
@@ -416,9 +420,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     // wire: the flight solver throttles each motor by how much of the pilot's
                     // demand it is placed to answer. A thruster on WIRE gets all or nothing like
                     // everything else.
+                    // ⛔ **Interlocked while berthed**, unless the player has said otherwise. Firing a
+                    // motor against a station you are bolted to is not a manoeuvre, it is an
+                    // accident — but it is their ship, so this is a switch that starts in the
+                    // position that does not wreck anything rather than a rule. See
+                    // [VesselState.dockedThrustAllowed].
                     is Thruster -> w.fire(
                         cfg, m,
-                        flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
+                        if (state.docked != null && !state.dockedThrustAllowed) 0
+                        else flight[tile.index].takeIf { m.control == ThrusterControl.Flight }
                             ?: if (on) SignalField.FULL else 0,
                         tile, structure,
                     )
@@ -831,16 +841,31 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // torque is not known until this tick's fluid has been solved. `toInt` is not a truncation
         // to apologise for — [Coord]'s two's-complement wrap *is* the turn, so an angle that runs
         // past π comes back at −π exactly and never drifts. See [Rotation].
-        val spin = angularVelocity(state.angImpulse, w.about)
+        // ⛔ **While docked the vessel advances as one member of a welded pair**, so the three numbers
+        // this expression reads — the mass, the centre of mass and the radius of gyration — are the
+        // *pair's*. Substituting them here is the whole of the weld's dynamics: there is no second
+        // integrator, no constraint to solve and nothing to drift, because a rigid pair turning about
+        // its joint centre is exactly what this line already computes for one body about its own. See
+        // [Weld], which explains why the pair's numbers live on the vessel and not anywhere else.
+        val dockedStation = state.docked?.let { link ->
+            w.bodies.firstOrNull { it.station?.id == link.stationId }
+        }
+        val moveAbout = if (dockedStation == null) w.about
+        else Weld.jointOf(state.pose, w.about, dockedStation).about
+        val spin = angularVelocity(state.angImpulse, moveAbout)
         val comScale = Flight.PER_TILE / Rotation.MILLI_TILE
         // ⛔ **A frozen tick does not fly.** The ship keeps the pose it had — which is the whole of
         // "no time passes" as far as the world outside the hull is concerned, since the pose is what
         // carries the vessel through space and what every body's frame conversion is taken against.
         // Its momentum is untouched, so releasing the pause resumes the same trajectory rather than
         // restarting it.
+        // The pair's velocity, not the vessel's: the same momentum divided by the heavier thing it is
+        // now bolted to, which is what makes a berthing look like an arrival rather than a bounce.
+        val moveVelocityX = if (dockedStation == null) startVelocityX else state.velocityXAt(moveAbout.mass)
+        val moveVelocityY = if (dockedStation == null) startVelocityY else state.velocityYAt(moveAbout.mass)
         val newPose = if (frozen) state.pose else state.pose
-            .turnedAbout(Coord(spin.toInt()), w.about.comX * comScale, w.about.comY * comScale)
-            .movedBy(startVelocityX, startVelocityY)
+            .turnedAbout(Coord(spin.toInt()), moveAbout.comX * comScale, moveAbout.comY * comScale)
+            .movedBy(moveVelocityX, moveVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y
         val newAng = newPose.ang
@@ -870,9 +895,14 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                 val station = body.station ?: return@map body
                 body.copy(station = station.worked())
             }
+        // ⛔ **The docked station does not drift.** It is not free any more — its pose is the
+        // vessel's pose plus a frozen offset, and letting the sweep integrate it as well would have
+        // two different answers for where it is. Held out here rather than special-cased inside
+        // [driftBodies], which stays a function about free bodies and knows nothing about berths.
+        val berthed = state.docked?.let { link -> bodiesAtWork.firstOrNull { it.station?.id == link.stationId } }
         // Replace w.bodies contents (driftBodies mutates by reference via the list).
         w.bodies.clear()
-        w.bodies.addAll(bodiesAtWork)
+        w.bodies.addAll(if (berthed == null) bodiesAtWork else bodiesAtWork.filter { it !== berthed })
 
         // Bodies fly here because this is where the ship's own motion is known.
         // A body is stated entirely in the *world* now — position and momentum both — so drifting
@@ -970,6 +1000,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             exportedEnergy = w.exportedEnergy,
             credits = w.credits,
             dockedMarket = w.market,
+            docked = w.docked,
+            dockedThrustAllowed = w.dockedThrustAllowed,
             ventedMass = w.ventedMass,
             builtMass = w.builtMass,
             scrapping = w.scrapping.toSet(),
@@ -1015,7 +1047,13 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // Debug engine (non-physics, booked alongside thrust).
             debugImpulseX = state.debugImpulseX + thrustX,
             debugImpulseY = state.debugImpulseY + thrustY,
-            bodies = bodiesDrifted.bodies,
+            // The berthed station, back on the list at the pose the weld says it must be at. One
+            // rotation and one translation, both already applied to the vessel above — a rigid pair
+            // needs nothing else, which is the whole reason the weld is cheap.
+            bodies = if (berthed == null) bodiesDrifted.bodies else bodiesDrifted.bodies + berthed.let {
+                val at = Weld.stationPose(newPose, state.docked!!)
+                it.copy(positionX = at.x, positionY = at.y, ang = at.ang)
+            },
             bodyImpulseX = state.bodyImpulseX + handedX,
             bodyImpulseY = state.bodyImpulseY + handedY,
             // The angular halves of the two stores above, and the counterparts `netTorque`
@@ -1602,6 +1640,9 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         var credits: Long = state.credits
         /** The counterparty on the far side of every docking port, or null when the ship is alone. */
         var market: Market? = state.dockedMarket
+        /** The berth the vessel is bolted to — see [VesselState.docked]. */
+        var docked: DockLink? = state.docked
+        var dockedThrustAllowed: Boolean = state.dockedThrustAllowed
         // Editable conduit layers (array of lists avoids per-tile Conduits rebuild).
         val layers: Array<MutableList<Segment?>> =
             Array(Conduit.entries.size) { state.conduits[Conduit.entries[it]].toMutableList() }
@@ -2120,6 +2161,42 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
                     if (m is WireButton) deck[tile] = m.copy(key = edit.key)
                 }
                 is Edit.SetSas -> sas = edit.on
+                is Edit.SetDockedThrust -> dockedThrustAllowed = edit.allowed
+                is Edit.Undock -> docked = null
+                is Edit.Dock -> {
+                    val tile = originAt(edit.tile) ?: return
+                    val port = deck[tile] as? DockingPort ?: return
+                    if (docked != null) return
+                    // The first berth on the first station this port is lined up with. Silent when
+                    // there is none: the affordance that issues this only appears when it would work.
+                    outer@ for (index in bodies.indices) {
+                        val body = bodies[index]
+                        val economy = body.station ?: continue
+                        for (i in economy.docks.indices) {
+                            if (!Docking.canDock(grid, port, before.pose, body, i)) continue
+                            val cap = Weld.capture(
+                                shipPose = before.pose,
+                                shipAbout = about,
+                                shipImpulseX = before.vesselImpulseX,
+                                shipImpulseY = before.vesselImpulseY,
+                                shipAngImpulse = before.angImpulse,
+                                station = body,
+                                portTile = tile,
+                                nodeIndex = i,
+                            )
+                            docked = cap.link
+                            // ⛔ The exchange, booked through the stores that exist to name it: the
+                            // vessel takes the station's momentum, so the station has handed it over.
+                            // Negative `handed` is the vessel *receiving* — the same idiom the
+                            // extractor uses when it takes a bite out of a moving rock.
+                            bodyHandedX -= cap.gainedImpulseX
+                            bodyHandedY -= cap.gainedImpulseY
+                            bodyHandedTorque -= cap.gainedAngImpulse
+                            bodies[index] = body.copy(impulseX = 0L, impulseY = 0L, angImpulse = 0L)
+                            break@outer
+                        }
+                    }
+                }
                 is Edit.SetThrusterControl -> {
                     val tile = originAt(edit.tile) ?: return
                     val m = deck[tile]

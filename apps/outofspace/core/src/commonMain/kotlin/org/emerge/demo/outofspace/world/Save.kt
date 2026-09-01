@@ -179,6 +179,18 @@ object Save {
         // [VesselState.credits], which is deliberately outside every ledger. Absent reads as zero,
         // which is what every world written before there was anything to buy had.
         out.append("credits ").append(state.credits).append('\n')
+        // ⛔ **A berth has to survive a save.** A docked world that reloaded flying free would drop
+        // the player through the station they were bolted to, at whatever attitude they had. Written
+        // only when docked, so an undocked world's file is unchanged. Position is in [Flight] units
+        // like a body's, so it does not go through the mass scale.
+        state.docked?.let {
+            out.append("dock ").append(it.stationId).append(' ').append(it.portTile.index)
+                .append(' ').append(it.nodeIndex)
+                .append(' ').append(it.stationLocalX).append(' ').append(it.stationLocalY)
+                .append(' ').append(it.stationRelativeAng)
+                .append(' ').append(if (state.dockedThrustAllowed) 1 else 0)
+                .append('\n')
+        }
         out.append("acquired ").append(state.acquiredEnergy).append('\n')
         out.append("solidtoair ").append(state.solidToAirEnergy).append('\n')
         out.append("baselineair ").append(state.baselineAirMass).append('\n')
@@ -769,6 +781,8 @@ object Save {
         var creative = false
         var sas = false
         var credits = 0L
+        var dock: DockLink? = null
+        var dockedThrust = false
         val scrapping = mutableSetOf<TileIndex>()
         var built = 0L
         var reconciled: Long? = null
@@ -1024,6 +1038,17 @@ object Save {
                 // through the mass scale would multiply the player's bank by 10⁶ on any file
                 // written at a different unit.
                 "credits" -> credits = tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable credits")
+                "dock" -> {
+                    dock = DockLink(
+                        stationId = tokens.getOrNull(1)?.toIntOrNull() ?: fail("unreadable dock station"),
+                        portTile = TileIndex(tokens.getOrNull(2)?.toIntOrNull() ?: fail("unreadable dock port")),
+                        nodeIndex = tokens.getOrNull(3)?.toIntOrNull() ?: fail("unreadable dock berth"),
+                        stationLocalX = long(4),
+                        stationLocalY = long(5),
+                        stationRelativeAng = tokens.getOrNull(6)?.toIntOrNull() ?: 0,
+                    )
+                    dockedThrust = tokens.getOrNull(7) == "1"
+                }
                 // Grams that stopped being cargo and became fabric. Absent reads as zero, which is
                 // what a world where nothing has ever been built out of its own stores has.
                 "baselinecargo" -> baselineCargo = scale.of(tokens.getOrNull(1)?.toLongOrNull() ?: fail("unreadable baseline cargo"))
@@ -1225,6 +1250,8 @@ object Save {
             creative = creative,
             sas = sas,
             credits = credits,
+            docked = dock,
+            dockedThrustAllowed = dockedThrust,
             scrapping = scrapping,
             builtMass = built,
             // A file that predates the field means "started empty", not "recompute from what is
