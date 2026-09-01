@@ -1,7 +1,7 @@
 # Economy
 
-Status: **nothing built** (2026-09-01). Design settled with Stu in conversation; the numbers in §3
-are measured off the live species tables, not invented. Steps in §9, decisions still owed in §10.
+Status: **nothing built** (2026-09-01). **All five open decisions settled — see §10.** Numbers in §3
+and §3.6 are measured off the live species tables, not invented. Steps in §9.
 
 The milestone is an **early- and mid-game arc**. The end game already exists and is fun — collect
 rocks, refine them with a sophisticated setup, build a better vessel — but it opens on a wall of
@@ -90,13 +90,36 @@ price(e) = IRON_PRICE × (abundance(Iron) / abundance(e)) ^ γ
 it is unplayable in a UI shared with a starter ship worth a few thousand credits. γ = 1/3 flattens
 the trace metals until hoarding tailings is pointless, which is the mid-game hook.
 
-**Ship γ = 1/2.** Gold stays 875× iron, uranium 4,961×, and the whole table fits in five digits.
-Keep γ as one named constant so it can be turned in one place; integer-only via `isqrt`.
+✅ **SETTLED: γ = 1/2** (Stu, 2026-09-01). Gold stays 875× iron, uranium 4,961×, and the whole table
+fits in five digits. Keep γ as one named constant so it can be turned in one place; integer-only via
+`isqrt`. Stu's reasoning is worth keeping: γ = 1 is defensible — if uranium is 1/24M as abundant it
+*should* be 24M times as valuable — but diminishing returns on rarity is a thing games do on purpose,
+and it is what makes the number readable.
+
+### ✅ One abundance table drives BOTH the world and the prices
+
+Stu asked whether the two knobs — raising the abundance of the rare species, and γ — can be tweaked
+later, and whether they can be used together. They can, and better than expected:
+
+⚠️ **`RockSpawner` rolls every rock's composition straight off `relativeAbundance`**
+(`world/RockSpawner.kt:295`, `ordinary = total × species.relativeAbundance / NATURAL_ABUNDANCE_TOTAL`).
+So the same table decides **what the world is made of** *and*, under §3.1, **what things cost**.
+
+⛔ **Do not add a separate price-abundance override.** Keeping one table means raising uranium's
+abundance makes uranium more findable *and* automatically cheaper by exactly the right factor — the
+two stay consistent for free, and Stu's two-pronged approach (commoner rare metals **and** γ = 1/2)
+is one coherent change rather than two that can drift apart. Two tables would let the world say a
+thing is common while the price says it is rare, which is the bug this avoids by construction.
+
+⚠️ **Prices are derived, never stored** — a station saves its *stock*, not its price list. So turning
+either knob reprices every existing save on load. That is right during development and is worth
+knowing before it surprises someone. ⚠️ Rocks already spawned keep the composition they were rolled
+with (they live in `bodies` and are saved); a chunk re-rolls with the new table only when it is
+re-entered, so an old save ends up with a mix of old and new rock. Minor, and self-healing.
 
 ⚠️ **Oxygen is the cheapest element in the game and it is 30–50% by mass of most ores.** That is
 correct and it is load-bearing: it is why hauling raw rock pays badly and why the tailings are where
 the value hides.
-
 ### 3.2 Species price, from elemental composition
 
 ```
@@ -166,33 +189,61 @@ sells at `localPrice × (1 + SPREAD)`, with `SPREAD` large enough to dominate th
 movement of any trade a player can execute in one docking. A test asserting *a round trip at one
 station loses money* belongs in step 1 and is the tripwire for this whole section.
 
-### 3.6 Mixed ore: the purification fee
+### 3.6 Mixed ore: the purification fee — ✅ SETTLED, share **squared**
 
 Stu: "Mixed ore would be priced based on the top two species present, each at half the going rate.
 The rest of the ore content is essentially forfeit as an additional sneaky cost of outsourcing
-purification that the player starts ignorant of. This bites extra because the low-percentage stuff
-is rarer and generally more valuable by definition."
+purification that the player starts ignorant of."
 
-Taken literally — *top two, each at exactly half* — pure ore is also "the top one species", so a
-100% pure lump would pay half rate and purity would be worth nothing. The rule needs to be
-continuous in purity without losing its shape. The generalisation that agrees with Stu's stated case
-exactly:
+Taken literally — *top two, each at exactly half* — a 100% pure lump is still "the top one species",
+so purity would pay half too. It needs to be continuous in purity without losing its shape. Four
+candidates, measured against the **real concentrator ladder** (41 → 65 → 86 → 94 → 97 → 100, from
+`reference_oos_processor_purity_ladder`) on a 100 kg lump whose non-dominant mass splits 50/30/20
+across three other species. All prices equal, so the table is about the *rule* and nothing else.
+100 = perfectly separated and sold as pure species.
+
+| purity | R0 flat-half | R1 share | **R2 share²** | R3 flat fee |
+|---|---|---|---|---|
+| 41% | 35.2 | 25.5 | **9.5** | 25.5 |
+| 65% | 41.2 | 45.3 | **28.0** | 37.5 |
+| 86% | 46.5 | 74.4 | **63.6** | 48.0 |
+| 94% | 48.5 | 88.5 | **83.1** | 52.0 |
+| 97% | 49.2 | 94.1 | **91.3** | 53.5 |
+| 100% | 100.0 | 100.0 | **100.0** | 55.0 |
+| **41% → 100%** | 2.84× | 3.92× | **10.57×** | 2.16× |
+
+⛔ **Ship R2:**
 
 ```
-sellValue(lump) = Σ over the top TWO species s of   localBid(s) × mass(s) × (mass(s) / total)
+sellValue(lump) = Σ over the top TWO species s of   localBid(s) × mass(s) × (mass(s) / total)²
 ```
 
-- 50/50 blend → each species at **half** rate. Stu's case, exactly as stated.
-- 100% pure → the one species at **full** rate. Purity pays, with no cliff.
-- 33/33/33 → top two at a third each, the third species forfeit.
+- 100% pure → full rate. Purity pays, with no cliff.
+- **10.6× from extractor output to fully concentrated** — the incentive Stu asked for. R1 (the
+  share-weighted rule the first draft of this plan proposed) gives only 3.92×, which is what he
+  called too low, and he was right.
+- The tail beyond the top two is still forfeit, and it is still the rare valuable part. The sneaky
+  cost survives, and it is now the *reason* a concentrator pays for itself rather than a flat toll.
 
-The tail is still forfeit and it is still the rare, valuable part — the sneaky cost survives intact,
-and now it is the *reason* a concentrator pays for itself rather than a flat toll.
+✅ **The marginal gains front-load, and that is the right shape**, because the last rungs are already
+motivated by something else — `BUILD_PURITY_PERCENT` is 100, so 97 → 100 is what *building* demands
+and does not need paying for twice:
 
-⚠️ **This is a change to what Stu said, not a restatement of it.** It is in the plan because a flat
-half-rate makes a 99%-pure lump pay the same as a 50/50 one, which reads as a bug the first time it
-happens. If the cliff is wanted deliberately, say so and it is one line.
+```
+ 41% ->  65%     9.5 ->  28.0   +196.0%
+ 65% ->  86%    28.0 ->  63.6   +127.3%
+ 86% ->  94%    63.6 ->  83.1   + 30.5%
+ 94% ->  97%    83.1 ->  91.3   +  9.9%
+ 97% -> 100%    91.3 -> 100.0   +  9.6%
+```
 
+⚠️ **R2 makes tier 1 deliberately meagre** — raw extractor ore fetches under a tenth of list. That is
+the intent (tier 1 should feel like subsistence), but it means §9 step 6's tuning has to make rocks
+big and propellant cheap, or the opening is unplayable rather than merely lean.
+
+⛔ R3 (top two at list, minus a flat fee on the whole mass) was rejected: the fee applies to pure
+material too, so it caps at 55% of list and pure metal never fetches its price. It also breaks the
+case where a 1%-uranium ore is legitimately worth hauling.
 ## 4. Money
 
 `credits: Long` on `VesselState`. **Deliberately outside the mass and energy ledgers** — it is not a
@@ -201,6 +252,14 @@ substance, has no position, and must never appear in `massBalance`.
 Save: appended, and gated on **the field's own absence** rather than a version number, following the
 `reconciledMass` precedent (`reference_oos_mass_ledger`) — the question is whether this file has ever
 had a balance, and absence is the exact answer.
+
+✅ **A new save opens with nothing** (Stu, 2026-09-01). The first haul is the whole stake.
+
+⏸ **PARKED, and worth coming back to: opening in debt.** Stu: many games in this space start the
+player as a debt slave, which buys a *time*-based incentive — interest accruing, a mortgage on the
+vessel you are flying — that a zero balance cannot. Deliberately not in iteration one, and noted here
+so it is not re-derived from scratch. It costs nothing to add later: a negative `credits` and an
+interest term, both of which this design already permits.
 
 ## 5. The docking port
 
@@ -253,17 +312,41 @@ Three things a station needs that a rock does not:
 1. **Permanence.** `RockSpawner` despawns any body whose chunk leaves an 11×11 window of 64-tile
    chunks (~700 tiles). A station must be exempt, and must be excluded from the spawn roll so
    asteroids do not materialise inside it — Stu's exclusion zone, keyed on the station's origin.
-2. **A flat face to dock against.** ⚠️ A union of discs cannot represent one; the scallop table in
-   `PLAN_rigid_bodies.md` is unambiguous that no radius removes it. Either the station's cells are
-   `CellShape.Box` — which needs `collectHullContacts`' ±`reach` grid-space bound widened first, a
-   hazard already flagged in that plan — or docking ignores contact geometry entirely and is a pure
-   pose constraint. **Start with the pose constraint** and leave the cells as discs; the scallops
-   only ever matter if you *bump* the station.
-3. **A broadphase that survives it.** ⚠️ `collectBodyContacts` (`world/Contact.kt:223`) is
-   O(cells × cells), culled only by a whole-body bound-radius test. A 40×40 station is 1,600 cells
-   with a bound radius that culls nothing in its own neighbourhood, so every nearby rock pays 1,600
-   tests a tick. **Measure this before choosing a station size** — it may be fine, it may want a
-   station-specific spatial index.
+2. ✅ **Discs, and a pose-only dock** (Stu, 2026-09-01: "economy doesn't hinge on the station
+   collision box being perfect"). ⚠️ A union of discs cannot make the flat face you would want to
+   berth against — the scallop table in `PLAN_rigid_bodies.md` is unambiguous that no radius removes
+   it — so docking must not read contact geometry at all. §7's capture is a pose constraint and the
+   scallops only ever matter if you *bump* the station.
+3. ✅ **A 100×100 station must be a HOLLOW SHELL.** (Stu wants it "pretty large — like 100×100".)
+
+### ⛔ Why a big station is a shell, and why boxes would not have helped
+
+`collectBodyContacts` (`world/Contact.kt:223`) is O(a.cells × b.cells), culled only by a whole-body
+bound-radius test. A **solid** 100×100 station is 10,000 cells with a bound radius of ~70 tiles, so
+it culls nothing within 70 tiles of itself and every nearby rock costs 10,000 × its own cell count in
+pair tests, every substep, every tick. That is not a tuning problem, it is a different order.
+
+⛔ **`CellShape.Box` does not fix it.** Stu asked whether the size argues for boxes over discs; it
+does not, because the cost is *per cell* whichever shape the cell is. Boxes change the narrow phase,
+not the count.
+
+✅ **A shell does fix it, costs nothing, and is what a station actually is.** The perimeter of a
+100×100 is ~400 cells against 10,000 — **25× cheaper** — and a station is mostly rooms, so a hollow
+`cells` mask is the honest shape rather than a trick. `cellDistribution` (`world/Rotation.kt:215`)
+walks the mask and skips empties with no solidity assumption anywhere, so centre of mass, gyration
+and `boundRadius` all come out right for a shell **with no code change at all**. Mass follows the
+filled cells, which is also correct: a hollow station weighs what its hull weighs.
+
+✅ **This is also what keeps §1's scoping claim true.** The right fix for a genuinely solid body that
+large is the *hull's* traversal — `collectHullContacts` rasterises into a tile index instead of going
+quadratic over cells, and `PLAN_rigid_bodies.md` records that it is the better of the two and that
+giving it to bodies is precisely what step 6 has left. A solid 100×100 station would therefore drag a
+slice of the unification into this milestone. **The shell is what avoids that**, and if interior
+detail is ever wanted, that traversal is the thing to go and get.
+
+⚠️ **The renderer has a stake in this too.** `MAX_RECTS = 48,000` is *already* exceeded at minimum
+zoom in an un-turned view (`project_rotation`); a 10,000-cell station would eat a fifth of the budget
+on its own. Another reason the shell is not merely a physics optimisation.
 
 ### 6.1 Station industry
 
@@ -348,19 +431,25 @@ docked ship firing a thruster moves the pair about the shared CoM.
 
 **6. The arc.** Re-author the starter vessel to the tier-1 ship — extractor, no concentrator (Stu,
 2026-09-01) — and tune fuel cost, ore value and machine bills until tier 1 → 2 → 3 paces.
+⚠️ §3.6's R2 puts raw extractor ore under a tenth of list, so this step has real work to do: rocks
+have to be big and propellant cheap, or the opening is unplayable rather than merely lean.
 ⛔ This is playtesting, not coding, and Stu is the only oracle for it.
 
 ⚠️ Steps 1 and 2 land the milestone's actual content without touching physics at all. Step 3 wants
 the box-vs-disc answer (§6, item 2) before it starts.
 
-## 10. Decisions owed
+## 10. Decisions — ✅ ALL SETTLED (Stu, 2026-09-01)
 
-1. **γ = 1/2?** (§3.1) — or accept γ = 1's seven orders of magnitude.
-2. **§3.6's continuous purity rule, or the literal flat half-rate cliff?** This is the one place the
-   plan knowingly differs from what Stu said.
-3. **Station cells: `Box` now, or discs plus a pose-only dock?** (§6, item 2) Recommendation: discs now.
-4. **How big is a station?** Decides whether §6 item 3's broadphase is a problem.
-5. **Starting balance** — does a new save open with a stake, or is the first haul the whole stake?
+1. ✅ **γ = 1/2**, and the rare species' *abundance* may be raised alongside it — one table, so the
+   two stay consistent by construction. §3.1.
+2. ✅ **R2, share squared** — 10.6× from extractor output to pure. §3.6. The first draft's R1 gave
+   3.92× and Stu was right that it was too weak.
+3. ✅ **Discs**, with a pose-only dock. §6 item 2.
+4. ✅ **100×100, hollow shell.** Boxes would not have helped; the shell is 25× cheaper and is what a
+   station is. §6.
+5. ✅ **Start with nothing.** Opening in debt is parked with its reasoning intact — §4.
+
+Nothing blocks step 1.
 
 ## 11. Hazards carried in from memory
 
