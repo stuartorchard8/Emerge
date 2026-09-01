@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.MassDistribution
+import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.Pose
 import org.emerge.demo.outofspace.world.rotScale
 import org.emerge.sim.core.physics.primitives.Coord
@@ -131,11 +133,11 @@ class PoseTest {
 
     /**
      * **The one that matters for the sim.** A body spins about its centre of mass, not about its
-     * grid origin, so turning the pose has to move the origin to keep the pivot still.
+     * grid origin, so turning the pose has to move the origin to keep that centre still.
      *
-     * Storing the *origin's* pose and turning about the *centre of mass* is the way round that
-     * survives cargo moving. The other way round — storing the centre of mass's world position —
-     * would lurch the whole grid sideways every time an ingot slid down a rail.
+     * ⚠️ The pivot is whatever [MassDistribution.comX] says and cannot be anything else — see
+     * [Pose.turned]. What is checked here is that the centre named by the distribution is the point
+     * that does not move, which is the whole contract.
      */
     @Test
     fun `turning about a pivot leaves the pivot where it was`() {
@@ -147,7 +149,7 @@ class PoseTest {
             val wasX = before.toWorldX(pivotX, pivotY)
             val wasY = before.toWorldY(pivotX, pivotY)
 
-            val after = before.turnedAbout(angle, pivotX, pivotY)
+            val after = before.turned(angle, about(pivotX, pivotY))
 
             assertEquals(angle.raw, after.ang.raw, "the turn must actually happen")
             assertTrue(
@@ -163,7 +165,7 @@ class PoseTest {
     @Test
     fun `turning about the origin does not move the pose`() {
         val before = Pose(7L * Flight.PER_TILE, 9L * Flight.PER_TILE, Coord(0))
-        val after = before.turnedAbout(Coord(Int.MAX_VALUE / 3), 0L, 0L)
+        val after = before.turned(Coord(Int.MAX_VALUE / 3), about(0L, 0L))
 
         assertEquals(before.x, after.x)
         assertEquals(before.y, after.y)
@@ -173,8 +175,18 @@ class PoseTest {
     @Test
     fun `turning by nothing changes nothing`() {
         val before = Pose(7L * Flight.PER_TILE, 9L * Flight.PER_TILE, Coord(123_456))
-        assertEquals(before, before.turnedAbout(Coord(0), 48L * Flight.PER_TILE, 30L * Flight.PER_TILE))
+        assertEquals(before, before.turned(Coord(0), about(48L * Flight.PER_TILE, 30L * Flight.PER_TILE)))
     }
+
+    /** A distribution that exists only to name a centre — the pivot these tests want to turn about. */
+    private fun about(x: Long, y: Long) = MassDistribution(
+        mass = 1L,
+        comMilliX = x / Rotation.PER_MILLI_TILE,
+        comMilliY = y / Rotation.PER_MILLI_TILE,
+        comX = x,
+        comY = y,
+        gyrationSq = 0L,
+    )
 
     private companion object {
         /**

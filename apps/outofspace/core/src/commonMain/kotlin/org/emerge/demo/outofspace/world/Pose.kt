@@ -80,23 +80,39 @@ class Pose(
     }
 
     /**
-     * This pose turned by [by], about the local point ([pivotX], [pivotY]) rather than about its own
-     * origin — which is how a body actually spins, since it spins about its centre of mass.
+     * This pose turned by [by] about [about]'s centre of mass — which is the only point anything
+     * here ever turns about.
      *
-     * The origin has to move for the pivot to stay put, and this is the expression that moves it:
-     * `origin' = origin + R(ang)·p − R(ang + by)·p`. Storing the pose of the *origin* and turning
-     * about the *centre of mass* is the way round that survives cargo shifting, because the centre
-     * of mass moves in local space every time a packet does. Store the centre of mass's world
-     * position instead and the whole grid lurches sideways whenever an ingot slides down a rail.
+     * The origin has to move for that centre to stay put, and this is the expression that moves it:
+     * `origin' = origin + R(ang)·c − R(ang + by)·c`.
+     *
+     * ⚠️ **The pivot is not a parameter, and that is the point.** It used to be two raw `Long`s, and
+     * every one of the three callers passed the body's own centre of mass — the vessel's, a rock's,
+     * and, while docked, the welded pair's. There was no fourth kind of pivot and there is no
+     * sensible one: a free body spins about its mass and nothing else. Taking the distribution
+     * instead of a point means a caller cannot pass a pivot that is not a centre of mass, which is
+     * the bug the comment at [org.emerge.demo.outofspace.world.sweepBodies] records the vessel
+     * having had.
+     *
+     * ⛔ **A welded pair is not an exception to that rule, it is an instance of it.** Docked, the
+     * thing being advanced is the pair, so the distribution handed in is the pair's and its centre
+     * is the pair's — see [Weld], which computes exactly that. Nothing here knows the difference.
+     *
+     * Uses [MassDistribution.comX], the centre at the position scale, and not the millitile radius
+     * the torque maths runs on: this is a *position*, the callers were each scaling the coarse one
+     * up by hand, and the sub-millitile digits are the ones that keep a slow spin from stepping.
+     * See `PLAN_com_anchored_frames.md`.
      */
-    fun turnedAbout(by: Coord, pivotX: Long, pivotY: Long): Pose {
+    fun turned(by: Coord, about: MassDistribution): Pose {
         if (by.raw == 0) return this
+        val cx = about.comX
+        val cy = about.comY
         val turned = Pose(x, y, Coord(ang.raw + by.raw))
         return Pose(
-            x = x + rotScale(pivotX, cos) - rotScale(pivotY, sin) -
-                (rotScale(pivotX, turned.cos) - rotScale(pivotY, turned.sin)),
-            y = y + rotScale(pivotX, sin) + rotScale(pivotY, cos) -
-                (rotScale(pivotX, turned.sin) + rotScale(pivotY, turned.cos)),
+            x = x + rotScale(cx, cos) - rotScale(cy, sin) -
+                (rotScale(cx, turned.cos) - rotScale(cy, turned.sin)),
+            y = y + rotScale(cx, sin) + rotScale(cy, cos) -
+                (rotScale(cx, turned.sin) + rotScale(cy, turned.cos)),
             ang = turned.ang,
         )
     }

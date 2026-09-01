@@ -97,7 +97,6 @@ import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.MassDistribution
 import org.emerge.demo.outofspace.world.angularVelocity
 import org.emerge.demo.outofspace.world.Pose
-import org.emerge.demo.outofspace.world.Rotation
 import org.emerge.demo.outofspace.world.ShipMotion
 import org.emerge.demo.outofspace.world.driftBodies
 import org.emerge.demo.outofspace.world.massDistribution
@@ -852,7 +851,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // without moving the origin would rotate the ship about tile (0,0) — a corner of the pad,
         // usually off the hull entirely. That was invisible while nothing in the sim read `ang`;
         // it is not invisible now that a body's frame conversion goes through the pose.
-        // [Pose.turnedAbout] is what moves the origin to hold the pivot still.
+        // [Pose.turned] is what moves the origin to hold that centre still, and it takes the
+        // distribution rather than a pivot because there is no other point a body turns about.
         //
         // Explicit, from the start-of-tick spin, for the same reason the position is: this tick's
         // torque is not known until this tick's fluid has been solved. `toInt` is not a truncation
@@ -870,7 +870,6 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val moveAbout = if (dockedStation == null) w.about
         else Weld.jointOf(state.pose, w.about, dockedStation).about
         val spin = angularVelocity(state.angImpulse, moveAbout)
-        val comScale = Flight.PER_TILE / Rotation.MILLI_TILE
         // ⛔ **A frozen tick does not fly.** The ship keeps the pose it had — which is the whole of
         // "no time passes" as far as the world outside the hull is concerned, since the pose is what
         // carries the vessel through space and what every body's frame conversion is taken against.
@@ -881,7 +880,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         val moveVelocityX = if (dockedStation == null) startVelocityX else state.velocityXAt(moveAbout.mass)
         val moveVelocityY = if (dockedStation == null) startVelocityY else state.velocityYAt(moveAbout.mass)
         val newPose = if (frozen) state.pose else state.pose
-            .turnedAbout(Coord(spin.toInt()), moveAbout.comMilliX * comScale, moveAbout.comMilliY * comScale)
+            .turned(Coord(spin.toInt()), moveAbout)
             .movedBy(moveVelocityX, moveVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y

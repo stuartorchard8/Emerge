@@ -885,11 +885,17 @@ data class VesselState(
     /**
      * Where that mass is, which is what every torque is booked about — see [MassDistribution].
      *
-     * Recomputed on demand like [mass], and for the same reason: it is a fact about the layout and
-     * its cargo, so storing it would be storing a second answer to a question the walk already
-     * answers. The tick computes it once and passes it down; a readout can afford to ask again.
+     * A fact about the layout and its cargo, so it is never *stored* — a state that carried one
+     * could be handed a layer it disagreed with. It is memoised instead, which is the same thing a
+     * `get()` said but computed once: this is an immutable state, so the walk cannot come back with
+     * a different answer, and [flow] and [solids] are held exactly this way for exactly this reason.
+     *
+     * ⚠️ **It stopped being a readout's question.** [Pose.turned] takes a distribution now, so the
+     * tick asks for this on the path that advances the ship rather than only on the way out, and
+     * `mass` is the walk the perf note under [velocityXAt] measured at 11% of execution samples. A
+     * `get()` here would run it once per caller for the 33 of them that reach [pose].
      */
-    val distribution: MassDistribution get() = massDistribution(grid, rail, conduits, deck, buffers)
+    val distribution: MassDistribution by lazy { massDistribution(grid, rail, conduits, deck, buffers) }
 
     /**
      * How fast the vessel is turning, in [Coord] raw per tick — the angular twin of [velocityX].
@@ -930,7 +936,7 @@ data class VesselState(
      * [positionX] is the world position of the grid's **origin**, tile (0,0)'s corner, and not of
      * the centre of mass: the centre of mass moves in grid coordinates every time a packet slides
      * down a rail, and a pose anchored to it would slew the whole ship sideways when it did. The
-     * ship still *turns* about its centre of mass — see [Pose.turnedAbout], which is what moves the
+     * ship still *turns* about its centre of mass — see [Pose.turned], which is what moves the
      * origin to keep that pivot still.
      *
      * This is the single conversion point between the world, which is where bodies and momentum
