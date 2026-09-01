@@ -879,9 +879,8 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
         // now bolted to, which is what makes a berthing look like an arrival rather than a bounce.
         val moveVelocityX = if (dockedStation == null) startVelocityX else state.velocityXAt(moveAbout.mass)
         val moveVelocityY = if (dockedStation == null) startVelocityY else state.velocityYAt(moveAbout.mass)
-        val newPose = if (frozen) state.pose else state.pose
-            .turned(Coord(spin.toInt()), moveAbout)
-            .movedBy(moveVelocityX, moveVelocityY)
+        val newPose = if (frozen) state.pose
+        else Weld.advance(state.pose, w.about, moveAbout, Coord(spin.toInt()), moveVelocityX, moveVelocityY)
         val newPositionX = newPose.x
         val newPositionY = newPose.y
         val newAng = newPose.ang
@@ -1075,7 +1074,7 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
             // rotation and one translation, both already applied to the vessel above — a rigid pair
             // needs nothing else, which is the whole reason the weld is cheap.
             bodies = if (berthed == null) bodiesDrifted.bodies else bodiesDrifted.bodies + berthed.let {
-                val at = Weld.stationPose(newPose, state.docked!!)
+                val at = Weld.stationPose(newPose, state.docked!!, it.about)
                 it.copy(positionX = at.x, positionY = at.y, ang = at.ang)
             },
             bodyImpulseX = state.bodyImpulseX + handedX,
@@ -2532,11 +2531,15 @@ object OutofspaceReducer : SimReducer<OutofspaceConfig, VesselState, OutofspaceI
 
         /** Drop a body at ([x], [y]) (capture placeholder). Body heat → stored, booking → inserted. */
         private fun dropRock(x: Float, y: Float, radius: Int) {
-            val half = radius * Flight.PER_TILE
             // [Edit.DropRock] carries a *grid* coordinate, because it comes from a cursor over the
             // deck. A body is stored in the world, so it is placed through the pose.
-            val localX = (x * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L
-            val localY = (y * Flight.PER_TILE).toLong() - half + Flight.PER_TILE / 2L
+            //
+            // ⚠️ The cursor's tile centre, and nothing else. This used to subtract the blob's radius
+            // to arrive at the corner that would leave it centred under the cursor; a body is placed
+            // by its centre of mass now, so the centring is the placement — see
+            // `PLAN_com_anchored_frames.md`.
+            val localX = (x * Flight.PER_TILE).toLong() + Flight.PER_TILE / 2L
+            val localY = (y * Flight.PER_TILE).toLong() + Flight.PER_TILE / 2L
             val body = RigidBody.rockBlob(
                 radius = radius,
                 positionX = pose.toWorldX(localX, localY),

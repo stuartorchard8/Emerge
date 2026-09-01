@@ -148,17 +148,23 @@ fun feedExtractor(
     return rockOnPlate(x, y, bodies)
 }
 
-/** Body lying centred on the plate at [x],[y], for a plate that is already built. */
-fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<RigidBody> {
-    val half = FEEDSTOCK_RADIUS * Flight.PER_TILE
-    return List(count) {
-        RigidBody.rockBlob(
-            radius = FEEDSTOCK_RADIUS,
-            positionX = x * Flight.PER_TILE - half,
-            positionY = y * Flight.PER_TILE - half,
-            composition = OutofspaceReducer.DEFAULT_ORE_BODY,
-        )
-    }
+/**
+ * Body lying centred on the plate at [x],[y], for a plate that is already built.
+ *
+ * ⚠️ It used to subtract the radius to get here, because a body was placed by the corner of its cell
+ * box and "centred" had to be arranged. A body is placed by its centre of mass now, so centring it
+ * is saying where it goes — see `PLAN_com_anchored_frames.md`.
+ */
+fun rockOnPlate(x: Int, y: Int, count: Int = 1): List<RigidBody> = List(count) {
+    RigidBody.rockBlob(
+        radius = FEEDSTOCK_RADIUS,
+        // ⚠️ The tile's *centre*, not its corner. A tile spans `[x, x+1)`, so a body centred on it
+        // has its centre of mass half a tile in — which is what the old `- radius` arrived at from
+        // the other direction, the cell box of an odd-diameter blob being centred on its middle row.
+        positionX = x * Flight.PER_TILE + Flight.PER_TILE / 2L,
+        positionY = y * Flight.PER_TILE + Flight.PER_TILE / 2L,
+        composition = OutofspaceReducer.DEFAULT_ORE_BODY,
+    )
 }
 
 /** Body radius the plate is sized for: five tiles across, 21 cells. */
@@ -213,8 +219,23 @@ fun workingVessel(grid: Grid, rocksPerPlate: Int = 6): VesselState {
     // bites (recorded in [acquiredEnergy]). So the baseline stays as-is.
     return base.copy(
         bodies = bodies,
-    )
+    ).gridAtWorldOrigin()
 }
+
+/**
+ * The vessel placed so that its grid and the world coincide — tile `(3, 4)` is at world `(3, 4)`.
+ *
+ * ⚠️ **Fixtures that put a body at a tile need this, and used to get it for nothing.** A vessel is
+ * anchored on its centre of mass now, so the default `positionX = 0` means *the centre* is at the
+ * world origin and the grid hangs some seventeen tiles up and to the left of it. Every fixture that
+ * says "a rock on the plate at (x, y)" and then hands the body raw tile coordinates is quietly
+ * mixing two frames; before the anchor flipped the two happened to be the same one.
+ *
+ * Solving `world = C + R·(local − comLocal)` for `world == local` at zero rotation gives
+ * `C == comLocal`, which is the whole of this.
+ */
+fun VesselState.gridAtWorldOrigin(): VesselState =
+    copy(positionX = distribution.comX, positionY = distribution.comY)
 
 /**
  * A world with [resource] already sitting in the [role] store of the machine at [tile].

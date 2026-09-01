@@ -122,12 +122,38 @@ object Weld {
     /** The pair's distribution in the vessel's frame, plus the station's own centre within it. */
     class Joint(val about: MassDistribution, val stationComX: Long, val stationComY: Long)
 
-    /** Where the station must be, given where the vessel has got to. The whole of "rigid". */
-    fun stationPose(shipPose: Pose, link: DockLink): Pose = Pose(
+    /**
+     * Where the station must be, given where the vessel has got to. The whole of "rigid".
+     *
+     * ⚠️ [DockLink.stationLocalX] is the station's **centre of mass** in the vessel's grid, so what
+     * comes back is already anchored where a body is anchored and needs no further offset. It was
+     * the station's origin before the anchor flipped, and the link is versioned for it.
+     */
+    fun stationPose(shipPose: Pose, link: DockLink, station: MassDistribution): Pose = Pose(
         x = shipPose.toWorldX(link.stationLocalX, link.stationLocalY),
         y = shipPose.toWorldY(link.stationLocalX, link.stationLocalY),
         ang = Coord(shipPose.ang.raw + link.stationRelativeAng),
+        about = station,
     )
+
+    /**
+     * One tick of flight for whichever body is actually moving — the vessel alone, or the pair.
+     *
+     * ⛔ **A pair turns about the pair's centre, and that is the only thing docking changes.** So the
+     * grid is re-hung on [moving]'s centre, turned and translated there, and re-hung on the vessel's
+     * own centre on the way out. Undocked the two distributions are the same one and both re-hangs
+     * are *exactly* the identity — [Pose.about] to the centre a pose already has rotates zero, and
+     * [rotScale] returns zero for zero — so the common case pays nothing and, more to the point,
+     * accumulates no rounding.
+     */
+    fun advance(
+        pose: Pose,
+        own: MassDistribution,
+        moving: MassDistribution,
+        by: Coord,
+        dx: Long,
+        dy: Long,
+    ): Pose = pose.about(moving).turned(by).movedBy(dx, dy).about(own)
 
     /**
      * `r × p` with the arm in millitiles and the momentum in mass·tiles/tick.

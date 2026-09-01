@@ -27,21 +27,62 @@ import org.emerge.sim.core.physics.primitives.Norm
  * per tick and [Norm.fromAngle] is a CORDIC loop. Construct one per body per tick.
  */
 class Pose(
-    /** The world position of the body's local origin, at [Flight.PER_TILE] to the tile. */
+    /**
+     * The world position of the body's **centre of mass**, at [Flight.PER_TILE] to the tile.
+     *
+     * Not its local origin. A body stores where its mass is, and the grid hangs off that — see
+     * [comLocalX] for the offset that does the hanging, and `PLAN_com_anchored_frames.md` for why
+     * this way round. The short of it: with the origin held, cargo sliding down a rail moves the
+     * centre of mass through *open space* with no force acting on it, and momentum conservation
+     * says that is exactly backwards. Held this way the invariant is free — the centre cannot move
+     * unless something pushes it, because the centre is the thing that is stored.
+     */
     val x: Long,
     val y: Long,
     /** How far the body is turned relative to open space. */
     val ang: Coord,
+    /**
+     * Where that centre of mass sits in the body's **own grid**, at [Flight.PER_TILE] to the tile.
+     *
+     * This is what superimposes the grid on the point [x] fixes: the grid is placed so that its own
+     * centre of mass lands there, whatever the mass distribution currently says. Cargo moving aboard
+     * changes this, so the whole grid — colliders and all — shifts under a stationary centre, which
+     * is the hull recoiling from its own cargo and is correct.
+     *
+     * ⚠️ **Fixed for a tick.** It is a fact about a mass distribution that changes *during* a tick
+     * as matter moves, so a conversion early in the tick and one late in it must agree. The class
+     * already required one instance per body per tick because [Norm.fromAngle] is a CORDIC loop;
+     * that lifetime is the freeze, and it is now load-bearing rather than an optimisation.
+     *
+     * ⛔ Millitiles will not do here. A 100 kg packet moving one tile on the starter vessel shifts
+     * the centre by 1.04 millitiles, so a grid placed on the radius scale would snap in whole
+     * thousandths of a tile and swallow everything finer — see [MassDistribution.comX].
+     */
+    val comLocalX: Long,
+    val comLocalY: Long,
 ) {
+    /** The pose of a body whose centre of mass [about] describes. */
+    constructor(x: Long, y: Long, ang: Coord, about: MassDistribution) :
+        this(x, y, ang, about.comX, about.comY)
+
     private val norm: Norm = Norm.fromAngle(ang)
 
     /** `(cos, sin)` as [Flight.FRAC_ONE]ths, in the grid's axes — +y down, so +ang is clockwise. */
     val cos: Long = norm.x.raw
     val sin: Long = norm.y.raw
 
-    fun toWorldX(localX: Long, localY: Long): Long = x + rotScale(localX, cos) - rotScale(localY, sin)
+    /**
+     * A point in the body's grid, in the world.
+     *
+     * ⚠️ The offset from the centre of mass is taken **first**, and for [rotScale]'s reason: it is
+     * the small quantity. A grid coordinate is bounded by the grid and so is its distance from the
+     * centre, whereas [x] is a world coordinate and can be billions of tiles out.
+     */
+    fun toWorldX(localX: Long, localY: Long): Long =
+        x + rotScale(localX - comLocalX, cos) - rotScale(localY - comLocalY, sin)
 
-    fun toWorldY(localX: Long, localY: Long): Long = y + rotScale(localX, sin) + rotScale(localY, cos)
+    fun toWorldY(localX: Long, localY: Long): Long =
+        y + rotScale(localX - comLocalX, sin) + rotScale(localY - comLocalY, cos)
 
     /**
      * A **direction** in this pose's frame, expressed in the world: [toWorldX] without the offset.
@@ -70,58 +111,55 @@ class Pose(
     fun toLocalX(worldX: Long, worldY: Long): Long {
         val dx = worldX - x
         val dy = worldY - y
-        return rotScale(dx, cos) + rotScale(dy, sin)
+        return rotScale(dx, cos) + rotScale(dy, sin) + comLocalX
     }
 
     fun toLocalY(worldX: Long, worldY: Long): Long {
         val dx = worldX - x
         val dy = worldY - y
-        return -rotScale(dx, sin) + rotScale(dy, cos)
+        return -rotScale(dx, sin) + rotScale(dy, cos) + comLocalY
     }
 
     /**
-     * This pose turned by [by] about [about]'s centre of mass — which is the only point anything
-     * here ever turns about.
+     * This pose turned by [by] — and that is the whole of it.
      *
-     * The origin has to move for that centre to stay put, and this is the expression that moves it:
-     * `origin' = origin + R(ang)·c − R(ang + by)·c`.
+     * ⛔ **There is no pivot, because the anchor is the pivot.** A free body spins about its centre
+     * of mass, [x] *is* its centre of mass, and a rotation about the point you are anchored to
+     * moves nothing but the angle. Two commits ago this took a pivot as two `Long`s; one commit ago
+     * it took the [MassDistribution] the pivot had to come from; now there is nothing left to pass.
+     * That is the whole argument of `PLAN_com_anchored_frames.md` arriving in one line of code.
      *
-     * ⚠️ **The pivot is not a parameter, and that is the point.** It used to be two raw `Long`s, and
-     * every one of the three callers passed the body's own centre of mass — the vessel's, a rock's,
-     * and, while docked, the welded pair's. There was no fourth kind of pivot and there is no
-     * sensible one: a free body spins about its mass and nothing else. Taking the distribution
-     * instead of a point means a caller cannot pass a pivot that is not a centre of mass, which is
-     * the bug the comment at [org.emerge.demo.outofspace.world.sweepBodies] records the vessel
-     * having had.
-     *
-     * ⛔ **A welded pair is not an exception to that rule, it is an instance of it.** Docked, the
-     * thing being advanced is the pair, so the distribution handed in is the pair's and its centre
-     * is the pair's — see [Weld], which computes exactly that. Nothing here knows the difference.
-     *
-     * Uses [MassDistribution.comX], the centre at the position scale, and not the millitile radius
-     * the torque maths runs on: this is a *position*, the callers were each scaling the coarse one
-     * up by hand, and the sub-millitile digits are the ones that keep a slow spin from stepping.
-     * See `PLAN_com_anchored_frames.md`.
+     * ⚠️ **A welded pair still turns about the pair's centre, not the vessel's** — but that is a
+     * statement about *which body is being advanced*, not about this method. Advance the pair's
+     * pose and read the members back out of it; see [Weld.advance].
      */
-    fun turned(by: Coord, about: MassDistribution): Pose {
-        if (by.raw == 0) return this
-        val cx = about.comX
-        val cy = about.comY
-        val turned = Pose(x, y, Coord(ang.raw + by.raw))
-        return Pose(
-            x = x + rotScale(cx, cos) - rotScale(cy, sin) -
-                (rotScale(cx, turned.cos) - rotScale(cy, turned.sin)),
-            y = y + rotScale(cx, sin) + rotScale(cy, cos) -
-                (rotScale(cx, turned.sin) + rotScale(cy, turned.cos)),
-            ang = turned.ang,
-        )
-    }
+    fun turned(by: Coord): Pose =
+        if (by.raw == 0) this else Pose(x, y, Coord(ang.raw + by.raw), comLocalX, comLocalY)
+
+    /**
+     * This pose with the grid hung off a different centre of mass, the body not having moved.
+     *
+     * What "not having moved" means is that every tile stays where it is in the world and the
+     * *centre* is what shifts — the opposite of [movedBy]. That is what an intra-grid mass change
+     * does: `⛔` the world centre of mass must not move when cargo does, so when the local centre
+     * moves the anchor has to follow it, and this is the expression that follows it.
+     */
+    fun about(comLocalX: Long, comLocalY: Long): Pose = Pose(
+        x = toWorldX(comLocalX, comLocalY),
+        y = toWorldY(comLocalX, comLocalY),
+        ang = ang,
+        comLocalX = comLocalX,
+        comLocalY = comLocalY,
+    )
+
+    fun about(distribution: MassDistribution): Pose = about(distribution.comX, distribution.comY)
 
     /** This pose moved by a world-frame offset, turning not at all. */
-    fun movedBy(dx: Long, dy: Long): Pose = Pose(x + dx, y + dy, ang)
+    fun movedBy(dx: Long, dy: Long): Pose = Pose(x + dx, y + dy, ang, comLocalX, comLocalY)
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Pose && x == other.x && y == other.y && ang == other.ang)
+        this === other || (other is Pose && x == other.x && y == other.y && ang == other.ang &&
+            comLocalX == other.comLocalX && comLocalY == other.comLocalY)
 
     override fun hashCode(): Int = (x * 31 + y).toInt() * 31 + ang.raw
 
@@ -130,7 +168,7 @@ class Pose(
 
     companion object {
         /** At the world origin, pointing the way the grid is drawn — what every old save means. */
-        val IDENTITY = Pose(0L, 0L, Coord(0))
+        val IDENTITY = Pose(0L, 0L, Coord(0), 0L, 0L)
     }
 }
 

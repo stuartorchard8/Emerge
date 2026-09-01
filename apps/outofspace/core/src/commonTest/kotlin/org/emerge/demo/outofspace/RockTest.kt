@@ -33,6 +33,12 @@ import kotlin.test.assertTrue
  * that the arrival of conduction is not also the arrival of a discontinuity.
  */
 class RockTest {
+    // ⚠️ **For the class, not for one test.** [RockSpawner.enabled] is global mutable state and this
+    // was switched off inside a single case a hundred lines down, so every other case here was
+    // relying on running after it — or on the field never happening to reach the ship. Moving the
+    // vessel is enough to break that second bet, and `bodies.single()` reports a stray world rock as
+    // "the body you dropped is somehow two bodies". [RockContactTest] guards it exactly this way.
+    init { RockSpawner.enabled = false }
 
     @Test
     fun `a body over the deck falls toward it`() {
@@ -151,8 +157,6 @@ class RockTest {
         )
         val controller = OutofspaceController(CFG, vacuumHull().copy(bodies = listOf(far)))
 
-        RockSpawner.enabled = false
-
         repeat(TICKS) { controller.stepOnce() }
 
         val body = controller.state.bodies.single()
@@ -234,6 +238,7 @@ class RockTest {
         for (x in 1..33) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(33, y) }
         return VesselState(grid = grid, deck = deck, gravity = VesselState.PLATING_ONE_G, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+            .gridAtWorldOrigin()
     }
 
     /** The same box with the air taken out, so the hull does not ring and the ship does not jitter. */

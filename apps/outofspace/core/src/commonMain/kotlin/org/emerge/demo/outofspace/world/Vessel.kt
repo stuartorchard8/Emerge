@@ -943,7 +943,7 @@ data class VesselState(
      * live, and the grid, which is the addressing scheme for everything aboard. Step 1 of
      * `PLAN_rigid_bodies.md`.
      */
-    val pose: Pose get() = Pose(positionX, positionY, ang)
+    val pose: Pose get() = Pose(positionX, positionY, ang, distribution)
 
     /**
      * The whole momentum identity as one number: zero, or momentum has been minted or lost.

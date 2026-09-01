@@ -97,7 +97,7 @@ class SignalWiringTest {
             deck,
             conduits = Conduits.of(grid.size, Conduit.Signal to wires.toList()),
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        ).stocked(grid.tile(13, 5), stored), 1).copy(
+        ).stocked(grid.tile(13, 5), stored).gridAtWorldOrigin(), 1).copy(
             // Place rock after signals have propagated for a tick
             bodies = rockOnPlate(extractorAt.first, extractorAt.second, 6),
         )

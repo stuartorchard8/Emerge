@@ -92,7 +92,7 @@ fun materialBefore(conduit: Conduit): Species = when (conduit) {
 object Save {
 
     /** Bump when a field's meaning changes. An old save is migrated, or refused rather than misread. */
-    const val VERSION = 22
+    const val VERSION = 23
 
     /**
      * The first version that can carry a [org.emerge.demo.outofspace.world.BodyKind.STATION].
@@ -104,6 +104,16 @@ object Save {
      * what a person diagnosing that would read, and not something that prevents it.
      */
     const val STATION_VERSION = 22
+
+    /**
+     * The first version whose `position` records a **centre of mass** rather than a grid origin —
+     * for the vessel and for every body. See `PLAN_com_anchored_frames.md`.
+     *
+     * A file below this is not wrong about where anything is, it is anchored differently: the same
+     * world, described from the corner of the grid instead of from its mass. The migration is the
+     * one conversion between the two, and it needs the layers, so it runs once they are read.
+     */
+    const val COM_ANCHOR_VERSION = 23
 
     /**
      * The first version whose thrusters have a bell — see [ThrusterMigration].
@@ -1203,8 +1213,12 @@ object Save {
         // nothing could turn a ship until the tick before this format changed. It goes through
         // [Pose] anyway rather than adding `positionX`: a migration that is only correct for the
         // saves that happen to exist is a migration that breaks on the first one that does not.
+        //
+        // ⚠️ A zero local centre is what makes this the *origin*-anchored transform these old files
+        // were written against — `toWorld(local) = origin + R·local`, which is what [Pose] meant
+        // before [COM_ANCHOR_VERSION]. Not a placeholder: it is the old law, stated exactly.
         val loaded = if (version >= 15 || bodies.isEmpty()) momentumFixed else {
-            val pose = Pose(positionX, positionY, ang)
+            val pose = Pose(positionX, positionY, ang, 0L, 0L)
             momentumFixed.map {
                 it.copy(
                     positionX = pose.toWorldX(it.positionX, it.positionY),
@@ -1212,7 +1226,7 @@ object Save {
                 )
             }
         }
-        val state = VesselState(
+        val asRead = VesselState(
             grid = grid,
             gridPad = GRID_PAD,
             deck = deck,
@@ -1291,6 +1305,13 @@ object Save {
             bodyImpulseY = bodyImpulseY,
             bodies = loaded,
         )
+        // ⛔ **The anchor flip — and it can only happen here, with the layers standing.**
+        //
+        // Below [COM_ANCHOR_VERSION] every `position` in the file is a grid origin, and a centre of
+        // mass cannot be recovered from one without walking the mass that defines it. So the state
+        // is built as written and re-anchored once, rather than the header trying to convert a
+        // number whose meaning depends on layers it has not read yet.
+        val state = if (version >= COM_ANCHOR_VERSION) asRead else asRead.comAnchored()
         // ⛔ **The one-time write-off, and it is gated on the file never having stated the term.**
         //
         // A world saved before `reconciled` existed may carry a drift in the mass ledger from some
@@ -2005,4 +2026,52 @@ object Save {
         }
         return out
     }
+}
+
+
+/**
+ * A world written against the grid-origin anchor, read into the centre-of-mass one.
+ *
+ * The world does not change: every tile, every body and every relative pose stays exactly where the
+ * file put it. What changes is which point each `position` names, so each one is re-read under the
+ * old law and re-stated under the new — see `PLAN_com_anchored_frames.md` and [Save.COM_ANCHOR_VERSION].
+ *
+ * ⚠️ **The dock link is recomputed rather than converted.** It recorded the station's *origin* in
+ * the vessel's frame; it records the station's centre now, and the difference is that centre turned
+ * by the station's own relative angle. Deriving that by hand is a rotation to get wrong for no gain,
+ * when the two migrated poses can simply be asked — which is also exactly what [Weld.capture] does,
+ * so a migrated berth and a fresh one are computed by the same expression.
+ */
+private fun VesselState.comAnchored(): VesselState {
+    /** The file's numbers under the law they were written with: no local centre is the origin. */
+    fun asWritten(x: Long, y: Long, at: Coord) = Pose(x, y, at, 0L, 0L)
+
+    val shipWasAt = asWritten(positionX, positionY, ang)
+    val about = distribution
+    val movedBodies = bodies.map {
+        val was = asWritten(it.positionX, it.positionY, it.ang)
+        it.copy(
+            positionX = was.toWorldX(it.about.comX, it.about.comY),
+            positionY = was.toWorldY(it.about.comX, it.about.comY),
+        )
+    }
+    val anchored = copy(
+        positionX = shipWasAt.toWorldX(about.comX, about.comY),
+        positionY = shipWasAt.toWorldY(about.comX, about.comY),
+        bodies = movedBodies,
+    )
+
+    val link = anchored.docked ?: return anchored
+    val station = movedBodies.firstOrNull { it.station?.id == link.stationId } ?: return anchored
+    val berth = anchored.pose
+    return anchored.copy(
+        docked = DockLink(
+            stationId = link.stationId,
+            portTile = link.portTile,
+            nodeIndex = link.nodeIndex,
+            stationLocalX = berth.toLocalX(station.comX, station.comY),
+            stationLocalY = berth.toLocalY(station.comX, station.comY),
+            stationRelativeAng = link.stationRelativeAng,
+        ),
+    )
 }

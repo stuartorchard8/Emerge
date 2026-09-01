@@ -117,7 +117,7 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        ).copy(creative = true)
+        ).gridAtWorldOrigin().copy(creative = true)
     }
 
     @Test
@@ -167,7 +167,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
                 buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-            ),
+            ).gridAtWorldOrigin(),
             480*RAIL_PERIOD,
         )
 
@@ -199,7 +199,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
                 buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-            ),
+            ).gridAtWorldOrigin(),
             120*RAIL_PERIOD,
         )
 
@@ -253,7 +253,7 @@ class VesselSimTest {
                 conduits = Conduits.ofRails(rails.toList()),
                 bodies = feed,
                 buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-            ),
+            ).gridAtWorldOrigin(),
             120*RAIL_PERIOD,
         )
 
@@ -329,7 +329,7 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).gridAtWorldOrigin()
         s = run(s, 80)
 
         assertEquals(0L, (5..8).sumOf { s.rail.massAt(grid.tile(it, 2)) })
@@ -352,7 +352,7 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).gridAtWorldOrigin()
         s = run(s, 120)
 
         // One packet does leave the extractor: pushing out onto the tile under an output port is how
@@ -386,7 +386,7 @@ class VesselSimTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).gridAtWorldOrigin()
         s = run(s, ticksToMove(FEEDSTOCK_MASS))
 
         assertEquals(emptyList(), s.bodies, "the rock should be gone entirely")

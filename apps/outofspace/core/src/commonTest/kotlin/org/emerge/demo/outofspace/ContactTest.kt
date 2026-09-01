@@ -63,7 +63,7 @@ class ContactTest {
         val overlap = Flight.PER_TILE / 4L
         collectHullContacts(
             world.grid, world.structure, body, 0,
-            at = Pose(WALL * Flight.PER_TILE - Flight.PER_TILE + overlap, ROW * Flight.PER_TILE, Coord(0)),
+            at = Pose(WALL * Flight.PER_TILE - Flight.PER_TILE + overlap, ROW * Flight.PER_TILE, Coord(0), 0L, 0L),
             shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
@@ -104,7 +104,7 @@ class ContactTest {
         val shallow = Flight.PER_TILE / 8L
         collectHullContacts(
             world.grid, world.structure, body, 0,
-            at = Pose(WALL * Flight.PER_TILE, ROW * Flight.PER_TILE - Flight.PER_TILE + shallow, Coord(0)),
+            at = Pose(WALL * Flight.PER_TILE, ROW * Flight.PER_TILE - Flight.PER_TILE + shallow, Coord(0), 0L, 0L),
             shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
@@ -122,7 +122,7 @@ class ContactTest {
         val contacts = ArrayList<Contact>()
         collectHullContacts(
             world.grid, world.structure, oneCell(), 0,
-            at = Pose(2L * Flight.PER_TILE, 2L * Flight.PER_TILE, Coord(0)),
+            at = Pose(2L * Flight.PER_TILE, 2L * Flight.PER_TILE, Coord(0), 0L, 0L),
             shipPose = Pose.IDENTITY,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )
@@ -501,7 +501,7 @@ class ContactTest {
         // coming back out, not the arithmetic going in.
         val boxX = 20L * Flight.PER_TILE
         val boxY = 15L * Flight.PER_TILE
-        val frame = Pose(boxX, boxY, turn)
+        val frame = Pose(boxX, boxY, turn, 0L, 0L)
         val reach = half + radius - overlap
         val contacts = ArrayList<Contact>()
 
@@ -546,7 +546,7 @@ class ContactTest {
         val turn = Coord(1, 4)
         // The ship's origin is left at zero: what is under test is the turn, and a translation would
         // only add the same offset to both sides of every assertion below.
-        val ship = Pose(0L, 0L, turn)
+        val ship = Pose(0L, 0L, turn, 0L, 0L)
         val contacts = ArrayList<Contact>()
 
         // A quarter tile into the wall tile's **upper** face, expressed in the grid and then put
@@ -557,7 +557,7 @@ class ContactTest {
         val localY = ROW * Flight.PER_TILE - Flight.PER_TILE + overlap
         collectHullContacts(
             world.grid, world.structure, body, 0,
-            at = Pose(ship.toWorldX(localX, localY), ship.toWorldY(localX, localY), turn),
+            at = Pose(ship.toWorldX(localX, localY), ship.toWorldY(localX, localY), turn, 0L, 0L),
             shipPose = ship,
             restingSpeedX = 0L, restingSpeedY = 0L, into = contacts,
         )

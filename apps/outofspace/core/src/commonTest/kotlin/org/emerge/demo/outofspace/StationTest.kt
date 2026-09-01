@@ -72,10 +72,22 @@ class StationTest {
         // `cellDistribution` walks the mask and skips empties, so a ring needs no special case
         // anywhere. If this ever drifts, something has started reconstructing a body from its
         // bounding box instead of from its cells.
+        //
+        // ⚠️ Asked of the body's **own grid**, which is where the claim lives. It used to be asked
+        // of [RigidBody.comX] and got the same number for a body placed at the world origin — but
+        // that reads the *world* centre, and since the anchor flipped a body's world centre is
+        // wherever it was put. The distribution is what walks the mask, so the distribution is what
+        // this is about; the expected value has not moved.
         val s = station(width = 21, height = 21)
-        assertEquals(s.width * Flight.PER_TILE / 2, s.comX, "a symmetric ring is off-centre in x")
-        assertEquals(s.height * Flight.PER_TILE / 2, s.comY, "a symmetric ring is off-centre in y")
+        assertEquals(s.width * Flight.PER_TILE / 2, s.about.comX, "a symmetric ring is off-centre in x")
+        assertEquals(s.height * Flight.PER_TILE / 2, s.about.comY, "a symmetric ring is off-centre in y")
         assertTrue(s.about.gyrationSq > 0L, "a ring cannot spin")
+
+        // And the other half of the anchor: a body's world centre of mass is where it was placed,
+        // exactly, with no bounding box anywhere in the answer.
+        val placed = station(width = 21, height = 21, atTileX = 7L, atTileY = -3L)
+        assertEquals(7L * Flight.PER_TILE, placed.comX, "a body is placed by its centre of mass")
+        assertEquals(-3L * Flight.PER_TILE, placed.comY, "a body is placed by its centre of mass")
     }
 
     @Test

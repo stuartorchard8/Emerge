@@ -53,7 +53,7 @@ class MotionTest {
         val feed = feedExtractor(grid, deck, 2, 3)
         deck += fixtureStorage(grid.tile(tankX, 3), Direction.Right)
         joinRow(grid, rails, 4, tankX - 1, 3)
-        return VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
+        return VesselState(grid, deck, conduits = Conduits.ofRails(rails.toList()), bodies = feed, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size)).gridAtWorldOrigin()
     }
 
     // ── Travelling ────────────────────────────────────────────────────────────
@@ -165,7 +165,7 @@ class MotionTest {
             conduits = Conduits.ofRails(rails.toList()),
             bodies = feed,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
-        )
+        ).gridAtWorldOrigin()
     }
 
     @Test

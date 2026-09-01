@@ -23,6 +23,9 @@ import org.emerge.demo.outofspace.world.SignalSource
 import org.emerge.demo.outofspace.world.Trigger
 import org.emerge.demo.outofspace.world.Wiring
 import org.emerge.demo.outofspace.world.machine.Extractor
+import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Pose
+import org.emerge.demo.outofspace.world.RigidBody
 import org.emerge.demo.outofspace.world.Save
 import org.emerge.demo.outofspace.world.SaveError
 import org.emerge.demo.outofspace.world.Segment
@@ -722,6 +725,56 @@ class SaveTest {
         // half a kilogram in whatever this build's unit is, not the digits on the page.
         assertEquals(500L * Budget.GRAM, state.rail.massAt(TileIndex(10)))
         assertTrue(state.railAt(TileIndex(9))!!.linkedTo(Direction.Right))
+    }
+
+    /**
+     * A version 22 `position` is a grid origin; a version 23 one is a centre of mass.
+     *
+     * The file describes the same world either way, so the test is that the world survives: the
+     * hull ends up in the same place in space, and only the number naming it changes. Asserted
+     * through a tile rather than through the field, because "tile (5, 5) has not moved" is the
+     * claim and "positionX went up by seventeen tiles" is an implementation detail of it.
+     *
+     * ⚠️ Bodies migrate too, and by their own centres, not the ship's — a rock parked beside the
+     * hull that came back half its own width off would be a rock that had moved.
+     */
+    @Test
+    fun `a version 22 save is re-anchored from the grid origin onto the centre of mass`() {
+        val originX = 900L * Flight.PER_TILE
+        val originY = -400L * Flight.PER_TILE
+        val rockOrigin = 40L * Flight.PER_TILE
+        val rock = RigidBody.rockBlob(
+            radius = 2,
+            positionX = originX + rockOrigin,
+            positionY = originY,
+            composition = OutofspaceReducer.DEFAULT_ORE_BODY,
+        )
+        // Written as version 23 — so `position` here means a centre — then relabelled 22, which
+        // makes every one of those numbers claim to be an origin instead. That is exactly the file
+        // the migration has to cope with, and it is built from the writer rather than by hand so it
+        // cannot drift away from the format.
+        val asWritten = starterVessel(cfg.initialGrid).copy(
+            positionX = originX, positionY = originY, bodies = listOf(rock),
+        )
+        val text = Save.write(asWritten).replaceFirst("outofspace ${Save.VERSION}", "outofspace 22")
+
+        val loaded = Save.read(text)
+
+        // The ship: the origin the file named is still the origin, so the grid has not moved.
+        val origin = Pose(originX, originY, loaded.ang, 0L, 0L)
+        assertEquals(
+            origin.toWorldX(5L * Flight.PER_TILE, 5L * Flight.PER_TILE),
+            loaded.pose.toWorldX(5L * Flight.PER_TILE, 5L * Flight.PER_TILE),
+            "the hull moved when the file was re-anchored",
+        )
+        assertEquals(originX + loaded.distribution.comX, loaded.positionX, "the ship's centre is not where the mass is")
+
+        // The body: same test, its own centre.
+        val back = loaded.bodies.single { it.station == null }
+        assertEquals(
+            originX + rockOrigin + back.about.comX, back.positionX,
+            "the body was re-anchored on the ship's centre instead of its own",
+        )
     }
 
     @Test

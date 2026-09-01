@@ -328,11 +328,14 @@ fun sweepBodies(
      * including everything the ship's rotation contributes — falls out of the subtraction instead of
      * being written down as an `ω × r` term that could be got wrong or forgotten.
      */
-    fun poseAt(step: Int): Pose = Pose(
-        ship.pose.x + svx * step / steps,
-        ship.pose.y + svy * step / steps,
-        Coord((ship.pose.ang.raw + sav * step / steps).toInt()),
-    )
+    fun poseAt(step: Int): Pose = ship.pose.let {
+        Pose(
+            it.x + svx * step / steps,
+            it.y + svy * step / steps,
+            Coord((it.ang.raw + sav * step / steps).toInt()),
+            it.comLocalX, it.comLocalY,
+        )
+    }
 
     /**
      * ⚠️ **There is no `gridPose` any more, and its absence is step 6.**
@@ -372,7 +375,7 @@ fun sweepBodies(
     // is the entire fix, and a tenth of a tile a tick is faster than an editor drop can be noticed
     // settling and far too slow to jump a wall.
     val startPose = poseAt(0)
-    val startWorld = Array(n) { Pose(px[it], py[it], Coord(ang[it].toInt())) }
+    val startWorld = Array(n) { Pose(px[it], py[it], Coord(ang[it].toInt()), bodies[it].about) }
     val depenetration = LongArray(n) { i ->
         var stuck = overlapsHull(grid, structure, bodies[i], startWorld[i], startPose)
         if (!stuck) {
@@ -410,8 +413,8 @@ fun sweepBodies(
             val vx = worldVel(ix[i], mass[i])
             val vy = worldVel(iy[i], mass[i])
             val spin = angularVelocity(angImpulse[i], bodies[i].about)
-            val moved = Pose(px[i], py[i], Coord(ang[i].toInt()))
-                .turned(Coord((spin * (k + 1) / steps - spin * k / steps).toInt()), bodies[i].about)
+            val moved = Pose(px[i], py[i], Coord(ang[i].toInt()), bodies[i].about)
+                .turned(Coord((spin * (k + 1) / steps - spin * k / steps).toInt()))
                 .movedBy(
                     vx * (k + 1) / steps - vx * k / steps,
                     vy * (k + 1) / steps - vy * k / steps,
@@ -474,8 +477,10 @@ fun sweepBodies(
                 Operand(
                     mass = mass[i],
                     about = bodies[i].about,
-                    comX = turned[i]!!.toWorldX(comLocalX[i], comLocalY[i]),
-                    comY = turned[i]!!.toWorldY(comLocalX[i], comLocalY[i]),
+                    // The pose *is* anchored on the centre of mass now, so this is a read and not
+                    // a transform. It was `toWorld(comLocal)` while the anchor was the corner.
+                    comX = turned[i]!!.x,
+                    comY = turned[i]!!.y,
                     velocityX = worldVel(ix[i], mass[i]),
                     velocityY = worldVel(iy[i], mass[i]),
                     angVel = angularVelocity(angImpulse[i], bodies[i].about),

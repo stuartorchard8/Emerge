@@ -350,10 +350,16 @@ object RockSpawner {
             val (worldTileX, worldTileY) = chunkX.toLong() * CHUNK_SIZE + rx.toLong() to chunkY.toLong() * CHUNK_SIZE + ry.toLong()
 
             // Born on the grid, stored in the world — the one conversion, done once. See [pose].
+            //
+            // ⚠️ The **centre** of the tile, because a body is placed by its centre of mass now and a
+            // tile spans `[x, x+1)`. Placing that centre on the tile's corner would sit every rock in
+            // the field half a tile up and to the left of the tile it was rolled for.
+            val bornX = tileX.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
+            val bornY = tileY.toLong() * Flight.PER_TILE + Flight.PER_TILE / 2L
             bodies.add(RigidBody.rockBlob(
                 radius = radius,
-                positionX = pose.toWorldX(tileX.toLong() * Flight.PER_TILE, tileY.toLong() * Flight.PER_TILE),
-                positionY = pose.toWorldY(tileX.toLong() * Flight.PER_TILE, tileY.toLong() * Flight.PER_TILE),
+                positionX = pose.toWorldX(bornX, bornY),
+                positionY = pose.toWorldY(bornX, bornY),
                 composition = composition,
             ))
         }

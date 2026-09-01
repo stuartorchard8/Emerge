@@ -253,11 +253,14 @@ class RockContactTest {
             positionX = 0L, positionY = 0L,
             composition = OutofspaceReducer.DEFAULT_ORE_BODY,
         )
-        val half = (Edit.DEFAULT_ROCK_RADIUS * 2 + 1) * Flight.PER_TILE / 2L
+        // ⚠️ Placed at [x],[y] and not half a cell box short of it. This used to subtract the box's
+        // half-width to leave the blob centred where the caller asked — a different compensation
+        // from the one `rockOnPlate` needed, which is the tell that both were correcting for an
+        // anchor rather than saying anything. A body is placed by its centre of mass now.
         return RigidBody.rockBlob(
             radius = Edit.DEFAULT_ROCK_RADIUS,
-            positionX = x * Flight.PER_TILE - half,
-            positionY = y * Flight.PER_TILE - half,
+            positionX = x * Flight.PER_TILE,
+            positionY = y * Flight.PER_TILE,
             composition = OutofspaceReducer.DEFAULT_ORE_BODY,
             // ⚠️ The inverse of [RigidBody.velocityX], and it needs the same reduction: this rock is
             // 8.3e13 units, and a quarter-tile-a-tick velocity is 2.5e8, so the plain product is 2e22
@@ -344,7 +347,7 @@ class RockContactTest {
         for (x in 1..WALL_X) { put(x, 6); put(x, 26) }
         for (y in 6..26) { put(1, y); put(WALL_X, y) }
         val state = VesselState(grid = grid, deck = deck, gravity = VesselState.FREEFALL, buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size))
-        return state.copy(air = Stuff.gas(MassArray(grid.size)))
+        return (state.copy(air = Stuff.gas(MassArray(grid.size)))).gridAtWorldOrigin()
     }
 
     private fun abs(v: Long): Long = if (v < 0L) -v else v

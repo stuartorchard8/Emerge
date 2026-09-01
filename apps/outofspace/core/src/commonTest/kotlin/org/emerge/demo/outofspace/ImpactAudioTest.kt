@@ -130,7 +130,7 @@ class ImpactAudioTest {
             grid = grid, deck = deck, gravity = VesselState.FREEFALL,
             buffers = BufferLayer.forDeck(grid, deck), rail = RailLayer.empty(grid.size),
         )
-        return state.copy(air = Stuff.gas(MassArray(grid.size)))
+        return (state.copy(air = Stuff.gas(MassArray(grid.size)))).gridAtWorldOrigin()
     }
 
     private companion object {

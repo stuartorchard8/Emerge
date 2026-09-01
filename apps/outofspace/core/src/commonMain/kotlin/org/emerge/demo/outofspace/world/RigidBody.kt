@@ -237,7 +237,7 @@ class RigidBody(
      * ⚠️ Built fresh on every read, and [Pose] runs a CORDIC loop in its constructor. Hoist it out
      * of a loop over cells; it is cheap once a tick and not cheap once a cell.
      */
-    val pose: Pose get() = Pose(positionX, positionY, ang)
+    val pose: Pose get() = Pose(positionX, positionY, ang, about)
 
     /**
      * The same pose expressed in [ship]'s grid, which is where every tile index in the game lives.
@@ -250,6 +250,7 @@ class RigidBody(
         ship.toLocalX(positionX, positionY),
         ship.toLocalY(positionX, positionY),
         Coord(ang.raw - ship.ang.raw),
+        about,
     )
 
     /**
@@ -287,9 +288,15 @@ class RigidBody(
     /** Its spin, in [Coord] raw per tick — derived from [angImpulse] exactly as [velocityX] is. */
     val angVel: Long get() = angularVelocity(angImpulse, about)
 
-    /** Its centre of mass, in the world — the point it actually spins about. */
-    val comX: Long get() = pose.toWorldX(about.comMilliX * COM_SCALE, about.comMilliY * COM_SCALE)
-    val comY: Long get() = pose.toWorldY(about.comMilliX * COM_SCALE, about.comMilliY * COM_SCALE)
+    /**
+     * Its centre of mass, in the world — the point it actually spins about.
+     *
+     * Since the anchor flipped this *is* [positionX], not a rotation away from it. Kept as a name
+     * rather than inlined because the call sites are asking a physical question and the answer
+     * being trivial is the news, not a reason to stop asking it.
+     */
+    val comX: Long get() = positionX
+    val comY: Long get() = positionY
 
     /**
      * The centre of its **bounding box**, in the world — where it looks like it is, for the plating
