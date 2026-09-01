@@ -2,7 +2,8 @@
 
 Status: **steps 1–3 BUILT and green** (`97bd3e79`, `46f28c80`, `c10fd62f`, 2026-09-01) — money, prices,
 valuation, the docking port and stations. Steps 4–6 not started.
-⛔ **One decision has re-opened: a 100×100 station does not fit the tick budget — §10b.** Numbers in §3
+✅ Station size settled at **20×20** (`RigidBody.STATION_TILES`) against the measurement in §10b;
+100×100 waits on the coarse box decomposition parked in §6. Numbers in §3
 and §3.6 are measured off the live species tables, not invented. Steps in §9.
 
 The milestone is an **early- and mid-game arc**. The end game already exists and is fun — collect
@@ -574,11 +575,10 @@ the per-cell walk, or decouple a body's colliders from its cell mask — and inv
 economy increment is exactly what `feedback_no_unrequested_functionality` forbids. Station size is a
 plain argument to `RigidBody.stationShell`, so nothing downstream is blocked either way.
 
-**The choice, and it is Stu's:**
-
-1. **20×20 stations now** (0.7 ms/tick, comfortable), 100×100 when the decomposition lands.
-2. **Un-park the coarse box decomposition** and do it before step 4.
-3. Something in between — ~40×40 was not measured but should land near 2–3 ms/tick.
+✅ **SETTLED (Stu, 2026-09-01): 20×20 now**, at 0.7 ms/tick, as `RigidBody.STATION_TILES` and the
+default for `stationShell`. A hundred tiles is still the station he wants; what unlocks it is the
+coarse box decomposition parked in §6, and **nothing but that one constant has to change** when it
+lands.
 
 ### What step 3 turned up besides
 

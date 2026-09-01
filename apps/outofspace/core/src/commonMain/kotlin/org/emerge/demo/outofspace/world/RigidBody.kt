@@ -398,9 +398,26 @@ class RigidBody(
          * whose collider set is decoupled from its cell mask, which does not exist. See
          * `PLAN_economy.md` §6.
          */
+        /**
+         * How big a station is, per side — **twenty tiles** (Stu, 2026-09-01).
+         *
+         * ⛔ **Chosen against a measurement, not a feeling.** A 100×100 shell adjacent to the player
+         * costs **12.1 ms a tick** against a budget of ~3.5 ms mean and 8.5 ms p95
+         * (`reference_oos_perf_levers`); 20×20 costs **0.7 ms**. The cost is entirely *contacts* —
+         * the same station a thousand tiles away costs nothing at all — because a station's bound
+         * radius culls nothing in its own neighbourhood and every rock nearby then pays
+         * `cells × cells`. Full numbers in `PLAN_economy.md` §10b.
+         *
+         * ⏸ **This is a holding position and it is meant to move.** A hundred tiles is the station
+         * Stu wants; what unlocks it is the coarse box decomposition parked in `PLAN_economy.md` §6
+         * — a dozen colliders for the whole hull instead of one per cell. Nothing but this number
+         * has to change when that lands.
+         */
+        const val STATION_TILES: Int = 20
+
         fun stationShell(
-            width: Int,
-            height: Int,
+            width: Int = STATION_TILES,
+            height: Int = STATION_TILES,
             positionX: Long,
             positionY: Long,
             composition: Mixture,
