@@ -1,6 +1,7 @@
 # Economy
 
-Status: **nothing built** (2026-09-01). **All five open decisions settled — see §10.** Numbers in §3
+Status: **step 1 BUILT and green** (`97bd3e79`, 2026-09-01) — money, prices, valuation.
+All five open decisions settled (§10); steps 2–6 not started. Numbers in §3
 and §3.6 are measured off the live species tables, not invented. Steps in §9.
 
 The milestone is an **early- and mid-game arc**. The end game already exists and is fun — collect
@@ -463,6 +464,45 @@ the box-vs-disc answer (§6, item 2) before it starts.
 5. ✅ **Start with nothing.** Opening in debt is parked with its reasoning intact — §4.
 
 Nothing blocks step 1.
+
+## 10a. What step 1 turned up
+
+⛔ **Thirteen lanthanides have no source, and it is a chemistry question not an economy one.**
+`MINERALS` writes monazite, bastnasite and xenotime with a **single representative lanthanide**
+(cerium or yttrium) so their molar masses stay exact; the true site occupancy lives in
+`LANTHANIDE_SUITE`, whose own doc calls it "the distribution a refining step should actually use" —
+and nothing reads it. So La, Pr, Nd, Sm, Eu, Gd, Tb, Dy, Ho, Er, Tm, Yb and Lu occur in no rock this
+derivation can see. They are unobtainable, and `elementPrice`'s floor prices them at the rarity
+ceiling (147 M/100 kg), well above uranium. Harmless — no *compound* price moves, because no mineral
+contains them — but the dearest entries in the table are things nobody can sell.
+⚠️ **Deliberately not fixed here.** Spreading a monazite's rare-earth share across the suite is a
+chemistry change with a knock-on to cerium's price, and inventing it inside an economy increment is
+exactly the mechanism-to-make-a-problem-go-away that `feedback_no_unrequested_functionality` forbids.
+`PricesTest` pins the count at 13 so a future fix surfaces as a failure, not a silent repricing.
+
+⚠️ **The incentive to concentrate depends on how many species the gangue carries**, and §3.6's table
+only ever measured one of the two cases. Same purity, different ore:
+
+| 41% iron, gangue is… | worth removing |
+|---|---|
+| one other species | **~3.7×** |
+| three other species (50/30/20) | **~10×** |
+
+With one impurity that impurity is *itself* a top-two species and keeps its share²; with three,
+everything past the second is forfeit. Real extractor output is many species, so §3.6's figure is the
+right one — but "ore that is dirty in many ways" is what the concentrator is really for, and a test
+written against a two-species lump is measuring a different game. Both are pinned in `MarketTest`.
+
+⚠️ **Share-squared does NOT reproduce "top two, each at half".** At 50/50 it pays each a **quarter**,
+so a blend fetches a quarter of what the separated piles do rather than a half. That is the extra
+bite chosen over R1 and it is correct — but it is worth stating plainly beside the sentence the
+feature started from, because the two differ by a factor of two at the exact case Stu quoted.
+
+✅ **The arbitrage guarantee is `cost >= revenue`, strict only when the trade is worth a credit.** A
+kilogram of iron at a station holding a hundred tonnes is worth 0.8 credits and both sides truncate
+to zero — a wash, which is what the invariant is for. Verified at every size from 1 kg to 99% of the
+shelf, in both directions, and it holds **because prices are quoted at the stock a trade leaves
+behind** — not because of the spread, which alone fails for large trades.
 
 ## 11. Hazards carried in from memory
 
