@@ -40,6 +40,22 @@ class Station(
     ore: Mixture,
     /** The pure shelves, and the prices they imply. */
     val market: Market,
+    /**
+     * Which station this is, for as long as the world lasts.
+     *
+     * ⛔ **A body has no identity and a station needs one.** A dock is a link between the vessel and
+     * one particular trading post, and the obvious key — an index into
+     * [VesselState.bodies] — is wrong: the spawner rebuilds that list every tick and rocks despawning
+     * *around* a station shift it. So the link names the station, and the station says who it is.
+     */
+    val id: Int = 0,
+    /**
+     * Where a ship may berth, in the body's own cells.
+     *
+     * Several, because a station approachable from exactly one bearing is one the player has to fly
+     * around before they may trade, which is a chore rather than a manoeuvre.
+     */
+    val docks: List<DockNode> = emptyList(),
 ) {
     /**
      * What has been bought from passing ships and not yet separated — the mixed reserve.
@@ -56,12 +72,23 @@ class Station(
     val ore: Mixture = if (ore.energy == 0L) ore else Mixture.of(ore.masses, 0L)
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is Station && ore == other.ore && market.holdings() == other.market.holdings())
+        this === other || (other is Station && id == other.id && ore == other.ore &&
+            market.holdings() == other.market.holdings() && docks == other.docks)
 
-    override fun hashCode(): Int = ore.hashCode() * 31 + market.holdings().hashCode()
+    override fun hashCode(): Int = (id * 31 + ore.hashCode()) * 31 + market.holdings().hashCode()
 
-    override fun toString(): String = "Station(ore ${ore.total}g, stock ${market.holdings().total}g)"
+    override fun toString(): String = "Station#$id(ore ${ore.total}g, stock ${market.holdings().total}g)"
 }
+
+/**
+ * A berth on a station's hull: which cell of it, and which way is **out**.
+ *
+ * The cell is the hull cell itself; the mouth a ship meets is one step along [facing] from it, the
+ * same way a [org.emerge.demo.outofspace.world.machine.DockingPort]'s berth is one step outside its
+ * own footprint. Stating the hull cell rather than the mouth means a node is always a cell the
+ * station actually has, which a test can check.
+ */
+data class DockNode(val cellX: Int, val cellY: Int, val facing: Direction)
 
 /**
  * Free-floating solid (rock or fragment). Own grid, momentum, temperature.
@@ -429,6 +456,17 @@ class RigidBody(
             require(width > 2 * thickness && height > 2 * thickness) {
                 "a ${width}x$height shell $thickness deep has no inside"
             }
+            // A berth on the middle of each side unless the caller says otherwise. Four, because a
+            // station approachable from one bearing only is one the player must fly around before
+            // they may trade — a chore, not a manoeuvre.
+            val berths = station.docks.ifEmpty {
+                listOf(
+                    DockNode(width / 2, 0, Direction.Up),
+                    DockNode(width - 1, height / 2, Direction.Right),
+                    DockNode(width / 2, height - 1, Direction.Down),
+                    DockNode(0, height / 2, Direction.Left),
+                )
+            }
             val cells = BooleanArray(width * height)
             for (y in 0 until height) {
                 for (x in 0 until width) {
@@ -445,7 +483,7 @@ class RigidBody(
                 impulseX = 0L, impulseY = 0L,
                 oreComposition = composition,
                 fillPermille = fillPermille,
-                station = station,
+                station = Station(station.ore, station.market, station.id, berths),
                 energy = TileEnergy.uniform(
                     filled,
                     capacityPerTileOf(composition) * fillPermille / 1_000 * kelvin,

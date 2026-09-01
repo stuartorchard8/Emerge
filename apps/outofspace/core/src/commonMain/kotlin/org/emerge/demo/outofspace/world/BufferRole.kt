@@ -126,7 +126,9 @@ internal fun localBufferOffset(machine: DeckMachine, role: BufferRole): Int {
         // which keeps a purchase the player has not collected from being sold straight back.
         is DockingPort -> when (role) {
             BufferRole.Input -> pack(-r, 0)
-            BufferRole.Product -> pack(r, 0)
+            // On the flank, with the output port it serves — see `localPorts`, which explains why
+            // `+r` along the facing is the one place neither of this machine's doors may be.
+            BufferRole.Product -> pack(0, r)
             else -> NO_OFFSET
         }
 

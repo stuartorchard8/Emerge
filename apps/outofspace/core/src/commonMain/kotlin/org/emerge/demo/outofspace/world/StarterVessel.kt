@@ -1,6 +1,8 @@
 package org.emerge.demo.outofspace.world
 
 import org.emerge.demo.outofspace.chem.Mixture
+import org.emerge.demo.outofspace.num.Budget
+import org.emerge.demo.outofspace.world.RigidBody.Companion.STATION_TILES
 import org.emerge.demo.outofspace.chem.Species
 import org.emerge.demo.outofspace.world.machine.Gauge
 import org.emerge.demo.outofspace.world.machine.DeckArray
@@ -205,6 +207,60 @@ fun starterVessel(
         ),
     ).fitGrid()
 }
+
+/**
+ * The world a new game opens on: the [starterVessel], and **one trading post to fly to**.
+ *
+ * ⛔ **Separate from [starterVessel] on purpose.** Every fixture in the suite builds its world from
+ * that function, and putting a station inside it would give several hundred tests a twenty-tile body
+ * they never asked for — along with its contacts, its industry and its save lines. The game calls
+ * this; a test that wants a station states one.
+ *
+ * ⚠️ **Every number here belongs to step 6 of `PLAN_economy.md`, not to this one.** The distance, the
+ * shelves and the reserve are placeholders chosen to be *playable enough to look at* — a short flight
+ * away, holding enough of the obvious metals that prices are sane, and enough unworked ore that the
+ * industry visibly does something. Tuning them is the arc, and the arc is a playtest.
+ */
+fun starterWorld(grid: Grid): VesselState {
+    val ship = starterVessel(grid)
+    return ship.copy(bodies = ship.bodies + firstStation())
+}
+
+/**
+ * Where the first station is and what it has.
+ *
+ * Deterministic — the same place every game — because the first thing a new player needs is
+ * somewhere to *go*, and a trading post they have to find by exploring is one most of them will not.
+ */
+fun firstStation(): RigidBody = RigidBody.stationShell(
+    // Two hundred tiles: past the rock field's inner edge, so getting there is a flight rather than a
+    // nudge, and near enough that the first haul is not an expedition.
+    positionX = STATION_TILES_AWAY * Flight.PER_TILE,
+    positionY = 0L,
+    // A station is somebody else's hull, and hulls are steel.
+    composition = Mixture.of(Species.Steel to Budget.KILOGRAM, energy = 0),
+    station = Station(
+        // Unworked ore on the shelf behind the counter, so its separator has something to chew and a
+        // player who watches the panel sees a business rather than a vending machine.
+        ore = Mixture.of(
+            Species.Forsterite to 40L * Budget.TONNE,
+            Species.Fayalite to 15L * Budget.TONNE,
+            Species.Troilite to 5L * Budget.TONNE,
+            energy = 0,
+        ),
+        // What it will sell you on day one: the two metals a ship is actually made of, and enough of
+        // each that buying a few tonnes does not empty the shelf and spike the price.
+        market = Market.of(
+            Species.Iron to 30L * Budget.TONNE,
+            Species.Copper to 5L * Budget.TONNE,
+            Species.Steel to 10L * Budget.TONNE,
+        ),
+        id = 1,
+    ),
+)
+
+/** How far the first trading post is from where the ship starts, in tiles. */
+const val STATION_TILES_AWAY: Long = 200L
 
 /**
  * The heap of iron the vessel starts with — the thing every length of track you draw is built from.

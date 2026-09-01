@@ -23,6 +23,7 @@ import org.emerge.demo.outofspace.world.machine.Sensor
 import org.emerge.demo.outofspace.world.toMachineSettings
 import org.emerge.demo.outofspace.world.withSettings
 import org.emerge.demo.outofspace.world.starterVessel
+import org.emerge.demo.outofspace.world.starterWorld
 import org.emerge.sim.core.PlayerId
 import org.emerge.sim.core.Tick
 import org.emerge.sim.core.TickStepper
@@ -39,7 +40,7 @@ import kotlin.math.sign
  */
 class OutofspaceController(
     val cfg: OutofspaceConfig = OutofspaceConfig(),
-    initial: VesselState = starterVessel(OutofspaceConfig().initialGrid),
+    initial: VesselState = starterWorld(OutofspaceConfig().initialGrid),
 ) {
     private val stepper = TickStepper(cfg, initial, OutofspaceReducer)
     private val localPlayer = PlayerId(0)
@@ -781,7 +782,7 @@ class OutofspaceController(
     }
 
     /** Replaces the world — what "new game" and "load" will call. */
-    fun reset(newState: VesselState = starterVessel(cfg.initialGrid)) {
+    fun reset(newState: VesselState = starterWorld(cfg.initialGrid)) {
         selected = TileIndex.NONE
         inspectTile = TileIndex.NONE
         closeWiki()

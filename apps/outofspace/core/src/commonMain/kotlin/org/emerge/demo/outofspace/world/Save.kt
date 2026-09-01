@@ -211,6 +211,13 @@ object Save {
                 out.append(' ').append(b.fillPermille)
                     .append(' ').append(writeMixture(st.ore))
                     .append(' ').append(writeMixture(st.market.holdings()))
+                    .append(' ').append(st.id)
+                    // `x:y:facing` per berth. Written even when there are none ("-"), so the field
+                    // count of a station line does not depend on its contents.
+                    .append(' ').append(
+                        if (st.docks.isEmpty()) "-"
+                        else st.docks.joinToString(",") { "${it.cellX}:${it.cellY}:${it.facing.name}" },
+                    )
             }
             out.append("   # ").append(b.filled).append(" cells, ").append(b.mass).append("g\n")
         }
@@ -1049,6 +1056,18 @@ object Save {
                                 market = Market.holding(
                                     readMixture(tokens.getOrNull(14) ?: "-", scale, ::fail),
                                 ),
+                                id = tokens.getOrNull(15)?.toIntOrNull() ?: 0,
+                                docks = tokens.getOrNull(16)
+                                    ?.takeIf { it != "-" }
+                                    ?.split(",")
+                                    ?.mapNotNull { entry ->
+                                        val p = entry.split(":")
+                                        val x = p.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+                                        val y = p.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+                                        val f = Direction.entries.firstOrNull { it.name == p.getOrNull(2) }
+                                            ?: return@mapNotNull null
+                                        DockNode(x, y, f)
+                                    } ?: emptyList(),
                             ),
                         ),
                     )
