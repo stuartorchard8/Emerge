@@ -1,7 +1,7 @@
 # Economy
 
-Status: **step 1 BUILT and green** (`97bd3e79`, 2026-09-01) — money, prices, valuation.
-All five open decisions settled (§10); steps 2–6 not started. Numbers in §3
+Status: **steps 1–2 BUILT and green** (`97bd3e79`, `46f28c80`, 2026-09-01) — money, prices, valuation,
+and the docking port. All five open decisions settled (§10); steps 3–6 not started. Numbers in §3
 and §3.6 are measured off the live species tables, not invented. Steps in §9.
 
 The milestone is an **early- and mid-game arc**. The end game already exists and is fun — collect
@@ -426,10 +426,11 @@ are 1 and 2, and neither needs a station, a dock or a pixel.
 *Done when:* purity pays more than the same mass mixed; selling depresses a price and buying raises
 it; **a round trip at one station loses money** (§3.5); the whole thing runs in well under a second.
 
-**2. The docking port against a stub counterparty.** The 3×3 machine, the plural sell filter in
-`Demand.kt`, the output port minting packets, and the four ledger terms.
-*Done when:* ore routed to the port becomes credits and leaves the world; bought species arrive on
-the rail; `massBalance` **and** `heatBalance` both stay at zero across a thousand ticks of trading.
+**2. ✅ BUILT — the docking port against a stub counterparty** (`46f28c80`).
+`world/machine/DockingPort.kt`, the sell-list acceptance, the buy-order step, the four ledger terms,
+`VesselState.dockedMarket` as the stub. 14 tests; 1093 green.
+⚠️ **The `heatBalance` half of this criterion could not be met and should not have been written** —
+see §10a. `massBalance` is asserted every tick for a thousand ticks and holds.
 
 **3. Stations.** `BodyKind.STATION`, the `Station` record, despawn exemption, spawn exclusion zone,
 §6.1's two industrial processes, save lines. Save **21 → 22**.
@@ -503,6 +504,42 @@ kilogram of iron at a station holding a hundred tonnes is worth 0.8 credits and 
 to zero — a wash, which is what the invariant is for. Verified at every size from 1 kg to 99% of the
 shelf, in both directions, and it holds **because prices are quoted at the stock a trade leaves
 behind** — not because of the spread, which alone fails for large trades.
+
+### What step 2 turned up
+
+✅ **The plural sell filter was free.** §5.1 said `Acceptance.filtered` takes a single
+`SpeciesFilter` and that a sell list "needs a plural form — a list, or a species bitmask beside a
+purity". It does not: `accepts` is keyed **tile → List\<Acceptance\>** and `Whitelist.room` admits a
+lump that *any* demand at the tile wants, so one `Acceptance` per order already unions. The machinery
+the locked warehouse needed was the machinery a sell list needs, and no change to `Demand.kt` was
+required at all.
+
+⛔ **`heatBalance` is PARKED, and step 2's stated criterion was impossible.** `EnergyLedgers.PARKED`
+has been true since step 3 of `PLAN_unit_rescale.md`: the whole-grid energy accumulators are single
+`Long`s that overflow above `Kₘ = 1.4e5`, well short of the microgram unit, so **a non-zero
+`heatBalance` is expected rather than alarming** and its own doc says not to re-enable the check
+piecemeal. Writing "heatBalance stays at zero" into the plan was an error made without reading that.
+
+✅ **What replaced it is better.** The global identity goes through `EnergyLedgers.assertBalanced`,
+which asserts nothing today and un-parks in one edit with the rest of the suite. The *booking* — the
+thing these four terms exist for — is checked directly and is not parked: one lump, one tick,
+`exportedEnergy` equals the lump's energy exactly, and a purchase arrives at exactly
+`AMBIENT_KELVIN`. An identity over a whole world was never the sharp instrument here anyway.
+
+✅ **`massBalance` is now one definition**, on `VesselState`. It was written out longhand in the HUD,
+the harness and four test files, and the HUD's copy is the one that read the player's own ship as an
+8.8 t leak (`reference_oos_mass_ledger`). Adding two terms to a seven-way restatement is exactly how
+that happens a second time.
+
+⚠️ **A test trap.** Comparing pure iron against an iron/**nickel** blend measures nickel's price, not
+purity — nickel is four times iron at γ = 1/2, so the impure lump was worth more per gram to start
+with and the penalty read as 1.55× instead of the ~4× that is really there. **The partner species has
+to be priced near the one under test**; forsterite (930 against iron's 1,000) is the right choice.
+
+⏸ **Deliberately deferred to the increment that owns them:** the port is **not** `preventAirflow`
+(only the hull and the airlock hold air out, and making a third kind do so changes room topology —
+a docking question, not a money one), and `dockedMarket` is **not saved** (nothing owns a market
+until stations exist, and persisting a transient one is building the shape step 3 would delete).
 
 ## 11. Hazards carried in from memory
 
