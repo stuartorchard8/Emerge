@@ -462,7 +462,7 @@ class FlightTest {
             airMomentumX = 7_777L, airMomentumY = 3_333L, airAngImpulse = -555L,
             airMassBefore = 1_000L, ventedMass = 1_000L,
             vesselImpulseX = 1_000_000L, vesselImpulseY = 0L, angImpulse = 0L,
-            ship = MassDistribution(100_000L, 0L, 0L, 4_000_000L),
+            ship = MassDistribution(mass = 100_000L, comMilliX = 0L, comMilliY = 0L, gyrationSq = 4_000_000L),
             air = MassDistribution.EMPTY,
             sharePermille = 1000,
         )

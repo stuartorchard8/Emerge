@@ -296,7 +296,7 @@ class PhaseTransportTest {
                     tallEdges, sealedTall(), masses, energies,
                     gasKelvin(energies, heatCapacity(tall.size, masses)),
                     Frac2(Frac(1L, 1), Frac(0L)), spin = 0L,
-                    about = MassDistribution(1L, 2_500L, 1_500L, 1L),
+                    about = MassDistribution(mass = 1L, comMilliX = 2_500L, comMilliY = 1_500L, gyrationSq = 1L),
                 )
             }
             // How much left the starting cell sideways, into the two rows either side of it.

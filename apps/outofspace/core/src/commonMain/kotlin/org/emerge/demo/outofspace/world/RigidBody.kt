@@ -387,7 +387,7 @@ class RigidBody(
          * Millitiles to [Flight.PER_TILE]s: what a centre of mass has to be multiplied by to stand
          * next to a position. A thousandth of a tile is as fine as a lever arm is ever measured.
          */
-        const val COM_SCALE: Long = Flight.PER_TILE / Rotation.MILLI_TILE
+        const val COM_SCALE: Long = Rotation.PER_MILLI_TILE
 
         /*
          * ⛔ **`MATERIAL = Material.Firebrick` stood here and was read by nothing.** It said a rock

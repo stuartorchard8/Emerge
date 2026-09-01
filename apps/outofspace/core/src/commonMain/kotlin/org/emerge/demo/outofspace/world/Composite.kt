@@ -67,6 +67,11 @@ object Composite {
                 mass = total,
                 comMilliX = a.comMilliX + jointX,
                 comMilliY = a.comMilliY + jointY,
+                // The joint offset is a millitile quantity — it is a lever arm, and the parallel-axis
+                // term above needs it to be one — so the pair's centre carries `a`'s full precision
+                // plus that arm, and no more. There is no finer answer to be had here.
+                comX = a.comX + jointX * Rotation.PER_MILLI_TILE,
+                comY = a.comY + jointY * Rotation.PER_MILLI_TILE,
                 gyrationSq = gyrationSq,
             ),
             jointX,
@@ -84,5 +89,5 @@ object Composite {
     class Joint(val about: MassDistribution, val offsetX: Long, val offsetY: Long)
 
     /** Millitiles to [Flight.PER_TILE]s — the two length scales this file has to move between. */
-    const val PER_MILLI_TILE: Long = Flight.PER_TILE / Rotation.MILLI_TILE
+    const val PER_MILLI_TILE: Long = Rotation.PER_MILLI_TILE
 }

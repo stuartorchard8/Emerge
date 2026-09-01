@@ -97,17 +97,26 @@ object Weld {
      * absolute world coordinate ever being multiplied by anything — see [Composite].
      */
     fun jointOf(shipPose: Pose, shipAbout: MassDistribution, station: RigidBody): Joint {
-        // The station's centre of mass, in the vessel's frame, in millitiles.
-        val comX = shipPose.toLocalX(station.comX, station.comY) / Composite.PER_MILLI_TILE
-        val comY = shipPose.toLocalY(station.comX, station.comY) / Composite.PER_MILLI_TILE
+        // The station's centre of mass, in the vessel's frame. [Pose.toLocalX] answers at the
+        // position scale, so the millitile arms below are a reduction of this rather than the other
+        // way about — the frame conversion's precision is kept and then spent, not discarded first.
+        val comX = shipPose.toLocalX(station.comX, station.comY)
+        val comY = shipPose.toLocalY(station.comX, station.comY)
+        val comMilliX = comX / Rotation.PER_MILLI_TILE
+        val comMilliY = comY / Rotation.PER_MILLI_TILE
         val stationAbout = MassDistribution(
             mass = station.mass,
-            comMilliX = comX,
-            comMilliY = comY,
+            comMilliX = comMilliX,
+            comMilliY = comMilliY,
+            comX = comX,
+            comY = comY,
             gyrationSq = station.about.gyrationSq,
         )
-        val joined = Composite.combined(shipAbout, stationAbout, comX - shipAbout.comMilliX, comY - shipAbout.comMilliY)
-        return Joint(joined.about, comX, comY)
+        val joined = Composite.combined(
+            shipAbout, stationAbout,
+            comMilliX - shipAbout.comMilliX, comMilliY - shipAbout.comMilliY,
+        )
+        return Joint(joined.about, comMilliX, comMilliY)
     }
 
     /** The pair's distribution in the vessel's frame, plus the station's own centre within it. */

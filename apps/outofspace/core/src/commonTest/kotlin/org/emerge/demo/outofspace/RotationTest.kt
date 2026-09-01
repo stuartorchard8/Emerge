@@ -35,6 +35,7 @@ import org.emerge.demo.outofspace.num.scaledRatio
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import org.emerge.demo.outofspace.world.starterWorld
 
 /**
  * Step 2 of `PLAN_trig_free_rotation.md`: the vessel has an orientation, and what pushes it off
@@ -73,6 +74,37 @@ class RotationTest {
         // the fill fractions and would be a magic number the moment one of those moved.
         val kSq = d.gyrationSq / Rotation.GYRATION_SCALE
         assertTrue(kSq in 50L..400L, "a 33x21 box should have k² of order a hundred tile², not $kSq")
+    }
+
+    /**
+     * The centre of mass as a **position** agrees with it as a **radius**, and carries more digits.
+     *
+     * Both halves matter. Agreement is what makes it one centre and not two: the grid is placed
+     * about [MassDistribution.comX] and every torque is booked about [MassDistribution.comMilliX],
+     * so a disagreement bigger than the millitile they differ by would be the ship turning about a
+     * point it is not drawn about.
+     *
+     * The extra digits are the whole reason the field exists. Measured on the starter vessel, one
+     * 100 kg packet moving one tile shifts the centre by 1.04 millitiles — so a grid hung off the
+     * radius would move in whole-millitile snaps and lose everything finer. If this ever comes back
+     * exactly `comMilliX · PER_MILLI_TILE` on a real vessel then the precision is decorative and
+     * `PLAN_com_anchored_frames.md` has lost its premise.
+     */
+    @Test
+    fun `the centre of mass is one point at two scales`() {
+        val d = starterWorld(OutofspaceConfig().initialGrid).distribution
+
+        assertEquals(d.comMilliX, d.comX / Rotation.PER_MILLI_TILE, "the two x centres disagree")
+        assertEquals(d.comMilliY, d.comY / Rotation.PER_MILLI_TILE, "the two y centres disagree")
+
+        // Sub-millitile digits on at least one axis — a centre that landed exactly on a millitile
+        // boundary on both would be a coincidence, and on a real vessel it is not one that happens.
+        val subX = d.comX % Rotation.PER_MILLI_TILE
+        val subY = d.comY % Rotation.PER_MILLI_TILE
+        assertTrue(
+            subX != 0L || subY != 0L,
+            "the position centre carries no digits the radius does not: $subX, $subY",
+        )
     }
 
     /** `τ = rₓF_y − r_yF_x`, with the arm measured from the centre and not from anywhere else. */

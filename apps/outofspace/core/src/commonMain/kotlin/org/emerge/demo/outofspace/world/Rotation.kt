@@ -33,6 +33,16 @@ object Rotation {
     const val MILLI_TILE: Long = 1_000L
 
     /**
+     * [Flight.PER_TILE]s to a [MILLI_TILE] — the one conversion between a **position** and a
+     * **radius**, which are the two things this file's units are.
+     *
+     * It lives here because it is a statement about [MILLI_TILE], and it is a `const` rather than
+     * three copies because it was three copies: `RigidBody.COM_SCALE` and `Composite.PER_MILLI_TILE`
+     * both spelled it out, and a fourth was about to.
+     */
+    const val PER_MILLI_TILE: Long = Flight.PER_TILE / MILLI_TILE
+
+    /**
      * [Coord] raw per radian: a half turn is [Int.MAX_VALUE], so this is `Int.MAX_VALUE / π`.
      *
      * The one place a transcendental number enters, and it enters as a rounded integer constant
@@ -98,6 +108,35 @@ data class MassDistribution(
     /** Centre of mass in millitiles from the grid origin — see [comMilliX]. */
     val comMilliY: Long,
     /**
+     * The same centre of mass as a **position**: [Flight.PER_TILE]ths of a tile from the grid origin.
+     *
+     * ⚠️ **This is the one that places the grid in the world**, and it needs every digit of that
+     * precision. Measured on the starter vessel, a 100 kg packet moving one tile shifts the centre
+     * by 1.04 millitiles — so at [comMilliX]'s resolution a full packet-tile move is *one unit* and
+     * anything smaller than it quantises to nothing at all. A grid hung off that would snap in
+     * whole-millitile steps and swallow every small mass movement in between. Here the same move is
+     * a million units. See `PLAN_com_anchored_frames.md`.
+     *
+     * ⛔ **Not a lever arm.** Radii stay on [comMilliX] — squaring one of these overflows, which is
+     * what [Rotation.GYRATION_SCALE] exists to say.
+     *
+     * ⚠️ Carried beside [comMilliX] rather than deriving one from the other, because the two are
+     * different roundings of one exact ratio and can differ in the last millitile. Collapsing them
+     * would move every torque arm in the sim by up to a millitile, which is a change to argue on
+     * the momentum ledger's evidence and not to smuggle in beside a unit addition.
+     *
+     * Defaulted from [comMilliX] so that a caller who only ever knew a radius — every fixture, and
+     * [Weld]'s station before its frame conversion stopped throwing the digits away — states the
+     * centre once and gets exactly the precision it actually has. The two real walks pass it.
+     *
+     * ⛔ **A `copy()` would not recompute this.** There are none today and this is why there should
+     * stay none: `copy(comMilliX = …)` would move the radius and leave the position where it was,
+     * which is the trap `Footprint.remapped` fell into. Build a new distribution instead.
+     */
+    val comX: Long = comMilliX * Rotation.PER_MILLI_TILE,
+    /** The centre of mass as a position, in [Flight.PER_TILE]ths — see [comX]. */
+    val comY: Long = comMilliY * Rotation.PER_MILLI_TILE,
+    /**
      * Squared radius of gyration about ([comMilliX], [comMilliY]), in [Rotation.GYRATION_SCALE]ths
      * of a tile².
      *
@@ -107,7 +146,7 @@ data class MassDistribution(
     val gyrationSq: Long,
 ) {
     companion object {
-        val EMPTY = MassDistribution(0L, 0L, 0L, 0L)
+        val EMPTY = MassDistribution(0L, 0L, 0L, 0L, 0L, 0L)
     }
 }
 
@@ -146,15 +185,20 @@ fun massDistribution(
     // `+ MILLI_TILE / 2` because a tile's mass sits at its centre, not at its corner. Added after
     // the division rather than to every term, which is the same number and one rounding instead of
     // one per tile.
-    val comX = scaledRatio(momentX, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
-    val comY = scaledRatio(momentY, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
+    val comMilliX = scaledRatio(momentX, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
+    val comMilliY = scaledRatio(momentY, mass, Rotation.MILLI_TILE) + Rotation.MILLI_TILE / 2L
+    // The same ratio at the position scale, and the same argument for the half-tile. Nothing here is
+    // wider than it already was: `momentX` is in **tile** units and [scaledRatio] reduces before it
+    // scales, so the accumulator the comment above bounds at 2e17 is this one, unchanged.
+    val comX = scaledRatio(momentX, mass, Flight.PER_TILE) + Flight.PER_TILE / 2L
+    val comY = scaledRatio(momentY, mass, Flight.PER_TILE) + Flight.PER_TILE / 2L
 
     var gyrationSq = 0L
     forEachVesselMass(grid, rail, conduits, deck, buffers) { tile, fabric, cargo ->
         val m = fabric + cargo
         if (m == 0L) return@forEachVesselMass
-        val rx = tileCentre(grid.xOf(tile)) - comX
-        val ry = tileCentre(grid.yOf(tile)) - comY
+        val rx = tileCentre(grid.xOf(tile)) - comMilliX
+        val ry = tileCentre(grid.yOf(tile)) - comMilliY
         // Millitile² is micro-tile², which is what GYRATION_SCALE counts — so `r²` is already in the
         // output's unit and enters as the *scale*, making each term `(m/M)·r²` with the mass unit
         // cancelled inside a single exact call rather than across two lossy ones.
@@ -163,7 +207,12 @@ fun massDistribution(
         gyrationSq += scaledRatio(m, mass, rSq)
     }
 
-    return MassDistribution(mass = mass, comMilliX = comX, comMilliY = comY, gyrationSq = gyrationSq)
+    return MassDistribution(
+        mass = mass,
+        comMilliX = comMilliX, comMilliY = comMilliY,
+        comX = comX, comY = comY,
+        gyrationSq = gyrationSq,
+    )
 }
 
 /**
@@ -203,7 +252,12 @@ fun atmosphereDistribution(grid: Grid, masses: MassArray, about: MassDistributio
         // the accumulator by the largest `r²` on the grid however much gas is aboard.
         gyrationSq += scaledRatio(m, mass, rSq)
     }
-    return MassDistribution(mass = mass, comMilliX = about.comMilliX, comMilliY = about.comMilliY, gyrationSq = gyrationSq)
+    return MassDistribution(
+        mass = mass,
+        comMilliX = about.comMilliX, comMilliY = about.comMilliY,
+        comX = about.comX, comY = about.comY,
+        gyrationSq = gyrationSq,
+    )
 }
 
 /** The centre of tile column/row [n], in millitiles. */
@@ -239,8 +293,13 @@ fun cellDistribution(width: Int, height: Int, cells: BooleanArray, massPerTile: 
     // Every cell weighs the same, so the mass divides out of the centroid entirely and the moments
     // can be counted in cells. That is not a micro-optimisation: `Σ m·x` for an 83-tonne rock at a
     // microgram per unit is the quantity [Rotation.GYRATION_SCALE] exists to keep off the books.
-    val comX = momentX / filled
-    val comY = momentY / filled
+    val comMilliX = momentX / filled
+    val comMilliY = momentY / filled
+    // The same centroid at the position scale. `momentX` is a sum of millitile centres, so this is
+    // one more factor — through [scaledRatio], because the product is the wide term and the sum is
+    // not.
+    val comX = scaledRatio(momentX, filled, Rotation.PER_MILLI_TILE)
+    val comY = scaledRatio(momentY, filled, Rotation.PER_MILLI_TILE)
 
     // Summed and then divided once, not divided per cell: `r²` is millitile², which is already
     // [Rotation.GYRATION_SCALE]'s unit, and the sum of it over even a huge body is ~1e14 — nowhere
@@ -250,15 +309,15 @@ fun cellDistribution(width: Int, height: Int, cells: BooleanArray, massPerTile: 
     for (cy in 0 until height) {
         for (cx in 0 until width) {
             if (!cells[cy * width + cx]) continue
-            val rx = tileCentre(cx) - comX
-            val ry = tileCentre(cy) - comY
+            val rx = tileCentre(cx) - comMilliX
+            val ry = tileCentre(cy) - comMilliY
             rSqTotal += rx * rx + ry * ry + Rotation.CELL_MOMENT
         }
     }
     return MassDistribution(
         mass = filled * massPerTile,
-        comMilliX = comX,
-        comMilliY = comY,
+        comMilliX = comMilliX, comMilliY = comMilliY,
+        comX = comX, comY = comY,
         gyrationSq = rSqTotal / filled,
     )
 }
