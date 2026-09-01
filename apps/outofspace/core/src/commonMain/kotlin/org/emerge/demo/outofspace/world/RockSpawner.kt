@@ -205,8 +205,8 @@ object RockSpawner {
         // ── Despawn bodies outside the WINDOW_SIZE×WINDOW_SIZE window ──
         val result = ArrayList<RigidBody>(bodies.size)
         for (body in bodies) {
-            val bodyTileX = body.localX(pose) / Flight.PER_TILE
-            val bodyTileY = body.localY(pose) / Flight.PER_TILE
+            val bodyTileX = body.localComX(pose) / Flight.PER_TILE
+            val bodyTileY = body.localComY(pose) / Flight.PER_TILE
             val bodyChunkX = chunkIndexOf(bodyTileX)
             val bodyChunkY = chunkIndexOf(bodyTileY)
             val dx = abs(bodyChunkX)
@@ -247,7 +247,7 @@ object RockSpawner {
             val newBodies = spawnBodiesForChunk(worldChunkX, worldChunkY, density, mixture)
 
             for (body in newBodies) {
-                if (!wouldOverlap(body.localX(pose) / Flight.PER_TILE, body.localY(pose) / Flight.PER_TILE, (body.width / 2), result)) {
+                if (!wouldOverlap(body.localComX(pose) / Flight.PER_TILE, body.localComY(pose) / Flight.PER_TILE, (body.width / 2), result)) {
                     result.add(body)
                 }
             }
@@ -677,8 +677,8 @@ object RockSpawner {
             // asks only for the space it occupies, so this is zero for rocks and the loop is
             // unchanged for them.
             val clear = if (body.kind == BodyKind.STATION) STATION_CLEARANCE_TILES * Flight.PER_TILE else 0L
-            val bodyMinX = body.localX(pose) - clear
-            val bodyMinY = body.localY(pose) - clear
+            val bodyMinX = body.localComX(pose) - clear
+            val bodyMinY = body.localComY(pose) - clear
             val bodyMaxX = bodyMinX + body.width * Flight.PER_TILE + 2 * clear
             val bodyMaxY = bodyMinY + body.height * Flight.PER_TILE + 2 * clear
 

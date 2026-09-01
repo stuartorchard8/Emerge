@@ -308,24 +308,22 @@ class RigidBody(
     val centreX: Long get() = pose.toWorldX(width * Flight.PER_TILE / 2L, height * Flight.PER_TILE / 2L)
     val centreY: Long get() = pose.toWorldY(width * Flight.PER_TILE / 2L, height * Flight.PER_TILE / 2L)
 
-    /**
-     * Its local origin in [pose]'s frame — grid coordinates, which is what every tile index in the
-     * game is built from.
-     *
-     * ⚠️ This is the origin **only**, not the placement: since step 3 a body has an orientation of
-     * its own, so knowing where its corner landed does not tell you where its cells are. Anything
-     * that walks cells wants [poseIn] instead.
-     */
-    fun localX(pose: Pose): Long = pose.toLocalX(positionX, positionY)
-
-    fun localY(pose: Pose): Long = pose.toLocalY(positionX, positionY)
-
     /** Its bounding-box centre in [pose]'s frame — what plating and the extractor's reach want. */
     fun localCentreX(pose: Pose): Long = pose.toLocalX(centreX, centreY)
 
     fun localCentreY(pose: Pose): Long = pose.toLocalY(centreX, centreY)
 
-    /** Its centre of mass in [pose]'s frame — what a torque arm wants, and only that. */
+    /**
+     * Its centre of mass in [pose]'s frame — grid coordinates, which is what every tile index in
+     * the game is built from.
+     *
+     * ⚠️ **Where the body *is*, and not where its cells are.** A body has an orientation of its
+     * own, so one point does not tell you what it covers; anything that walks cells wants [poseIn].
+     *
+     * There was a `localX` beside this that answered for the body's local origin, and the anchor
+     * flip made the two the same question — [positionX] *is* the centre of mass now, so the corner
+     * was a rotation away from this rather than a different fact. One of them had to go.
+     */
     fun localComX(pose: Pose): Long = pose.toLocalX(comX, comY)
 
     fun localComY(pose: Pose): Long = pose.toLocalY(comX, comY)

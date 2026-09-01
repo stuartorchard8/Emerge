@@ -5,8 +5,9 @@ import org.emerge.sim.core.physics.primitives.Coord
 import org.emerge.sim.core.physics.primitives.Norm
 
 /**
- * Where a body's local origin sits in the world, and how far it is turned — step 1 of
- * `PLAN_rigid_bodies.md`.
+ * Where a body's centre of mass sits in the world, how far it is turned, and where that centre sits
+ * in its own grid — step 1 of `PLAN_rigid_bodies.md`, re-anchored by
+ * `PLAN_com_anchored_frames.md`.
  *
  * This is the piece that lets the vessel frame be **deleted** rather than patched. Bodies and the
  * vessel all store world coordinates; the grid stops being the frame and keeps the job it is good

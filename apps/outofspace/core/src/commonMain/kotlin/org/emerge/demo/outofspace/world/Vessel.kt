@@ -177,6 +177,12 @@ data class VesselState(
      *
      * It is a position in **open space**, not on the grid. The grid is the vessel's own frame and
      * travels with it; nothing on it moves because the ship does.
+     *
+     * ⛔ **It is the centre of mass, not the grid's origin.** That is what makes it a position a
+     * physicist would recognise: with no force acting it cannot change, so cargo shifting aboard
+     * moves the *hull* and leaves this alone. Anchored on the origin instead — as it was until save
+     * version 23 — a packet sliding down a rail walked the ship's centre through open space with
+     * nothing pushing it. See [pose] and `PLAN_com_anchored_frames.md`.
      */
     val positionX: Long = 0L,
     val positionY: Long = 0L,
@@ -933,11 +939,19 @@ data class VesselState(
     /**
      * Where the grid sits in the world and how far it is turned — the vessel as one rigid body.
      *
-     * [positionX] is the world position of the grid's **origin**, tile (0,0)'s corner, and not of
-     * the centre of mass: the centre of mass moves in grid coordinates every time a packet slides
-     * down a rail, and a pose anchored to it would slew the whole ship sideways when it did. The
-     * ship still *turns* about its centre of mass — see [Pose.turned], which is what moves the
-     * origin to keep that pivot still.
+     * [positionX] is the world position of the vessel's **centre of mass**, and the grid is hung so
+     * that its own centre lands there — [distribution] is what says where that is in grid
+     * coordinates, and it is re-read here every tick because cargo moves it.
+     *
+     * ⚠️ **That re-reading is the whole mechanism.** Nothing keeps the world centre still when an
+     * ingot slides down a rail; it stays still because it is the number that is *stored*, and the
+     * grid moves under it because `comLocal` is the number that changed. The recoil falls out of
+     * the arithmetic rather than being applied by anything.
+     *
+     * ⛔ This used to be the grid's origin, tile (0,0)'s corner, on the argument that a centre of
+     * mass moves in grid coordinates and an anchor on it would slew the ship sideways. It does and
+     * it does — and that slew is the hull recoiling, which is correct and was the thing being
+     * prevented. See `PLAN_com_anchored_frames.md`.
      *
      * This is the single conversion point between the world, which is where bodies and momentum
      * live, and the grid, which is the addressing scheme for everything aboard. Step 1 of
