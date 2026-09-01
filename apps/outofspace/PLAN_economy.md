@@ -1,7 +1,8 @@
 # Economy
 
-Status: **steps 1–3 BUILT and green** (`97bd3e79`, `46f28c80`, `c10fd62f`, 2026-09-01) — money, prices,
-valuation, the docking port and stations. Steps 4–6 not started.
+Status: **steps 1–4 BUILT and green** (2026-09-01) — money, prices, valuation, the docking port,
+stations and docking. Steps 5–6 (trade UI, arc tuning) not started.
+⏸ One piece of §7 is deliberately not built: the visual approach — see §10c.
 ✅ Station size settled at **20×20** (`RigidBody.STATION_TILES`) against the measurement in §10b;
 100×100 waits on the coarse box decomposition parked in §6. Numbers in §3
 and §3.6 are measured off the live species tables, not invented. Steps in §9.
@@ -439,9 +440,11 @@ see §10a. `massBalance` is asserted every tick for a thousand ticks and holds.
 with a `station` line. 14 tests in 0.28 s.
 ⛔ **The measurement came back badly — see §10b. The station size is now an open question.**
 
-**4. Docking.** Proximity and alignment test, soft capture, the composite body, undock.
-*Done when:* `momentumBalanceX/Y` and `angularBalance` are zero across dock → burn → undock; a
-docked ship firing a thruster moves the pair about the shared CoM.
+**4. ✅ BUILT — docking** (`5d1ae5a5` placement + geometry, `3ae6099a` the weld, `02c0a45b` the
+market). `starterWorld` with one deterministic station, `Station.id` + `DockNode`s, `world/Docking.kt`,
+`world/Composite.kt`, `world/Weld.kt`, `Edit.Dock`/`Undock`/`SetDockedThrust`, the dock in the save.
+`momentumBalanceX/Y` and `angularBalance` asserted **every tick for 300 ticks** across dock, drift and
+undock. 25 tests.
 
 **5. Trade UI.** The inspector panel and the trade sheet, with `agent-scripts/trade.txt`.
 *Done when:* screenshotted wide and narrow, and the screenshots are in the commit message.
@@ -598,6 +601,54 @@ already rich in the elements does not crack the compound", not "a station at lis
 ⚠️ **The save version bump is a record, not a guard.** The reader has no upper-version check, so an
 older build handed a v22 file skips the `station` lines and loads a world silently missing its
 trading posts. v22 is what a person diagnosing that would read.
+
+## 10c. What step 4 turned up
+
+✅ **The weld is small because the vessel carries the pair.** The reducer already advances the ship's
+pose by its own momentum about its own centre of mass — so handing that *one expression* the pair's
+mass, centre and radius of gyration turns it into the pair's advance. No second integrator, no
+constraint to solve, nothing to drift. The station's pose is derived from the ship's through an offset
+frozen at capture, which is the whole of "rigid".
+
+⛔ **A REAL OVERFLOW BUG in the range test, and taking the difference first was not enough.**
+`canDock` did subtract two world coordinates before squaring — the documented §5.3 hazard — and a
+station sixty tiles away still gave `dx = 6e10`, whose square is 3.6e21 against a `Long` that stops at
+9.2e18. It wrapped, the range test *passed*, and a ship berthed across sixty tiles of empty space.
+**The difference has to be bounded before it is squared**; a box reject first holds both squares under
+`reach²`. Nothing about the arithmetic looked wrong, and only the test that deliberately shoves the
+station out of range found it.
+
+⚠️ **Two fixture lessons from the ledgers.** Momentum handed to a fixture has to say where it came
+from, or `momentumBalance` reads the fixture's own drift as a leak for ever — `debugImpulse` is the
+store for that. And **the angular ledger has no debug store at all**, on purpose: a fixture that wants
+a spinning ship has to give it a *history* instead, which means it took its spin off a body
+(`bodyAngImpulse`).
+
+⚠️ **Rigidity is exact to the pose primitives and no further.** The station's world pose is written
+out through `toWorld` and read back through `toLocal`, and that round trip is documented at 2.7e-6 of
+a tile. Measured here at **five raw units** — 5e-9 of a tile. It does not accumulate: the station's
+pose is *derived* every tick, never integrated, so there is no running total for an error to collect
+in.
+
+### ⏸ NOT BUILT: bringing the ports together visually
+
+Stu asked for the two hulls to close the last gap so the ports kiss, and was right to be cautious.
+Doing it in the **sim** means one of two things, and neither is free:
+
+- **Move the station** to touch the ship — it is the massive object, and watching a trading post slide
+  two tiles to meet you reads as the world being wrong rather than as a docking clamp.
+- **Move the ship** into the berth — more natural, but the ship's pose is what every body's frame
+  conversion is taken against, and rewriting it from inside the edit phase means every later reader in
+  that tick sees a pose the tick did not start with.
+
+And either way, **changing the internal geometry of a welded pair changes its inertia**: the joint
+centre and the radius of gyration both move, so a pair conserving angular momentum spins up or down
+as the gap closes. That is physically correct — it is a skater pulling their arms in — and it is a
+strange thing to have happen for a cosmetic two tiles.
+
+⛔ **So it belongs in the view, and the view is step 5.** The gap is at most `Docking.RANGE_TILES`
+before capture, the sim can hold the pose it captured at, and the renderer can close the last two
+tiles over a few frames without any of the above being true. Left here rather than done badly.
 
 ## 11. Hazards carried in from memory
 
