@@ -43,10 +43,13 @@ Direction transforms — `turnedX`, `unturnedX` — never involved the offset an
 Rotation of a free body becomes `ang += by` with `C` untouched. That is the whole of "the rotation
 problem dissolves."
 
-⚠️ **`turnedAbout` survives, confined to the composite case.** A docked pair turns about the *joint*
-centre (`Weld.jointOf`, `OutofspaceSim.kt:884`), which belongs to neither member, so each member's
-stored COM still has to be displaced as the pair turns. It stops being the general case and becomes
-the one case that genuinely has a pivot other than its own.
+⛔ **`turnedAbout` does not survive, and the composite is not an exception — this plan said twice
+that it was, and was wrong both times.** A docked pair turns about the joint centre, which belongs to
+neither member, and the conclusion drawn from that was that some caller must still be able to name a
+foreign pivot. It does not follow: the pair *is* a body, the joint centre *is* that body's own
+centre, and what gets advanced while docked is the pair. Every caller turns about its own mass. So
+the pivot stops being a parameter at all — `turned(by, about)` takes the distribution and reads the
+centre off it — and the composite case is deleted rather than accommodated. Done in `e96a15c8`.
 
 ⚠️ **The per-tick freeze is already in the contract.** The transform now depends on the mass
 distribution, which changes *during* a tick as matter moves — so a conversion early in the tick and
@@ -89,49 +92,51 @@ meanwhile.
 `Rotation.PER_MILLI_TILE` now states the position/radius conversion once; `RigidBody.COM_SCALE` and
 `Composite.PER_MILLI_TILE` were already two copies of it.
 
-### 2. `Pose` carries the COM, and the weld with it
+### 2. ✅ The pivot stops being a parameter — `e96a15c8`
 
-The type change, `toWorld`/`toLocal` rewritten, `turnedAbout` split into `turned(by)` (free) and
-`turnedAbout(by, pivot)` (composite only).
+`Pose.turnedAbout(by, pivotX, pivotY)` → `Pose.turned(by, about)`, `turnedAbout` deleted, and with it
+the idea that a body can be told where to spin. It reads `MassDistribution.comX`, so the integrator
+stops rounding its pivot to a thousandth of a tile — the first use of what step 1 built.
 
-Every `Pose(...)` construction site must now supply the distribution — there are nine:
-`Weld.kt:117`, `RigidBody.kt:240`, `RigidBody.kt:249`, `RockContact.kt:331`, `RockContact.kt:375`,
-`RockContact.kt:413`, `OutofspaceSim.kt:1079`, `Vessel.kt:940`, `Save.kt:1207`.
+**The weld needed no rebuild.** It was offered one and did not want it: once the pivot comes off the
+distribution, `moveAbout` being the pair's rather than the vessel's is the entire docked case, and
+`Pose` cannot tell the difference. The remaining asymmetry — "the vessel carries the pair's momentum"
+— is about *momentum storage*, not rotation, and nothing in step 3 needs it flipped.
 
-**Do the weld in this step, not later.** `Weld.stationPose` and the docked branch of the integrator
-are the only places a pivot is not the body's own centre, so they are what decides whether the split
-above is a real distinction or a leak. If COM-anchoring is going to fail to be clean, it fails here.
+`VesselState.distribution` is memoised, because `turned` puts the mass walk on the advance path
+rather than only on the way out.
 
-**Gate:** `PoseTest`, `WeldTest`, `DockingTest`, `DockingPortTest`, `RotationTest`.
+⚠️ **This step did not move the anchor.** `Pose.x` is still the grid origin and `toWorld`/`toLocal`
+are untouched, so the world COM still drifts on an intra-grid mass move. That property arrives in
+step 3, which is where the plan's whole claim actually lands.
 
-### 3. The vessel stores its COM
+### 3. The anchor flips — vessel, bodies and saves together
 
-`VesselState.positionX/Y` becomes the world COM. `pose` builds from `distribution`. The integrator
-at `OutofspaceSim.kt:884` becomes `pose.turned(spin).movedBy(v)` for free flight and keeps
-`turnedAbout(jointCom)` while docked.
+⛔ **These cannot be separated, and the plan was wrong to number them apart.** The moment
+`toWorld(local) = C + R·(local − comLocal)` replaces `origin + R·local`, `Pose.x` *must* be a centre
+of mass at every construction site at once — there is no half-way state that compiles and means
+anything. `RigidBody.pose` is built from `positionX`, so bodies flip with the vessel; `Save` reads
+`position` into that field, so the migration flips with both. One commit, or a deliberately broken
+tree across three.
 
-**Gate:** `MomentumLedger`, plus the new invariant below.
+What it covers:
 
-### 4. Rigid bodies store their COM
+- `VesselState.positionX/Y` and `RigidBody.positionX/Y` become world centres of mass.
+- `Pose` gains `comLocalX/comLocalY` and both transforms subtract it. ⚠️ Not added earlier on
+  purpose: until the transform reads it, it is a field several sites would have to supply a
+  meaningless value for — `Save`'s legacy migration pose has no centre of mass to name.
+- `RigidBody.comX/comY` stop being derived and become the stored value; `centreX` stays derived,
+  because the silhouette is a different question.
+- `RockContact`'s `px`/`py` start carrying centres, and `Contact.kt:559` stops deriving one per
+  contact.
+- **Save v23** (`Save.VERSION` is 22): read the old origin, walk the loaded layers for `comLocal`,
+  store `C = origin + R·comLocal`. The migration needs the grid, so it runs after the layers are
+  read, not while the header is.
 
-`RigidBody.positionX/Y` becomes the COM; `comX`/`comY` (`RigidBody.kt:291`) stop being derived and
-become the stored value; `centreX` (bounding box) stays derived, since the silhouette question is a
-different question.
+**Gate:** `MomentumLedger`, `PoseTest`, `WeldTest`, `DockingTest`, `RotationTest`, the contact
+suites, and the two new invariants below — which fail today and are the point of the exercise.
 
-This one pays for itself: `RockContact`'s `px`/`py` arrays (`:268`) start carrying COMs directly, and
-`Contact.kt:559` (`arx[i] = (c.pointX − body.comX)`) stops deriving one per contact.
-
-**Gate:** `BodyContactTest`, `ContactTest`, `RockContactTest`.
-
-### 5. Save v23
-
-`position` changes meaning. Migration reads the old origin-anchored value, computes the distribution
-at load, and writes `C = origin + R·comLocal`. `Save.VERSION` is 22 today.
-
-⚠️ Migration needs the *loaded* grid before it can place the body, so it runs after layers are read,
-not while the header is.
-
-### 6. Readouts and the renderer
+### 4. Readouts and the renderer
 
 Nav coordinate label (`OutofspaceHud.kt:960`), origin marker (`:930`), density-field UVs (`:917`),
 camera (`OutofspaceRenderer.kt:181`, already COM-anchored and so already correct).
