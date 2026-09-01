@@ -1384,17 +1384,21 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
     // not read as a wall for the frame between the resize and the next tick.
     val newStructure = StructureMap.derive(newGrid, newDeck, airlockOpenness(newDeck, newSignals))
 
-    // ── 6. Bodies: nothing to do ─────────────────────────────────────────
-    // They used to be shifted by the same offset the tile indices moved by, because they were
+    // ── 6. Bodies and the pose: nothing to do ────────────────────────────
+    // Bodies used to be shifted by the same offset the tile indices moved by, because they were
     // stored in the grid's frame. They are stored in the **world** now, and a rock does not move
-    // because the player built a row of hull off the port bow. What moves instead is the grid's
-    // *origin*: tile (0,0) is a different place than it was, `dx`,`dy` tiles away in grid axes, so
-    // the pose has to follow it or everything aboard would appear to jump. See [VesselState.pose].
+    // because the player built a row of hull off the port bow.
+    //
+    // ⛔ **Neither does the ship, and this used to move it.** While [VesselState.positionX] was
+    // tile (0,0)'s corner, re-numbering the tiles genuinely moved the stored point — the corner is
+    // a different place once there is a new row in front of it — so the pose was slid by `dx`,`dy`
+    // to compensate. The stored point is the **centre of mass** now, and that is a physical fact
+    // about where the mass is; it does not care how the tiles are indexed. A resize moves the
+    // centre's *grid* coordinate, and [VesselState.pose] re-reads that from the distribution every
+    // tick, so the two changes cancel with nothing to write down.
+    //
+    // Compensating anyway put a fresh starter vessel eighteen tiles from where it said it was.
     val newBodies = bodies
-    val shiftedOrigin = pose.let { it.movedBy(
-        it.toWorldX(-dx.toLong() * Flight.PER_TILE, -dy.toLong() * Flight.PER_TILE) - it.x,
-        it.toWorldY(-dx.toLong() * Flight.PER_TILE, -dy.toLong() * Flight.PER_TILE) - it.y,
-    ) }
 
     // ── 7. Vent whatever the new grid does not cover ─────────────────────
     // As a difference of totals rather than a walk of the discarded cells: exact by construction,
@@ -1436,8 +1440,9 @@ fun VesselState.remapped(newGrid: Grid, dx: Int, dy: Int): VesselState {
         air = newAir,
         pipeAir = newPipeAir,
         bodies = newBodies,
-        positionX = shiftedOrigin.x,
-        positionY = shiftedOrigin.y,
+        // Untouched — see step 6. A re-indexed grid is the same ship in the same place.
+        positionX = positionX,
+        positionY = positionY,
         // vented quantities — grow: difference is zero, no special case needed
         airVentedMass = airVentedMass + ventedGas,
         airVentedEnergy = airVentedEnergy + ventedEnergy,

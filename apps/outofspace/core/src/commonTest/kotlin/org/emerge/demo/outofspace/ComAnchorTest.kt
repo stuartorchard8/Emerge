@@ -2,6 +2,8 @@ package org.emerge.demo.outofspace
 
 import org.emerge.demo.outofspace.world.BufferLayer
 import org.emerge.demo.outofspace.world.Flight
+import org.emerge.demo.outofspace.world.Grid
+import org.emerge.demo.outofspace.world.remapped
 import org.emerge.demo.outofspace.world.MassArray
 import org.emerge.demo.outofspace.chem.Mixture
 import org.emerge.demo.outofspace.world.RailLayer
@@ -84,6 +86,41 @@ class ComAnchorTest {
         assertTrue(turned, "the ship never actually turned, so this proved nothing")
         // And far enough round that a corner would have been all the way about the centre.
         assertTrue(controller.state.ang.raw != 0, "the spin stopped")
+    }
+
+    /**
+     * Re-numbering the tiles does not move the ship.
+     *
+     * ⚠️ **This one was found by driving the game, not by the suite.** A fresh starter vessel
+     * reported its position as eighteen tiles from the world origin it had never left, because
+     * [VesselState.remapped] still slid the pose by the index offset — which was right while the
+     * stored point was tile (0,0)'s corner, that corner genuinely being somewhere else once there
+     * is a new row in front of it. A centre of mass is a fact about where the mass is and has no
+     * opinion about how the tiles are numbered.
+     *
+     * Checked at the anchor *and* through a tile, because "the ship did not move" and "the number
+     * did not change" are the same claim only if the grid came with it.
+     */
+    @Test
+    fun `re-indexing the grid does not move the ship`() {
+        val before = twoStores()
+        val grown = Grid(before.grid.width + 6, before.grid.height + 4)
+        val after = before.remapped(grown, dx = 3, dy = 2)
+
+        assertEquals(before.positionX, after.positionX, "a resize moved the ship on x")
+        assertEquals(before.positionY, after.positionY, "a resize moved the ship on y")
+
+        // The hull tile that was at (2, 2) is at (5, 4) now, and it is the same place in space.
+        assertEquals(
+            before.pose.toWorldX(2L * Flight.PER_TILE, 2L * Flight.PER_TILE),
+            after.pose.toWorldX(5L * Flight.PER_TILE, 4L * Flight.PER_TILE),
+            "the hull moved when the grid was re-indexed",
+        )
+        assertEquals(
+            before.pose.toWorldY(2L * Flight.PER_TILE, 2L * Flight.PER_TILE),
+            after.pose.toWorldY(5L * Flight.PER_TILE, 4L * Flight.PER_TILE),
+            "the hull moved when the grid was re-indexed",
+        )
     }
 
     /** A sealed vacuum box with a store at each end, so cargo has somewhere to be moved between. */
