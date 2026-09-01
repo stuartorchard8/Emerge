@@ -326,9 +326,22 @@ bound-radius test. A **solid** 100×100 station is 10,000 cells with a bound rad
 it culls nothing within 70 tiles of itself and every nearby rock costs 10,000 × its own cell count in
 pair tests, every substep, every tick. That is not a tuning problem, it is a different order.
 
-⛔ **`CellShape.Box` does not fix it.** Stu asked whether the size argues for boxes over discs; it
-does not, because the cost is *per cell* whichever shape the cell is. Boxes change the narrow phase,
-not the count.
+⛔ **Per-cell `CellShape.Box` does not fix it**, because the cost is *per cell* whichever shape the
+cell is. Boxes change the narrow phase, not the count.
+
+⏸ **PARKED, and the right long-term answer: a COARSE box decomposition.** Stu, clarifying: treat the
+whole station as one solid object built from *a dozen* bounding boxes, not from ten thousand cell-
+sized ones. That is the standard shape for a large static body and it is roughly **30× cheaper again
+than the shell** — twelve colliders against four hundred. It composes with the shell rather than
+competing with it.
+
+What it needs that does not exist: **a body whose collider set is decoupled from its cell mask.**
+`RigidBody` today is `cells: BooleanArray` plus `shapeAt(cell)`, so every collider *is* a cell. The
+narrow-phase primitives are already there — `discVsBox` is exact and closed-form, and box-vs-box has
+taken a `bFrame` since step 6 — but `collectBodyContacts`, `collectHullContacts` and `boundRadius`
+all walk cells. Done properly it separates **what a body weighs** (cells, unchanged) from **what it
+collides as** (a collider list), which is a clean seam and one `PLAN_rigid_bodies.md` would want too.
+Scope-cut for this milestone by agreement; revisit when a station has to be more than a berth.
 
 ✅ **A shell does fix it, costs nothing, and is what a station actually is.** The perimeter of a
 100×100 is ~400 cells against 10,000 — **25× cheaper** — and a station is mostly rooms, so a hollow
