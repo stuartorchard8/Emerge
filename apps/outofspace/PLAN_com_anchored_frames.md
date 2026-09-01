@@ -110,39 +110,45 @@ rather than only on the way out.
 are untouched, so the world COM still drifts on an intra-grid mass move. That property arrives in
 step 3, which is where the plan's whole claim actually lands.
 
-### 3. The anchor flips — vessel, bodies and saves together
+### 3. ✅ The anchor flips — `47294234`, `31056848`, `b9402df3`
 
-⛔ **These cannot be separated, and the plan was wrong to number them apart.** The moment
-`toWorld(local) = C + R·(local − comLocal)` replaces `origin + R·local`, `Pose.x` *must* be a centre
-of mass at every construction site at once — there is no half-way state that compiles and means
-anything. `RigidBody.pose` is built from `positionX`, so bodies flip with the vessel; `Save` reads
-`position` into that field, so the migration flips with both. One commit, or a deliberately broken
-tree across three.
+`Pose.x` is a centre of mass, `Pose` carries `comLocalX/comLocalY`, and both transforms use it.
+Vessel and bodies store centres; save **v23** re-anchors older files. `Pose.turned` lost its last
+argument — the anchor is the pivot — and `Pose.about` arrived for the other direction: keep the grid
+still, move the anchor, which is what docking and the migration need. Undocked it is *exactly* the
+identity, so `Weld.advance` re-hanging twice a tick accumulates no rounding.
 
-What it covers:
+**The invariant is structural, not maintained.** Nothing holds the world centre still when cargo
+moves; it is the number that is stored, and `comLocal` is re-read from the layers each tick, so the
+grid shifts and the centre does not. The recoil falls out of the arithmetic.
 
-- `VesselState.positionX/Y` and `RigidBody.positionX/Y` become world centres of mass.
-- `Pose` gains `comLocalX/comLocalY` and both transforms subtract it. ⚠️ Not added earlier on
-  purpose: until the transform reads it, it is a field several sites would have to supply a
-  meaningless value for — `Save`'s legacy migration pose has no centre of mass to name.
-- `RigidBody.comX/comY` stop being derived and become the stored value; `centreX` stays derived,
-  because the silhouette is a different question.
-- `RockContact`'s `px`/`py` start carrying centres, and `Contact.kt:559` stops deriving one per
-  contact.
-- **Save v23** (`Save.VERSION` is 22): read the old origin, walk the loaded layers for `comLocal`,
-  store `C = origin + R·comLocal`. The migration needs the grid, so it runs after the layers are
-  read, not while the header is.
+Things the flip **deleted** rather than moved:
 
-**Gate:** `MomentumLedger`, `PoseTest`, `WeldTest`, `DockingTest`, `RotationTest`, the contact
-suites, and the two new invariants below — which fail today and are the point of the exercise.
+- `Pose.turnedAbout`'s pivot, then its distribution, then the method.
+- `RigidBody.localX`/`localY` — the same question as `localComX` once `positionX` is the centre.
+- `remapped`'s pose compensation. A resize moved the ship while the anchor was a corner; a centre of
+  mass does not care how tiles are numbered.
+- Three placement compensations — `dropRock`, `rockOnPlate`, `bodyAt` each subtracted a *different*
+  half-extent to make a blob come out centred, which is the tell that all three were correcting for
+  a frame rather than expressing an intent.
 
-### 4. Readouts and the renderer
+⚠️ **Fixtures were mixing grid and world coordinates** and got away with it while `positionX = 0`
+meant origin-at-zero. `gridAtWorldOrigin()` states what they were assuming.
 
-Nav coordinate label (`OutofspaceHud.kt:960`), origin marker (`:930`), density-field UVs (`:917`),
-camera (`OutofspaceRenderer.kt:181`, already COM-anchored and so already correct).
+⚠️ **The last bug was found by driving the game, not by the suite.** A fresh starter vessel read
+`-18.25, -12.36` — eighteen tiles from an origin it had never left — because `starterVessel` fits its
+grid on the way out. Every test builds its grid at final size, so 1149 of them never resized a vessel
+and then asked where it was. Worth remembering for step 4: the suite does not exercise the panel.
 
-This is where the reported bug dies: the nav coordinates stop tracing a circle when the ship spins in
-place, because the number they print is the pivot.
+### 4. ✅ Readouts — fell out of step 3
+
+Nothing to do. The nav label, the origin marker and the density-field UVs all read `positionX`, which
+is now the centre of mass, and the camera was already COM-anchored. Verified in the running game: the
+panel reads `2.994807, 0.000000` after a three-tile burn along `+x`.
+
+⚠️ The remaining readout question is not a bug but a choice: docked, the vessel still stores *its own*
+centre rather than the pair's, so the number on the panel is the ship's. That is almost certainly
+what a pilot wants; noted in case it ever reads oddly at a station.
 
 ## The invariant this buys
 
@@ -156,7 +162,11 @@ Its twin, for rotation:
 
 > **A vessel spinning in place holds its stored position bit-identical across a full turn.**
 
-Both fail today. Neither should be able to fail again.
+✅ Both are `ComAnchorTest`, and both failed at `e96a15c8`: spinning drifted the stored point by
+2 680 588 — a corner orbiting its centre, which is the readout tracing a circle — and moving cargo
+shifted the centre 445 028 751 through the grid while the hull owed exactly that and moved 0.
+
+A third joined them, from driving the game: **re-indexing the grid does not move the ship.**
 
 ## Open
 
